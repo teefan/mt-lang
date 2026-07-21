@@ -963,6 +963,22 @@ function resolve_name_in_analysis(
                         mi += 1
                 return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
 
+        # Union type.
+        let decl_line_u = find_declaration_line(file, name, "union")
+        if decl_line_u > 0:
+            var hover_u = string.String.create()
+            hover_u.append("union ")
+            hover_u.append(name)
+            return Option[CursorResult].some(value = make_result(decl_line_u, name, source, hover_u))
+
+        # Event declaration.
+        let decl_line_ev = find_declaration_line(file, name, "event")
+        if decl_line_ev > 0:
+            var hover_ev = string.String.create()
+            hover_ev.append("event ")
+            hover_ev.append(name)
+            return Option[CursorResult].some(value = make_result(decl_line_ev, name, source, hover_ev))
+
         # Opaque type.
         let decl_line_o = find_declaration_line(file, name, "opaque")
         if decl_line_o > 0:
@@ -1203,6 +1219,17 @@ function find_declaration_line(file: ast.SourceFile, name: str, kind: str) -> pt
         var decl: ast.Decl
         unsafe:
             decl = read(file.declarations.data + di)
+        let result = find_decl_line_in(decl, name, kind)
+        if result > 0:
+            return result
+        di += 1
+    return 0
+
+
+## Search a single declaration and its nested children for a named entity
+## of the given kind.  Returns the line number (1-based) or 0 if not found.
+function find_decl_line_in(decl: ast.Decl, name: str, kind: str) -> ptr_uint:
+    unsafe:
         if kind == "function":
             match decl:
                 ast.Decl.decl_function as fun:
@@ -1225,6 +1252,14 @@ function find_declaration_line(file: ast.SourceFile, name: str, kind: str) -> pt
                 ast.Decl.decl_struct as s:
                     if s.name == name:
                         return s.line
+                    else:
+                        # Search nested declarations inside structs
+                        var ni: ptr_uint = 0
+                        while ni < s.nested_types.len:
+                            let nested = find_decl_line_in(read(s.nested_types.data + ni), name, kind)
+                            if nested > 0:
+                                return nested
+                            ni += 1
                 ast.Decl.decl_union as u:
                     if u.name == name:
                         return u.line
@@ -1237,29 +1272,28 @@ function find_declaration_line(file: ast.SourceFile, name: str, kind: str) -> pt
                 ast.Decl.decl_enum as e:
                     if e.name == name:
                         return e.line
-                ast.Decl.decl_flags as fl:
-                    if fl.name == name:
-                        return fl.line
+                ast.Decl.decl_flags as f:
+                    if f.name == name:
+                        return f.line
                 ast.Decl.decl_interface as iface:
                     if iface.name == name:
                         return iface.line
                 _:
                     pass
-        else if kind == "opaque":
+        else if kind == "union":
             match decl:
-                ast.Decl.decl_opaque as op:
-                    if op.name == name:
-                        return op.line
+                ast.Decl.decl_union as u:
+                    if u.name == name:
+                        return u.line
                 _:
                     pass
-        else if kind == "alias":
+        else if kind == "event":
             match decl:
-                ast.Decl.decl_type_alias as ta:
-                    if ta.name == name:
-                        return ta.line
+                ast.Decl.decl_event as ev:
+                    if ev.name == name:
+                        return ev.line
                 _:
                     pass
-        di += 1
     return 0
 
 
@@ -1292,6 +1326,64 @@ function find_token_str(source: str, line: ptr_uint, character: ptr_uint) -> Opt
 # =============================================================================
 
 function keyword_hover_text(lexeme: str) -> Option[str]:
+    if lexeme.equal("return"):
+        return Option[str].some(value = "keyword return — exits a function with an optional value")
+    if lexeme.equal("if"):
+        return Option[str].some(value = "keyword if / else — conditional control flow")
+    if lexeme.equal("else"):
+        return Option[str].some(value = "keyword else — fallback branch in if / match")
+    if lexeme.equal("while"):
+        return Option[str].some(value = "keyword while — conditional loop")
+    if lexeme.equal("for"):
+        return Option[str].some(value = "keyword for — iteration over ranges, arrays, spans, or structural iterables")
+    if lexeme.equal("match"):
+        return Option[str].some(value = "keyword match — exhaustive pattern matching on enums, variants, integers, or strings")
+    if lexeme.equal("let"):
+        return Option[str].some(value = "keyword let — immutable local binding, supports else: guard over T? / Option / Result")
+    if lexeme.equal("var"):
+        return Option[str].some(value = "keyword var — mutable local binding, supports else: guard")
+    if lexeme.equal("const"):
+        return Option[str].some(value = "keyword const — compile-time constant value")
+    if lexeme.equal("type"):
+        return Option[str].some(value = "keyword type — type alias definition")
+    if lexeme.equal("struct"):
+        return Option[str].some(value = "keyword struct — plain data record with named fields")
+    if lexeme.equal("enum"):
+        return Option[str].some(value = "keyword enum — fixed set of named integer values with an explicit backing type")
+    if lexeme.equal("interface"):
+        return Option[str].some(value = "keyword interface — compile-time method-set contract for static polymorphism")
+    if lexeme.equal("variant"):
+        return Option[str].some(value = "keyword variant — tagged union with optional payload fields")
+    if lexeme.equal("flags"):
+        return Option[str].some(value = "keyword flags — named bitmask values with a fixed integer backing type")
+    if lexeme.equal("union"):
+        return Option[str].some(value = "keyword union — untagged C-ABI union for FFI / low-level storage")
+    if lexeme.equal("opaque"):
+        return Option[str].some(value = "keyword opaque — C handle type with hidden layout")
+    if lexeme.equal("extending"):
+        return Option[str].some(value = "keyword extending — method declarations on an existing type")
+    if lexeme.equal("function"):
+        return Option[str].some(value = "keyword function — named callable entity")
+    if lexeme.equal("const function"):
+        return Option[str].some(value = "keyword const function — compile-time-evaluable callable")
+    if lexeme.equal("async"):
+        return Option[str].some(value = "keyword async — cooperative multitasking via task model")
+    if lexeme.equal("external"):
+        return Option[str].some(value = "keyword external — raw C ABI binding file marker")
+    if lexeme.equal("public"):
+        return Option[str].some(value = "keyword public — exported declaration visibility")
+    if lexeme.equal("import"):
+        return Option[str].some(value = "keyword import — module dependency declaration")
+    if lexeme.equal("defer"):
+        return Option[str].some(value = "keyword defer — scope-exit cleanup registration")
+    if lexeme.equal("unsafe"):
+        return Option[str].some(value = "keyword unsafe — explicitly-allowed raw pointer operations")
+    if lexeme.equal("break"):
+        return Option[str].some(value = "keyword break — exit the innermost enclosing loop")
+    if lexeme.equal("continue"):
+        return Option[str].some(value = "keyword continue — skip to the next iteration of the innermost loop")
+    if lexeme.equal("in"):
+        return Option[str].some(value = "keyword in — used in for-in iterable clauses and foreign param modes")
     if lexeme.equal("size_of"):
         return Option[str].some(value = "builtin size_of(T) -> ptr_uint")
     if lexeme.equal("align_of"):
@@ -1505,7 +1597,7 @@ function as_binding_hover(source: str, line: ptr_uint, character: ptr_uint, name
             p -= 1
         if p >= 2 and lt.byte_at(p - 2) == 'a' and lt.byte_at(p - 1) == 's':
             var hover = string.String.create()
-            hover.append("match binding ")
+            hover.append("import alias ")
             hover.append(name)
             return Option[CursorResult].some(value = quick_hover(hover.as_str()))
     return Option[CursorResult].none
