@@ -267,6 +267,7 @@ function compute_token_data(
 
     var prev_line: uint = 0
     var prev_char: uint = 0
+    var in_import_path: bool = false
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
         let tok_ptr = all_tokens.get(ti) else:
@@ -275,8 +276,13 @@ function compute_token_data(
         let kind = tok.kind
         if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
            kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof:
+            in_import_path = false
             ti += 1
             continue
+        if kind == tk_mod.TokenKind.tk_import:
+            in_import_path = true
+        else if kind == tk_mod.TokenKind.tk_as:
+            in_import_path = false
         let line_num: uint = if tok.line > 0: uint<-(tok.line - 1) else: 0
         if clip and (line_num < uint<-clip_start_line or line_num > uint<-clip_end_line):
             ti += 1
@@ -286,6 +292,9 @@ function compute_token_data(
         var token_type = token_kind_to_type(kind)
         if kind == tk_mod.TokenKind.identifier:
             token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
+        else if in_import_path and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
+            # Reserved words in module paths (e.g. 'async') should be namespaces.
+            token_type = TOKEN_NAMESPACE
         let delta_line = line_num - prev_line
         var delta_char = col_num
         if delta_line == 0:
@@ -350,6 +359,7 @@ function emit_semantic_tokens(
 
     var prev_line: uint = 0
     var prev_char: uint = 0
+    var in_import: bool = false
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
         let tok_ptr = all_tokens.get(ti) else:
@@ -361,8 +371,13 @@ function emit_semantic_tokens(
         # Skip whitespace tokens.
         if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
            kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof:
+            in_import = false
             ti += 1
             continue
+        if kind == tk_mod.TokenKind.tk_import:
+            in_import = true
+        else if kind == tk_mod.TokenKind.tk_as:
+            in_import = false
         let line_num: uint = if tok.line > 0: uint<-(tok.line - 1) else: 0
         if clip and (line_num < uint<-clip_start_line or line_num > uint<-clip_end_line):
             ti += 1
@@ -373,6 +388,8 @@ function emit_semantic_tokens(
         var token_type = token_kind_to_type(kind)
         if kind == tk_mod.TokenKind.identifier:
             token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
+        else if in_import and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
+            token_type = TOKEN_NAMESPACE
         let delta_line = line_num - prev_line
         var delta_char = col_num
         if delta_line == 0:
@@ -581,6 +598,7 @@ public function snapshot_semantic_entries(source: str) -> string.String:
     var enum_depth: ptr_uint = 0
     var in_extending: bool = false
     var extending_depth: ptr_uint = 0
+    var in_import_path: bool = false
     var prev_was_dot: bool = false
 
     var ti: ptr_uint = 0
@@ -609,8 +627,14 @@ public function snapshot_semantic_entries(source: str) -> string.String:
             ti += 1
             continue
         if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.eof:
+            in_import_path = false
             ti += 1
             continue
+
+        if kind == tk_mod.TokenKind.tk_import:
+            in_import_path = true
+        else if kind == tk_mod.TokenKind.tk_as:
+            in_import_path = false
 
         if kind == tk_mod.TokenKind.rbracket:
             in_decorator = false
@@ -639,6 +663,8 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                         prev_is_decl = false
 
         var token_type = token_kind_to_type(kind)
+        if in_import_path and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
+            token_type = TOKEN_NAMESPACE
         if kind == tk_mod.TokenKind.identifier:
             let lexeme = cursor.token_text(source, tok)
             if in_decorator:
