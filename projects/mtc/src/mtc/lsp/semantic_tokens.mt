@@ -700,8 +700,12 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                 is_readonly = prev_readonly
                 prev_is_decl = false
                 prev_readonly = false
+            if in_enum_body and enum_depth >= 1:
+                is_decl = true
+                is_readonly = true
         else:
-            if kind == tk_mod.TokenKind.tk_enum:
+            if kind == tk_mod.TokenKind.tk_enum or kind == tk_mod.TokenKind.tk_flags or
+               kind == tk_mod.TokenKind.tk_struct or kind == tk_mod.TokenKind.tk_union:
                 in_enum_body = true
                 enum_depth = 0
                 prev_is_decl = true
