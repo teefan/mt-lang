@@ -48,3 +48,11 @@ external function mt_process_wait(pid: int, out result: mt_process_wait_result, 
 external function mt_process_try_wait(pid: int, out result: mt_process_wait_result, out error: mt_process_error) -> int
 external function mt_process_kill(pid: int, signal: int, out error: mt_process_error) -> int
 external function mt_process_pty_resize(fd: int, columns: int, rows: int, out error: mt_process_error) -> int
+
+## Return a pointer to the POSIX environ array (ptr[ptr[char]]), or null
+## if the platform does not expose the parent environment.
+external function mt_process_environ_accessor() -> ptr[ptr[ptr[char]]]?
+
+## Return the number of entries in the POSIX environ array, or 0 if
+## unavailable.
+external function mt_process_environ_length() -> ptr_uint

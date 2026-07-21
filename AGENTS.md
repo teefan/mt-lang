@@ -79,7 +79,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 `mtc` built C binary is generated, compiled C code. It can contain memory and concurrency bugs — segfault, double-free, use-after-free, infinite loop/hang, runaway memory, and (once threading lands) data races. ALWAYS run it sandboxed when testing:
 
 - Wrap every invocation with a timeout AND a virtual-memory cap, e.g.:
-  `timeout 10 bash -c 'ulimit -v 2000000; <mtc-binary> <args>'`
+  `timeout 10 bash -c 'ulimit -v 20000000; <mtc-binary> <args>'`
 - Interpret abnormal exits as bugs to investigate, not test noise: `124` = timed out (hang), `137` = SIGKILL/OOM, `139` = SIGSEGV, `134` = SIGABRT/double-free.
 - Never loop the binary over many inputs without a per-invocation timeout.
 - When a crash/hang is found, debug it with `valgrind` / `gdb` (and `--keep-c` to inspect the generated C).

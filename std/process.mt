@@ -3,6 +3,7 @@ import std.mem.arena as arena
 import std.mem.heap as heap
 import std.str as text
 import std.string as string
+import std.vec as vec
 
 public struct EnvironmentEntry:
     name: str
@@ -60,6 +61,121 @@ function safe_text_view(value: string.String) -> Option[str]:
 
 function empty_environment() -> span[EnvironmentEntry]:
     return zero[span[EnvironmentEntry]]
+
+
+## Returns the parent process's environment entries. Each entry is a
+## "NAME=VALUE" string parsed from the POSIX `environ` array. Entries
+## with empty names (broken entries) are silently skipped.
+public function parent_environment() -> vec.Vec[EnvironmentEntry]:
+    var result = vec.Vec[EnvironmentEntry].create()
+    let count = c.mt_process_environ_length()
+    if count == 0:
+        return result
+    result.reserve(count)
+    unsafe:
+        let raw_ptr_opt = c.mt_process_environ_accessor()
+        if raw_ptr_opt == null:
+            return result
+        let env_array = read(raw_ptr_opt)
+        var i: ptr_uint = 0
+        while i < count:
+            let entry_cstr = read(env_array + i)
+            let len = find_null_byte(entry_cstr, 0)
+            if len == 0:
+                i += 1
+                continue
+            var eq_pos: ptr_uint = 0
+            while eq_pos < len and read(entry_cstr + eq_pos) != 61:
+                eq_pos += 1
+            if eq_pos == 0 or eq_pos >= len:
+                i += 1
+                continue
+            var nname = string.String.create()
+            nname.reserve(eq_pos)
+            var ni: ptr_uint = 0
+            while ni < eq_pos:
+                nname.push_byte(ubyte<-(unsafe: read(entry_cstr + ni)))
+                ni += 1
+            var nvalue = string.String.create()
+            let vlen = len - eq_pos - 1
+            if vlen > 0:
+                nvalue.reserve(vlen)
+                var vi: ptr_uint = 0
+                while vi < vlen:
+                    nvalue.push_byte(ubyte<-(unsafe: read(entry_cstr + eq_pos + 1 + vi)))
+                    vi += 1
+            result.push(EnvironmentEntry(
+                name = nname.as_str(),
+                value = nvalue.as_str()
+            ))
+            i += 1
+    return result
+
+
+## Scan `data` (pointer to a NUL-terminated buffer) from `start` for the
+## first 0 byte. Returns the byte offset at which the NUL was found.
+function find_null_byte(data: ptr[char], start: ptr_uint) -> ptr_uint:
+    var i = start
+    unsafe:
+        while read(data + i) != 0:
+            i += 1
+    return i
+
+
+## Like `capture` but inherits the parent environment and merges
+## `extra_env` entries (extra entries override parent entries with the
+## same name). When `extra_env` is empty, identical to `capture`.
+public function capture_inheriting_env(
+    command: span[str],
+    cwd: Option[str],
+    extra_env: span[EnvironmentEntry]
+) -> Result[CaptureResult, ProcessError]:
+    if extra_env.len == 0:
+        return capture_internal(command, cwd, empty_environment())
+    var env_vec = parent_environment()
+    merge_environment(ref_of(env_vec), extra_env)
+    let env_span = env_vec.as_span()
+    let result = capture_internal(command, cwd, env_span)
+    env_vec.release()
+    return result
+
+
+## Like `spawn` but inherits the parent environment and merges
+## `extra_env` entries.
+public function spawn_inheriting_env(
+    command: span[str],
+    cwd: Option[str],
+    extra_env: span[EnvironmentEntry]
+) -> Result[ChildProcess, ProcessError]:
+    if extra_env.len == 0:
+        return spawn_internal(command, cwd, empty_environment())
+    var env_vec = parent_environment()
+    merge_environment(ref_of(env_vec), extra_env)
+    let env_span = env_vec.as_span()
+    let result = spawn_internal(command, cwd, env_span)
+    env_vec.release()
+    return result
+
+
+## Merge `extra` entries into `base`, overwriting base entries that share
+## the same name. New entries (names not in base) are appended.
+function merge_environment(base: ref[vec.Vec[EnvironmentEntry]], extra: span[EnvironmentEntry]) -> void:
+    var ei: ptr_uint = 0
+    while ei < extra.len:
+        let entry = unsafe: read(extra.data + ei)
+        var found = false
+        var bi: ptr_uint = 0
+        while bi < base.len():
+            let bp = base.get(bi) else:
+                break
+            if unsafe: read(bp).name.equal(entry.name):
+                unsafe: read(bp) = entry
+                found = true
+                break
+            bi += 1
+        if not found:
+            base.push(entry)
+        ei += 1
 
 
 function pointer_storage_bytes(count: ptr_uint) -> ptr_uint:
