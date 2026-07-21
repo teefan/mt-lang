@@ -315,6 +315,14 @@ function compute_token_data(
                     prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
                 else:
                     prev_is_decl = false
+        if token_type == TOKEN_STRING:
+            let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+            match lexeme.find_substring("<<-"):
+                Option.some:
+                    ti += 1
+                    continue
+                Option.none:
+                    pass
         let delta_line = line_num - prev_line
         var delta_char = col_num
         if delta_line == 0:
@@ -430,6 +438,14 @@ function emit_semantic_tokens(
                     prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
                 else:
                     prev_is_decl = false
+        if token_type == TOKEN_STRING:
+            let lexeme = unsafe: cursor.token_text(source, tok)
+            match lexeme.find_substring("<<-"):
+                Option.some:
+                    ti += 1
+                    continue
+                Option.none:
+                    pass
         let delta_line = line_num - prev_line
         var delta_char = col_num
         if delta_line == 0:
@@ -743,6 +759,15 @@ public function snapshot_semantic_entries(source: str) -> string.String:
         if token_type == TOKEN_PARAMETER:
             ti += 1
             continue
+        if token_type == TOKEN_STRING:
+            # Skip heredoc markers so TextMate grammar handles them uniformly.
+            let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+            match lexeme.find_substring("<<-"):
+                Option.some:
+                    ti += 1
+                    continue
+                Option.none:
+                    pass
 
         var type_name = snapshot_token_type_name(token_type)
         if token_type == TOKEN_TYPE:
