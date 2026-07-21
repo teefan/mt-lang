@@ -50,6 +50,7 @@ struct ScopeCtx:
     scope_counts: array[ptr_uint, 32]
     scope_count: ptr_uint
     generic_function_depth: ptr_uint
+    match_arm_depth: ptr_uint
 
 
 # =============================================================================
@@ -127,7 +128,7 @@ function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: p
     let c = unsafe: read(ctx)
     if c.scope_count == 0:
         return
-    if c.scope_count > 1:
+    if c.scope_count > 1 and c.match_arm_depth == 0:
         var si: ptr_uint = 0
         while si < c.scope_count - 1:
             unsafe:
@@ -522,6 +523,8 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[ScopeW
             ast.Stmt.stmt_match as mt:
                 visit_expr(mt.scrutinee, path, warnings, ctx)
                 var ai: ptr_uint = 0
+                var saved_depth = unsafe: read(ctx).match_arm_depth
+                unsafe: read(ctx).match_arm_depth = 1
                 while ai < mt.arms.len:
                     let arm = read(mt.arms.data + ai)
                     ctx_push_scope(ctx)
@@ -533,6 +536,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[ScopeW
                     visit_stmt_opt(arm.body, path, warnings, ctx)
                     ctx_pop_scope(ctx, path, warnings)
                     ai += 1
+                unsafe: read(ctx).match_arm_depth = saved_depth
             ast.Stmt.stmt_ret as r:
                 visit_expr_opt(r.value, path, warnings, ctx)
             ast.Stmt.stmt_defer as df:
