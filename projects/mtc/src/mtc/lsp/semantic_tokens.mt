@@ -268,6 +268,7 @@ function compute_token_data(
     var prev_line: uint = 0
     var prev_char: uint = 0
     var in_import_path: bool = false
+    var prev_is_decl: bool = false
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
         let tok_ptr = all_tokens.get(ti) else:
@@ -290,13 +291,27 @@ function compute_token_data(
         let char_num: uint = uint<-tok.end_offset - uint<-tok.start_offset
         let col_num: uint = if tok.column > 0: uint<-(tok.column - 1) else: 0
         var token_type = token_kind_to_type(kind)
+        var token_mod: uint = 0
+        var is_decl: bool = false
         if kind == tk_mod.TokenKind.identifier:
             token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
             if in_import_path and token_type == TOKEN_VARIABLE:
                 token_type = TOKEN_NAMESPACE
-        else if in_import_path and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
-            # Reserved words in module paths (e.g. 'async') should be namespaces.
-            token_type = TOKEN_NAMESPACE
+            if prev_is_decl:
+                is_decl = true
+                token_mod = 1
+                prev_is_decl = false
+        else:
+            if kind == tk_mod.TokenKind.tk_import or kind == tk_mod.TokenKind.tk_enum or
+               kind == tk_mod.TokenKind.tk_extending:
+                prev_is_decl = true
+            else:
+                if in_import_path and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
+                    token_type = TOKEN_NAMESPACE
+                if snapshot_is_decl_kind(kind):
+                    prev_is_decl = true
+                else:
+                    prev_is_decl = false
         let delta_line = line_num - prev_line
         var delta_char = col_num
         if delta_line == 0:
@@ -305,7 +320,7 @@ function compute_token_data(
         data.push(delta_char)
         data.push(char_num)
         data.push(token_type)
-        data.push(0)
+        data.push(token_mod)
         prev_line = line_num
         prev_char = col_num
         ti += 1
@@ -362,6 +377,7 @@ function emit_semantic_tokens(
     var prev_line: uint = 0
     var prev_char: uint = 0
     var in_import: bool = false
+    var prev_is_decl: bool = false
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
         let tok_ptr = all_tokens.get(ti) else:
@@ -385,15 +401,27 @@ function emit_semantic_tokens(
             ti += 1
             continue
         let char_num: uint = uint<-tok.end_offset - uint<-tok.start_offset
-        # Use column (1-based in lexer) converted to 0-based for LSP.
         let col_num: uint = if tok.column > 0: uint<-(tok.column - 1) else: 0
         var token_type = token_kind_to_type(kind)
+        var token_mod: uint = 0
         if kind == tk_mod.TokenKind.identifier:
             token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
             if in_import and token_type == TOKEN_VARIABLE:
                 token_type = TOKEN_NAMESPACE
-        else if in_import and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
-            token_type = TOKEN_NAMESPACE
+            if prev_is_decl:
+                token_mod = 1
+                prev_is_decl = false
+        else:
+            if kind == tk_mod.TokenKind.tk_import or kind == tk_mod.TokenKind.tk_enum or
+               kind == tk_mod.TokenKind.tk_extending:
+                prev_is_decl = true
+            else:
+                if in_import and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
+                    token_type = TOKEN_NAMESPACE
+                if snapshot_is_decl_kind(kind):
+                    prev_is_decl = true
+                else:
+                    prev_is_decl = false
         let delta_line = line_num - prev_line
         var delta_char = col_num
         if delta_line == 0:
@@ -402,7 +430,7 @@ function emit_semantic_tokens(
         data.push(delta_char)
         data.push(char_num)
         data.push(token_type)
-        data.push(0)
+        data.push(token_mod)
         prev_line = line_num
         prev_char = col_num
         ti += 1
