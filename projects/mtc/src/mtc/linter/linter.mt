@@ -488,7 +488,7 @@ function push_warning(warnings: ref[vec.Vec[Warning]], path: str, line: ptr_uint
 
 
 ## Like push_warning but extracts line and column from an AST expression.
-function push_warning_expr(warnings: ref[vec.Vec[Warning]], path: str, expr: ptr[ast.Expr], code: str, message: str, severity: str) -> void:
+function push_warning_expr(warnings: ref[vec.Vec[Warning]], path: str, expr: ptr[ast.Expr]?, code: str, message: str, severity: str) -> void:
     let line = expression_line(expr)
     push_warning_at(warnings, path, line, expression_column(expr), 0, code, message, severity)
 
@@ -2022,7 +2022,8 @@ function check_prefer_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast
         return
     if not inline_simple_statement(s):
         return
-    push_warning(warnings, path, line, "prefer-inline-if", "if/else with single-statement branches can be written inline", "hint")
+    let first_cond = unsafe: read(branches.data + 0).condition
+    push_warning_expr(warnings, path, first_cond, "prefer-inline-if", "if/else with single-statement branches can be written inline", "hint")
 
 
 # =============================================================================
@@ -2052,7 +2053,7 @@ function check_prefer_or_pattern_stmt(arms: span[ast.MatchArm], path: str, warni
                 if pat_line == 0:
                     i += 1
                     continue
-                push_warning(warnings, path, pat_line, "prefer-or-pattern", "adjacent match arms have identical bodies; merge them with `|`", "hint")
+                push_warning_expr(warnings, path, curr.pattern, "prefer-or-pattern", "adjacent match arms have identical bodies; merge them with `|`", "hint")
         i += 1
 
 
@@ -2076,7 +2077,7 @@ function check_prefer_or_pattern_expr(arms: span[ast.MatchExprArm], path: str, w
             if exprs_structural_equal(prev.value, curr.value):
                 let pat_line = expression_line(curr.pattern)
                 if pat_line != 0:
-                    push_warning(warnings, path, pat_line, "prefer-or-pattern", "adjacent match arms have identical bodies; merge them with `|`", "hint")
+                    push_warning_expr(warnings, path, curr.pattern, "prefer-or-pattern", "adjacent match arms have identical bodies; merge them with `|`", "hint")
         i += 1
 
 
@@ -2140,7 +2141,7 @@ function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], el
         buf.append(kind)
         buf.append(" ...` expression")
         let line = unsafe: expression_line(read(branches.data + 0).condition)
-        push_warning(warnings, path, line, "prefer-conditional-expression", buf.as_str(), "hint")
+        push_warning_expr(warnings, path, unsafe: read(branches.data + 0).condition, "prefer-conditional-expression", buf.as_str(), "hint")
     else if all_assign:
         var buf = string.String.create()
         buf.append("every ")
@@ -2149,7 +2150,7 @@ function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], el
         buf.append(kind)
         buf.append(" ...` expression")
         let line = unsafe: expression_line(read(branches.data + 0).condition)
-        push_warning(warnings, path, line, "prefer-conditional-expression", buf.as_str(), "hint")
+        push_warning_expr(warnings, path, unsafe: read(branches.data + 0).condition, "prefer-conditional-expression", buf.as_str(), "hint")
 
 
 function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -2217,7 +2218,7 @@ function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], pat
         buf.append(kind)
         buf.append(" ...` expression")
         let line = unsafe: expression_line(read(arms.data + 0).pattern)
-        push_warning(warnings, path, line, "prefer-conditional-expression", buf.as_str(), "hint")
+        push_warning_expr(warnings, path, unsafe: read(arms.data + 0).pattern, "prefer-conditional-expression", buf.as_str(), "hint")
     else if all_assign:
         var buf = string.String.create()
         buf.append("every ")
@@ -2226,7 +2227,7 @@ function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], pat
         buf.append(kind)
         buf.append(" ...` expression")
         let line = unsafe: expression_line(read(arms.data + 0).pattern)
-        push_warning(warnings, path, line, "prefer-conditional-expression", buf.as_str(), "hint")
+        push_warning_expr(warnings, path, unsafe: read(arms.data + 0).pattern, "prefer-conditional-expression", buf.as_str(), "hint")
 
 
 ## A source-signature string for an expression, used for assignment-target
@@ -3729,13 +3730,13 @@ function lint_const_cond_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Ve
                 while bi < iff.branches.len:
                     let br = read(iff.branches.data + bi)
                     if is_constant_condition(br.condition):
-                        push_warning(warnings, path, br.line, "constant-condition", "if condition is always a constant boolean", "hint")
+                        push_warning_expr(warnings, path, br.condition, "constant-condition", "if condition is always a constant boolean", "hint")
                     lint_const_cond_in_body(br.body, path, warnings)
                     bi += 1
                 lint_const_cond_in_body(iff.else_body, path, warnings)
             ast.Stmt.stmt_while as wh:
                 if is_constant_condition(wh.condition):
-                    push_warning(warnings, path, wh.line, "constant-condition", "while condition is always a constant boolean", "hint")
+                    push_warning_expr(warnings, path, wh.condition, "constant-condition", "while condition is always a constant boolean", "hint")
                 lint_const_cond_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
                 lint_const_cond_in_body(fr.body, path, warnings)
