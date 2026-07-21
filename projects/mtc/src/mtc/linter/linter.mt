@@ -487,6 +487,17 @@ function push_warning(warnings: ref[vec.Vec[Warning]], path: str, line: ptr_uint
     push_warning_at(warnings, path, line, 0, 0, code, message, severity)
 
 
+## Like push_warning but extracts line and column from an AST expression.
+function push_warning_expr(warnings: ref[vec.Vec[Warning]], path: str, expr: ptr[ast.Expr], code: str, message: str, severity: str) -> void:
+    let line = expression_line(expr)
+    push_warning_at(warnings, path, line, expression_column(expr), 0, code, message, severity)
+
+
+## Like push_warning but uses a statement's line and column position.
+function push_warning_stmt(warnings: ref[vec.Vec[Warning]], path: str, line: ptr_uint, col: ptr_uint, code: str, message: str, severity: str) -> void:
+    push_warning_at(warnings, path, line, col, 0, code, message, severity)
+
+
 function push_warning_at(
     warnings: ref[vec.Vec[Warning]],
     path: str,
@@ -988,7 +999,7 @@ function check_self_comparison(operator: str, left: ptr[ast.Expr], right: ptr[as
     buf.append(left_name)
     buf.append("' is compared to itself — ")
     buf.append(always)
-    push_warning(warnings, path, expression_line(left), "self-comparison", buf.as_str(), "warning")
+    push_warning_expr(warnings, path, left, "self-comparison", buf.as_str(), "warning")
 
 
 ## `x == true` / `x != false` and friends — comparison against a boolean literal.
@@ -1103,7 +1114,7 @@ function check_noop_compound_assignment(target: ptr[ast.Expr], operator: str, va
     else if operator == "*=" or operator == "/=":
         is_identity = numeric_literal_one(value)
     if is_identity:
-        push_warning(warnings, path, expression_line(target), "noop-compound-assignment", "compound assignment with identity value has no effect", "hint")
+        push_warning_expr(warnings, path, target, "noop-compound-assignment", "compound assignment with identity value has no effect", "hint")
 
 
 function lexeme_without_underscores(lexeme: str) -> string.String:
@@ -1263,7 +1274,7 @@ function check_redundant_return(return_type: ptr[ast.TypeRef]?, body: ptr[ast.St
         match read(last):
             ast.Stmt.stmt_ret as r:
                 if r.value == null:
-                    push_warning(warnings, path, r.line, "redundant-return", "final bare return in void function is redundant", "hint")
+                    push_warning_stmt(warnings, path, r.line, r.column, "redundant-return", "final bare return in void function is redundant", "hint")
             _:
                 pass
 
@@ -1610,7 +1621,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
             ast.Stmt.stmt_local as loc:
                 visit_expr_opt(loc.value, path, warnings)
                 visit_stmt_opt(loc.else_body, path, warnings)
-                check_redundant_type_annotation(loc.is_let, loc.name, loc.stmt_type, loc.value, loc.line, path, warnings)
+                check_redundant_type_annotation(loc.is_let, loc.name, loc.stmt_type, loc.value, loc.line, loc.column, path, warnings)
             ast.Stmt.stmt_assignment as asgn:
                 visit_expr(asgn.value, path, warnings)
                 visit_expr(asgn.target, path, warnings)
@@ -2639,6 +2650,7 @@ function check_redundant_type_annotation(
     stmt_type: ptr[ast.TypeRef]?,
     value: ptr[ast.Expr]?,
     line: ptr_uint,
+    column: ptr_uint,
     path: str,
     warnings: ref[vec.Vec[Warning]],
 ) -> void:
@@ -2657,7 +2669,7 @@ function check_redundant_type_annotation(
         buf.append("type annotation ': ")
         buf.append(declared)
         buf.append("' is redundant, inferred from initializer")
-        push_warning(warnings, path, line, "redundant-type-annotation", buf.as_str(), "hint")
+        push_warning_at(warnings, path, line, column, 0, "redundant-type-annotation", buf.as_str(), "hint")
 
 
 ## Extract the leaf name from a simple TypeRef (e.g. `int` → `"int"`),
