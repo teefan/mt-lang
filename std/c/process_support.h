@@ -591,6 +591,14 @@ static inline void mt_process_reset_wait_result(mt_process_wait_result* result) 
 
 #if defined(_WIN32)
 
+static inline char*** mt_process_environ_accessor(void) {
+  return NULL;
+}
+
+static inline uintptr_t mt_process_environ_length(void) {
+  return 0;
+}
+
 static inline int mt_process_spawn_interactive(const char* file, char** args, char** env, const char* cwd, mt_process_spawn_handle* out_handle, mt_process_error* out_error) {
   (void) file;
   (void) args;
@@ -1115,6 +1123,23 @@ static inline int mt_process_pty_resize(int fd, int columns, int rows, mt_proces
   }
 
   return 0;
+}
+
+static inline char*** mt_process_environ_accessor(void) {
+  return &environ;
+}
+
+static inline uintptr_t mt_process_environ_length(void) {
+  if (environ == NULL) {
+    return 0;
+  }
+  uintptr_t count = 0;
+  char** cursor = environ;
+  while (*cursor != NULL) {
+    count += 1;
+    cursor += 1;
+  }
+  return count;
 }
 
 #endif
