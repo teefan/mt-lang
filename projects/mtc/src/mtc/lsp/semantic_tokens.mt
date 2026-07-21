@@ -650,7 +650,6 @@ public function snapshot_semantic_entries(source: str) -> string.String:
 
     var prev_is_decl: bool = false
     var prev_readonly: bool = false
-    var in_decorator: bool = false
     var in_enum_body: bool = false
     var enum_depth: ptr_uint = 0
     var in_extending: bool = false
@@ -693,11 +692,6 @@ public function snapshot_semantic_entries(source: str) -> string.String:
         else if kind == tk_mod.TokenKind.tk_as:
             in_import_path = false
 
-        if kind == tk_mod.TokenKind.rbracket:
-            in_decorator = false
-        if kind == tk_mod.TokenKind.at:
-            in_decorator = true
-
         var is_decl = false
         var is_readonly = false
         if kind == tk_mod.TokenKind.identifier:
@@ -728,24 +722,21 @@ public function snapshot_semantic_entries(source: str) -> string.String:
             token_type = TOKEN_NAMESPACE
         if kind == tk_mod.TokenKind.identifier:
             let lexeme = cursor.token_text(source, tok)
-            if in_decorator:
-                token_type = TOKEN_DECORATOR
-            else:
-                var raw_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
-                if in_import_path and raw_type == TOKEN_VARIABLE:
-                    token_type = TOKEN_NAMESPACE
-                else if in_enum_body and enum_depth == 1:
-                    if raw_type == TOKEN_VARIABLE:
-                        token_type = TOKEN_ENUM_MEMBER
-                    else:
-                        token_type = raw_type
+            var raw_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
+            if in_import_path and raw_type == TOKEN_VARIABLE:
+                token_type = TOKEN_NAMESPACE
+            else if in_enum_body and enum_depth == 1:
+                if raw_type == TOKEN_VARIABLE:
+                    token_type = TOKEN_ENUM_MEMBER
                 else:
                     token_type = raw_type
-                    if prev_was_dot and raw_type != TOKEN_FUNCTION and raw_type != TOKEN_NAMESPACE and raw_type != TOKEN_TYPE:
+            else:
+                token_type = raw_type
+                if prev_was_dot and raw_type != TOKEN_FUNCTION and raw_type != TOKEN_NAMESPACE and raw_type != TOKEN_TYPE:
+                    token_type = TOKEN_METHOD
+                else:
+                    if in_extending and extending_depth >= 1 and is_decl:
                         token_type = TOKEN_METHOD
-                    else:
-                        if in_extending and extending_depth >= 1 and is_decl:
-                            token_type = TOKEN_METHOD
             prev_was_dot = false
         else:
             if kind == tk_mod.TokenKind.dot:
