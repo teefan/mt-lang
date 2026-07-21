@@ -730,6 +730,7 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                     token_type = TOKEN_ENUM_MEMBER
                 else:
                     token_type = raw_type
+                is_decl = true
             else:
                 token_type = raw_type
                 if prev_was_dot and raw_type != TOKEN_FUNCTION and raw_type != TOKEN_NAMESPACE and raw_type != TOKEN_TYPE:
@@ -738,6 +739,8 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                     if in_extending and extending_depth >= 1 and is_decl:
                         token_type = TOKEN_METHOD
             prev_was_dot = false
+            if in_enum_body and enum_depth == 1:
+                is_decl = true
         else:
             if kind == tk_mod.TokenKind.dot:
                 prev_was_dot = true
@@ -745,8 +748,12 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                 prev_was_dot = false
 
         if token_type == TOKEN_VARIABLE and not is_decl:
-            ti += 1
-            continue
+            if in_enum_body and enum_depth == 1:
+                token_type = TOKEN_ENUM_MEMBER
+                is_decl = true
+            else:
+                ti += 1
+                continue
         if token_type == TOKEN_PARAMETER:
             ti += 1
             continue
