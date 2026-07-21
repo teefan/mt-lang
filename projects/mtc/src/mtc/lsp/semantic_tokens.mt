@@ -292,6 +292,8 @@ function compute_token_data(
         var token_type = token_kind_to_type(kind)
         if kind == tk_mod.TokenKind.identifier:
             token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
+            if in_import_path and token_type == TOKEN_VARIABLE:
+                token_type = TOKEN_NAMESPACE
         else if in_import_path and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
             # Reserved words in module paths (e.g. 'async') should be namespaces.
             token_type = TOKEN_NAMESPACE
@@ -388,6 +390,8 @@ function emit_semantic_tokens(
         var token_type = token_kind_to_type(kind)
         if kind == tk_mod.TokenKind.identifier:
             token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
+            if in_import and token_type == TOKEN_VARIABLE:
+                token_type = TOKEN_NAMESPACE
         else if in_import and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
             token_type = TOKEN_NAMESPACE
         let delta_line = line_num - prev_line
@@ -671,7 +675,9 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                 token_type = TOKEN_DECORATOR
             else:
                 var raw_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
-                if in_enum_body and enum_depth == 1:
+                if in_import_path and raw_type == TOKEN_VARIABLE:
+                    token_type = TOKEN_NAMESPACE
+                else if in_enum_body and enum_depth == 1:
                     if raw_type == TOKEN_VARIABLE:
                         token_type = TOKEN_ENUM_MEMBER
                     else:
