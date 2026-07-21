@@ -19,6 +19,7 @@ import mtc.parser.ast as ast
 public struct ScopeWarning:
     path: str
     line: ptr_uint
+    column: ptr_uint
     code: str
     message: str
     severity: str
@@ -57,42 +58,42 @@ struct ScopeCtx:
 #  Warning helpers
 # =============================================================================
 
-function push_w(warnings: ref[vec.Vec[ScopeWarning]], path: str, line: ptr_uint, code: str, msg: str, sev: str) -> void:
-    warnings.push(ScopeWarning(path = path, line = line, code = code, message = msg, severity = sev))
+function push_w(warnings: ref[vec.Vec[ScopeWarning]], path: str, line: ptr_uint, column: ptr_uint, code: str, msg: str, sev: str) -> void:
+    warnings.push(ScopeWarning(path = path, line = line, column = column, code = code, message = msg, severity = sev))
 
 
-function warn_shadow(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint) -> void:
+function warn_shadow(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
     var buf = string.String.create()
     buf.append("local '")
     buf.append(name)
     buf.append("' shadows a binding from an outer scope")
-    push_w(warnings, path, line, "shadow", buf.as_str(), "warning")
+    push_w(warnings, path, line, column, "shadow", buf.as_str(), "warning")
 
 
-function warn_unused(warnings: ref[vec.Vec[ScopeWarning]], path: str, code: str, kind: str, name: str, line: ptr_uint) -> void:
+function warn_unused(warnings: ref[vec.Vec[ScopeWarning]], path: str, code: str, kind: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
     var buf = string.String.create()
     buf.append("unused ")
     buf.append(kind)
     buf.append(" '")
     buf.append(name)
     buf.append("'")
-    push_w(warnings, path, line, code, buf.as_str(), "warning")
+    push_w(warnings, path, line, column, code, buf.as_str(), "warning")
 
 
-function warn_prefer_let(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint) -> void:
+function warn_prefer_let(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
     var buf = string.String.create()
     buf.append("variable '")
     buf.append(name)
     buf.append("' is never reassigned, prefer 'let'")
-    push_w(warnings, path, line, "prefer-let", buf.as_str(), "hint")
+    push_w(warnings, path, line, column, "prefer-let", buf.as_str(), "hint")
 
 
-function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint) -> void:
+function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
     var buf = string.String.create()
     buf.append("unused import '")
     buf.append(name)
     buf.append("'")
-    push_w(warnings, path, line, "unused-import", buf.as_str(), "hint")
+    push_w(warnings, path, line, column, "unused-import", buf.as_str(), "hint")
 
 
 # =============================================================================
@@ -133,7 +134,7 @@ function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: p
         while si < c.scope_count - 1:
             unsafe:
                 if scope_has_name_buf(c.buf, c.scope_starts[si], c.scope_counts[si], name):
-                    warn_shadow(warnings, path, name, line)
+                    warn_shadow(warnings, path, name, line, col)
                     break
             si += 1
 
@@ -219,10 +220,10 @@ function emit_scope_flat(path: str, warnings: ref[vec.Vec[ScopeWarning]], buf: p
             if not bd.used and bd.name.len > 0 and not bd.name.starts_with("_"):
                 let code = if bd.binding_kind == BINDING_PARAM: "unused-param" else: "unused-local"
                 let kind = if bd.binding_kind == BINDING_PARAM: "parameter" else: "local"
-                warn_unused(warnings, path, code, kind, bd.name, bd.line)
+                warn_unused(warnings, path, code, kind, bd.name, bd.line, bd.column)
             else:
                 if bd.allow_prefer_let and not bd.mutated:
-                    warn_prefer_let(warnings, path, bd.name, bd.line)
+                    warn_prefer_let(warnings, path, bd.name, bd.line, bd.column)
         i += 1
 
 
@@ -268,7 +269,7 @@ function check_unused_imports(file: ast.SourceFile, path: str, warnings: ref[vec
                             break
                         j += 1
                     if not used:
-                        warn_unused_import(warnings, path, ln, im.line)
+                        warn_unused_import(warnings, path, ln, im.line, im.column)
                 _:
                     pass
         i += 1

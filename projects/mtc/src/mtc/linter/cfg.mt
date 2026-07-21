@@ -22,6 +22,7 @@ import mtc.parser.ast as ast
 public struct DeadWrite:
     name: str
     line: ptr_uint
+    column: ptr_uint
 
 
 ## Return a list of dead writes: assignments where the written name is not in the
@@ -60,7 +61,7 @@ function walk_stmt_backward(sp: ptr[ast.Stmt], result: ref[vec.Vec[DeadWrite]], 
             ast.Stmt.stmt_local as l:
                 add_expr_reads(l.value, live)
                 if l.name.len > 0 and not l.name.starts_with("_") and l.line > 0 and l.value != null and not is_live(live, l.name):
-                    result.push(DeadWrite(name = l.name, line = l.line))
+                    result.push(DeadWrite(name = l.name, line = l.line, column = l.column))
                 remove_from_live(live, l.name)
             ast.Stmt.stmt_assignment as a:
                 add_expr_reads(a.value, live)
@@ -68,7 +69,7 @@ function walk_stmt_backward(sp: ptr[ast.Stmt], result: ref[vec.Vec[DeadWrite]], 
                     ast.Expr.expr_identifier as id:
                         if id.name.len > 0 and not id.name.starts_with("_"):
                             if a.line > 0 and not is_live(live, id.name) and a.operator == "=":
-                                result.push(DeadWrite(name = id.name, line = a.line))
+                                result.push(DeadWrite(name = id.name, line = a.line, column = a.column))
                             remove_from_live(live, id.name)
                     _:
                         pass
