@@ -269,6 +269,7 @@ function compute_token_data(
     var prev_char: uint = 0
     var in_import_path: bool = false
     var prev_is_decl: bool = false
+    var prev_readonly: bool = false
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
         let tok_ptr = all_tokens.get(ti) else:
@@ -292,15 +293,16 @@ function compute_token_data(
         let col_num: uint = if tok.column > 0: uint<-(tok.column - 1) else: 0
         var token_type = token_kind_to_type(kind)
         var token_mod: uint = 0
-        var is_decl: bool = false
         if kind == tk_mod.TokenKind.identifier:
             token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
             if in_import_path and token_type == TOKEN_VARIABLE:
                 token_type = TOKEN_NAMESPACE
             if prev_is_decl:
-                is_decl = true
                 token_mod = 1
+                if prev_readonly:
+                    token_mod = 5
                 prev_is_decl = false
+                prev_readonly = false
         else:
             if kind == tk_mod.TokenKind.tk_import or kind == tk_mod.TokenKind.tk_enum or
                kind == tk_mod.TokenKind.tk_extending:
@@ -310,6 +312,7 @@ function compute_token_data(
                     token_type = TOKEN_NAMESPACE
                 if snapshot_is_decl_kind(kind):
                     prev_is_decl = true
+                    prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
                 else:
                     prev_is_decl = false
         let delta_line = line_num - prev_line
@@ -378,6 +381,7 @@ function emit_semantic_tokens(
     var prev_char: uint = 0
     var in_import: bool = false
     var prev_is_decl: bool = false
+    var prev_readonly: bool = false
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
         let tok_ptr = all_tokens.get(ti) else:
@@ -410,7 +414,10 @@ function emit_semantic_tokens(
                 token_type = TOKEN_NAMESPACE
             if prev_is_decl:
                 token_mod = 1
+                if prev_readonly:
+                    token_mod = 5
                 prev_is_decl = false
+                prev_readonly = false
         else:
             if kind == tk_mod.TokenKind.tk_import or kind == tk_mod.TokenKind.tk_enum or
                kind == tk_mod.TokenKind.tk_extending:
@@ -420,6 +427,7 @@ function emit_semantic_tokens(
                     token_type = TOKEN_NAMESPACE
                 if snapshot_is_decl_kind(kind):
                     prev_is_decl = true
+                    prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
                 else:
                     prev_is_decl = false
         let delta_line = line_num - prev_line
@@ -625,6 +633,7 @@ public function snapshot_semantic_entries(source: str) -> string.String:
     result.append("[")
 
     var prev_is_decl: bool = false
+    var prev_readonly: bool = false
     var in_decorator: bool = false
     var in_enum_body: bool = false
     var enum_depth: ptr_uint = 0
@@ -674,10 +683,13 @@ public function snapshot_semantic_entries(source: str) -> string.String:
             in_decorator = true
 
         var is_decl = false
+        var is_readonly = false
         if kind == tk_mod.TokenKind.identifier:
             if prev_is_decl:
                 is_decl = true
+                is_readonly = prev_readonly
                 prev_is_decl = false
+                prev_readonly = false
         else:
             if kind == tk_mod.TokenKind.tk_enum:
                 in_enum_body = true
@@ -691,6 +703,7 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                 else:
                     if snapshot_is_decl_kind(kind):
                         prev_is_decl = true
+                        prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
                     else:
                         prev_is_decl = false
 
@@ -767,6 +780,10 @@ public function snapshot_semantic_entries(source: str) -> string.String:
         result.append("\",\"modifiers\":[")
         if is_decl:
             result.append("\"declaration\"")
+        if is_readonly:
+            if is_decl:
+                result.append(",")
+            result.append("\"readonly\"")
         result.append("]}")
         ti += 1
 

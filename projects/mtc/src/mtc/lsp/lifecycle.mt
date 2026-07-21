@@ -47,7 +47,7 @@ public function handle_initialize(id: json.Value) -> void:
     # semantic tokens: legend + full + range + delta
     r.append(",\"semanticTokensProvider\":{\"legend\":{")
     r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\",\"enumMember\",\"method\",\"decorator\"]")
-    r.append(",\"tokenModifiers\":[\"declaration\",\"defaultLibrary\"]")
+    r.append(",\"tokenModifiers\":[\"declaration\",\"defaultLibrary\",\"readonly\"]")
     r.append("},\"full\":{\"delta\":true},\"range\":true}")
     # workspace: folders + file operations + watched files
     r.append(",\"workspace\":{\"workspaceFolders\":{\"supported\":true,\"changeNotifications\":true},")
