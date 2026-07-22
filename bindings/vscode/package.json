@@ -114,8 +114,8 @@
         },
         "milkTea.lsp.serverPath": {
           "type": "string",
-          "default": "mtc-lsp",
-          "description": "Path to the mtc-lsp binary. Accepts an absolute path or a name on $PATH."
+          "default": "mtc",
+          "description": "Path to the mtc binary. Accepts an absolute path or a name on $PATH."
         },
         "milkTea.lsp.extraArgs": {
           "type": "array",
@@ -214,8 +214,8 @@
         },
         "milkTea.dap.serverPath": {
           "type": "string",
-          "default": "mtc-dap",
-          "description": "Path to the mtc-dap binary. Accepts an absolute path or a name on $PATH."
+          "default": "mtc",
+          "description": "Path to the mtc binary. Accepts an absolute path or a name on $PATH."
         },
         "milkTea.dap.extraArgs": {
           "type": "array",

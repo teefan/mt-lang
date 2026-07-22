@@ -1711,24 +1711,28 @@ module MilkTea
       stdio = false
 
       until @argv.empty?
-        arg = @argv.first
+        arg = @argv.shift
         case arg
         when "--log-level"
-          @argv.shift
           log_level = @argv.shift&.downcase
+          unless log_level && %w[trace debug info warn error].include?(log_level)
+            @err.puts("lsp: invalid --log-level #{log_level.inspect} (expected trace, debug, info, warn, or error)")
+            return 1
+          end
+        when /\A--log-level=(.+)\z/
+          log_level = ::Regexp.last_match(1).downcase
           unless %w[trace debug info warn error].include?(log_level)
             @err.puts("lsp: invalid --log-level #{log_level.inspect} (expected trace, debug, info, warn, or error)")
             return 1
           end
         when "--stdio"
           stdio = true
-          @argv.shift
         else
           if arg.start_with?("-")
             @err.puts("lsp: unknown option #{arg}")
             return 1
           end
-          @err.puts("lsp: unexpected argument #{@argv.shift}")
+          @err.puts("lsp: unexpected argument #{arg}")
           return 1
         end
       end
@@ -1744,17 +1748,13 @@ module MilkTea
       adapter_command = nil
 
       until @argv.empty?
-        arg = @argv.first
+        arg = @argv.shift
         case arg
         when "--backend"
-          @argv.shift
           preferred_backend_kind = @argv.shift&.downcase
-          unless %w[process].include?(preferred_backend_kind)
-            @err.puts("dap: unsupported backend #{preferred_backend_kind.inspect} (expected: process)")
-            return 1
-          end
+        when /\A--backend=(.+)\z/
+          preferred_backend_kind = ::Regexp.last_match(1).downcase
         when "--adapter-path"
-          @argv.shift
           adapter_path = @argv.shift
           unless adapter_path && File.file?(adapter_path)
             @err.puts("dap: adapter path not found: #{adapter_path}")
@@ -1771,7 +1771,7 @@ module MilkTea
             @err.puts("dap: unknown option #{arg}")
             return 1
           end
-          @err.puts("dap: unexpected argument #{@argv.shift}")
+          @err.puts("dap: unexpected argument #{arg}")
           return 1
         end
       end

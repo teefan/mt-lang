@@ -57,7 +57,7 @@ export class MilkTeaLspClient {
       return;
     }
 
-    const args = [...cfg.extraArgs];
+    const args = ['lsp', ...cfg.extraArgs];
     this.log.info(`Starting LSP server: ${cfg.serverPath} ${args.join(' ')}`);
 
     const serverOptions: ServerOptions = {

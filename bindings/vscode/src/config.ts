@@ -39,7 +39,7 @@ export function getConfig(): MilkTeaConfig {
   return {
     lsp: {
       enabled:     cfg.get<boolean>('lsp.enabled', true),
-      serverPath:  cfg.get<string>('lsp.serverPath', 'mtc-lsp'),
+      serverPath:  cfg.get<string>('lsp.serverPath', 'mtc'),
       extraArgs:   cfg.get<string[]>('lsp.extraArgs', []),
       logLevel:    cfg.get<LogLevel>('lsp.logLevel', 'info'),
       traceServer: cfg.get<'off' | 'messages' | 'verbose'>('lsp.traceServer', 'off'),
@@ -53,7 +53,7 @@ export function getConfig(): MilkTeaConfig {
     },
     dap: {
       enabled:    cfg.get<boolean>('dap.enabled', true),
-      serverPath: cfg.get<string>('dap.serverPath', 'mtc-dap'),
+      serverPath: cfg.get<string>('dap.serverPath', 'mtc'),
       extraArgs:  cfg.get<string[]>('dap.extraArgs', []),
       logLevel:   cfg.get<LogLevel>('dap.logLevel', 'info'),
       retry: {
