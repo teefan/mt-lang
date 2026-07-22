@@ -1724,6 +1724,8 @@ module MilkTea
             @err.puts("lsp: invalid --log-level #{log_level.inspect} (expected trace, debug, info, warn, or error)")
             return 1
           end
+        when "--stdio"
+          # stdio is the only transport; accept the flag as a no-op
         else
           if arg.start_with?("-")
             @err.puts("lsp: unknown option #{arg}")
