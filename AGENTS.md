@@ -91,7 +91,7 @@ The build cache persists compiled C and binaries across invocations. When iterat
 - **`--no-cache`** — always rebuild from source; use when you change `CBackend`, `Lowering`, or any compiler pipeline code. Without it, `[cached]` builds may reuse a previous C/binary that does not reflect your latest changes.
 - **`--keep-c`** — save the generated C file to disk for inspection. Combine with `--no-cache` to ensure the saved C matches the actually compiled binary.
 
-**Loop iteration guards** (Ruby compiler only — the self-host does not inject guards): the Ruby CBackend unconditionally injects a per-`while`/`for` counter (`__mt_loop_N`) that calls `mt_fatal` after 50,000,000 iterations. The counter is local to the enclosing function (resets per call). This catches infinite loops in synchronous code; long-running CPS-async resume loops may legitimately reach the limit, which is a pre-existing pattern in `std/net/discovery.mt` (not a compiler bug).
+**Loop iteration guards**: the CBackend unconditionally injects a per-`while`/`for` counter (`__mt_loop_N`) that calls `mt_fatal` after 50,000,000 iterations. The counter is local to the enclosing function (resets per call). This catches infinite loops in synchronous code; long-running CPS-async resume loops may legitimately reach the limit, which is a pre-existing pattern in `std/net/discovery.mt` (not a compiler bug).
 
 ## Tool Usage
 
