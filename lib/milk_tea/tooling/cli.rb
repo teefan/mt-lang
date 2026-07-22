@@ -1750,6 +1750,10 @@ module MilkTea
       until @argv.empty?
         arg = @argv.shift
         case arg
+        when "--log-level"
+          @argv.shift
+        when /\A--log-level=(.+)\z/
+          # accept and ignore
         when "--backend"
           preferred_backend_kind = @argv.shift&.downcase
         when /\A--backend=(.+)\z/
