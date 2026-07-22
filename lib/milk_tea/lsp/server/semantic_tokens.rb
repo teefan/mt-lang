@@ -580,10 +580,16 @@ module MilkTea
         variant_enum_member_declaration?(tokens, head_index)
       end
 
+      FOREIGN_PARAM_MODE_TOKENS = [:out, :in, :inout, :consuming].freeze
+      private_constant :FOREIGN_PARAM_MODE_TOKENS
+
       def parameter_declaration_token?(tokens, index)
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
-        next_tok&.type == :colon && prev_tok && [:lparen, :comma].include?(prev_tok.type)
+        next_tok&.type == :colon && prev_tok && (
+          [:lparen, :comma].include?(prev_tok.type) ||
+          FOREIGN_PARAM_MODE_TOKENS.include?(prev_tok.type)
+        )
       end
 
       def callable_parameter_declaration_token?(tokens, index)
