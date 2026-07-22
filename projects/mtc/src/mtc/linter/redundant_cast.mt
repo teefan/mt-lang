@@ -14,8 +14,8 @@ import mtc.parser.ast as ast
 public struct Diag:
     name: str
     line: ptr_uint
-    ## 1-based column of the cast target type (`int<-x` points at `int`).
     column: ptr_uint
+    message: str
 
 
 public function check(file: ast.SourceFile) -> vec.Vec[Diag]:
@@ -90,16 +90,31 @@ function check_expr(ep: ptr[ast.Expr]?, declared: ref[map_mod.Map[str, str]], di
         match read(p):
             ast.Expr.expr_unsafe as u:
                 check_expr(u.expression, declared, diags)
+            ast.Expr.expr_call as call:
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    check_expr(read(call.args.data + ai).arg_value, declared, diags)
+                    ai += 1
             ast.Expr.expr_prefix_cast as c:
+                let ct = type_last_name(c.target_type)
+                if ct.len == 0:
+                    return
                 match read(c.expression):
                     ast.Expr.expr_identifier as id:
-                        if id.name == "_":
-                            return
-                        let dt = declared.get(id.name) else:
-                            return
-                        let ct = type_last_name(c.target_type)
-                        if unsafe: read(dt).equal(ct):
-                            diags.push(Diag(name = id.name, line = c.line, column = c.column))
+                        if id.name != "_":
+                            let val_ptr = declared.get(id.name)
+                            if val_ptr != null:
+                                if unsafe: read(val_ptr).equal(ct):
+                                    diags.push(Diag(name = id.name, line = c.line, column = c.column, message = "cast to same type is redundant"))
+                    ast.Expr.expr_integer_literal:
+                        if ct.equal("int"):
+                            diags.push(Diag(name = "", line = c.line, column = c.column, message = "cast to same type is redundant"))
+                    ast.Expr.expr_float_literal:
+                        if ct.equal("float"):
+                            diags.push(Diag(name = "", line = c.line, column = c.column, message = "cast to same type is redundant"))
+                    ast.Expr.expr_bool_literal:
+                        if ct.equal("bool"):
+                            diags.push(Diag(name = "", line = c.line, column = c.column, message = "cast to same type is redundant"))
                     _:
                         pass
             _:

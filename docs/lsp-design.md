@@ -1,7 +1,7 @@
 # Self-Host LSP Architecture
 
-Status: **Implementation complete — all capabilities + long-tail items + 2026-07-20
-stability/hover/resilience session delivered.** Last updated: 2026-07-20.
+Status: **Implementation complete — all capabilities + long-tail items + 2026-07-22
+linter parity session delivered.** Last updated: 2026-07-22.
 35 modules, ~9,500 lines, 29 capabilities advertised at Ruby parity.
 Hover coverage: 18/25 declaration types (up from 5/25).
 References: cross-file via workspace index.
@@ -9,6 +9,8 @@ Definition: local variables supported.
 Signature help: methods and extending-block methods resolved.
 Diagnostic positions: lexer-based token matching, buffer-overflow fix.
 LSP logging: structured stderr with version+revision announcement.
+Snapshot semantic tokens: parity with Ruby on language_baseline.mt after decorator/enum-member/struct-body fixes.
+Snapshot semantic tokens: parity with Ruby on language_baseline.mt after decorator/enum-member/struct-body fixes.
 
 ## 0. Design Principles
 
@@ -416,7 +418,7 @@ fixed the same day.
 | Progress | Begin/report/end three-phase | Same via `$/progress` notifications |
 | Configuration | Pull on `initialized` | Same via `workspace/configuration` after `initialized` |
 
-### Known gaps (self-host vs Ruby) — as of 2026-07-20
+### Known gaps (self-host vs Ruby) — as of 2026-07-22
 
 | Feature | Status |
 |---------|--------|
@@ -426,6 +428,7 @@ fixed the same day.
 | LSP logging (std/log) | **DONE** — `--log-level trace|debug|info|warn|error` |
 | $/setTrace handler | **DONE** — VSCode trace-level changes at runtime |
 | Semantic token legend | **EXTENDED** — 15 types (added enumMember, method, decorator) |
+| Semantic token accuracy | **DONE** — snapshot HTML matches Ruby on language_baseline.mt. Fixed: decorator `@[...]` tracking, enum member dot-access via `static_member_types`, parameter-name collision in enum body, struct/union body separation. |
 | Completion depth | **DONE** — prefix filtering, detail, insertText, isIncomplete, proper response format, import completions via filesystem enumeration, scope/local completions via AST binding collection. Missing: format-string/snippet/value-chain/specialization contexts. |
 | Code actions depth | **IMPROVED** — unused-param, dead-assignment, shadow, unsafe-wrap, match-missing-arms quickfixes added. `only_kinds` filtering respected. Missing: type-cast-insertion, line-too-long wrap. |
 | Document link resolveProvider | **DONE** — advertised correctly |

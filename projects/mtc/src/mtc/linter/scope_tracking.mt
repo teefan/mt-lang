@@ -167,11 +167,29 @@ function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> void:
                     pass
 
 
+function visit_typeref(tr: ptr[ast.TypeRef], ctx: ref[ScopeCtx]) -> void:
+    unsafe:
+        let r = read(tr)
+        var pi: ptr_uint = 0
+        while pi < r.name.parts.len:
+            ctx_mark_used(ctx, read(r.name.parts.data + pi))
+            pi += 1
+        var ai: ptr_uint = 0
+        while ai < r.arguments.len:
+            visit_typeref(r.arguments.data + ai, ctx)
+            ai += 1
+
+
+function visit_typeref_opt(tr: ptr[ast.TypeRef]?, ctx: ref[ScopeCtx]) -> void:
+    if tr != null:
+        visit_typeref(tr, ctx)
+
+
 function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
-                let c = read(ctx)
+                var c = read(ctx)
                 var si = c.scope_count
                 while si > 0:
                     si -= 1
@@ -181,6 +199,37 @@ function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> void:
                             return
                         Option.none:
                             pass
+            ast.Expr.expr_index_access as ia:
+                ctx_mark_mutated(ctx, ia.receiver)
+            ast.Expr.expr_member_access as ma:
+                ctx_mark_mutated(ctx, ma.receiver)
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as callee_id:
+                        if callee_id.name.equal("read"):
+                            var ai: ptr_uint = 0
+                            while ai < call.args.len:
+                                ctx_mark_mutated(ctx, read(call.args.data + ai).arg_value)
+                                ai += 1
+                    _:
+                        pass
+            _:
+                pass
+
+
+## When a call creates a writable alias (ref_of / ptr_of / out / inout), mark
+## the source identifier as potentially mutated through the alias.
+function ctx_mark_alias_source(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+    unsafe:
+        match read(call):
+            ast.Expr.expr_call as cl:
+                match read(cl.callee):
+                    ast.Expr.expr_identifier as callee_id:
+                        if callee_id.name.equal("ref_of") or callee_id.name.equal("ptr_of") or callee_id.name.equal("const_ptr_of"):
+                            if cl.args.len >= 1:
+                                ctx_mark_mutated(ctx, read(cl.args.data + 0).arg_value)
+                    _:
+                        pass
             _:
                 pass
 
@@ -603,11 +652,22 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[ScopeW
                 while i < call.args.len:
                     visit_expr(read(call.args.data + i).arg_value, path, warnings, ctx)
                     i += 1
+                ctx_mark_alias_source(expr, ctx)
             ast.Expr.expr_index_access as ix:
                 visit_expr(ix.receiver, path, warnings, ctx)
                 visit_expr(ix.index, path, warnings, ctx)
             ast.Expr.expr_specialization as sp:
                 visit_expr(sp.callee, path, warnings, ctx)
+                var sai: ptr_uint = 0
+                while sai < sp.arguments.len:
+                    visit_typeref(read(sp.arguments.data + sai).value, ctx)
+                    sai += 1
+            ast.Expr.expr_sizeof as sz:
+                visit_typeref(sz.target_type, ctx)
+            ast.Expr.expr_alignof as al:
+                visit_typeref(al.target_type, ctx)
+            ast.Expr.expr_offsetof as off:
+                visit_typeref(off.target_type, ctx)
             ast.Expr.expr_if as iff:
                 visit_expr(iff.condition, path, warnings, ctx)
                 visit_expr(iff.then_expr, path, warnings, ctx)

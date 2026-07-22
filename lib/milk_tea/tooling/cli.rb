@@ -34,6 +34,8 @@ module MilkTea
       ["cache",       "Inspect and manage the build cache"],
       ["docs",        "Serve the local documentation site"],
       ["snapshot",    "Render a highlighted HTML snapshot"],
+      ["lsp",         "Start the Language Server Protocol server"],
+      ["dap",         "Start the Debug Adapter Protocol server"],
       ["completions", "Print a shell completion script"],
     ].freeze
 
@@ -127,6 +129,10 @@ module MilkTea
         docs_command
       when "snapshot"
         snapshot_command
+      when "lsp"
+        lsp_command
+      when "dap"
+        dap_command
       when "completions"
         completions_command
       else
@@ -1700,6 +1706,85 @@ module MilkTea
       $?.success? ? 0 : 1
     end
 
+    def lsp_command
+      log_level = nil
+      stdio = false
+
+      until @argv.empty?
+        arg = @argv.first
+        case arg
+        when "--log-level"
+          @argv.shift
+          log_level = @argv.shift&.downcase
+          unless %w[trace debug info warn error].include?(log_level)
+            @err.puts("lsp: invalid --log-level #{log_level.inspect} (expected trace, debug, info, warn, or error)")
+            return 1
+          end
+        when "--stdio"
+          stdio = true
+          @argv.shift
+        else
+          if arg.start_with?("-")
+            @err.puts("lsp: unknown option #{arg}")
+            return 1
+          end
+          @err.puts("lsp: unexpected argument #{@argv.shift}")
+          return 1
+        end
+      end
+
+      require "milk_tea/lsp/server" unless defined?(MilkTea::LSP::Server)
+      server = MilkTea::LSP::Server.new
+      server.run
+      0
+    end
+
+    def dap_command
+      preferred_backend_kind = "process"
+      adapter_command = nil
+
+      until @argv.empty?
+        arg = @argv.first
+        case arg
+        when "--backend"
+          @argv.shift
+          preferred_backend_kind = @argv.shift&.downcase
+          unless %w[process].include?(preferred_backend_kind)
+            @err.puts("dap: unsupported backend #{preferred_backend_kind.inspect} (expected: process)")
+            return 1
+          end
+        when "--adapter-path"
+          @argv.shift
+          adapter_path = @argv.shift
+          unless adapter_path && File.file?(adapter_path)
+            @err.puts("dap: adapter path not found: #{adapter_path}")
+            return 1
+          end
+          adapter_command =
+            if adapter_path.end_with?(".rb")
+              [RbConfig.ruby, File.expand_path(adapter_path)]
+            else
+              [File.expand_path(adapter_path)]
+            end
+        else
+          if arg.start_with?("-")
+            @err.puts("dap: unknown option #{arg}")
+            return 1
+          end
+          @err.puts("dap: unexpected argument #{@argv.shift}")
+          return 1
+        end
+      end
+
+      require "milk_tea/dap/server" unless defined?(MilkTea::DAP::Server)
+      server = MilkTea::DAP::Server.new(
+        preferred_backend_kind:,
+        adapter_command:,
+      )
+      server.run
+      0
+    end
+
     def toolchain_command
       ToolchainCLI.start(
         @argv,
@@ -2466,6 +2551,28 @@ module MilkTea
             --theme, -t PATH      VS Code theme JSON file (default: 2026 Dark).
             --output, -o PATH     Write HTML to PATH instead of stdout.
         HELP
+      "lsp"             => <<~HELP,
+        Usage: mtc lsp [OPTIONS]
+
+          Start the Milk Tea Language Server. Reads JSON-RPC messages from stdin
+          and writes responses to stdout. Stderr is reserved for logging.
+
+          Options:
+            --log-level LEVEL     Log verbosity: trace, debug, info, warn, or
+                                  error (default: warn, set by extension).
+            --stdio               Enable stdio transport (default).
+        HELP
+      "dap"             => <<~HELP,
+        Usage: mtc dap [OPTIONS]
+
+          Start the Milk Tea Debug Adapter. Reads DAP messages from stdin
+          and writes responses to stdout.
+
+          Options:
+            --backend KIND        Debug backend kind (default: process).
+            --adapter-path PATH   Path to an lldb-dap or cppdbg adapter
+                                  executable or Ruby bridge script.
+        HELP
       "completions"     => <<~HELP,
         Usage: mtc completions bash|zsh|fish
 
@@ -2542,6 +2649,8 @@ module MilkTea
       io.puts("       mtc cache purge|status")
       io.puts("       mtc docs [--open] [--port PORT]")
       io.puts("       mtc snapshot INPUT.mt [--theme PATH] [-o OUTPUT]")
+      io.puts("       mtc lsp [--log-level LEVEL] [--stdio]")
+      io.puts("       mtc dap [--backend KIND] [--adapter-path PATH]")
       io.puts("       mtc completions bash|zsh|fish")
     end
 

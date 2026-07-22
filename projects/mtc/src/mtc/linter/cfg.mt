@@ -68,9 +68,12 @@ function walk_stmt_backward(sp: ptr[ast.Stmt], result: ref[vec.Vec[DeadWrite]], 
                 match read(a.target):
                     ast.Expr.expr_identifier as id:
                         if id.name.len > 0 and not id.name.starts_with("_"):
-                            if a.line > 0 and not is_live(live, id.name) and a.operator == "=":
-                                result.push(DeadWrite(name = id.name, line = a.line, column = a.column))
-                            remove_from_live(live, id.name)
+                            if a.operator == "=":
+                                if a.line > 0 and not is_live(live, id.name):
+                                    result.push(DeadWrite(name = id.name, line = a.line, column = a.column))
+                                remove_from_live(live, id.name)
+                            else:
+                                add_to_live(live, id.name)
                     _:
                         pass
             ast.Stmt.stmt_expression as e:
@@ -96,12 +99,22 @@ function walk_stmt_backward(sp: ptr[ast.Stmt], result: ref[vec.Vec[DeadWrite]], 
                 while fi < f.iterables.len:
                     add_expr_reads(f.iterables.data + fi, live)
                     fi += 1
+                var bi = f.bindings.len
+                while bi > 0:
+                    bi -= 1
+                    remove_from_live(live, read(f.bindings.data + bi).name)
             ast.Stmt.stmt_match as m:
                 add_expr_reads(m.scrutinee, live)
                 var ai = m.arms.len
                 while ai > 0:
                     ai -= 1
-                    walk_body_backward(read(m.arms.data + ai).body, result, live)
+                    let arm = read(m.arms.data + ai)
+                    walk_body_backward(arm.body, result, live)
+                    match arm.binding_name:
+                        Option.some as name:
+                            remove_from_live(live, name.value)
+                        Option.none:
+                            pass
             ast.Stmt.stmt_unsafe as u:
                 walk_body_backward(u.body, result, live)
             ast.Stmt.stmt_defer as d:
@@ -119,6 +132,16 @@ function walk_stmt_backward(sp: ptr[ast.Stmt], result: ref[vec.Vec[DeadWrite]], 
                         walk_stmt_backward(br.body.data + bsi, result, live)
             ast.Stmt.stmt_static_assert as s:
                 add_expr_reads(s.condition, live)
+            ast.Stmt.stmt_parallel_block as pb:
+                var pri = pb.bodies.len
+                while pri > 0:
+                    pri -= 1
+                    walk_stmt_backward(pb.bodies.data + pri, result, live)
+            ast.Stmt.stmt_gather as g:
+                var gi: ptr_uint = 0
+                while gi < g.handles.len:
+                    add_expr_reads(g.handles.data + gi, live)
+                    gi += 1
             _:
                 pass
 
@@ -172,6 +195,18 @@ function add_expr_reads(ep: ptr[ast.Expr]?, live: ref[vec.Vec[str]]) -> void:
                         _:
                             pass
                     fi += 1
+            ast.Expr.expr_match as me:
+                add_expr_reads(me.scrutinee, live)
+                var ai = me.arms.len
+                while ai > 0:
+                    ai -= 1
+                    let arm = read(me.arms.data + ai)
+                    add_expr_reads(arm.value, live)
+                    match arm.binding_name:
+                        Option.some as name:
+                            remove_from_live(live, name.value)
+                        Option.none:
+                            pass
             _:
                 pass
 

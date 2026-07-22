@@ -44,6 +44,7 @@ import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.cfg as cfg
 import mtc.linter.nullcheck as nullcheck
 import mtc.linter.own_ptr as own_ptr
+import mtc.linter.constprop as constprop
 import mtc.linter.redundant_cast as redundant_cast
 
 
@@ -1824,7 +1825,14 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
             ast.Stmt.stmt_ret as ra:
                 match read(b):
                     ast.Stmt.stmt_ret as rb:
-                        return ra.value == null and rb.value == null
+                        if ra.value == null and rb.value == null:
+                            return true
+                        let rv_ptr = ra.value else:
+                            return false
+                        let rb_ptr = rb.value else:
+                            return false
+                        return exprs_structural_equal(rv_ptr, rb_ptr)
+                        return false
                     _:
                         return false
             ast.Stmt.stmt_expression as ea:
@@ -1836,7 +1844,7 @@ function stmts_structural_equal(a: ptr[ast.Stmt]?, b: ptr[ast.Stmt]?) -> bool:
             ast.Stmt.stmt_assignment as aa:
                 match read(b):
                     ast.Stmt.stmt_assignment as ab:
-                        return aa.operator.equal(ab.operator) and exprs_structural_equal(aa.target, ab.target)
+                        return aa.operator.equal(ab.operator) and exprs_structural_equal(aa.target, ab.target) and exprs_structural_equal(aa.value, ab.value)
                     _:
                         return false
             ast.Stmt.stmt_break:
@@ -2160,7 +2168,7 @@ function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], pat
     while ai < arms.len:
         unsafe:
             let arm = read(arms.data + ai)
-            if arm.pattern != null and wildcard_pattern(arm.pattern):
+            if arm.pattern == null or wildcard_pattern(arm.pattern):
                 has_wild = true
                 break
         ai += 1
@@ -2592,8 +2600,8 @@ function check_prefer_is_variant_expr(arms: span[ast.MatchExprArm], match_line: 
 
 
 function classify_is_variant_arms(arm0: ast.MatchExprArm, arm1: ast.MatchExprArm) -> Option[IsVariantPair]:
-    let p0_wild = arm0.pattern != null and wildcard_pattern(arm0.pattern)
-    let p1_wild = arm1.pattern != null and wildcard_pattern(arm1.pattern)
+    let p0_wild = arm0.pattern == null or (arm0.pattern != null and wildcard_pattern(arm0.pattern))
+    let p1_wild = arm1.pattern == null or (arm1.pattern != null and wildcard_pattern(arm1.pattern))
     if p0_wild == p1_wild:
         return Option[IsVariantPair].none
     let wild_is_first = p0_wild
@@ -2661,8 +2669,17 @@ function check_redundant_type_annotation(
         return
     let val = value else:
         return
-    let declared = type_ref_leaf_name(st) else:
+    let type_name = type_ref_leaf_name(st) else:
+        let nullable_name = type_ref_leaf_name_nullable(st) else:
+            return
+        redundancy_match(nullable_name, val, line, column, path, warnings)
         return
+    redundancy_match(type_name, val, line, column, path, warnings)
+
+
+## If the expression's literal type matches the declared type name, emit a
+## redundant-type-annotation warning.
+function redundancy_match(declared: str, val: ptr[ast.Expr], line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let inferred = expression_literal_type_name(val) else:
         return
     if declared.equal(inferred):
@@ -2673,8 +2690,24 @@ function check_redundant_type_annotation(
         push_warning_at(warnings, path, line, column, 0, "redundant-type-annotation", buf.as_str(), "hint")
 
 
+## Extract the leaf name from a simple TypeRef even when nullable
+## (stripping `?`). Returns none for compound types.
+function type_ref_leaf_name_nullable(type_ref: ptr[ast.TypeRef]) -> Option[str]:
+    unsafe:
+        let t = read(type_ref)
+        if t.arguments.len > 0:
+            return Option[str].none
+        if t.fn_params.len > 0:
+            return Option[str].none
+        if t.is_dyn or t.is_fn or t.is_proc or t.is_tuple:
+            return Option[str].none
+        if t.name.parts.len != 1:
+            return Option[str].none
+        return Option[str].some(value = read(t.name.parts.data + 0))
+
+
 ## Extract the leaf name from a simple TypeRef (e.g. `int` → `"int"`),
-## or none when it has type arguments or is compound.
+## or none when it has type arguments, is nullable, or is compound.
 function type_ref_leaf_name(type_ref: ptr[ast.TypeRef]) -> Option[str]:
     unsafe:
         let t = read(type_ref)
@@ -3705,6 +3738,21 @@ function lint_unreachable_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
 # =============================================================================
 
 function lint_constant_condition(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var conds = constprop.collect_constant_conditions(file)
+    defer conds.release()
+    var ci: ptr_uint = 0
+    while ci < conds.len():
+        let cp = conds.get(ci) else:
+            break
+        unsafe:
+            let c = read(cp)
+            var buf = string.String.create()
+            buf.append(c.kind)
+            buf.append(" condition is always ")
+            buf.append(c.value)
+            push_warning(warnings, path, c.line, "constant-condition", buf.as_str(), "hint")
+        ci += 1
+    # Fall back to the trivial check for literal true/false and self-comparisons.
     for_each_func_body(file, path, warnings, 2)
 
 
@@ -3730,13 +3778,13 @@ function lint_const_cond_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Ve
                 while bi < iff.branches.len:
                     let br = read(iff.branches.data + bi)
                     if is_constant_condition(br.condition):
-                        push_warning_expr(warnings, path, br.condition, "constant-condition", "if condition is always a constant boolean", "hint")
+                        push_warning_stmt(warnings, path, iff.line, 0, "constant-condition", "if condition is always a constant boolean", "hint")
                     lint_const_cond_in_body(br.body, path, warnings)
                     bi += 1
                 lint_const_cond_in_body(iff.else_body, path, warnings)
             ast.Stmt.stmt_while as wh:
                 if is_constant_condition(wh.condition):
-                    push_warning_expr(warnings, path, wh.condition, "constant-condition", "while condition is always a constant boolean", "hint")
+                    push_warning_stmt(warnings, path, wh.line, 0, "constant-condition", "while condition is always a constant boolean", "hint")
                 lint_const_cond_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
                 lint_const_cond_in_body(fr.body, path, warnings)
@@ -3754,8 +3802,6 @@ function lint_const_cond_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Ve
 function is_constant_condition(ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
-            ast.Expr.expr_bool_literal:
-                return true
             ast.Expr.expr_binary_op as b:
                 if b.operator == "==" or b.operator == "!=":
                     return exprs_equal(b.left, b.right)
@@ -3869,11 +3915,7 @@ function lint_redundant_cast(file: ast.SourceFile, path: str, warnings: ref[vec.
             break
         unsafe:
             let d = read(dp)
-            var buf = string.String.create()
-            buf.append("redundant cast: ")
-            buf.append(d.name)
-            buf.append(" is already declared as this type")
-            push_warning_at(warnings, path, d.line, d.column, 0, "redundant-cast", buf.as_str(), "hint")
+            push_warning_at(warnings, path, d.line, d.column, 0, "redundant-cast", d.message, "hint")
         di += 1
 
 

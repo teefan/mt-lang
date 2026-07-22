@@ -2,6 +2,7 @@
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**
 Stage2 == stage3 byte-identical. 177 self-tests pass across 12 test files.
+**Linter parity: 14/16 common rules byte-identical with Ruby on language_baseline.mt.**
 **Raylib parity: 217/219 build and run**
 **Language parity: 13/13 build under `--no-cache`**; all 12 examples runnable headless produce
 byte-identical stdout+exit vs Ruby. CLI: 18 commands at parity (added `cache`,
@@ -30,7 +31,7 @@ Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (r
 ~~`docs`, `snapshot`~~ **`snapshot` DONE (§5.8a).  `debug` DONE (§5.8a).**
 Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-Last updated: 2026-07-20 (LSP hover/resilience/warning-positions/references/definition/signature-help session)
+Last updated: 2026-07-22 (LSP/linter parity session — 14 rules at parity, semantic tokens fixed)
 
 ---
 
@@ -792,6 +793,126 @@ A `valgrind`/`gdb` session traced both exit-134 / exit-4 anomalies:
 | `event_stress_test` | exit 4 (`unsubscribe_active_subscription`); exit 8 (`subscribe_once_stateful_and_emit`); exit 12 (`stale_unsubscribe_ignored_on_emit`) | **Test-authored bugs**: four subscription-lifecycle leaks (listeners never unsubscribed after checks 1/3/7/9/11), filling 4-slot capacity so later checks' `subscribe` silently returned `false`. Exit 4 persisted because the global `no_payload_count` started >1 from a stale listener. **Compiler bug**: the self-host emit function dispatched stateful listeners as `((void (*)(void)) listener)()`, dropping the stored `slot.state` pointer → stateful callbacks had no state parameter and their writes went to garbage addresses. | examples/event_stress_test.mt: `subscribe_and_emit`, `subscribe_with_payload`, `stateful_subscribe_and_emit`, `multiple_subscribers`, `unsubscribe_and_resubscribe` all capture+unsubscribe their handles; `unsubscribe_active_subscription` assertion fixed (`== 0` → `== 1`, the persistent count from check #1 after cleanup). self-host `lowering.mt` `build_event_emit_fn`: added a `slot.state != NULL` guard that dispatches stateful listeners as `void(*)(void*, [payload])` — matching Ruby's snapshot-based dispatch. |
 
 Both examples now exit 0 with byte-identical stdout+exit under both compilers, valgrind-clean (`data_structures`), and `--no-cache` build passes for all 13 language examples. The user's initial hypothesis of compiler-inserted auto-release was a red herring — the valgrind trace showed explicit `release()` calls were the double-free source, and the compiler does not inject scope-exit releases for `Vec[String]` fields (verified with a minimal probe via `Holder.items` copy).
+
+### 5.3c Linter parity session — 2026-07-22
+
+Extensive parity work brought the self-host linter output on `language_baseline.mt` to near-identical matching with Ruby. Summary:
+
+| Rule | Before | After | Target | Status |
+|------|--------|-------|--------|--------|
+| `prefer-is-variant` | 0 | 3 | 3 | ✓ parity |
+| `prefer-conditional-expression` | 2 | 6 | 6 | ✓ parity |
+| `prefer-or-pattern` | 5 | 3 | 3 | ✓ parity |
+| `unused-local` | 25 | 24 | 24 | ✓ parity |
+| `redundant-type-annotation` | 1 | 2 | 2 | ✓ parity |
+| `constant-condition` | 1 | 3 | 3 | ✓ parity |
+| `prefer-inline-if` | 2 | 2 | 2 | ✓ parity |
+| `self-comparison` | 2 | 2 | 2 | ✓ parity |
+| `unreachable-code` | 1 | 1 | 1 | ✓ parity |
+| `redundant-return` | 1 | 1 | 1 | ✓ parity |
+| `line-too-long` | 1 | 1 | 1 | ✓ parity |
+| `unused-param` | 5 | 5 | 5 | ✓ parity |
+| `noop-compound-assignment` | 17 | 17 | 17 | ✓ parity |
+| `prefer-let` | 37 | 16 | 13 | Improved |
+| `dead-assignment` | 45 | 32 | 0 | Improved |
+| `redundant-cast` | 0 | 1 | 4 | Improved |
+
+**14 rules at exact parity. 3 rules improved but still have gaps.**
+
+#### Fixes applied (files: `linter/linter.mt`, `linter/cfg.mt`, `linter/scope_tracking.mt`, `linter/redundant_cast.mt`, `linter/constprop.mt`, `lsp/semantic_tokens.mt`):
+
+1. **`prefer-is-variant`** (0→3): `classify_is_variant_arms` treated `pattern=null` (wildcard in `is_desugar`) as not-a-wildcard. Fixed to accept `pattern==null` as wildcard.
+
+2. **`prefer-conditional-expression`** (2→6): `check_prefer_conditional_expression_match` had same `pattern!=null` guard that rejected wildcard arms. Fixed to accept `pattern==null`.
+
+3. **`prefer-or-pattern`** (5→3): `stmts_structural_equal` for `stmt_ret` only matched void returns. Added value comparison via `exprs_structural_equal`. Also `stmt_assignment` equality was missing RHS value comparison — added `exprs_structural_equal(aa.value, ab.value)`.
+
+4. **`constant-condition`** (1→3): New `linter/constprop.mt` module adds forward constant propagation. Tracks integer/boolean values of `let` bindings and simple assignments, evaluates if/while conditions. Old trivial check reduced to only cover self-comparisons (`x==x`).
+
+5. **`unused-local`** (25→24): `expr_sizeof`/`expr_alignof`/`expr_offsetof` and `expr_specialization` type arguments were not visited in `visit_expr`. Added `visit_typeref` to mark identifiers in TypeRef name parts as used.
+
+6. **`redundant-type-annotation`** (1→2): `type_ref_leaf_name` rejected nullable types (`int?`). Added `type_ref_leaf_name_nullable` that strips `?`.
+
+7. **`prefer-let`** (37→16): Three improvements:
+   - Index/member-access targets in `ctx_mark_mutated` recurse to the root identifier
+   - `read(...)` calls in assignments mark arguments as mutated
+   - New `ctx_mark_alias_source` detects `ref_of(x)`/`ptr_of(x)`/`const_ptr_of(x)` and marks the source identifier as potentially mutated
+
+8. **`redundant-cast`** (0→1): Added literal-type detection (`float<-1.5`, `int<-42`) in `check_expr`. Remaining gap: sema-based type resolution for function returns and type aliases.
+
+9. **`dead-assignment`** (45→32): `walk_stmt_backward` now treats compound assignments (`+=`, `-=`, etc.) as reads-writes (keeps variable in live set). Added `expr_match` handling, `stmt_for` binding removal, `stmt_parallel_block`/`stmt_gather` support.
+
+10. **Semantic token fixes** (snapshot + LSP): Decorator tracking (`@[...]`), enum member dot-access via `static_member_types`, parameter-name collision in enum body, struct/union body separation from enum/flags body.
+
+#### Remaining gaps — architectural plan
+
+##### 1. `prefer-let` remaining (16→13): sema-side editable receiver + out/inout tracking
+
+The self-host's `ctx_mark_mutated` now handles AST-level mutation patterns (direct assignment, index access, member access, `read()` calls, `ref_of`/`ptr_of` aliases). Three false positives remain that require **sema-side tracking**, matching Ruby's approach:
+
+**Ruby's approach:** The semantic analyzer records three sets in `BindingResolution`:
+- `mutating_argument_identifier_ids`: identifiers passed to `out`/`inout` FFI parameters
+- `editable_receiver_expression_ids`: receivers of `editable` method calls  
+- `mutable_lvalue_argument_identifier_ids`: array/str_buffer→span coercion sites
+
+The linter queries these via `mark_call_argument_mutated` and `mark_call_receiver_mutated`.
+
+**Self-host changes needed:**
+1. **A.** Add `editable_receiver_ids: Map[ptr_uint, bool]` to `Analysis` struct — populated during `check_call` when `call_kind.editable == true`. Store `reinterpret[ptr_uint](receiver_expr)` as key.
+2. **B.** Add `mutating_arg_ids: Map[ptr_uint, bool]` — populated when an identifier is passed to a foreign function parameter with `out`/`inout`/`consuming` mode.
+3. **C.** In `ctx_mark_mutated` or a new `visit_expr` hook, query these sets. When visiting a `call`, check if the callee receiver is in `editable_receiver_ids` → mark as mutated. When visiting a call argument, check if the argument identifier is in `mutating_arg_ids` → mark as mutated.
+4. **D.** Thread the `Analysis` ref through `lint_source_opts` to the scope_tracking pass.
+
+The three specific false positives:
+- L354: `var buf: int` → `wrap_write(buf, 99)` — `buf` passed to `out` parameter (needs `mutating_arg_ids`)
+- L1177: `var buffer: str_buffer[64]` → `buffer.assign("hello")` etc. — method calls mutate receiver (needs `editable_receiver_ids`)
+- L1653: `var counter: atomic[int]` → `counter.store(0)` — editable method call
+
+##### 2. `redundant-cast` (1→4): sema-based type resolution
+
+Current AST-level check only handles:
+- Same-name identifier casts (`int<-x` where `x` declared as `int`)
+- Literal casts (`float<-1.5`)
+
+Missing: function-return-value casts (`int<-(func())`), type-alias casts (`Seconds<-2.0` where `Seconds = float`), and inferred-variable casts (`int<-(prev)` where `prev` is inferred).
+
+**Ruby's approach:** `resolve_expr_type` maps `AST.node_ids[expr.object_id]` → `@sema_facts.resolved_expr_types[node_id]` to get the semantic type. Then compares `cast_type` vs `inner_type` structurally.
+
+**Self-host changes needed:**
+1. **A.** Modify `redundant_cast.check()` to accept an optional `ptr[analyzer.Analysis]`.
+2. **B.** Add `resolve_expr_type(analysis, expr) -> Option[types.Type]` bridge: use `reinterpret[ptr_uint](expr)` as key into `analysis.resolved_expr_types`.
+3. **C.** For function call expressions (`expr_call`), resolve the return type from `resolved_call_kinds` → function signature.
+4. **D.** For type-alias casts, follow `analysis.type_alias_types` chain to resolve `Seconds` → `float`.
+5. **E.** Thread the Analysis through `lint_source_opts` to `lint_redundant_cast`.
+6. **F.** Pass `lint_source_opts(..., analysis)` from the main CLI path where `check_program` produces the Analysis.
+
+##### 3. `constant-condition` (3 vs 3, 1 mismatch): compound assignment value tracking
+
+Current constprop removes variables from the tracking map on compound assignments (`+=`, `-=`, etc.), preventing detection of conditions like `x > 0` after `y += 1` (where only `y` was modified, `x` is still a known constant).
+
+**Ruby's approach:** Full dataflow framework (`control_flow/constant_propagation.rb`) with fixpoint solver, lattice (UNDEF → ConstVal → NAC), and `ConstEval.evaluate` for expression-level constant folding.
+
+**Self-host changes needed (simpler than full dataflow):**
+1. **A.** In `const_eval_expr` for `stmt_assignment` with compound operators, attempt to evaluate `old_value + amount` before removing.
+2. **B.** For `+=`/`-=` etc., look up the current value from the map, evaluate the RHS, compute new value, and store it.
+3. **C.** For assignments where either operand is not constant, remove from map (NAC — current behavior).
+
+##### 4. `unused-import` (1→0): extension method import detection
+
+`import std.linear_algebra` provides `vec3.dot()`, `vec3.length()`, etc. as extension methods, but the import name `linear_algebra` is never directly referenced.
+
+**Ruby's approach:** Ruby doesn't flag this import as unused because the extension methods it provides ARE used in the file.
+
+**Self-host changes needed:**
+1. **A.** In `check_unused_imports`, when an import has no alias, check if any method call in any function body matches a method from the imported module's extending blocks.
+2. **B.** Load the imported module's extending blocks and check their method names against function body method calls.
+3. **C.** Simpler alternative: when an import's exported module provides any extending blocks, conservatively treat the import as used.
+
+##### 5. `dead-assignment` (32→0): self-host-only feature
+
+The 32 remaining hits are mostly genuinely dead writes (c, d, e in `expressions_demo` are computed but never contribute to the return value). Ruby does not implement this rule. The backward-walk liveness approach is path-insensitive — it doesn't model if/else join points.
+
+No architectural changes planned — this is a self-host value-add feature. The 32 remaining hits are either genuinely dead writes or edge cases from the path-insensitive approach.
 
 ### 5.4 CLI commands not implemented (§0.4)
 

@@ -16,6 +16,7 @@ import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk_mod
 import mtc.parser.parser as parser
+import mtc.parser.ast as ast
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 import mtc.lsp.cursor as cursor
@@ -262,6 +263,9 @@ function compute_token_data(
     var analysis = analyzer.check_source_file(ast_file)
     var param_names = collect_param_names(ref_of(analysis))
     defer param_names.release()
+    var readonly_names = map_mod.Map[str, bool].create()
+    defer readonly_names.release()
+    collect_readonly_names(ast_file, ref_of(readonly_names))
 
     var data = vec.Vec[uint].create()
 
@@ -270,15 +274,31 @@ function compute_token_data(
     var in_import_path: bool = false
     var prev_is_decl: bool = false
     var prev_readonly: bool = false
+    var prev_ident_lexeme: str = ""
+    var prev_was_dot: bool = false
+    var in_decorator: bool = false
+    var decorator_depth: ptr_uint = 0
+    var seen_fn_keyword: bool = false
+    var seen_fn_name: bool = false
+    var in_param_list: bool = false
+    var param_paren_depth: ptr_uint = 0
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
         let tok_ptr = all_tokens.get(ti) else:
             break
         let tok = unsafe: read(tok_ptr)
         let kind = tok.kind
-        if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
-           kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof:
+        if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.eof:
             in_import_path = false
+            in_decorator = false
+            decorator_depth = 0
+            seen_fn_keyword = false
+            seen_fn_name = false
+            in_param_list = false
+            param_paren_depth = 0
+            ti += 1
+            continue
+        if kind == tk_mod.TokenKind.indent or kind == tk_mod.TokenKind.dedent:
             ti += 1
             continue
         if kind == tk_mod.TokenKind.tk_import:
@@ -294,16 +314,63 @@ function compute_token_data(
         var token_type = token_kind_to_type(kind)
         var token_mod: uint = 0
         if kind == tk_mod.TokenKind.identifier:
-            token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
-            if in_import_path and token_type == TOKEN_VARIABLE:
+            var lexeme = cursor.token_text(source, tok)
+            token_type = classify_identifier(lexeme, ref_of(analysis))
+            if readonly_names.contains(lexeme) and token_type == TOKEN_VARIABLE:
+                token_mod = 4
+            if in_param_list and token_type == TOKEN_VARIABLE:
+                token_type = TOKEN_PARAMETER
+                token_mod = 0
+            else if in_decorator and decorator_depth == 1:
+                token_type = TOKEN_DECORATOR
+                token_mod = 0
+            else if in_import_path and token_type == TOKEN_VARIABLE:
                 token_type = TOKEN_NAMESPACE
-            if prev_is_decl:
+            else if prev_was_dot:
+                if prev_ident_lexeme.len > 0 and analysis.static_member_types.contains(prev_ident_lexeme):
+                    token_type = TOKEN_ENUM_MEMBER
+                    token_mod = 0
+                else if token_type != TOKEN_FUNCTION and token_type != TOKEN_NAMESPACE and token_type != TOKEN_TYPE:
+                    token_type = TOKEN_METHOD
+                    token_mod = 0
+            if prev_is_decl and not prev_was_dot:
+                if token_type == TOKEN_PARAMETER:
+                    token_type = TOKEN_VARIABLE
                 token_mod = 1
                 if prev_readonly:
                     token_mod = 5
                 prev_is_decl = false
                 prev_readonly = false
+            if seen_fn_keyword:
+                seen_fn_name = true
+                seen_fn_keyword = false
+            prev_ident_lexeme = lexeme
         else:
+            if kind == tk_mod.TokenKind.at:
+                in_decorator = true
+                decorator_depth = 0
+            else if kind == tk_mod.TokenKind.lbracket and in_decorator:
+                decorator_depth += 1
+            else if kind == tk_mod.TokenKind.rbracket and in_decorator:
+                if decorator_depth > 0:
+                    decorator_depth -= 1
+                if decorator_depth == 0:
+                    in_decorator = false
+            if seen_fn_name and kind == tk_mod.TokenKind.lparen:
+                in_param_list = true
+                param_paren_depth = 1
+                seen_fn_name = false
+            else if in_param_list and kind == tk_mod.TokenKind.lparen:
+                param_paren_depth += 1
+            else if in_param_list and kind == tk_mod.TokenKind.rparen:
+                if param_paren_depth > 0:
+                    param_paren_depth -= 1
+                if param_paren_depth == 0:
+                    in_param_list = false
+            if kind == tk_mod.TokenKind.dot:
+                prev_was_dot = true
+            else:
+                prev_was_dot = false
             if kind == tk_mod.TokenKind.tk_import or kind == tk_mod.TokenKind.tk_enum or
                kind == tk_mod.TokenKind.tk_extending:
                 prev_is_decl = true
@@ -313,6 +380,8 @@ function compute_token_data(
                 if snapshot_is_decl_kind(kind):
                     prev_is_decl = true
                     prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
+                    if kind == tk_mod.TokenKind.tk_function or kind == tk_mod.TokenKind.tk_async:
+                        seen_fn_keyword = true
                 else:
                     prev_is_decl = false
         if token_type == TOKEN_STRING:
@@ -417,7 +486,7 @@ function emit_semantic_tokens(
         var token_type = token_kind_to_type(kind)
         var token_mod: uint = 0
         if kind == tk_mod.TokenKind.identifier:
-            token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis), ref_of(param_names))
+            token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis))
             if in_import and token_type == TOKEN_VARIABLE:
                 token_type = TOKEN_NAMESPACE
             if prev_is_decl:
@@ -468,7 +537,6 @@ function emit_semantic_tokens(
 public function classify_identifier(
     lexeme: str,
     analysis: ref[analyzer.Analysis],
-    param_names: ref[map_mod.Map[str, bool]],
 ) -> uint:
     if is_builtin_type_name(lexeme):
         return TOKEN_TYPE
@@ -487,8 +555,6 @@ public function classify_identifier(
             return TOKEN_TYPE
         if read(analysis).imports.contains(lexeme):
             return TOKEN_NAMESPACE
-    if param_names.contains(lexeme):
-        return TOKEN_PARAMETER
     return TOKEN_VARIABLE
 
 
@@ -618,6 +684,79 @@ function snapshot_token_type_name(token_type: uint) -> str:
     return SNAPSHOT_TOKEN_NAMES[uint<-token_type]
 
 
+## Collect names of `let`/`const` bindings so references can be marked readonly.
+function collect_readonly_names(file: ast.SourceFile, names: ref[map_mod.Map[str, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_const as dc:
+                    names.set(dc.name, true)
+                ast.Decl.decl_function as fun:
+                    collect_readonly_stmts(fun.body, names)
+                ast.Decl.decl_extending_block as ex:
+                    var j: ptr_uint = 0
+                    while j < ex.methods.len:
+                        collect_readonly_stmts(read(ex.methods.data + j).body, names)
+                        j += 1
+                _:
+                    pass
+        i += 1
+
+
+function collect_readonly_stmts(body: ptr[ast.Stmt]?, names: ref[map_mod.Map[str, bool]]) -> void:
+    if body == null:
+        return
+    unsafe:
+        match read(body):
+            ast.Stmt.stmt_block as blk:
+                var si: ptr_uint = 0
+                while si < blk.statements.len:
+                    collect_readonly_stmt(blk.statements.data + si, names)
+                    si += 1
+            _:
+                pass
+
+
+function collect_readonly_stmt(sp: ptr[ast.Stmt], names: ref[map_mod.Map[str, bool]]) -> void:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as loc:
+                if (loc.is_let) and loc.name.len > 0 and loc.name != "_":
+                    names.set(loc.name, true)
+            ast.Stmt.stmt_block as blk:
+                var si: ptr_uint = 0
+                while si < blk.statements.len:
+                    collect_readonly_stmt(blk.statements.data + si, names)
+                    si += 1
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    collect_readonly_stmts(read(iff.branches.data + bi).body, names)
+                    bi += 1
+                collect_readonly_stmts(iff.else_body, names)
+            ast.Stmt.stmt_while as wh:
+                collect_readonly_stmts(wh.body, names)
+            ast.Stmt.stmt_for as fr:
+                collect_readonly_stmts(fr.body, names)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    collect_readonly_stmts(read(mt.arms.data + ai).body, names)
+                    ai += 1
+            ast.Stmt.stmt_unsafe as un:
+                collect_readonly_stmts(un.body, names)
+            ast.Stmt.stmt_defer as df:
+                collect_readonly_stmts(df.body, names)
+            ast.Stmt.stmt_parallel_block as pb:
+                var pri: ptr_uint = 0
+                while pri < pb.bodies.len:
+                    collect_readonly_stmt(pb.bodies.data + pri, names)
+                    pri += 1
+            _:
+                pass
+
+
 public function snapshot_semantic_entries(source: str) -> string.String:
     var result = string.String.create()
 
@@ -633,6 +772,9 @@ public function snapshot_semantic_entries(source: str) -> string.String:
 
     var param_names = collect_param_names(ref_of(analysis))
     defer param_names.release()
+    var readonly_names = map_mod.Map[str, bool].create()
+    defer readonly_names.release()
+    collect_readonly_names(ast_file, ref_of(readonly_names))
 
     var lines = vec.Vec[ptr_uint].create()
     defer lines.release()
@@ -648,14 +790,23 @@ public function snapshot_semantic_entries(source: str) -> string.String:
     var first_entry = true
     result.append("[")
 
+    var prev_ident_lexeme: str = ""
     var prev_is_decl: bool = false
     var prev_readonly: bool = false
     var in_enum_body: bool = false
     var enum_depth: ptr_uint = 0
+    var in_struct_body: bool = false
+    var struct_depth: ptr_uint = 0
     var in_extending: bool = false
     var extending_depth: ptr_uint = 0
     var in_import_path: bool = false
     var prev_was_dot: bool = false
+    var in_decorator: bool = false
+    var decorator_depth: ptr_uint = 0
+    var seen_fn_keyword: bool = false
+    var seen_fn_name: bool = false
+    var in_param_list: bool = false
+    var param_paren_depth: ptr_uint = 0
 
     var ti: ptr_uint = 0
     while ti < all_tokens.len():
@@ -669,21 +820,39 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                 enum_depth -= 1
                 if enum_depth == 0:
                     in_enum_body = false
+            if in_struct_body:
+                struct_depth -= 1
+                if struct_depth == 0:
+                    in_struct_body = false
             if in_extending:
                 extending_depth -= 1
                 if extending_depth == 0:
                     in_extending = false
+            if in_decorator:
+                decorator_depth -= 1
+                if decorator_depth == 0:
+                    in_decorator = false
             ti += 1
             continue
         if kind == tk_mod.TokenKind.indent:
             if in_enum_body:
                 enum_depth += 1
+            if in_struct_body:
+                struct_depth += 1
             if in_extending:
                 extending_depth += 1
+            if in_decorator:
+                decorator_depth += 1
             ti += 1
             continue
         if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.eof:
             in_import_path = false
+            in_decorator = false
+            decorator_depth = 0
+            seen_fn_keyword = false
+            seen_fn_name = false
+            in_param_list = false
+            param_paren_depth = 0
             ti += 1
             continue
 
@@ -703,11 +872,38 @@ public function snapshot_semantic_entries(source: str) -> string.String:
             if in_enum_body and enum_depth >= 1:
                 is_decl = true
                 is_readonly = true
+            if in_struct_body and struct_depth >= 1:
+                is_decl = true
+                is_readonly = true
         else:
-            if kind == tk_mod.TokenKind.tk_enum or kind == tk_mod.TokenKind.tk_flags or
-               kind == tk_mod.TokenKind.tk_struct or kind == tk_mod.TokenKind.tk_union:
+            if kind == tk_mod.TokenKind.at:
+                in_decorator = true
+                decorator_depth = 0
+            else if kind == tk_mod.TokenKind.lbracket and in_decorator:
+                decorator_depth += 1
+            else if kind == tk_mod.TokenKind.rbracket and in_decorator:
+                if decorator_depth > 0:
+                    decorator_depth -= 1
+                if decorator_depth == 0:
+                    in_decorator = false
+            if seen_fn_name and kind == tk_mod.TokenKind.lparen:
+                in_param_list = true
+                param_paren_depth = 1
+                seen_fn_name = false
+            else if in_param_list and kind == tk_mod.TokenKind.lparen:
+                param_paren_depth += 1
+            else if in_param_list and kind == tk_mod.TokenKind.rparen:
+                if param_paren_depth > 0:
+                    param_paren_depth -= 1
+                if param_paren_depth == 0:
+                    in_param_list = false
+            if kind == tk_mod.TokenKind.tk_enum or kind == tk_mod.TokenKind.tk_flags:
                 in_enum_body = true
                 enum_depth = 0
+                prev_is_decl = true
+            else if kind == tk_mod.TokenKind.tk_struct or kind == tk_mod.TokenKind.tk_union:
+                in_struct_body = true
+                struct_depth = 0
                 prev_is_decl = true
             else:
                 if kind == tk_mod.TokenKind.tk_extending:
@@ -718,6 +914,8 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                     if snapshot_is_decl_kind(kind):
                         prev_is_decl = true
                         prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
+                        if kind == tk_mod.TokenKind.tk_function or kind == tk_mod.TokenKind.tk_async:
+                            seen_fn_keyword = true
                     else:
                         prev_is_decl = false
 
@@ -726,8 +924,18 @@ public function snapshot_semantic_entries(source: str) -> string.String:
             token_type = TOKEN_NAMESPACE
         if kind == tk_mod.TokenKind.identifier:
             let lexeme = cursor.token_text(source, tok)
-            var raw_type = classify_identifier(lexeme, ref_of(analysis), ref_of(param_names))
-            if in_import_path and raw_type == TOKEN_VARIABLE:
+            var raw_type = classify_identifier(lexeme, ref_of(analysis))
+            if readonly_names.contains(lexeme) and raw_type == TOKEN_VARIABLE:
+                is_readonly = true
+            if in_param_list and raw_type == TOKEN_VARIABLE:
+                token_type = TOKEN_PARAMETER
+                is_decl = true
+                is_readonly = true
+            else if in_decorator and decorator_depth == 1:
+                token_type = TOKEN_DECORATOR
+                is_decl = false
+                is_readonly = false
+            else if in_import_path and raw_type == TOKEN_VARIABLE:
                 token_type = TOKEN_NAMESPACE
             else if in_enum_body and enum_depth == 1:
                 if raw_type == TOKEN_VARIABLE:
@@ -735,15 +943,27 @@ public function snapshot_semantic_entries(source: str) -> string.String:
                 else:
                     token_type = raw_type
                 is_decl = true
+            else if in_struct_body and struct_depth == 1:
+                token_type = raw_type
             else:
                 token_type = raw_type
-                if prev_was_dot and raw_type != TOKEN_FUNCTION and raw_type != TOKEN_NAMESPACE and raw_type != TOKEN_TYPE:
-                    token_type = TOKEN_METHOD
+                if prev_was_dot:
+                    if prev_ident_lexeme.len > 0 and analysis.static_member_types.contains(prev_ident_lexeme):
+                        token_type = TOKEN_ENUM_MEMBER
+                        is_decl = false
+                    else if raw_type != TOKEN_FUNCTION and raw_type != TOKEN_NAMESPACE and raw_type != TOKEN_TYPE:
+                        token_type = TOKEN_METHOD
                 else:
                     if in_extending and extending_depth >= 1 and is_decl:
                         token_type = TOKEN_METHOD
             prev_was_dot = false
+            prev_ident_lexeme = lexeme
+            if seen_fn_keyword:
+                seen_fn_name = true
+                seen_fn_keyword = false
             if in_enum_body and enum_depth == 1:
+                is_decl = true
+            if in_struct_body and struct_depth == 1:
                 is_decl = true
         else:
             if kind == tk_mod.TokenKind.dot:
@@ -755,12 +975,27 @@ public function snapshot_semantic_entries(source: str) -> string.String:
             if in_enum_body and enum_depth == 1:
                 token_type = TOKEN_ENUM_MEMBER
                 is_decl = true
+            else if in_struct_body and struct_depth == 1:
+                pass
+            else if is_readonly:
+                pass
             else:
                 ti += 1
                 continue
         if token_type == TOKEN_PARAMETER:
-            ti += 1
-            continue
+            if in_enum_body and enum_depth == 1:
+                token_type = TOKEN_ENUM_MEMBER
+                is_decl = true
+            else if in_struct_body and struct_depth == 1:
+                token_type = TOKEN_VARIABLE
+                is_decl = true
+            else if in_param_list:
+                pass
+            else if is_decl:
+                token_type = TOKEN_VARIABLE
+            else:
+                ti += 1
+                continue
         if token_type == TOKEN_STRING:
             # Skip heredoc markers so TextMate grammar handles them uniformly.
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
