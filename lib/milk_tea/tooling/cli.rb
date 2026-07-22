@@ -1756,16 +1756,12 @@ module MilkTea
           preferred_backend_kind = ::Regexp.last_match(1).downcase
         when "--adapter-path"
           adapter_path = @argv.shift
-          unless adapter_path && File.file?(adapter_path)
-            @err.puts("dap: adapter path not found: #{adapter_path}")
-            return 1
-          end
-          adapter_command =
-            if adapter_path.end_with?(".rb")
-              [RbConfig.ruby, File.expand_path(adapter_path)]
-            else
-              [File.expand_path(adapter_path)]
-            end
+          adapter_command = resolve_adapter_path(adapter_path)
+          return 1 unless adapter_command
+        when /\A--adapter-path=(.+)\z/
+          adapter_path = ::Regexp.last_match(1)
+          adapter_command = resolve_adapter_path(adapter_path)
+          return 1 unless adapter_command
         else
           if arg.start_with?("-")
             @err.puts("dap: unknown option #{arg}")
@@ -1783,6 +1779,15 @@ module MilkTea
       )
       server.run
       0
+    end
+
+    def resolve_adapter_path(adapter_path)
+      unless adapter_path && File.file?(adapter_path)
+        @err.puts("dap: adapter path not found: #{adapter_path}")
+        return nil
+      end
+      expanded = File.expand_path(adapter_path)
+      adapter_path.end_with?(".rb") ? [RbConfig.ruby, expanded] : [expanded]
     end
 
     def toolchain_command
