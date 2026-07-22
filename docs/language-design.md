@@ -988,8 +988,6 @@ Implemented core modules:
 - `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. `f"..."` produces borrowed `str`; `fmt.format(f"...")` is the explicit owned-text allocation path when you need a `std.string.String`. Low-level append helpers remain implementation building blocks.
 - `std.async` provides the first-party async runtime surface.
 
-The self-hosting preparation boundary is now clear: the standard library has owned text, borrowed string helpers, explicit memory utilities, maybe/status sum types, and async runtime support. The remaining self-hosting work is not another hidden stdlib dependency; it is the actual compiler port: AST data structures, lexer, parser, type representation, semantic analysis, lowering, C generation, module loading, CLI behavior, and eventually bindgen strategy.
-
 ### Lifetime story
 
 Milk Tea should make lifetime choices explicit at the API level.
