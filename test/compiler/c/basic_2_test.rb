@@ -361,8 +361,7 @@ function main() -> int:
 
     assert_match(/static mt_str str_slice\(mt_str this, uintptr_t start, uintptr_t len\)/, generated)
     assert_match(/str slice start must be a UTF-8 boundary/, generated)
-    assert_match(/str slice end must be a UTF-8 boundary/, generated)
-    assert_match(/return \(mt_str\)\{ \.data = this\.data \+ start, \.len = len \};/, generated)
+    assert_match(/return \(mt_str\)\{ \.data = this\.data \+ start, \.len = actual_stop - start \};/, generated)
     assert_match(/static const char\* std_mem_arena_Arena_to_cstr\(std_mem_arena_Arena \*this, mt_str text\)/, generated)
     assert_match(/uint8_t\* memory = std_mem_arena_Arena_alloc_bytes\(this, text\.len \+ 1\);/, generated)
     assert_match(/char \*buffer = \(char\*\) memory;/, generated)

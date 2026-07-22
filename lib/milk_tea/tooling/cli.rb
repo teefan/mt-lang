@@ -1708,7 +1708,6 @@ module MilkTea
 
     def lsp_command
       log_level = nil
-      stdio = false
 
       until @argv.empty?
         arg = @argv.shift
@@ -1725,8 +1724,6 @@ module MilkTea
             @err.puts("lsp: invalid --log-level #{log_level.inspect} (expected trace, debug, info, warn, or error)")
             return 1
           end
-        when "--stdio"
-          stdio = true
         else
           if arg.start_with?("-")
             @err.puts("lsp: unknown option #{arg}")
