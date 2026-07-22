@@ -92,7 +92,7 @@ export class MilkTeaDebugAdapterFactory
       ? sessionCfg.backend.trim()
       : 'lldb-dap';
 
-    const args = [`--backend=${backend}`, ...cfg.extraArgs, 'dap'];
+    const args = ['dap', `--backend=${backend}`, ...cfg.extraArgs];
     if (typeof sessionCfg.adapterPath === 'string' && sessionCfg.adapterPath.trim().length > 0) {
       args.unshift(`--adapter-path=${sessionCfg.adapterPath.trim()}`);
     }
