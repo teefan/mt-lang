@@ -115,18 +115,29 @@ function buildColorResolver(theme) {
       });
     }
   }
-  rules.sort((a, b) => b.specificity - a.specificity || b.index - a.index);
 
   return function resolveToken(scopes) {
-    for (let i = scopes.length - 1; i >= 0; i--) {
-      const ts = scopes[i];
-      for (const rule of rules) {
+    let bestRule = null;
+    let bestSpec = -1;
+    let bestScopeIdx = -1;
+    for (const rule of rules) {
+      for (let i = 0; i < scopes.length; i++) {
+        const ts = scopes[i];
         if (ts === rule.scope || ts.startsWith(rule.scope + ".")) {
-          return rule;
+          if (
+            rule.specificity > bestSpec ||
+            (rule.specificity === bestSpec && i > bestScopeIdx) ||
+            (rule.specificity === bestSpec && i === bestScopeIdx && (bestRule === null || rule.index > bestRule.index))
+          ) {
+            bestRule = rule;
+            bestSpec = rule.specificity;
+            bestScopeIdx = i;
+          }
+          break;
         }
       }
     }
-    return null;
+    return bestRule;
   };
 }
 
