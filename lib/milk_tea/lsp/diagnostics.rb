@@ -7,6 +7,11 @@ module MilkTea
   module LSP
     # Collects parse and semantic errors and formats them as LSP Diagnostics
     class Diagnostics
+      class << self
+        attr_accessor :protocol, :position_encoding
+      end
+      @position_encoding = 'utf-16'
+
       def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, workspace_root_path: nil, dependency_resolution_mode: :auto, platform_override: nil, sema_snapshot: nil, strict_current_root_diagnostics: false, lint_tier: :full)
         total_start = perf_logging? ? monotonic_time : nil
         diagnostics = []
@@ -86,8 +91,7 @@ module MilkTea
                            .each { |diagnostic| diagnostics << format_tooling_diagnostic(diagnostic, stage: 'sema') }
             sema_ms = elapsed_ms(sema_start) if sema_start
           rescue StandardError => e
-            warn "Error collecting diagnostics: #{e.message}"
-            warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
+            log_diagnostics_warning("Error collecting diagnostics: #{e.message}")
           end
 
           begin
@@ -109,14 +113,12 @@ module MilkTea
               strict_root_ms = elapsed_ms(strict_root_start) if strict_root_start
             end
           rescue StandardError => e
-            warn "Error collecting strict root diagnostics: #{e.message}"
-            warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
+            log_diagnostics_warning("Error collecting strict root diagnostics: #{e.message}")
           end
         rescue MilkTea::LexError => e
           diagnostics << format_error(e)
         rescue StandardError => e
-          warn "Error collecting diagnostics: #{e.message}"
-          warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
+          log_diagnostics_warning("Error collecting diagnostics: #{e.message}")
         end
 
         # Lint warnings (severity: 2 = Warning)
@@ -137,8 +139,7 @@ module MilkTea
           # Best-effort only while the user is mid-edit; lex/parse failures are
           # already reported by the main diagnostics path.
         rescue StandardError => e
-          warn "Error collecting lint diagnostics: #{e.message}"
-          warn "  #{e.backtrace.first(6).join("\n  ")}" if e.backtrace
+          log_diagnostics_warning("Error collecting lint diagnostics: #{e.message}")
         end
 
         { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot }
@@ -364,7 +365,7 @@ module MilkTea
           },
           severity: lsp_severity,
           code: diagnostic.code,
-          message: diagnostic.message.to_s,
+          message: diagnostic_message_to_client(diagnostic.message.to_s, diagnostic.code),
           source: 'milk-tea',
           data: {
             stage: stage
@@ -416,6 +417,7 @@ module MilkTea
         length = extract_length(error)
         start_char = [column.to_i - 1, 0].max
         end_char = start_char + [length.to_i, 1].max
+        code = diagnostic_code(error)
 
         diagnostic = {
           range: {
@@ -429,8 +431,8 @@ module MilkTea
             }
           },
           severity: 1,  # Error
-          code: diagnostic_code(error),
-          message: error.message.to_s,
+          code: code,
+          message: diagnostic_message_to_client(error.message.to_s, code),
           source: 'milk-tea',
           data: {
             stage: diagnostic_stage(error)
@@ -449,6 +451,7 @@ module MilkTea
         line_index = [import.line.to_i - 1, 0].max
         start_char = [column.to_i - 1, 0].max
         end_char = start_char + [length.to_i, 1].max
+        code = diagnostic_code(error)
 
         {
           range: {
@@ -462,8 +465,8 @@ module MilkTea
             }
           },
           severity: 1,
-          code: diagnostic_code(error),
-          message: error.message.to_s,
+          code: code,
+          message: diagnostic_message_to_client(error.message.to_s, code),
           source: 'milk-tea',
           data: {
             stage: diagnostic_stage(error)
@@ -550,6 +553,57 @@ module MilkTea
           error.length || 1
         else
           1
+        end
+      end
+
+      def self.log_diagnostics_warning(message)
+        return unless @protocol
+
+        @protocol.write_notification('window/logMessage', {
+          type: 2,
+          message: message,
+        })
+      rescue StandardError
+        nil
+      end
+
+      def self.diagnostic_message_to_client(message, code)
+        return message unless message.is_a?(String)
+
+        code_spans = []
+        if code.to_s.start_with?('sema')
+          message.scan(/`([^`]+)`/) { |m| code_spans << m[0] }
+          message.scan(/'([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)'/) { |m| code_spans << m[0] unless code_spans.include?(m[0]) }
+        end
+
+        return message if code_spans.empty?
+
+        markdown = message.gsub(/`([^`]+)`/, '`\1`')
+        { kind: 'markdown', value: markdown }
+      end
+
+      def self.client_char_to_internal(line_text, client_char)
+        return client_char if @position_encoding == 'utf-16'
+
+        case @position_encoding
+        when 'utf-8'
+          bytes_seen = 0
+          utf16_count = 0
+          line_text.each_char do |ch|
+            break if bytes_seen >= client_char
+            bytes_seen += ch.bytesize
+            utf16_count += ch.ord > 0xFFFF ? 2 : 1
+          end
+          utf16_count
+        when 'utf-32'
+          utf16_count = 0
+          line_text.each_char.with_index do |ch, idx|
+            break if idx >= client_char
+            utf16_count += ch.ord > 0xFFFF ? 2 : 1
+          end
+          utf16_count
+        else
+          client_char
         end
       end
     end

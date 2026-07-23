@@ -11,14 +11,17 @@ module MilkTea
         @root_uri = params['rootUri']
         @client_capabilities = params['capabilities'] || {}
         @workspace.workspace_root_path = uri_to_path(@root_uri)
+        negotiate_position_encoding(params)
         apply_configuration_settings(params['initializationOptions'])
         apply_configuration_settings(params['settings'])
         {
           capabilities: {
+            positionEncoding: @position_encoding,
             textDocumentSync: {
               openClose: true,
               change: 2,
-              save: { includeText: true }
+              save: { includeText: true },
+              willSaveWaitUntil: true
             },
             hoverProvider: true,
             definitionProvider: true,
@@ -90,6 +93,22 @@ module MilkTea
             }
           }
         }
+      end
+
+      def negotiate_position_encoding(params)
+        client_encodings = params.dig('capabilities', 'general', 'positionEncodings')
+        if client_encodings.is_a?(Array)
+          @position_encoding = if client_encodings.include?('utf-8')
+                                 'utf-8'
+                               elsif client_encodings.include?('utf-32')
+                                 'utf-32'
+                               else
+                                 'utf-16'
+                               end
+        else
+          @position_encoding = 'utf-16'
+        end
+        Diagnostics.position_encoding = @position_encoding
       end
 
       def handle_initialized(_params)

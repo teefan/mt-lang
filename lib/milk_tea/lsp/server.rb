@@ -6,6 +6,7 @@ require 'digest'
 require 'pathname'
 require 'set'
 require 'thread'
+require 'timeout'
 require 'uri'
 
 
@@ -187,6 +188,7 @@ module MilkTea
         @format_mode = :tidy
         @dependency_resolution_mode = :auto
         @platform_override = nil
+        @position_encoding = 'utf-16'
         @handlers = {}
         @diagnostic_report_cache = {}
         @workspace_diagnostic_cache = {}
@@ -215,6 +217,8 @@ module MilkTea
         @diagnostics_workers = []
         @cancelled_requests_mutex = Mutex.new
         @cancelled_request_ids = Set.new
+        Diagnostics.protocol = @protocol
+        Diagnostics.position_encoding = @position_encoding
         register_handlers
         start_diagnostics_workers
       end
@@ -282,6 +286,7 @@ module MilkTea
         @handlers['textDocument/didChange'] = method(:handle_did_change)
         @handlers['textDocument/didClose']  = method(:handle_did_close)
         @handlers['textDocument/didSave']   = method(:handle_did_save)
+        @handlers['textDocument/willSaveWaitUntil'] = method(:handle_will_save_wait_until)
 
         # IDE features
         @handlers['textDocument/hover']             = method(:handle_hover)
@@ -346,7 +351,7 @@ module MilkTea
           handle_notification(method_name, params)
         end
       rescue StandardError => e
-        warn "Error processing message: #{e.message}"
+        log_message(:warning, "Error processing message: #{e.message}")
         @protocol.write_error(id, -32_603, 'Internal server error') if id && message.key?('method')
       end
 
@@ -379,8 +384,7 @@ module MilkTea
             @protocol.write_response(id, result)
           end
         rescue StandardError => e
-          warn "Error in handler for #{method_name}: #{e.message}"
-          warn e.backtrace.first(3).join("\n")
+          log_message(:warning, "Error in handler for #{method_name}: #{e.message}")
           @protocol.write_error(id, -32_603, "Internal error: #{e.message}")
         ensure
           clear_cancelled_request(id)
@@ -401,7 +405,7 @@ module MilkTea
             warn "[LSP perf] ntf #{method_name} #{elapsed_ms}ms#{detail}"
           end
         rescue StandardError => e
-          warn "Error in notification handler for #{method_name}: #{e.message}"
+          log_message(:warning, "Error in notification handler for #{method_name}: #{e.message}")
         end
       end
     end
