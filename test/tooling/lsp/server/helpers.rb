@@ -15,11 +15,12 @@ module LSPServerTestHelpers
   LIB_DIR = File.join(ROOT_DIR, "lib").freeze
 
   class << self
-    attr_accessor :_shared_client, :_shared_pid
+    attr_accessor :_global_docs
   end
 
-  def self.ensure_shared_server!
-    return if self._shared_client
+  def self.ensure_lsp_server_for(klass)
+    @_servers ||= {}
+    return if @_servers[klass]
 
     stdin_read, stdin_write = IO.pipe
     stdout_read, stdout_write = IO.pipe
@@ -33,12 +34,13 @@ module LSPServerTestHelpers
     stdin_read.close
     stdout_write.close
 
-    client = LSPClient.new(stdin_write, stdout_read)
-    client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
-    client.send_notification("initialized", {})
-
-    self._shared_client = client
-    self._shared_pid = pid
+    raw = LSPClient.new(stdin_write, stdout_read)
+    @_servers[klass] = {
+      client: LSPTrackingClient.new(raw),
+      docs:  Set.new,
+      pid:,
+      io: [stdin_write, stdout_read],
+    }
 
     Minitest.after_run do
       stdin_write&.close rescue nil
@@ -48,14 +50,28 @@ module LSPServerTestHelpers
     end
   end
 
-  def teardown
-    ObjectSpace.each_object(MilkTea::LSP::Server) do |server|
-      server.send(:handle_shutdown, nil)
-    rescue StandardError
-      nil
+  class LSPTrackingClient < SimpleDelegator
+    def send_notification(method, params = {})
+      if method == "textDocument/didOpen"
+        uri = params.dig("textDocument", "uri")
+        LSPServerTestHelpers._global_docs << uri if LSPServerTestHelpers._global_docs
+      end
+      __getobj__.send_notification(method, params)
     end
+  end
 
-    super
+  def with_lsp_server(&block)
+    LSPServerTestHelpers.ensure_lsp_server_for(self.class)
+    server_state = LSPServerTestHelpers.instance_variable_get(:@_servers)[self.class]
+    LSPServerTestHelpers._global_docs = server_state[:docs]
+
+    server_state[:docs].each do |doc_uri|
+      server_state[:client].send_notification("textDocument/didClose",
+        { "textDocument" => { "uri" => doc_uri } })
+    end
+    server_state[:docs].clear
+
+    block.call(server_state[:client])
   end
 
   class RecordingProtocol
@@ -132,12 +148,8 @@ module LSPServerTestHelpers
       write_message({ jsonrpc: "2.0", method: method, params: params })
     end
 
-    private
-
-    def write_message(message)
-      json = JSON.dump(message)
-      @stdin.write("Content-Length: #{json.bytesize}\r\n\r\n#{json}")
-      @stdin.flush
+    def get_logged_lines
+      @log_lines ||= []
     end
 
     def read_until_response(expected_id, timeout: 5)
@@ -157,36 +169,20 @@ module LSPServerTestHelpers
       loop do
         line = @stdout.gets
         return nil if line.nil?
-
         stripped = line.chomp.sub(/\r\z/, "")
         break if stripped.empty?
-
         key, value = stripped.split(":", 2)
         headers[key.strip] = value.strip
       end
-
       content_length = headers["Content-Length"]&.to_i
       return nil if content_length.nil? || content_length <= 0
-
       JSON.parse(@stdout.read(content_length))
     end
-  end
 
-  class SharedLSPClient
-    def initialize(delegate)
-      @delegate = delegate
-    end
-
-    def send_request(method, params = {})
-      return @delegate.send_request(method, params) unless method == "initialize"
-
-      {}
-    end
-
-    def send_notification(method, params = {})
-      return if method == "initialized"
-
-      @delegate.send_notification(method, params)
+    def write_message(message)
+      json = JSON.dump(message)
+      @stdin.write("Content-Length: #{json.bytesize}\r\n\r\n#{json}")
+      @stdin.flush
     end
   end
 
@@ -809,8 +805,9 @@ function main(value: int) -> int:
   end
 
   def assert_embedded_heredoc_body_has_no_string_semantic_tokens(source, uri)
-    with_server do |client|
+    with_lsp_server do |client|
       init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
@@ -846,90 +843,4 @@ function main(value: int) -> int:
     end or flunk("expected semantic token entry for #{lexeme.inspect} on line #{line}")
   end
 
-  def with_shared_server
-    LSPServerTestHelpers.ensure_shared_server!
-    client = SharedLSPClient.new(LSPServerTestHelpers._shared_client)
-    yield client
-  end
-
-  def with_server
-    stdin_read, stdin_write = IO.pipe
-    stdout_read, stdout_write = IO.pipe
-
-    pid = spawn(
-      RbConfig.ruby, "-I", LIB_DIR,
-      "-e", "require 'milk_tea'; MilkTea::LSP::Server.new.run",
-      in: stdin_read,
-      out: stdout_write,
-      err: File::NULL,
-    )
-
-    stdin_read.close
-    stdout_write.close
-
-    client = LSPClient.new(stdin_write, stdout_read)
-    yield client
-  ensure
-    stdin_write&.close
-    stdout_read&.close
-    Process.kill("TERM", pid) rescue nil
-    Process.wait(pid) rescue nil
-  end
-
-  def with_live_server(&block)
-    server_state = LSPServerTestHelpers.live_server_state_for(self.class)
-    unless server_state[:client]
-      stdin_read, stdin_write = IO.pipe
-      stdout_read, stdout_write = IO.pipe
-      server_state[:pid] = spawn(
-        RbConfig.ruby, "-I", LIB_DIR,
-        "-e", "require 'milk_tea'; MilkTea::LSP::Server.new.run",
-        in: stdin_read, out: stdout_write, err: File::NULL,
-      )
-      stdin_read.close
-      stdout_write.close
-      raw_client = LSPClient.new(stdin_write, stdout_read)
-      server_state[:client] = TrackingLSPClient.new(raw_client, server_state)
-      server_state[:docs] = Set.new
-      server_state[:io] = [stdin_write, stdout_read]
-      Minitest.after_run do
-        stdin_write&.close rescue nil
-        stdout_read&.close rescue nil
-        Process.kill("TERM", server_state[:pid]) rescue nil
-        Process.wait(server_state[:pid]) rescue nil
-      end
-    end
-
-    server_state[:docs].each do |doc_uri|
-      server_state[:client].send_notification("textDocument/didClose",
-        { "textDocument" => { "uri" => doc_uri } })
-    end
-    server_state[:docs].clear
-
-    block.call(server_state[:client])
-  end
-
-  class TrackingLSPClient < SimpleDelegator
-    def initialize(delegate, server_state)
-      super(delegate)
-      @server_state = server_state
-    end
-
-    def send_notification(method, params = {})
-      if method == "textDocument/didOpen"
-        uri = params.dig("textDocument", "uri")
-        @server_state[:docs] << uri if uri
-      end
-      __getobj__.send_notification(method, params)
-    end
-  end
-
-  def self.live_server_state_for(klass)
-    @_live_states ||= {}
-    @_live_states[klass] ||= {}
-  end
-
-  def track_live_doc(uri)
-    LSPServerTestHelpers.live_server_state_for(self.class)[:docs] << uri
-  end
 end

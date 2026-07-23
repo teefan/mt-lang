@@ -217,6 +217,8 @@ module MilkTea
         @diagnostics_workers = []
         @cancelled_requests_mutex = Mutex.new
         @cancelled_request_ids = Set.new
+        @_initialize_called = false
+        @_indexing_thread = nil
         Diagnostics.protocol = @protocol
         Diagnostics.position_encoding = @position_encoding
         register_handlers

@@ -6,7 +6,7 @@ class SignatureHelpTest < Minitest::Test
   include LSPServerTestHelpers
 
   def test_signature_help_returns_function_signature_at_call_site
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_sighel_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -28,7 +28,7 @@ class SignatureHelpTest < Minitest::Test
   end
 
   def test_signature_help_tracks_active_parameter_by_comma_count
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_sighel2_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -45,7 +45,7 @@ class SignatureHelpTest < Minitest::Test
   end
 
   def test_signature_help_includes_doc_comment_and_parameter_docs
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_sighel_structured_docs_test.mt"
       client.send_notification("textDocument/didOpen", {

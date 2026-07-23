@@ -5,7 +5,7 @@ require_relative "helpers"
 class FoldingRangeTest < Minitest::Test
   include LSPServerTestHelpers
   def test_folds_function_body
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_folding_test.mt"
       source = <<~MT
@@ -32,7 +32,7 @@ class FoldingRangeTest < Minitest::Test
   end
 
   def test_folds_if_else_blocks
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_folding_if_test.mt"
       source = <<~MT
@@ -59,7 +59,7 @@ class FoldingRangeTest < Minitest::Test
   end
 
   def test_folds_while_loop
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_folding_while_test.mt"
       source = <<~MT
@@ -82,7 +82,7 @@ class FoldingRangeTest < Minitest::Test
   end
 
   def test_folds_match_arms
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_folding_match_test.mt"
       source = <<~MT
@@ -108,7 +108,7 @@ class FoldingRangeTest < Minitest::Test
   end
 
   def test_folds_struct_enum
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_folding_struct_test.mt"
       source = <<~MT
@@ -134,7 +134,7 @@ class FoldingRangeTest < Minitest::Test
   end
 
   def test_folds_import_group
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_folding_import_test.mt"
       source = <<~MT
@@ -160,7 +160,7 @@ class FoldingRangeTest < Minitest::Test
   end
 
   def test_folds_multiline_comment
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_folding_comment_test.mt"
       source = <<~MT
@@ -186,7 +186,7 @@ class FoldingRangeTest < Minitest::Test
   end
 
   def test_no_folds_on_empty_file
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_folding_empty_test.mt"
       client.send_notification("textDocument/didOpen", {

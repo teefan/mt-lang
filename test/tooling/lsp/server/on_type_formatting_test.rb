@@ -31,7 +31,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── block introducers ──────────────────────────────────────────────
 
   def test_enter_after_function_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "function main() -> int:\n\n    return 0\n"
       open_doc(client, uri, source)
@@ -46,7 +46,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_if_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    if x == 1:\n\n        x = 2\n"
       open_doc(client, uri, source)
@@ -59,7 +59,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_else_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    else:\n\n        x = 3\n"
       open_doc(client, uri, source)
@@ -72,7 +72,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_elif_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    elif x == 2:\n\n        x = 3\n"
       open_doc(client, uri, source)
@@ -85,7 +85,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_while_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    while true:\n\n        pass\n"
       open_doc(client, uri, source)
@@ -98,7 +98,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_for_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    for i in 0..n:\n\n        pass\n"
       open_doc(client, uri, source)
@@ -111,7 +111,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_match_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    match val:\n\n        1: pass\n"
       open_doc(client, uri, source)
@@ -124,7 +124,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_struct_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "struct Point:\n\n    x: int\n"
       open_doc(client, uri, source)
@@ -137,7 +137,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_unsafe_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    unsafe:\n\n        pass\n"
       open_doc(client, uri, source)
@@ -150,7 +150,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_defer_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    defer:\n\n        pass\n"
       open_doc(client, uri, source)
@@ -163,7 +163,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_extending_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "extending Point:\n\n    function zero() -> int:\n"
       open_doc(client, uri, source)
@@ -178,7 +178,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── regular statements (same indent) ────────────────────────────────
 
   def test_enter_after_statement_keeps_indent
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    let x = 1\n\n    x = 3\n"
       open_doc(client, uri, source)
@@ -191,7 +191,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_inside_block_keeps_indent
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "        x = 2\n\n        y = 3\n"
       open_doc(client, uri, source)
@@ -206,7 +206,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── colon without block keyword ────────────────────────────────────
 
   def test_enter_after_parameter_colon_does_not_increase_indent
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    some_label:\n\n    x = 3\n"
       open_doc(client, uri, source)
@@ -220,7 +220,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_typed_let_does_not_increase_indent
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    let x: int = 1\n\n    pass\n"
       open_doc(client, uri, source)
@@ -235,7 +235,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── same indent → no edit ─────────────────────────────────────────
 
   def test_enter_with_already_correct_indent_returns_empty
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    let x = 1\n    \n    x = 3\n"
       open_doc(client, uri, source)
@@ -248,7 +248,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── walk back past empty lines ─────────────────────────────────────
 
   def test_enter_after_empty_line_looks_back_to_block_introducer
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    if x == 1:\n        x = 2\n\n\n        pass\n"
       open_doc(client, uri, source)
@@ -261,7 +261,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_after_empty_line_looks_back_to_statement
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    let x = 1\n\n\n    x = 3\n"
       open_doc(client, uri, source)
@@ -274,7 +274,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_with_only_blank_lines_above_returns_empty
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "\n\n\n\n    code\n"
       open_doc(client, uri, source)
@@ -287,7 +287,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── non-Enter character ────────────────────────────────────────────
 
   def test_non_newline_character_returns_empty
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    let x = 1\n"
       open_doc(client, uri, source)
@@ -300,7 +300,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── boundary positions ─────────────────────────────────────────────
 
   def test_position_zero_returns_empty
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "function main() -> int:\n    return 0\n"
       open_doc(client, uri, source)
@@ -311,7 +311,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_position_beyond_length_returns_empty
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "function main() -> int:\n    return 0\n"
       open_doc(client, uri, source)
@@ -324,7 +324,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── public keyword ─────────────────────────────────────────────────
 
   def test_enter_after_public_function_indents
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "public function main() -> int:\n\n    return 0\n"
       open_doc(client, uri, source)
@@ -339,7 +339,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── Enter at start of dedented line (block exit) ────────────────────
 
   def test_enter_at_start_of_dedented_line_uses_below_indent
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "        x = 2\n\n    x = 3\n"
       open_doc(client, uri, source)
@@ -352,7 +352,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_at_start_of_dedented_line_multiple_levels
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "            y = 9\n\n    x = 3\n"
       open_doc(client, uri, source)
@@ -365,7 +365,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_between_block_body_and_else_keeps_body_indent
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "        x = 2\n\n    else:\n"
       open_doc(client, uri, source)
@@ -378,7 +378,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_between_block_body_and_elif_keeps_body_indent
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "        x = 2\n\n    elif y == 1:\n"
       open_doc(client, uri, source)
@@ -391,7 +391,7 @@ class OnTypeFormattingTest < Minitest::Test
   end
 
   def test_enter_at_start_of_same_indent_line_stays
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    let x = 1\n\n    let y = 2\n"
       open_doc(client, uri, source)
@@ -406,7 +406,7 @@ class OnTypeFormattingTest < Minitest::Test
   # ── unrealistic indent correction ──────────────────────────────────
 
   def test_indent_corrected_when_wrong
-    with_shared_server do |client|
+    with_lsp_server do |client|
       uri = next_uri
       source = "    if x == 1:\n  \n        pass\n"
       open_doc(client, uri, source)

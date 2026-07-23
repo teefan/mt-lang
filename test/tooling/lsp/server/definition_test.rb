@@ -6,7 +6,7 @@ class DefinitionTest < Minitest::Test
   include LSPServerTestHelpers
 
   def test_implementation_on_interface_returns_implementing_type_locations
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_interface_implementation_test.mt"
       source = SOURCE_WITH_LOCAL_INTERFACES
@@ -36,7 +36,7 @@ class DefinitionTest < Minitest::Test
   end
 
   def test_implementation_on_interface_method_returns_implementing_method_locations
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_interface_method_implementation_test.mt"
       source = SOURCE_WITH_LOCAL_INTERFACES
@@ -97,7 +97,7 @@ class DefinitionTest < Minitest::Test
       contracts_uri = path_to_uri(contracts_path)
       entities_uri = path_to_uri(entities_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -129,7 +129,7 @@ class DefinitionTest < Minitest::Test
   end
 
   def test_declaration_and_type_definition_delegate_to_definition_location
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_decl_type_def_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -172,7 +172,7 @@ class DefinitionTest < Minitest::Test
       shared_uri = path_to_uri(shared_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -220,7 +220,7 @@ class DefinitionTest < Minitest::Test
       lib_uri = path_to_uri(lib_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -282,7 +282,7 @@ class DefinitionTest < Minitest::Test
       lib_uri = path_to_uri(lib_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -349,7 +349,7 @@ class DefinitionTest < Minitest::Test
       foo_uri = path_to_uri(foo_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -408,7 +408,7 @@ class DefinitionTest < Minitest::Test
       foo_uri = path_to_uri(foo_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -438,7 +438,7 @@ class DefinitionTest < Minitest::Test
   end
 
   def test_definition_returns_field_declaration_for_member_access_segments
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_member_chain_definition_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -457,7 +457,7 @@ class DefinitionTest < Minitest::Test
   end
 
   def test_definition_returns_current_module_field_declaration_in_tetris
-    with_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
       client.send_notification("initialized", {})
 

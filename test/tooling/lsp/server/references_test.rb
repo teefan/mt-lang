@@ -6,7 +6,7 @@ class ReferencesTest < Minitest::Test
   include LSPServerTestHelpers
 
   def test_references_finds_all_occurrences_of_a_name
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -67,7 +67,7 @@ class ReferencesTest < Minitest::Test
       other_uri = path_to_uri(other_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -113,7 +113,7 @@ class ReferencesTest < Minitest::Test
           return value
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_references_shadowed_local.mt"
       client.send_notification("textDocument/didOpen", {
@@ -135,7 +135,7 @@ class ReferencesTest < Minitest::Test
   end
 
   def test_document_highlight_returns_all_occurrences_in_file
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_highlight_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -162,7 +162,7 @@ class ReferencesTest < Minitest::Test
           return value
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_highlight_shadowed_local.mt"
       client.send_notification("textDocument/didOpen", {
@@ -193,7 +193,7 @@ class ReferencesTest < Minitest::Test
       root_uri = path_to_uri(dir)
       watched_uri = path_to_uri(watched_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
 

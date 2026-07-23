@@ -102,6 +102,11 @@ module MilkTea
         warn "LSP diagnostics worker shutdown error: #{e.message}"
       end
 
+      def drain_diagnostics_queue
+        @diagnostics_queue.clear
+        nil
+      end
+
       def process_diagnostics_for_uri(uri)
         loop do
           snapshot = nil

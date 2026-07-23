@@ -8,16 +8,24 @@ module MilkTea
 
       def handle_initialize(params)
         @pull_diagnostics_active = true
-        if @root_uri
+        if @_initialize_called
+          @_indexing_thread&.join rescue nil
+          @_indexing_thread = nil
           @workspace.reset
           @diagnostic_report_cache.clear
           @workspace_diagnostic_cache.clear
+          drain_diagnostics_queue
+          @diagnostics_pending.clear
+          @diagnostics_enqueued.clear
+          @diagnostics_last_scheduled_hash.clear
+          @diagnostics_generation.clear
           @semantic_tokens_cache.clear
           @semantic_tokens_delta_cache.clear
           @fixall_cache.clear
           @definition_file_token_cache.clear
           @definition_file_ast_cache.clear
         end
+        @_initialize_called = true
         @root_uri = params['rootUri']
         @client_capabilities = params['capabilities'] || {}
         @workspace.workspace_root_path = uri_to_path(@root_uri)
@@ -125,7 +133,7 @@ module MilkTea
         pull_client_configuration if @client_capabilities&.dig('workspace', 'configuration')
         return nil unless @root_uri
 
-        Thread.new do
+        @_indexing_thread = Thread.new do
           progress = create_progress(title: 'Milk Tea LSP: Indexing workspace', message: 'Scanning source files...')
           @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) }
           document_count = @workspace.all_documents.length

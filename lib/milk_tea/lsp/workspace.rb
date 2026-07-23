@@ -85,6 +85,16 @@ module MilkTea
 
       def reset
         @indexed_documents.clear
+        @tokens_cache.clear
+        @last_good_tokens_cache.clear
+        @ast_cache.clear
+        @facts_cache.clear
+        @tooling_snapshot_cache.clear
+        @symbols_cache.clear
+        @doc_comments_cache.clear
+        @last_good_facts_cache.clear
+        @last_good_tooling_snapshot_cache.clear
+        @document_module_names.clear
         @shared_module_cache.clear
         @definition_index.clear
         @identifier_index.clear
@@ -98,6 +108,7 @@ module MilkTea
         @dependency_imports_by_uri.clear
         @reverse_import_dependents.clear
         @diagnostics_cache.clear
+        @facts_generation.clear
       end
 
       include WorkspaceStore

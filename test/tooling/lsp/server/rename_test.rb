@@ -6,7 +6,7 @@ class RenameTest < Minitest::Test
   include LSPServerTestHelpers
 
   def test_prepare_rename_returns_range_and_placeholder
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_prep_rename_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -24,7 +24,7 @@ class RenameTest < Minitest::Test
   end
 
   def test_rename_produces_workspace_edit_for_all_occurrences
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_rename_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -53,7 +53,7 @@ class RenameTest < Minitest::Test
           return value
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_rename_shadowed_local.mt"
       client.send_notification("textDocument/didOpen", {
@@ -89,7 +89,7 @@ class RenameTest < Minitest::Test
           return value
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_rename_shadowed_local_usage.mt"
       client.send_notification("textDocument/didOpen", {
@@ -138,7 +138,7 @@ class RenameTest < Minitest::Test
       root_uri = path_to_uri(dir)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -191,7 +191,7 @@ class RenameTest < Minitest::Test
       root_uri = path_to_uri(dir)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -227,7 +227,7 @@ class RenameTest < Minitest::Test
           return Scene.lobby
     MT
 
-    with_server do |client|
+    with_lsp_server do |client|
       init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
 
@@ -298,7 +298,7 @@ class RenameTest < Minitest::Test
       consumer_uri = path_to_uri(consumer_path)
       unrelated_uri = path_to_uri(unrelated_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         client.send_notification("initialized", {})
@@ -370,7 +370,7 @@ class RenameTest < Minitest::Test
           return value
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_rename_fstring_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -514,7 +514,7 @@ class RenameTest < Minitest::Test
       },
     ]
 
-    with_server do |client|
+    with_lsp_server do |client|
       init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
 
@@ -564,7 +564,7 @@ class RenameTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-cross-file-rename-matrix") do |dir|
       root_uri = path_to_uri(dir)
 
-      with_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
