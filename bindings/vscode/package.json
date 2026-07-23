@@ -1,6 +1,6 @@
 {
   "name": "milk-tea-lang",
-  "displayName": "Milk Tea",
+  "displayName": "Milk Tea Programming Language",
   "description": "Language support, LSP, and DAP integration for the Milk Tea programming language (.mt files)",
   "version": "0.2.0",
   "publisher": "milk-tea-lang",
