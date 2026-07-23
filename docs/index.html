@@ -270,7 +270,16 @@ p + p{margin-top:-.25rem}
 <div class="hero">
   <h1>Milk Tea <span>Reference</span></h1>
   <p class="tagline">A statically typed, indentation-based systems language for games. Safe by default, explicit by design, compiling to <strong>beautiful C</strong>.</p>
+  <div class="code-wrap" style="margin-bottom:1rem">
+    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+    <pre><code>$ gem install mt-lang
+$ mtc run hello.mt</code></pre>
+  </div>
   <div class="badges">
+    <span class="badge">&#128230; Install: <code>gem install mt-lang</code></span>
+    <span class="badge ac"><a href="https://marketplace.visualstudio.com/items?itemName=teefan.milk-tea-lang" style="color:inherit;text-decoration:none">&#128187; VS Code Extension</a></span>
+  </div>
+  <div class="badges" style="margin-top:.5rem">
     <span class="badge">&#9889; Statically Typed</span>
     <span class="badge">&#127758; Compiles to C</span>
     <span class="badge ac">&#128274; Safe by Default</span>

@@ -1,5 +1,17 @@
 # Milk Tea
 
+A statically typed, indentation-based systems language for games.
+Compiles to readable C. Safe by default, explicit by design.
+
+```bash
+gem install mt-lang
+mtc run hello.mt
+```
+
+[VS Code extension](https://marketplace.visualstudio.com/items?itemName=teefan.milk-tea-lang) &mdash; syntax highlighting, IntelliSense, debugging
+
+---
+
 This README is the primary, implementation-focused language reference for the project.
 It is the preferred first entry point for getting to know the language.
 
