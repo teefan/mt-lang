@@ -11,7 +11,7 @@ module MilkTea
 
   def self.data_root
     @data_root ||= begin
-      if File.writable?(root.to_s)
+      if !installed_as_gem? && File.writable?(root.to_s)
         root
       else
         xdg_cache = ENV.fetch("XDG_CACHE_HOME", File.join(Dir.home, ".cache"))
@@ -19,6 +19,11 @@ module MilkTea
       end
     end
   end
+
+  def self.installed_as_gem?
+    root.to_s.match?(%r{/gems/mt-lang-})
+  end
+  private_class_method :installed_as_gem?
 
   def self.writable_root_for(root)
     resolved = Pathname.new(File.expand_path(root.to_s))
