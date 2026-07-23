@@ -11,7 +11,7 @@ class HoverTest < Minitest::Test
       source = SOURCE_WITH_HOVER_DOCS
       File.write(source_path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -47,7 +47,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_returns_interface_info_for_local_implements_clause
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
 
       uri = "file:///tmp/lsp_hover_interface_local.mt"
@@ -108,7 +108,7 @@ class HoverTest < Minitest::Test
       contracts_uri = path_to_uri(contracts_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -154,7 +154,7 @@ class HoverTest < Minitest::Test
           return value
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -185,7 +185,7 @@ class HoverTest < Minitest::Test
           return value
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -228,7 +228,7 @@ class HoverTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -259,7 +259,7 @@ class HoverTest < Minitest::Test
           return value
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -293,7 +293,7 @@ class HoverTest < Minitest::Test
           return answer + score
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -344,7 +344,7 @@ class HoverTest < Minitest::Test
           return 0
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -372,7 +372,7 @@ class HoverTest < Minitest::Test
   def test_hover_shows_builtin_default_value_signature
     source = SOURCE_WITH_FUNCTION_VALUE_AND_ZERO_SEMANTICS
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -417,7 +417,7 @@ class HoverTest < Minitest::Test
   def test_hover_shows_builtin_callable_signatures
     source = SOURCE_WITH_BUILTIN_CALLABLE_HOVER
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -475,7 +475,7 @@ class HoverTest < Minitest::Test
   def test_hover_shows_builtin_associated_hook_signatures
     source = SOURCE_WITH_ASSOCIATED_HOOK_BUILTINS
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -577,7 +577,7 @@ class HoverTest < Minitest::Test
           return 0
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -613,7 +613,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_response_stays_within_latency_budget
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -642,7 +642,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_ignores_plain_hash_comments_for_docs
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -668,7 +668,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_doc_block_requires_no_blank_line_before_definition
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -699,7 +699,7 @@ class HoverTest < Minitest::Test
       source = SOURCE_WITH_HOVER_DOCS
       File.write(source_path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -727,7 +727,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_renders_structured_doc_tag_sections
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -789,7 +789,7 @@ class HoverTest < Minitest::Test
       foo_uri = path_to_uri(foo_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -841,7 +841,7 @@ class HoverTest < Minitest::Test
       lib_uri = path_to_uri(lib_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -919,7 +919,7 @@ class HoverTest < Minitest::Test
       hover_line = main_source.lines.index { |line| line.include?("layout.default_width") }
       hover_char = main_source.lines.fetch(hover_line).index("layout") + 1
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -1008,7 +1008,7 @@ class HoverTest < Minitest::Test
       hover_char = main_source.lines.fetch(hover_line).index("layout") + 1
       board_height_char = main_source.lines.fetch(hover_line).index("board_height") + 1
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -1069,7 +1069,7 @@ class HoverTest < Minitest::Test
       hover_line = source.lines.index { |line| line.include?("return value") }
       hover_char = source.lines.fetch(hover_line).index("value") + 1
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1118,7 +1118,7 @@ class HoverTest < Minitest::Test
       hover_line = broken_source.lines.index { |line| line.include?("return value") }
       hover_char = broken_source.lines.fetch(hover_line).index("value")
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1187,7 +1187,7 @@ class HoverTest < Minitest::Test
       hover_line = healthy_source.lines.index { |line| line.include?("return value") }
       hover_char = healthy_source.lines.fetch(hover_line).index("value")
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1252,7 +1252,7 @@ class HoverTest < Minitest::Test
       hover_line = broken_source.lines.index { |line| line.include?("return value") }
       hover_char = broken_source.lines.fetch(hover_line).index("value")
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1299,7 +1299,7 @@ class HoverTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1351,7 +1351,7 @@ class HoverTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1394,7 +1394,7 @@ class HoverTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1440,7 +1440,7 @@ class HoverTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1494,7 +1494,7 @@ class HoverTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1585,7 +1585,7 @@ class HoverTest < Minitest::Test
       main_uri = path_to_uri(main_path)
       ui_uri = path_to_uri(ui_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => root_uri,
           "capabilities" => {},
@@ -1685,7 +1685,7 @@ class HoverTest < Minitest::Test
       call_line = main_source.lines.index { |line| line.include?("duel_ui.default_width") }
       call_char = main_source.lines.fetch(call_line).index("default_width") + 1
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => root_uri,
           "capabilities" => {},
@@ -1745,7 +1745,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_returns_method_info_for_method_name
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_method_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1763,7 +1763,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_formats_builtin_type_without_redundant_alias
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_builtin_type_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1781,7 +1781,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_returns_field_info_for_field_declarations
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_field_declaration_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1807,7 +1807,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_returns_field_info_for_member_chain_segments
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_member_chain_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1868,7 +1868,7 @@ class HoverTest < Minitest::Test
       foo_uri = path_to_uri(foo_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -1928,7 +1928,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_and_definition_resolve_fstring_member_access_segments_in_tetris
-    with_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1980,7 +1980,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_returns_method_info_for_member_access_segments
-    with_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -2006,7 +2006,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_returns_field_info_for_named_constructor_labels
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_named_constructor_label_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -2032,7 +2032,7 @@ class HoverTest < Minitest::Test
   end
 
   def test_hover_and_definition_resolve_imported_enum_members
-    with_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
       client.send_notification("initialized", {})
 

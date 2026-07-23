@@ -6,7 +6,7 @@ class DiagnosticsTest < Minitest::Test
   include LSPServerTestHelpers
 
   def test_did_save_republishes_diagnostics
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_save_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -251,7 +251,7 @@ class DiagnosticsTest < Minitest::Test
   end
 
   def test_document_diagnostic_returns_full_report
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -275,7 +275,7 @@ class DiagnosticsTest < Minitest::Test
   end
 
   def test_document_diagnostic_reports_syntax_errors
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_err_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -299,7 +299,7 @@ class DiagnosticsTest < Minitest::Test
   end
 
   def test_document_diagnostic_returns_unchanged_when_previous_result_matches
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_unchanged_test.mt"
       source = "function add(a: int, b: int) -> int:\n    return a + b\n"
@@ -330,7 +330,7 @@ class DiagnosticsTest < Minitest::Test
   end
 
   def test_document_diagnostic_returns_full_after_content_changes
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_change_test.mt"
       source = "function add(a: int, b: int) -> int:\n    return a + b\n"
@@ -389,7 +389,7 @@ class DiagnosticsTest < Minitest::Test
 
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -439,7 +439,7 @@ class DiagnosticsTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => path_to_uri(dir),
           "capabilities" => {},
@@ -493,7 +493,7 @@ class DiagnosticsTest < Minitest::Test
       lib_uri = path_to_uri(lib_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -553,7 +553,7 @@ class DiagnosticsTest < Minitest::Test
       lib_uri = path_to_uri(lib_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -617,7 +617,7 @@ class DiagnosticsTest < Minitest::Test
       lib_uri = path_to_uri(lib_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -682,7 +682,7 @@ class DiagnosticsTest < Minitest::Test
       helper_uri = path_to_uri(helper_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -788,7 +788,7 @@ class DiagnosticsTest < Minitest::Test
       main_path = File.join(app_src_dir, "main.mt")
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => root_uri,
           "capabilities" => {},
@@ -880,7 +880,7 @@ class DiagnosticsTest < Minitest::Test
       main_path = File.join(app_src_dir, "main.mt")
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => root_uri,
           "capabilities" => {},
@@ -943,7 +943,7 @@ class DiagnosticsTest < Minitest::Test
 
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => path_to_uri(dir),
           "capabilities" => {},
@@ -1005,7 +1005,7 @@ class DiagnosticsTest < Minitest::Test
 
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => path_to_uri(dir),
           "capabilities" => {}
@@ -1068,7 +1068,7 @@ class DiagnosticsTest < Minitest::Test
 
       File.write(main_path, main_source)
       main_uri = path_to_uri(main_path)
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => path_to_uri(dir),
           "capabilities" => {},
@@ -1117,7 +1117,7 @@ class DiagnosticsTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1143,7 +1143,7 @@ class DiagnosticsTest < Minitest::Test
   end
 
   def test_document_diagnostic_collects_errors_from_multiple_functions
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_multi_err_test.mt"
       source = <<~MT
@@ -1166,7 +1166,7 @@ class DiagnosticsTest < Minitest::Test
   end
 
   def test_document_diagnostic_sema_errors_have_accurate_line_numbers
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_err_line_test.mt"
       source = <<~MT
@@ -1193,7 +1193,7 @@ class DiagnosticsTest < Minitest::Test
   end
 
   def test_document_diagnostic_reports_attribute_target_errors_at_attribute_name
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_attribute_target_error_test.mt"
       source = <<~MT
@@ -1258,7 +1258,7 @@ class DiagnosticsTest < Minitest::Test
       MT
       File.write(main_path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -1309,7 +1309,7 @@ class DiagnosticsTest < Minitest::Test
       helper_uri = path_to_uri(helper_path)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {

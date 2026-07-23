@@ -6,7 +6,7 @@ class FormattingTest < Minitest::Test
   include LSPServerTestHelpers
 
   def test_range_formatting_returns_text_edits
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_range_fmt_test.mt"
       source = "function add(a:int,b:int)->int:\n    return a+b\n"
@@ -31,7 +31,7 @@ class FormattingTest < Minitest::Test
   end
 
   def test_full_document_formatting_returns_text_edits
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_full_fmt_test.mt"
       source = "function add(a:int,b:int)->int:\n    return a+b\n"
@@ -58,7 +58,7 @@ class FormattingTest < Minitest::Test
   end
 
   def test_full_document_formatting_returns_non_empty_for_valid_source
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_fmt_non_empty_test.mt"
       source = "const MAGIC = 42\nfunction main() -> int:\n    return MAGIC\n"

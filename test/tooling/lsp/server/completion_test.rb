@@ -62,7 +62,7 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.index { |line| line.include?("return duel_ui.") }
       dot_char = partial_source.lines.fetch(dot_line).chomp.length
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => root_uri,
           "capabilities" => {},
@@ -121,7 +121,7 @@ class CompletionTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -176,7 +176,7 @@ class CompletionTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -225,7 +225,7 @@ class CompletionTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -274,7 +274,7 @@ class CompletionTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -323,7 +323,7 @@ class CompletionTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -377,7 +377,7 @@ class CompletionTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -412,7 +412,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_returns_function_names
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -439,7 +439,7 @@ class CompletionTest < Minitest::Test
           var other = 0
           return other
     MT
-    with_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_completion_locals_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -459,7 +459,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_returns_method_names_after_dot
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_method_completion_test.mt"
       # Open valid source so analysis succeeds and is cached as last-good.
@@ -544,7 +544,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_returns_fields_and_methods_for_local_value_receiver
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_local_value_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -578,7 +578,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_uses_lexical_scope_for_shadowed_value_receiver
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_shadow_value_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -606,7 +606,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_uses_flow_refined_type_for_nullable_receiver
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_nullable_flow_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -633,7 +633,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_uses_ref_receiver_type_for_fields
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_ref_receiver_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -661,7 +661,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_uses_pointer_receiver_type_for_fields
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_ptr_receiver_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -689,7 +689,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_uses_top_level_value_receiver_type
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_top_level_value_receiver_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -718,7 +718,7 @@ class CompletionTest < Minitest::Test
   end
 
   def test_completion_uses_enclosing_receiver_for_this_in_editable_method
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_editable_this_completion_test.mt"
       client.send_notification("textDocument/didOpen", {

@@ -29,7 +29,7 @@ class SemanticTokensTest < Minitest::Test
       root_uri = path_to_uri(dir)
       main_uri = path_to_uri(main_path)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -156,7 +156,7 @@ class SemanticTokensTest < Minitest::Test
       MT
       File.write(source_path, source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         uri = path_to_uri(source_path)
         client.send_notification("textDocument/didOpen", {
@@ -233,7 +233,7 @@ class SemanticTokensTest < Minitest::Test
       main_path = File.join(app_src_dir, "main.mt")
       main_uri = path_to_uri(main_path)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", {
           "rootUri" => root_uri,
           "capabilities" => {},
@@ -293,7 +293,7 @@ class SemanticTokensTest < Minitest::Test
       MT
       File.write(source_path, source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         uri = path_to_uri(source_path)
         client.send_notification("textDocument/didOpen", {
@@ -339,7 +339,7 @@ class SemanticTokensTest < Minitest::Test
       MT
       File.write(source_path, source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         uri = path_to_uri(source_path)
         client.send_notification("textDocument/didOpen", {
@@ -379,7 +379,7 @@ class SemanticTokensTest < Minitest::Test
       MT
       File.write(source_path, source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         uri = path_to_uri(source_path)
         client.send_notification("initialized", {})
@@ -425,7 +425,7 @@ class SemanticTokensTest < Minitest::Test
       MT
       File.write(source_path, source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         uri = path_to_uri(source_path)
         client.send_notification("textDocument/didOpen", {
@@ -470,7 +470,7 @@ class SemanticTokensTest < Minitest::Test
       MT
       File.write(source_path, source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         uri = path_to_uri(source_path)
         client.send_notification("textDocument/didOpen", {
@@ -532,7 +532,7 @@ class SemanticTokensTest < Minitest::Test
       MT
       File.write(source_path, source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         uri = path_to_uri(source_path)
         client.send_notification("textDocument/didOpen", {
@@ -577,7 +577,7 @@ class SemanticTokensTest < Minitest::Test
       File.write(api_path, api_initial)
       File.write(main_path, main_source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         api_uri = path_to_uri(api_path)
         main_uri = path_to_uri(main_path)
@@ -637,7 +637,7 @@ class SemanticTokensTest < Minitest::Test
       File.write(api_path, api_initial)
       File.write(main_path, main_source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         api_uri = path_to_uri(api_path)
         main_uri = path_to_uri(main_path)
@@ -688,7 +688,7 @@ class SemanticTokensTest < Minitest::Test
           screen.draw(texture)
     MT
 
-    with_live_server do |client|
+    with_lsp_server do |client|
       init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_semantic_interface_local_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -738,7 +738,7 @@ class SemanticTokensTest < Minitest::Test
       File.write(contracts_path, contracts_source)
       File.write(main_path, main_source)
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         uri = path_to_uri(main_path)
         client.send_notification("textDocument/didOpen", {
@@ -773,7 +773,7 @@ class SemanticTokensTest < Minitest::Test
           reloaded.emit()
     MT
 
-    with_live_server do |client|
+    with_lsp_server do |client|
       init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_semantic_event_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -799,7 +799,7 @@ class SemanticTokensTest < Minitest::Test
 
 
     def test_semantic_tokens_classify_str_buffer_and_value_receiver_methods
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_str_buffer_test.mt"
         source = SOURCE_WITH_STR_BUFFER_METHODS
@@ -827,7 +827,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_array_and_span_as_types_but_array_ctor_as_function
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_generic_types_test.mt"
         source = SOURCE_WITH_GENERIC_TYPE_SURFACES
@@ -861,7 +861,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_all_generic_type_arguments_as_type_parameters
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_multi_type_argument_test.mt"
         source = SOURCE_WITH_MULTI_TYPE_ARGUMENT_SEMANTICS
@@ -909,7 +909,7 @@ class SemanticTokensTest < Minitest::Test
                 return Cache[K, V](key = key, value = value)
       MT
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_generic_methods_receiver_test.mt"
         client.send_notification("textDocument/didOpen", {
@@ -958,7 +958,7 @@ class SemanticTokensTest < Minitest::Test
             return ch == 32
       MT
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_byte_parameter_test.mt"
         client.send_notification("textDocument/didOpen", {
@@ -982,7 +982,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_ordered_map_receiver_type_parameters_and_members
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
         source_path = File.join(Dir.pwd, "std", "ordered_map.mt")
         source = File.read(source_path)
@@ -1036,7 +1036,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_binary_heap_receiver_type_parameter_and_members
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
         source_path = File.join(Dir.pwd, "std", "binary_heap.mt")
         source = File.read(source_path)
@@ -1072,7 +1072,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_priority_queue_receiver_type_parameter_and_members
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
         source_path = File.join(Dir.pwd, "std", "priority_queue.mt")
         source = File.read(source_path)
@@ -1114,7 +1114,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_ordered_set_receiver_type_parameter_and_members
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
         source_path = File.join(Dir.pwd, "std", "ordered_set.mt")
         source = File.read(source_path)
@@ -1155,7 +1155,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_parameters_named_labels_and_for_binders
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_parameter_labels_test.mt"
         source = SOURCE_WITH_PARAMETER_AND_LABEL_SEMANTICS
@@ -1190,7 +1190,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_struct_field_declarations_and_member_access
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_struct_field_test.mt"
         source = SOURCE_WITH_STRUCT_FIELD_SEMANTICS
@@ -1221,7 +1221,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_resolved_callables_for_constructors_and_callable_values
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_resolved_callable_test.mt"
         source = SOURCE_WITH_RESOLVED_CALLABLE_SEMANTICS
@@ -1251,7 +1251,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_function_values_and_bare_zero_specialization
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_function_value_zero_test.mt"
         source = SOURCE_WITH_FUNCTION_VALUE_AND_ZERO_SEMANTICS
@@ -1286,7 +1286,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_do_not_mark_user_defined_cast_or_range_as_default_library
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_user_defined_cast_range_test.mt"
         source = SOURCE_WITH_USER_DEFINED_CAST_AND_RANGE_SEMANTICS
@@ -1322,7 +1322,7 @@ class SemanticTokensTest < Minitest::Test
             )
       MT
 
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_cast_expression_parameter_test.mt"
         client.send_notification("textDocument/didOpen", {
@@ -1352,7 +1352,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_mark_builtin_associated_hooks_as_default_library
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_builtin_associated_hooks_test.mt"
         source = SOURCE_WITH_ASSOCIATED_HOOK_BUILTINS
@@ -1385,7 +1385,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_mark_attribute_reflection_builtins_as_default_library
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_attribute_reflection_test.mt"
         source = <<~MT
@@ -1465,7 +1465,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_do_not_mark_user_defined_hash_equal_order_as_default_library
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_user_defined_associated_hooks_test.mt"
         source = SOURCE_WITH_USER_DEFINED_ASSOCIATED_HOOK_NAMES
@@ -1498,7 +1498,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_do_not_classify_invalid_bare_function_reference_as_function
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_invalid_bare_function_reference_test.mt"
         source = SOURCE_WITH_INVALID_BARE_FUNCTION_REFERENCE_SEMANTICS
@@ -1519,7 +1519,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_specialized_member_calls_as_function_and_method
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
         source = SOURCE_WITH_SPECIALIZED_MEMBER_CALL_SEMANTICS
         path = File.join(Dir.pwd, "tmp", "lsp_semantic_specialized_member_calls_test.mt")
@@ -1547,7 +1547,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_generic_parameter_shadowing_import_alias_as_parameter
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
         source = SOURCE_WITH_GENERIC_PARAMETER_SHADOWING_IMPORT_SEMANTICS
         path = File.join(Dir.pwd, "tmp", "lsp_semantic_generic_param_shadow_test.mt")
@@ -1581,7 +1581,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_specialized_generic_function_calls_as_function
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_specialized_function_call_test.mt"
         source = SOURCE_WITH_SPECIALIZED_FUNCTION_CALL_SEMANTICS
@@ -1602,7 +1602,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_keyword_module_and_import_path_segments_as_namespace
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
         source = SOURCE_WITH_KEYWORD_NAMESPACE_PATH_SEMANTICS
         path = File.join(Dir.pwd, "tmp", "lsp_semantic_keyword_namespace_path_test.mt")
@@ -1627,7 +1627,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_generic_local_shadowing_and_specialized_function_values
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
         source = SOURCE_WITH_GENERIC_LOCAL_AND_SPECIALIZED_FUNCTION_VALUE_SEMANTICS
         path = File.join(Dir.pwd, "tmp", "lsp_semantic_generic_local_specialized_test.mt")
@@ -1665,7 +1665,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_do_not_let_generic_parameter_fallback_override_member_access
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_generic_parameter_property_test.mt"
         source = SOURCE_WITH_GENERIC_PARAMETER_AND_PROPERTY_SEMANTICS
@@ -1688,7 +1688,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_type_parameters_match_scrutinees_and_match_binders
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_generic_variant_test.mt"
         source = SOURCE_WITH_GENERIC_VARIANT_SEMANTICS
@@ -1719,7 +1719,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_classify_variant_members_payload_fields_and_generic_constructor_labels
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_variant_constructor_labels_test.mt"
         source = <<~MT
@@ -1780,7 +1780,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_fstring_delimiters_do_not_override_textmate
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_fstring_test.mt"
         source = SOURCE_WITH_FSTRING_INTERPOLATION
@@ -1842,7 +1842,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_cover_multiline_heredoc_strings
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_heredoc_test.mt"
         source = SOURCE_WITH_PLAIN_HEREDOC_CSTRING
@@ -1923,7 +1923,7 @@ class SemanticTokensTest < Minitest::Test
     end
 
     def test_semantic_tokens_full_stays_within_latency_budget
-      with_live_server do |client|
+      with_lsp_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_latency_test.mt"
         source = <<~MT

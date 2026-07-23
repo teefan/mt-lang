@@ -95,7 +95,6 @@ module MilkTea
 
       def handle_will_save_wait_until(params)
         uri = params.dig('textDocument', 'uri')
-        reason = params['reason']
         return nil unless uri
 
         content = @workspace.get_content(uri)

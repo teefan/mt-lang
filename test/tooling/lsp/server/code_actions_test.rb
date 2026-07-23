@@ -6,7 +6,7 @@ class CodeActionsTest < Minitest::Test
   include LSPServerTestHelpers
 
   def test_code_action_returns_source_fixall_action
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_code_action_test.mt"
       source = "function main() -> int:\n    var x = 1\n    return x\n"
@@ -34,7 +34,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_source_fixall_preserves_required_match_bindings
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_fixall_match_bindings.mt"
       source = <<~MT
@@ -85,7 +85,7 @@ class CodeActionsTest < Minitest::Test
       MT
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -124,7 +124,7 @@ class CodeActionsTest < Minitest::Test
       MT
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -163,7 +163,7 @@ class CodeActionsTest < Minitest::Test
       MT
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -186,7 +186,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_source_fixall_is_lint_only_and_ignores_formatter_mode_changes
-    with_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
       uri = "file:///tmp/lsp_fixall_formatter_mode.mt"
@@ -253,7 +253,7 @@ class CodeActionsTest < Minitest::Test
       root_uri = path_to_uri(dir)
       uri = path_to_uri(file_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -279,7 +279,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_code_action_quickfix_prefer_let
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_prefer_let.mt"
       source = <<~MT
@@ -315,7 +315,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_code_action_quickfix_reserved_primitive_name
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_reserved_primitive_name.mt"
       source = <<~MT
@@ -350,7 +350,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_code_action_quickfix_redundant_else
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_else.mt"
       source = <<~MT
@@ -390,7 +390,7 @@ class CodeActionsTest < Minitest::Test
 
 
   def test_code_action_quickfix_redundant_return
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_return.mt"
       source = <<~MT
@@ -441,7 +441,7 @@ class CodeActionsTest < Minitest::Test
       MT
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -487,7 +487,7 @@ class CodeActionsTest < Minitest::Test
       MT
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -535,7 +535,7 @@ class CodeActionsTest < Minitest::Test
       MT
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -587,7 +587,7 @@ class CodeActionsTest < Minitest::Test
       MT
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -620,7 +620,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_code_action_quickfix_redundant_ignored_match_binding
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_ignored_match_binding.mt"
       source = <<~MT
@@ -662,7 +662,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_code_action_quickfix_prefer_let_else
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_prefer_let_else.mt"
       source = <<~MT
@@ -702,7 +702,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_code_action_quickfix_prefer_var_else
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_prefer_var_else.mt"
       source = <<~MT
@@ -742,7 +742,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_code_action_quickfix_redundant_bool_compare
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_bool_compare.mt"
       source = <<~MT
@@ -782,7 +782,7 @@ class CodeActionsTest < Minitest::Test
   end
 
   def test_initialize_advertises_quickfix_code_action_kind
-    with_server do |client|
+    with_lsp_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       kinds = response.dig("result", "capabilities", "codeActionProvider", "codeActionKinds")
       assert_includes kinds, "quickFix"

@@ -17,7 +17,7 @@ class LifecycleTest < Minitest::Test
   end
 
   def test_initialize_advertises_expected_capabilities
-    with_server do |client|
+    with_lsp_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       capabilities = response.dig("result", "capabilities")
 
@@ -107,7 +107,7 @@ class LifecycleTest < Minitest::Test
       first_root_uri = path_to_uri(first_root)
       second_root_uri = path_to_uri(second_root)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => first_root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -129,7 +129,7 @@ class LifecycleTest < Minitest::Test
   end
 
   def test_document_symbol_and_hover_work_after_open
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -172,7 +172,7 @@ class LifecycleTest < Minitest::Test
           reloaded.emit()
     MT
 
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_event_symbols_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -219,7 +219,7 @@ class LifecycleTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         uri = path_to_uri(path)
@@ -261,7 +261,7 @@ class LifecycleTest < Minitest::Test
       MT
       File.write(path, source)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         uri = path_to_uri(path)
@@ -301,7 +301,7 @@ class LifecycleTest < Minitest::Test
       main_uri = path_to_uri(main_path)
       asset_uri = path_to_uri(asset_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
@@ -326,7 +326,7 @@ class LifecycleTest < Minitest::Test
   end
 
   def test_document_symbol_captures_opaque_declarations
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_opaque_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -339,7 +339,7 @@ class LifecycleTest < Minitest::Test
   end
 
   def test_document_symbol_captures_interface_declarations_with_interface_kind
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_interface_symbol_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -355,7 +355,7 @@ class LifecycleTest < Minitest::Test
   end
 
   def test_code_lens_returns_lenses_for_functions
-    with_shared_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_codelens_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -391,7 +391,7 @@ class LifecycleTest < Minitest::Test
       File.write(main_path, main_source)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -430,7 +430,7 @@ class LifecycleTest < Minitest::Test
       File.write(path, v1)
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -477,7 +477,7 @@ class LifecycleTest < Minitest::Test
       File.write(main_path, main_source)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -510,7 +510,7 @@ class LifecycleTest < Minitest::Test
       File.write(path, valid_source)
       uri = path_to_uri(path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -540,7 +540,7 @@ class LifecycleTest < Minitest::Test
       File.write(File.join(dir, "a.mt"), "function fa() -> int:\n    return 1\n")
       File.write(File.join(dir, "b.mt"), "function fb() -> int:\n    return 2\n")
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
 
         # Send initialized and capture progress notifications that follow
@@ -592,7 +592,7 @@ class LifecycleTest < Minitest::Test
       File.write(main_path, main_source)
       main_uri = path_to_uri(main_path)
 
-      with_server do |client|
+      with_lsp_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 

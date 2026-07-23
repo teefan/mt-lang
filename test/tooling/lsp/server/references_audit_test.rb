@@ -96,7 +96,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_single_file_free_function_distance
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_single.mt"
       client.send_notification("textDocument/didOpen", {
@@ -118,7 +118,7 @@ class ReferencesAuditTest < Minitest::Test
   end
 
   def test_single_file_free_function_helper
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_helper.mt"
       client.send_notification("textDocument/didOpen", {
@@ -144,7 +144,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_single_file_instance_method_magnitude
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_magnitude.mt"
       client.send_notification("textDocument/didOpen", {
@@ -166,7 +166,7 @@ class ReferencesAuditTest < Minitest::Test
   end
 
   def test_single_file_editable_method_reset
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_reset.mt"
       client.send_notification("textDocument/didOpen", {
@@ -192,7 +192,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_single_file_static_method_origin
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_origin.mt"
       client.send_notification("textDocument/didOpen", {
@@ -218,7 +218,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_single_file_local_outer_p
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_outer_p.mt"
       client.send_notification("textDocument/didOpen", {
@@ -250,7 +250,7 @@ class ReferencesAuditTest < Minitest::Test
   end
 
   def test_single_file_local_inner_p_shadowed
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_inner_p.mt"
       client.send_notification("textDocument/didOpen", {
@@ -276,7 +276,7 @@ class ReferencesAuditTest < Minitest::Test
   end
 
   def test_single_file_local_o
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_local_o.mt"
       client.send_notification("textDocument/didOpen", {
@@ -302,7 +302,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_single_file_code_lens_counts
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_codelens.mt"
       client.send_notification("textDocument/didOpen", {
@@ -421,7 +421,7 @@ class ReferencesAuditTest < Minitest::Test
 
   def test_cross_file_static_method_origin_receiver_scoped
     ws = setup_cross_file_workspace
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(ws[:dir]), "capabilities" => {} })
       client.send_notification("initialized", {})
       open_all_files(client, ws)
@@ -450,7 +450,7 @@ class ReferencesAuditTest < Minitest::Test
 
   def test_cross_file_free_function_distance
     ws = setup_cross_file_workspace
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(ws[:dir]), "capabilities" => {} })
       client.send_notification("initialized", {})
       open_all_files(client, ws)
@@ -476,7 +476,7 @@ class ReferencesAuditTest < Minitest::Test
 
   def test_cross_file_instance_method_magnitude
     ws = setup_cross_file_workspace
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(ws[:dir]), "capabilities" => {} })
       client.send_notification("initialized", {})
       open_all_files(client, ws)
@@ -502,7 +502,7 @@ class ReferencesAuditTest < Minitest::Test
 
   def test_cross_file_editable_method_reset
     ws = setup_cross_file_workspace
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(ws[:dir]), "capabilities" => {} })
       client.send_notification("initialized", {})
       open_all_files(client, ws)
@@ -528,7 +528,7 @@ class ReferencesAuditTest < Minitest::Test
 
   def test_cross_file_static_method_unit_on_circle
     ws = setup_cross_file_workspace
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(ws[:dir]), "capabilities" => {} })
       client.send_notification("initialized", {})
       open_all_files(client, ws)
@@ -554,7 +554,7 @@ class ReferencesAuditTest < Minitest::Test
 
   def test_cross_file_free_function_total_radius
     ws = setup_cross_file_workspace
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(ws[:dir]), "capabilities" => {} })
       client.send_notification("initialized", {})
       open_all_files(client, ws)
@@ -600,7 +600,7 @@ class ReferencesAuditTest < Minitest::Test
     File.write(unrelated_path, unrelated_source)
     unrelated_uri = path_to_uri(unrelated_path)
 
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(ws[:dir]), "capabilities" => {} })
       client.send_notification("initialized", {})
       open_all_files(client, ws)
@@ -626,7 +626,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_single_file_exclude_declaration
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_exclude_decl.mt"
       client.send_notification("textDocument/didOpen", {
@@ -660,7 +660,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_parameter_value_scoped_to_add
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_param_scope.mt"
       client.send_notification("textDocument/didOpen", {
@@ -690,7 +690,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_code_lens_matches_references_count
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_lens_match.mt"
       client.send_notification("textDocument/didOpen", {
@@ -741,7 +741,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_multi_extend_all_methods_found
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_multi_extend.mt"
       client.send_notification("textDocument/didOpen", {
@@ -771,7 +771,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_references_from_call_site_matches_declaration_site
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_from_call.mt"
       client.send_notification("textDocument/didOpen", {
@@ -800,7 +800,7 @@ class ReferencesAuditTest < Minitest::Test
   # =====================================================================
 
   def test_references_from_member_access_call_site
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_member_call.mt"
       client.send_notification("textDocument/didOpen", {
@@ -852,7 +852,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_struct_field_speed_references
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -884,7 +884,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_for_loop_binding_scoped
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_for.mt"
       client.send_notification("textDocument/didOpen", {
@@ -926,7 +926,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_constant_references
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_const.mt"
       client.send_notification("textDocument/didOpen", {
@@ -968,7 +968,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_named_argument_label_references
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_named_arg.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1012,7 +1012,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_enum_member_references
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_enum.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1055,7 +1055,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_same_method_name_different_types_not_mixed
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_same_name.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1092,7 +1092,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_module_var_references
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_modvar.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1133,7 +1133,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_interface_name_references
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_interface.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1177,7 +1177,7 @@ class ReferencesAuditTest < Minitest::Test
   MT
 
   def test_struct_type_name_references
-    with_live_server do |client|
+    with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_audit_typename.mt"
       client.send_notification("textDocument/didOpen", {
