@@ -120,17 +120,17 @@ module MilkTea
       def is_heap_alloc_call?(expr)
         return false unless expr.is_a?(AST::Call)
         callee = expr.callee
-        heap_method_names = %w[must_alloc alloc must_alloc_aligned alloc_aligned
-                               must_alloc_zeroed alloc_zeroed must_resize resize].to_set
+        non_null_method_names = %w[must_alloc must_alloc_aligned
+                                   must_alloc_zeroed must_resize].to_set
         case callee
         when AST::MemberAccess
           callee.receiver.is_a?(AST::Identifier) &&
-            heap_method_names.include?(callee.member)
+            non_null_method_names.include?(callee.member)
         when AST::Specialization
           inner = callee.callee
           inner.is_a?(AST::MemberAccess) &&
             inner.receiver.is_a?(AST::Identifier) &&
-            heap_method_names.include?(inner.member)
+            non_null_method_names.include?(inner.member)
         else
           false
         end
@@ -216,6 +216,7 @@ module MilkTea
         expr.arguments.each do |arg|
           next unless arg.is_a?(AST::Argument)
           value = arg.value
+          value = value.expression if value.is_a?(AST::UnsafeStmt)
           if value.is_a?(AST::Identifier)
             released = value.name
           elsif value.is_a?(AST::Call) && value.callee.is_a?(AST::Identifier) && value.callee.name == "ref_of"
@@ -512,7 +513,7 @@ module MilkTea
       def emit_owning_release_cfg_warnings(cfg_analysis, body)
         graph = cfg_analysis.graph
         reachable_ids = cfg_analysis.reachability.reachable_ids
-        exit_kinds = %i[exit break_exit continue_exit].to_set.freeze
+                exit_kinds = %i[exit return break_exit continue_exit].to_set.freeze
         owning_locals = owning_local_bindings(body)
         return if owning_locals.empty?
 
