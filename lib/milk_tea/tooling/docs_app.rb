@@ -38,7 +38,7 @@ module MilkTea
       end
 
       def reference_index
-        @reference_index ||= File.expand_path("../../../docs/reference/index.html", __dir__)
+        @reference_index ||= File.expand_path("../../../docs/index.html", __dir__)
       end
 
       def h(text)
