@@ -99,7 +99,7 @@ module MilkTea
               else return NAC
               end
           ConstVal.new(v)
-        rescue StandardError
+        rescue ZeroDivisionError, RangeError
           NAC
         end
       end
