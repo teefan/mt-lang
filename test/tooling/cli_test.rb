@@ -850,39 +850,25 @@ class MilkTeaCliTest < Minitest::Test
   def test_toolchain_bootstrap_command_reports_results
     require_relative "../../lib/milk_tea/bindings"
 
-    upstream_sources_singleton = class << MilkTea::UpstreamSources
-      self
-    end
-
-    source = MilkTea::UpstreamSources::Source.new(
-      name: "raylib",
-      checkout_root: Pathname.new("/tmp/raylib-upstream"),
-      repository_url: "https://example.invalid/raylib.git",
-      revision: "deadbeef",
-      sentinel_paths: ["src/raylib.h"],
-    )
-    results = [
-      MilkTea::UpstreamSources::Result.new(source:, status: :present, path: source.checkout_root.to_s),
-    ]
-    original = upstream_sources_singleton.instance_method(:bootstrap_all!)
-    upstream_sources_singleton.send(:remove_method, :bootstrap_all!)
-    upstream_sources_singleton.send(:define_method, :bootstrap_all!) do |**|
-      results
+    source = Object.new
+    source.define_singleton_method(:name) { "raylib" }
+    source.define_singleton_method(:checkout_root) { Pathname.new("/tmp/raylib-upstream") }
+    source.define_singleton_method(:complete?) { false }
+    source.define_singleton_method(:bootstrap!) do
+      MilkTea::UpstreamSources::Result.new(source: self, status: :bootstrapped, path: "/tmp/raylib-upstream")
     end
 
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["toolchain", "bootstrap"], out:, err:)
+    status = with_singleton_method_override(MilkTea::UpstreamSources, :default_sources, ->(*, **) { [source] }) do
+      MilkTea::CLI.start(["toolchain", "bootstrap"], out:, err:)
+    end
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_match(/kept raylib -> \/tmp\/raylib-upstream/, out.string)
-  ensure
-    if original
-      upstream_sources_singleton.send(:remove_method, :bootstrap_all!)
-      upstream_sources_singleton.send(:define_method, :bootstrap_all!, original)
-    end
+    assert_match(/raylib.*bootstrapped/, out.string)
+    assert_match(/1 source\(s\): 1 bootstrapped, 0 skipped, 0 failed/, out.string)
   end
 
   def test_toolchain_command_rejects_unknown_subcommands
@@ -919,6 +905,29 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal "", out.string
     assert_match(/unknown toolchain option --bogus/, err.string)
     assert_match(/Usage: mtc toolchain SUBCOMMAND/, err.string)
+  end
+
+  def test_toolchain_tools_command_loads_and_reports_results
+    require_relative "../../lib/milk_tea/bindings"
+
+    out = StringIO.new
+    err = StringIO.new
+
+    fake_tool = Object.new
+    fake_tool.define_singleton_method(:name) { "fake-tool" }
+    fake_tool.define_singleton_method(:binary_path) { "/tmp/fake-tool" }
+    fake_tool.define_singleton_method(:build!) { "/tmp/fake-tool" }
+    fake_tool.define_singleton_method(:install_path) { |**| "/tmp/milk-tea-bin/fake-tool" }
+
+    status = with_singleton_method_override(MilkTea::VendoredTools, :all, ->(*, **) { [fake_tool] }) do
+      with_singleton_method_override(MilkTea::VendoredTools, :build_all!, ->(*, **) { [{ tool: fake_tool, binary: "/tmp/milk-tea-bin/fake-tool" }] }) do
+        MilkTea::CLI.start(["toolchain", "tools"], out:, err:)
+      end
+    end
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_match(/fake-tool.*built/, out.string)
   end
 
   def test_toolchain_doctor_command_reports_successful_checks
