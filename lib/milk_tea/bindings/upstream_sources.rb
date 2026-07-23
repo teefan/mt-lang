@@ -2,12 +2,16 @@
 
 require "fileutils"
 require "open3"
+require "yaml"
 
 module MilkTea
   module UpstreamSources
     class Error < StandardError; end
 
     Result = Data.define(:source, :status, :path)
+
+    CONFIG_DIR = "config"
+    REVISIONS_FILE = "upstream_versions.yml"
 
     Source = Data.define(:name, :checkout_root, :repository_url, :revision, :sentinel_paths) do
       def bootstrap!
@@ -49,9 +53,100 @@ module MilkTea
 
     module_function
 
+    def revisions_path(root: MilkTea.root)
+      Pathname.new(File.expand_path(root.to_s)).join(CONFIG_DIR, REVISIONS_FILE)
+    end
+
+    def load_version_overrides(root: MilkTea.root)
+      path = revisions_path(root:)
+      return {} unless File.file?(path)
+
+      data = YAML.safe_load(File.read(path), permitted_classes: [String]) || {}
+      return {} unless data.is_a?(Hash)
+
+      overrides = {}
+      data.each do |name, entry|
+        next unless name.is_a?(String)
+
+        revision = if entry.is_a?(String)
+                     entry
+        elsif entry.is_a?(Hash)
+                     entry["revision"] || entry[:revision] if entry["revision"] || entry[:revision]
+        end
+        overrides[name] = revision if revision.is_a?(String) && !revision.empty?
+      end
+      overrides
+    end
+
+    def load_sentinel_overrides(root: MilkTea.root)
+      path = revisions_path(root:)
+      return {} unless File.file?(path)
+
+      data = YAML.safe_load(File.read(path), permitted_classes: [String, Array]) || {}
+      return {} unless data.is_a?(Hash)
+
+      overrides = {}
+      data.each do |name, entry|
+        next unless name.is_a?(String) && entry.is_a?(Hash)
+
+        sentinels = entry["sentinels"] || entry[:sentinels]
+        overrides[name] = sentinels if sentinels.is_a?(Array) && sentinels.all?(String)
+      end
+      overrides
+    end
+
+    def write_version_override(name, revision, root: MilkTea.root)
+      path = revisions_path(root:)
+      data = File.file?(path) ? (YAML.safe_load(File.read(path)) || {}) : {}
+      existing = data[name.to_s]
+      if existing.is_a?(Hash)
+        existing["revision"] = revision.to_s
+      else
+        data[name.to_s] = revision.to_s
+      end
+      FileUtils.mkdir_p(path.dirname)
+      File.write(path, data.to_yaml)
+    end
+
+    def remove_version_override(name, root: MilkTea.root)
+      path = revisions_path(root:)
+      return unless File.file?(path)
+
+      data = YAML.safe_load(File.read(path)) || {}
+      data.delete(name.to_s)
+      if data.empty?
+        FileUtils.rm_f(path)
+      else
+        File.write(path, data.to_yaml)
+      end
+    end
+
+    def resolve_ref(repository_url, ref)
+      return ref if ref.match?(/\A[0-9a-f]{40}\z/i)
+
+      output, status = Open3.capture2("git", "ls-remote", "--refs", repository_url, ref.to_s)
+      raise Error, "failed to resolve #{ref.inspect} for #{repository_url}" unless status.success?
+
+      lines = output.lines.map(&:strip).reject(&:empty?)
+      raise Error, "no ref found for #{ref.inspect} in #{repository_url}" if lines.empty?
+
+      lines.each do |line|
+        hash, full_name = line.split(/\s+/, 2)
+        next unless full_name
+
+        return hash if full_name == ref || full_name == "refs/tags/#{ref}" || full_name == "refs/heads/#{ref}"
+      end
+
+      lines.first.split(/\s+/, 2).first
+    end
+
+    def find_source(name, root: MilkTea.root)
+      default_sources(root:).find { |source| source.name == name.to_s }
+    end
+
     def default_sources(root: MilkTea.root)
       data = MilkTea.writable_root_for(root)
-      [
+      sources = [
         Source.new(
           name: "raylib",
           checkout_root: data.join("third_party/raylib-upstream"),
@@ -180,6 +275,15 @@ module MilkTea
           ],
         ),
         Source.new(
+          name: "raygui",
+          checkout_root: data.join("third_party/raygui-upstream"),
+          repository_url: "https://github.com/raysan5/raygui.git",
+          revision: "5.0",
+          sentinel_paths: %w[
+            src/raygui.h
+          ],
+        ),
+        Source.new(
           name: "rres",
           checkout_root: data.join("third_party/rres-upstream"),
           repository_url: "https://github.com/raysan5/rres.git",
@@ -217,10 +321,32 @@ module MilkTea
           ],
         ),
       ]
+
+      version_overrides = load_version_overrides(root:)
+      sentinel_overrides = load_sentinel_overrides(root:)
+
+      unless version_overrides.empty? && sentinel_overrides.empty?
+        sources = sources.map do |source|
+          new_rev = version_overrides[source.name]
+          new_sentinels = sentinel_overrides[source.name]
+          source = source.with(revision: new_rev) if new_rev
+          source = source.with(sentinel_paths: new_sentinels) if new_sentinels
+          source
+        end
+      end
+
+      sources
     end
 
     def bootstrap_all!(root: MilkTea.root)
       default_sources(root:).map(&:bootstrap!)
+    end
+
+    def bootstrap_one(name, root: MilkTea.root)
+      source = find_source(name, root:)
+      raise Error, "unknown upstream source: #{name}" unless source
+
+      source.bootstrap!
     end
   end
 end

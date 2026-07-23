@@ -136,6 +136,124 @@ namespace :deps do
       puts "#{verb} #{result.source.name} -> #{result.path}"
     end
   end
+
+  desc 'Resolve a git tag or branch to a commit hash for an upstream source'
+  task :resolve, [:source, :ref] do |_t, args|
+    source_name = args[:source]
+    ref = args[:ref]
+    unless source_name && ref
+      puts "usage: rake deps:resolve[source_name,tag_or_branch]"
+      puts "example: rake deps:resolve[raylib,v5.5]"
+      exit 1
+    end
+
+    source = MilkTea::UpstreamSources.find_source(source_name)
+    unless source
+      known = MilkTea::UpstreamSources.default_sources.map(&:name).join(", ")
+      puts "unknown upstream source: #{source_name}"
+      puts "known sources: #{known}"
+      exit 1
+    end
+
+    hash = MilkTea::UpstreamSources.resolve_ref(source.repository_url, ref)
+    puts "#{source_name}: #{ref.inspect} → #{hash}"
+  end
+
+  desc 'Pin an upstream source to a new revision (tag, branch, or commit hash)'
+  task :bump, [:source, :version] do |_t, args|
+    source_name = args[:source]
+    version = args[:version]
+    unless source_name && version
+      puts "usage: rake deps:bump[source_name,version]"
+      puts "  version may be a tag (v6.0.0), branch, or full commit hash"
+      puts "example: rake deps:bump[raylib,v6.0.0]"
+      exit 1
+    end
+
+    source = MilkTea::UpstreamSources.find_source(source_name)
+    unless source
+      known = MilkTea::UpstreamSources.default_sources.map(&:name).join(", ")
+      puts "error: unknown upstream source: #{source_name}"
+      puts "known sources: #{known}"
+      exit 1
+    end
+
+    hash = MilkTea::UpstreamSources.resolve_ref(source.repository_url, version)
+    MilkTea::UpstreamSources.write_version_override(source_name, hash)
+    puts "pinned #{source_name} to #{hash} (resolved from #{version.inspect})"
+    puts "updated config/upstream_versions.yml"
+  end
+
+  desc 'Upgrade an upstream C library: bump revision, rebootstrap, regenerate all bindings'
+  task :upgrade, [:source, :version] do |_t, args|
+    source_name = args[:source]
+    version = args[:version]
+    unless source_name && version
+      puts "usage: rake deps:upgrade[source_name,version]"
+      puts "  version may be a tag (v6.0.0), branch, or full commit hash"
+      puts "example: rake deps:upgrade[raylib,v6.0.0]"
+      puts ""
+      puts "this runs: bump → bootstrap → bindgen:all → imported_bindings:all → verify"
+      exit 1
+    end
+
+    source = MilkTea::UpstreamSources.find_source(source_name)
+    unless source
+      known = MilkTea::UpstreamSources.default_sources.map(&:name).join(", ")
+      puts "error: unknown upstream source: #{source_name}"
+      puts "known sources: #{known}"
+      exit 1
+    end
+
+    puts "=== Step 1/5: bump #{source_name} to #{version.inspect} ==="
+    hash = MilkTea::UpstreamSources.resolve_ref(source.repository_url, version)
+    MilkTea::UpstreamSources.write_version_override(source_name, hash)
+    puts "pinned #{source_name} → #{hash}"
+
+    puts ""
+    puts "=== Step 2/5: bootstrap #{source_name} ==="
+    result = MilkTea::UpstreamSources.bootstrap_one(source_name)
+    puts "#{result.status == :present ? 'kept' : 'bootstrapped'} #{source_name} -> #{result.path}"
+
+    puts ""
+    puts "=== Step 3/5: regenerate raw bindings (bindgen:all) ==="
+    Rake::Task["bindgen:all"].invoke
+
+    puts ""
+    puts "=== Step 4/5: regenerate imported bindings (imported_bindings:all) ==="
+    Rake::Task["imported_bindings:all"].invoke
+
+    puts ""
+    puts "=== Step 5/5: verify bindings up-to-date ==="
+    Rake::Task["bindgen:check:all"].invoke rescue nil
+    Rake::Task["imported_bindings:check:all"].invoke rescue nil
+
+    puts ""
+    puts "done. #{source_name} upgraded to #{hash}."
+    puts "review changes with: git diff std/"
+  end
+
+  desc 'List all upstream sources and their current pinned revisions'
+  task :list do
+    overrides = MilkTea::UpstreamSources.load_version_overrides
+    MilkTea::UpstreamSources.default_sources.each do |source|
+      overridden = overrides.key?(source.name)
+      marker = overridden ? " [OVERRIDDEN]" : ""
+      puts "#{source.name}: #{source.revision}#{marker}"
+    end
+  end
+
+  desc 'Remove a version override, reverting to the hardcoded default revision'
+  task :revert, [:source] do |_t, args|
+    source_name = args[:source]
+    unless source_name
+      puts "usage: rake deps:revert[source_name]"
+      exit 1
+    end
+
+    MilkTea::UpstreamSources.remove_version_override(source_name)
+    puts "removed override for #{source_name} — next bootstrap will use hardcoded default revision"
+  end
 end
 
 namespace :tools do
