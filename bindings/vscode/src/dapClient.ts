@@ -187,9 +187,6 @@ export class MilkTeaDapSessionTracker {
         if (session.type === 'milk-tea') {
           this.sessions.add(session);
           this.sessionStarts.set(session.id, Date.now());
-          this.sessionShutdownExpected.delete(session.id);
-          this.sessionExited.delete(session.id);
-          this.sessionExitCodes.delete(session.id);
           this.log.info(`DAP session started: '${session.name}' (id=${session.id})`);
           this.log.info(
             `DAP config for '${session.name}': ${JSON.stringify(this.summarizeSessionConfiguration(session.configuration as SessionConfiguration))}`,
