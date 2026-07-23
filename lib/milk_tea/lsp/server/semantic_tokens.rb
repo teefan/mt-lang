@@ -354,10 +354,10 @@ module MilkTea
         end
 
         if prev_tok&.type == :for
-          return [:variable, ['declaration']]
+          return [:variable, ['declaration', 'readonly']]
         end
 
-        return [:variable, ['declaration']] if match_arm_binding_token?(tokens, index)
+        return [:variable, ['declaration', 'readonly']] if match_arm_binding_token?(tokens, index)
         return [:parameter, ['declaration']] if callable_parameter_declaration_token?(tokens, index)
         return [:property, ['declaration']] if variant_payload_field_declaration_token?(tokens, index)
         return [:property, ['declaration']] if field_declaration_token?(tokens, index)
