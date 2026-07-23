@@ -192,7 +192,7 @@ module MilkTea
 
       require_relative "../bindings"
 
-      tools = VendoredTools.default_tools(root: MilkTea.root)
+      tools = VendoredTools.all(root: MilkTea.root)
       info "Building #{tools.length} vendored tool(s)..."
       info ""
 
