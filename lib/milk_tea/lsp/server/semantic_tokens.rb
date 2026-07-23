@@ -337,6 +337,8 @@ module MilkTea
           return [:type, ['declaration']]
         end
 
+        return [:variable, []] if name == "_"
+
         if prev_tok&.type == :event
           return struct_event_declaration_token?(tokens, index) ? [:property, ['declaration']] : [:variable, ['declaration']]
         end
