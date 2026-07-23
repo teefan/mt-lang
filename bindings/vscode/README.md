@@ -1,53 +1,90 @@
-# Milk Tea VS Code Extension
+# Milk Tea Programming Language
 
-Language support, LSP, and DAP integration for Milk Tea (`.mt`) files.
+Syntax highlighting, IntelliSense, and debugging for the [Milk Tea](https://teefan.github.io/mt-lang/) programming language.
+
+## Features
+
+- **Syntax highlighting** for `.mt` files with embedded GLSL, JSON, JSONC, and SQL heredocs
+- **Language server** — diagnostics, hover, completion, go-to-definition, semantic tokens, document symbols, formatting
+- **Debugger** — launch and attach via lldb-dap with breakpoints, stepping, variable inspection, and LLDB command hooks
+- **Formatter** — format-on-save with configurable mode (tidy, preserve, safe/canonical)
+
+## Getting Started
+
+Install the extension, then open any `.mt` file. The language server starts automatically.
+
+Requires the `mtc` compiler on your `$PATH`:
+
+```bash
+gem install mt-lang
+```
+
+## Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `milkTea.lsp.enabled` | `true` | Enable the Milk Tea language server |
+| `milkTea.lsp.serverPath` | `"mtc"` | Path to the mtc binary |
+| `milkTea.lsp.extraArgs` | `[]` | Extra arguments passed to `mtc lsp` |
+| `milkTea.lsp.logLevel` | `"info"` | LSP log verbosity: `off`, `error`, `warn`, `info`, `debug`, `trace` |
+| `milkTea.lsp.traceServer` | `"off"` | Trace JSON-RPC communication: `off`, `messages`, `verbose` |
+| `milkTea.lsp.dependencyResolution` | `"auto"` | Import resolution mode: `auto` (lockfile when current), `live`, `locked`, `frozen` |
+| `milkTea.lsp.platform` | `"auto"` | Active platform for module resolution: `auto`, `linux`, `windows`, `wasm` |
+| `milkTea.lsp.retry.enabled` | `true` | Retry LSP startup on connection failure |
+| `milkTea.lsp.retry.maxAttempts` | `3` | Max startup attempts |
+| `milkTea.lsp.retry.delaySeconds` | `10` | Seconds between retry attempts |
+| `milkTea.dap.enabled` | `true` | Enable the Milk Tea debug adapter |
+| `milkTea.dap.serverPath` | `"mtc"` | Path to the mtc binary |
+| `milkTea.dap.extraArgs` | `[]` | Extra arguments passed to `mtc dap` |
+| `milkTea.dap.logLevel` | `"info"` | DAP log verbosity: `off`, `error`, `warn`, `info`, `debug`, `trace` |
+| `milkTea.dap.retry.enabled` | `true` | Retry DAP launch on connection failure |
+| `milkTea.dap.retry.maxAttempts` | `3` | Max launch attempts |
+| `milkTea.dap.retry.delaySeconds` | `10` | Seconds between retry attempts |
+| `milkTea.format.mode` | `"tidy"` | Formatter mode: `tidy`, `preserve`, `safe`, `canonical` |
+
+## Debugging
+
+Create a `launch.json` configuration. The extension provides snippets for common setups:
+
+```jsonc
+{
+    "type": "milk-tea",
+    "request": "launch",
+    "name": "Debug Milk Tea Program",
+    "backend": "lldb-dap",
+    "program": "${file}",
+    "args": [],
+    "stopOnEntry": false
+}
+```
+
+Requires `lldb-dap` (the LLDB debug adapter) on your `$PATH` for the `lldb-dap` backend.
+
+For attaching to a running process:
+
+```jsonc
+{
+    "type": "milk-tea",
+    "request": "attach",
+    "name": "Attach to Process",
+    "backend": "lldb-dap",
+    "pid": 12345
+}
+```
+
+## Commands
+
+- **Milk Tea: Restart LSP** — restart the language server
+- **Milk Tea: View LSP Logs** — open the LSP output channel
+- **Milk Tea: View DAP Logs** — open the DAP output channel
+- **Milk Tea: Restart DAP (Stop Active Sessions)** — stop all active debug sessions
 
 ## Development
 
 ```bash
 npm install
-npm run compile
-npm run watch
+npm run compile       # type-check and bundle
+npm run watch         # watch mode
+npm run vsix:build    # package as .vsix
+npm run vscode:install   # install into VS Code
 ```
-
-`npm run compile` type-checks the extension and emits a bundled `dist/extension.js` for packaging.
-
-## Settings
-
-- `milkTea.lsp.dependencyResolution`: `auto` (default), `live`, `locked`, or `frozen`.
-- `auto` uses `package.lock` when it is current and falls back to live manifests otherwise.
-- `locked` always resolves semantic editor features from `package.lock`.
-- `frozen` requires a current `package.lock` and reports a lockfile diagnostic when it is missing or stale.
-
-## Package And Install
-
-Build a VSIX package:
-
-```bash
-npm run vsix:build
-```
-
-Install the built extension into VS Code (uses `code --install-extension`):
-
-```bash
-npm run vscode:install
-```
-
-Uninstall the extension from VS Code (skips cleanly when it is already absent):
-
-```bash
-npm run vscode:uninstall
-```
-
-Rebuild and reinstall in one step:
-
-```bash
-npm run vscode:reinstall
-```
-
-## Notes
-
-- The install script expects a VSIX named `<package-name>-<package-version>.vsix` in this folder.
-- The uninstall target is `milk-tea-lang.milk-tea-lang`.
-- VSIX packaging uses the bundled `dist/extension.js` output and skips `node_modules`.
-- This is intentional: an externalized `vscode-languageclient` packaging experiment reduced `dist/extension.js`, but regressed the VSIX to 214 files / 165 JavaScript files / 307.53 KB and brought back `vsce`'s bundling warning.
