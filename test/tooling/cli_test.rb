@@ -4119,15 +4119,14 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/unknown new option --bogus/, err.string)
   end
 
-  def test_dap_command_runs_server
+  def test_dap_command_rejects_unknown_options
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["dap"], out:, err:)
+    status = MilkTea::CLI.start(["dap", "--bogus"], out:, err:)
 
     assert_equal 1, status
-    assert_equal "", out.string
-    assert_match(/Usage: mtc lex PATH/, err.string)
+    assert_match(/dap: unknown option/, err.string)
   end
 
   def test_build_run_and_format_reject_invalid_options
