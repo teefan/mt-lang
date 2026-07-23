@@ -9,7 +9,7 @@ Gem::Specification.new do |spec|
   spec.summary       = "The Milk Tea programming language compiler toolchain"
   spec.description   = "A statically-typed, compiled programming language with C ABI interop, " \
                         "async/await, generics, pattern matching, and a comprehensive standard library. " \
-                        "Includes the mtc compiler, LSP language server, and DAP debug adapter."
+                        "Includes the mtc compiler, LSP server (mtc lsp), and DAP debug adapter (mtc dap)."
   spec.homepage      = "https://github.com/teefan/mt-lang"
   spec.license       = "MIT"
 
@@ -37,7 +37,7 @@ Gem::Specification.new do |spec|
     gem_files
   end
 
-  spec.executables = %w[mtc mtc-lsp mtc-dap].map { |name| File.basename(name) }
+  spec.executables = %w[mtc]
   spec.require_paths = %w[lib]
 
   spec.add_dependency "rake",     "~> 13.4"
