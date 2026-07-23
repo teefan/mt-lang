@@ -749,8 +749,11 @@ module MilkTea
           vendored_library: vendored_raylib_library,
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RAYGUI_IMPLEMENTATION"],
+          prepare: lambda do |_binding, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "raygui" }&.bootstrap!
+          end,
           header_candidates: [
-            vendored_raylib.source_root.dirname.join("examples/shapes/raygui.h").to_s,
+            MilkTea.data_root.join("third_party/raygui-upstream/src/raygui.h").to_s,
           ],
           function_param_type_overrides: raylib_function_param_overrides,
           function_return_type_overrides: raygui_function_return_overrides,
