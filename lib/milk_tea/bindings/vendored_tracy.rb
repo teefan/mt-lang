@@ -5,8 +5,9 @@ require_relative "vendored_tool"
 module MilkTea
   module VendoredTracy
     def self.library(root: MilkTea.root)
-      source = MilkTea.writable_root_for(root).join("third_party/tracy-upstream/public/TracyClient.cpp")
-      build = MilkTea.writable_root_for(root).join("tmp/tracy-lib")
+      data = MilkTea.writable_root_for(root)
+      source = data.join("third_party/tracy-upstream/public/TracyClient.cpp")
+      build = data.join("tmp/tracy-lib")
       MilkTea::VendoredCLibrary::Archive.new(
         name: "tracy",
         source_root: source.dirname,
@@ -20,11 +21,12 @@ module MilkTea
     end
 
     def self.profiler_tool(root: MilkTea.root)
-      upstream_root = root.join("third_party/tracy-upstream")
+      data = MilkTea.writable_root_for(root)
+      source_dir = data.join("third_party/tracy-upstream/profiler")
       MilkTea::VendoredTool.new(
         name: "tracy-profiler",
-        source_dir: upstream_root.join("profiler").to_s,
-        build_dir: MilkTea.writable_root_for(root).join("tmp/tracy-profiler-build").to_s,
+        source_dir: source_dir.to_s,
+        build_dir: data.join("tmp/tracy-profiler-build").to_s,
         output_binary_name: "tracy-profiler",
         cmake_args: ["-DLEGACY=ON"],
       )

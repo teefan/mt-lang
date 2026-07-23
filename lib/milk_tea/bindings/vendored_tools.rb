@@ -9,9 +9,10 @@ module MilkTea
     end
 
     def self.build_all!(root: MilkTea.root)
+      data = MilkTea.writable_root_for(root)
       results = all(root:).map do |tool|
         binary = tool.build!
-        install = tool.install_path(root:)
+        install = tool.install_path(root: data)
         FileUtils.mkdir_p(File.dirname(install))
         FileUtils.cp(binary, install)
         FileUtils.chmod(0o755, install)
