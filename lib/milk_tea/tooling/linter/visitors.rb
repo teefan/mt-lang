@@ -823,10 +823,12 @@ module MilkTea
         arms.each_cons(2) do |first, second|
           next if first.binding_name || second.binding_name
           next if wildcard_pattern?(first.pattern) || wildcard_pattern?(second.pattern)
+          next if body_of.call(first).equal?(body_of.call(second))
           next unless node_fingerprint(body_of.call(first)) == node_fingerprint(body_of.call(second))
 
-          pattern_line = second.pattern.respond_to?(:line) ? second.pattern.line : nil
-          pattern_column = second.pattern.respond_to?(:column) ? second.pattern.column : nil
+          pattern = second.pattern
+          pattern_line = pattern.respond_to?(:line) ? pattern.line : second.binding_line
+          pattern_column = pattern.respond_to?(:column) ? pattern.column : second.binding_column
           emit_conciseness_hint(
             "prefer-or-pattern",
             line: pattern_line,
