@@ -310,6 +310,19 @@ function endian_demo() -> void:
     let _ = swapped16
 
 # ---------------------------------------------------------------------------
+# 31  heap.bytes_of — safe byte-view of any value
+# ---------------------------------------------------------------------------
+
+struct TestPoint:
+    x: float
+    y: float
+    flag: bool
+
+function bytes_of_demo() -> span[ubyte]:
+    var point = TestPoint(x = 10.0, y = 20.0, flag = true)
+    return heap.bytes_of[TestPoint](ref_of(point))
+
+# ---------------------------------------------------------------------------
 # 22  Entrypoint
 # ---------------------------------------------------------------------------
 

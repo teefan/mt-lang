@@ -291,3 +291,8 @@ public function release[T](memory: ptr[T]?) -> void:
 public function release_and_null[T](memory: ref[ptr[T]?]) -> void:
     unsafe: release_bytes(ptr[void]<-read(memory))
     read(memory) = null
+
+
+public function bytes_of[T](value: ref[T]) -> span[ubyte]:
+    unsafe:
+        return span[ubyte](data = ptr[ubyte]<-ptr_of(value), len = size_of(T))
