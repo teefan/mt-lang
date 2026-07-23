@@ -3,7 +3,7 @@
 require_relative "lib/milk_tea/base"
 
 Gem::Specification.new do |spec|
-  spec.name          = "milk_tea"
+  spec.name          = "mt-lang"
   spec.version       = MilkTea::VERSION
   spec.authors       = ["Long (Teefan) Tran"]
   spec.summary       = "The Milk Tea programming language compiler toolchain"
