@@ -97,7 +97,7 @@ module MilkTea
         return nil unless @root_uri
 
         Thread.new do
-          progress = create_progress(title: 'Indexing workspace', message: 'Scanning source files...')
+          progress = create_progress(title: 'Milk Tea LSP: Indexing workspace', message: 'Scanning source files...')
           @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) }
           document_count = @workspace.all_documents.length
           progress.done(message: "#{document_count} document#{document_count == 1 ? '' : 's'} indexed")
@@ -141,7 +141,7 @@ module MilkTea
 
         uris = @workspace.open_document_uris.dup
         Thread.new do
-          progress = create_progress(title: 'Reindexing workspace', message: 'Scanning source files...')
+          progress = create_progress(title: 'Milk Tea LSP: Reindexing workspace', message: 'Scanning source files...')
           @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) }
           doc_count = @workspace.all_documents.length
           progress.done(message: "#{doc_count} document#{doc_count == 1 ? '' : 's'} indexed")
