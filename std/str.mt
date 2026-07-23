@@ -210,14 +210,7 @@ extending str:
             fatal(c"str slice start must be a UTF-8 boundary")
         var actual_stop = start + len
         if not utf8_boundary(this, actual_stop):
-            var adj = actual_stop
-            while adj > start:
-                adj -= 1
-                if utf8_boundary(this, adj):
-                    break
-            if adj <= start:
-                return unsafe: str(data = this.data + start, len = 0)
-            actual_stop = adj
+            fatal(c"str slice end must be a UTF-8 boundary")
 
         return unsafe: str(data = this.data + start, len = actual_stop - start)
 
