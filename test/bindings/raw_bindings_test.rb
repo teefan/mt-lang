@@ -34,7 +34,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("raymath").header_candidates.first, "third_party/raylib-upstream/src/raymath.h"
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
-    assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
+    assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raygui-upstream/src/raygui.h"
     assert_equal({ "codepoints" => "ptr[int]?" }, registry.fetch("raygui").function_param_type_overrides.fetch("LoadFontData"))
     assert_equal "ptr[ptr[char]]?", registry.fetch("raygui").function_return_type_overrides.fetch("GuiLoadIcons")
     assert_equal "std.c.rlgl", registry.fetch("rlgl").module_name

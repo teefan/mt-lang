@@ -7,7 +7,6 @@ module MilkTea
         return [] unless contains_task_type?(type)
 
         void_type = @ctx.types.fetch("void")
-        int_type = @ctx.types.fetch("int")
 
         case type
         when Types::Task
@@ -32,27 +31,8 @@ module MilkTea
           statements
 
         when Types::VariantInstance
-          args_with_task = type.arguments.select { |a| contains_task_type?(a) }
-          if args_with_task.any? && type.definition.name == "Option"
-            kind_expr = IR::Member.new(receiver: value_expr, member: "kind", type: int_type)
-            some_check = IR::Binary.new(
-              operator: "==",
-              left: kind_expr,
-              right: IR::IntegerLiteral.new(value: 0, type: int_type),
-              type: @ctx.types.fetch("bool"),
-            )
-            data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
-            some_payload_expr = IR::Member.new(receiver: data_expr, member: "some", type: nil)
-            task_type = args_with_task.first
-            task_value_expr = IR::Member.new(receiver: some_payload_expr, member: "value", type: task_type)
-            release_body = lower_contained_task_release_statements(task_value_expr, task_type)
-            none_assignment = IR::Assignment.new(
-              target: kind_expr,
-              operator: "=",
-              value: IR::IntegerLiteral.new(value: 1, type: int_type),
-            )
-            then_body = release_body + [none_assignment]
-            [IR::IfStmt.new(condition: some_check, then_body:, else_body: nil)]
+          if type.definition.name == "Option" && type.arguments.any? { |a| contains_task_type?(a) }
+            lower_opt_task_value_release_statements(value_expr, type.arguments.first)
           else
             []
           end
@@ -62,7 +42,6 @@ module MilkTea
           type.arms.each do |arm_name, arm_fields|
             arm_fields.each do |field_name, field_type|
               next unless contains_task_type?(field_type)
-              # For variant arms, the data is under .data.<arm_name>
               data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
               arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: nil)
               field_expr = IR::Member.new(receiver: arm_expr, member: field_name, type: field_type)
@@ -73,25 +52,7 @@ module MilkTea
 
         when Types::GenericInstance
           if type.name == "Option" && type.arguments.any? { |a| contains_task_type?(a) }
-            kind_expr = IR::Member.new(receiver: value_expr, member: "kind", type: int_type)
-            some_check = IR::Binary.new(
-              operator: "==",
-              left: kind_expr,
-              right: IR::IntegerLiteral.new(value: 0, type: int_type),
-              type: @ctx.types.fetch("bool"),
-            )
-            data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
-            some_payload_expr = IR::Member.new(receiver: data_expr, member: "some", type: nil)
-            task_type = type.arguments.first
-            task_value_expr = IR::Member.new(receiver: some_payload_expr, member: "value", type: task_type)
-            release_body = lower_contained_task_release_statements(task_value_expr, task_type)
-            none_assignment = IR::Assignment.new(
-              target: kind_expr,
-              operator: "=",
-              value: IR::IntegerLiteral.new(value: 1, type: int_type),
-            )
-            then_body = release_body + [none_assignment]
-            [IR::IfStmt.new(condition: some_check, then_body:, else_body: nil)]
+            lower_opt_task_value_release_statements(value_expr, type.arguments.first)
           else
             []
           end
@@ -102,6 +63,28 @@ module MilkTea
         else
           []
         end
+      end
+
+      def lower_opt_task_value_release_statements(value_expr, task_type)
+        int_type = @ctx.types.fetch("int")
+        kind_expr = IR::Member.new(receiver: value_expr, member: "kind", type: int_type)
+        some_check = IR::Binary.new(
+          operator: "==",
+          left: kind_expr,
+          right: IR::IntegerLiteral.new(value: 0, type: int_type),
+          type: @ctx.types.fetch("bool"),
+        )
+        data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
+        some_payload_expr = IR::Member.new(receiver: data_expr, member: "some", type: nil)
+        task_value_expr = IR::Member.new(receiver: some_payload_expr, member: "value", type: task_type)
+        release_body = lower_contained_task_release_statements(task_value_expr, task_type)
+        none_assignment = IR::Assignment.new(
+          target: kind_expr,
+          operator: "=",
+          value: IR::IntegerLiteral.new(value: 1, type: int_type),
+        )
+        then_body = release_body + [none_assignment]
+        [IR::IfStmt.new(condition: some_check, then_body:, else_body: nil)]
       end
 
       def lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers: [], loop_flow: nil)

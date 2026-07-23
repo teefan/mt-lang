@@ -2015,7 +2015,7 @@ function main() -> int:
     assert_match(/struct demo_variant_codegen_Token_ident \{/, generated)
     assert_match(/struct demo_variant_codegen_Token_number \{/, generated)
     # Data union (ident and number have payloads)
-    assert_match(/union demo_variant_codegen_Token__data \{/, generated)
+    assert_match(/union demo_variant_codegen_Token_data \{/, generated)
     # Outer struct with kind and data fields
     assert_match(/struct demo_variant_codegen_Token \{/, generated)
     assert_match(/demo_variant_codegen_Token_kind kind;/, generated)
