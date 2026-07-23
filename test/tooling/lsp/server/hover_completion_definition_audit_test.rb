@@ -110,7 +110,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   # =====================================================================
 
   def test_hover_free_function_shows_signature
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_func.mt"
       client.send_notification("textDocument/didOpen", {
@@ -129,7 +129,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_hover_instance_method_shows_signature
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_method.mt"
       client.send_notification("textDocument/didOpen", {
@@ -147,7 +147,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_hover_static_method_shows_signature
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_static.mt"
       client.send_notification("textDocument/didOpen", {
@@ -165,7 +165,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_hover_local_variable_shows_type
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_local.mt"
       client.send_notification("textDocument/didOpen", {
@@ -183,7 +183,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_hover_constant_shows_type_and_value
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_const.mt"
       client.send_notification("textDocument/didOpen", {
@@ -201,7 +201,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_hover_struct_field_in_member_access
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_field.mt"
       source = <<~MT
@@ -227,7 +227,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_hover_enum_type
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_enum.mt"
       client.send_notification("textDocument/didOpen", {
@@ -244,7 +244,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_hover_member_chain_nested_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_chain.mt"
       source = <<~MT
@@ -276,7 +276,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   # =====================================================================
 
   def test_definition_free_function
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_func.mt"
       client.send_notification("textDocument/didOpen", {
@@ -296,7 +296,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_definition_static_method
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_static.mt"
       client.send_notification("textDocument/didOpen", {
@@ -316,7 +316,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_definition_instance_method_from_call_site
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_inst_method.mt"
       client.send_notification("textDocument/didOpen", {
@@ -336,7 +336,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_definition_local_variable
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_local.mt"
       client.send_notification("textDocument/didOpen", {
@@ -356,7 +356,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_definition_constant
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_const.mt"
       client.send_notification("textDocument/didOpen", {
@@ -376,7 +376,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_definition_named_argument_label
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_named_arg.mt"
       client.send_notification("textDocument/didOpen", {
@@ -395,7 +395,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   end
 
   def test_definition_for_loop_binding
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_for.mt"
       source = <<~MT
@@ -426,7 +426,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   # =====================================================================
 
   def test_definition_named_arg_on_method_call
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_named_arg_method.mt"
       source = <<~MT
@@ -501,7 +501,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   MT
 
   def test_definition_enum_type_name
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_enum.mt"
       client.send_notification("textDocument/didOpen", {
@@ -551,7 +551,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, COMPLETION_SOURCE)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -596,7 +596,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -631,7 +631,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -675,7 +675,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -718,7 +718,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
       MT
       File.write(main_path, main_source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -761,7 +761,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
       File.write(lib_path, lib_source)
       File.write(main_path, main_source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -805,7 +805,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
       File.write(geo_path, geo_source)
       File.write(main_path, main_source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -852,7 +852,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
       File.write(lib_path, lib_source)
       File.write(main_path, main_source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -879,7 +879,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   # =====================================================================
 
   def test_hover_editable_method_via_member_access
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_hover_editable.mt"
       client.send_notification("textDocument/didOpen", {
@@ -901,7 +901,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   # =====================================================================
 
   def test_definition_editable_method_via_member_access
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_def_editable.mt"
       client.send_notification("textDocument/didOpen", {
@@ -925,7 +925,7 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
   # =====================================================================
 
   def test_completion_returns_empty_for_keyword_position
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_hcd_comp_keyword.mt"
       source = <<~MT

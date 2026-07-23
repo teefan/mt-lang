@@ -2,6 +2,7 @@
 
 require "json"
 require "cgi/escape"
+require "delegate"
 require "tmpdir"
 require "timeout"
 require_relative "../../../test_helper"
@@ -873,5 +874,62 @@ function main(value: int) -> int:
     stdout_read&.close
     Process.kill("TERM", pid) rescue nil
     Process.wait(pid) rescue nil
+  end
+
+  def with_live_server(&block)
+    server_state = LSPServerTestHelpers.live_server_state_for(self.class)
+    unless server_state[:client]
+      stdin_read, stdin_write = IO.pipe
+      stdout_read, stdout_write = IO.pipe
+      server_state[:pid] = spawn(
+        RbConfig.ruby, "-I", LIB_DIR,
+        "-e", "require 'milk_tea'; MilkTea::LSP::Server.new.run",
+        in: stdin_read, out: stdout_write, err: File::NULL,
+      )
+      stdin_read.close
+      stdout_write.close
+      raw_client = LSPClient.new(stdin_write, stdout_read)
+      server_state[:client] = TrackingLSPClient.new(raw_client, server_state)
+      server_state[:docs] = Set.new
+      server_state[:io] = [stdin_write, stdout_read]
+      Minitest.after_run do
+        stdin_write&.close rescue nil
+        stdout_read&.close rescue nil
+        Process.kill("TERM", server_state[:pid]) rescue nil
+        Process.wait(server_state[:pid]) rescue nil
+      end
+    end
+
+    server_state[:docs].each do |doc_uri|
+      server_state[:client].send_notification("textDocument/didClose",
+        { "textDocument" => { "uri" => doc_uri } })
+    end
+    server_state[:docs].clear
+
+    block.call(server_state[:client])
+  end
+
+  class TrackingLSPClient < SimpleDelegator
+    def initialize(delegate, server_state)
+      super(delegate)
+      @server_state = server_state
+    end
+
+    def send_notification(method, params = {})
+      if method == "textDocument/didOpen"
+        uri = params.dig("textDocument", "uri")
+        @server_state[:docs] << uri if uri
+      end
+      __getobj__.send_notification(method, params)
+    end
+  end
+
+  def self.live_server_state_for(klass)
+    @_live_states ||= {}
+    @_live_states[klass] ||= {}
+  end
+
+  def track_live_doc(uri)
+    LSPServerTestHelpers.live_server_state_for(self.class)[:docs] << uri
   end
 end

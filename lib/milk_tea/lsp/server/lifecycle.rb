@@ -8,6 +8,16 @@ module MilkTea
 
       def handle_initialize(params)
         @pull_diagnostics_active = true
+        if @root_uri
+          @workspace.reset
+          @diagnostic_report_cache.clear
+          @workspace_diagnostic_cache.clear
+          @semantic_tokens_cache.clear
+          @semantic_tokens_delta_cache.clear
+          @fixall_cache.clear
+          @definition_file_token_cache.clear
+          @definition_file_ast_cache.clear
+        end
         @root_uri = params['rootUri']
         @client_capabilities = params['capabilities'] || {}
         @workspace.workspace_root_path = uri_to_path(@root_uri)
