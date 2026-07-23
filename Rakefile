@@ -296,7 +296,7 @@ namespace :release do
   desc "Build and publish the gem to RubyGems.org"
   task :push do
     sh "gem build milk_tea.gemspec"
-    gem_file = Dir["milk_tea-*.gem"].sort_by { |f| File.mtime(f) }.last
+    gem_file = Dir["mt-lang-*.gem"].sort_by { |f| File.mtime(f) }.last
     sh "gem push #{gem_file}"
   end
 end
