@@ -362,6 +362,10 @@ module MilkTea
         return [:property, ['declaration']] if variant_payload_field_declaration_token?(tokens, index)
         return [:property, ['declaration']] if field_declaration_token?(tokens, index)
 
+        if destructure_let_binding?(tokens, index)
+          return [:variable, ['declaration', 'readonly']]
+        end
+
         if facts
           return [:typeParameter, ['declaration']] if type_parameter_declaration_token?(facts, tokens, index)
           return [:typeParameter, []] if type_parameter_reference_token?(facts, tokens, index)
@@ -544,6 +548,33 @@ module MilkTea
 
         next_tok = next_non_trivia_token(tokens, index + 1)
         next_tok&.type == :colon
+      end
+
+      def destructure_let_binding?(tokens, index)
+        tok = tokens[index]
+        return false unless tok&.type == :identifier
+
+        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
+        return false unless line_tokens.length >= 3
+
+        first = line_tokens[0]
+        return false unless [:let, :var].include?(first.type)
+
+        eq_idx = line_tokens.index { |t| t.type == :equal }
+        lparen_idx = line_tokens.index { |t| t.type == :lparen }
+        return false unless lparen_idx
+
+        return false if eq_idx && lparen_idx >= eq_idx
+
+        # let (a, b) = ...
+        if line_tokens[1]&.type == :lparen
+          return first.type == :let
+        end
+
+        # let Vec2(x, y) = ... — identifier then lparen adjacency
+        return false unless line_tokens[1]&.type == :identifier && lparen_idx == 2
+
+        first.type == :let
       end
 
       def struct_event_declaration_token?(tokens, index)
