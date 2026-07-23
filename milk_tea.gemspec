@@ -32,7 +32,7 @@ Gem::Specification.new do |spec|
     gem_files += Dir.glob("lib/**/*.erb").to_a
     gem_files += Dir.glob("lib/**/public/**/*").to_a
     gem_files += Dir.glob("bin/*").to_a
-    gem_files += Dir.glob("docs/reference/**/*").to_a
+    gem_files += Dir.glob("docs/**/*").to_a
 
     gem_files
   end
