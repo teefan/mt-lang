@@ -11,6 +11,8 @@ Gem::Specification.new do |spec|
                         "async/await, generics, pattern matching, and a comprehensive standard library. " \
                         "Includes the mtc compiler, LSP server (mtc lsp), and DAP debug adapter (mtc dap)."
   spec.homepage      = "https://teefan.github.io/mt-lang/"
+  spec.license       = "MIT"
+  spec.licenses      = ["MIT"]
   spec.metadata["homepage_uri"]    = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/teefan/mt-lang"
 
