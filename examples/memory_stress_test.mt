@@ -301,9 +301,9 @@ function move_bytes_demo() -> void:
 
 function endian_demo() -> void:
     let host32: uint = 0x01020304
-    let net32 = endian.hton32(host32)
-    let back32 = endian.ntoh32(net32)
-    let swapped16 = endian.swap_u16(ushort<-0x1234)
+    let net32 = endian.hton_uint(host32)
+    let back32 = endian.ntoh_uint(net32)
+    let swapped16 = endian.swap_ushort(ushort<-0x1234)
     let _ = host32
     let _ = net32
     let _ = back32

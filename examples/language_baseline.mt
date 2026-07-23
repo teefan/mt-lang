@@ -1664,9 +1664,9 @@ function atomic_demo() -> int:
 
 function endian_demo() -> uint:
     let original: uint = 0x01020304
-    let swapped = endian.swap_u32(original)
-    let network = endian.hton32(original)
-    let host = endian.ntoh32(network)
+    let swapped = endian.swap_uint(original)
+    let network = endian.hton_uint(original)
+    let host = endian.ntoh_uint(network)
     return swapped + network + host
 
 function move_bytes_demo() -> void:
