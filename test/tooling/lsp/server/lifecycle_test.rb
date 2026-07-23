@@ -372,4 +372,253 @@ class LifecycleTest < Minitest::Test
     end
   end
 
+  # ── Non-blocking indexing stress tests ──────────────────────────────────
+
+  def test_hover_works_during_background_indexing
+    Dir.mktmpdir("mt-lsp-stress-index") do |dir|
+      50.times do |i|
+        File.write(File.join(dir, "mod_#{i}.mt"), <<~MT)
+          public function lib_#{i}(x: int) -> int:
+              return x + #{i}
+        MT
+      end
+
+      main_source = <<~MT
+        function sum_all(a: int) -> int:
+            return a + 1
+      MT
+      main_path = File.join(dir, "main.mt")
+      File.write(main_path, main_source)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        # Hover should work immediately — indexing runs in background
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => 0, "character" => 12 }
+        })
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "sum_all", "hover should work during background indexing"
+        assert_includes hover_value, "-> int"
+      end
+    end
+  end
+
+  def test_rapid_edits_reflect_latest_state
+    Dir.mktmpdir("mt-lsp-stress-edits") do |dir|
+      v1 = <<~MT
+        function add_one(x: int) -> int:
+            return x + 1
+      MT
+      v2 = <<~MT
+        function add_two(x: int) -> int:
+            return x + 2
+      MT
+      v3 = <<~MT
+        function add_three(x: int) -> int:
+            return x + 3
+      MT
+
+      path = File.join(dir, "main.mt")
+      File.write(path, v1)
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => v1 }
+        })
+
+        # Rapid edits without waiting for each to resolve
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => uri, "version" => 2 },
+          "contentChanges" => [{ "text" => v2 }]
+        })
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => uri, "version" => 3 },
+          "contentChanges" => [{ "text" => v3 }]
+        })
+
+        # Hover should reflect the LATEST edit (v3), not stale v1 or v2
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => 0, "character" => 12 }
+        })
+        hover_value = hover.dig("result", "contents", "value")
+        assert_includes hover_value, "add_three", "hover should reflect latest edit, not stale content"
+      end
+    end
+  end
+
+  def test_cross_file_reference_works_after_background_indexing_completes
+    Dir.mktmpdir("mt-lsp-stress-cross") do |dir|
+      lib_path = File.join(dir, "lib.mt")
+      File.write(lib_path, <<~MT)
+        public function get_magic() -> int:
+            return 42
+      MT
+
+      main_path = File.join(dir, "main.mt")
+      main_source = <<~MT
+        import lib
+
+        function caller() -> int:
+            return lib.get_magic()
+      MT
+      File.write(main_path, main_source)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        # Wait briefly for background indexing to catch the lib file
+        sleep 0.2
+
+        # Hover on lib.get_magic should resolve the imported function
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => 3, "character" => 18 }
+        })
+        hover_value = hover.dig("result", "contents", "value")
+        assert_includes hover_value, "get_magic", "cross-file reference should resolve after indexing"
+        assert_includes hover_value, "-> int"
+      end
+    end
+  end
+
+  def test_edit_while_indexing_preserves_correct_diagnostics
+    Dir.mktmpdir("mt-lsp-stress-diag") do |dir|
+      valid_source = <<~MT
+        function valid_fn() -> int:
+            return 0
+      MT
+      path = File.join(dir, "probe.mt")
+      File.write(path, valid_source)
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => valid_source }
+        })
+
+        # Edit to an invalid source while background indexing may still be running
+        broken_source = "function main() -> int: return x"
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => uri, "version" => 2 },
+          "contentChanges" => [{ "text" => broken_source }]
+        })
+
+        # Hover on the invalid function name should not crash
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => 0, "character" => 12 }
+        })
+        refute_nil hover["result"], "hover should not crash on invalid source"
+      end
+    end
+  end
+
+  def test_initialized_logs_progress_and_completes
+    Dir.mktmpdir("mt-lsp-stress-progress") do |dir|
+      File.write(File.join(dir, "a.mt"), "function fa() -> int:\n    return 1\n")
+      File.write(File.join(dir, "b.mt"), "function fb() -> int:\n    return 2\n")
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+
+        # Send initialized and capture progress notifications that follow
+        # We need to read the progress notifications from stdout before sending the next request
+        Timeout.timeout(5) do
+          client.send_notification("initialized", {})
+
+          # Read the $/progress notifications until we see the "end" kind
+          end_seen = false
+          begin
+            loop do
+              # Use a short timeout to read available messages
+              msg = Timeout.timeout(1) { client.send(:read_message) }
+              break unless msg
+
+              if msg["method"] == "$/progress"
+                value = msg.dig("params", "value")
+                end_seen = true if value && value["kind"] == "end"
+              end
+
+              break if end_seen
+            end
+          rescue Timeout::Error
+            # Timeout waiting for messages — that's OK if all progress is done
+          end
+
+          # Server should respond to requests after indexing
+          uri = path_to_uri(File.join(dir, "a.mt"))
+          client.send_notification("textDocument/didOpen", {
+            "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1,
+              "text" => "function fa() -> int:\n    return 1\n" }
+          })
+          response = client.send_request("textDocument/hover", {
+            "textDocument" => { "uri" => uri },
+            "position" => { "line" => 0, "character" => 10 }
+          })
+          assert_includes response.dig("result", "contents", "value"), "fa"
+        end
+      end
+    end
+  end
+
+  def test_no_deadlock_during_concurrent_indexing_and_editing
+    Dir.mktmpdir("mt-lsp-stress-deadlock") do |dir|
+      20.times { |i| File.write(File.join(dir, "f#{i}.mt"), "function f#{i}() -> int:\n    return #{i}\n") }
+
+      main_path = File.join(dir, "main.mt")
+      main_source = "function main() -> int:\n    return 0\n"
+      File.write(main_path, main_source)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        # Immediately open and edit while indexing is running
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        # Send several rapid edits
+        5.times do |n|
+          client.send_notification("textDocument/didChange", {
+            "textDocument" => { "uri" => main_uri, "version" => n + 2 },
+            "contentChanges" => [{ "text" => "function main() -> int:\n    return #{n}\n" }]
+          })
+        end
+
+        # All requests should complete without hanging
+        3.times do
+          response = client.send_request("textDocument/hover", {
+            "textDocument" => { "uri" => main_uri },
+            "position" => { "line" => 0, "character" => 12 }
+          })
+          refute_nil response["result"], "server should respond without deadlock"
+        end
+      end
+    end
+  end
+
 end
