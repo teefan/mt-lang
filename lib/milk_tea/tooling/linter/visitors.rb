@@ -804,14 +804,15 @@ module MilkTea
           emit_conciseness_hint(
             "prefer-conditional-expression",
             line:, column:,
-            message: "every #{kind} branch returns a value; use a `return #{kind} …` expression",
+            message: "every #{kind} branch returns a value; rewrite as `return #{kind} …` expression",
           )
         elsif stmts.all? { |s| s.is_a?(AST::Assignment) && s.operator == "=" } &&
               stmts.map { |s| node_fingerprint(s.target) }.uniq.size == 1
+          target_name = stmts.first.target.name
           emit_conciseness_hint(
             "prefer-conditional-expression",
             line:, column:,
-            message: "every #{kind} branch assigns the same target; use a `#{kind} …` expression",
+            message: "every #{kind} branch assigns to '#{target_name}'; rewrite as `let #{target_name} = #{kind} …` expression",
           )
         end
       end
