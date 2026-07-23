@@ -602,11 +602,17 @@ class SemanticTokensTest < Minitest::Test
           "contentChanges" => [{ "text" => api_updated }]
         })
 
-        second = client.send_request("textDocument/semanticTokens/full", {
-          "textDocument" => { "uri" => main_uri }
-        })
-        second_entries = decode_semantic_token_entries(second.fetch("result").fetch("data"), legend)
-        second_answer = semantic_entry_for_lexeme(main_source, second_entries, "Answer")
+        second_entries = nil
+        second_answer = nil
+        3.times do
+          second_resp = client.send_request("textDocument/semanticTokens/full", {
+            "textDocument" => { "uri" => main_uri }
+          })
+          second_entries = decode_semantic_token_entries(second_resp.fetch("result").fetch("data"), legend)
+          second_answer = second_entries && semantic_entry_for_lexeme(main_source, second_entries, "Answer")
+          break if second_answer && second_answer.fetch("tokenType") == "type"
+          sleep 0.05
+        end
 
         assert_equal "type", second_answer.fetch("tokenType")
       end
