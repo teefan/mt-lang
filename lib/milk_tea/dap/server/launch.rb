@@ -208,14 +208,12 @@ module MilkTea
 
               write_event("terminated")
               write_event("exited", { exitCode: exit_code })
-              @session.request_exit!
             end
           rescue StandardError => e
             @session.terminate!
             write_event("output", { category: "stderr", output: "DAP runtime error: #{e.message}\n" })
             write_event("terminated")
             write_event("exited", { exitCode: 1 })
-            @session.request_exit!
           ensure
             @runtime_mutex.synchronize do
               @runtime_pid = nil
