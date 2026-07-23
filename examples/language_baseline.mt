@@ -1675,6 +1675,10 @@ function move_bytes_demo() -> void:
     buf[1] = ubyte<-2
     heap.move_bytes(ptr_of(buf[2]), ptr_of(buf[0]), 2)
 
+function bytes_of_demo() -> span[ubyte]:
+    var p = Vec2(x = 1.0, y = 2.0)
+    return heap.bytes_of[Vec2](ref_of(p))
+
 # =============================================================================
 # 36  Entrypoint
 # =============================================================================
