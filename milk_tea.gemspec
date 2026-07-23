@@ -10,13 +10,9 @@ Gem::Specification.new do |spec|
   spec.description   = "A statically-typed, compiled programming language with C ABI interop, " \
                         "async/await, generics, pattern matching, and a comprehensive standard library. " \
                         "Includes the mtc compiler, LSP server (mtc lsp), and DAP debug adapter (mtc dap)."
-  spec.homepage      = "https://github.com/teefan/mt-lang"
-  spec.license       = "MIT"
-
-  spec.required_ruby_version = ">= 4.0.0"
-
+  spec.homepage      = "https://teefan.github.io/mt-lang/"
   spec.metadata["homepage_uri"]    = spec.homepage
-  spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["source_code_uri"] = "https://github.com/teefan/mt-lang"
 
   spec.files = Dir.chdir(__dir__) do
     gem_files = %w[
