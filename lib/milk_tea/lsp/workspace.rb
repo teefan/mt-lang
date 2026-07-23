@@ -83,6 +83,23 @@ module MilkTea
         @indexed_uris = Set.new
       end
 
+      def reset
+        @indexed_documents.clear
+        @shared_module_cache.clear
+        @definition_index.clear
+        @identifier_index.clear
+        @full_reverse_index_built = false
+        @indexed_uris.clear
+        @definition_miss_cache.clear
+        @definition_candidate_uris.clear
+        @definition_names_by_uri.clear
+        @definition_warmup_enqueued.clear
+        @dependency_module_name_by_uri.clear
+        @dependency_imports_by_uri.clear
+        @reverse_import_dependents.clear
+        @diagnostics_cache.clear
+      end
+
       include WorkspaceStore
       include WorkspaceCaches
       include WorkspaceAnalysis

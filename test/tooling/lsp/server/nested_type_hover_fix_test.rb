@@ -24,7 +24,7 @@ class NestedTypeHoverFixTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         uri = path_to_uri(path)
@@ -74,7 +74,7 @@ class NestedTypeHoverFixTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
         uri = path_to_uri(path)

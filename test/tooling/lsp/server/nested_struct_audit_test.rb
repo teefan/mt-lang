@@ -76,7 +76,7 @@ class NestedStructAuditTest < Minitest::Test
   # =====================================================================
 
   def test_rename_nested_struct_field_start
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_rename_nested_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -112,7 +112,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_rename_nested_struct_field_end
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_rename_end.mt"
       client.send_notification("textDocument/didOpen", {
@@ -143,7 +143,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_rename_deeply_nested_struct_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_rename_deeply_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -173,7 +173,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_rename_nested_field_from_usage_site
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_rename_qualified_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -197,7 +197,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_rename_struct_field_on_parent_with_nested_types
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_rename_parent_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -225,7 +225,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_rename_extending_method_on_nested_type
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_rename_nested_method.mt"
       client.send_notification("textDocument/didOpen", {
@@ -254,7 +254,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_prepare_rename_nested_struct_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_prep_rename.mt"
       client.send_notification("textDocument/didOpen", {
@@ -312,7 +312,7 @@ class NestedStructAuditTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, source)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -431,7 +431,7 @@ class NestedStructAuditTest < Minitest::Test
       path = File.join(dir, "main.mt")
       File.write(path, FULL_SOURCE)
 
-      with_server do |client|
+      with_live_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
         client.send_notification("initialized", {})
 
@@ -465,7 +465,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_hover_nested_struct_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_hover_nested_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -488,7 +488,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_hover_nested_struct_parent_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_hover_parent_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -511,7 +511,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_hover_deeply_nested_struct_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_hover_deeply_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -534,7 +534,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_hover_deeply_nested_mid_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_hover_mid_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -557,7 +557,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_hover_qualified_type_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_hover_qualified_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -580,7 +580,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_hover_nested_type_method
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_hover_nested_method.mt"
       client.send_notification("textDocument/didOpen", {
@@ -607,7 +607,7 @@ class NestedStructAuditTest < Minitest::Test
   # =====================================================================
 
   def test_definition_nested_struct_field_to_declaration
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_def_nested_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -632,7 +632,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_definition_deeply_nested_field_to_declaration
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_def_deeply_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -657,7 +657,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_definition_nested_type_method_to_declaration
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_def_nested_method.mt"
       client.send_notification("textDocument/didOpen", {
@@ -686,7 +686,7 @@ class NestedStructAuditTest < Minitest::Test
   # =====================================================================
 
   def test_references_nested_struct_field
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_ref_nested_field.mt"
       client.send_notification("textDocument/didOpen", {
@@ -710,7 +710,7 @@ class NestedStructAuditTest < Minitest::Test
   end
 
   def test_references_extending_method_on_nested_type
-    with_server do |client|
+    with_live_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_audit_ref_nested_method.mt"
       client.send_notification("textDocument/didOpen", {
