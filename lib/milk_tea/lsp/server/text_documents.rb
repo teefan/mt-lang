@@ -92,6 +92,34 @@ module MilkTea
         schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
         nil
       end
+
+      def handle_will_save_wait_until(params)
+        uri = params.dig('textDocument', 'uri')
+        reason = params['reason']
+        return nil unless uri
+
+        content = @workspace.get_content(uri)
+        return nil if content.nil? || content.empty?
+        return nil if skip_expensive_work_reason(uri, content)
+
+        begin
+          formatted = Timeout.timeout(0.5) do
+            Formatter.format_source(content, path: uri, mode: @format_mode)
+          end
+          return nil if formatted == content
+
+          line_count = content.count("\n")
+          [{
+            range: {
+              start: { line: 0, character: 0 },
+              end:   { line: line_count + 1, character: 0 }
+            },
+            newText: formatted
+          }]
+        rescue Timeout::Error, StandardError
+          nil
+        end
+      end
       end
     end
   end

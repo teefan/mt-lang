@@ -3471,7 +3471,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc deps publish \[PATH_OR_PACKAGE\] \[--upstream\]/, err.string)
     assert_match(/mtc deps fetch \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc bindgen MODULE HEADER .*--nullable-report PATH/, err.string)
-    refute_match(/mtc dap/, err.string)
+    assert_match(/mtc dap/, err.string)
   end
 
   def test_new_command_creates_project_scaffold_and_generated_entry_checks

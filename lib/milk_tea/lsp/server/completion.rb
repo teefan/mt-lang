@@ -32,6 +32,13 @@ module MilkTea
           "#{label}(#{stops.join(', ')})"
         end
 
+        def label_details_for_params(params_str, module_name = nil)
+          result = {}
+          result[:detail] = " (#{params_str})" if params_str && !params_str.empty?
+          result[:description] = module_name if module_name && !module_name.empty?
+          result.empty? ? nil : result
+        end
+
       def handle_completion(params)
         stages = new_perf_stages
         total_start = stages ? monotonic_time : nil
@@ -114,6 +121,9 @@ module MilkTea
                   sortText:   "0_#{fname}",
                   data:       completion_data(fname),
                 }
+                if (ld = label_details_for_params(params_str, module_binding.name))
+                  item[:labelDetails] = ld
+                end
                 if (snippet = snippet_for_callable(fname, binding.type.params))
                   item[:insertText] = snippet
                   item[:insertTextFormat] = 2
@@ -270,6 +280,9 @@ module MilkTea
                   sortText:   "0_#{mname}",
                   data:       completion_data(mname),
                 }
+                if (ld = label_details_for_params(params_str, nil))
+                  item[:labelDetails] = ld
+                end
                 if (snippet = snippet_for_callable(mname, binding.type.params))
                   item[:insertText] = snippet
                   item[:insertTextFormat] = 2
@@ -306,6 +319,10 @@ module MilkTea
               sortText:     "0_#{name}",
               data:         completion_data(name),
             }
+
+            if (ld = label_details_for_params(params_str, nil))
+              entry[:labelDetails] = ld
+            end
 
             if (snippet = snippet_for_callable(name, binding.type.params))
               entry[:insertText] = snippet
@@ -484,6 +501,9 @@ module MilkTea
             sortText:   "0_#{display_name}",
             data:       completion_data(display_name),
           }
+          if (ld = label_details_for_params(params_str, nil))
+            item[:labelDetails] = ld
+          end
           if (snippet = snippet_for_callable(display_name, binding.type.params))
             item[:insertText] = snippet
             item[:insertTextFormat] = 2
@@ -684,6 +704,9 @@ module MilkTea
             sortText:   "1_#{mname}",
             data:       completion_data(mname),
           }
+          if (ld = label_details_for_params(params_str, nil))
+            item[:labelDetails] = ld
+          end
           if (snippet = snippet_for_callable(mname, binding.type.params))
             item[:insertText] = snippet
             item[:insertTextFormat] = 2

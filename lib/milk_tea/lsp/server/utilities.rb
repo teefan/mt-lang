@@ -307,10 +307,13 @@ module MilkTea
 
       def token_to_range(token)
         end_line, end_character = token_end_position(token)
+        start_line = token.line - 1
+        start_char = encode_char_for_client(start_line, token.column - 1)
+        end_char = encode_char_for_client(end_line, end_character)
 
         {
-          start: { line: token.line - 1, character: token.column - 1 },
-          end:   { line: end_line, character: end_character }
+          start: { line: start_line, character: start_char },
+          end:   { line: end_line, character: end_char }
         }
       end
 
@@ -321,6 +324,51 @@ module MilkTea
         else
           [token.line - 1 + segments.length - 1, segments.last.length]
         end
+      end
+
+      def encode_char_for_client(lsp_line, internal_char)
+        return internal_char if @position_encoding == 'utf-16'
+
+        internal_char
+      end
+
+      def decode_client_char(uri, lsp_line, client_char)
+        return client_char if @position_encoding == 'utf-16'
+
+        content = @workspace.get_content(uri)
+        return client_char unless content
+
+        lines = content.split("\n", -1)
+        line_text = lines[lsp_line]
+        return client_char unless line_text
+
+        if @position_encoding == 'utf-8'
+          utf8_to_utf16_char(line_text, client_char)
+        elsif @position_encoding == 'utf-32'
+          utf32_to_utf16_char(line_text, client_char)
+        else
+          client_char
+        end
+      end
+
+      def utf8_to_utf16_char(line_text, utf8_offset)
+        bytes_seen = 0
+        utf16_count = 0
+        line_text.each_char do |ch|
+          break if bytes_seen >= utf8_offset
+          bytes_seen += ch.bytesize
+          utf16_count += ch.ord > 0xFFFF ? 2 : 1
+        end
+        utf16_count
+      end
+
+      def utf32_to_utf16_char(line_text, utf32_offset)
+        utf16_count = 0
+        line_text.each_char.with_index do |ch, idx|
+          break if idx >= utf32_offset
+          utf16_count += ch.ord > 0xFFFF ? 2 : 1
+        end
+        utf16_count
       end
 
       def diagnostics_fingerprint(content, diagnostics)
