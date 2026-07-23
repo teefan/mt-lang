@@ -170,19 +170,18 @@ enum rresFontStyle: int
     RRES_FONT_STYLE_BOLD = 2
     RRES_FONT_STYLE_ITALIC = 3
 
-external function rresLoadResourceChunk(fileName: cstr, rresId: uint) -> rresResourceChunk
+external function rresLoadResourceChunk(fileName: cstr, rresId: int) -> rresResourceChunk
 external function rresUnloadResourceChunk(chunk: rresResourceChunk) -> void
-external function rresLoadResourceMulti(fileName: cstr, rresId: uint) -> rresResourceMulti
+external function rresLoadResourceMulti(fileName: cstr, rresId: int) -> rresResourceMulti
 external function rresUnloadResourceMulti(multi: rresResourceMulti) -> void
-external function rresLoadResourceChunkInfo(fileName: cstr, rresId: uint) -> rresResourceChunkInfo
+external function rresLoadResourceChunkInfo(fileName: cstr, rresId: int) -> rresResourceChunkInfo
 external function rresLoadResourceChunkInfoAll(fileName: cstr, chunkCount: ptr[uint]) -> ptr[rresResourceChunkInfo]
 external function rresLoadCentralDirectory(fileName: cstr) -> rresCentralDir
 external function rresUnloadCentralDirectory(dir: rresCentralDir) -> void
 external function rresGetDataType(fourCC: const_ptr[ubyte]) -> uint
-external function rresGetResourceId(dir: rresCentralDir, fileName: cstr) -> uint
-external function rresComputeCRC32(data: const_ptr[ubyte], len: int) -> uint
+external function rresGetResourceId(dir: rresCentralDir, fileName: cstr) -> int
+external function rresComputeCRC32(data: ptr[ubyte], len: int) -> uint
 external function rresSetCipherPassword(pass_: cstr) -> void
 external function rresGetCipherPassword() -> cstr
 
-const RRES_SUPPORT_LOG_INFO: int = 1
 const RRES_MAX_FILENAME_SIZE: int = 1024

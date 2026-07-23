@@ -1400,7 +1400,6 @@ enum SDL_JoystickConnectionState: int
     SDL_JOYSTICK_CONNECTION_WIRELESS = 2
 
 external function SDL_LockJoysticks() -> void
-external function SDL_TryLockJoysticks() -> bool
 external function SDL_UnlockJoysticks() -> void
 external function SDL_HasJoystick() -> bool
 external function SDL_GetJoysticks(count: ptr[int]?) -> ptr[SDL_JoystickID]?
@@ -3849,9 +3848,6 @@ struct SDL_GPURenderStateCreateInfo:
 opaque SDL_GPURenderState = c"SDL_GPURenderState"
 
 external function SDL_CreateGPURenderState(renderer: ptr[SDL_Renderer], createinfo: const_ptr[SDL_GPURenderStateCreateInfo]) -> ptr[SDL_GPURenderState]?
-external function SDL_SetGPURenderStateSamplerBindings(state: ptr[SDL_GPURenderState], num_sampler_bindings: int, sampler_bindings: const_ptr[SDL_GPUTextureSamplerBinding]) -> bool
-external function SDL_SetGPURenderStateStorageTextures(state: ptr[SDL_GPURenderState], num_storage_textures: int, storage_textures: const_ptr[ptr[SDL_GPUTexture]]) -> bool
-external function SDL_SetGPURenderStateStorageBuffers(state: ptr[SDL_GPURenderState], num_storage_buffers: int, storage_buffers: const_ptr[ptr[SDL_GPUBuffer]]) -> bool
 external function SDL_SetGPURenderStateFragmentUniforms(state: ptr[SDL_GPURenderState], slot_index: uint, data: const_ptr[void], length: uint) -> bool
 external function SDL_SetGPURenderState(renderer: ptr[SDL_Renderer], state: ptr[SDL_GPURenderState]?) -> bool
 external function SDL_DestroyGPURenderState(state: ptr[SDL_GPURenderState]) -> void
@@ -3891,7 +3887,6 @@ external function SDL_GetStorageSpaceRemaining(storage: ptr[SDL_Storage]) -> Uin
 external function SDL_GlobStorageDirectory(storage: ptr[SDL_Storage], path: cstr?, pattern: cstr?, flags_: uint, count: ptr[int]) -> ptr[ptr[char]]?
 external function SDL_SetLinuxThreadPriority(threadID: ptr_int, priority: int) -> bool
 external function SDL_SetLinuxThreadPriorityAndPolicy(threadID: ptr_int, sdlPriority: int, schedPolicy: int) -> bool
-external function SDL_IsPhone() -> bool
 external function SDL_IsTablet() -> bool
 external function SDL_IsTV() -> bool
 
@@ -3962,10 +3957,8 @@ opaque SDL_TrayEntry = c"SDL_TrayEntry"
 
 type SDL_TrayEntryFlags = uint
 type SDL_TrayCallback = fn(arg0: ptr[void], arg1: ptr[SDL_TrayEntry]) -> void
-type SDL_TrayClickCallback = fn(arg0: ptr[void], arg1: ptr[SDL_Tray]) -> bool
 
 external function SDL_CreateTray(icon: ptr[SDL_Surface], tooltip: cstr) -> ptr[SDL_Tray]
-external function SDL_CreateTrayWithProperties(props: uint) -> ptr[SDL_Tray]
 external function SDL_SetTrayIcon(tray: ptr[SDL_Tray], icon: ptr[SDL_Surface]) -> void
 external function SDL_SetTrayTooltip(tray: ptr[SDL_Tray], tooltip: cstr) -> void
 external function SDL_CreateTrayMenu(tray: ptr[SDL_Tray]) -> ptr[SDL_TrayMenu]
@@ -4135,5 +4128,5 @@ const SDL_TRAYENTRY_SUBMENU: uint = 4
 const SDL_TRAYENTRY_DISABLED: uint = 2147483648
 const SDL_TRAYENTRY_CHECKED: uint = 1073741824
 const SDL_MAJOR_VERSION: int = 3
-const SDL_MINOR_VERSION: int = 5
-const SDL_MICRO_VERSION: int = 0
+const SDL_MINOR_VERSION: int = 4
+const SDL_MICRO_VERSION: int = 12

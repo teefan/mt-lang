@@ -8,7 +8,6 @@
   "constants": {
     "strip_prefix": "RRES_",
     "exclude": [
-      "RRES_SUPPORT_LOG_INFO",
       "RRES_MAX_FILENAME_SIZE"
     ]
   },

@@ -101,15 +101,16 @@ external function pcre2_pattern_info_8(arg0: const_ptr[pcre2_code_8], arg1: uint
 external function pcre2_callout_enumerate_8(arg0: const_ptr[pcre2_code_8], arg1: fn(arg0: ptr[pcre2_callout_enumerate_block_8], arg1: ptr[void]) -> int, arg2: ptr[void]) -> int
 external function pcre2_match_data_create_8(arg0: uint, arg1: ptr[pcre2_general_context_8]) -> ptr[pcre2_match_data_8]
 external function pcre2_match_data_create_from_pattern_8(arg0: const_ptr[pcre2_code_8], arg1: ptr[pcre2_general_context_8]) -> ptr[pcre2_match_data_8]
+external function pcre2_match_data_free_8(arg0: ptr[pcre2_match_data_8]) -> void
 external function pcre2_dfa_match_8(arg0: const_ptr[pcre2_code_8], arg1: const_ptr[PCRE2_UCHAR8], arg2: ptr_uint, arg3: ptr_uint, arg4: uint, arg5: ptr[pcre2_match_data_8], arg6: ptr[pcre2_match_context_8], arg7: ptr[int], arg8: ptr_uint) -> int
 external function pcre2_match_8(arg0: const_ptr[pcre2_code_8], arg1: const_ptr[PCRE2_UCHAR8], arg2: ptr_uint, arg3: ptr_uint, arg4: uint, arg5: ptr[pcre2_match_data_8], arg6: ptr[pcre2_match_context_8]) -> int
-external function pcre2_match_data_free_8(arg0: ptr[pcre2_match_data_8]) -> void
 external function pcre2_get_mark_8(arg0: ptr[pcre2_match_data_8]) -> PCRE2_SPTR8
 external function pcre2_get_match_data_size_8(arg0: ptr[pcre2_match_data_8]) -> ptr_uint
 external function pcre2_get_match_data_heapframes_size_8(arg0: ptr[pcre2_match_data_8]) -> ptr_uint
 external function pcre2_get_ovector_count_8(arg0: ptr[pcre2_match_data_8]) -> uint
 external function pcre2_get_ovector_pointer_8(arg0: ptr[pcre2_match_data_8]) -> ptr[ptr_uint]
 external function pcre2_get_startchar_8(arg0: ptr[pcre2_match_data_8]) -> ptr_uint
+external function pcre2_next_match_8(arg0: ptr[pcre2_match_data_8], arg1: ptr[ptr_uint], arg2: ptr[uint]) -> int
 external function pcre2_substring_copy_byname_8(arg0: ptr[pcre2_match_data_8], arg1: const_ptr[PCRE2_UCHAR8], arg2: ptr[PCRE2_UCHAR8], arg3: ptr[ptr_uint]) -> int
 external function pcre2_substring_copy_bynumber_8(arg0: ptr[pcre2_match_data_8], arg1: uint, arg2: ptr[PCRE2_UCHAR8], arg3: ptr[ptr_uint]) -> int
 external function pcre2_substring_free_8(arg0: ptr[PCRE2_UCHAR8]) -> void
@@ -226,15 +227,16 @@ external function pcre2_pattern_info_16(arg0: const_ptr[pcre2_code_16], arg1: ui
 external function pcre2_callout_enumerate_16(arg0: const_ptr[pcre2_code_16], arg1: fn(arg0: ptr[pcre2_callout_enumerate_block_16], arg1: ptr[void]) -> int, arg2: ptr[void]) -> int
 external function pcre2_match_data_create_16(arg0: uint, arg1: ptr[pcre2_general_context_16]) -> ptr[pcre2_match_data_16]
 external function pcre2_match_data_create_from_pattern_16(arg0: const_ptr[pcre2_code_16], arg1: ptr[pcre2_general_context_16]) -> ptr[pcre2_match_data_16]
+external function pcre2_match_data_free_16(arg0: ptr[pcre2_match_data_16]) -> void
 external function pcre2_dfa_match_16(arg0: const_ptr[pcre2_code_16], arg1: const_ptr[PCRE2_UCHAR16], arg2: ptr_uint, arg3: ptr_uint, arg4: uint, arg5: ptr[pcre2_match_data_16], arg6: ptr[pcre2_match_context_16], arg7: ptr[int], arg8: ptr_uint) -> int
 external function pcre2_match_16(arg0: const_ptr[pcre2_code_16], arg1: const_ptr[PCRE2_UCHAR16], arg2: ptr_uint, arg3: ptr_uint, arg4: uint, arg5: ptr[pcre2_match_data_16], arg6: ptr[pcre2_match_context_16]) -> int
-external function pcre2_match_data_free_16(arg0: ptr[pcre2_match_data_16]) -> void
 external function pcre2_get_mark_16(arg0: ptr[pcre2_match_data_16]) -> PCRE2_SPTR16
 external function pcre2_get_match_data_size_16(arg0: ptr[pcre2_match_data_16]) -> ptr_uint
 external function pcre2_get_match_data_heapframes_size_16(arg0: ptr[pcre2_match_data_16]) -> ptr_uint
 external function pcre2_get_ovector_count_16(arg0: ptr[pcre2_match_data_16]) -> uint
 external function pcre2_get_ovector_pointer_16(arg0: ptr[pcre2_match_data_16]) -> ptr[ptr_uint]
 external function pcre2_get_startchar_16(arg0: ptr[pcre2_match_data_16]) -> ptr_uint
+external function pcre2_next_match_16(arg0: ptr[pcre2_match_data_16], arg1: ptr[ptr_uint], arg2: ptr[uint]) -> int
 external function pcre2_substring_copy_byname_16(arg0: ptr[pcre2_match_data_16], arg1: const_ptr[PCRE2_UCHAR16], arg2: ptr[PCRE2_UCHAR16], arg3: ptr[ptr_uint]) -> int
 external function pcre2_substring_copy_bynumber_16(arg0: ptr[pcre2_match_data_16], arg1: uint, arg2: ptr[PCRE2_UCHAR16], arg3: ptr[ptr_uint]) -> int
 external function pcre2_substring_free_16(arg0: ptr[PCRE2_UCHAR16]) -> void
@@ -351,15 +353,16 @@ external function pcre2_pattern_info_32(arg0: const_ptr[pcre2_code_32], arg1: ui
 external function pcre2_callout_enumerate_32(arg0: const_ptr[pcre2_code_32], arg1: fn(arg0: ptr[pcre2_callout_enumerate_block_32], arg1: ptr[void]) -> int, arg2: ptr[void]) -> int
 external function pcre2_match_data_create_32(arg0: uint, arg1: ptr[pcre2_general_context_32]) -> ptr[pcre2_match_data_32]
 external function pcre2_match_data_create_from_pattern_32(arg0: const_ptr[pcre2_code_32], arg1: ptr[pcre2_general_context_32]) -> ptr[pcre2_match_data_32]
+external function pcre2_match_data_free_32(arg0: ptr[pcre2_match_data_32]) -> void
 external function pcre2_dfa_match_32(arg0: const_ptr[pcre2_code_32], arg1: const_ptr[PCRE2_UCHAR32], arg2: ptr_uint, arg3: ptr_uint, arg4: uint, arg5: ptr[pcre2_match_data_32], arg6: ptr[pcre2_match_context_32], arg7: ptr[int], arg8: ptr_uint) -> int
 external function pcre2_match_32(arg0: const_ptr[pcre2_code_32], arg1: const_ptr[PCRE2_UCHAR32], arg2: ptr_uint, arg3: ptr_uint, arg4: uint, arg5: ptr[pcre2_match_data_32], arg6: ptr[pcre2_match_context_32]) -> int
-external function pcre2_match_data_free_32(arg0: ptr[pcre2_match_data_32]) -> void
 external function pcre2_get_mark_32(arg0: ptr[pcre2_match_data_32]) -> PCRE2_SPTR32
 external function pcre2_get_match_data_size_32(arg0: ptr[pcre2_match_data_32]) -> ptr_uint
 external function pcre2_get_match_data_heapframes_size_32(arg0: ptr[pcre2_match_data_32]) -> ptr_uint
 external function pcre2_get_ovector_count_32(arg0: ptr[pcre2_match_data_32]) -> uint
 external function pcre2_get_ovector_pointer_32(arg0: ptr[pcre2_match_data_32]) -> ptr[ptr_uint]
 external function pcre2_get_startchar_32(arg0: ptr[pcre2_match_data_32]) -> ptr_uint
+external function pcre2_next_match_32(arg0: ptr[pcre2_match_data_32], arg1: ptr[ptr_uint], arg2: ptr[uint]) -> int
 external function pcre2_substring_copy_byname_32(arg0: ptr[pcre2_match_data_32], arg1: const_ptr[PCRE2_UCHAR32], arg2: ptr[PCRE2_UCHAR32], arg3: ptr[ptr_uint]) -> int
 external function pcre2_substring_copy_bynumber_32(arg0: ptr[pcre2_match_data_32], arg1: uint, arg2: ptr[PCRE2_UCHAR32], arg3: ptr[ptr_uint]) -> int
 external function pcre2_substring_free_32(arg0: ptr[PCRE2_UCHAR32]) -> void
@@ -387,7 +390,7 @@ external function pcre2_maketables_32(arg0: ptr[pcre2_general_context_32]) -> co
 external function pcre2_maketables_free_32(arg0: ptr[pcre2_general_context_32], arg1: const_ptr[ubyte]) -> void
 
 const PCRE2_MAJOR: int = 10
-const PCRE2_MINOR: int = 46
+const PCRE2_MINOR: int = 47
 const PCRE2_ANCHORED: uint = 2147483648
 const PCRE2_NO_UTF_CHECK: uint = 1073741824
 const PCRE2_ENDANCHORED: uint = 536870912
@@ -591,6 +594,10 @@ const PCRE2_ERROR_PERL_ECLASS_UNEXPECTED_EXPR: int = 213
 const PCRE2_ERROR_PERL_ECLASS_EMPTY_EXPR: int = 214
 const PCRE2_ERROR_PERL_ECLASS_MISSING_CLOSE: int = 215
 const PCRE2_ERROR_PERL_ECLASS_UNEXPECTED_CHAR: int = 216
+const PCRE2_ERROR_EXPECTED_CAPTURE_GROUP: int = 217
+const PCRE2_ERROR_MISSING_OPENING_PARENTHESIS: int = 218
+const PCRE2_ERROR_MISSING_NUMBER_TERMINATOR: int = 219
+const PCRE2_ERROR_NULL_ERROROFFSET: int = 220
 const PCRE2_ERROR_NOMATCH: int = -1
 const PCRE2_ERROR_PARTIAL: int = -2
 const PCRE2_ERROR_UTF8_ERR1: int = -3
@@ -662,6 +669,11 @@ const PCRE2_ERROR_INVALIDOFFSET: int = -67
 const PCRE2_ERROR_JIT_UNSUPPORTED: int = -68
 const PCRE2_ERROR_REPLACECASE: int = -69
 const PCRE2_ERROR_TOOLARGEREPLACE: int = -70
+const PCRE2_ERROR_DIFFSUBSPATTERN: int = -71
+const PCRE2_ERROR_DIFFSUBSSUBJECT: int = -72
+const PCRE2_ERROR_DIFFSUBSOFFSET: int = -73
+const PCRE2_ERROR_DIFFSUBSOPTIONS: int = -74
+const PCRE2_ERROR_BAD_BACKSLASH_K: int = -75
 const PCRE2_INFO_ALLOPTIONS: int = 0
 const PCRE2_INFO_ARGOPTIONS: int = 1
 const PCRE2_INFO_BACKREFMAX: int = 2
@@ -707,6 +719,7 @@ const PCRE2_CONFIG_HEAPLIMIT: int = 12
 const PCRE2_CONFIG_NEVER_BACKSLASH_C: int = 13
 const PCRE2_CONFIG_COMPILED_WIDTHS: int = 14
 const PCRE2_CONFIG_TABLES_LENGTH: int = 15
+const PCRE2_CONFIG_EFFECTIVE_LINKSIZE: int = 16
 const PCRE2_OPTIMIZATION_NONE: int = 0
 const PCRE2_OPTIMIZATION_FULL: int = 1
 const PCRE2_AUTO_POSSESS: int = 64

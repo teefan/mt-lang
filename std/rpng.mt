@@ -7,7 +7,6 @@ public type color = c.rpng_color
 public type palette = c.rpng_palette
 
 public const MAX_CHUNKS_COUNT: int = c.RPNG_MAX_CHUNKS_COUNT
-public const COMPRESSION_LEVEL: int = c.RPNG_COMPRESSION_LEVEL
 public const SUCCESS: int = c.RPNG_SUCCESS
 public const ERROR_FILE_OPEN: int = c.RPNG_ERROR_FILE_OPEN
 public const ERROR_PIXEL_FORMAT: int = c.RPNG_ERROR_PIXEL_FORMAT
@@ -21,7 +20,6 @@ public foreign function load_image_from_memory(buffer: cstr, width: ptr[int], he
 public foreign function load_image_indexed_from_memory(buffer: cstr, width: ptr[int], height: ptr[int], palette: ptr[palette]) -> ptr[char]? = c.rpng_load_image_indexed_from_memory
 public foreign function save_image_to_memory(data: cstr, width: int, height: int, color_channels: int, bit_depth: int, output_size: ptr[int]) -> ptr[char]? = c.rpng_save_image_to_memory
 public foreign function save_image_indexed_to_memory(indexed_data: cstr, width: int, height: int, palette: palette, output_size: ptr[int]) -> ptr[char]? = c.rpng_save_image_indexed_to_memory
-public foreign function unindex_image_data(indexed_data: ptr[char], width: int, height: int, palette: palette) -> ptr[char]? = c.rpng_unindex_image_data
 public foreign function chunk_count(filename: str as cstr) -> int = c.rpng_chunk_count
 public foreign function chunk_read(filename: str as cstr, chunk_type: str as cstr) -> chunk = c.rpng_chunk_read
 public foreign function chunk_read_all(filename: cstr, count: ptr[int]) -> ptr[chunk]? = c.rpng_chunk_read_all

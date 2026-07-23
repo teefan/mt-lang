@@ -351,7 +351,6 @@ public type TrayMenu = c.SDL_TrayMenu
 public type TrayEntry = c.SDL_TrayEntry
 public type TrayEntryFlags = c.SDL_TrayEntryFlags
 public type TrayCallback = c.SDL_TrayCallback
-public type TrayClickCallback = c.SDL_TrayClickCallback
 public type MainFunc = c.SDL_main_func
 
 public const PLATFORM_LINUX: int = c.SDL_PLATFORM_LINUX
@@ -1132,7 +1131,6 @@ public foreign function get_sensor_data(sensor: ptr[Sensor], data: ptr[float], n
 public foreign function close_sensor(sensor: ptr[Sensor]) -> void = c.SDL_CloseSensor
 public foreign function update_sensors() -> void = c.SDL_UpdateSensors
 public foreign function lock_joysticks() -> void = c.SDL_LockJoysticks
-public foreign function try_lock_joysticks() -> bool = c.SDL_TryLockJoysticks
 public foreign function unlock_joysticks() -> void = c.SDL_UnlockJoysticks
 public foreign function has_joystick() -> bool = c.SDL_HasJoystick
 public foreign function get_joysticks(out count: int) -> ptr[JoystickID]? = c.SDL_GetJoysticks
@@ -1651,9 +1649,6 @@ public foreign function render_debug_text_format(renderer: Renderer, x: float, y
 public foreign function set_default_texture_scale_mode(renderer: Renderer, scale_mode: ScaleMode) -> bool = c.SDL_SetDefaultTextureScaleMode
 public foreign function get_default_texture_scale_mode(renderer: Renderer, scale_mode: ptr[ScaleMode]) -> bool = c.SDL_GetDefaultTextureScaleMode
 public foreign function create_gpu_render_state(renderer: Renderer, createinfo: const_ptr[GPURenderStateCreateInfo]) -> ptr[GPURenderState]? = c.SDL_CreateGPURenderState
-public foreign function set_gpu_render_state_sampler_bindings(state: ptr[GPURenderState], num_sampler_bindings: int, sampler_bindings: const_ptr[GPUTextureSamplerBinding]) -> bool = c.SDL_SetGPURenderStateSamplerBindings
-public foreign function set_gpu_render_state_storage_textures(state: ptr[GPURenderState], num_storage_textures: int, storage_textures: const_ptr[ptr[GPUTexture]]) -> bool = c.SDL_SetGPURenderStateStorageTextures
-public foreign function set_gpu_render_state_storage_buffers(state: ptr[GPURenderState], num_storage_buffers: int, storage_buffers: const_ptr[ptr[GPUBuffer]]) -> bool = c.SDL_SetGPURenderStateStorageBuffers
 public foreign function set_gpu_render_state_fragment_uniforms(state: ptr[GPURenderState], slot_index: uint, data: const_ptr[void], length: uint) -> bool = c.SDL_SetGPURenderStateFragmentUniforms
 public foreign function set_gpu_render_state(renderer: Renderer, state: ptr[GPURenderState]?) -> bool = c.SDL_SetGPURenderState
 public foreign function destroy_gpu_render_state(state: ptr[GPURenderState]) -> void = c.SDL_DestroyGPURenderState
@@ -1676,7 +1671,6 @@ public foreign function get_storage_space_remaining(storage: ptr[Storage]) -> pt
 public foreign function glob_storage_directory(storage: ptr[Storage], path: cstr?, pattern: cstr?, flags_: uint, count: ptr[int]) -> ptr[ptr[char]]? = c.SDL_GlobStorageDirectory
 public foreign function set_linux_thread_priority(thread_id: ptr_int, priority: int) -> bool = c.SDL_SetLinuxThreadPriority
 public foreign function set_linux_thread_priority_and_policy(thread_id: ptr_int, sdl_priority: int, sched_policy: int) -> bool = c.SDL_SetLinuxThreadPriorityAndPolicy
-public foreign function is_phone() -> bool = c.SDL_IsPhone
 public foreign function is_tablet() -> bool = c.SDL_IsTablet
 public foreign function is_tv() -> bool = c.SDL_IsTV
 public foreign function get_sandbox() -> Sandbox = c.SDL_GetSandbox
@@ -1706,7 +1700,6 @@ public foreign function add_timer(interval: uint, callback: fn(arg0: ptr[void], 
 public foreign function add_timer_ns(interval: ptr_uint, callback: fn(arg0: ptr[void], arg1: TimerID, arg2: ptr_uint) -> ptr_uint, userdata: ptr[void]) -> TimerID = c.SDL_AddTimerNS
 public foreign function remove_timer(id: uint) -> bool = c.SDL_RemoveTimer
 public foreign function create_tray(icon: ptr[Surface], tooltip: str as cstr) -> ptr[Tray] = c.SDL_CreateTray
-public foreign function create_tray_with_properties(props: uint) -> ptr[Tray] = c.SDL_CreateTrayWithProperties
 public foreign function set_tray_icon(tray: ptr[Tray], icon: ptr[Surface]) -> void = c.SDL_SetTrayIcon
 public foreign function set_tray_tooltip(tray: ptr[Tray], tooltip: str as cstr) -> void = c.SDL_SetTrayTooltip
 public foreign function create_tray_menu(tray: ptr[Tray]) -> ptr[TrayMenu] = c.SDL_CreateTrayMenu

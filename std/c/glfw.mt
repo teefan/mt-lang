@@ -186,7 +186,7 @@ external function glfwVulkanSupported() -> int
 external function glfwGetRequiredInstanceExtensions(count: ptr[uint]) -> ptr[cstr]?
 
 const GLFW_VERSION_MAJOR: int = 3
-const GLFW_VERSION_MINOR: int = 5
+const GLFW_VERSION_MINOR: int = 4
 const GLFW_VERSION_REVISION: int = 0
 const GLFW_TRUE: int = 1
 const GLFW_FALSE: int = 0
@@ -451,7 +451,6 @@ const GLFW_STICKY_KEYS: int = 208898
 const GLFW_STICKY_MOUSE_BUTTONS: int = 208899
 const GLFW_LOCK_KEY_MODS: int = 208900
 const GLFW_RAW_MOUSE_MOTION: int = 208901
-const GLFW_UNLIMITED_MOUSE_BUTTONS: int = 208902
 const GLFW_CURSOR_NORMAL: int = 212993
 const GLFW_CURSOR_HIDDEN: int = 212994
 const GLFW_CURSOR_DISABLED: int = 212995
