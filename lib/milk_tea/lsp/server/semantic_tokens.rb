@@ -345,7 +345,11 @@ module MilkTea
           return [:variable, ['declaration', 'readonly']]
         end
 
-        if prev_tok && [:let, :var].include?(prev_tok.type)
+        if prev_tok&.type == :let
+          return [:variable, ['declaration', 'readonly']] unless next_tok&.type == :lparen
+        end
+
+        if prev_tok&.type == :var
           return [:variable, ['declaration']] unless next_tok&.type == :lparen
         end
 
@@ -767,7 +771,7 @@ module MilkTea
         Array(statements).each do |statement|
           case statement
           when AST::LocalDecl
-            active_bindings[statement.name] = :variable
+            active_bindings[statement.name] = statement.kind == :var ? :var : :let
             scopes << generic_binding_scope(statement, active_bindings, block_end_line)
           when AST::IfStmt
             Array(statement.branches).each do |branch|
@@ -787,7 +791,7 @@ module MilkTea
               arm_body = Array(arm.body)
               arm_end_line = generic_statement_list_end_line(arm_body, statement.line)
               if arm.respond_to?(:binding_name) && arm.binding_name
-                arm_bindings[arm.binding_name] = :variable
+                arm_bindings[arm.binding_name] = :let
                 scopes << generic_binding_scope(arm, arm_bindings, arm_end_line)
               end
               collect_generic_function_local_scopes(arm_body, arm_bindings, arm_end_line, scopes)
@@ -802,7 +806,7 @@ module MilkTea
             body = Array(statement.body)
             body_end_line = generic_statement_list_end_line(body, statement.line)
             for_bindings = active_bindings.dup
-            for_bindings[statement.name] = :variable
+            for_bindings[statement.name] = :let
             scopes << generic_binding_scope(statement, for_bindings, body_end_line)
             collect_generic_function_local_scopes(body, for_bindings, body_end_line, scopes)
           end
@@ -881,7 +885,7 @@ module MilkTea
           modifiers = []
           modifiers << 'declaration' if declaration
           [:parameter, modifiers]
-        when :const
+        when :const, :let
           [:variable, ['readonly']]
         else
           modifiers = []
