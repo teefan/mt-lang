@@ -3133,4 +3133,86 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
 
     refute warnings.any? { |w| w.code == "loop-single-iteration" }
   end
+
+  # ── own[T] / heap alloc release detection ───────────────────────────
+
+  def test_warns_on_own_typed_local_not_released
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function leak() -> int:
+          let p = heap.must_alloc[int](1)
+          return 1
+    MT
+
+    w = warnings.find { |w| w.code == "owning-release-leak" && w.symbol_name == "p" }
+    assert w, "expected owning-release-leak warning for own-typed 'p'"
+    assert_match(/own/, w.message)
+  end
+
+  def test_no_warn_on_own_typed_local_released
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function ok() -> int:
+          let p = heap.must_alloc[int](1)
+          heap.release(p)
+          return 1
+    MT
+
+    refute warnings.any? { |w| w.code == "owning-release-leak" && w.symbol_name == "p" }
+  end
+
+  def test_no_warn_on_own_typed_local_released_and_null
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function ok() -> int:
+          var p = heap.must_alloc[int](1)
+          heap.release_and_null(ref_of(p))
+          return 1
+    MT
+
+    refute warnings.any? { |w| w.code == "owning-release-leak" && w.symbol_name == "p" }
+  end
+
+  def test_no_warn_on_own_typed_local_returned
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function factory() -> own[int]:
+          let p = heap.must_alloc[int](1)
+          return p
+    MT
+
+    refute warnings.any? { |w| w.code == "owning-release-leak" && w.symbol_name == "p" }
+  end
+
+  def test_no_warn_on_own_typed_local_released_in_if_branch
+    # AST-based check finds a release in one branch and considers it released
+    # Full path-sensitive analysis would require CFG support for own[T]
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function branched(x: bool) -> int:
+          let p = heap.must_alloc[int](1)
+          if x:
+              heap.release(p)
+          return 1
+    MT
+
+    refute warnings.any? { |w| w.code == "owning-release-leak" && w.symbol_name == "p" }
+  end
+
+  def test_no_warn_on_ptr_typed_local_not_released
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function raw_ptr() -> int:
+          let p: ptr[int] = null[ptr[int]]
+          return 1
+    MT
+
+    refute warnings.any? { |w| w.code == "owning-release-leak" && w.symbol_name == "p" }
+  end
+
+  def test_warns_on_double_heap_release
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function double_free() -> void:
+          let p = heap.must_alloc[int](1)
+          heap.release(p)
+          heap.release(p)
+    MT
+
+    w = warnings.find { |w| w.code == "owning-release-double" && w.symbol_name == "p" }
+    assert w, "expected owning-release-double warning for double heap.release"
+  end
 end
