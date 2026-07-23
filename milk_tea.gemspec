@@ -5,7 +5,7 @@ require_relative "lib/milk_tea/base"
 Gem::Specification.new do |spec|
   spec.name          = "milk_tea"
   spec.version       = MilkTea::VERSION
-  spec.authors       = ["Milk Tea contributors"]
+  spec.authors       = ["Long (Teefan) Tran"]
   spec.summary       = "The Milk Tea programming language compiler toolchain"
   spec.description   = "A statically-typed, compiled programming language with C ABI interop, " \
                         "async/await, generics, pattern matching, and a comprehensive standard library. " \
@@ -16,6 +16,7 @@ Gem::Specification.new do |spec|
 
   spec.files = Dir.chdir(__dir__) do
     gem_files = %w[
+      AUTHORS
       LICENSE
       README.md
       Gemfile
