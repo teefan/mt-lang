@@ -11,9 +11,12 @@ module MilkTea
       @out = out
       @err = err
       @help_printer = help_printer
+      @quiet = false
     end
 
     def start
+      extract_options!
+
       subcommand = @argv.shift
       unless subcommand
         @err.puts("missing toolchain subcommand")
@@ -37,6 +40,29 @@ module MilkTea
 
     private
 
+    def extract_options!
+      remaining = []
+      until @argv.empty?
+        arg = @argv.first
+        case arg
+        when "-q", "--quiet"
+          @quiet = true
+          @argv.shift
+        when "--"
+          @argv.shift
+          remaining.concat(@argv)
+          @argv.clear
+        else
+          remaining << @argv.shift
+        end
+      end
+      @argv.replace(remaining)
+    end
+
+    def info(message)
+      @out.puts(message) unless @quiet
+    end
+
     def print_help
       @help_printer.call(@err)
     end
@@ -50,12 +76,39 @@ module MilkTea
 
       require_relative "../bindings"
 
-      results = UpstreamSources.bootstrap_all!
-      results.each do |result|
-        verb = result.status == :present ? "kept" : "bootstrapped"
-        @out.puts("#{verb} #{result.source.name} -> #{result.path}")
+      sources = UpstreamSources.default_sources(root: MilkTea.root)
+      info "Bootstrapping #{sources.length} vendored libraries..."
+      info ""
+
+      ok = 0
+      skipped = 0
+      failed = 0
+
+      sources.each do |source|
+        if source.complete?
+          info "  #{source.name} (already present)"
+          skipped += 1
+          next
+        end
+
+        info "  #{source.name} \e[2mcloning...\e[0m"
+        @out.flush
+        begin
+          result = source.bootstrap!
+          verb = result.status == :present ? "kept" : "bootstrapped"
+          info "\r  #{source.name} \e[32m#{verb}\e[0m"
+          ok += 1
+        rescue UpstreamSources::Error => e
+          info "\r  #{source.name} \e[31mfailed\e[0m"
+          @err.puts("    #{e.message}")
+          failed += 1
+        end
       end
-      0
+
+      info ""
+      total = ok + skipped + failed
+      info "#{total} source(s): #{ok} bootstrapped, #{skipped} skipped, #{failed} failed"
+      failed.zero? ? 0 : 1
     end
 
     def doctor_command
@@ -71,6 +124,7 @@ module MilkTea
       ar = ENV.fetch("AR", "ar")
       checks = []
 
+      info "Checking system tools..."
       checks << ["ruby", true, RUBY_DESCRIPTION]
       checks << ["cc", executable_available?(cc), cc]
       checks << ["ar", executable_available?(ar), ar]
@@ -80,6 +134,7 @@ module MilkTea
       checks << ["cmake", executable_available?(ENV.fetch("CMAKE", "cmake")), ENV.fetch("CMAKE", "cmake")]
       checks << ["ninja", executable_available?("ninja"), "ninja"]
 
+      info "Checking vendored libraries..."
       UpstreamSources.default_sources(root: MilkTea.root).each do |source|
         missing = source.sentinel_paths.reject do |relative_path|
           File.exist?(source.checkout_root.join(relative_path))
@@ -91,6 +146,7 @@ module MilkTea
         end
       end
 
+      info "Checking bindings..."
       RawBindings.default_registry(root: MilkTea.root)
         .select { |binding| binding.module_name.start_with?("std.c.") }
         .sort_by(&:name)
@@ -119,8 +175,9 @@ module MilkTea
         end
       end
 
+      info ""
       checks.each do |name, ok, detail|
-        @out.puts("#{ok ? 'ok' : 'fail'} #{name}: #{detail}")
+        @out.puts("#{ok ? "ok" : "fail"} #{name}: #{detail}")
       end
 
       checks.all? { |_, ok, _| ok } ? 0 : 1
@@ -135,9 +192,13 @@ module MilkTea
 
       require_relative "../bindings"
 
+      tools = VendoredTools.default_tools(root: MilkTea.root)
+      info "Building #{tools.length} vendored tool(s)..."
+      info ""
+
       results = VendoredTools.build_all!(root: MilkTea.root)
       results.each do |result|
-        @out.puts("built #{result[:tool].name} -> #{result[:binary]}")
+        info "  #{result[:tool].name} \e[32mbuilt\e[0m -> #{result[:binary]}"
       end
       0
     rescue VendoredTool::Error => e
