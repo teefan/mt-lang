@@ -833,7 +833,7 @@ Core modules in `std/`:
 - `std.math` — `sqrt`, `sin`, `cos`, `abs`, `pow`, etc. via C math
 - `std.encoding` — UTF-8 validation (`is_valid_utf8`, `utf8_codepoint_count`, `decode_utf8_codepoint`, `utf8_overlong_check`)
 - `std.string.String` — growable owned UTF-8 text
-- `std.mem.heap`, `std.mem.arena`, `std.mem.pool`, `std.mem.stack` — allocators
+- `std.mem.heap`, `std.mem.arena`, `std.mem.pool`, `std.mem.stack`, `std.mem.tracking` — allocators
 - `std.async` — task runtime (`sleep`, `work`, `completed`, `result`, `wait`, `run`)
 - `std.option.Option[T]` — optional value with `is_some`, `is_none`, `unwrap`, `expect`, `unwrap_or`, `unwrap_or_else` (auto-imported via prelude)
 - `std.result.Result[T, E]` — fallible computation with `is_success`, `is_failure`, `unwrap`, `unwrap_error`, `unwrap_or`, `unwrap_or_else`, `ok`, `error`, `map_error` (auto-imported via prelude)
