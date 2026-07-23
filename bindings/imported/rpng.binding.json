@@ -39,10 +39,6 @@
         "return_type": "ptr[char]?"
       },
       {
-        "raw": "rpng_unindex_image_data",
-        "return_type": "ptr[char]?"
-      },
-      {
         "raw": "rpng_chunk_read_all",
         "return_type": "ptr[chunk]?"
       },

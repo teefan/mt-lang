@@ -1020,6 +1020,9 @@ module MilkTea
           vendored_library: vendored_flecs_library,
           clang_args: vendored_flecs.include_flags(root:),
           compiler_flags: vendored_flecs.include_flags(root:),
+          type_overrides: {
+            "FILE" => "ptr[void]",
+          },
           tracked_header_paths: [
             vendored_flecs.header_path(root:).to_s,
           ],

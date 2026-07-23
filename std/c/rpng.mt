@@ -27,7 +27,6 @@ external function rpng_load_image_from_memory(buffer: cstr, width: ptr[int], hei
 external function rpng_load_image_indexed_from_memory(buffer: cstr, width: ptr[int], height: ptr[int], palette: ptr[rpng_palette]) -> ptr[char]
 external function rpng_save_image_to_memory(data: cstr, width: int, height: int, color_channels: int, bit_depth: int, output_size: ptr[int]) -> ptr[char]
 external function rpng_save_image_indexed_to_memory(indexed_data: cstr, width: int, height: int, palette: rpng_palette, output_size: ptr[int]) -> ptr[char]
-external function rpng_unindex_image_data(indexed_data: ptr[char], width: int, height: int, palette: rpng_palette) -> ptr[char]
 external function rpng_chunk_count(filename: cstr) -> int
 external function rpng_chunk_read(filename: cstr, chunk_type: cstr) -> rpng_chunk
 external function rpng_chunk_read_all(filename: cstr, count: ptr[int]) -> ptr[rpng_chunk]
@@ -55,7 +54,6 @@ external function rpng_chunk_combine_image_data_from_memory(buffer: ptr[char], o
 external function rpng_chunk_split_image_data_from_memory(buffer: ptr[char], split_size: int, output_size: ptr[int]) -> ptr[char]
 
 const RPNG_MAX_CHUNKS_COUNT: int = 64
-const RPNG_COMPRESSION_LEVEL: int = 8
 const RPNG_SUCCESS: int = 0
 const RPNG_ERROR_FILE_OPEN: int = 1
 const RPNG_ERROR_PIXEL_FORMAT: int = 2

@@ -284,8 +284,8 @@ enum CURLproxycode: int
 type curl_conv_callback = fn(arg0: ptr[char], arg1: ptr_uint) -> CURLcode
 type curl_ssl_ctx_callback = fn(arg0: ptr[CURL], arg1: ptr[void], arg2: ptr[void]) -> CURLcode
 
-flags curl_proxytype: int
-    CURLPROXY_LAST = 8
+enum curl_proxytype: int
+    CURLPROXY_LAST = 9
 
 enum curl_khtype: int
     CURLKHTYPE_UNKNOWN = 0
@@ -1139,6 +1139,7 @@ const CURLPROXY_SOCKS4: ptr_int = 4
 const CURLPROXY_SOCKS5: ptr_int = 5
 const CURLPROXY_SOCKS4A: ptr_int = 6
 const CURLPROXY_SOCKS5_HOSTNAME: ptr_int = 7
+const CURLPROXY_HTTPS3: ptr_int = 8
 const CURLSSH_AUTH_NONE: ptr_int = 0
 const CURLGSSAPI_DELEGATION_NONE: ptr_int = 0
 const CURL_ERROR_SIZE: int = 256

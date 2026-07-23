@@ -40,7 +40,7 @@ struct cgltf_memory_options:
 
 struct cgltf_file_options:
     read: fn(arg0: const_ptr[cgltf_memory_options], arg1: const_ptr[cgltf_file_options], arg2: cstr, arg3: ptr[cgltf_size], arg4: ptr[ptr[void]]) -> cgltf_result
-    release: fn(arg0: const_ptr[cgltf_memory_options], arg1: const_ptr[cgltf_file_options], arg2: ptr[void], arg3: cgltf_size) -> void
+    release: fn(arg0: const_ptr[cgltf_memory_options], arg1: const_ptr[cgltf_file_options], arg2: ptr[void]) -> void
     user_data: ptr[void]
 
 struct cgltf_options:
@@ -169,8 +169,7 @@ enum cgltf_meshopt_compression_filter: int
     cgltf_meshopt_compression_filter_octahedral = 1
     cgltf_meshopt_compression_filter_quaternion = 2
     cgltf_meshopt_compression_filter_exponential = 3
-    cgltf_meshopt_compression_filter_color = 4
-    cgltf_meshopt_compression_filter_max_enum = 5
+    cgltf_meshopt_compression_filter_max_enum = 4
 
 struct cgltf_meshopt_compression:
     buffer: ptr[cgltf_buffer]
@@ -180,7 +179,6 @@ struct cgltf_meshopt_compression:
     count: ptr_uint
     mode: cgltf_meshopt_compression_mode
     filter: cgltf_meshopt_compression_filter
-    is_khr: int
 
 struct cgltf_buffer_view:
     name: ptr[char]
@@ -564,7 +562,6 @@ struct cgltf_asset:
 struct cgltf_data:
     file_type: cgltf_file_type
     file_data: ptr[void]
-    file_size: ptr_uint
     asset: cgltf_asset
     meshes: ptr[cgltf_mesh]
     meshes_count: ptr_uint

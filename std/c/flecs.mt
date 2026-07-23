@@ -355,6 +355,8 @@ type ecs_os_api_dlopen_t = fn(arg0: cstr) -> ecs_os_dl_t
 type ecs_os_api_dlproc_t = fn(arg0: ecs_os_dl_t, arg1: cstr) -> ecs_os_proc_t
 type ecs_os_api_dlclose_t = fn(arg0: ecs_os_dl_t) -> void
 type ecs_os_api_module_to_path_t = fn(arg0: cstr) -> ptr[char]
+type ecs_os_api_fopen_t = fn(arg0: cstr, arg1: cstr) -> ptr[void]
+type ecs_os_api_fclose_t = fn(arg0: ptr[void]) -> void
 type ecs_os_api_perf_trace_t = fn(arg0: cstr, arg1: ptr_uint, arg2: cstr) -> void
 
 struct ecs_os_api_t:
@@ -393,6 +395,8 @@ struct ecs_os_api_t:
     dlclose_: fn(arg0: ecs_os_dl_t) -> void
     module_to_dl_: fn(arg0: cstr) -> ptr[char]
     module_to_etc_: fn(arg0: cstr) -> ptr[char]
+    fopen_: fn(arg0: cstr, arg1: cstr) -> ptr[ptr[void]]
+    fclose_: fn(arg0: ptr[ptr[void]]) -> void
     perf_trace_push_: fn(arg0: cstr, arg1: ptr_uint, arg2: cstr) -> void
     perf_trace_pop_: fn(arg0: cstr, arg1: ptr_uint, arg2: cstr) -> void
     log_level_: int
@@ -593,12 +597,11 @@ struct ecs_var_t:
 
 struct ecs_ref_t:
     entity: ptr_uint
-    id: ptr_uint
     table_id: ptr_uint
     table_version_fast: uint
     table_version: ushort
-    record: ptr[ecs_record_t]
     ptr: ptr[void]
+    id: ptr_uint
 
 struct ecs_page_iter_t:
     offset: int
@@ -620,7 +623,7 @@ struct ecs_each_iter_t:
     ids: ptr_uint
     sources: ptr_uint
     sizes: int
-    columns: int
+    columns: short
     trs: const_ptr[ecs_table_record_t]
 
 struct ecs_query_op_profile_t:
@@ -754,6 +757,7 @@ struct ecs_iter_t:
     entities: const_ptr[ecs_entity_t]
     ptrs: ptr[ptr[void]]
     trs: ptr[const_ptr[ecs_table_record_t]]
+    columns: const_ptr[short]
     sizes: const_ptr[ecs_size_t]
     table: ptr[ecs_table_t]
     other_table: ptr[ecs_table_t]
@@ -854,8 +858,6 @@ struct ecs_build_info_t:
 
 struct ecs_world_info_t:
     last_component_id: ptr_uint
-    min_id: ptr_uint
-    max_id: ptr_uint
     delta_time_raw: float
     delta_time: float
     time_scale: float
@@ -892,6 +894,12 @@ struct ecs_query_group_info_t:
     match_count: int
     table_count: int
     ctx: ptr[void]
+
+struct ecs_entity_range_t:
+    min: uint
+    max: uint
+    cur: uint
+    recycled: ecs_vec_t
 
 struct EcsIdentifier:
     value: ptr[char]
@@ -972,8 +980,9 @@ external function ecs_get_build_info() -> const_ptr[ecs_build_info_t]
 external function ecs_get_world_info(world: const_ptr[ecs_world_t]) -> const_ptr[ecs_world_info_t]
 external function ecs_dim(world: ptr[ecs_world_t], entity_count: int) -> void
 external function ecs_shrink(world: ptr[ecs_world_t]) -> void
-external function ecs_set_entity_range(world: ptr[ecs_world_t], id_start: ptr_uint, id_end: ptr_uint) -> void
-external function ecs_enable_range_check(world: ptr[ecs_world_t], enable: bool) -> bool
+external function ecs_entity_range_new(world: ptr[ecs_world_t], min: uint, max: uint) -> const_ptr[ecs_entity_range_t]
+external function ecs_entity_range_set(world: ptr[ecs_world_t], range: const_ptr[ecs_entity_range_t]) -> void
+external function ecs_entity_range_get(world: const_ptr[ecs_world_t]) -> const_ptr[ecs_entity_range_t]
 external function ecs_get_max_id(world: const_ptr[ecs_world_t]) -> ecs_entity_t
 external function ecs_run_aperiodic(world: ptr[ecs_world_t], flags_: uint) -> void
 
@@ -981,6 +990,7 @@ struct ecs_delete_empty_tables_desc_t:
     clear_generation: ushort
     delete_generation: ushort
     time_budget_seconds: double
+    offset: int
 
 external function ecs_delete_empty_tables(world: ptr[ecs_world_t], desc: const_ptr[ecs_delete_empty_tables_desc_t]) -> int
 external function ecs_get_world(poly: const_ptr[ecs_poly_t]) -> const_ptr[ecs_world_t]
@@ -1015,7 +1025,7 @@ external function ecs_get_mut_id(world: const_ptr[ecs_world_t], entity: ptr_uint
 external function ecs_ensure_id(world: ptr[ecs_world_t], entity: ptr_uint, component: ptr_uint, size: ptr_uint) -> ptr[void]
 external function ecs_ref_init_id(world: const_ptr[ecs_world_t], entity: ptr_uint, component: ptr_uint) -> ecs_ref_t
 external function ecs_ref_get_id(world: const_ptr[ecs_world_t], ref: ptr[ecs_ref_t], component: ptr_uint) -> ptr[void]
-external function ecs_ref_update(world: const_ptr[ecs_world_t], ref: ptr[ecs_ref_t]) -> void
+external function ecs_ref_update(world: const_ptr[ecs_world_t], ref: ptr[ecs_ref_t], component: ptr_uint) -> void
 external function ecs_emplace_id(world: ptr[ecs_world_t], entity: ptr_uint, component: ptr_uint, size: ptr_uint, is_new: ptr[bool]) -> ptr[void]
 external function ecs_modified_id(world: ptr[ecs_world_t], entity: ptr_uint, component: ptr_uint) -> void
 external function ecs_set_id(world: ptr[ecs_world_t], entity: ptr_uint, component: ptr_uint, size: ptr_uint, ptr: const_ptr[void]) -> void
@@ -1088,6 +1098,7 @@ external function ecs_children(world: const_ptr[ecs_world_t], parent: ptr_uint) 
 external function ecs_children_w_rel(world: const_ptr[ecs_world_t], relationship: ptr_uint, parent: ptr_uint) -> ecs_iter_t
 external function ecs_children_next(it: ptr[ecs_iter_t]) -> bool
 external function ecs_query_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_query_desc_t]) -> ptr[ecs_query_t]
+external function ecs_query_update(world: ptr[ecs_world_t], entity: ptr_uint, desc: const_ptr[ecs_query_desc_t]) -> ptr[ecs_query_t]
 external function ecs_query_fini(query: ptr[ecs_query_t]) -> void
 external function ecs_query_find_var(query: const_ptr[ecs_query_t], name: cstr) -> int
 external function ecs_query_var_name(query: const_ptr[ecs_query_t], var_id: int) -> cstr
@@ -1121,6 +1132,7 @@ external function ecs_query_get_cache_query(query: const_ptr[ecs_query_t]) -> co
 external function ecs_emit(world: ptr[ecs_world_t], desc: ptr[ecs_event_desc_t]) -> void
 external function ecs_enqueue(world: ptr[ecs_world_t], desc: ptr[ecs_event_desc_t]) -> void
 external function ecs_observer_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_observer_desc_t]) -> ecs_entity_t
+external function ecs_observer_update(world: ptr[ecs_world_t], observer: ptr_uint, desc: const_ptr[ecs_observer_desc_t]) -> ecs_entity_t
 external function ecs_observer_get(world: const_ptr[ecs_world_t], observer: ptr_uint) -> const_ptr[ecs_observer_t]
 external function ecs_iter_next(it: ptr[ecs_iter_t]) -> bool
 external function ecs_iter_fini(it: ptr[ecs_iter_t]) -> void
@@ -1346,6 +1358,7 @@ struct ecs_pipeline_desc_t:
     query: ecs_query_desc_t
 
 external function ecs_pipeline_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_pipeline_desc_t]) -> ecs_entity_t
+external function ecs_pipeline_update(world: ptr[ecs_world_t], pipeline: ptr_uint, desc: const_ptr[ecs_pipeline_desc_t]) -> ecs_entity_t
 external function ecs_set_pipeline(world: ptr[ecs_world_t], pipeline: ptr_uint) -> void
 external function ecs_get_pipeline(world: const_ptr[ecs_world_t]) -> ecs_entity_t
 external function ecs_progress(world: ptr[ecs_world_t], delta_time: float) -> bool
@@ -1380,6 +1393,7 @@ struct ecs_system_desc_t:
     immediate: bool
 
 external function ecs_system_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_system_desc_t]) -> ecs_entity_t
+external function ecs_system_update(world: ptr[ecs_world_t], system: ptr_uint, desc: const_ptr[ecs_system_desc_t]) -> ecs_entity_t
 
 struct ecs_system_t:
     hdr: ecs_header_t
@@ -1818,6 +1832,8 @@ struct EcsScriptMethod:
     callback: fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t]) -> void
     vector_callbacks: array[ecs_vector_function_callback_t, 18]
     ctx: ptr[void]
+    binding_ctx: ptr[void]
+    binding_ctx_free: fn(arg0: ptr[void]) -> void
 
 type EcsScriptFunction = EcsScriptMethod
 
@@ -1827,6 +1843,8 @@ struct ecs_script_eval_desc_t:
 
 struct ecs_script_eval_result_t:
     error: ptr[char]
+    line: int
+    column: int
 
 external function ecs_script_parse(world: ptr[ecs_world_t], name: cstr, code: cstr, desc: const_ptr[ecs_script_eval_desc_t], result: ptr[ecs_script_eval_result_t]) -> ptr[ecs_script_t]
 external function ecs_script_eval(script: const_ptr[ecs_script_t], desc: const_ptr[ecs_script_eval_desc_t], result: ptr[ecs_script_eval_result_t]) -> int
@@ -1870,6 +1888,7 @@ struct ecs_expr_eval_desc_t:
     allow_unresolved_identifiers: bool
     runtime: ptr[ecs_script_runtime_t]
     script_visitor: ptr[void]
+    unresolved_identifier_action: fn(arg0: const_ptr[ecs_world_t], arg1: cstr, arg2: ptr[void]) -> bool
 
 external function ecs_expr_run(world: ptr[ecs_world_t], ptr: cstr, value: ptr[ecs_value_t], desc: const_ptr[ecs_expr_eval_desc_t]) -> cstr
 external function ecs_expr_parse(world: ptr[ecs_world_t], expr: cstr, desc: const_ptr[ecs_expr_eval_desc_t]) -> ptr[ecs_script_t]
@@ -2306,8 +2325,8 @@ external function ecs_cpp_last_member(world: const_ptr[ecs_world_t], type_: ptr_
 
 const FLECS_VERSION_MAJOR: int = 4
 const FLECS_VERSION_MINOR: int = 1
-const FLECS_VERSION_PATCH: int = 5
-const FLECS_VERSION: cstr = c"4.1.5"
+const FLECS_VERSION_PATCH: int = 6
+const FLECS_VERSION: cstr = c"4.1.6"
 const FLECS_HI_COMPONENT_ID: int = 256
 const FLECS_HI_ID_RECORD_ID: int = 1024
 const FLECS_SPARSE_PAGE_BITS: int = 6
