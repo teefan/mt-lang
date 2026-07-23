@@ -2,7 +2,7 @@
   "name": "milk-tea-lang",
   "displayName": "Milk Tea Programming Language",
   "description": "Syntax highlighting, IntelliSense, and debugging for the Milk Tea programming language (.mt files)",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "teefan",
   "icon": "icons/marketplace-icon.png",
   "license": "MIT",
