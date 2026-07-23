@@ -231,13 +231,22 @@ module MilkTea
       # ── own[T] ownership transfer ─────────────────────────────────────
 
       def own_transferred?(stmts, name)
-        transferred = false
         _any_stmt?(stmts) do |stmt|
           if stmt.is_a?(AST::ReturnStmt) && stmt.value.is_a?(AST::Identifier) && stmt.value.name == name
-            transferred = true
+            true
+          elsif (expr = extract_expr(stmt)) && own_struct_field_transfer?(expr, name)
+            true
+          else
+            false
           end
         end
-        transferred
+      end
+
+      def own_struct_field_transfer?(expr, name)
+        return false unless expr.is_a?(AST::Call)
+        expr.arguments.any? do |arg|
+          arg.is_a?(AST::Argument) && arg.value.is_a?(AST::Identifier) && arg.value.name == name
+        end
       end
 
       def owning_local_bindings(stmts)

@@ -14,6 +14,8 @@
 import std.async as aio
 import std.hash
 import std.linear_algebra
+import std.mem.endian as endian
+import std.mem.heap as heap
 
 # =============================================================================
 # 2  Literals
@@ -1657,7 +1659,24 @@ function atomic_demo() -> int:
     return int<-(prev) + value
 
 # =============================================================================
-# 35  Entrypoint
+# 35  Endian & move_bytes helpers
+# =============================================================================
+
+function endian_demo() -> uint:
+    let original: uint = 0x01020304
+    let swapped = endian.swap_u32(original)
+    let network = endian.hton32(original)
+    let host = endian.ntoh32(network)
+    return swapped + network + host
+
+function move_bytes_demo() -> void:
+    var buf: array[ubyte, 16]
+    buf[0] = ubyte<-1
+    buf[1] = ubyte<-2
+    heap.move_bytes(ptr_of(buf[2]), ptr_of(buf[0]), 2)
+
+# =============================================================================
+# 36  Entrypoint
 # =============================================================================
 
 function main() -> int:
