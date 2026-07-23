@@ -94,11 +94,16 @@ module MilkTea
 
       def handle_initialized(_params)
         pull_client_configuration if @client_capabilities&.dig('workspace', 'configuration')
-        progress = create_progress(title: 'Indexing workspace', message: 'Scanning source files...')
-        @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) } if @root_uri
-        document_count = @workspace.all_documents.length
-        progress.done(message: "#{document_count} document#{document_count == 1 ? '' : 's'} indexed")
-        log_message(:info, "Milk Tea LSP ready — #{document_count} document#{document_count == 1 ? '' : 's'} indexed")
+        return nil unless @root_uri
+
+        Thread.new do
+          progress = create_progress(title: 'Indexing workspace', message: 'Scanning source files...')
+          @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) }
+          document_count = @workspace.all_documents.length
+          progress.done(message: "#{document_count} document#{document_count == 1 ? '' : 's'} indexed")
+          log_message(:info, "Milk Tea LSP ready — #{document_count} document#{document_count == 1 ? '' : 's'} indexed")
+          refresh_client_semantic_tokens if document_count > 0
+        end
         nil
       end
 
@@ -132,13 +137,18 @@ module MilkTea
         end
 
         @workspace.workspace_root_path = uri_to_path(@root_uri)
-        progress = create_progress(title: 'Reindexing workspace', message: 'Scanning source files...')
-        @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) } if @root_uri
-        doc_count = @workspace.all_documents.length
-        progress.done(message: "#{doc_count} document#{doc_count == 1 ? '' : 's'} indexed")
+        return nil unless @root_uri
 
-        @workspace.open_document_uris.each do |uri|
-          schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
+        uris = @workspace.open_document_uris.dup
+        Thread.new do
+          progress = create_progress(title: 'Reindexing workspace', message: 'Scanning source files...')
+          @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) }
+          doc_count = @workspace.all_documents.length
+          progress.done(message: "#{doc_count} document#{doc_count == 1 ? '' : 's'} indexed")
+
+          uris.each do |uri|
+            schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
+          end
         end
         nil
       end

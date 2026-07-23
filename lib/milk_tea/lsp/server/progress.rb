@@ -6,8 +6,15 @@ module MilkTea
       module ServerProgress
         private
 
+        PROGRESS_TOKEN_PREFIX = "mt-lsp-progress"
+
         def create_progress(title:, message: nil, cancellable: false)
-          token = "mt-lsp-progress-#{next_progress_token_id}"
+          token = "#{PROGRESS_TOKEN_PREFIX}-#{next_progress_token_id}"
+
+          @protocol.send_request('window/workDoneProgress/create', { token: token }) do |_result, error|
+            warn "[LSP] client rejected progress token #{token}: #{error}" if error
+          end
+
           begin_value = { kind: 'begin', title: title, cancellable: cancellable }
           begin_value[:message] = message if message
           @protocol.write_notification('$/progress', { token: token, value: begin_value })
