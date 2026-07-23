@@ -111,5 +111,15 @@ module MilkTea
           type: pointer_to(@ctx.types.fetch("bool")),
         )
       end
+
+      def str_buffer_args(receiver, env:)
+        receiver_type = infer_expression_type(receiver, env:)
+        [
+          lower_str_buffer_data_pointer(receiver, env:),
+          IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
+          lower_str_buffer_len_pointer(receiver, env:),
+          lower_str_buffer_dirty_pointer(receiver, env:),
+        ]
+      end
   end
 end

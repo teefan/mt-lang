@@ -85,7 +85,6 @@ module MilkTea
                   end
                 end
                lines << "};"
-               lines << "typedef struct #{arm.linkage_name} #{arm.linkage_name};"
              end
 
 
@@ -102,7 +101,7 @@ module MilkTea
 
             # Data union (only if at least one arm has payload)
             if payload_arms.any?
-              lines << "union #{outer_c}__data {"
+              lines << "union #{outer_c}_data {"
               payload_arms.each do |arm|
                 lines << "#{INDENT}struct #{arm.linkage_name} #{sanitize_c_identifier(arm.name)};"
               end
@@ -112,7 +111,7 @@ module MilkTea
             # Outer struct
             lines << "struct #{outer_c} {"
             lines << "#{INDENT}#{outer_c}_kind kind;"
-            lines << "#{INDENT}union #{outer_c}__data data;" if payload_arms.any?
+            lines << "#{INDENT}union #{outer_c}_data data;" if payload_arms.any?
             lines << "};"
             lines
           end

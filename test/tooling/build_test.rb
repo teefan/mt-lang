@@ -1884,7 +1884,7 @@ function main() -> int:
       assert_includes invocation, "-lraylib"
       assert_includes invocation, "-lm"
       assert_includes invocation, "-DRAYGUI_IMPLEMENTATION"
-      assert_includes invocation, "-I#{File.expand_path('../../third_party/raylib-upstream/examples/shapes', __dir__)}"
+      assert_includes invocation, "-I#{File.expand_path('../../third_party/raygui-upstream/src', __dir__)}"
     end
   end
 

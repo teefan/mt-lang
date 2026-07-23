@@ -49,90 +49,58 @@ module MilkTea
           arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :str_buffer_clear
-          receiver_type = infer_expression_type(receiver, env:)
           IR::Call.new(
             callee: "mt_str_buffer_clear",
-            arguments: [
-              lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
-              lower_str_buffer_len_pointer(receiver, env:),
-              lower_str_buffer_dirty_pointer(receiver, env:),
-            ],
+            arguments: str_buffer_args(receiver, env:),
             type:,
           )
         when :str_buffer_assign, :str_buffer_assign_format
-          receiver_type = infer_expression_type(receiver, env:)
           IR::Call.new(
             callee: "mt_str_buffer_assign",
             arguments: [
               lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @ctx.types.fetch("str")),
-              lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
-              lower_str_buffer_len_pointer(receiver, env:),
-              lower_str_buffer_dirty_pointer(receiver, env:),
+              *str_buffer_args(receiver, env:),
             ],
             type:,
           )
         when :str_buffer_append, :str_buffer_append_format
-          receiver_type = infer_expression_type(receiver, env:)
           IR::Call.new(
             callee: "mt_str_buffer_append",
             arguments: [
               lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @ctx.types.fetch("str")),
-              lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
-              lower_str_buffer_len_pointer(receiver, env:),
-              lower_str_buffer_dirty_pointer(receiver, env:),
+              *str_buffer_args(receiver, env:),
             ],
             type:,
           )
         when :str_buffer_len
-          receiver_type = infer_expression_type(receiver, env:)
           IR::Call.new(
             callee: "mt_str_buffer_len",
-            arguments: [
-              lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
-              lower_str_buffer_len_pointer(receiver, env:),
-              lower_str_buffer_dirty_pointer(receiver, env:),
-            ],
+            arguments: str_buffer_args(receiver, env:),
             type:,
           )
         when :str_buffer_capacity
           receiver_type = infer_expression_type(receiver, env:)
           IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: type)
         when :str_buffer_as_str
-          receiver_type = infer_expression_type(receiver, env:)
-          data_pointer = lower_str_buffer_data_pointer(receiver, env:)
+          args = str_buffer_args(receiver, env:)
           IR::AggregateLiteral.new(
             type:,
             fields: [
-              IR::AggregateField.new(name: "data", value: data_pointer),
+              IR::AggregateField.new(name: "data", value: args[0]),
               IR::AggregateField.new(
                 name: "len",
                 value: IR::Call.new(
                   callee: "mt_str_buffer_len",
-                  arguments: [
-                    data_pointer,
-                    IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
-                    lower_str_buffer_len_pointer(receiver, env:),
-                    lower_str_buffer_dirty_pointer(receiver, env:),
-                  ],
+                  arguments: args,
                   type: @ctx.types.fetch("ptr_uint"),
                 ),
               ),
             ],
           )
         when :str_buffer_as_cstr
-          receiver_type = infer_expression_type(receiver, env:)
           IR::Call.new(
             callee: "mt_str_buffer_as_cstr",
-            arguments: [
-              lower_str_buffer_data_pointer(receiver, env:),
-              IR::IntegerLiteral.new(value: str_buffer_capacity(receiver_type), type: @ctx.types.fetch("ptr_uint")),
-              lower_str_buffer_len_pointer(receiver, env:),
-              lower_str_buffer_dirty_pointer(receiver, env:),
-            ],
+            arguments: str_buffer_args(receiver, env:),
             type:,
           )
         when :array_as_span
@@ -145,47 +113,9 @@ module MilkTea
 
           case kind
           when :event_subscribe
-            if expression.arguments.length == 2
-              IR::Call.new(
-                callee: runtime.fetch(:subscribe_stateful_linkage_name),
-                arguments: [
-                  event_pointer,
-                  lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:void_ptr)),
-                  lower_contextual_expression(expression.arguments.fetch(1).value, env:, expected_type: runtime.fetch(:void_ptr)),
-                ],
-                type:,
-              )
-            else
-              IR::Call.new(
-                callee: runtime.fetch(:subscribe_linkage_name),
-                arguments: [
-                  event_pointer,
-                  lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:listener_type)),
-                ],
-                type:,
-              )
-            end
+            lower_event_subscribe_call(expression, env:, runtime:, event_pointer:, type:)
           when :event_subscribe_once
-            if expression.arguments.length == 2
-              IR::Call.new(
-                callee: runtime.fetch(:subscribe_once_stateful_linkage_name),
-                arguments: [
-                  event_pointer,
-                  lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:void_ptr)),
-                  lower_contextual_expression(expression.arguments.fetch(1).value, env:, expected_type: runtime.fetch(:void_ptr)),
-                ],
-                type:,
-              )
-            else
-              IR::Call.new(
-                callee: runtime.fetch(:subscribe_once_linkage_name),
-                arguments: [
-                  event_pointer,
-                  lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:listener_type)),
-                ],
-                type:,
-              )
-            end
+            lower_event_subscribe_call(expression, env:, runtime:, event_pointer:, type:, once: true)
           when :event_unsubscribe
             IR::Call.new(
               callee: runtime.fetch(:unsubscribe_linkage_name),
@@ -1613,6 +1543,23 @@ module MilkTea
         when :atomic_compare_exchange
           raise LoweringError, "atomic compare_exchange is not yet implemented in the built-in surface; use std.sync.AtomicUint for compare-exchange operations"
         end
+      end
+
+      def lower_event_subscribe_call(expression, env:, runtime:, event_pointer:, type:, once: false)
+        stateful = expression.arguments.length == 2
+        callee_key = if stateful
+                        once ? :subscribe_once_stateful_linkage_name : :subscribe_stateful_linkage_name
+                      else
+                        once ? :subscribe_once_linkage_name : :subscribe_linkage_name
+                      end
+        arguments = [event_pointer]
+        if stateful
+          arguments << lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:void_ptr))
+          arguments << lower_contextual_expression(expression.arguments.fetch(1).value, env:, expected_type: runtime.fetch(:void_ptr))
+        else
+          arguments << lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:listener_type))
+        end
+        IR::Call.new(callee: runtime.fetch(callee_key), arguments:, type:)
       end
   end
 end
