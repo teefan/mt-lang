@@ -21,6 +21,14 @@ extending Bytes:
         return Bytes(data = data, len = source.len)
 
 
+    public static function from_owned(data: own[ubyte], len: ptr_uint) -> Bytes:
+        return Bytes(data = data, len = len)
+
+
+    public static function take_owned(data: own[ubyte]?, len: ptr_uint) -> Bytes:
+        return Bytes(data = data, len = len)
+
+
     public editable function release() -> void:
         heap.release(this.data)
         this.data = null

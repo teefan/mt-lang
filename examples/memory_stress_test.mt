@@ -5,8 +5,14 @@
 ## Conversion Rules).
 ##
 ## Uses own[T] for heap allocation exercises.
+##
+## §28 demonstrates that own[T] → ptr[T] coercion is now non-null
+## implicit, removing the need for unsafe casts in span construction
+## and pointer-parameter calls.  §29 exercises heap.move_bytes, and
+## §30 exercises std.mem.endian byte-swap helpers.
 
 import std.mem.heap as heap
+import std.mem.endian as endian
 ##
 ## Each function exercises a specific scenario.  The entrypoint `main`
 ## calls them all and returns a status code where 0 indicates all
@@ -261,6 +267,47 @@ function own_nullable_flow() -> int:
     if p != null:
         return 0
     return -1
+
+# ---------------------------------------------------------------------------
+# 28  own[T] → ptr[T] / span non-null implicit coercion (no unsafe needed)
+# ---------------------------------------------------------------------------
+
+function own_to_span_coercion() -> span[ubyte]:
+    let raw = heap.must_alloc[ubyte](64)
+    defer heap.release(raw)
+    return span[ubyte](data = raw, len = 64)
+
+function own_to_ptr_param(dest: ptr[int]) -> void:
+    let owned = heap.must_alloc[int](1)
+    defer heap.release(owned)
+    unsafe:
+        read(dest) = read(owned)
+
+# ---------------------------------------------------------------------------
+# 29  heap.move_bytes — overlapping-safe memory copy
+# ---------------------------------------------------------------------------
+
+function move_bytes_demo() -> void:
+    var buf: array[ubyte, 16]
+    buf[0] = ubyte<-1
+    buf[1] = ubyte<-2
+    buf[2] = ubyte<-3
+    heap.move_bytes(ptr_of(buf[2]), ptr_of(buf[0]), 3)
+    heap.move_bytes(ptr_of(buf[0]), ptr_of(buf[3]), 3)
+
+# ---------------------------------------------------------------------------
+# 30  std.mem.endian — byte-swap and network byte-order helpers
+# ---------------------------------------------------------------------------
+
+function endian_demo() -> void:
+    let host32: uint = 0x01020304
+    let net32 = endian.hton32(host32)
+    let back32 = endian.ntoh32(net32)
+    let swapped16 = endian.swap_u16(ushort<-0x1234)
+    let _ = host32
+    let _ = net32
+    let _ = back32
+    let _ = swapped16
 
 # ---------------------------------------------------------------------------
 # 22  Entrypoint

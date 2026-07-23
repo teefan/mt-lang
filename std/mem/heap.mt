@@ -1,4 +1,5 @@
 import std.c.libc as libc
+import std.cstring as cstring
 
 public const ptr_uint_max: ptr_uint = ~0
 public const minimum_alignment: ptr_uint = size_of(ptr[void])
@@ -108,6 +109,17 @@ public function copy_bytes(destination: ptr[ubyte]?, source: ptr[ubyte]?, size_b
         unsafe:
             read(destination + index) = read(source + index)
         index += 1
+
+
+public function move_bytes(destination: ptr[ubyte]?, source: ptr[ubyte]?, size_bytes: ptr_uint) -> void:
+    if size_bytes == 0:
+        return
+
+    if destination == null or source == null:
+        fatal(c"heap.move_bytes requires non-null pointers for non-empty copies")
+
+    unsafe:
+        cstring.move_bytes(ptr[void]<-destination, ptr[void]<-source, size_bytes)
 
 
 public function resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
