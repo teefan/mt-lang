@@ -9,6 +9,7 @@ mtc run hello.mt
 ```
 
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=teefan.milk-tea-lang) &mdash; syntax highlighting, IntelliSense, debugging
+[Language Reference](https://teefan.github.io/mt-lang/) &mdash; full syntax, types, and standard library
 
 ---
 
