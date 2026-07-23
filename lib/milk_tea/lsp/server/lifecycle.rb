@@ -12,6 +12,9 @@ module MilkTea
           @_indexing_thread&.join rescue nil
           @_indexing_thread = nil
           @workspace.reset
+          @format_mode = :tidy
+          @dependency_resolution_mode = :auto
+          @platform_override = nil
           @diagnostic_report_cache.clear
           @workspace_diagnostic_cache.clear
           drain_diagnostics_queue
@@ -24,6 +27,7 @@ module MilkTea
           @fixall_cache.clear
           @definition_file_token_cache.clear
           @definition_file_ast_cache.clear
+          MilkTea::Types::Registry.reset!
         end
         @_initialize_called = true
         @root_uri = params['rootUri']

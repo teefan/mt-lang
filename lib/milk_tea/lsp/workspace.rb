@@ -84,6 +84,10 @@ module MilkTea
       end
 
       def reset
+        @workspace_root_path = nil
+        @dependency_resolution_mode = :auto
+        @platform_override = nil
+        @strict_current_root_diagnostics_enabled = false
         @indexed_documents.clear
         @tokens_cache.clear
         @last_good_tokens_cache.clear
