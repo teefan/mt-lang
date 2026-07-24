@@ -158,9 +158,9 @@ module MilkTea
                           ast = get_ast(uri)
                           return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
-                          result = MilkTea::SemanticAnalyzer.check_collecting_errors(ast)
-                          facts = result[:analysis]
-                          MilkTea::SemanticAnalyzer::ToolingSnapshot.new(facts:, diagnostics: (Array(result[:errors]).map { |e| e.to_diagnostic(path: uri) } || []).freeze)
+                           result = MilkTea::SemanticAnalyzer.check_collecting_errors(ast, path:)
+                           facts = result[:analysis]
+                           MilkTea::SemanticAnalyzer::ToolingSnapshot.new(facts:, diagnostics: (Array(result[:errors]).map { |e| e.to_diagnostic(path:) } || []).freeze)
                         end
               if snapshot&.facts
                 @last_good_tooling_snapshot_cache[uri] = snapshot
