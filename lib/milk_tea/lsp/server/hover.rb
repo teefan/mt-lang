@@ -649,7 +649,7 @@ module MilkTea
         return nil unless current_type
 
           chain[:segments][1..hovered_segment[:position]].each do |segment|
-            field_receiver_type = project_field_receiver_type_for_completion(current_type)
+            field_receiver_type = project_field_receiver_type_for_completion(current_type, facts)
             if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
               source_location = field_definition_location(current_uri, field_receiver_type, segment[:name])
 
@@ -787,7 +787,7 @@ module MilkTea
         return nil unless receiver_info
 
         field_name = tokens[token_index].lexeme
-        receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
+        receiver_type = project_field_receiver_type_for_completion(receiver_info[:type], facts)
         return nil unless receiver_type.respond_to?(:field)
 
         field_type = receiver_type.field(field_name)
@@ -809,7 +809,7 @@ module MilkTea
 
         field_name = tokens[token_index].lexeme
         if receiver_info
-          receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
+          receiver_type = project_field_receiver_type_for_completion(receiver_info[:type], facts)
           if receiver_type.respond_to?(:field)
             field_type = receiver_type.field(field_name)
             if field_type

@@ -473,7 +473,7 @@ module MilkTea
 
         current_type = first_type
         chain_segments[1..].each do |seg|
-          field_owner = project_field_receiver_type_for_completion(current_type)
+          field_owner = project_field_receiver_type_for_completion(current_type, facts)
           if field_owner.respond_to?(:field) && (field_type = field_owner.field(seg))
             current_type = field_type
           else
@@ -674,7 +674,7 @@ module MilkTea
       def completion_items_for_value_receiver(facts, receiver_type, prefix)
         items = []
 
-        field_receiver_type = project_field_receiver_type_for_completion(receiver_type)
+        field_receiver_type = project_field_receiver_type_for_completion(receiver_type, facts)
         if field_receiver_type.respond_to?(:fields)
           field_receiver_type.fields.each do |fname, ftype|
             next unless prefix.empty? || fname.start_with?(prefix)
@@ -763,8 +763,20 @@ module MilkTea
         dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
       end
 
-      def project_field_receiver_type_for_completion(type)
-        project_receiver_type_for_completion(type)
+      def project_field_receiver_type_for_completion(type, facts = nil)
+        type = project_receiver_type_for_completion(type)
+        return type.definition if type.is_a?(Types::StructInstance)
+        return field_type_from_struct_definition(type, facts) if facts
+
+        type
+      end
+
+      def field_type_from_struct_definition(type, facts)
+        return type unless type.is_a?(Types::GenericInstance)
+        return type if ref_type_name?(type) || pointer_type_name?(type)
+
+        struct_def = facts.types[type.name]
+        struct_def if struct_def&.respond_to?(:fields)
       end
 
       def project_method_receiver_type_for_completion(type)
@@ -778,8 +790,8 @@ module MilkTea
         type
       end
 
-      def field_owner_type(receiver_type)
-        aggregate_type = project_field_receiver_type_for_completion(receiver_type)
+      def field_owner_type(receiver_type, facts = nil)
+        aggregate_type = project_field_receiver_type_for_completion(receiver_type, facts)
         return aggregate_type.definition if aggregate_type.is_a?(Types::StructInstance)
 
         aggregate_type
