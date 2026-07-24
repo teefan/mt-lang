@@ -269,6 +269,7 @@ struct Rectangle:
 - Nested structs may themselves contain nested structs to arbitrary depth.
 - The generated C name uses underscore-separated path components (e.g., `module_Rectangle_Edge`).
 
+```mt
 union Number:
     i: int
     f: float
@@ -276,8 +277,10 @@ union Number:
 enum State: ubyte
     idle = 0
     running = 1
+```
 
-# Backing type defaults to int; values auto-increment from 0:
+Backing type defaults to int; values auto-increment from 0:
+```mt
 enum Color:
     red
     green
