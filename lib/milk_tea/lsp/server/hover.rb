@@ -457,6 +457,8 @@ module MilkTea
           elsif (member_info = find_member_in_types(facts, name))
             type, member, value = member_info
             signature = value ? "#{type.name}.#{member} = #{value}" : "#{type.name}.#{member}"
+            source_location ||= module_member_definition_location(uri, facts.module_name, name) ||
+                                module_definition_location(uri, facts.module_name)
           elsif (import_binding = facts.imports[name])
             signature = "module #{import_binding.name}"
             source_location = module_definition_location(uri, import_binding.name)
