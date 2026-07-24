@@ -495,16 +495,16 @@ class MilkTeaParserTest < Minitest::Test
 
     ast = MilkTea::Parser.parse(source)
     enum_decl = ast.declarations.first
-    values = enum_decl.members.map do |member|
-      value = member.value
-      if value.is_a?(MilkTea::AST::UnaryOp) && value.operator == "-"
-        -value.operand.value
-      else
-        value.value
-      end
-    end
+    names = enum_decl.members.map(&:name)
+    assert_equal %w[a b c d], names
 
-    assert_equal [-3, -2, 10, 11], values
+    a, b, c, d = enum_decl.members
+    assert_instance_of MilkTea::AST::UnaryOp, a.value
+    assert_equal "-", a.value.operator
+    assert_equal 3, a.value.operand.value
+    assert_nil b.value
+    assert_equal 10, c.value.value
+    assert_nil d.value
   end
 
   def test_parses_format_string_literal

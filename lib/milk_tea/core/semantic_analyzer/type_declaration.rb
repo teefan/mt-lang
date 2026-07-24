@@ -581,8 +581,13 @@ module MilkTea
 
             decl.members.each do |member|
               begin
-                actual_type = infer_expression(member.value, scopes: [], expected_type: backing_type)
-                const_value = evaluate_enum_member_const_value(member.value, enum_type:, member_values:)
+                if member.value
+                  actual_type = infer_expression(member.value, scopes: [], expected_type: backing_type)
+                  const_value = evaluate_enum_member_const_value(member.value, enum_type:, member_values:)
+                else
+                  const_value = (member_values.values.last&.succ || 0)
+                  actual_type = backing_type
+                end
 
                 compatible = types_compatible?(actual_type, backing_type, expression: member.value, scopes: [])
                 compatible ||= actual_type.is_a?(Types::EnumBase) && types_compatible?(actual_type.backing_type, backing_type, expression: member.value, scopes: [])
