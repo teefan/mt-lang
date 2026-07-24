@@ -2750,6 +2750,72 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/cannot assign through immutable this/, error.message)
   end
 
+  def test_cross_file_immutable_this_not_duplicated
+    imported = <<~MT
+      # module demo.immutable_xfile_lib
+
+      public struct Box[T]:
+          data: T
+
+      extending Box[T]:
+          public function set(val: T) -> void:
+              this.data = val
+    MT
+
+    source = <<~MT
+      # module demo.immutable_xfile_main
+
+      import demo.immutable_xfile_lib as lib
+
+      function main() -> int:
+          var b = lib.Box[int](data = 0)
+          b.set(5)
+          return 0
+    MT
+
+    errors = check_program_source_collecting(source, { "demo/immutable_xfile_lib.mt" => imported })
+    immutable_count = errors.count { |e| (e.respond_to?(:error) ? e.error.message : e.message).include?("cannot assign through immutable") }
+    assert_equal 1, immutable_count,
+                 "expected exactly 1 immutable-this error, got #{immutable_count}"
+  end
+
+  def test_cross_file_type_mismatch_and_immutable_this_both_reported
+    imported = <<~MT
+      # module demo.both_errors_lib
+
+      public struct Node[T]:
+          child: Node[T]?
+          data: T
+
+      extending Node[T]:
+          public editable function set_child(value: T) -> void:
+              this.child = value
+
+          public function set_data(value: T) -> void:
+              this.data = value
+    MT
+
+    source = <<~MT
+      # module demo.both_errors_main
+
+      import demo.both_errors_lib as lib
+
+      function main() -> int:
+          var n = lib.Node[int](child = null, data = 0)
+          n.set_child(42)
+          n.set_data(99)
+          return 0
+    MT
+
+    errors = check_program_source_collecting(source, { "demo/both_errors_lib.mt" => imported })
+    messages = errors.map { |e| e.respond_to?(:error) ? e.error.message : e.message }
+    assert messages.any? { |m| m.include?("cannot assign int to") },
+           "expected type mismatch error"
+    immutable_count = messages.count { |m| m.include?("cannot assign through immutable") }
+    assert_equal 1, immutable_count,
+                 "expected exactly 1 immutable-this error, got #{immutable_count}"
+  end
+
   def test_rejects_implementor_with_wrong_signature
     source = <<~MT
       # module demo.wrong_sig
