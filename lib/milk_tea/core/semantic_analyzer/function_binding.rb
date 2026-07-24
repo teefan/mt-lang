@@ -306,7 +306,7 @@ module MilkTea
         previous_type_substitutions = @current_type_substitutions
         previous_specialization_owner = @current_specialization_owner
         started_check = false
-        return if binding.external || binding.type_params.any?
+        return if binding.external
         return if @checked_function_bindings[binding.object_id]
         return if @checking_function_bindings[binding.object_id]
 
@@ -317,6 +317,8 @@ module MilkTea
         with_error_node(binding.ast) do
           with_scope(binding.body_params) do |scopes|
             start_local_completion_frame(binding, scopes)
+            return if binding.type_params.any?
+
             if binding.ast.is_a?(AST::ForeignFunctionDecl)
               record_callable_value_expression_site(binding.ast.mapping) unless binding.ast.mapping.is_a?(AST::Call)
               expression = foreign_mapping_expression(binding.ast)
@@ -351,10 +353,10 @@ module MilkTea
             end
           end
         end
-        @checked_function_bindings[binding.object_id] = true
       ensure
         return unless started_check
 
+        @checked_function_bindings[binding.object_id] = true
         finish_local_completion_frame(binding)
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil

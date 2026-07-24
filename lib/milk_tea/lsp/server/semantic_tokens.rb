@@ -961,7 +961,7 @@ module MilkTea
         resolve_receiver_value_type(facts, receiver_tok).then do |receiver_type|
           next false unless receiver_type
 
-          field_receiver_type = project_field_receiver_type_for_completion(receiver_type)
+          field_receiver_type = project_field_receiver_type_for_completion(receiver_type, facts)
           next false unless field_receiver_type.respond_to?(:field)
 
           callable_semantic_type?(field_receiver_type.field(name))
