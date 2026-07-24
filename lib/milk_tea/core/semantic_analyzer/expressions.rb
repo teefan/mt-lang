@@ -1005,7 +1005,7 @@ module MilkTea
           )
 
           check_function_call(callable, expression.arguments, scopes:)
-          callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
+          validate_specialized_function_body(callable) unless callable.type_arguments.empty?
           callable.type.return_type
         when :method
           callable = specialize_function_binding(
@@ -1018,7 +1018,7 @@ module MilkTea
           raise_sema_error("cannot call editable method #{callable.name} on an immutable receiver") if callable.type.receiver_editable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
-          callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
+          validate_specialized_function_body(callable) unless callable.type_arguments.empty?
           callable.type.return_type
         when :callable_value
           check_callable_value_call(callable, expression.arguments, scopes:, callee_expression: expression.callee)

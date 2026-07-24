@@ -2701,6 +2701,36 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/generic type Pair requires type arguments/, error.message)
   end
 
+  def test_rejects_imported_generic_method_body_type_mismatch
+    imported = <<~MT
+      # module demo.gen_body_bad_lib
+
+      public struct Node[T]:
+          child: Node[T]?
+          data: T
+
+      extending Node[T]:
+          public editable function set_child(value: T) -> void:
+              this.child = value
+    MT
+
+    source = <<~MT
+      # module demo.gen_body_bad_main
+
+      import demo.gen_body_bad_lib as lib
+
+      function main() -> int:
+          var n = lib.Node[int](child = null, data = 0)
+          n.set_child(42)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_program_source(source, { "demo/gen_body_bad_lib.mt" => imported })
+    end
+    assert_match(/cannot assign int to demo\.gen_body_bad_lib\.Node\[int\]\?/, error.message)
+  end
+
   def test_rejects_implementor_with_wrong_signature
     source = <<~MT
       # module demo.wrong_sig
