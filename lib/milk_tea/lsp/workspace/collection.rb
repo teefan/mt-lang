@@ -56,10 +56,12 @@ module MilkTea
               )
               collect_ms = elapsed_ms(collect_start) if collect_start
               diagnostics = result[:diagnostics]
+              cross_by_uri = result[:cross_file_diagnostics] || {}
               facts = result[:facts]
               snapshot = result[:sema_snapshot]
               @facts_cache_mutex.synchronize do
                 if @facts_generation[uri] == generation
+                  @cross_file_diagnostics = cross_by_uri
                   @tooling_snapshot_cache[uri] = snapshot if snapshot
                   @last_good_tooling_snapshot_cache[uri] = snapshot if snapshot&.facts
                   @facts_cache[uri] = facts if facts
@@ -92,6 +94,10 @@ module MilkTea
             )
           end
         end
+      end
+
+      def cross_file_diagnostics
+        @facts_cache_mutex.synchronize { @cross_file_diagnostics }
       end
     end
   end

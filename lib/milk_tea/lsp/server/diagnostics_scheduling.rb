@@ -133,6 +133,16 @@ module MilkTea
                 diagnostics: diagnostics
               })
               notify_diagnostic_errors(uri, diagnostics)
+
+              cross = @workspace.cross_file_diagnostics
+              if cross&.any?
+                cross.each do |target_uri, items|
+                  @protocol.write_notification('textDocument/publishDiagnostics', {
+                    uri: target_uri,
+                    diagnostics: items
+                  })
+                end
+              end
             end
           elsif perf_logging?
             @diagnostics_perf[:dropped_stale] += 1

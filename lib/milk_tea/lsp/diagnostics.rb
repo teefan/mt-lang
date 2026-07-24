@@ -87,8 +87,17 @@ module MilkTea
             sema_start = total_start ? monotonic_time : nil
             sema_snapshot ||= SemanticAnalyzer.tooling_snapshot(ast, imported_modules: imported_modules.fetch(:modules), path: path, allow_missing_imports: true)
             sema_facts = sema_snapshot.facts
+            cross_by_uri = {}
+            target_path = path.is_a?(String) ? File.expand_path(path) : nil
             sema_snapshot.diagnostics.reject { |diagnostic| redundant_unknown_import_diagnostic?(diagnostic, unresolved_import_paths) }
-                           .each { |diagnostic| diagnostics << format_tooling_diagnostic(diagnostic, stage: 'sema') }
+                           .each do |diagnostic|
+                             if target_path && diagnostic.path && File.expand_path(diagnostic.path) != target_path
+                               target_uri = path_to_uri(diagnostic.path)
+                               (cross_by_uri[target_uri] ||= []) << format_tooling_diagnostic(diagnostic, stage: 'sema')
+                             else
+                               diagnostics << format_tooling_diagnostic(diagnostic, stage: 'sema')
+                             end
+                           end
             sema_ms = elapsed_ms(sema_start) if sema_start
           rescue StandardError => e
             log_diagnostics_warning("Error collecting diagnostics: #{e.message}")
@@ -142,7 +151,7 @@ module MilkTea
           log_diagnostics_warning("Error collecting lint diagnostics: #{e.message}")
         end
 
-        { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot }
+        { diagnostics: diagnostics, cross_file_diagnostics: cross_by_uri, facts: sema_facts, sema_snapshot: sema_snapshot }
       ensure
         if total_start
           lint_breakdown = lint_profile&.summary(limit: 12)
@@ -196,7 +205,15 @@ module MilkTea
       def self.redundant_unknown_import_diagnostic?(diagnostic, unresolved_import_paths)
         return false unless diagnostic&.message.to_s.start_with?("unknown import ")
 
-        unresolved_import_paths.include?(diagnostic.message.delete_prefix("unknown import "))
+        import_path = diagnostic.message.to_s.match(/unknown import (.+)$/)&.captures&.first
+        return false unless import_path
+
+        unresolved_import_paths.include?(import_path)
+      end
+
+    def self.path_to_uri(path)
+        escaped_path = path.split('/').map { |seg| CGI.escape(seg).gsub('+', '%20') }.join('/')
+        "file://#{escaped_path}"
       end
 
       def self.uri_to_path(uri)
