@@ -527,6 +527,12 @@ module MilkTea
           end
 
           unless signature
+            if token_index && tokens && parameter_declaration_token?(tokens, token_index)
+              signature = resolve_lexical_local_hover_signature(uri, name, tokens[token_index])
+            end
+          end
+
+          unless signature
             unless token_index && tokens && tokens[previous_non_trivia_token_index(tokens, token_index)]&.type == :dot
               local_def = @workspace.find_definition_token_global(
                 name,
@@ -1449,6 +1455,17 @@ module MilkTea
         builtin_call_hover_info(name, tokens, token_index)
       end
 
+      def parameter_declaration_token?(tokens, index)
+        return false unless index && tokens[index]&.type == :identifier
+
+        prev = previous_non_trivia_token_index(tokens, index)
+        return false unless prev
+        return false unless [:lparen, :comma].include?(tokens[prev].type)
+
+        nxt = next_non_trivia_token_index(tokens, index + 1)
+        nxt && tokens[nxt].type == :colon
+      end
+
       def builtin_in_member_access_context?(tokens, token_index)
         prev_index = previous_non_trivia_token_index(tokens, token_index)
         prev_index && tokens[prev_index].type == :dot
@@ -1790,6 +1807,8 @@ module MilkTea
               when "flags" then kind = :flags_type
               when "union" then kind = :union_type
               when "variant" then kind = :variant_type
+              when "(" then kind = :param
+              when "," then kind = :param
               end
             end
 
@@ -1816,14 +1835,15 @@ module MilkTea
         end
 
         kind ||= :let
-        unless %i[let var const].include?(kind)
+        unless %i[let var const param].include?(kind)
           kind = kind.to_s.sub(/_type$/, "")
           return "#{kind} #{name}"
         end
 
+        display_kind = kind == :param ? "parameter" : kind.to_s
         mutability = kind == :var ? "mutable" : "immutable"
         if type_str && !type_str.empty?
-          "#{kind} #{name}: #{type_str} (#{mutability})"
+          "#{display_kind} #{name}: #{type_str} (#{mutability})"
         else
           "#{kind} #{name} (#{mutability})"
         end
