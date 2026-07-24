@@ -72,7 +72,7 @@ module MilkTea
           },
           'type' => {
             signature: 'type',
-            docs: 'Type alias: `type Name = ExistingType`. Generic type parameters and `implements` constraints are supported.',
+            docs: 'Type alias: `type Name = ExistingType`. Generic type parameters are supported.',
           },
           'interface' => {
             signature: 'interface',
@@ -116,7 +116,7 @@ module MilkTea
           },
           'for' => {
             signature: 'for',
-            docs: 'Loop: `for i in 0..count:` (exclusive range) or `for item in iterable:`. Parallel form `for left, right in xs, ys:` iterates arrays/spans.',
+            docs: 'Loop: `for i in 0..count:` (exclusive range) or `for item in iterable:`. Multi-iteration `for left, right in xs, ys:` iterates arrays/spans in lockstep.',
           },
           'while' => {
             signature: 'while',
