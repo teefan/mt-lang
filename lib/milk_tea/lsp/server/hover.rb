@@ -272,6 +272,28 @@ module MilkTea
           'Subscription' => 'Opaque handle returned by `event.subscribe`. Pass to `event.unsubscribe` to remove a listener.',
         }.freeze
 
+        BUILTIN_TYPE_METHOD_SIGNATURES = {
+          'atomic' => {
+            'load' => 'function load() -> T',
+            'store' => 'static function store(value: T) -> void',
+            'add' => 'static function add(value: T) -> T',
+            'sub' => 'static function sub(value: T) -> T',
+            'exchange' => 'static function exchange(value: T) -> T',
+            'compare_exchange' => 'static function compare_exchange(expected: T, desired: T) -> bool',
+          },
+          'str_buffer' => {
+            'assign' => 'static function assign(value: str) -> void',
+            'append' => 'static function append(value: str) -> void',
+            'assign_format' => 'static function assign_format(fmt: str) -> void',
+            'append_format' => 'static function append_format(fmt: str) -> void',
+            'clear' => 'static function clear() -> void',
+            'len' => 'static function len() -> ptr_uint',
+            'capacity' => 'static function capacity() -> ptr_uint',
+            'as_str' => 'static function as_str() -> str',
+            'as_cstr' => 'static function as_cstr() -> cstr',
+          },
+        }.freeze
+
       def handle_hover(params)
         stages = new_perf_stages
         total_start = stages ? monotonic_time : nil
@@ -466,6 +488,27 @@ module MilkTea
           end
 
           unless signature
+            if dot_receiver
+              receiver_name = dot_receiver
+              receiver_binding = resolve_local_hover_binding(facts, receiver_name, lsp_line + 1, lsp_char + 1) ||
+                                 facts.values[receiver_name] ||
+                                 facts.functions[receiver_name]
+              if receiver_binding && receiver_binding.type
+                receiver_type = receiver_binding.respond_to?(:storage_type) ? receiver_binding.storage_type : receiver_binding.type
+                methods = methods_for_receiver_type(facts, receiver_type)
+                if (method_binding = methods[name])
+                  signature = method_signature(method_binding)
+                else
+                  type_base = receiver_type.to_s[/^([a-z_]+)/, 1]
+                  if type_base && (method_sigs = BUILTIN_TYPE_METHOD_SIGNATURES[type_base])
+                    signature = method_sigs[name]
+                  end
+                end
+              end
+            end
+          end
+
+          unless signature
             if token_index && (builtin_info = builtin_hover_info(name, tokens, token_index))
               signature = builtin_info[:signature]
               docs = builtin_info[:docs]
@@ -473,14 +516,16 @@ module MilkTea
           end
 
           unless signature
-            local_def = @workspace.find_definition_token_global(
-              name,
-              preferred_uri: uri,
-              before_line: lsp_line + 1,
-              before_char: lsp_char + 1,
-            )
-            if local_def
-              signature = resolve_lexical_local_hover_signature(local_def[:uri], name, local_def[:token])
+            unless token_index && tokens && tokens[previous_non_trivia_token_index(tokens, token_index)]&.type == :dot
+              local_def = @workspace.find_definition_token_global(
+                name,
+                preferred_uri: uri,
+                before_line: lsp_line + 1,
+                before_char: lsp_char + 1,
+              )
+              if local_def
+                signature = resolve_lexical_local_hover_signature(local_def[:uri], name, local_def[:token])
+              end
             end
           end
           end
