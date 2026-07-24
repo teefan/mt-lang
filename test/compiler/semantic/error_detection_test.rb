@@ -2639,6 +2639,50 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/generic interface Mapper requires type arguments/, error.message)
   end
 
+  # ── generic struct/variant constructor errors ────────────────────────────
+
+  def test_rejects_generic_struct_constructor_without_type_arguments
+    source = <<~MT
+      # module demo.gen_struct_bad
+
+      struct Pair[A, B]:
+          first: A
+          second: B
+
+      function main() -> int:
+          let p = Pair(first = 1, second = 2)
+          return p.first
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
+    assert_match(/generic type Pair requires type arguments/, error.message)
+  end
+
+  def test_rejects_qualified_generic_struct_constructor_without_type_arguments
+    imported = <<~MT
+      # module demo.gen_struct_bad_lib
+
+      public struct DoubleLinkedList[T]:
+          first: int
+          last: int
+    MT
+
+    source = <<~MT
+      # module demo.gen_struct_bad_main
+
+      import demo.gen_struct_bad_lib as dll
+
+      function main() -> int:
+          let list = dll.DoubleLinkedList(first = 0, last = 0)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_program_source(source, { "demo/gen_struct_bad_lib.mt" => imported })
+    end
+    assert_match(/generic type dll\.DoubleLinkedList requires type arguments/, error.message)
+  end
+
   def test_rejects_implementor_with_wrong_signature
     source = <<~MT
       # module demo.wrong_sig
