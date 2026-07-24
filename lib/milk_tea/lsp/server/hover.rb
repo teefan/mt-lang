@@ -285,7 +285,6 @@ module MilkTea
             'subscribe' => 'function subscribe(listener) -> Result[Subscription, EventError]',
             'subscribe_once' => 'function subscribe_once(listener) -> Result[Subscription, EventError]',
             'unsubscribe' => 'function unsubscribe(subscription) -> bool',
-            'emit' => 'function emit() / function emit(payload)',
             'wait' => 'function wait() -> Task[Result[T, EventError]]',
           },
           'str_buffer' => {
@@ -314,24 +313,22 @@ module MilkTea
         token = context&.fetch(:token, nil)
         token_kind = token&.type || :none
         unless token&.type == :identifier
-          unless member_access_token?(context)
-            info = builtin_keyword_hover_info(token) ||
-                   BUILTIN_CALL_HOVER_INFO[token.lexeme]&.slice(:signature, :docs)
-            if info
-              result_state = 'hit'
-              return {
-                contents: {
-                  kind: 'markdown',
-                  value: render_hover_markdown(info)
-                },
-                range: token_to_range(token)
-              }
-            end
+          info = builtin_keyword_hover_info(token) ||
+                 BUILTIN_CALL_HOVER_INFO[token.lexeme]&.slice(:signature, :docs)
+          if info
+            result_state = 'hit'
+            return {
+              contents: {
+                kind: 'markdown',
+                value: render_hover_markdown(info)
+              },
+              range: token_to_range(token)
+            }
+          end
 
-            result_state = 'not-identifier'
-            return nil
-          end
-          end
+          result_state = 'not-identifier'
+          return nil
+        end
 
         info = resolve_hover_info(uri, lsp_line, lsp_char, token: token, tokens: context[:tokens], token_index: context[:token_index], stages: stages)
         return nil unless info
@@ -1029,24 +1026,18 @@ module MilkTea
 
           method_receiver_type = project_method_receiver_type_for_completion(current_type)
           method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])
-          if method_info
-            source_location = module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding])
-            source_location ||= module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
+          return nil unless method_info
 
-            return {
-              signature: method_signature(method_info[:binding]),
-              docs: nil,
-              source: hover_source_label_from_location(source_location),
-              source_uri: hover_source_uri_from_location(source_location),
-              source_line: hover_source_line_from_location(source_location),
-            }
-          end
+          source_location = module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding])
+          source_location ||= module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
 
-          type_base = current_type.to_s[/^([a-z_]+)/, 1]
-          if type_base && (method_sigs = BUILTIN_TYPE_METHOD_SIGNATURES[type_base])
-            builtin_sig = method_sigs[segment[:name]]
-            return { signature: builtin_sig, docs: nil } if builtin_sig
-          end
+          return {
+            signature: method_signature(method_info[:binding]),
+            docs: nil,
+            source: hover_source_label_from_location(source_location),
+            source_uri: hover_source_uri_from_location(source_location),
+            source_line: hover_source_line_from_location(source_location),
+          }
         end
 
         nil
@@ -1324,7 +1315,7 @@ module MilkTea
 
       def member_access_chain_at(tokens, token_index)
         token = tokens[token_index]
-        return nil unless token && (token.type == :identifier || Token::KEYWORDS.key?(token.lexeme))
+        return nil unless token&.type == :identifier
 
         indices = [token_index]
         current_index = token_index
@@ -1503,15 +1494,6 @@ module MilkTea
         return false unless after && [:rbracket, :comma].include?(tokens[after].type)
 
         true
-      end
-
-      def member_access_token?(context)
-        tokens = context[:tokens]
-        token_index = context[:token_index]
-        return false unless tokens && token_index
-
-        prev = previous_non_trivia_token_index(tokens, token_index)
-        prev && tokens[prev].type == :dot
       end
 
       def call_argument_token?(tokens, index)
