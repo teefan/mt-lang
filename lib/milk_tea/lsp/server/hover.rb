@@ -449,6 +449,9 @@ module MilkTea
             type = facts.types[name]
             signature = type_hover_signature(name, type)
             docs ||= BUILTIN_TYPE_DOCS[name]
+          elsif !name.include?(".") && (nested = find_nested_type_by_short_name(facts, name))
+            signature = type_hover_signature(name, nested)
+            docs ||= BUILTIN_TYPE_DOCS[name]
           elsif (binding = facts.values[name])
             signature = value_hover_signature(binding)
           elsif (import_binding = facts.imports[name])
@@ -1384,6 +1387,13 @@ module MilkTea
 
       def field_hover_signature(name, type)
         "field #{name}: #{type}"
+      end
+
+      def find_nested_type_by_short_name(facts, short_name)
+        matches = facts.types.keys.select { |k| k.to_s.end_with?(".#{short_name}") }
+        return nil unless matches.length == 1
+
+        facts.types[matches.first]
       end
 
       def builtin_hover_info(name, tokens, token_index)
