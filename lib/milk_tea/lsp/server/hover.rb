@@ -1734,6 +1734,12 @@ module MilkTea
               when "let" then kind = :let
               when "var" then kind = :var
               when "const" then kind = :const
+              when "struct" then kind = :struct_type
+              when "function", "async", "external", "foreign" then kind = :function
+              when "enum" then kind = :enum_type
+              when "flags" then kind = :flags_type
+              when "union" then kind = :union_type
+              when "variant" then kind = :variant_type
               end
             end
 
@@ -1760,6 +1766,11 @@ module MilkTea
         end
 
         kind ||= :let
+        unless %i[let var const].include?(kind)
+          kind = kind.to_s.sub(/_type$/, "")
+          return "#{kind} #{name}"
+        end
+
         mutability = kind == :var ? "mutable" : "immutable"
         if type_str && !type_str.empty?
           "#{kind} #{name}: #{type_str} (#{mutability})"
