@@ -2731,6 +2731,25 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/cannot assign int to demo\.gen_body_bad_lib\.Node\[int\]\?/, error.message)
   end
 
+  def test_rejects_immutable_this_in_generic_method_body_standalone
+    source = <<~MT
+      # module demo.immutable_gen
+
+      struct Box[T]:
+          data: T
+
+      extending Box[T]:
+          function set(val: T) -> void:
+              this.data = val
+
+      function main() -> int:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
+    assert_match(/cannot assign through immutable this/, error.message)
+  end
+
   def test_rejects_implementor_with_wrong_signature
     source = <<~MT
       # module demo.wrong_sig
