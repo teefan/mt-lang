@@ -648,13 +648,13 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function set_state\(state: State\) -> void = c\.GuiSetState\(int<-state\)$/, source)
     assert_match(/^public foreign function get_state\(\) -> State = State<-c\.GuiGetState\(\)$/, source)
     assert_match(/^public foreign function get_icons\(\) -> span\[uint\] = span\[uint\]\(data = c\.GuiGetIcons\(\), len = 2048\)$/, source)
-    assert_match(/^public foreign function tab_bar\(bounds: Rectangle, text: span\[str\] as span\[ptr\[char\]\], inout active: int\) -> int = c\.GuiTabBar\(bounds, text\.data, int<-text\.len, active\)$/, source)
+    assert_match(/^public foreign function tab_bar\(bounds: Rectangle, text: str as cstr, inout hscroll: int, inout active: int\) -> int = c\.GuiTabBar$/, source)
     assert_match(/^public foreign function scroll_panel\(bounds: Rectangle, text: str as cstr, content: Rectangle, inout scroll: Vector2, out view: Rectangle\) -> int = c\.GuiScrollPanel$/, source)
     assert_match(/^public foreign function toggle\(bounds: Rectangle, text: str as cstr, inout active: bool\) -> int = c\.GuiToggle$/, source)
     assert_match(/^public foreign function list_view_ex\(bounds: Rectangle, text: span\[str\] as span\[ptr\[char\]\], inout scroll_index: int, inout active: int, inout focus: int\) -> int = c\.GuiListViewEx\(bounds, text\.data, int<-text\.len, scroll_index, active, focus\)$/, source)
     assert_match(/^public foreign function value_box_float\[N\]\(bounds: Rectangle, text: str as cstr, text_value: str_buffer\[N\] as ptr\[char\], inout value: float, edit_mode: bool\) -> int = c\.GuiValueBoxFloat\(bounds, text, text_value, value, edit_mode\)$/, source)
     assert_match(/^public foreign function text_box\[N\]\(bounds: Rectangle, text: str_buffer\[N\] as ptr\[char\], edit_mode: bool\) -> int = c\.GuiTextBox\(bounds, text, int<-\(text_public\.capacity\(\) \+ 1\), edit_mode\)$/, source)
-    assert_match(/^public foreign function text_input_box\[N\]\(bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr, text: str_buffer\[N\] as ptr\[char\], inout secret_view_active: bool\) -> int = c\.GuiTextInputBox\(bounds, title, message, buttons, text, int<-\(text_public\.capacity\(\) \+ 1\), secret_view_active\)$/, source)
+    assert_match(/^public foreign function text_input_box\[N\]\(bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr, text: str_buffer\[N\] as ptr\[char\], out btn_active: int, inout secret_view_active: bool\) -> int = c\.GuiTextInputBox\(bounds, title, message, buttons, text, int<-\(text_public\.capacity\(\) \+ 1\), btn_active, secret_view_active\)$/, source)
   end
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
