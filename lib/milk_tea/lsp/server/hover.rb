@@ -251,6 +251,25 @@ module MilkTea
           'mat3' => '3×3 column-major float matrix. Columns: `.col0`–`.col2` (each `vec3`). Supports `identity`, `transpose` via `std.linear_algebra`.',
           'mat4' => '4×4 column-major float matrix. Columns: `.col0`–`.col3` (each `vec4`). Supports `identity`, `transpose` via `std.linear_algebra`.',
           'quat' => 'Quaternion. Fields: `.x`, `.y`, `.z`, `.w`. Layout-compatible with `vec4`. Supports `identity`, `conjugate` via `std.linear_algebra`.',
+          'ptr' => 'Generic pointer type: `ptr[T]`. Raw mutable pointer. Requires `unsafe` for indexing, dereference, and arithmetic.',
+          'const_ptr' => 'Read-only pointer type: `const_ptr[T]`. Immutable pointer, does not require `unsafe` for dereference.',
+          'own' => 'Owning heap pointer: `own[T]`. Auto-dereferences like `ref`. Storable, returnable, and nullable. Allocated via `heap.must_alloc[T](count)`.',
+          'ref' => 'Non-null borrow reference: `ref[T]`. Auto-dereferences for member access and method calls. Cannot be stored in module variables or constants.',
+          'span' => 'Borrowed pointer-plus-length view: `span[T]`. Constructed via `span[T](data = ..., len = ...)`. Arrays coerce implicitly.',
+          'array' => 'Fixed-length array: `array[T, N]`. Constructed via `array[T, N](elements...)`. Omitted trailing elements default to zero.',
+          'str_buffer' => 'Fixed-capacity mutable UTF-8 text buffer: `str_buffer[N]`. Methods: `assign`, `append`, `assign_format`, `append_format`, `clear`, `as_str`, `as_cstr`.',
+          'atomic' => 'Atomic value for lock-free concurrent access: `atomic[T]`. `T` must be a primitive integer or `bool`. Methods: `load`, `store`, `add`, `sub`, `exchange`. Uses C11 `_Atomic`.',
+          'Task' => 'Async task future: `Task[T]`. Returned by `async function`. Use `await` to unwrap, or `aio.wait`/`aio.run` to drive.',
+          'Option' => 'Built-in optional type: `Option[T]`. Arms: `some(value: T)` and `none`. Use `let ... else:` or `?` for safe unwrapping.',
+          'Result' => 'Built-in result type: `Result[T, E]`. Arms: `success(value: T)` and `failure(error: E)`. Use `let ... else:` or `?` for error propagation.',
+          'SoA' => 'Struct-of-Arrays: `SoA[T, N]`. Each struct field becomes a separate array of length `N`. Access `soa[i].field` reads from column `field` at row `i`.',
+          'struct_handle' => 'Compile-time handle for a struct type. Obtained via reflection builtins like `fields_of`.',
+          'field_handle' => 'Compile-time handle for a struct field. Exposes `.name` and `.type`. Obtained via `field_of` and `fields_of`.',
+          'callable_handle' => 'Compile-time handle for a callable declaration. Obtained via `callable_of`. Used with `has_attribute`, `attribute_of`.',
+          'attribute_handle' => 'Compile-time handle for an applied attribute. Obtained via `attribute_of` and `attributes_of`. Use `attribute_arg[T]` to read arguments.',
+          'member_handle' => 'Compile-time handle for an enum or flags member. Exposes `.name` and `.value`. Obtained via `members_of`.',
+          'EventError' => 'Built-in enum returned when event listener capacity is exhausted. Single member: `full`.',
+          'Subscription' => 'Opaque handle returned by `event.subscribe`. Pass to `event.unsubscribe` to remove a listener.',
         }.freeze
 
       def handle_hover(params)
@@ -1375,7 +1394,7 @@ module MilkTea
       end
 
       def builtin_type_constructor_hover_info(name, tokens, token_index)
-        return nil unless %w[array span Option Result SoA].include?(name)
+        return nil unless %w[array span Option Result SoA str_buffer].include?(name)
 
         lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
@@ -1427,8 +1446,10 @@ module MilkTea
                when 'Option'
                  '`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms.'
                when 'Result'
-                 '`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms.'
-               end
+                  '`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms.'
+                when 'str_buffer'
+                  '`str_buffer[N]` is a fixed-capacity mutable UTF-8 text buffer. Methods: `assign`, `append`, `assign_format`, `append_format`, `clear`, `len`, `as_str`, `as_cstr`.'
+                end
 
         {
           signature: "builtin type #{specialization}",
