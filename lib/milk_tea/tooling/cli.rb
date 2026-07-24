@@ -716,9 +716,9 @@ module MilkTea
       parts << "#{info_count} #{info_count == 1 ? 'note' : 'notes'}" if info_count > 0
       body = parts.join("; ")
       if error_count > 0
-        @err.puts("error: could not check due to #{body}")
+        @err.puts("#{body} found")
       elsif warning_count > 0
-        @err.puts("warning: #{body}")
+        @err.puts("#{body}")
       end
       final_error_count = error_count + (resolution[:warnings_as_errors] ? warning_count : 0)
       final_error_count > 0 ? 1 : 0
