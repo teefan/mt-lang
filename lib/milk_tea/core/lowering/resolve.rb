@@ -430,6 +430,8 @@ module MilkTea
             [:get, nil, nil, nil]
           elsif (type = @ctx.types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
             [ :struct_literal, nil, nil, type ]
+          elsif (type = @ctx.types[callee.name]).is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+            raise LoweringError, "generic type #{callee.name} requires type arguments"
           else
             emit_fn = @artifacts.emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
             if emit_fn
@@ -452,6 +454,10 @@ module MilkTea
               return [:function, external_function_c_name(binding), nil, binding.type, binding]
             end
             imported_type = imported_module.types[callee.member]
+            if imported_type.is_a?(Types::GenericStructDefinition) || imported_type.is_a?(Types::GenericVariantDefinition)
+              raise LoweringError, "generic type #{callee.receiver.name}.#{callee.member} requires type arguments"
+            end
+
             if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
               return [:struct_literal, nil, nil, imported_module.types.fetch(callee.member)]
             end
