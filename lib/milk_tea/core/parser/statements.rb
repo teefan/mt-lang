@@ -87,6 +87,7 @@ module MilkTea
 
       def parse_local_decl(kind)
         line = previous.line
+        column = previous.column
         name_token = nil
         name = nil
         var_type = nil
@@ -145,7 +146,7 @@ module MilkTea
           consume_end_of_statement
         end
 
-        AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_binding:, else_body:, line:, column: name_token&.column || line, destructure_bindings:, destructure_type_name:)
+        AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_binding:, else_body:, line:, column: name_token&.column || column, destructure_bindings:, destructure_type_name:)
       rescue ParseError => e
         raise unless @recovery_errors && name
 
