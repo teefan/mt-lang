@@ -224,6 +224,35 @@ module MilkTea
           },
         }.freeze
 
+        BUILTIN_TYPE_DOCS = {
+          'bool' => '1-byte boolean: `true` or `false`.',
+          'byte' => '8-bit signed integer. Range: -128 to 127.',
+          'ubyte' => '8-bit unsigned integer. Range: 0 to 255. Also used for `char` literals like `\'A\'`.',
+          'char' => '8-bit character type (alias for `ubyte`).',
+          'short' => '16-bit signed integer. Range: -32,768 to 32,767.',
+          'ushort' => '16-bit unsigned integer. Range: 0 to 65,535.',
+          'int' => '32-bit signed integer. Range: -2,147,483,648 to 2,147,483,647. Default enum backing type.',
+          'uint' => '32-bit unsigned integer. Range: 0 to 4,294,967,295.',
+          'long' => '64-bit signed integer.',
+          'ulong' => '64-bit unsigned integer.',
+          'ptr_int' => 'Pointer-sized signed integer. Width matches the target platform pointer size.',
+          'ptr_uint' => 'Pointer-sized unsigned integer. Return type for `size_of`, `align_of`, `offset_of`.',
+          'float' => '32-bit IEEE 754 single-precision float.',
+          'double' => '64-bit IEEE 754 double-precision float.',
+          'void' => 'Empty type for functions with no return value. Not a storable type.',
+          'str' => 'Non-owning UTF-8 string view (pointer + length). Not null-terminated.',
+          'cstr' => 'Null-terminated C string. Used at FFI boundaries.',
+          'vec2' => '2-component float vector. Fields: `.x`, `.y`. Supports component-wise arithmetic.',
+          'vec3' => '3-component float vector. Fields: `.x`, `.y`, `.z`. Supports component-wise arithmetic and `dot`/`cross`/`length` via `std.linear_algebra`.',
+          'vec4' => '4-component float vector. Fields: `.x`, `.y`, `.z`, `.w`. Supports component-wise arithmetic.',
+          'ivec2' => '2-component integer vector. Fields: `.x`, `.y`. Supports component-wise arithmetic.',
+          'ivec3' => '3-component integer vector. Fields: `.x`, `.y`, `.z`. Supports component-wise arithmetic.',
+          'ivec4' => '4-component integer vector. Fields: `.x`, `.y`, `.z`, `.w`. Supports component-wise arithmetic.',
+          'mat3' => '3×3 column-major float matrix. Columns: `.col0`–`.col2` (each `vec3`). Supports `identity`, `transpose` via `std.linear_algebra`.',
+          'mat4' => '4×4 column-major float matrix. Columns: `.col0`–`.col3` (each `vec4`). Supports `identity`, `transpose` via `std.linear_algebra`.',
+          'quat' => 'Quaternion. Fields: `.x`, `.y`, `.z`, `.w`. Layout-compatible with `vec4`. Supports `identity`, `conjugate` via `std.linear_algebra`.',
+        }.freeze
+
       def handle_hover(params)
         stages = new_perf_stages
         total_start = stages ? monotonic_time : nil
@@ -378,6 +407,7 @@ module MilkTea
           elsif facts.types.key?(name)
             type = facts.types[name]
             signature = type_hover_signature(name, type)
+            docs ||= BUILTIN_TYPE_DOCS[name]
           elsif (binding = facts.values[name])
             signature = value_hover_signature(binding)
           elsif (import_binding = facts.imports[name])
@@ -395,6 +425,7 @@ module MilkTea
               signature = value_hover_signature(val)
             elsif module_binding.types.key?(name)
               signature = "type #{name}"
+              docs ||= BUILTIN_TYPE_DOCS[name]
             elsif (binding = module_binding.interfaces[name])
               signature = interface_signature(binding)
               source_location = module_member_definition_location(uri, module_binding.name, name)
