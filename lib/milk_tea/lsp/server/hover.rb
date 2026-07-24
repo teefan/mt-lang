@@ -1506,7 +1506,7 @@ module MilkTea
       end
 
       def builtin_type_constructor_hover_info(name, tokens, token_index)
-        return nil unless %w[array span Option Result SoA str_buffer].include?(name)
+        return nil unless %w[array span Option Result SoA str_buffer ref ptr const_ptr own Task atomic].include?(name)
 
         lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
@@ -1561,6 +1561,18 @@ module MilkTea
                   '`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms.'
                 when 'str_buffer'
                   '`str_buffer[N]` is a fixed-capacity mutable UTF-8 text buffer. Methods: `assign`, `append`, `assign_format`, `append_format`, `clear`, `len`, `as_str`, `as_cstr`.'
+                when 'ref'
+                  '`ref[T]` is a non-null borrow reference. Auto-dereferences for member access and method calls. Cannot be stored in module-level variables, constants, or nested containers.'
+                when 'ptr'
+                  '`ptr[T]` is a raw mutable pointer. Indexing, dereference, and arithmetic require `unsafe`. Nullable via `ptr[T]?`.'
+                when 'const_ptr'
+                  '`const_ptr[T]` is a read-only pointer. Does not require `unsafe` for dereference.'
+                when 'own'
+                  '`own[T]` is an owning heap pointer. Auto-dereferences like `ref`. Storable, returnable, and nullable. Allocated via `heap.must_alloc[T](count)`.'
+                when 'Task'
+                  '`Task[T]` is an async task future. Returned by `async function`. Use `await` to unwrap, or `aio.wait`/`aio.run` to drive.'
+                when 'atomic'
+                  '`atomic[T]` is an atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load`, `store`, `add`, `sub`, `exchange`.'
                 end
 
         {
