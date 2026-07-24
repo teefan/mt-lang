@@ -256,6 +256,20 @@ module MilkTea
         end
       end
 
+      # Validates the body of a specialized (instantiated) function or method
+      # binding.  The owner checker may be in collecting-errors mode, which
+      # would silently swallow body errors into @structural_errors.  We
+      # temporarily disable collect mode on the owner so the caller receives
+      # the SemanticError directly.
+      def validate_specialized_function_body(binding)
+        owner = binding.owner
+        prev_collecting = owner.instance_variable_get(:@collecting_errors)
+        owner.instance_variable_set(:@collecting_errors, false)
+        owner.send(:check_function, binding)
+      ensure
+        owner.instance_variable_set(:@collecting_errors, prev_collecting) if owner
+      end
+
       # Per-function error collection used by check_collecting_errors.
       # Continues past individual function failures, accumulating SemanticErrors.
       def check_functions_collecting(errors)
