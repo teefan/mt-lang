@@ -1342,7 +1342,11 @@ module MilkTea
             imported_module = @ctx.imports.fetch(callee.receiver.name)
             return [:function, imported_module.functions.fetch(callee.member), nil] if imported_module.functions.key?(callee.member)
             imported_type = imported_module.types[callee.member]
-            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::GenericStructDefinition) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
+            if imported_type.is_a?(Types::GenericStructDefinition) || imported_type.is_a?(Types::GenericVariantDefinition)
+              raise_sema_error("generic type #{callee.receiver.name}.#{callee.member} requires type arguments", callee)
+            end
+
+            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
               return [:struct, imported_module.types.fetch(callee.member), nil]
             end
 
