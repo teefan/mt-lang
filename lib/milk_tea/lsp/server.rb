@@ -58,7 +58,7 @@ module MilkTea
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
       BUILTIN_FUNCTION_NAMES = %w[
-        ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default adapt get
+        ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default adapt get field_of callable_of has_attribute attribute_of attribute_arg fields_of members_of attributes_of
       ].to_set.freeze
       BUILTIN_ASSOCIATED_HOOK_NAMES = %w[hash equal order].to_set.freeze
       BUILTIN_CALL_HOVER_INFO = {
@@ -68,7 +68,7 @@ module MilkTea
         },
         'ref_of' => {
           signature: 'builtin ref_of(value) -> ref[T]',
-          docs: '`ref_of(x)` borrows a mutable safe lvalue as `ref[T]`.'
+          docs: '`ref_of(x)` borrows a safe lvalue as `ref[T]`.'
         },
         'const_ptr_of' => {
           signature: 'builtin const_ptr_of(value) -> const_ptr[T]',
@@ -76,7 +76,7 @@ module MilkTea
         },
         'ptr_of' => {
           signature: 'builtin ptr_of(value) -> ptr[T]',
-          docs: '`ptr_of(x)` takes the address of a mutable safe lvalue as `ptr[T]`.'
+          docs: '`ptr_of(x)` takes the address of a safe lvalue as `ptr[T]`.'
         },
         'read' => {
           signature: 'builtin read(value) -> T',
@@ -129,6 +129,18 @@ module MilkTea
         'attribute_of' => {
           signature: 'builtin attribute_of(target, attribute_name) -> attribute_handle',
           docs: '`attribute_of(target, attribute_name)` returns the applied attribute handle for the resolved target-and-attribute pair; use `has_attribute(...)` when absence is expected.'
+        },
+        'fields_of' => {
+          signature: 'builtin fields_of(Type) -> array[field_handle, N]',
+          docs: '`fields_of(Type)` returns all struct fields as a compile-time `array[field_handle, N]`, in declaration order. Use with `inline for` for reflective field iteration.'
+        },
+        'members_of' => {
+          signature: 'builtin members_of(Type) -> array[member_handle, N]',
+          docs: '`members_of(Type)` returns all members of an enum or flags type as a compile-time `array[member_handle, N]`. Each handle exposes `.name` and `.value`.'
+        },
+        'attributes_of' => {
+          signature: 'builtin attributes_of(target [, name]) -> array[attribute_handle, N]',
+          docs: '`attributes_of(target)` returns all attributes applied to a type, field, or callable as a compile-time array. `attributes_of(target, name)` filters by attribute kind.'
         },
       }.freeze
       OPERATOR_TOKEN_TYPES = %i[
