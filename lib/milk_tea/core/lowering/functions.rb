@@ -80,7 +80,7 @@ module MilkTea
       def resolve_extending_receiver_type(analysis, type_name)
         if type_name.is_a?(AST::TypeRef)
           generic_type = resolve_named_generic_type_for_analysis(analysis, type_name.name.parts)
-          if generic_type.is_a?(Types::GenericStructDefinition)
+          if generic_type.is_a?(Types::GenericStructDefinition) || generic_type.is_a?(Types::GenericVariantDefinition)
             validate_methods_receiver_type_arguments!(type_name, generic_type)
             return generic_type
           end
