@@ -545,7 +545,7 @@ module MilkTea
           end
 
           unless signature
-            unless token_index && tokens && tokens[previous_non_trivia_token_index(tokens, token_index)]&.type == :dot
+            unless token_index && tokens && (tokens[previous_non_trivia_token_index(tokens, token_index)]&.type == :dot || call_argument_token?(tokens, token_index))
               local_def = @workspace.find_definition_token_global(
                 name,
                 preferred_uri: uri,
@@ -1488,6 +1488,16 @@ module MilkTea
         return false unless after && [:rbracket, :comma].include?(tokens[after].type)
 
         true
+      end
+
+      def call_argument_token?(tokens, index)
+        return false unless index && tokens[index]&.type == :identifier
+
+        prev = previous_non_trivia_token_index(tokens, index)
+        return false unless prev && [:lparen, :comma].include?(tokens[prev].type)
+
+        nxt = next_non_trivia_token_index(tokens, index + 1)
+        !nxt || ![:colon, :rbracket, :comma].include?(tokens[nxt].type)
       end
 
       def builtin_in_member_access_context?(tokens, token_index)
