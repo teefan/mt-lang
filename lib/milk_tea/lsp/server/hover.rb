@@ -533,6 +533,12 @@ module MilkTea
           end
 
           unless signature
+            if token_index && tokens && attribute_target_token?(tokens, token_index)
+              signature = "attribute target #{name}"
+            end
+          end
+
+          unless signature
             unless token_index && tokens && tokens[previous_non_trivia_token_index(tokens, token_index)]&.type == :dot
               local_def = @workspace.find_definition_token_global(
                 name,
@@ -1464,6 +1470,18 @@ module MilkTea
 
         nxt = next_non_trivia_token_index(tokens, index + 1)
         nxt && tokens[nxt].type == :colon
+      end
+
+      def attribute_target_token?(tokens, index)
+        return false unless index && tokens[index]&.type == :identifier
+
+        prev = previous_non_trivia_token_index(tokens, index)
+        return false unless prev && [:lbracket, :comma].include?(tokens[prev].type)
+
+        after = next_non_trivia_token_index(tokens, index + 1)
+        return false unless after && [:rbracket, :comma].include?(tokens[after].type)
+
+        true
       end
 
       def builtin_in_member_access_context?(tokens, token_index)
