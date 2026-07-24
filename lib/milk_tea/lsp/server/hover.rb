@@ -459,6 +459,10 @@ module MilkTea
             signature = value ? "#{type.name}.#{member} = #{value}" : "#{type.name}.#{member}"
             source_location ||= module_member_definition_location(uri, facts.module_name, name) ||
                                 module_definition_location(uri, facts.module_name)
+          elsif (arm_sig = find_variant_arm_in_types(facts, name))
+            signature = arm_sig
+            source_location ||= module_member_definition_location(uri, facts.module_name, name) ||
+                                module_definition_location(uri, facts.module_name)
           elsif (import_binding = facts.imports[name])
             signature = "module #{import_binding.name}"
             source_location = module_definition_location(uri, import_binding.name)
@@ -1402,7 +1406,7 @@ module MilkTea
       end
 
       def find_member_in_types(facts, name)
-        facts.types.each_value do |type|
+        facts.types.reverse_each do |_key, type|
           next unless type.respond_to?(:members)
 
           member = type.members.find { |m| m == name }
@@ -1410,6 +1414,20 @@ module MilkTea
             value = type.respond_to?(:member_value) ? type.member_value(name) : nil
             return [type, member, value]
           end
+        end
+        nil
+      end
+
+      def find_variant_arm_in_types(facts, name)
+        facts.types.reverse_each do |_key, type|
+          next unless type.respond_to?(:arms)
+
+          arm = type.arms[name]
+          next unless arm
+
+          fields = arm.map { |fname, ftype| "#{fname}: #{ftype}" }.join(", ")
+          field_str = fields.empty? ? "" : "(#{fields})"
+          return "#{type.name}.#{name}#{field_str}"
         end
         nil
       end
