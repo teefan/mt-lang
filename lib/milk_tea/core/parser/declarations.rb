@@ -472,20 +472,13 @@ module MilkTea
 
         members = []
         skip_newlines
-        auto_value = 0
         until check(:dedent) || eof?
           member_token = consume_name("expected member name")
           member_name = member_token.lexeme
           if match(:equal)
             value = parse_expression
-            if value.is_a?(AST::IntegerLiteral)
-              auto_value = value.value + 1
-            elsif value.is_a?(AST::UnaryOp) && value.operator == "-" && value.operand.is_a?(AST::IntegerLiteral)
-              auto_value = -value.operand.value + 1
-            end
           else
-            value = AST::IntegerLiteral.new(lexeme: auto_value.to_s, value: auto_value)
-            auto_value += 1
+            value = nil
           end
           consume_end_of_statement
           members << AST::EnumMember.new(name: member_name, value:, line: member_token.line, column: member_token.column)
