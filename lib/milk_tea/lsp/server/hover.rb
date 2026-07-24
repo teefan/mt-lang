@@ -454,6 +454,9 @@ module MilkTea
             docs ||= BUILTIN_TYPE_DOCS[name]
           elsif (binding = facts.values[name])
             signature = value_hover_signature(binding)
+          elsif (member_info = find_member_in_types(facts, name))
+            type, member, value = member_info
+            signature = value ? "#{type.name}.#{member} = #{value}" : "#{type.name}.#{member}"
           elsif (import_binding = facts.imports[name])
             signature = "module #{import_binding.name}"
             source_location = module_definition_location(uri, import_binding.name)
@@ -1394,6 +1397,19 @@ module MilkTea
         return nil unless matches.length == 1
 
         facts.types[matches.first]
+      end
+
+      def find_member_in_types(facts, name)
+        facts.types.each_value do |type|
+          next unless type.respond_to?(:members)
+
+          member = type.members.find { |m| m == name }
+          if member
+            value = type.respond_to?(:member_value) ? type.member_value(name) : nil
+            return [type, member, value]
+          end
+        end
+        nil
       end
 
       def builtin_hover_info(name, tokens, token_index)
