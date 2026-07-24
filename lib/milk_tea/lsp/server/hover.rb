@@ -412,6 +412,7 @@ module MilkTea
         signature = nil
         docs = nil
         source_location = nil
+        resolved_via_type_member = false
 
         if (binding = method_binding_at_token(facts, token))
           signature = method_signature(binding)
@@ -457,12 +458,10 @@ module MilkTea
           elsif (member_info = find_member_in_types(facts, name))
             type, member, value = member_info
             signature = value ? "#{type.name}.#{member} = #{value}" : "#{type.name}.#{member}"
-            source_location ||= module_member_definition_location(uri, facts.module_name, name) ||
-                                module_definition_location(uri, facts.module_name)
+            resolved_via_type_member = true
           elsif (arm_sig = find_variant_arm_in_types(facts, name))
             signature = arm_sig
-            source_location ||= module_member_definition_location(uri, facts.module_name, name) ||
-                                module_definition_location(uri, facts.module_name)
+            resolved_via_type_member = true
           elsif (import_binding = facts.imports[name])
             signature = "module #{import_binding.name}"
             source_location = module_definition_location(uri, import_binding.name)
@@ -547,6 +546,8 @@ module MilkTea
 
         definition_entry = if source_location
                              measure_perf_stage(stages, 'definition_entry') { hover_definition_entry_from_location(source_location) }
+                           elsif resolved_via_type_member
+                             nil
                            else
                              measure_perf_stage(stages, 'global_definition') do
                                @workspace.find_definition_token_global(
@@ -1420,9 +1421,12 @@ module MilkTea
 
       def find_variant_arm_in_types(facts, name)
         facts.types.reverse_each do |_key, type|
-          next unless type.respond_to?(:arms)
-
-          arm = type.arms[name]
+          arm = nil
+          if type.respond_to?(:arms)
+            arm = type.arms[name]
+          elsif type.respond_to?(:arm_names) && type.arm_names.include?(name)
+            arm = type.arm(name)
+          end
           next unless arm
 
           fields = arm.map { |fname, ftype| "#{fname}: #{ftype}" }.join(", ")
