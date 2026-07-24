@@ -1421,7 +1421,7 @@ module MilkTea
           def_index = tokens.index(definition_token)
           if def_index
             prev = previous_non_trivia_token_index(tokens, def_index)
-            if prev && tokens[prev].type == :identifier
+            if prev
               case tokens[prev].lexeme
               when "let" then kind = :let
               when "var" then kind = :var
