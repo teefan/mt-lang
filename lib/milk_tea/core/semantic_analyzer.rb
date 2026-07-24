@@ -36,7 +36,7 @@ module MilkTea
 
     def to_diagnostic(path: nil)
       Diagnostic.new(
-        path:,
+        path: @path || path,
         line: @line,
         column: @column,
         length: @length,
