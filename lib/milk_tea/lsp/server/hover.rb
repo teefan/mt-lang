@@ -21,6 +21,209 @@ module MilkTea
           },
         }.freeze
 
+        LANGUAGE_KEYWORD_HOVER_INFO = {
+          'let' => {
+            signature: 'let',
+            docs: 'Immutable local variable declaration: `let name = value` or `let name: Type`. Supports `else` guard with `T?`, `Option[T]`, or `Result[T, E]`.',
+          },
+          'var' => {
+            signature: 'var',
+            docs: 'Mutable local or module-level variable: `var name: Type = initializer`. Supports `else` guard. Module `var` requires explicit type.',
+          },
+          'const' => {
+            signature: 'const',
+            docs: 'Compile-time constant, requires explicit type and initializer. Block-bodied form `const NAME -> TYPE:` evaluates at compile time.',
+          },
+          'function' => {
+            signature: 'function',
+            docs: 'Ordinary function declaration: `function name(params) -> ReturnType:`. Parameters are non-rebindable. Return type defaults to `void`.',
+          },
+          'async' => {
+            signature: 'async',
+            docs: 'Marks a function as async; the declared return type is lifted to `Task[T]`. Use `await` inside async functions.',
+          },
+          'await' => {
+            signature: 'await',
+            docs: 'Awaits a `Task[T]` inside an async function, yielding the unwrapped `T`. Only allowed in async function bodies.',
+          },
+          'struct' => {
+            signature: 'struct',
+            docs: 'Value-type struct with named, typed fields: `struct Name: field: Type`. Supports generics, nested structs, and `implements`.',
+          },
+          'enum' => {
+            signature: 'enum',
+            docs: 'Integer-backed enumeration: `enum Name: BackingType`. Backing type defaults to `int`. Values auto-increment from 0 or the last explicit value.',
+          },
+          'flags' => {
+            signature: 'flags',
+            docs: 'Bitmask type backed by an integer primitive: `flags Name: uint`. Members must be compile-time integer constants.',
+          },
+          'union' => {
+            signature: 'union',
+            docs: 'Overlapped storage union: `union Name: field1: Type1, field2: Type2`. All fields share the same memory.',
+          },
+          'variant' => {
+            signature: 'variant',
+            docs: 'Tagged union: `variant Name: arm1(field: Type), arm2`. Arms may carry named payload fields. No-payload arms are bare identifiers.',
+          },
+          'opaque' => {
+            signature: 'opaque',
+            docs: 'Externally-defined type with unknown layout: `opaque Name`. May declare `implements` for interface conformance.',
+          },
+          'type' => {
+            signature: 'type',
+            docs: 'Type alias: `type Name = ExistingType`. Generic type parameters and `implements` constraints are supported.',
+          },
+          'interface' => {
+            signature: 'interface',
+            docs: 'Declares a method contract: `interface Name: function method(params) -> T`. Implemented via `implements`; used at runtime via `dyn[Interface]`.',
+          },
+          'extending' => {
+            signature: 'extending',
+            docs: 'Extends an existing type with methods: `extending Type: function method():`. Supports `function`, `editable function`, and `static function`.',
+          },
+          'implements' => {
+            signature: 'implements',
+            docs: 'Nominal interface conformance on `struct` or `opaque`: `struct Foo implements Interface`. Must be declared on the type definition.',
+          },
+          'editable' => {
+            signature: 'editable',
+            docs: 'Method receiver modifier: `editable function`. Grants mutable access to `this`. Used in interfaces and extending blocks.',
+          },
+          'static' => {
+            signature: 'static',
+            docs: 'Static method modifier: `static function`. No `this` receiver. Used in interfaces and extending blocks for constructors and utilities.',
+          },
+          'import' => {
+            signature: 'import',
+            docs: 'Module import: `import module.path` or `import module.path as alias`. Module lookup resolves `a.b.c` to `a/b/c.mt`.',
+          },
+          'public' => {
+            signature: 'public',
+            docs: 'Export visibility modifier: `public function`, `public type`, etc. Rejected on `extending`, `external`, and `static_assert` declarations.',
+          },
+          'if' => {
+            signature: 'if',
+            docs: 'Conditional branch: `if condition:`. Condition must be `bool`. Supports `else if` and `else`. Inline form: `if cond: stmt else: stmt`.',
+          },
+          'else' => {
+            signature: 'else',
+            docs: 'Else branch for `if`. Chains as `else if condition:` for additional branches. Supports inline single-statement form `else: stmt`.',
+          },
+          'match' => {
+            signature: 'match',
+            docs: 'Pattern match on enum, variant, integer, `str`, or tuple. Expression form produces a value. Must be exhaustive without `_` wildcard.',
+          },
+          'for' => {
+            signature: 'for',
+            docs: 'Loop: `for i in 0..count:` (exclusive range) or `for item in iterable:`. Parallel form `for left, right in xs, ys:` iterates arrays/spans.',
+          },
+          'while' => {
+            signature: 'while',
+            docs: 'Conditional loop: `while condition:`. Condition must be `bool`. Supports `break`, `continue`, and `defer` inside the body.',
+          },
+          'return' => {
+            signature: 'return',
+            docs: 'Returns a value from a function. Not allowed inside `defer` blocks.',
+          },
+          'break' => {
+            signature: 'break',
+            docs: 'Exits the nearest enclosing `for`, `while`, or `parallel for` loop.',
+          },
+          'continue' => {
+            signature: 'continue',
+            docs: 'Skips to the next iteration of the nearest enclosing `for` or `while` loop.',
+          },
+          'defer' => {
+            signature: 'defer',
+            docs: 'Defers an expression or block to function exit: `defer expr` or `defer:`. Multiple defers execute in LIFO order. `return` is not allowed inside.',
+          },
+          'unsafe' => {
+            signature: 'unsafe',
+            docs: 'Required for pointer indexing, raw pointer dereference, pointer arithmetic, pointer casts, and `reinterpret[...]`. Single-expr or block form.',
+          },
+          'external' => {
+            signature: 'external',
+            docs: 'Raw C ABI surface: `external function name(params) -> T`. No body, supports variadic `...`. Also marks external files with `external` header.',
+          },
+          'foreign' => {
+            signature: 'foreign',
+            docs: 'Foreign function bridging: `foreign function name(params) -> T = c.FuncName`. Supports `in`, `out`, `inout`, and `consuming` parameter modes.',
+          },
+          'consuming' => {
+            signature: 'consuming',
+            docs: 'Foreign function parameter mode: takes ownership of the argument. The caller\'s binding is consumed. Only on `foreign function` params.',
+          },
+          'when' => {
+            signature: 'when',
+            docs: 'Compile-time conditional: `when CONSTANT:`. Only the chosen branch is type-checked and emitted. Requires `else` unless exhaustive.',
+          },
+          'inline' => {
+            signature: 'inline',
+            docs: 'Compile-time unrolling modifier: `inline for` (loop unrolling), `inline while`, `inline match`, `inline if`. Only the active branch emits code.',
+          },
+          'emit' => {
+            signature: 'emit',
+            docs: 'Emits a declaration at compile time: `emit function ...`. Only allowed inside `const function` or `inline` bodies.',
+          },
+          'parallel' => {
+            signature: 'parallel',
+            docs: 'Concurrency construct: `parallel for i in 0..N:` (data-parallel loop) or `parallel:` block (concurrent statement dispatch). Uses OS threads via libuv.',
+          },
+          'detach' => {
+            signature: 'detach',
+            docs: 'Spawns work on a separate thread, returning a `Handle`: `let h = detach func()`. Use `gather` to wait. Supports global function calls only.',
+          },
+          'gather' => {
+            signature: 'gather',
+            docs: 'Blocks until one or more `detach` handles complete: `gather h1, h2`. Takes one or more `Handle` values.',
+          },
+          'event' => {
+            signature: 'event',
+            docs: 'Typed publisher/subscriber: `event name[capacity]` or `event name[capacity](PayloadType)`. Supports `subscribe`, `emit`, `unsubscribe`, `wait`.',
+          },
+          'attribute' => {
+            signature: 'attribute',
+            docs: 'Declares a reusable declaration attribute: `attribute[target, ...] name(params)`. Targets: struct, field, callable, const, event, enum, flags, union, variant.',
+          },
+          'proc' => {
+            signature: 'proc',
+            docs: 'Ref-counted closure: `proc(params...) -> T: body`. Captures values by value. Storable in structs, arrays, and tuples.',
+          },
+          'fn' => {
+            signature: 'fn',
+            docs: 'Function pointer type: `fn(params...) -> T`. Points to module-level functions. No captured state; capture-free.',
+          },
+          'dyn' => {
+            signature: 'dyn',
+            docs: 'Runtime interface value: `dyn[Interface]`. A fat pointer carrying a data pointer and vtable. Constructed via `adapt[Interface](value)`.',
+          },
+          'is' => {
+            signature: 'is',
+            docs: 'Variant arm membership test: `expr is Variant.arm`. Desugars to a `match` expression evaluating to `bool`. Supports `not` negation.',
+          },
+          'pass' => {
+            signature: 'pass',
+            docs: 'Explicit no-op statement for intentionally empty block bodies.',
+          },
+          'null' => {
+            signature: 'null',
+            docs: 'Null value for nullable types (`T?`). Use typed `null[T]` when context cannot determine the target type.',
+          },
+          'true' => {
+            signature: 'true',
+            docs: 'Boolean literal `true`. Type is `bool`.',
+          },
+          'false' => {
+            signature: 'false',
+            docs: 'Boolean literal `false`. Type is `bool`.',
+          },
+          'static_assert' => {
+            signature: 'static_assert',
+            docs: 'Compile-time assertion: `static_assert(condition, message)`. Fails compilation if the compile-time condition is false.',
+          },
+        }.freeze
+
       def handle_hover(params)
         stages = new_perf_stages
         total_start = stages ? monotonic_time : nil
@@ -1260,10 +1463,9 @@ module MilkTea
         return nil unless token
 
         info = KEYWORD_HOVER_INFO[token.lexeme]
-        return nil unless info
-        return nil unless [:size_of, :align_of, :offset_of].include?(token.type)
+        return info if info && [:size_of, :align_of, :offset_of].include?(token.type)
 
-        info
+        LANGUAGE_KEYWORD_HOVER_INFO[token.lexeme]
       end
 
       def render_builtin_specialization(tokens)
