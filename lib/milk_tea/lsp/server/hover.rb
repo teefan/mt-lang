@@ -8,15 +8,15 @@ module MilkTea
 
         KEYWORD_HOVER_INFO = {
           'size_of' => {
-            signature: 'size_of(expr) -> int',
-            docs: '`size_of(expr)` evaluates the compile-time size (in bytes) of the expression\'s type.',
+            signature: 'size_of(Type) -> ptr_uint',
+            docs: '`size_of(Type)` evaluates the compile-time size (in bytes) of the type.',
           },
           'align_of' => {
-            signature: 'align_of(expr) -> int',
-            docs: '`align_of(expr)` evaluates the compile-time alignment (in bytes) of the expression\'s type.',
+            signature: 'align_of(Type) -> ptr_uint',
+            docs: '`align_of(Type)` evaluates the compile-time alignment (in bytes) of the type.',
           },
           'offset_of' => {
-            signature: 'offset_of(Type, field) -> int',
+            signature: 'offset_of(Type, field) -> ptr_uint',
             docs: '`offset_of(Type, field)` evaluates the compile-time byte offset of `field` within `Type`.',
           },
         }.freeze
