@@ -684,12 +684,17 @@ module MilkTea
         diagnostics = sort_by_location(diagnostics)
 
         if diagnostics.any? || closure_errors.any?
-          source = read_source_file(path)
+          main_source = read_source_file(path)
+          main_abs = File.expand_path(path)
           diagnostics.each do |d|
+            same_file = !d.respond_to?(:path) || d.path.nil? || File.expand_path(d.path) == main_abs
+            source = same_file ? main_source : nil
             @err.puts(ErrorFormatter.format(d, source:, color: error_color?(@err)))
           end
           closure_errors.each do |d|
-            @err.puts(ErrorFormatter.format(d, color: error_color?(@err)))
+            same_file = !d.respond_to?(:path) || d.path.nil? || File.expand_path(d.path) == main_abs
+            source = same_file ? main_source : nil
+            @err.puts(ErrorFormatter.format(d, source:, color: error_color?(@err)))
           end
           all_diagnostics.concat(diagnostics)
           all_diagnostics.concat(closure_errors)
