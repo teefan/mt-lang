@@ -465,6 +465,11 @@ module MilkTea
           elsif (import_binding = facts.imports[name])
             signature = "module #{import_binding.name}"
             source_location = module_definition_location(uri, import_binding.name)
+          elsif (attr_binding = facts.attributes[name])
+            targets = attr_binding.targets.map(&:to_s).join(", ")
+            params_str = attr_binding.params.map { |p| "#{p.name}: #{p.type}" }.join(", ")
+            signature = "attribute [#{targets}] #{name}(#{params_str})"
+            source_location ||= module_definition_location(uri, facts.module_name)
           else
             dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
           dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
