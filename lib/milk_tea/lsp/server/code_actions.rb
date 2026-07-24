@@ -366,7 +366,8 @@ module MilkTea
         return { kind: 'full', items: [] } unless uri
 
         content = @workspace.get_content(uri)
-        diagnostics = @workspace.collect_diagnostics(uri)
+        result = @workspace.collect_diagnostics(uri)
+        diagnostics = result
         fingerprint = diagnostics_fingerprint(content, diagnostics)
         previous_result_id = params['previousResultId']
         cached = @diagnostic_report_cache[uri]
@@ -383,6 +384,16 @@ module MilkTea
           result_id: result_id,
           fingerprint: fingerprint
         }
+
+        cross = @workspace.cross_file_diagnostics
+        if cross&.any?
+          cross.each do |target_uri, items|
+            @protocol.write_notification('textDocument/publishDiagnostics', {
+              uri: target_uri,
+              diagnostics: items
+            })
+          end
+        end
 
         {
           kind: 'full',
