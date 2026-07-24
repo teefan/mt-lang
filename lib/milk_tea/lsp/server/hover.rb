@@ -307,7 +307,8 @@ module MilkTea
         token = context&.fetch(:token, nil)
         token_kind = token&.type || :none
         unless token&.type == :identifier
-          info = builtin_keyword_hover_info(token)
+          info = builtin_keyword_hover_info(token) ||
+                 BUILTIN_CALL_HOVER_INFO[token.lexeme]&.slice(:signature, :docs)
           if info
             result_state = 'hit'
             return {
