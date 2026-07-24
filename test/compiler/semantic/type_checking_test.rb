@@ -4779,6 +4779,24 @@ class TypeCheckingTest < Minitest::Test
     assert result.functions.key?("main")
   end
 
+  def test_type_checks_generic_struct_destructure
+    source = <<~MT
+      # module demo.gen_destructure
+
+      struct Pair[A, B]:
+          first: A
+          second: B
+
+      function main() -> int:
+          let p = Pair[int, float](first = 1, second = 2.0)
+          let Pair(first, second) = p
+          return first
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
   def test_type_checks_float_literal_with_f_suffix
     source = <<~MT
       # module demo.float_lit_suffix

@@ -2683,6 +2683,24 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/generic type dll\.DoubleLinkedList requires type arguments/, error.message)
   end
 
+  def test_rejects_generic_struct_destructure_with_mismatched_value
+    source = <<~MT
+      # module demo.gen_destructure_bad
+
+      struct Pair[A, B]:
+          first: A
+          second: B
+
+      function main() -> int:
+          let wrong = 42
+          let Pair(first, second) = wrong
+          return first
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) { check_source(source) }
+    assert_match(/generic type Pair requires type arguments/, error.message)
+  end
+
   def test_rejects_implementor_with_wrong_signature
     source = <<~MT
       # module demo.wrong_sig

@@ -304,10 +304,17 @@ module MilkTea
                       end
         display_name = type_name.is_a?(Array) ? type_name.join(".") : type_name
         raise_sema_error("unknown type #{display_name} for struct destructure") unless struct_type
-        raise_sema_error("#{display_name} is not a struct") unless struct_type.is_a?(Types::Struct) || struct_type.is_a?(Types::Tuple)
-        ensure_assignable!(value_type, struct_type, "cannot destructure #{value_type} as #{display_name}")
-
-        fields = struct_type.fields
+        if struct_type.is_a?(Types::GenericStructDefinition)
+          if value_type.is_a?(Types::StructInstance) && value_type.definition == struct_type
+            fields = value_type.fields
+          else
+            raise_sema_error("generic type #{display_name} requires type arguments")
+          end
+        else
+          raise_sema_error("#{display_name} is not a struct") unless struct_type.is_a?(Types::Struct) || struct_type.is_a?(Types::Tuple)
+          ensure_assignable!(value_type, struct_type, "cannot destructure #{value_type} as #{display_name}")
+          fields = struct_type.fields
+        end
         raise_sema_error("destructure pattern has #{statement.destructure_bindings.length} bindings but #{display_name} has #{fields.length} fields") unless statement.destructure_bindings.length == fields.length
 
         current_scope = current_actual_scope(scopes)
