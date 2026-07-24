@@ -227,8 +227,8 @@ module MilkTea
     RangeExpr = Data.define(:start_expr, :end_expr, :line, :column)
     ExpressionList = Data.define(:elements, :line, :column)
     IfExpr = Data.define(:condition, :then_expression, :else_expression)
-    MatchExpr = Data.define(:expression, :arms, :line, :column, :length) do
-      def initialize(expression:, arms:, line: nil, column: nil, length: nil) = super
+    MatchExpr = Data.define(:expression, :arms, :line, :column, :length, :desugared_from_is) do
+      def initialize(expression:, arms:, line: nil, column: nil, length: nil, desugared_from_is: false) = super
     end
     UnsafeExpr = Data.define(:expression, :line, :column, :length) do
       def initialize(expression:, line: nil, column: nil, length: nil) = super

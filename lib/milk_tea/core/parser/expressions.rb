@@ -141,6 +141,7 @@ module MilkTea
             line:,
             column:,
             length: previous.lexeme.length,
+            desugared_from_is: true,
           )
         end
         expr
