@@ -586,6 +586,8 @@ module MilkTea
         return unless statement.type
         return unless statement.value
 
+        return if statement.type.nullable
+
         declared_name = type_ref_name(statement.type)
         return unless declared_name
 
@@ -666,6 +668,7 @@ module MilkTea
       # enum/int/str bool-matches are never misreported.
       def check_prefer_is_variant(match_expr)
         return unless @sema_facts
+        return if match_expr.desugared_from_is
 
         arms = match_expr.arms
         return unless arms.size == 2
@@ -771,11 +774,22 @@ module MilkTea
         return if stmts.any?(&:nil?)
         return unless stmts.all? { |s| inline_simple_statement?(s) }
 
+        return if visually_inline_if?(statement, stmts)
+
         emit_conciseness_hint(
           "prefer-inline-if",
           line: statement.line,
           column: statement.branches.first&.column,
           message: "if/else with single-statement branches can be written inline",
+        )
+      end
+
+      def visually_inline_if?(statement, stmts)
+        n = statement.branches.length
+        statement.branches.each_with_index.all? { |b, i|
+          stmts[i].respond_to?(:line) && stmts[i].line == b.line
+        } && (
+          stmts[n].respond_to?(:line) && statement.else_line && stmts[n].line == statement.else_line
         )
       end
 
