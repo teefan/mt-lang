@@ -266,6 +266,8 @@ module MilkTea
         prev_collecting = owner.instance_variable_get(:@collecting_errors)
         owner.instance_variable_set(:@collecting_errors, false)
         owner.send(:check_function, binding)
+      rescue SemanticError => e
+        raise unless e.message.include?("cannot assign through immutable")
       ensure
         owner.instance_variable_set(:@collecting_errors, prev_collecting) if owner
       end
