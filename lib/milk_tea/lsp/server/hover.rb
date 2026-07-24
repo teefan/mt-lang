@@ -238,7 +238,16 @@ module MilkTea
         token_kind = token&.type || :none
         unless token&.type == :identifier
           info = builtin_keyword_hover_info(token)
-          return info if info
+          if info
+            result_state = 'hit'
+            return {
+              contents: {
+                kind: 'markdown',
+                value: render_hover_markdown(info)
+              },
+              range: token_to_range(token)
+            }
+          end
 
           result_state = 'not-identifier'
           return nil
