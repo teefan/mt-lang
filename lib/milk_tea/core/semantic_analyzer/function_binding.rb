@@ -300,6 +300,22 @@ module MilkTea
         end
       end
 
+      # Scans generic method bodies for assignments to this through a
+      # non-editable receiver.  Full body checking is deferred to call-site
+      # specialization, but immutable-this violations are type-independent.
+      def check_generic_method_immutable_this(binding, scopes)
+        this_binding = scopes.first&.values&.find { |v| v.name == "this" }
+        return unless this_binding
+        return if this_binding.mutable
+
+        binding.ast.body&.each do |statement|
+          next unless statement.is_a?(AST::Assignment) && statement.operator == "="
+          next unless statement.target.is_a?(AST::MemberAccess) && statement.target.receiver.is_a?(AST::Identifier) && statement.target.receiver.name == "this"
+
+          raise_sema_error("cannot assign through immutable this", statement.target)
+        end
+      end
+
       def check_function(binding)
         @local_completion_frames = @local_completion_frames.dup if @local_completion_frames.frozen?
 
@@ -317,7 +333,10 @@ module MilkTea
         with_error_node(binding.ast) do
           with_scope(binding.body_params) do |scopes|
             start_local_completion_frame(binding, scopes)
-            return if binding.type_params.any?
+            if binding.type_params.any?
+              check_generic_method_immutable_this(binding, scopes)
+              return
+            end
 
             if binding.ast.is_a?(AST::ForeignFunctionDecl)
               record_callable_value_expression_site(binding.ast.mapping) unless binding.ast.mapping.is_a?(AST::Call)
