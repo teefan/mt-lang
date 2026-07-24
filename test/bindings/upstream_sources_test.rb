@@ -26,7 +26,7 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
     refute_nil sdl3
     assert_includes sdl3.checkout_root.to_s, "/third_party/sdl3-upstream"
     assert_equal "https://github.com/libsdl-org/SDL.git", sdl3.repository_url
-    assert_equal "41f079491a0e79b22441fd32a7c8ad91db237744", sdl3.revision
+    assert_equal "f87239e71e42da91ca317a12eefb82cfbf3393eb", sdl3.revision
     assert_equal %w[CMakeLists.txt include/SDL3/SDL.h include/SDL3/SDL_main.h], sdl3.sentinel_paths
   end
 
@@ -37,7 +37,7 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
     refute_nil libuv
     assert_includes libuv.checkout_root.to_s, "/third_party/libuv-upstream"
     assert_equal "https://github.com/libuv/libuv.git", libuv.repository_url
-    assert_equal "1cfa32ff59c076ffb6ed735bbc8c18361558661f", libuv.revision
+    assert_equal "48dbd851fe4ad7d1252b75ac907c725a437e1634", libuv.revision
     assert_equal %w[CMakeLists.txt include/uv.h include/uv/version.h], libuv.sentinel_paths
   end
 
@@ -48,7 +48,7 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
     refute_nil pcre2
     assert_includes pcre2.checkout_root.to_s, "/third_party/pcre2-upstream"
     assert_equal "https://github.com/PCRE2Project/pcre2.git", pcre2.repository_url
-    assert_equal "b2bd4254b379b9d7dc9a3dda060a7e27009ccdff", pcre2.revision
+    assert_equal "cd007b4466798f66d479d1442a407099e7c40050", pcre2.revision
     assert_equal %w[CMakeLists.txt src/pcre2.h.generic src/pcre2_compile.c], pcre2.sentinel_paths
   end
 
