@@ -281,6 +281,12 @@ module MilkTea
             'exchange' => 'static function exchange(value: T) -> T',
             'compare_exchange' => 'static function compare_exchange(expected: T, desired: T) -> bool',
           },
+          'event' => {
+            'subscribe' => 'function subscribe(listener) -> Result[Subscription, EventError]',
+            'subscribe_once' => 'function subscribe_once(listener) -> Result[Subscription, EventError]',
+            'unsubscribe' => 'function unsubscribe(subscription) -> bool',
+            'wait' => 'function wait() -> Task[Result[T, EventError]]',
+          },
           'str_buffer' => {
             'assign' => 'static function assign(value: str) -> void',
             'append' => 'static function append(value: str) -> void',
