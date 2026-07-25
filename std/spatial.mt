@@ -9,7 +9,53 @@ public struct SpatialGrid[T]:
     origin_y: float
 
 
+function cell_index[T](grid: ref[SpatialGrid[T]], x: float, y: float) -> Option[ptr_uint]:
+    let cx = int<-(float<-((x - grid.origin_x) / grid.cell_size))
+    let cy = int<-(float<-((y - grid.origin_y) / grid.cell_size))
+    if cx < 0 or cy < 0 or uint<-cx >= grid.cols or uint<-cy >= grid.rows:
+        return Option[ptr_uint].none()
+    return Option[ptr_uint].some(value = ptr_uint<-cx + ptr_uint<-cy * ptr_uint<-grid.cols)
+
+
 extending SpatialGrid[T]:
+    public static function create(cell_size: float, width: float, height: float) -> SpatialGrid[T]:
+        var cols: uint = uint<-(float<-width / cell_size)
+        var rows: uint = uint<-(float<-height / cell_size)
+        if cols == 0:
+            cols = 1
+        if rows == 0:
+            rows = 1
+
+        var cells = vec.Vec[vec.Vec[T]].create()
+        var total: ptr_uint = ptr_uint<-cols * ptr_uint<-rows
+        var i: ptr_uint = 0
+        while i < total:
+            cells.push(vec.Vec[T].create())
+            i += 1
+
+        return SpatialGrid[T](
+            cells = cells,
+            cell_size = cell_size,
+            cols = cols,
+            rows = rows,
+            origin_x = 0.0,
+            origin_y = 0.0
+        )
+
+
+    public static function with_origin(
+        cell_size: float,
+        width: float,
+        height: float,
+        origin_x: float,
+        origin_y: float
+    ) -> SpatialGrid[T]:
+        var grid = SpatialGrid[T].create(cell_size, width, height)
+        grid.origin_x = origin_x
+        grid.origin_y = origin_y
+        return grid
+
+
     public editable function release() -> void:
         var i: ptr_uint = 0
         while i < this.cells.len():
@@ -20,53 +66,6 @@ extending SpatialGrid[T]:
         this.cells.release()
 
 
-function cell_index[T](grid: ref[SpatialGrid[T]], x: float, y: float) -> Option[ptr_uint]:
-    let cx = int<-(float<-((x - grid.origin_x) / grid.cell_size))
-    let cy = int<-(float<-((y - grid.origin_y) / grid.cell_size))
-    if cx < 0 or cy < 0 or uint<-cx >= grid.cols or uint<-cy >= grid.rows:
-        return Option[ptr_uint].none()
-    return Option[ptr_uint].some(value = ptr_uint<-cx + ptr_uint<-cy * ptr_uint<-grid.cols)
-
-
-public function new[T](cell_size: float, width: float, height: float) -> SpatialGrid[T]:
-    var cols: uint = uint<-(float<-width / cell_size)
-    var rows: uint = uint<-(float<-height / cell_size)
-    if cols == 0:
-        cols = 1
-    if rows == 0:
-        rows = 1
-
-    var cells = vec.Vec[vec.Vec[T]].create()
-    var total: ptr_uint = ptr_uint<-cols * ptr_uint<-rows
-    var i: ptr_uint = 0
-    while i < total:
-        cells.push(vec.Vec[T].create())
-        i += 1
-
-    return SpatialGrid[T](
-        cells = cells,
-        cell_size = cell_size,
-        cols = cols,
-        rows = rows,
-        origin_x = 0.0,
-        origin_y = 0.0
-    )
-
-
-public function new_with_origin[T](
-    cell_size: float,
-    width: float,
-    height: float,
-    origin_x: float,
-    origin_y: float
-) -> SpatialGrid[T]:
-    var grid = new[T](cell_size, width, height)
-    grid.origin_x = origin_x
-    grid.origin_y = origin_y
-    return grid
-
-
-extending SpatialGrid[T]:
     public editable function insert(entity: T, x: float, y: float) -> void:
         let idx_opt = cell_index(ref_of(this), x, y)
         match idx_opt:

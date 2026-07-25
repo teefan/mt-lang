@@ -7,7 +7,7 @@ import std.vec as vec
 
 @[test]
 function test_spatial_grid_dimensions() -> t.Check:
-    var grid = sp.new[uint](10.0, 100.0, 50.0)
+    var grid = sp.SpatialGrid[uint].create(10.0, 100.0, 50.0)
     defer grid.release()
     t.expect(grid.cell_count() == 50z, "50 cells")?
     t.expect(grid.cols == uint<-10, "10 cols")?
@@ -16,7 +16,7 @@ function test_spatial_grid_dimensions() -> t.Check:
 
 @[test]
 function test_spatial_insert_and_query() -> t.Check:
-    var grid = sp.new[uint](10.0, 100.0, 100.0)
+    var grid = sp.SpatialGrid[uint].create(10.0, 100.0, 100.0)
     defer grid.release()
 
     grid.insert(42, 15.0, 25.0)
@@ -36,7 +36,7 @@ function test_spatial_insert_and_query() -> t.Check:
 
 @[test]
 function test_spatial_clear_removes_all_entities() -> t.Check:
-    var grid = sp.new[uint](10.0, 100.0, 100.0)
+    var grid = sp.SpatialGrid[uint].create(10.0, 100.0, 100.0)
     defer grid.release()
 
     grid.insert(1, 5.0, 5.0)
@@ -50,7 +50,7 @@ function test_spatial_clear_removes_all_entities() -> t.Check:
 
 @[test]
 function test_spatial_query_outside_bounds_is_empty() -> t.Check:
-    var grid = sp.new[uint](10.0, 100.0, 100.0)
+    var grid = sp.SpatialGrid[uint].create(10.0, 100.0, 100.0)
     defer grid.release()
     grid.insert(42, 5.0, 5.0)
     var results = grid.query_radius(200.0, 200.0, 5.0)
@@ -60,7 +60,7 @@ function test_spatial_query_outside_bounds_is_empty() -> t.Check:
 
 @[test]
 function test_spatial_multiple_entities_in_same_cell() -> t.Check:
-    var grid = sp.new[uint](20.0, 100.0, 100.0)
+    var grid = sp.SpatialGrid[uint].create(20.0, 100.0, 100.0)
     defer grid.release()
     grid.insert(10, 5.0, 5.0)
     grid.insert(20, 8.0, 8.0)
@@ -72,7 +72,7 @@ function test_spatial_multiple_entities_in_same_cell() -> t.Check:
 
 @[test]
 function test_spatial_cell_index_with_origin_offset() -> t.Check:
-    var grid = sp.new_with_origin[uint](10.0, 100.0, 100.0, 50.0, 30.0)
+    var grid = sp.SpatialGrid[uint].with_origin(10.0, 100.0, 100.0, 50.0, 30.0)
     defer grid.release()
     grid.insert(42, 55.0, 35.0)
     var results = grid.query_radius(55.0, 35.0, 1.0)

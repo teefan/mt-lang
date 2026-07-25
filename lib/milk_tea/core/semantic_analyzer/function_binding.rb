@@ -458,16 +458,39 @@ module MilkTea
         raise_sema_error("unknown name #{name}", node)
       end
 
-      # When a generic method body contains a let/var declaration, try to infer a
-      # rough type for the new local so that completion frames include it.  This
-      # handles the common pattern of extracting a field or local for null checks.
+      # When a generic method body contains a let/var declaration, always record a
+      # completion snapshot so hover and completion can discover the local, even
+      # when full type inference is impossible.  The inferred type is used when
+      # available; otherwise the explicit type annotation on the declaration is
+      # consulted.  As a last resort a fallback primitive type is used so the
+      # binding is never silently dropped.
       def try_record_generic_local_snapshot(stmt, scopes, binding)
-        inferred = infer_simple_local_type(stmt.value, scopes)
-        return unless inferred
+        type = infer_local_initializer_type(stmt, scopes) ||
+               explicit_declaration_type_for(stmt) ||
+               fallback_completion_type
 
-        vb = value_binding(name: stmt.name, type: inferred, mutable: stmt.kind == :var, kind: :let)
+        decl_kind = stmt.kind == :var ? :var : :let
+        vb = value_binding(name: stmt.name, type: type, mutable: stmt.kind == :var, kind: decl_kind)
         new_scopes = scopes.dup.unshift({ stmt.name => vb })
         record_local_completion_snapshot(stmt.line, stmt.column, new_scopes)
+      end
+
+      def infer_local_initializer_type(stmt, scopes)
+        return nil unless stmt.value
+
+        infer_simple_local_type(stmt.value, scopes)
+      end
+
+      def explicit_declaration_type_for(stmt)
+        annotation = stmt.respond_to?(:type) ? stmt.type : nil
+        return nil unless annotation
+
+        name = annotation.respond_to?(:name) ? annotation.name : annotation.to_s
+        @ctx.types[name]
+      end
+
+      def fallback_completion_type
+        @ctx.types["int"] || @ctx.types.values.first
       end
 
       def infer_simple_local_type(value, scopes)
@@ -475,16 +498,41 @@ module MilkTea
         when AST::Call
           infer_call_return_type(value, scopes)
         when AST::MemberAccess
-          return nil unless value.receiver.is_a?(AST::Identifier)
-
-          receiver_binding = lookup_value(value.receiver.name, scopes)
-          return nil unless receiver_binding
-
-          receiver_type = receiver_type_for_fields(receiver_binding.type)
-          receiver_type&.respond_to?(:fields) ? receiver_type.fields[value.member] : nil
+          infer_member_access_field_type(value, scopes)
         when AST::Identifier
           (binding = lookup_value(value.name, scopes)) ? binding.type : nil
+        when AST::IntegerLiteral
+          @ctx.types["int"]
+        when AST::FloatLiteral
+          @ctx.types["float"] || @ctx.types["double"]
+        when AST::CharLiteral
+          @ctx.types["ubyte"]
+        when AST::BooleanLiteral
+          @ctx.types["bool"]
+        when AST::StringLiteral
+          @ctx.types["str"]
+        when AST::PrefixCast
+          if value.target_type.respond_to?(:name)
+            @ctx.types[value.target_type.name] || @ctx.types["int"]
+          else
+            @ctx.types["int"]
+          end
         end
+      end
+
+      def infer_member_access_field_type(value, scopes)
+        receiver_type = case value.receiver
+                        when AST::Identifier
+                          if value.receiver.name == "this"
+                            (binding = lookup_value("this", scopes)) ? binding.type : nil
+                          else
+                            (binding = lookup_value(value.receiver.name, scopes)) ? binding.type : nil
+                          end
+                        end
+        return nil unless receiver_type
+
+        field_receiver = receiver_type_for_fields(receiver_type)
+        field_receiver&.respond_to?(:fields) ? field_receiver.fields[value.member] : nil
       end
 
       def infer_call_return_type(call, scopes)
@@ -495,11 +543,17 @@ module MilkTea
         when AST::Identifier
           func = @ctx.top_level_functions[callee.name]
           return func.type.return_type if func
-        when AST::MemberAccess
-          return nil unless callee.receiver.is_a?(AST::Identifier)
 
-          name = callee.receiver.name
+          member = callee.name
+          this_binding = lookup_value("this", scopes)
+          if this_binding && (rt = receiver_type_for_fields(this_binding.type))
+            method = @ctx.methods.dig(rt, member)
+            return method.type.return_type if method
+          end
+        when AST::MemberAccess
+          name = resolve_receiver_name_for_call_inference(callee, scopes)
           member = callee.member
+          return nil unless name
 
           if (import = @ctx.imports[name])
             func = import.functions[member]
@@ -515,8 +569,23 @@ module MilkTea
         nil
       end
 
+      def resolve_receiver_name_for_call_inference(callee, scopes)
+        case callee.receiver
+        when AST::Identifier
+          if callee.receiver.name == "this"
+            binding = lookup_value("this", scopes)
+            return nil unless binding
+            this_type = receiver_type_for_fields(binding.type)
+            this_type&.name
+          else
+            callee.receiver.name
+          end
+        end
+      end
+
       def receiver_type_for_fields(type)
         type = type.base while type.is_a?(Types::Nullable)
+        type = type.arguments.first if type.respond_to?(:name) && type.name == 'ref' && type.respond_to?(:arguments) && type.arguments&.length == 1
         type = type.definition if type.respond_to?(:definition)
         type
       end

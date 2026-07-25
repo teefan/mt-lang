@@ -462,7 +462,9 @@ module MilkTea
         struct_type = find_struct_containing_field(facts, field_name)
         return nil unless struct_type
 
-        changes = collect_struct_field_changes(uri, field_name, new_name)
+        changes = {}
+        edits = collect_struct_field_changes(uri, field_name, new_name)
+        changes[uri] = edits if edits
         related_uris = @workspace.related_open_document_uris(uri)
         related_uris.each do |related_uri|
           next if related_uri == uri

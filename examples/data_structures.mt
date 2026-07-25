@@ -19,7 +19,12 @@ import std.linked_map as lmap
 import std.linked_set as lset
 import std.counter as counter_mod
 import std.multiset as mset
+import std.bitset as bitset
+import std.spatial as spatial
 import std.graph as gmod
+import std.ring_buffer as ring_buf
+import std.sparse_set as sset
+import std.lru_cache as lru
 
 # ---------------------------------------------------------------------------
 # 1  Vec[T] — contiguous dynamic array
@@ -213,7 +218,23 @@ function multiset_demo() -> int:
     return int<-(total)
 
 # ---------------------------------------------------------------------------
-# 15  SoA[T,N] — Structure of Arrays
+# 15  Bitset — bit-level set
+# ---------------------------------------------------------------------------
+
+function bitset_demo() -> int:
+    var b = bitset.with_capacity(64)
+    b.set(3)
+    b.set(7)
+    b.set(42)
+    let has_three = b.test(3)
+    let has_five = b.test(5)
+    b.toggle(7)
+    let _hf = has_five
+    b.release()
+    return int<-(has_three)
+
+# ---------------------------------------------------------------------------
+# 16  SoA[T,N] — Structure of Arrays
 # ---------------------------------------------------------------------------
 
 struct Point:
@@ -231,7 +252,7 @@ function soa_demo() -> float:
     return particles[0].x + particles[1].x
 
 # ---------------------------------------------------------------------------
-# 16  Graph[T] — adjacency list + DenseGraph compile
+# 17  Graph[T] — adjacency list + DenseGraph compile
 # ---------------------------------------------------------------------------
 
 function graph_demo() -> int:
@@ -255,7 +276,68 @@ function graph_demo() -> int:
     return int<-(nc + ncount)
 
 # ---------------------------------------------------------------------------
-# 17  Entrypoint
+# 18  SpatialGrid[T] — uniform spatial hash grid
+# ---------------------------------------------------------------------------
+
+function spatial_demo() -> int:
+    var grid = spatial.SpatialGrid[int].create(cell_size = 16.0, width = 128.0, height = 128.0)
+    grid.insert(1, 10.0, 10.0)
+    grid.insert(2, 50.0, 60.0)
+    let count = grid.entity_count()
+    var r = grid.query_radius(0.0, 0.0, 32.0)
+    let _rc = r.len()
+    r.release()
+    grid.release()
+    return int<-(count)
+
+# ---------------------------------------------------------------------------
+# 19  RingBuffer[T] — fixed-capacity circular buffer
+# ---------------------------------------------------------------------------
+
+function ring_buffer_demo() -> int:
+    var b = ring_buf.RingBuffer[int].with_capacity(4)
+    b.push(10)
+    b.push(20)
+    b.push(30)
+    b.push(40)
+    b.push(50)
+    let first = b.get(0)
+    let _first = first
+    b.release()
+    return 1
+
+# ---------------------------------------------------------------------------
+# 20  SparseSet[T] — O(1) insert/remove with dense iteration
+# ---------------------------------------------------------------------------
+
+function sparse_set_demo() -> int:
+    var s = sset.SparseSet[int].create()
+    s.insert(100, 42)
+    s.insert(7, 99)
+    let has = s.contains(100)
+    let val = s.get(7)
+    let _val = val
+    s.remove(7)
+    s.release()
+    return int<-(has)
+
+# ---------------------------------------------------------------------------
+# 21  LruCache[K,V] — capacity-bounded LRU eviction map
+# ---------------------------------------------------------------------------
+
+function lru_cache_demo() -> int:
+    var c = lru.LruCache[str, int].with_capacity(2)
+    c.set("a", 1)
+    c.set("b", 2)
+    c.set("c", 3)
+    let has_a = c.contains("a")
+    let has_b = c.contains("b")
+    let _hb = has_b
+    c.release()
+    return int<-(has_a) + 1
+
+# ---------------------------------------------------------------------------
+# 22  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -274,7 +356,12 @@ function main() -> int:
     total += linked_set_demo()
     total += counter_demo()
     total += multiset_demo()
+    total += bitset_demo()
     total += int<-(soa_demo())
     total += graph_demo()
+    total += spatial_demo()
+    total += ring_buffer_demo()
+    total += sparse_set_demo()
+    total += lru_cache_demo()
     let _total = total
     return 0
