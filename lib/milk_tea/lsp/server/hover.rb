@@ -462,11 +462,11 @@ module MilkTea
             docs ||= BUILTIN_TYPE_DOCS[name]
           elsif (binding = facts.values[name])
             signature = value_hover_signature(binding)
-          elsif (member_info = find_member_in_types(facts, name))
+          elsif !BUILTIN_CALL_HOVER_INFO.key?(name) && (member_info = find_member_in_types(facts, name))
             type, member, value = member_info
             signature = value ? "#{type.name}.#{member} = #{value}" : "#{type.name}.#{member}"
             resolved_via_type_member = true
-          elsif (arm_sig = find_variant_arm_in_types(facts, name))
+          elsif !BUILTIN_CALL_HOVER_INFO.key?(name) && (arm_sig = find_variant_arm_in_types(facts, name))
             signature = arm_sig
             resolved_via_type_member = true
           elsif (import_binding = facts.imports[name])
@@ -550,19 +550,6 @@ module MilkTea
             end
           end
 
-          unless signature
-            unless token_index && tokens && (tokens[previous_non_trivia_token_index(tokens, token_index)]&.type == :dot || call_argument_token?(tokens, token_index))
-              local_def = @workspace.find_definition_token_global(
-                name,
-                preferred_uri: uri,
-                before_line: lsp_line + 1,
-                before_char: lsp_char + 1,
-              )
-              if local_def
-                signature = resolve_lexical_local_hover_signature(local_def[:uri], name, local_def[:token])
-              end
-            end
-          end
           end
 
           return nil unless signature
