@@ -764,6 +764,7 @@ module MilkTea
       end
 
       def project_field_receiver_type_for_completion(type, facts = nil)
+        type = type.base while type.is_a?(Types::Nullable)
         type = project_receiver_type_for_completion(type)
         return type.definition if type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
         return field_type_from_struct_definition(type, facts) if facts
