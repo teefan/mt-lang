@@ -247,7 +247,7 @@ public function sleep_release(frame: ptr[void]) -> void:
 
         if not state.closing:
             state.closing = true
-            let handle = timer_as_handle(unsafe: ptr[NativeTimerHandle]<-state.timer)
+            let handle = timer_as_handle(ptr[NativeTimerHandle]<-state.timer)
             libuv.close(handle, sleep_timer_close)
 
 
@@ -323,7 +323,7 @@ public function work_release[T](frame: ptr[void]) -> void:
 
         state.released = true
         if state.queued and state.work != null:
-            libuv.cancel(work_as_req(unsafe: ptr[NativeWorkRequest]<-state.work))
+            libuv.cancel(work_as_req(ptr[NativeWorkRequest]<-state.work))
 
 
 public function work_take_result[T](frame: ptr[void]) -> T:

@@ -736,7 +736,7 @@ function connect_cleanup_and_release(state: ptr[ConnectState]) -> void:
             read(state).result_owned = false
 
         if read(state).handle != null[ptr[NativeTcpHandle]]:
-            close_tcp_handle(unsafe: ptr[NativeTcpHandle]<-read(state).handle)
+            close_tcp_handle(ptr[NativeTcpHandle]<-read(state).handle)
             read(state).handle = null
 
         heap.release(state)

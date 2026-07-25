@@ -1214,7 +1214,7 @@ function append_value(output: ref[string.String], value: Value) -> void:
                     let item = values.values.get(index) else:
                         fatal(c"toml.append_value missing array item")
 
-                    append_value(output, unsafe: read(item))
+                    append_value(output, read(item))
                     index += 1
 
         output.push_byte(byte_right_bracket)
@@ -1233,7 +1233,7 @@ function append_value(output: ref[string.String], value: Value) -> void:
                 let entry = object_entries.entries.get(index) else:
                     fatal(c"toml.append_value missing object entry")
 
-                let current = unsafe: read(entry)
+                let current = read(entry)
                 append_entry_key(output, current.key.as_str())
                 output.append(" = ")
                 append_value(output, current.value)

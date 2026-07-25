@@ -323,13 +323,12 @@ extending Planner[World, Goal, Context]:
                                         action_index += 1
                                         continue
 
-                                    if next_cost < unsafe: read(existing_ptr).cost_so_far:
-                                        unsafe:
-                                            read(existing_ptr).parent_index = current_index
-                                            read(existing_ptr).has_parent = true
-                                            read(existing_ptr).action_index = action_index
-                                            read(existing_ptr).cost_so_far = next_cost
-                                            read(existing_ptr).closed = false
+                                    if next_cost < read(existing_ptr).cost_so_far:
+                                        read(existing_ptr).parent_index = current_index
+                                        read(existing_ptr).has_parent = true
+                                        read(existing_ptr).action_index = action_index
+                                        read(existing_ptr).cost_so_far = next_cost
+                                        read(existing_ptr).closed = false
                                         if not open_list_contains(ref_of(open_list), existing_payload.value):
                                             open_list.push(existing_payload.value)
                         action_index += 1

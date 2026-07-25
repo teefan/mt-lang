@@ -128,7 +128,7 @@ function tick_node[Context](tree: ref[Tree[Context]], node_id: ptr_uint, context
 
                 var saw_running = false
                 for child_ptr in read(node).children:
-                    let child_status = tick_node(tree, unsafe: read(child_ptr), context)
+                    let child_status = tick_node(tree, read(child_ptr), context)
                     match child_status:
                         Status.success:
                             pass
@@ -148,7 +148,7 @@ function tick_node[Context](tree: ref[Tree[Context]], node_id: ptr_uint, context
 
                 var saw_running = false
                 for child_ptr in read(node).children:
-                    let child_status = tick_node(tree, unsafe: read(child_ptr), context)
+                    let child_status = tick_node(tree, read(child_ptr), context)
                     match child_status:
                         Status.success:
                             return Status.success

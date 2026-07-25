@@ -25,7 +25,7 @@ public function unpack[T](source: span[ubyte]) -> Result[T, bin.Error]:
             error = raw_unpack_error("source too short for target type")
         )
 
-    var result = unsafe: zero[T]
+    var result = zero[T]
     var dest = unsafe: ptr[ubyte]<-ptr_of(result)
     var i: ptr_uint = 0
     while i < total:
@@ -59,7 +59,7 @@ extending bin.Reader:
                         error = raw_unpack_error("reader returned empty data")
                     )
 
-                var result = unsafe: zero[T]
+                var result = zero[T]
                 var dest = unsafe: ptr[ubyte]<-ptr_of(result)
                 var i: ptr_uint = 0
                 while i < total:

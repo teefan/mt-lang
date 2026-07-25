@@ -94,7 +94,7 @@ public function parent_environment() -> vec.Vec[EnvironmentEntry]:
             nname.reserve(eq_pos)
             var ni: ptr_uint = 0
             while ni < eq_pos:
-                nname.push_byte(ubyte<-(unsafe: read(entry_cstr + ni)))
+                nname.push_byte(ubyte<-(read(entry_cstr + ni)))
                 ni += 1
             var nvalue = string.String.create()
             let vlen = len - eq_pos - 1
@@ -102,7 +102,7 @@ public function parent_environment() -> vec.Vec[EnvironmentEntry]:
                 nvalue.reserve(vlen)
                 var vi: ptr_uint = 0
                 while vi < vlen:
-                    nvalue.push_byte(ubyte<-(unsafe: read(entry_cstr + eq_pos + 1 + vi)))
+                    nvalue.push_byte(ubyte<-(read(entry_cstr + eq_pos + 1 + vi)))
                     vi += 1
             result.push(EnvironmentEntry(
                 name = nname.as_str(),

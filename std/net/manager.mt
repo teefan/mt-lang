@@ -331,7 +331,7 @@ public function create_server(
                 is_server = true,
                 max_players = config.max_players,
                 mux_session = session_p.value,
-                mux_connection = unsafe: zero[mux.MuxedConnection],
+                mux_connection = zero[mux.MuxedConnection],
                 local_player_id = 0u,
                 players = vec.Vec[PlayerState].create(),
                 next_player_id = 1u,
@@ -357,7 +357,7 @@ public function create_client(
             let client_mgr = NetworkManager(
                 is_server = false,
                 max_players = config.max_players,
-                mux_session = unsafe: zero[mux.MuxedSession],
+                mux_session = zero[mux.MuxedSession],
                 mux_connection = mux_conn_p.value,
                 local_player_id = 0u,
                 players = vec.Vec[PlayerState].create(),

@@ -164,7 +164,7 @@ extending Stream:
             Result.failure as error_payload:
                 return Result[ptr_uint, Error].failure(error = error_from_net(error_payload.error))
             Result.success as write_payload:
-                unsafe: write_payload.value
+                write_payload.value
                 return Result[ptr_uint, Error].success(value = content.len)
 
 
@@ -183,7 +183,7 @@ extending Stream:
                         Result.failure as discard_payload:
                             return Result[bytes.Bytes, Error].failure(error = discard_payload.error)
                         Result.success as discard_payload:
-                            unsafe: discard_payload.value
+                            discard_payload.value
                             return Result[bytes.Bytes, Error].failure(error = packet_error(
                                 -2,
                                 "packet exceeds configured maximum"
