@@ -334,6 +334,7 @@ module MilkTea
         when AST::LocalDecl
           check_expr_names(stmt.value, scopes, binding, names) if stmt.value
           names.add(stmt.name) if stmt.name
+          try_record_generic_local_snapshot(stmt, scopes, binding) if stmt.name && stmt.value
         when AST::Assignment
           check_expr_names(stmt.target, scopes, binding, names)
           check_expr_names(stmt.value, scopes, binding, names)
@@ -455,6 +456,39 @@ module MilkTea
         return if binding.type_params.include?(name)
 
         raise_sema_error("unknown name #{name}", node)
+      end
+
+      # When a generic method body contains a let/var declaration, try to infer a
+      # rough type for the new local so that completion frames include it.  This
+      # handles the common pattern of extracting a field or local for null checks.
+      def try_record_generic_local_snapshot(stmt, scopes, binding)
+        inferred = infer_simple_local_type(stmt.value, scopes)
+        return unless inferred
+
+        vb = value_binding(name: stmt.name, type: inferred, mutable: stmt.kind == :var, kind: :let)
+        new_scopes = scopes.dup.unshift({ stmt.name => vb })
+        record_local_completion_snapshot(stmt.line, stmt.column, new_scopes)
+      end
+
+      def infer_simple_local_type(value, scopes)
+        case value
+        when AST::MemberAccess
+          return nil unless value.receiver.is_a?(AST::Identifier)
+
+          receiver_binding = lookup_value(value.receiver.name, scopes)
+          return nil unless receiver_binding
+
+          receiver_type = receiver_binding.respond_to?(:type) ? receiver_type_for_fields(receiver_binding.type) : nil
+          receiver_type&.respond_to?(:fields) ? receiver_type.fields[value.member] : nil
+        when AST::Identifier
+          (binding = lookup_value(value.name, scopes)) ? binding.type : nil
+        end
+      end
+
+      def receiver_type_for_fields(type)
+        type = type.base while type.is_a?(Types::Nullable)
+        type = type.definition if type.respond_to?(:definition)
+        type
       end
 
       # Scans generic method bodies for assignments to this through a
