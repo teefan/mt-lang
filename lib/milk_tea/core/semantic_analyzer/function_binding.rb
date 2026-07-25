@@ -302,6 +302,161 @@ module MilkTea
         end
       end
 
+      # Names recognised as builtin callable / type-constructor identifiers by
+      # resolve_callable and the compile-time evaluation path.  We allow these
+      # so the generic-name check does not flag them as unknown before the full
+      # type checker has a chance to handle the surrounding Specialization /
+      # Call context.
+      BUILTIN_CALLABLE_NAMES = %w[
+        fatal ref_of const_ptr_of read ptr_of
+        field_of fields_of callable_of attribute_of has_attribute
+        members_of attributes_of get
+        reinterpret array span zero default hash equal order
+        adapt attribute_arg
+        Task Option Result SoA str_buffer atomic
+      ].to_set.freeze
+
+      # Verifies that every bare identifier used as a value expression inside
+      # a generic method body resolves to a known name (parameter, local,
+      # top-level value, function, type, import, or type parameter).  This
+      # catches misspelled variables and undeclared names without touching any
+      # type-dependent logic, so it is safe to run during structural analysis
+      # before concrete types are substituted.
+      def check_generic_method_names(binding, scopes)
+        names = Set.new
+        binding.ast.body&.each do |statement|
+          check_stmt_names(statement, scopes, binding, names)
+        end
+      end
+
+      def check_stmt_names(stmt, scopes, binding, names)
+        case stmt
+        when AST::LocalDecl
+          check_expr_names(stmt.value, scopes, binding, names) if stmt.value
+          names.add(stmt.name) if stmt.name
+        when AST::Assignment
+          check_expr_names(stmt.target, scopes, binding, names)
+          check_expr_names(stmt.value, scopes, binding, names)
+        when AST::ExpressionStmt
+          check_expr_names(stmt.expression, scopes, binding, names)
+        when AST::ReturnStmt
+          check_expr_names(stmt.value, scopes, binding, names) if stmt.value
+        when AST::IfStmt
+          stmt.branches.each do |b|
+            check_expr_names(b.condition, scopes, binding, names)
+            branch_names = names.dup
+            b.body&.each { |s| check_stmt_names(s, scopes, binding, branch_names) }
+          end
+          else_names = names.dup
+          stmt.else_body&.each { |s| check_stmt_names(s, scopes, binding, else_names) }
+        when AST::WhileStmt
+          check_expr_names(stmt.condition, scopes, binding, names)
+          body_names = names.dup
+          stmt.body&.each { |s| check_stmt_names(s, scopes, binding, body_names) }
+        when AST::ForStmt
+          Array(stmt.iterables).each { |i| check_expr_names(i, scopes, binding, names) }
+          body_names = names.dup
+          Array(stmt.bindings).each { |b| body_names.add(b.respond_to?(:name) ? b.name : b) }
+          stmt.body&.each { |s| check_stmt_names(s, scopes, binding, body_names) }
+        when AST::MatchStmt
+          check_expr_names(stmt.expression, scopes, binding, names)
+          stmt.arms.each do |arm|
+            arm_names = names.dup
+            arm_names.add(arm.binding_name) if arm.binding_name
+            arm.body&.each { |s| check_stmt_names(s, scopes, binding, arm_names) }
+          end
+        when AST::UnsafeStmt, AST::ParallelBlockStmt
+          body_names = names.dup
+          stmt.body&.each { |s| check_stmt_names(s, scopes, binding, body_names) }
+        when AST::DeferStmt
+          check_expr_names(stmt.expression, scopes, binding, names) if stmt.expression
+          body_names = names.dup
+          stmt.body&.each { |s| check_stmt_names(s, scopes, binding, body_names) }
+        when AST::WhenStmt
+          check_expr_names(stmt.discriminant, scopes, binding, names)
+          stmt.branches.each do |b|
+            branch_names = names.dup
+            b.body&.each { |s| check_stmt_names(s, scopes, binding, branch_names) }
+          end
+          else_names = names.dup
+          stmt.else_body&.each { |s| check_stmt_names(s, scopes, binding, else_names) }
+        when AST::ErrorBlockStmt
+          body_names = names.dup
+          stmt.body&.each { |s| check_stmt_names(s, scopes, binding, body_names) }
+        when AST::BreakStmt, AST::ContinueStmt, AST::PassStmt, AST::StaticAssert, AST::EmitStmt
+          nil
+        end
+      end
+
+      def check_expr_names(expr, scopes, binding, names)
+        case expr
+        when AST::Identifier
+          check_generic_name(expr.name, scopes, binding, expr, names)
+        when AST::MemberAccess
+          check_expr_names(expr.receiver, scopes, binding, names)
+        when AST::Call
+          check_expr_names(expr.callee, scopes, binding, names)
+          expr.arguments.each { |arg| check_expr_names(arg.value, scopes, binding, names) }
+        when AST::BinaryOp
+          check_expr_names(expr.left, scopes, binding, names)
+          check_expr_names(expr.right, scopes, binding, names)
+        when AST::UnaryOp
+          check_expr_names(expr.operand, scopes, binding, names)
+        when AST::IfExpr
+          check_expr_names(expr.condition, scopes, binding, names)
+          check_expr_names(expr.then_expression, scopes, binding, names)
+          check_expr_names(expr.else_expression, scopes, binding, names)
+        when AST::MatchExpr
+          check_expr_names(expr.expression, scopes, binding, names)
+          expr.arms.each do |arm|
+            arm_names = names.dup
+            arm_names.add(arm.binding_name) if arm.binding_name
+            check_expr_names(arm.value, scopes, binding, arm_names)
+          end
+        when AST::IndexAccess
+          check_expr_names(expr.receiver, scopes, binding, names)
+          check_expr_names(expr.index, scopes, binding, names)
+        when AST::Specialization
+          check_expr_names(expr.callee, scopes, binding, names)
+        when AST::PrefixCast
+          check_expr_names(expr.expression, scopes, binding, names)
+        when AST::AwaitExpr
+          check_expr_names(expr.expression, scopes, binding, names)
+        when AST::UnsafeExpr
+          check_expr_names(expr.expression, scopes, binding, names)
+        when AST::RangeExpr
+          check_expr_names(expr.start_expr, scopes, binding, names) if expr.start_expr
+          check_expr_names(expr.end_expr, scopes, binding, names) if expr.end_expr
+        when AST::ExpressionList
+          expr.elements.each { |elem| check_expr_names(elem, scopes, binding, names) }
+        when AST::ProcExpr
+          body_names = names.dup
+          Array(expr.params).each { |p| body_names.add(p.name) if p.respond_to?(:name) }
+          expr.body&.each { |s| check_stmt_names(s, scopes, binding, body_names) }
+        when AST::DetachExpr
+          check_expr_names(expr.body, scopes, binding, names)
+        when AST::FormatExprPart
+          check_expr_names(expr.expression, scopes, binding, names)
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral,
+             AST::BooleanLiteral, AST::NullLiteral, AST::CharLiteral,
+             AST::FormatString, AST::FormatTextPart
+          nil
+        end
+      end
+
+      def check_generic_name(name, scopes, binding, node, names)
+        return if name == "_" || name == "this"
+        return if names.include?(name)
+        return if BUILTIN_CALLABLE_NAMES.include?(name)
+        return if lookup_value(name, scopes)
+        return if @ctx.top_level_functions.key?(name)
+        return if @ctx.types.key?(name)
+        return if @ctx.imports.key?(name)
+        return if binding.type_params.include?(name)
+
+        raise_sema_error("unknown name #{name}", node)
+      end
+
       # Scans generic method bodies for assignments to this through a
       # non-editable receiver.  Full body checking is deferred to call-site
       # specialization, but immutable-this violations are type-independent.
@@ -337,6 +492,7 @@ module MilkTea
             start_local_completion_frame(binding, scopes)
             if binding.type_params.any?
               check_generic_method_immutable_this(binding, scopes)
+              check_generic_method_names(binding, scopes)
               return
             end
 
