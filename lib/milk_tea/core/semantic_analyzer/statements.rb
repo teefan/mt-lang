@@ -22,7 +22,19 @@ module MilkTea
                 if @nullability_flow_result && idx + 1 < statements.length
                   apply_nullability_continuation_refinements!(nested_scopes, statements[idx + 1])
                 end
-                record_local_completion_snapshot(statement_end_line(statement), 1_000_000, nested_scopes)
+                end_line = statement_end_line(statement)
+                # When the statement spans multiple lines (e.g. let … else:),
+                # record an extra snapshot at the declaration line so that
+                # hover and completion lookups on the declaration line itself
+                # can still find the new binding.
+                if end_line && statement.respond_to?(:line) && statement.line && end_line > statement.line
+                  record_local_completion_snapshot(
+                    statement.line,
+                    statement.respond_to?(:column) ? statement.column : 0,
+                    nested_scopes,
+                  )
+                end
+                record_local_completion_snapshot(end_line, 1_000_000, nested_scopes)
               rescue SemanticError => e
                 if @collecting_errors
                   @structural_errors << e
