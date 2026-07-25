@@ -122,6 +122,15 @@ module MilkTea
         start_line = [binding.ast.respond_to?(:line) ? binding.ast.line : nil, snapshots.first.line].compact.min
         end_line = snapshots.last.line
 
+        # Generic function bodies are not analysed during structural checking,
+        # so the frame only has the initial snapshot at the declaration line.
+        # Extend end_line to cover the actual body so that completion and hover
+        # lookups for parameters resolve correctly inside the body.
+        if snapshots.length == 1 && binding.ast.respond_to?(:body) && binding.ast.body
+          body_end = last_ast_line(binding.ast.body)
+          end_line = body_end if body_end && body_end > end_line
+        end
+
         @local_completion_frames << LocalCompletionFrame.new(
           start_line:,
           end_line:,
@@ -348,6 +357,34 @@ module MilkTea
         else
           expression.class.name.split("::").last
         end
+      end
+
+      # Returns the highest line number across a list of AST statement nodes,
+      # recursing into nested bodies (if/else/match/while/for/defer/unsafe).
+      def last_ast_line(statements)
+        return nil if statements.nil? || statements.empty?
+
+        statements.filter_map do |stmt|
+          case stmt
+          when AST::IfStmt
+            branch_lines = stmt.branches.filter_map { |b| last_ast_line(b.body) }
+            else_lines = last_ast_line(stmt.else_body)
+            [stmt.line, *branch_lines, else_lines].compact.max
+          when AST::WhileStmt, AST::ForStmt, AST::UnsafeStmt, AST::ErrorBlockStmt
+            [stmt.respond_to?(:line) ? stmt.line : nil, last_ast_line(stmt.body)].compact.max
+          when AST::MatchStmt
+            arm_lines = stmt.arms.filter_map { |arm| last_ast_line(arm.body) }
+            [stmt.line, *arm_lines].compact.max
+          when AST::DeferStmt
+            [stmt.respond_to?(:line) ? stmt.line : nil, last_ast_line(stmt.body)].compact.max
+          when AST::WhenStmt
+            branch_lines = stmt.branches.filter_map { |b| last_ast_line(b.body) }
+            else_lines = last_ast_line(stmt.else_body)
+            [stmt.line, *branch_lines, else_lines].compact.max
+          else
+            stmt.respond_to?(:line) ? stmt.line : nil
+          end
+        end.compact.max
       end
 
     end
