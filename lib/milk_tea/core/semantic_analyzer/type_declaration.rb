@@ -166,6 +166,7 @@ module MilkTea
           module_binding = @ctx.imported_modules[module_path]
           unless module_binding
             install_fallback_builtin_type(module_path)
+            @ctx.imports[module_path] = empty_module_binding(module_path) unless @ctx.imports.key?(module_path)
             next
           end
 
@@ -176,6 +177,19 @@ module MilkTea
           already_imported = @ctx.imports.any? { |_, existing_binding| existing_binding == module_binding }
           @ctx.imports[module_path] = module_binding unless @ctx.imports.key?(module_path) || already_imported
         end
+      end
+
+      def empty_module_binding(module_path)
+        ModuleBinding.new(
+          name: module_path,
+          types: {}, type_declarations: {}, interfaces: {},
+          attributes: {}, attribute_applications: {},
+          values: {}, functions: {}, methods: {},
+          implemented_interfaces: {}, imports: {},
+          private_types: {}, private_interfaces: {}, private_attributes: {},
+          private_values: {}, private_functions: {}, private_methods: {},
+          private_implemented_interfaces: {},
+        )
       end
 
       def install_fallback_builtin_type(module_path)
