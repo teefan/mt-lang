@@ -472,17 +472,47 @@ module MilkTea
 
       def infer_simple_local_type(value, scopes)
         case value
+        when AST::Call
+          infer_call_return_type(value, scopes)
         when AST::MemberAccess
           return nil unless value.receiver.is_a?(AST::Identifier)
 
           receiver_binding = lookup_value(value.receiver.name, scopes)
           return nil unless receiver_binding
 
-          receiver_type = receiver_binding.respond_to?(:type) ? receiver_type_for_fields(receiver_binding.type) : nil
+          receiver_type = receiver_type_for_fields(receiver_binding.type)
           receiver_type&.respond_to?(:fields) ? receiver_type.fields[value.member] : nil
         when AST::Identifier
           (binding = lookup_value(value.name, scopes)) ? binding.type : nil
         end
+      end
+
+      def infer_call_return_type(call, scopes)
+        callee = call.callee
+        callee = callee.callee while callee.is_a?(AST::Specialization)
+
+        case callee
+        when AST::Identifier
+          func = @ctx.top_level_functions[callee.name]
+          return func.type.return_type if func
+        when AST::MemberAccess
+          return nil unless callee.receiver.is_a?(AST::Identifier)
+
+          name = callee.receiver.name
+          member = callee.member
+
+          if (import = @ctx.imports[name])
+            func = import.functions[member]
+            return func.type.return_type if func
+          end
+
+          receiver_type = @ctx.types[name]
+          if receiver_type && @ctx.methods.key?(receiver_type)
+            method = @ctx.methods[receiver_type]["static:#{member}"] || @ctx.methods[receiver_type][member]
+            return method.type.return_type if method
+          end
+        end
+        nil
       end
 
       def receiver_type_for_fields(type)
