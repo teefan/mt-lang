@@ -237,6 +237,8 @@ module MilkTea
             true
           elsif (expr = extract_expr(stmt)) && own_struct_field_transfer?(expr, name)
             true
+          elsif stmt.is_a?(AST::Assignment) && stmt.value.is_a?(AST::Identifier) && stmt.value.name == name
+            true
           else
             false
           end

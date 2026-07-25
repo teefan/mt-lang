@@ -133,6 +133,26 @@ extending String:
         this.capacity = new_capacity
 
 
+    public editable function shrink_to_fit() -> void:
+        if not this.owns_storage:
+            return
+
+        if this.len == 0:
+            heap.release(this.data)
+            this.data = null
+            this.capacity = 0
+            return
+
+        if this.len == this.capacity:
+            return
+
+        let resized = heap.resize[ubyte](this.data, this.len) else:
+            fatal(c"string.shrink_to_fit out of memory")
+
+        this.data = resized
+        this.capacity = this.len
+
+
     public editable function push_byte(value: ubyte) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)

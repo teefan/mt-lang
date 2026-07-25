@@ -140,6 +140,35 @@ extending Deque[T]:
         this.capacity = new_capacity
 
 
+    public editable function shrink_to_fit() -> void:
+        if this.len == 0:
+            heap.release(this.data)
+            this.data = null
+            this.head = 0
+            this.capacity = 0
+            return
+
+        if this.len == this.capacity:
+            return
+
+        let new_data = heap.must_alloc[T](this.len)
+        let old_data = this.data
+        if old_data != null:
+            unsafe:
+                let old_ptr = ptr[T]<-old_data
+                let new_ptr = ptr[T]<-new_data
+                var index: ptr_uint = 0
+                while index < this.len:
+                    let source_index = Deque[T].physical_index(this.head, this.capacity, index)
+                    read(new_ptr + index) = read(old_ptr + source_index)
+                    index += 1
+
+        heap.release(old_data)
+        this.data = new_data
+        this.head = 0
+        this.capacity = this.len
+
+
     public editable function push_back(value: T) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)

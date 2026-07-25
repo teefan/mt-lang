@@ -85,3 +85,28 @@ function test_sparse_set_clear_and_reinsert() -> t.Check:
     t.expect(s.len() == 0z, "len == 0")?
 
     return t.expect_true(s.insert(1, 30))
+
+
+@[test]
+function test_sparse_set_shrink_to_fit() -> t.Check:
+    var s = sset.SparseSet[int].create()
+    defer s.release()
+
+    s.insert(10, 1)
+    s.insert(20, 2)
+    s.reserve(128)
+    t.expect(s.len() == 2z, "len == 2")?
+
+    s.shrink_to_fit()
+    t.expect_true(s.contains(10))?
+    t.expect_true(s.contains(20))?
+    match s.at(10):
+        Option.some as payload:
+            t.expect_equal_int(payload.value, 1)?
+        Option.none:
+            return t.fail("at(10) returned none after shrink")
+    match s.at(20):
+        Option.some as payload:
+            return t.expect_equal_int(payload.value, 2)
+        Option.none:
+            return t.fail("at(20) returned none after shrink")

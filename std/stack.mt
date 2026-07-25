@@ -47,6 +47,10 @@ extending Stack[T]:
         this.values.reserve(min_capacity)
 
 
+    public editable function shrink_to_fit() -> void:
+        this.values.shrink_to_fit()
+
+
     public editable function push(value: T) -> void:
         this.values.push_back(value)
 

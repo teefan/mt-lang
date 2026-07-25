@@ -93,6 +93,12 @@ extending SparseSet[T]:
         this.keys.reserve(min_capacity)
 
 
+    public editable function shrink_to_fit() -> void:
+        this.sparse.shrink_to_fit()
+        this.dense.shrink_to_fit()
+        this.keys.shrink_to_fit()
+
+
     public editable function insert(key: ptr_uint, value: T) -> bool:
         while key >= this.sparse.len():
             this.sparse.push(SPARSE_EMPTY)

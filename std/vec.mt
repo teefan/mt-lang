@@ -117,6 +117,23 @@ extending Vec[T]:
         this.capacity = new_capacity
 
 
+    public editable function shrink_to_fit() -> void:
+        if this.len == 0:
+            heap.release(this.data)
+            this.data = null
+            this.capacity = 0
+            return
+
+        if this.len == this.capacity:
+            return
+
+        let resized = heap.resize[T](this.data, this.len) else:
+            fatal(c"vec.shrink_to_fit out of memory")
+
+        this.data = resized
+        this.capacity = this.len
+
+
     public editable function append_span(values: span[T]) -> void:
         if values.len == 0:
             return

@@ -131,3 +131,25 @@ function test_queue_clear_resets() -> t.Check:
 
     t.expect_true(empty)?
     return t.expect(peek_null, "peek should be null after clear")
+
+
+@[test]
+function test_queue_shrink_to_fit() -> t.Check:
+    var values = queue.Queue[int].create()
+    defer values.release()
+    values.enqueue(10)
+    values.enqueue(20)
+    values.reserve(128)
+    t.expect(values.capacity() >= 128z, "capacity inflated")?
+
+    values.shrink_to_fit()
+    t.expect(values.capacity() == 2z, "capacity == len")?
+    t.expect(values.len() == 2z, "len unchanged")?
+
+    var first = 0
+    match values.dequeue():
+        Option.some as payload:
+            first = payload.value
+        Option.none:
+            return t.fail("dequeue returned none after shrink")
+    return t.expect_equal_int(first, 10)

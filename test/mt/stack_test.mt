@@ -141,3 +141,25 @@ function test_stack_clear_empties() -> t.Check:
     values.release()
     t.expect_true(empty)?
     return t.expect_true(top_is_null)
+
+
+@[test]
+function test_stack_shrink_to_fit() -> t.Check:
+    var values = stack.Stack[int].create()
+    defer values.release()
+    values.push(10)
+    values.push(20)
+    values.reserve(128)
+    t.expect(values.capacity() >= 128z, "capacity inflated")?
+
+    values.shrink_to_fit()
+    t.expect(values.capacity() == 2z, "capacity == len")?
+    t.expect(values.len() == 2z, "len unchanged")?
+
+    var top = 0
+    match values.pop():
+        Option.some as payload:
+            top = payload.value
+        Option.none:
+            return t.fail("pop returned none after shrink")
+    return t.expect_equal_int(top, 20)

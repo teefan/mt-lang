@@ -821,6 +821,7 @@ module MilkTea
             message: "every #{kind} branch returns a value; rewrite as `return #{kind} …` expression",
           )
         elsif stmts.all? { |s| s.is_a?(AST::Assignment) && s.operator == "=" } &&
+              stmts.all? { |s| s.target.respond_to?(:name) } &&
               stmts.map { |s| node_fingerprint(s.target) }.uniq.size == 1
           target_name = stmts.first.target.name
           emit_conciseness_hint(

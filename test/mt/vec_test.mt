@@ -148,6 +148,36 @@ function test_vec_pointer_accessors() -> t.Check:
 
 
 @[test]
+function test_vec_shrink_to_fit() -> t.Check:
+    var values = vec.Vec[int].create()
+    defer values.release()
+
+    values.push(10)
+    values.push(20)
+    values.reserve(100)
+    t.expect(values.capacity() >= 100z, "capacity inflated")?
+    t.expect(values.len() == 2z, "len == 2")?
+
+    values.shrink_to_fit()
+    t.expect(values.capacity() == 2z, "capacity == len")?
+    t.expect(values.len() == 2z, "len unchanged")?
+    let view = values.as_span()
+    var ok = false
+    unsafe:
+        ok = read(view.data + 0) == 10 and read(view.data + 1) == 20
+    t.expect_true(ok)?
+
+    values.clear()
+    values.shrink_to_fit()
+    t.expect(values.capacity() == 0z, "capacity zero after clear + shrink")?
+    t.expect_true(values.is_empty())?
+
+    values.push(1)
+    return t.expect(values.capacity() == 4z, "auto-grow to base 4 after zeroed shrink")
+
+
+
+@[test]
 function test_vec_search_helpers() -> t.Check:
     var values = vec.Vec[int].create()
     defer values.release()

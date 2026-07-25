@@ -47,6 +47,10 @@ extending Queue[T]:
         this.values.reserve(min_capacity)
 
 
+    public editable function shrink_to_fit() -> void:
+        this.values.shrink_to_fit()
+
+
     public editable function enqueue(value: T) -> void:
         this.values.push_back(value)
 

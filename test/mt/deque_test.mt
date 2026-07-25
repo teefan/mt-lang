@@ -118,6 +118,45 @@ function test_deque_wraparound_and_growth() -> t.Check:
 
 
 @[test]
+function test_deque_shrink_to_fit() -> t.Check:
+    var values = deque.Deque[int].create()
+    defer values.release()
+
+    values.push_back(10)
+    values.push_back(20)
+    values.push_back(30)
+
+    var dropped_value = 0
+    match values.pop_front():
+        Option.none:
+            return t.fail("pop_front none")
+        Option.some as payload:
+            dropped_value = payload.value
+    t.expect_equal_int(dropped_value, 10)?
+
+    values.push_back(40)
+    values.push_back(50)
+    let capacity_before = values.capacity()
+
+    values.shrink_to_fit()
+    t.expect(values.capacity() == 4z, "capacity == len after shrink with non-zero head")?
+    t.expect(values.len() == 4z, "len unchanged")?
+    t.expect_equal_int(read_int(values.get(0)), 20)?
+    t.expect_equal_int(read_int(values.get(1)), 30)?
+    t.expect_equal_int(read_int(values.get(2)), 40)?
+    t.expect_equal_int(read_int(values.get(3)), 50)?
+
+    values.clear()
+    values.shrink_to_fit()
+    t.expect(values.capacity() == 0z, "capacity zero after clear + shrink")?
+    t.expect_true(values.is_empty())?
+
+    values.push_back(1)
+    return t.expect(values.capacity() == 4z, "auto-grow to base 4 after zeroed shrink")
+
+
+
+@[test]
 function test_deque_plain_struct_elements() -> t.Check:
     var pairs = deque.Deque[Pair].create()
     defer pairs.release()
