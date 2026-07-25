@@ -704,7 +704,7 @@ module MilkTea
       end
 
       def interface_receiver_definition_location(current_uri, receiver_type)
-        receiver_type = receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+        receiver_type = receiver_type.definition if receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::VariantInstance)
 
         if receiver_type.module_name.nil? || receiver_type.module_name.empty?
           token = local_type_definition_token(current_uri, receiver_type.name)
@@ -716,7 +716,7 @@ module MilkTea
       end
 
       def receiver_module_name(receiver_type)
-        receiver_type = receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+        receiver_type = receiver_type.definition if receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::VariantInstance)
 
         receiver_type.module_name
       end

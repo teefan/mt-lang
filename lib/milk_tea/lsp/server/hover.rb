@@ -526,7 +526,7 @@ module MilkTea
                 if (method_binding = methods[name])
                   signature = method_signature(method_binding)
                 else
-                  type_base = receiver_type.to_s[/^([a-z_]+)/, 1]
+                  type_base = receiver_type.to_s[/^([A-Za-z_]+)/, 1]
                   if type_base && (method_sigs = BUILTIN_TYPE_METHOD_SIGNATURES[type_base])
                     signature = method_sigs[name]
                   end

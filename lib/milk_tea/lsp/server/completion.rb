@@ -742,7 +742,7 @@ module MilkTea
       end
 
       def method_dispatch_receiver_type_for_completion(receiver_type)
-        return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+        return receiver_type.definition if receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::VariantInstance)
 
         if receiver_type.is_a?(Types::Nullable)
           dispatch_base_type = method_dispatch_receiver_type_for_completion(receiver_type.base)
@@ -765,7 +765,7 @@ module MilkTea
 
       def project_field_receiver_type_for_completion(type, facts = nil)
         type = project_receiver_type_for_completion(type)
-        return type.definition if type.is_a?(Types::StructInstance)
+        return type.definition if type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
         return field_type_from_struct_definition(type, facts) if facts
 
         type
@@ -792,7 +792,7 @@ module MilkTea
 
       def field_owner_type(receiver_type, facts = nil)
         aggregate_type = project_field_receiver_type_for_completion(receiver_type, facts)
-        return aggregate_type.definition if aggregate_type.is_a?(Types::StructInstance)
+        return aggregate_type.definition if aggregate_type.is_a?(Types::StructInstance) || aggregate_type.is_a?(Types::VariantInstance)
 
         aggregate_type
       end
