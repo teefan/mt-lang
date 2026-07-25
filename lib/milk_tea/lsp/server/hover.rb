@@ -989,9 +989,10 @@ module MilkTea
               source_location = field_definition_location(current_uri, field_receiver_type, segment[:name])
 
               if segment[:token_index] == token_index
+                definition_entry = hover_definition_entry_from_location(source_location)
                 return {
                   signature: field_hover_signature(segment[:name], field_type),
-                  docs: nil,
+                  docs: hover_doc_comment_for_definition(definition_entry),
                   source: hover_source_label_from_location(source_location),
                   source_uri: hover_source_uri_from_location(source_location),
                   source_line: hover_source_line_from_location(source_location),
@@ -1006,7 +1007,7 @@ module MilkTea
               if segment[:token_index] == token_index
                 return {
                   signature: type_hover_signature(segment[:name], nested),
-                  docs: nil,
+                  docs: BUILTIN_TYPE_DOCS[segment[:name]],
                 }
               end
               current_type = nested
@@ -1021,10 +1022,11 @@ module MilkTea
 
           source_location = module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding])
           source_location ||= module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
+          definition_entry = hover_definition_entry_from_location(source_location)
 
           return {
             signature: method_signature(method_info[:binding]),
-            docs: nil,
+            docs: hover_doc_comment_for_definition(definition_entry),
             source: hover_source_label_from_location(source_location),
             source_uri: hover_source_uri_from_location(source_location),
             source_line: hover_source_line_from_location(source_location),
