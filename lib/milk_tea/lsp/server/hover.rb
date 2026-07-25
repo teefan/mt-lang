@@ -314,6 +314,7 @@ module MilkTea
         token = context&.fetch(:token, nil)
         token_kind = token&.type || :none
         unless token&.type == :identifier
+          return nil if token.nil?
           unless member_access_token?(context)
             info = builtin_keyword_hover_info(token) ||
                    BUILTIN_CALL_HOVER_INFO[token.lexeme]&.slice(:signature, :docs)
