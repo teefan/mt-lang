@@ -1,4 +1,4 @@
-# Milk Tea
+# Milk Tea (Simple Game) Programming Language
 
 A statically typed, indentation-based systems language for games.
 Compiles to readable C. Safe by default, explicit by design.
