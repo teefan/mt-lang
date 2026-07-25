@@ -1264,9 +1264,14 @@ module MilkTea
 
           header_line_tokens = non_trivia_tokens_on_line(tokens, current.line)
           header = header_line_tokens.first
+          type_index = 1
+          if header&.type == :public
+            header = header_line_tokens[1]
+            type_index = 2
+          end
           return nil unless [:struct, :union].include?(header&.type)
 
-          type_token = header_line_tokens[1]
+          type_token = header_line_tokens[type_index]
           return nil unless type_token&.type == :identifier
 
           return resolve_type_receiver_info(facts, type_token.lexeme, type_token.lexeme)
