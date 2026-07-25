@@ -450,6 +450,21 @@ module MilkTea
           raise_sema_error("safe array indexing requires an addressable array value; bind it to a local first")
         end
 
+        if array_type?(receiver_type) && expression.index.is_a?(AST::IntegerLiteral)
+          length = array_length(receiver_type)
+          index_val = expression.index.value
+          if index_val >= length || index_val < 0
+            raise_sema_error("array index #{index_val} is out of bounds for array[T, #{length}]", expression)
+          end
+        end
+
+        if array_type?(receiver_type) && expression.index.is_a?(AST::UnaryOp) && expression.index.operator == "-" &&
+           expression.index.operand.is_a?(AST::IntegerLiteral)
+          length = array_length(receiver_type)
+          index_val = -expression.index.operand.value
+          raise_sema_error("array index #{index_val} is out of bounds for array[T, #{length}]", expression)
+        end
+
         infer_index_result_type(receiver_type, index_type)
       end
 

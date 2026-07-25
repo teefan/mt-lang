@@ -318,9 +318,130 @@ struct TestPoint:
     y: float
     flag: bool
 
-function bytes_of_demo() -> span[ubyte]:
+function bytes_of_demo() -> ubyte:
     var point = TestPoint(x = 10.0, y = 20.0, flag = true)
-    return heap.bytes_of[TestPoint](ref_of(point))
+    let view = heap.bytes_of[TestPoint](ref_of(point))
+    unsafe:
+        return read(view.data + 0)
+
+# ---------------------------------------------------------------------------
+# 32  heap.release_and_null — safe double-release prevention
+# ---------------------------------------------------------------------------
+
+function safe_double_release_prevention() -> int:
+    var owned: ptr[int]? = heap.must_alloc[int](1)
+    unsafe:
+        read(ptr[int]<-owned) = 42
+    heap.release_and_null(ref_of(owned))
+    heap.release_and_null(ref_of(owned))
+    if owned == null:
+        return 1
+    return -1
+
+# ---------------------------------------------------------------------------
+# 33  Span edge cases — empty, zero-length, allocation-backed
+# ---------------------------------------------------------------------------
+
+function zero_length_span() -> span[int]:
+    let backing = heap.must_alloc[int](1)
+    defer heap.release(backing)
+    return span[int](data = backing, len = 0)
+
+function heap_backed_span() -> span[int]:
+    let owned = heap.must_alloc[int](3)
+    defer heap.release(owned)
+    unsafe:
+        read(owned) = 10
+        read(owned + 1) = 20
+        read(owned + 2) = 30
+    return span[int](data = owned, len = 3)
+
+# ---------------------------------------------------------------------------
+# 34  Stack addressability — ptr_of on locals (used locally, no escape)
+# ---------------------------------------------------------------------------
+
+struct AddrTarget:
+    x: int
+    y: int
+
+function ptr_of_local_demo() -> int:
+    var value: int = 7
+    let p = ptr_of(value)
+    unsafe:
+        return read(p)
+
+function ptr_of_array_demo(index: ptr_uint) -> int:
+    var data: array[int, 5] = array[int, 5](1, 2, 3, 4, 5)
+    let p = ptr_of(data[index])
+    unsafe:
+        return read(p)
+
+function ptr_of_struct_field_demo() -> int:
+    var target = AddrTarget(x = 10, y = 20)
+    let p = ptr_of(target.x)
+    unsafe:
+        return read(p)
+
+# ---------------------------------------------------------------------------
+# 35  own[T] nullable lifecycle — alloc, check, use, release
+# ---------------------------------------------------------------------------
+
+function nullable_own_guard() -> int:
+    var owned: own[int]? = heap.alloc[int](1)
+    defer:
+        if owned != null:
+            heap.release(owned)
+    let handle = owned else:
+        return -1
+    unsafe:
+        return read(handle)
+
+function nullable_own_flow_control() -> int:
+    var a: own[int]? = null
+    var b: own[int]? = heap.alloc[int](1)
+    defer:
+        heap.release(a)
+        heap.release(b)
+    if a == null and b != null:
+        unsafe:
+            return read(b)
+    return -1
+
+# ---------------------------------------------------------------------------
+# 36  Reinterpret through unsafe — struct to bytes round-trip
+# ---------------------------------------------------------------------------
+
+function reinterpret_struct_as_bytes() -> uint:
+    var point = TestPoint(x = 1.0, y = 2.0, flag = true)
+    unsafe:
+        return reinterpret[uint](point.x)
+
+# ---------------------------------------------------------------------------
+# 37  get() on empty and single-element containers
+# ---------------------------------------------------------------------------
+
+function get_on_empty_span() -> ptr[int]?:
+    var empty = zero_length_span()
+    return get(empty, 0)
+
+function get_on_in_bounds() -> int:
+    var arr: array[int, 2] = array[int, 2](42, 99)
+    let item = get(arr, 1) else:
+        return -1
+    unsafe:
+        return read(item)
+
+# ---------------------------------------------------------------------------
+# 38  own[T] aliasing — raw ptr alias of owning pointer (unsafe boundary)
+# ---------------------------------------------------------------------------
+
+function own_to_raw_alias() -> int:
+    let owned = heap.must_alloc[int](1)
+    defer heap.release(owned)
+    var raw = unsafe: ptr[int]<-owned
+    unsafe:
+        read(raw) = 99
+        return read(owned)
 
 # ---------------------------------------------------------------------------
 # 22  Entrypoint

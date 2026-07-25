@@ -185,6 +185,7 @@ module MilkTea
 
             validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false) if statement.value
             value_type = statement.value ? infer_expression(statement.value, scopes:, expected_type: return_type) : @ctx.types.fetch("void")
+            check_stack_pointer_escape_in_return(statement.value, scopes:) if statement.value
             ensure_assignable!(
               value_type,
               return_type,
@@ -1320,6 +1321,64 @@ module MilkTea
             check_block(chosen_arm.body, scopes:, return_type:, allow_return:)
           end
         end
+      end
+
+      # Walks the returned expression tree to detect ptr_of/ref_of/const_ptr_of
+      # applied to a stack-local variable whose address must not escape the
+      # function. Only flags when the pointer value itself (not a computed
+      # result through a function call) reaches the return.
+      def check_stack_pointer_escape_in_return(expression, scopes:)
+        return unless expression
+
+        if expression.is_a?(AST::Call)
+          check_stack_escape_call(expression, scopes:)
+        elsif expression.is_a?(AST::BinaryOp)
+          check_stack_pointer_escape_in_return(expression.left, scopes:)
+          check_stack_pointer_escape_in_return(expression.right, scopes:)
+        elsif expression.is_a?(AST::UnaryOp)
+          check_stack_pointer_escape_in_return(expression.operand, scopes:)
+        end
+      end
+
+      def check_stack_escape_call(expression, scopes:)
+        callee = expression.callee
+        return unless callee.is_a?(AST::Identifier)
+        return unless %w[ptr_of ref_of const_ptr_of].include?(callee.name)
+        return if expression.arguments.empty?
+
+        arg = expression.arguments.first
+        source = arg.respond_to?(:value) ? arg.value : arg
+        check_stack_local_source(source, scopes:, builtin: callee.name)
+      end
+
+      def check_stack_local_source(expression, scopes:, builtin:)
+        case expression
+        when AST::Identifier
+          binding = lookup_local_binding(expression.name, scopes)
+          return unless binding
+          return unless %i[let var param].include?(binding.kind)
+          return if stack_safe_pointer_source?(binding)
+          raise_sema_error(
+            "#{builtin}(#{expression.name}) cannot be returned: pointer to function-local storage",
+            expression,
+          )
+        when AST::MemberAccess
+          check_stack_local_source(expression.receiver, scopes:, builtin:)
+        when AST::IndexAccess
+          check_stack_local_source(expression.receiver, scopes:, builtin:)
+        end
+      end
+
+      def lookup_local_binding(name, scopes)
+        scopes.reverse_each do |scope|
+          return scope[name] if scope.key?(name)
+        end
+        nil
+      end
+
+      def stack_safe_pointer_source?(binding)
+        return false unless binding.type
+        ref_type?(binding.type) || own_type?(binding.type)
       end
 
     end
