@@ -999,6 +999,23 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/operator \+= requires matching numeric types, got int and float/, error.message)
   end
 
+  def test_rejects_vec3_compound_add_scalar
+    source = <<~MT
+      # module demo.main
+
+      function main() -> int:
+          var a: vec3 = vec3(x = 1.0, y = 2.0, z = 3.0)
+          a += 5
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/operator \+= requires matching numeric types, got vec3 and int/, error.message)
+  end
+
   def test_rejects_lossy_numeric_coercion_for_external_function_boundaries
     error = assert_raises(MilkTea::SemanticError) do
       check_program_source(

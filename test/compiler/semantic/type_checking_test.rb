@@ -4061,6 +4061,66 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.functions.key?("scale")
   end
 
+  def test_type_checks_vec3_compound_add
+    source = <<~MT
+      # module demo.main
+
+      function apply(a: ref[vec3], b: vec3) -> void:
+          read(a) += b
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("apply")
+  end
+
+  def test_type_checks_vec3_compound_scalar_multiply
+    source = <<~MT
+      # module demo.main
+
+      function scale(a: ref[vec3], s: float) -> void:
+          read(a) *= s
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("scale")
+  end
+
+  def test_type_checks_mat4_compound_add
+    source = <<~MT
+      # module demo.main
+
+      function apply(a: ref[mat4], b: mat4) -> void:
+          read(a) += b
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("apply")
+  end
+
+  def test_type_checks_quat_compound_multiply
+    source = <<~MT
+      # module demo.main
+
+      function apply(a: ref[quat], b: quat) -> void:
+          read(a) *= b
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("apply")
+  end
+
+  def test_type_checks_ivec3_compound_add
+    source = <<~MT
+      # module demo.main
+
+      function apply(a: ref[ivec3], b: ivec3) -> void:
+          read(a) += b
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("apply")
+  end
+
   def test_type_checks_ivec2_construction
     source = <<~MT
       # module demo.main

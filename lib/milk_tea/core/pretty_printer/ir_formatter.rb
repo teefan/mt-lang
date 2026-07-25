@@ -260,6 +260,8 @@ module MilkTea
           end
         when IR::ArrayLiteral
           "#{expression.type}(#{expression.elements.map { |element| render_expression(element) }.join(', ')})"
+        when IR::Assignment
+          "#{render_expression(expression.target)} #{expression.operator} #{render_expression(expression.value)}"
         else
           raise ArgumentError, "unsupported IR expression #{expression.class.name}"
         end

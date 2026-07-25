@@ -1074,7 +1074,15 @@ module MilkTea
                   lower_expression(prepared_value, env:, expected_type: target.type)
                 end
         update_cstr_metadata_for_assignment!(statement, prepared_value, env)
-        if statement.operator == "=" && contains_proc_storage_type?(target.type)
+        operator = statement.operator
+        if ["+=", "-=", "*=", "/="].include?(operator) &&
+           (target.type.is_a?(Types::Vector) || target.type.is_a?(Types::Matrix) || target.type.is_a?(Types::Quaternion))
+          binary_op = operator[0...-1]
+          expanded = lower_vector_binary_op(binary_op, target, target.type, value, value.type, target.type)
+          value = expanded || IR::Binary.new(operator: binary_op, left: target, right: value, type: target.type)
+          operator = "="
+        end
+        if operator == "=" && contains_proc_storage_type?(target.type)
           rhs_name = fresh_c_temp_name(env, "proc_assign")
           lowered << IR::LocalDecl.new(name: rhs_name, linkage_name: rhs_name, type: target.type, value:)
           rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
@@ -1082,7 +1090,7 @@ module MilkTea
           lowered.concat(lower_proc_contained_guarded_release_statements(target, target.type))
           lowered << IR::Assignment.new(target:, operator: "=", value: rhs)
         else
-          lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+          lowered << IR::Assignment.new(target:, operator:, value:)
         end
         lowered
       end

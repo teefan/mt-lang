@@ -2847,6 +2847,50 @@ function main() -> int:
     assert_match(/vec3/, generated)
   end
 
+  def test_generate_c_for_vec3_compound_add
+    source = <<~MT
+      function apply(a: ref[vec3], b: vec3) -> void:
+          read(a) += b
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/vec3/, generated)
+    refute_match(/\+=/, generated)
+  end
+
+  def test_generate_c_for_vec3_compound_scalar_multiply
+    source = <<~MT
+      function scale(a: ref[vec3], s: float) -> void:
+          read(a) *= s
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/vec3/, generated)
+    refute_match(/\*=/, generated)
+  end
+
+  def test_generate_c_for_mat4_compound_add
+    source = <<~MT
+      function apply(a: ref[mat4], b: mat4) -> void:
+          read(a) += b
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/mat4/, generated)
+    refute_match(/\+=/, generated)
+  end
+
+  def test_generate_c_for_quat_compound_multiply
+    source = <<~MT
+      function apply(a: ref[quat], b: quat) -> void:
+          read(a) *= b
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/quat/, generated)
+    refute_match(/\*=/, generated)
+  end
+
   def test_generate_c_for_mat4_identity
     source = <<~MT
       function identity() -> mat4:

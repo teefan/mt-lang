@@ -495,16 +495,21 @@ module MilkTea
             line: statement.line, column: statement.column,
           )
         when "+=", "-=", "*=", "/="
-          raise_sema_error("operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}") unless target_type.numeric? && value_type.numeric?
+          binary_op = statement.operator[0...-1]
+          if (result_type = vector_arithmetic_result(binary_op, target_type, value_type))
+            raise_sema_error("operator #{statement.operator} on #{target_type} and #{value_type} produces #{result_type}, expected #{target_type}") unless result_type == target_type
+          else
+            raise_sema_error("operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}") unless target_type.numeric? && value_type.numeric?
 
-          ensure_assignable!(
-            value_type,
-            target_type,
-            "operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}",
-            expression: statement.value,
-            contextual_int_to_float: contextual_int_to_float_target?(target_type),
-            line: statement.line, column: statement.column,
-          )
+            ensure_assignable!(
+              value_type,
+              target_type,
+              "operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}",
+              expression: statement.value,
+              contextual_int_to_float: contextual_int_to_float_target?(target_type),
+              line: statement.line, column: statement.column,
+            )
+          end
         when "%="
           unless common_integer_type(target_type, value_type) == target_type
             raise_sema_error("operator #{statement.operator} requires compatible integer types, got #{target_type} and #{value_type}")
@@ -1378,7 +1383,7 @@ module MilkTea
 
       def stack_safe_pointer_source?(binding)
         return false unless binding.type
-        ref_type?(binding.type) || own_type?(binding.type)
+        ref_type?(binding.type) || own_type?(binding.type) || (binding.mutable && binding.kind == :param)
       end
 
     end

@@ -1438,6 +1438,52 @@ function quat_demo() -> float:
     return q.x + q.y + q.z + q.w + qsum.x + qneg.x + q_id.x
 
 # =============================================================================
+# 24b  Compound operators on native math types
+# =============================================================================
+
+function vector_compound_demo() -> float:
+    var a: vec3 = vec3(x = 1.0, y = 2.0, z = 3.0)
+    var b: vec3 = vec3(x = 4.0, y = 5.0, z = 6.0)
+    a += b
+    a -= b
+    a *= b
+    a *= 2.0
+    a /= 2.0
+
+    var c: ivec3 = ivec3(x = 1, y = 2, z = 3)
+    var d: ivec3 = ivec3(x = 4, y = 5, z = 6)
+    c += d
+    c -= d
+    c *= d
+    c *= 3
+    c /= 2
+
+    var m4: mat4 = zero[mat4]
+    var m4b: mat4 = zero[mat4]
+    m4 += m4b
+    m4 -= m4b
+    m4 *= 2.0
+    m4 /= 2.0
+
+    var m3: mat3 = zero[mat3]
+    var m3b: mat3 = zero[mat3]
+    m3 += m3b
+    m3 -= m3b
+
+    var q: quat = zero[quat]
+    var qb: quat = zero[quat]
+    q += qb
+    q -= qb
+    q *= qb
+
+    let _a = a
+    let _c = c
+    let _m4 = m4
+    let _m3 = m3
+    let _q = q
+    return a.x + float<-(c.x) + m4.col0.x + m3.col0.x + q.x
+
+# =============================================================================
 # 25  SoA (Structure-of-Arrays)
 # =============================================================================
 
@@ -1715,6 +1761,7 @@ function main() -> int:
     total += int<-(vector_demo())
     total += int<-(matrix_demo())
     total += int<-(quat_demo())
+    total += int<-(vector_compound_demo())
     total += int<-(soa_demo())
 
     unsafe_demo()

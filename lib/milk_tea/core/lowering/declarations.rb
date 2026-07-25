@@ -176,7 +176,11 @@ module MilkTea
             enum_type = @ctx.types.fetch(decl.name)
             backing_type = enum_type.backing_type
             members = decl.members.map do |member|
-              value = lower_expression(member.value, env: empty_env, expected_type: backing_type)
+              value = if member.value
+                        lower_expression(member.value, env: empty_env, expected_type: backing_type)
+                      else
+                        IR::IntegerLiteral.new(value: enum_type.member_value(member.name), type: backing_type)
+                      end
               IR::EnumMember.new(name: member.name, linkage_name: enum_member_c_name(enum_type, member.name), value:)
             end
 

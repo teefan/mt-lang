@@ -2083,7 +2083,8 @@ function main() -> int:
 
 function main() -> int:
     let palette = array[int, 4](1, 2, 3, 4)
-    return palette[4]
+    let idx: ptr_uint = 4
+    return palette[idx]
 
       MT
 
