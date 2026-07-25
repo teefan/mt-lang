@@ -197,27 +197,6 @@ module MilkTea
         { uri => edits }
       end
 
-      def module_level_symbol_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
-        name = token.lexeme
-        module_level = facts.functions.key?(name) || facts.values.key?(name) || facts.types.key?(name) || facts.interfaces&.key?(name)
-        return nil unless module_level
-
-        related_uris = @workspace.related_open_document_uris(uri)
-        changes = {}
-        [uri, *related_uris].uniq.each do |doc_uri|
-          edits = []
-          doc_tokens = @workspace.get_tokens(doc_uri) || []
-          doc_tokens.each do |tok|
-            next unless tok.type == :identifier && tok.lexeme == name
-            edits << { range: token_to_range(tok), newText: new_name }
-          end
-          changes[doc_uri] = edits unless edits.empty?
-        end
-
-        return nil if changes.empty?
-        changes
-      end
-
       def import_alias_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
         alias_name = token.lexeme
         if facts

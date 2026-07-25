@@ -77,10 +77,6 @@ module MilkTea
                 end
                 lparen_index = i + 3
               end
-            elsif prev_tok&.type == :dot && next_tok&.type == :lparen
-              # Standalone method call where callee IS the method: .method(...)
-              # Need to find the receiver from the previous segment
-              # This is not easily resolvable without the full chain context
             end
           end
 
