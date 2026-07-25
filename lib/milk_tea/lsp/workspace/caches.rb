@@ -6,7 +6,15 @@ module MilkTea
       module WorkspaceCaches
         def get_content(uri)
           @document_state_mutex.synchronize do
-            @open_documents[uri] || @indexed_documents[uri] || ''
+            @open_documents[uri] || @indexed_documents[uri] ||
+              begin
+                path = uri_to_path(uri)
+                if path && File.file?(path)
+                  @indexed_documents[uri] = File.read(path)
+                end
+              rescue StandardError
+                nil
+              end || ''
           end
         end
 
