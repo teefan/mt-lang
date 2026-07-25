@@ -122,11 +122,12 @@ module MilkTea
         start_line = [binding.ast.respond_to?(:line) ? binding.ast.line : nil, snapshots.first.line].compact.min
         end_line = snapshots.last.line
 
-        # Generic function bodies are not analysed during structural checking,
-        # so the frame only has the initial snapshot at the declaration line.
-        # Extend end_line to cover the actual body so that completion and hover
-        # lookups for parameters resolve correctly inside the body.
-        if snapshots.length == 1 && binding.ast.respond_to?(:body) && binding.ast.body
+        # Extend end_line to cover the actual function body so that completion
+        # and hover lookups resolve correctly even when snapshots don't reach
+        # the final body line (common for generic functions whose bodies are
+        # only partially analysed, and functions whose last statement does not
+        # record a snapshot).
+        if binding.ast.respond_to?(:body) && binding.ast.body
           body_end = last_ast_line(binding.ast.body)
           end_line = body_end if body_end && body_end > end_line
         end
