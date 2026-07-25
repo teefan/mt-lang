@@ -725,6 +725,18 @@ module MilkTea
         dispatch_receiver_type = method_dispatch_receiver_type_for_completion(receiver_type)
         receiver_candidates << dispatch_receiver_type if dispatch_receiver_type != receiver_type
 
+        # For GenericInstance or Nullable-wrapped GenericInstance, also try the
+        # struct definition from facts.types — method registration keys are
+        # always the GenericStructDefinition, not a GenericInstance.
+        [dispatch_receiver_type, receiver_type].each do |candidate|
+          base = candidate
+          base = base.base while base.is_a?(Types::Nullable)
+          next unless base.is_a?(Types::GenericInstance)
+
+          definition = facts.types[base.name]
+          receiver_candidates << definition if definition && !receiver_candidates.include?(definition)
+        end
+
         receiver_candidates.each do |candidate|
           facts.methods.fetch(candidate, {}).each do |name, binding|
             methods[name] ||= binding
@@ -745,10 +757,7 @@ module MilkTea
         return receiver_type.definition if receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::VariantInstance)
 
         if receiver_type.is_a?(Types::Nullable)
-          dispatch_base_type = method_dispatch_receiver_type_for_completion(receiver_type.base)
-          return receiver_type if dispatch_base_type == receiver_type.base
-
-          return Types::Registry.nullable(dispatch_base_type)
+          return method_dispatch_receiver_type_for_completion(receiver_type.base)
         end
 
         return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
