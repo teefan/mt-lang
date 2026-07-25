@@ -12,7 +12,6 @@ class SignatureHelpTest < Minitest::Test
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_CALL }
       })
-      # Cursor right after "add(" on line 4: "    return add(" = 15 chars
       response = client.send_request("textDocument/signatureHelp", {
         "textDocument" => { "uri" => uri },
         "position"     => { "line" => 4, "character" => 15 }
@@ -34,7 +33,6 @@ class SignatureHelpTest < Minitest::Test
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_CALL }
       })
-      # Cursor after "add(1, " on line 4: "    return add(1, " = 18 chars
       response = client.send_request("textDocument/signatureHelp", {
         "textDocument" => { "uri" => uri },
         "position"     => { "line" => 4, "character" => 18 }
@@ -51,18 +49,15 @@ class SignatureHelpTest < Minitest::Test
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_STRUCTURED_DOC_TAGS }
       })
-
       response = client.send_request("textDocument/signatureHelp", {
         "textDocument" => { "uri" => uri },
         "position"     => { "line" => 9, "character" => 15 }
       })
-
       result = response.fetch("result")
       signature = result.dig("signatures", 0)
       signature_docs = signature.dig("documentation", "value")
       first_param_docs = signature.dig("parameters", 0, "documentation", "value")
       second_param_docs = signature.dig("parameters", 1, "documentation", "value")
-
       assert_includes signature_docs, "Adds two values."
       assert_includes signature_docs, "**Returns**"
       assert_includes signature_docs, "sum of both values"
@@ -71,4 +66,31 @@ class SignatureHelpTest < Minitest::Test
     end
   end
 
+  def test_signature_help_for_struct_constructor
+    with_lsp_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_sighel_struct_test.mt"
+      source = <<~MT
+        struct Point:
+            x: int
+            y: int
+
+        function main() -> int:
+            var p = Point(x = 1, y = 2)
+            return 0
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+      response = client.send_request("textDocument/signatureHelp", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 5, "character" => 18 }
+      })
+      result = response.fetch("result")
+      sig_label = result.dig("signatures", 0, "label")
+      assert_includes sig_label, "Point"
+      assert_includes sig_label, "x: int"
+      assert_includes sig_label, "y: int"
+    end
+  end
 end

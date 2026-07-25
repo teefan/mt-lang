@@ -28,17 +28,24 @@ module MilkTea
             end
           end
 
-          if (receiver_type = resolve_dot_receiver_value_type(facts, dot_recv, lsp_line + 1, lsp_char + 1))
+          if (receiver_type = resolve_dot_receiver_value_type(facts, dot_recv, lsp_line + 1, lsp_char + 1) ||
+                               resolve_dot_receiver_value_type(facts, dot_recv.sub(/\[.*\]\z/, ""), lsp_line + 1, lsp_char + 1))
             methods = methods_for_receiver_type(facts, receiver_type)
             if (binding = methods[name] || methods["static:#{name}"])
               return [binding, name]
             end
           end
 
-          if (type_receiver = resolve_type_receiver_info(facts, dot_recv, nil))
+          if (type_receiver = resolve_type_receiver_info(facts, dot_recv, nil) ||
+                              resolve_type_receiver_info(facts, dot_recv.sub(/\[.*\]\z/, ""), nil))
             methods = methods_for_receiver_type(facts, type_receiver[:type])
             if (binding = methods[name] || methods["static:#{name}"])
               return [binding, name]
+            end
+            if type_receiver[:type].respond_to?(:arms) && (arm = type_receiver[:type].arms[name])
+              if arm.respond_to?(:payload) && arm.payload
+                return [arm.payload, name]
+              end
             end
           end
         end
@@ -60,7 +67,7 @@ module MilkTea
         end
 
         # 6. Type constructor (struct constructor)
-        if (type = facts.types[name])
+        if (type = facts.types[name] || facts.imports.each_value.find { |mod| mod.types.key?(name) }&.types&.dig(name))
           if type.respond_to?(:fields) && !type.fields.empty?
             return [type, name]
           end
@@ -99,12 +106,13 @@ module MilkTea
         end
 
         return nil unless extending
-        facts.types[extending.type_name]
+        facts.types[extending.type_name] ||
+          facts.imports.each_value.find { |mod| mod.types.key?(extending.type_name) }&.types&.dig(extending.type_name)
       end
 
       def build_signature_from_binding(binding, name, ctx)
-        if binding.is_a?(Types::Struct) || binding.is_a?(Types::StructInstance)
-          fields = binding.fields
+        if binding.is_a?(Types::Struct) || binding.is_a?(Types::StructInstance) || binding.is_a?(Types::VariantArmPayload)
+          fields = binding.is_a?(Types::StructInstance) ? binding.definition.fields : binding.fields
           params_list = fields.map { |fname, ftype| Types::Registry.parameter(fname, ftype) }
           return_type_label = binding.is_a?(Types::StructInstance) ? binding.to_s : binding.name
         elsif binding.respond_to?(:[])
@@ -120,6 +128,7 @@ module MilkTea
             activeParameter: ctx[:active_parameter],
           }
         else
+          return nil unless binding.respond_to?(:type) && binding.type.respond_to?(:params)
           params_list = binding.type.params
           return_type_label = binding.type.return_type
         end
