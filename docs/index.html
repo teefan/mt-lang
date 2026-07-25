@@ -2164,6 +2164,11 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>std.multiset</code></td><td><code>MultiSet[T]</code></td><td>Values read-only; entries <code>current()</code></td><td>Bag with per-element counts</td></tr>
       <tr><td><code>std.queue</code></td><td><code>Queue[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>FIFO facade over Deque</td></tr>
       <tr><td><code>std.stack</code></td><td><code>Stack[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>LIFO facade over Deque</td></tr>
+      <tr><td><code>std.bitset</code></td><td><code>Bitset</code></td><td>&mdash;</td><td>Bit-level set with popcount</td></tr>
+      <tr><td><code>std.spatial</code></td><td><code>SpatialGrid[T]</code></td><td>&mdash;</td><td>Uniform spatial hash grid (returns Vec)</td></tr>
+      <tr><td><code>std.ring_buffer</code></td><td><code>RingBuffer[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>Fixed-capacity circular buffer</td></tr>
+      <tr><td><code>std.sparse_set</code></td><td><code>SparseSet[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>O(1) insert/remove; dense iteration</td></tr>
+      <tr><td><code>std.lru_cache</code></td><td><code>LruCache[K,V]</code></td><td><code>entries()</code></td><td>Capacity-bounded LRU eviction map</td></tr>
     </table>
   </div>
 

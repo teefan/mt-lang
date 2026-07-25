@@ -1129,6 +1129,11 @@ The current shipped collection modules in `std` are:
 - `std.multiset.MultiSet[T]`: insertion-ordered bag built on `Counter[T]`, with `create`, `with_capacity`, `len`, `total_count`, `distinct_len`, `capacity`, `is_empty`, `count`, `contains`, `values`, `entries`, `iter`, `is_subset`, `union_with`, `intersection`, `difference`, `symmetric_difference`, `clear`, `release`, `reserve`, `insert`, `add`, `remove_one`, and `remove_all`.
 - `std.queue.Queue[T]`: FIFO facade over `Deque[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `clear`, `release`, `reserve`, `enqueue`, and `dequeue`.
 - `std.stack.Stack[T]`: LIFO facade over `Deque[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `clear`, `release`, `reserve`, `push`, and `pop`.
+- `std.bitset.Bitset`: bit-level set backed by a heap-allocated word array, with `create`, `with_capacity`, `len`, `is_empty`, `set`, `clear`, `test`, `toggle`, `count`, `any`, `all`, `none`, `find_first_set`, `find_first_clear`, `clear_all`, `reserve`, and `release`.
+- `std.spatial.SpatialGrid[T]`: uniform spatial hash grid with `create`, `with_origin`, `insert`, `insert_many`, `query_radius`, `clear`, `release`, `cell_count`, `occupied_cells`, and `entity_count`.
+- `std.ring_buffer.RingBuffer[T]`: fixed-capacity circular buffer that overwrites oldest entries when full, with `with_capacity`, `len`, `capacity`, `is_empty`, `is_full`, `iter`, `get`, `at`, `peek`, `push`, `pop`, `clear`, and `release`.
+- `std.sparse_set.SparseSet[T]`: O(1) insert/remove/contains with cache-friendly dense iteration, keyed by `ptr_uint` handle, with `create`, `with_capacity`, `len`, `is_empty`, `iter`, `get`, `at`, `contains`, `key_at`, `insert`, `remove`, `clear`, `reserve`, and `release`.
+- `std.lru_cache.LruCache[K, V]`: capacity-bounded linked hash map with LRU eviction, keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `get`, `at`, `contains`, `set`, `remove`, `clear`, and `release`.
 - `std.linked_map_view.SnapshotValues[K, V]`: read-only snapshot view over `LinkedMap` values in insertion order, with `create(values: linked_map.Entries[K, V])` and `iter`.
 - `std.linked_map_view.SnapshotEntries[K, V]`: read-only snapshot view over `LinkedMap` entries in insertion order, with `create(values: linked_map.Entries[K, V])` and `iter`.
 
@@ -1151,7 +1156,10 @@ Iterator notes for those collection modules:
 - `MultiSet.values()` uses the pointer-returning iterator form with read-only value pointers in first-seen order.
 - `MultiSet.entries()` and `MultiSet.iter()` use the `next() -> bool` plus `current()` iterator form and yield immutable `{ value, count }` snapshots.
 - `Queue.iter()` and `Stack.iter()` use the same mutable pointer-returning iterator form as `Deque.iter()`, and `peek()` returns a mutable element pointer because changing an element value does not violate FIFO/LIFO ordering invariants.
+- `RingBuffer.iter()` uses the pointer-returning iterator form with mutable element pointers.
+- `SparseSet.iter()` uses the pointer-returning iterator form with mutable element pointers in dense order.
 - `SnapshotValues.iter()` and `SnapshotEntries.iter()` use the `next() -> bool` plus `current()` iterator form in insertion order.
+- `SpatialGrid` does not expose a direct iterator; query results are returned as a `Vec[T]`.
 
 ## 8. Strings, C Strings, And Format Strings
 
