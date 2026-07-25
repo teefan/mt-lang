@@ -555,8 +555,10 @@ module MilkTea
           with_scope(binding.body_params) do |scopes|
             start_local_completion_frame(binding, scopes)
             if binding.type_params.any?
-              check_generic_method_immutable_this(binding, scopes)
-              check_generic_method_names(binding, scopes)
+              if binding.ast.respond_to?(:body)
+                check_generic_method_immutable_this(binding, scopes)
+                check_generic_method_names(binding, scopes)
+              end
               return
             end
 
