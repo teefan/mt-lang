@@ -100,7 +100,7 @@ module MilkTea
         extending = nil
         each_ast_node(ast) do |node|
           next unless node.is_a?(AST::ExtendingBlock)
-          if node.line && node.end_line && lsp_line + 1 >= node.line && lsp_line + 1 <= node.end_line
+          if node.line && lsp_line + 1 >= node.line && (!node.respond_to?(:end_line) || !node.end_line || lsp_line + 1 <= node.end_line)
             extending = node
           end
         end
