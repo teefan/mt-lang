@@ -311,6 +311,30 @@ module MilkTea
           unless scoped.nil?
             return scoped.map { |entry| { range: entry[:range], kind: 1 } }
           end
+
+          binding_id = begin
+            rename_target_binding_id(uri, token, lsp_line, lsp_char, facts)
+          rescue StandardError
+            nil
+          end
+          if binding_id
+            ranges = begin
+              scoped_binding_occurrence_ranges(uri, token.lexeme, facts, binding_id, include_declaration: true)
+            rescue StandardError
+              []
+            end
+            unless ranges.empty?
+              return ranges.map do |range|
+                {
+                  range: {
+                    start: { line: range[:line] - 1, character: range[:column] - 1 },
+                    end: { line: range[:line] - 1, character: range[:column] - 1 + range[:length] },
+                  },
+                  kind: 1,
+                }
+              end
+            end
+          end
         end
 
         toks = @workspace.get_tokens(uri) || []
