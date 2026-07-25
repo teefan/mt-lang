@@ -285,6 +285,7 @@ module MilkTea
             'subscribe' => 'function subscribe(listener) -> Result[Subscription, EventError]',
             'subscribe_once' => 'function subscribe_once(listener) -> Result[Subscription, EventError]',
             'unsubscribe' => 'function unsubscribe(subscription) -> bool',
+            'emit' => 'function emit() / function emit(payload)',
             'wait' => 'function wait() -> Task[Result[T, EventError]]',
           },
           'str_buffer' => {
@@ -313,21 +314,23 @@ module MilkTea
         token = context&.fetch(:token, nil)
         token_kind = token&.type || :none
         unless token&.type == :identifier
-          info = builtin_keyword_hover_info(token) ||
-                 BUILTIN_CALL_HOVER_INFO[token.lexeme]&.slice(:signature, :docs)
-          if info
-            result_state = 'hit'
-            return {
-              contents: {
-                kind: 'markdown',
-                value: render_hover_markdown(info)
-              },
-              range: token_to_range(token)
-            }
-          end
+          unless member_access_token?(context)
+            info = builtin_keyword_hover_info(token) ||
+                   BUILTIN_CALL_HOVER_INFO[token.lexeme]&.slice(:signature, :docs)
+            if info
+              result_state = 'hit'
+              return {
+                contents: {
+                  kind: 'markdown',
+                  value: render_hover_markdown(info)
+                },
+                range: token_to_range(token)
+              }
+            end
 
-          result_state = 'not-identifier'
-          return nil
+            result_state = 'not-identifier'
+            return nil
+          end
         end
 
         info = resolve_hover_info(uri, lsp_line, lsp_char, token: token, tokens: context[:tokens], token_index: context[:token_index], stages: stages)
@@ -362,10 +365,11 @@ module MilkTea
           token_index = context[:token_index]
         end
 
-        return nil unless token&.type == :identifier
-
         tokens ||= @workspace.get_tokens(uri) || []
         token_index = tokens.index(token) if token_index.nil?
+        member_access_kw = token_index && keyword_member_access_token?(tokens, token_index)
+        return nil unless token&.type == :identifier || member_access_kw
+
         if token_index
           module_info = module_declaration_info_at(tokens, token_index)
           if module_info
@@ -1496,6 +1500,22 @@ module MilkTea
       def builtin_in_member_access_context?(tokens, token_index)
         prev_index = previous_non_trivia_token_index(tokens, token_index)
         prev_index && tokens[prev_index].type == :dot
+      end
+
+      def member_access_token?(context)
+        tokens = context[:tokens]
+        token_index = context[:token_index]
+        return false unless tokens && token_index
+        prev = previous_non_trivia_token_index(tokens, token_index)
+        prev && tokens[prev].type == :dot
+      end
+
+      def keyword_member_access_token?(tokens, token_index)
+        return false unless tokens && token_index
+        tok = tokens[token_index]
+        return false unless tok && tok.type != :identifier
+        prev = previous_non_trivia_token_index(tokens, token_index)
+        prev && tokens[prev].type == :dot
       end
 
       def builtin_value_specialization_info(name, tokens, token_index)
