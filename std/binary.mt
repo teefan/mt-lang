@@ -114,7 +114,7 @@ extending Writer:
     public editable function write_uint_at(position: ptr_uint, value: uint) -> void:
         let buffer_span = this.buffer.as_span()
         if position + 4 > buffer_span.len:
-            fatal(c"binary.write_u32_at position out of bounds")
+            fatal(c"binary.write_uint_at position out of bounds")
         unsafe:
             read(buffer_span.data + position) = ubyte<-(value & 0xFF)
             read(buffer_span.data + position + 1) = ubyte<-((value >> 8) & 0xFF)

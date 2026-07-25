@@ -167,7 +167,7 @@ function generate_handshake_key() -> Result[ulong, net.Error]:
                     return Result[ulong, net.Error].success(value = value)
 
 
-function decode_u32_at(data: span[ubyte], offset: ptr_uint) -> uint:
+function decode_uint_at(data: span[ubyte], offset: ptr_uint) -> uint:
     unsafe:
         return uint<-read(data.data + offset) | (uint<-read(data.data + offset + 1) << 8) | (uint<-read(data.data + offset + 2) << 16) | (uint<-read(data.data + offset + 3) << 24)
 
@@ -536,7 +536,7 @@ function handle_incoming_conn(conn: ref[Connection], msg: ref[chan.Message]) -> 
         conn.frame_since_last_recv = 0
         let hb_span = unsafe: span[ubyte](data = span.data + 1, len = span.len - 1)
         if hb_span.len >= 4:
-            let echoed = decode_u32_at(hb_span, 0)
+            let echoed = decode_uint_at(hb_span, 0)
             var ack = build_heartbeat_ack(echoed)
             let peer_addr_result = conn.channel.peer_address()
             match peer_addr_result:
@@ -555,7 +555,7 @@ function handle_incoming_conn(conn: ref[Connection], msg: ref[chan.Message]) -> 
         conn.frame_since_last_recv = 0
         let echo_span = unsafe: span[ubyte](data = span.data + 1, len = span.len - 1)
         if echo_span.len >= 4:
-            let echoed = decode_u32_at(echo_span, 0)
+            let echoed = decode_uint_at(echo_span, 0)
             if conn.last_heartbeat_sent > echoed:
                 conn.ping_rtt_frames = conn.last_heartbeat_sent - echoed
         msg.release()
@@ -920,7 +920,7 @@ function handle_incoming_session(session: ref[Session], msg: ref[chan.HostMessag
                 update_peer_last_recv(session, peer_payload.value)
                 let hb_span = unsafe: span[ubyte](data = span.data + 1, len = span.len - 1)
                 if hb_span.len >= 4:
-                    let echoed = decode_u32_at(hb_span, 0)
+                    let echoed = decode_uint_at(hb_span, 0)
                     var ack = build_heartbeat_ack(echoed)
                     let addr_result = msg.source.copy()
                     match addr_result:
@@ -973,7 +973,7 @@ function handle_connect_request(session: ref[Session], msg: ref[chan.HostMessage
         msg.release()
         return
 
-    let client_version = decode_u32_at(req_span, 0)
+    let client_version = decode_uint_at(req_span, 0)
     if client_version != session.config.protocol_version:
         var reject = build_connect_reject(reject_reason_version)
         let addr_result = msg.source.copy()

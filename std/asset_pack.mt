@@ -50,18 +50,18 @@ public function open(path: str) -> Result[Reader, Error]:
         stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.invalid_magic)
 
-    let version = decode_u16_le(unsafe: header_ptr + 4)
+    let version = decode_ushort_le(unsafe: header_ptr + 4)
     if version != VERSION:
         stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.unsupported_version)
 
-    let header_bits = decode_u16_le(unsafe: header_ptr + 6)
+    let header_bits = decode_ushort_le(unsafe: header_ptr + 6)
     if header_bits != HEADER_FLAGS:
         stdio.file_close(file)
         return Result[Reader, Error].failure(error= Error.unsupported_flags)
 
-    let entry_count = decode_u32_le(unsafe: header_ptr + 8)
-    let index_size_result = decode_u64_le(unsafe: header_ptr + 12)
+    let entry_count = decode_uint_le(unsafe: header_ptr + 8)
+    let index_size_result = decode_ulong_le(unsafe: header_ptr + 12)
     var index_size: ptr_uint
     match index_size_result:
         Result.failure as payload:
@@ -70,7 +70,7 @@ public function open(path: str) -> Result[Reader, Error]:
         Result.success as index_payload:
             index_size = index_payload.value
 
-    let data_offset_result = decode_u64_le(unsafe: header_ptr + 20)
+    let data_offset_result = decode_ulong_le(unsafe: header_ptr + 20)
     var data_offset: ptr_uint
     match data_offset_result:
         Result.failure as payload:
@@ -147,12 +147,12 @@ function read_entry_metadata(file: stdio.File?) -> Result[EntryMetadata, Error]:
     if not read_exact(file, prefix_ptr, ENTRY_PREFIX_SIZE_BYTES):
         return Result[EntryMetadata, Error].failure(error= Error.malformed_index)
 
-    let path_length = ptr_uint<-decode_u32_le(prefix_ptr)
+    let path_length = ptr_uint<-decode_uint_le(prefix_ptr)
     if path_length == 0:
         return Result[EntryMetadata, Error].failure(error= Error.malformed_index)
 
-    let entry_bits = decode_u32_le(unsafe: prefix_ptr + 4)
-    let data_offset_result = decode_u64_le(unsafe: prefix_ptr + 8)
+    let entry_bits = decode_uint_le(unsafe: prefix_ptr + 4)
+    let data_offset_result = decode_ulong_le(unsafe: prefix_ptr + 8)
     var data_offset: ptr_uint
     match data_offset_result:
         Result.failure as payload:
@@ -160,7 +160,7 @@ function read_entry_metadata(file: stdio.File?) -> Result[EntryMetadata, Error]:
         Result.success as data_offset_payload:
             data_offset = data_offset_payload.value
 
-    let stored_size_result = decode_u64_le(unsafe: prefix_ptr + 16)
+    let stored_size_result = decode_ulong_le(unsafe: prefix_ptr + 16)
     var stored_size: ptr_uint
     match stored_size_result:
         Result.failure as payload:
@@ -168,7 +168,7 @@ function read_entry_metadata(file: stdio.File?) -> Result[EntryMetadata, Error]:
         Result.success as stored_size_payload:
             stored_size = stored_size_payload.value
 
-    let unpacked_size_result = decode_u64_le(unsafe: prefix_ptr + 24)
+    let unpacked_size_result = decode_ulong_le(unsafe: prefix_ptr + 24)
     var unpacked_size: ptr_uint
     match unpacked_size_result:
         Result.failure as payload:
@@ -228,12 +228,12 @@ function bytes_equal_str(left: ptr[ubyte], left_len: ptr_uint, right: str) -> bo
     return true
 
 
-function decode_u16_le(bytes: ptr[ubyte]) -> uint:
+function decode_ushort_le(bytes: ptr[ubyte]) -> uint:
     unsafe:
         return uint<-read(bytes + 0) | (uint<-read(bytes + 1) << 8)
 
 
-function decode_u32_le(bytes: ptr[ubyte]) -> uint:
+function decode_uint_le(bytes: ptr[ubyte]) -> uint:
     unsafe:
         return (
             uint<-read(bytes + 0) |
@@ -243,7 +243,7 @@ function decode_u32_le(bytes: ptr[ubyte]) -> uint:
         )
 
 
-function decode_u64_le(bytes: ptr[ubyte]) -> Result[ptr_uint, Error]:
+function decode_ulong_le(bytes: ptr[ubyte]) -> Result[ptr_uint, Error]:
     if size_of(ptr[void]) < 8:
         var upper_index: ptr_uint = 4
         while upper_index < 8:

@@ -11,7 +11,7 @@ function test_random_deterministic_output_from_seed() -> t.Check:
     var b = rng.from_seed(42)
     var i: ptr_uint = 0
     while i < 10z:
-        t.expect(a.next_u32() == b.next_u32(), "same seed same output")?
+        t.expect(a.next_uint() == b.next_uint(), "same seed same output")?
         i += 1
     return t.ok()
 
@@ -23,7 +23,7 @@ function test_random_different_seeds_differ() -> t.Check:
     var diff = false
     var i: ptr_uint = 0
     while i < 10z:
-        if a.next_u32() != b.next_u32():
+        if a.next_uint() != b.next_uint():
             diff = true
             break
         i += 1
@@ -37,7 +37,7 @@ function test_random_fork_independent_streams() -> t.Check:
     var all_different = true
     var i: ptr_uint = 0
     while i < 10z:
-        if parent.next_u32() == child.next_u32():
+        if parent.next_uint() == child.next_uint():
             all_different = false
             break
         i += 1
@@ -45,12 +45,12 @@ function test_random_fork_independent_streams() -> t.Check:
 
 
 @[test]
-function test_random_next_f64_in_range() -> t.Check:
+function test_random_next_double_in_range() -> t.Check:
     var r = rng.from_seed(7)
     var ok_range = true
     var i: ptr_uint = 0
     while i < 100z:
-        let val = r.next_f64()
+        let val = r.next_double()
         if val < 0.0 or val >= 1.0:
             ok_range = false
             break
@@ -107,7 +107,7 @@ function test_random_from_seed_str_deterministic() -> t.Check:
     var b = rng.from_seed_str("hello")
     var i: ptr_uint = 0
     while i < 5z:
-        t.expect(a.next_u32() == b.next_u32(), "same string seed same output")?
+        t.expect(a.next_uint() == b.next_uint(), "same string seed same output")?
         i += 1
     return t.ok()
 
@@ -157,9 +157,9 @@ function test_random_skip_changes_output() -> t.Check:
     var b = rng.from_seed(42)
     var i: ptr_uint = 0
     while i < 3z:
-        b.next_u32()
+        b.next_uint()
         i += 1
-    return t.expect(a.next_u32() == b.next_u32(), "skip(3) matches three draws")
+    return t.expect(a.next_uint() == b.next_uint(), "skip(3) matches three draws")
 
 
 @[test]

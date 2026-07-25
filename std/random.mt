@@ -9,9 +9,9 @@ public struct Rng:
 
 public function from_seed(seed: ulong) -> Rng:
     var rng = Rng(state = 0ul, increment = (seed << 1ul) | 1ul)
-    rng.next_u32()
+    rng.next_uint()
     rng.state = rng.state + seed
-    rng.next_u32()
+    rng.next_uint()
     return rng
 
 
@@ -27,7 +27,7 @@ public function from_seed_str(seed_str: str) -> Rng:
 
 
 extending Rng:
-    public editable function next_u32() -> uint:
+    public editable function next_uint() -> uint:
         let oldstate = this.state
         this.state = oldstate * pcg_multiplier + this.increment
         let xorshifted = uint<-(((oldstate >> 18ul) ^ oldstate) >> 27ul)
@@ -35,67 +35,59 @@ extending Rng:
         return (xorshifted >> rot) | (xorshifted << (32u - rot))
 
 
-    public editable function next_u64() -> ulong:
-        let hi = ulong<-this.next_u32()
-        let lo = ulong<-this.next_u32()
+    public editable function next_ulong() -> ulong:
+        let hi = ulong<-this.next_uint()
+        let lo = ulong<-this.next_uint()
         return (hi << 32ul) | lo
 
 
-    public editable function next_f64() -> double:
-        let val = this.next_u32()
+    public editable function next_double() -> double:
+        let val = this.next_uint()
         return double<-val / 4294967296.0
 
 
-    public editable function next_f32() -> float:
-        let val = this.next_u32()
+    public editable function next_float() -> float:
+        let val = this.next_uint()
         return float<-val / 4294967296.0
 
 
     public editable function next_ubyte() -> ubyte:
-        let val = this.next_u32()
+        let val = this.next_uint()
         return ubyte<-(val & 0xFFu)
 
 
     public editable function next_bool() -> bool:
-        let val = this.next_u32()
+        let val = this.next_uint()
         return (val & 1u) != 0u
-
-
-    public editable function next_uint() -> uint:
-        return this.next_u32()
-
-
-    public editable function next_ulong() -> ulong:
-        return this.next_u64()
 
 
     public editable function next_uint_range(min: uint, max: uint) -> uint:
         if min >= max:
             return min
         let range = max - min
-        return min + (this.next_u32() % range)
+        return min + (this.next_uint() % range)
 
 
     public editable function next_int_range(min: int, max: int) -> int:
         if min >= max:
             return min
         let range = uint<-(max - min)
-        let offset = this.next_u32() % range
+        let offset = this.next_uint() % range
         return min + int<-offset
 
 
-    public editable function next_f64_range(min: double, max: double) -> double:
-        let t = this.next_f64()
+    public editable function next_double_range(min: double, max: double) -> double:
+        let t = this.next_double()
         return min + (max - min) * t
 
 
-    public editable function next_f32_range(min: float, max: float) -> float:
-        let t = this.next_f32()
+    public editable function next_float_range(min: float, max: float) -> float:
+        let t = this.next_float()
         return min + (max - min) * t
 
 
     public editable function chance(probability: double) -> bool:
-        return this.next_f64() < probability
+        return this.next_double() < probability
 
 
     public editable function pick_ref[T](items: span[T]) -> ptr[T]?:
@@ -130,17 +122,17 @@ extending Rng:
     public editable function skip(count: ptr_uint) -> void:
         var i: ptr_uint = 0
         while i < count:
-            this.next_u32()
+            this.next_uint()
             i += 1
 
 
     public editable function fork() -> Rng:
-        let seed = this.next_u64()
+        let seed = this.next_ulong()
         return from_seed(seed)
 
 
     public editable function seeds() -> array[ulong, 4]:
         return array[ulong, 4](
-            this.next_u64(), this.next_u64(),
-            this.next_u64(), this.next_u64()
+            this.next_ulong(), this.next_ulong(),
+            this.next_ulong(), this.next_ulong()
         )

@@ -189,7 +189,7 @@ extending char:
 #  hash mixes the value's bytes (FNV-1a); equal/order use native operators.
 # ---------------------------------------------------------------------------
 
-function hash_u32(value: uint) -> uint:
+function hash_uint(value: uint) -> uint:
     let fnv: uint = 0x811C9DC5
     let prime: uint = 0x01000193
     var h = fnv
@@ -200,14 +200,14 @@ function hash_u32(value: uint) -> uint:
     return h
 
 
-function hash_u64(value: ulong) -> uint:
-    return hash_u32(uint<-((value >> uint<-(32)) ^ value))
+function hash_ulong(value: ulong) -> uint:
+    return hash_uint(uint<-((value >> uint<-(32)) ^ value))
 
 
 extending byte:
     public static function hash(value: const_ptr[byte]) -> uint:
         unsafe:
-            return hash_u32(uint<-(int<-read(ptr[byte]<-value)))
+            return hash_uint(uint<-(int<-read(ptr[byte]<-value)))
 
 
     public static function equal(a: const_ptr[byte], b: const_ptr[byte]) -> bool:
@@ -229,7 +229,7 @@ extending byte:
 extending ubyte:
     public static function hash(value: const_ptr[ubyte]) -> uint:
         unsafe:
-            return hash_u32(uint<-read(ptr[ubyte]<-value))
+            return hash_uint(uint<-read(ptr[ubyte]<-value))
 
 
     public static function equal(a: const_ptr[ubyte], b: const_ptr[ubyte]) -> bool:
@@ -251,7 +251,7 @@ extending ubyte:
 extending short:
     public static function hash(value: const_ptr[short]) -> uint:
         unsafe:
-            return hash_u32(uint<-(int<-read(ptr[short]<-value)))
+            return hash_uint(uint<-(int<-read(ptr[short]<-value)))
 
 
     public static function equal(a: const_ptr[short], b: const_ptr[short]) -> bool:
@@ -273,7 +273,7 @@ extending short:
 extending ushort:
     public static function hash(value: const_ptr[ushort]) -> uint:
         unsafe:
-            return hash_u32(uint<-read(ptr[ushort]<-value))
+            return hash_uint(uint<-read(ptr[ushort]<-value))
 
 
     public static function equal(a: const_ptr[ushort], b: const_ptr[ushort]) -> bool:
@@ -295,7 +295,7 @@ extending ushort:
 extending long:
     public static function hash(value: const_ptr[long]) -> uint:
         unsafe:
-            return hash_u64(ulong<-read(ptr[long]<-value))
+            return hash_ulong(ulong<-read(ptr[long]<-value))
 
 
     public static function equal(a: const_ptr[long], b: const_ptr[long]) -> bool:
@@ -317,7 +317,7 @@ extending long:
 extending ulong:
     public static function hash(value: const_ptr[ulong]) -> uint:
         unsafe:
-            return hash_u64(read(ptr[ulong]<-value))
+            return hash_ulong(read(ptr[ulong]<-value))
 
 
     public static function equal(a: const_ptr[ulong], b: const_ptr[ulong]) -> bool:
@@ -339,7 +339,7 @@ extending ulong:
 extending ptr_int:
     public static function hash(value: const_ptr[ptr_int]) -> uint:
         unsafe:
-            return hash_u64(ulong<-read(ptr[ptr_int]<-value))
+            return hash_ulong(ulong<-read(ptr[ptr_int]<-value))
 
 
     public static function equal(a: const_ptr[ptr_int], b: const_ptr[ptr_int]) -> bool:
@@ -410,7 +410,7 @@ public function order_struct[T](a: const_ptr[T], b: const_ptr[T]) -> int:
 extending ptr_uint:
     public static function hash(value: const_ptr[ptr_uint]) -> uint:
         unsafe:
-            return hash_u64(ulong<-read(ptr[ptr_uint]<-value))
+            return hash_ulong(ulong<-read(ptr[ptr_uint]<-value))
 
 
     public static function equal(a: const_ptr[ptr_uint], b: const_ptr[ptr_uint]) -> bool:
