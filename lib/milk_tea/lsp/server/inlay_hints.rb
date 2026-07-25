@@ -44,47 +44,66 @@ module MilkTea
         while i < tokens.length - 1
           callee = tokens[i]
           next_tok = tokens[i + 1]
-
           prev_tok = i > 0 ? tokens[i - 1] : nil
 
-          if callee.type == :identifier && prev_tok&.type != :function && prev_tok&.type != :dot
-            binding = nil
-            lparen_index = nil
+          binding = nil
+          lparen_index = nil
 
+          if callee.type == :identifier && prev_tok&.type != :function
+            # Direct function call: func(...)
             if next_tok&.type == :lparen
               binding = facts.functions[callee.lexeme]
+              binding ||= facts.imports.each_value.find { |mod| mod.functions.key?(callee.lexeme) }&.functions&.dig(callee.lexeme)
               lparen_index = i + 1
             elsif next_tok&.type == :dot
               member = tokens[i + 2]
               member_lparen = tokens[i + 3]
               if member&.type == :identifier && member_lparen&.type == :lparen
-                module_binding = facts.imports[callee.lexeme]
-                binding = module_binding&.functions&.[](member.lexeme)
+                # Module-qualified call: mod.func(...)
+                mod_binding = facts.imports[callee.lexeme]
+                if mod_binding
+                  binding = mod_binding.functions[member.lexeme]
+                else
+                  # Instance method call: obj.method(...) or Type.static(...)
+                  receiver_type = resolve_dot_receiver_value_type(facts, callee.lexeme, callee.line, callee.column)
+                  receiver_type ||= facts.types[callee.lexeme]
+                  unless receiver_type
+                    receiver_type = facts.imports.each_value.find { |mod| mod.types.key?(callee.lexeme) }&.types&.dig(callee.lexeme)
+                  end
+                  if receiver_type
+                    methods = methods_for_receiver_type(facts, receiver_type)
+                    binding = methods[member.lexeme] || methods["static:#{member.lexeme}"]
+                  end
+                end
                 lparen_index = i + 3
               end
+            elsif prev_tok&.type == :dot && next_tok&.type == :lparen
+              # Standalone method call where callee IS the method: .method(...)
+              # Need to find the receiver from the previous segment
+              # This is not easily resolvable without the full chain context
+            end
+          end
+
+          if binding && lparen_index
+            arg_starts, closing_index = collect_call_argument_starts(tokens, lparen_index)
+            params_list = binding.respond_to?(:type) ? binding.type.params : []
+
+            arg_starts.each_with_index do |arg_tok, index|
+              break if index >= params_list.length
+              next unless position_in_range?(arg_tok.line - 1, arg_tok.column - 1, start_line, start_char, end_line, end_char)
+              next if self_describing_argument_expression?(tokens, arg_tok)
+              param_name = params_list[index].name
+              next if arg_tok.type == :identifier && arg_tok.lexeme == param_name
+
+              hints << {
+                position: { line: arg_tok.line - 1, character: arg_tok.column - 1 },
+                label: "#{params_list[index].name}: ",
+                kind: 2,
+                paddingRight: true
+              }
             end
 
-            if binding && lparen_index
-              arg_starts, closing_index = collect_call_argument_starts(tokens, lparen_index)
-              params_list = binding.type.params
-
-              arg_starts.each_with_index do |arg_tok, index|
-                break if index >= params_list.length
-                next unless position_in_range?(arg_tok.line - 1, arg_tok.column - 1, start_line, start_char, end_line, end_char)
-                next if self_describing_argument_expression?(tokens, arg_tok)
-                param_name = params_list[index].name
-                next if arg_tok.type == :identifier && arg_tok.lexeme == param_name
-
-                hints << {
-                  position: { line: arg_tok.line - 1, character: arg_tok.column - 1 },
-                  label: "#{params_list[index].name}: ",
-                  kind: 2,
-                  paddingRight: true
-                }
-              end
-
-              i = closing_index if closing_index
-            end
+            i = closing_index if closing_index
           end
 
           i += 1
@@ -121,6 +140,12 @@ module MilkTea
           next unless position_in_range?(func.line - 1, func.column - 1, start_line, start_char, end_line, end_char)
 
           binding = facts.functions[func.name]
+          unless binding
+            facts.imports.each_value do |mod|
+              binding = mod.functions[func.name]
+              break if binding
+            end
+          end
           next unless binding
 
           return_type = binding.type.return_type
