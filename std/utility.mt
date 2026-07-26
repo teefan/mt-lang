@@ -12,6 +12,7 @@
 ##   if chosen.selected: execute(chosen.name)
 
 import std.vec as vec
+import std.math as math
 
 
 public enum CombineMode: ubyte
@@ -52,7 +53,21 @@ function combine_scores(mode: CombineMode, scores: ref[vec.Vec[float]]) -> float
     if n == 0:
         return 0.0
 
-    if mode == CombineMode.geometric or mode == CombineMode.multiplicative:
+    if mode == CombineMode.geometric:
+        var product: float = 1.0
+        var i: ptr_uint = 0
+        while i < n:
+            let s_ptr = scores.get(i) else:
+                return 0.0
+            let s = unsafe: read(s_ptr)
+            if s <= 0.0:
+                return 0.0
+            product = product * s
+            i += 1
+        let exponent = 1.0 / float<-(n)
+        return float<-(math.pow(double<-(product), double<-(exponent)))
+
+    if mode == CombineMode.multiplicative:
         var product: float = 1.0
         var i: ptr_uint = 0
         while i < n:
