@@ -2227,6 +2227,46 @@ module MilkTea
               raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
             end
           end
+        when Types::Span
+          return {} unless receiver_type.is_a?(Types::Span)
+
+          substitutions = {}
+          if declared_receiver_type.element_type.is_a?(Types::TypeVar)
+            substitutions[declared_receiver_type.element_type.name] = receiver_type.element_type
+          elsif declared_receiver_type.element_type != receiver_type.element_type
+            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          end
+          substitutions
+        when Types::Task
+          return {} unless receiver_type.is_a?(Types::Task)
+
+          substitutions = {}
+          if declared_receiver_type.result_type.is_a?(Types::TypeVar)
+            substitutions[declared_receiver_type.result_type.name] = receiver_type.result_type
+          elsif declared_receiver_type.result_type != receiver_type.result_type
+            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          end
+          substitutions
+        when Types::SoA
+          return {} unless receiver_type.is_a?(Types::SoA)
+
+          substitutions = {}
+          if declared_receiver_type.element_type.is_a?(Types::TypeVar)
+            substitutions[declared_receiver_type.element_type.name] = receiver_type.element_type
+          elsif declared_receiver_type.element_type != receiver_type.element_type
+            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          end
+          substitutions
+        when Types::Simd
+          return {} unless receiver_type.is_a?(Types::Simd)
+
+          substitutions = {}
+          if declared_receiver_type.element_type.is_a?(Types::TypeVar)
+            substitutions[declared_receiver_type.element_type.name] = receiver_type.element_type
+          elsif declared_receiver_type.element_type != receiver_type.element_type
+            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+          end
+          substitutions
         else
           {}
         end

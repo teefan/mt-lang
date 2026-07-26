@@ -43,6 +43,10 @@ extending array[T, N]:
     public editable function as_iter() -> Iter[T]:
         return from_array[T, N](ref_of(this))
 
+extending span[T]:
+    public function as_iter() -> Iter[T]:
+        return from_span(this)
+
 ## ── Source: span ─────────────────────────────────────────────────────
 
 struct SpanIterState[T]:
