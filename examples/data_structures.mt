@@ -25,6 +25,7 @@ import std.graph as gmod
 import std.ring_buffer as ring_buf
 import std.sparse_set as sset
 import std.lru_cache as lru
+import std.iter as iter
 
 # ---------------------------------------------------------------------------
 # 1  Vec[T] — contiguous dynamic array
@@ -337,7 +338,33 @@ function lru_cache_demo() -> int:
     return int<-(has_a) + 1
 
 # ---------------------------------------------------------------------------
-# 22  Entrypoint
+# 22  Iter[T] — composable lazy iteration over collections
+# ---------------------------------------------------------------------------
+
+function is_even(x: int) -> bool:
+    return x % 2 == 0
+
+function triple(x: int) -> int:
+    return x * 3
+
+function iter_demo() -> int:
+    var v = vec.Vec[int].create()
+    v.push(1)
+    v.push(2)
+    v.push(3)
+    v.push(4)
+
+    let vec_it = v.as_iter()
+    let filtered = iter.iter_filter(vec_it, is_even)
+    let mapped = iter.iter_map(filtered, triple)
+    let result = iter.collect_vec(mapped)
+    let len = result.len()
+    let _result = result
+    v.release()
+    return int<-(len)
+
+# ---------------------------------------------------------------------------
+# 23  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -363,5 +390,6 @@ function main() -> int:
     total += ring_buffer_demo()
     total += sparse_set_demo()
     total += lru_cache_demo()
+    total += iter_demo()
     let _total = total
     return 0
