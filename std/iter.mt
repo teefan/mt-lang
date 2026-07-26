@@ -14,6 +14,7 @@
 ##   let v = iter.collect_vec(it2)
 
 import std.mem.heap as heap
+import std.mem.ptr as ptr
 import std.vec as v
 
 ## ── Core Iter type ───────────────────────────────────────────────────
@@ -89,7 +90,7 @@ public function filter_advance[T](state: ptr[void]) -> ptr[T]?:
     let _this = unsafe: read(s)
     var item = _this.inner.next_fn(_this.inner.state)
     while item != null:
-        if _this.pred(unsafe: read(item)):
+        if _this.pred(item.load()):
             return item
         item = _this.inner.next_fn(_this.inner.state)
     return null
@@ -123,7 +124,7 @@ public function map_advance[T, U](state: ptr[void]) -> ptr[U]?:
     let base: ptr[ubyte] = unsafe: ptr[ubyte]<-s
     let field_ptr = unsafe: base + ptr_uint<-current_offset
     let target: ptr[U] = unsafe: ptr[U]<-field_ptr
-    unsafe: read(target) = p.map_fn(unsafe: read(item))
+    target.store(p.map_fn(item.load()))
     return target
 
 public function map_release[T, U](state: ptr[void]) -> void:
@@ -214,7 +215,7 @@ public function enum_advance[T](state: ptr[void]) -> ptr[Enumerated[T]]?:
     let base: ptr[ubyte] = unsafe: ptr[ubyte]<-s
     let field_ptr = unsafe: base + ptr_uint<-current_offset
     let target: ptr[Enumerated[T]] = unsafe: ptr[Enumerated[T]]<-field_ptr
-    unsafe: read(target) = Enumerated[T](index = p.index, value = unsafe: read(item))
+    target.store(Enumerated[T](index = p.index, value = item.load()))
     unsafe: read(s).index += 1
     return target
 
@@ -238,7 +239,7 @@ public function iter_fold[T, U](iter: Iter[T], init: U, f: fn(accum: U, value: T
     var accum = init
     var item = iter.next_fn(iter.state)
     while item != null:
-        accum = f(accum, unsafe: read(item))
+        accum = f(accum, item.load())
         item = iter.next_fn(iter.state)
     iter.release_fn(iter.state)
     return accum
@@ -248,8 +249,8 @@ public function iter_fold[T, U](iter: Iter[T], init: U, f: fn(accum: U, value: T
 public function iter_find[T](iter: Iter[T], pred: fn(value: T) -> bool) -> Option[T]:
     var item = iter.next_fn(iter.state)
     while item != null:
-        if pred(unsafe: read(item)):
-            let val = unsafe: read(item)
+        if pred(item.load()):
+            let val = item.load()
             iter.release_fn(iter.state)
             return Option[T].some(value = val)
         item = iter.next_fn(iter.state)
@@ -261,7 +262,7 @@ public function iter_find[T](iter: Iter[T], pred: fn(value: T) -> bool) -> Optio
 public function iter_any[T](iter: Iter[T], pred: fn(value: T) -> bool) -> bool:
     var item = iter.next_fn(iter.state)
     while item != null:
-        if pred(unsafe: read(item)):
+        if pred(item.load()):
             iter.release_fn(iter.state)
             return true
         item = iter.next_fn(iter.state)
@@ -273,7 +274,7 @@ public function iter_any[T](iter: Iter[T], pred: fn(value: T) -> bool) -> bool:
 public function iter_all[T](iter: Iter[T], pred: fn(value: T) -> bool) -> bool:
     var item = iter.next_fn(iter.state)
     while item != null:
-        if not pred(unsafe: read(item)):
+        if not pred(item.load()):
             iter.release_fn(iter.state)
             return false
         item = iter.next_fn(iter.state)
@@ -297,7 +298,7 @@ public function collect_vec[T](iter: Iter[T]) -> v.Vec[T]:
     var result = v.Vec[T].create()
     var item = iter.next_fn(iter.state)
     while item != null:
-        result.push(unsafe: read(item))
+        result.push(item.load())
         item = iter.next_fn(iter.state)
     iter.release_fn(iter.state)
     return result

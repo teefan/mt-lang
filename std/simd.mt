@@ -9,18 +9,20 @@
 ##   let v = simd.load_aligned_float4(ptr)
 ##   let s = simd.horizontal_sum_float4(v)
 
+import std.mem.ptr as ptr
+
 ## ── simd[float, 4] ──────────────────────────────────────────────────
 
-public function load_aligned_float4(ptr: ptr[float]) -> simd[float, 4]:
-    let p = unsafe: ptr[simd[float, 4]]<-ptr
-    return unsafe: read(p)
+public function load_aligned_float4(p: ptr[float]) -> simd[float, 4]:
+    let q = unsafe: ptr[simd[float, 4]]<-p
+    return q.load()
 
 public function load_unaligned_float4(ptr: ptr[float]) -> simd[float, 4]:
     return load_aligned_float4(ptr)
 
-public function store_aligned_float4(ptr: ptr[float], value: simd[float, 4]) -> void:
-    let p = unsafe: ptr[simd[float, 4]]<-ptr
-    unsafe: read(p) = value
+public function store_aligned_float4(p: ptr[float], value: simd[float, 4]) -> void:
+    let q = unsafe: ptr[simd[float, 4]]<-p
+    q.store(value)
 
 public function store_unaligned_float4(ptr: ptr[float], value: simd[float, 4]) -> void:
     store_aligned_float4(ptr, value)
@@ -35,14 +37,14 @@ public function dot_float4(a: simd[float, 4], b: simd[float, 4]) -> float:
 
 public function load_aligned_int4(ptr: ptr[int]) -> simd[int, 4]:
     let p = unsafe: ptr[simd[int, 4]]<-ptr
-    return unsafe: read(p)
+    return p.load()
 
 public function load_unaligned_int4(ptr: ptr[int]) -> simd[int, 4]:
     return load_aligned_int4(ptr)
 
 public function store_aligned_int4(ptr: ptr[int], value: simd[int, 4]) -> void:
     let p = unsafe: ptr[simd[int, 4]]<-ptr
-    unsafe: read(p) = value
+    p.store(value)
 
 public function store_unaligned_int4(ptr: ptr[int], value: simd[int, 4]) -> void:
     store_aligned_int4(ptr, value)
@@ -57,7 +59,7 @@ public function dot_int4(a: simd[int, 4], b: simd[int, 4]) -> int:
 
 public function load_aligned_float8(ptr: ptr[float]) -> simd[float, 8]:
     let p = unsafe: ptr[simd[float, 8]]<-ptr
-    return unsafe: read(p)
+    return p.load()
 
 public function load_unaligned_float8(ptr: ptr[float]) -> simd[float, 8]:
     return load_aligned_float8(ptr)
@@ -72,7 +74,7 @@ public function dot_float8(a: simd[float, 8], b: simd[float, 8]) -> float:
 
 public function load_aligned_double2(ptr: ptr[double]) -> simd[double, 2]:
     let p = unsafe: ptr[simd[double, 2]]<-ptr
-    return unsafe: read(p)
+    return p.load()
 
 public function load_unaligned_double2(ptr: ptr[double]) -> simd[double, 2]:
     return load_aligned_double2(ptr)
