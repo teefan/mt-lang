@@ -86,7 +86,7 @@ module MilkTea
           end
 
           begin
-            return resolve_type_ref_for_analysis(type_name, analysis)
+            return method_dispatch_receiver_type(resolve_type_ref_for_analysis(type_name, analysis))
           rescue LoweringError => error
             receiver_type_param_names = methods_receiver_type_argument_names!(type_name)
             raise error if receiver_type_param_names.empty?

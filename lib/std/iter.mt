@@ -38,6 +38,11 @@ public function from_array[T, N](arr: ref[array[T, N]]) -> Iter[T]:
 extending v.Vec[T]:
     public editable function as_iter() -> Iter[T]:
         return from_vec(ref_of(this))
+
+extending array[T, N]:
+    public editable function as_iter() -> Iter[T]:
+        return from_array[T, N](ref_of(this))
+
 ## ── Source: span ─────────────────────────────────────────────────────
 
 struct SpanIterState[T]:

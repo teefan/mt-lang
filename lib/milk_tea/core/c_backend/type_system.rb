@@ -276,6 +276,10 @@ module MilkTea
               raise CBackendError, "ref requires at least one type argument" unless [1, 2].include?(type.arguments.length)
 
               "#{c_type(type.arguments.length == 1 ? type.arguments.first : type.arguments[1])}*"
+            when "array"
+              raise CBackendError, "array requires exactly two type arguments" unless type.arguments.length == 2
+
+              c_type(type.arguments.first)
             when "str_buffer"
               raise CBackendError, "str_buffer requires exactly one type argument" unless str_buffer_type?(type)
 

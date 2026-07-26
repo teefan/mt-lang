@@ -4,12 +4,32 @@ module MilkTea
   module TypePredicates
     def method_dispatch_receiver_type(receiver_type)
       return receiver_type.definition if receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::VariantInstance)
+
       if receiver_type.is_a?(Types::Nullable)
         dispatch_base_type = method_dispatch_receiver_type(receiver_type.base)
         return receiver_type if dispatch_base_type == receiver_type.base
 
         return Types::Registry.nullable(dispatch_base_type)
       end
+
+      case receiver_type
+      when Types::Span
+        normalized = Types::Registry.span(Types::TypeVar.new("__receiver_arg0"))
+        return normalized == receiver_type ? receiver_type : normalized
+      when Types::SoA
+        normalized = Types::Registry.soa(Types::TypeVar.new("__receiver_arg0"), count: 0)
+        return normalized == receiver_type ? receiver_type : normalized
+      when Types::Simd
+        normalized = Types::Registry.simd(Types::TypeVar.new("__receiver_arg0"), lane_count: 0)
+        return normalized == receiver_type ? receiver_type : normalized
+      when Types::Task
+        normalized = Types::Registry.task(Types::TypeVar.new("__receiver_arg0"))
+        return normalized == receiver_type ? receiver_type : normalized
+      when Types::Dyn
+        normalized = Types::Registry.dyn(Types::TypeVar.new("__receiver_arg0"))
+        return normalized == receiver_type ? receiver_type : normalized
+      end
+
       return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
 
       dispatch_receiver_type = Types::Registry.generic_instance(
