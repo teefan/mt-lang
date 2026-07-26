@@ -7,6 +7,8 @@
 ## simd[T, N] is a built-in SIMD vector type that lowers to
 ## GCC/Clang vector extensions for portable, readable C output.
 
+import std.simd as simd
+
 # =============================================================================
 # 1  Construction and zero initialization
 # =============================================================================
@@ -207,7 +209,19 @@ function lane_with_demo() -> float:
     return updated2[0] + updated2[1] + updated2[2] + updated2[3]
 
 # =============================================================================
-# 10  Entrypoint
+# 10  std.simd helpers (load, store, reduction)
+# =============================================================================
+
+function simd_helpers_demo() -> float:
+    var buf: array[float, 4] = array[float, 4](1.0, 2.0, 3.0, 4.0)
+    let v = simd.load_aligned_float4(ptr_of(buf[0]))
+    let sum = simd.horizontal_sum_float4(v)
+    let d = simd.dot_float4(v, v)
+    simd.store_aligned_float4(ptr_of(buf[0]), v)
+    return sum + d
+
+# =============================================================================
+# 11  Entrypoint
 # =============================================================================
 
 function main() -> int:
@@ -223,6 +237,7 @@ function main() -> int:
     total += int<-(typed_declarations_demo())
     total += int<-(nested_expression_demo())
     total += int<-(lane_with_demo())
+    total += int<-(simd_helpers_demo())
 
     let _total = total
     return 0
