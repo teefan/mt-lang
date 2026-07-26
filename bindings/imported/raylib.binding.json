@@ -1726,15 +1726,15 @@
             "mode": "inout"
           },
           {
-            "name": "v_1",
+            "name": "v1",
             "type": "Vector2"
           },
           {
-            "name": "v_2",
+            "name": "v2",
             "type": "Vector2"
           },
           {
-            "name": "v_3",
+            "name": "v3",
             "type": "Vector2"
           },
           {
@@ -1752,27 +1752,27 @@
             "mode": "inout"
           },
           {
-            "name": "v_1",
+            "name": "v1",
             "type": "Vector2"
           },
           {
-            "name": "v_2",
+            "name": "v2",
             "type": "Vector2"
           },
           {
-            "name": "v_3",
+            "name": "v3",
             "type": "Vector2"
           },
           {
-            "name": "c_1",
+            "name": "c1",
             "type": "Color"
           },
           {
-            "name": "c_2",
+            "name": "c2",
             "type": "Color"
           },
           {
-            "name": "c_3",
+            "name": "c3",
             "type": "Color"
           }
         ]
@@ -1786,15 +1786,15 @@
             "mode": "inout"
           },
           {
-            "name": "v_1",
+            "name": "v1",
             "type": "Vector2"
           },
           {
-            "name": "v_2",
+            "name": "v2",
             "type": "Vector2"
           },
           {
-            "name": "v_3",
+            "name": "v3",
             "type": "Vector2"
           },
           {

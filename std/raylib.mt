@@ -452,9 +452,9 @@ public foreign function image_draw_rectangle(inout dst: Image, pos_x: int, pos_y
 public foreign function image_draw_rectangle_v(inout dst: Image, position: Vector2, size: Vector2, color: Color) -> void = c.ImageDrawRectangleV
 public foreign function image_draw_rectangle_rec(inout dst: Image, rec: Rectangle, color: Color) -> void = c.ImageDrawRectangleRec
 public foreign function image_draw_rectangle_lines(inout dst: Image, rec: Rectangle, thick: int, color: Color) -> void = c.ImageDrawRectangleLines
-public foreign function image_draw_triangle(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangle
-public foreign function image_draw_triangle_ex(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void = c.ImageDrawTriangleEx
-public foreign function image_draw_triangle_lines(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangleLines
+public foreign function image_draw_triangle(inout dst: Image, v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void = c.ImageDrawTriangle
+public foreign function image_draw_triangle_ex(inout dst: Image, v1: Vector2, v2: Vector2, v3: Vector2, c1: Color, c2: Color, c3: Color) -> void = c.ImageDrawTriangleEx
+public foreign function image_draw_triangle_lines(inout dst: Image, v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void = c.ImageDrawTriangleLines
 public foreign function image_draw_triangle_fan(inout dst: Image, points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.ImageDrawTriangleFan
 public foreign function image_draw_triangle_strip(inout dst: Image, points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.ImageDrawTriangleStrip
 public foreign function image_draw(inout dst: Image, src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void = c.ImageDraw
@@ -926,23 +926,23 @@ extending Image:
         image_draw_rectangle_lines(this, rec, thick, color)
 
 
-    public editable function draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
-        image_draw_triangle(this, v_1, v_2, v_3, color)
+    public editable function draw_triangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void:
+        image_draw_triangle(this, v1, v2, v3, color)
 
 
     public editable function draw_triangle_ex(
-        v_1: Vector2,
-        v_2: Vector2,
-        v_3: Vector2,
-        c_1: Color,
-        c_2: Color,
-        c_3: Color
+        v1: Vector2,
+        v2: Vector2,
+        v3: Vector2,
+        c1: Color,
+        c2: Color,
+        c3: Color
     ) -> void:
-        image_draw_triangle_ex(this, v_1, v_2, v_3, c_1, c_2, c_3)
+        image_draw_triangle_ex(this, v1, v2, v3, c1, c2, c3)
 
 
-    public editable function draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
-        image_draw_triangle_lines(this, v_1, v_2, v_3, color)
+    public editable function draw_triangle_lines(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void:
+        image_draw_triangle_lines(this, v1, v2, v3, color)
 
 
     public editable function draw_triangle_fan(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
