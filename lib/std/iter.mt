@@ -1,17 +1,17 @@
 ## std.iter — composable, lazy iteration adaptors.
 ##
 ## Each source/adaptor creates heap-allocated state linked through
-## function pointers. The outer release() call frees the entire
-## chain. Callbacks use fn types (function pointers, no captures).
+## function pointers. Release walks the chain to free all allocations.
+## Callbacks use fn types (function pointers, no captures).
+##
+## iter_map stores the mapped value inline in the adaptor state and
+## returns a pointer to it — no per-item allocation.
 ##
 ## Usage:
 ##   import std.iter
 ##   let it = iter.from_array(ref_of(arr))
 ##   let it2 = iter.iter_filter(it, pred)
 ##   let v = iter.collect_vec(it2)
-##
-## Note: iter_map allocates per mapped item; prefer collect_vec or
-## fold to consume values without leaking.
 
 import std.mem.heap as heap
 import std.vec as v
@@ -91,16 +91,20 @@ public function iter_filter[T](iter: Iter[T], pred: fn(value: T) -> bool) -> Ite
 struct MapState[T, U]:
     inner: Iter[T]
     map_fn: fn(value: T) -> U
+    current: U
 
 public function map_advance[T, U](state: ptr[void]) -> ptr[U]?:
     let s = unsafe: ptr[MapState[T, U]]<-state
-    let _this = unsafe: read(s)
-    let item = _this.inner.next_fn(_this.inner.state)
+    let current_offset = offset_of(MapState[T, U], current)
+    let p = unsafe: read(s)
+    let item = p.inner.next_fn(p.inner.state)
     if item == null:
         return null
-    let mapped = heap.must_alloc[U](1)
-    read(mapped) = _this.map_fn(read(item))
-    return mapped
+    let base: ptr[ubyte] = unsafe: ptr[ubyte]<-s
+    let field_ptr = unsafe: base + ptr_uint<-current_offset
+    let target: ptr[U] = unsafe: ptr[U]<-field_ptr
+    unsafe: read(target) = p.map_fn(unsafe: read(item))
+    return target
 
 public function map_release[T, U](state: ptr[void]) -> void:
     let s = unsafe: ptr[MapState[T, U]]<-state
