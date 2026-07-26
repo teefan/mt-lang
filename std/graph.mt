@@ -1,6 +1,10 @@
 import std.vec as vec
 import std.deque as deque
 import std.mem.heap as heap
+import std.binary_heap as heap_mod
+
+const INF: float = 3.4028235e38
+const NIL_NODE: ptr_uint = ~(ptr_uint<-0)
 
 public struct Edge:
     from: ptr_uint
@@ -18,6 +22,27 @@ public struct DenseGraph[T]:
     targets: vec.Vec[ptr_uint]
     weights: vec.Vec[float]
     is_directed: bool
+
+
+public struct HeapEntry:
+    node: ptr_uint
+    dist: float
+
+extending HeapEntry:
+    public static function order(a: const_ptr[HeapEntry], b: const_ptr[HeapEntry]) -> int:
+        let da = unsafe: read(a).dist
+        let db = unsafe: read(b).dist
+        if da < db:
+            return 1
+        else if da > db:
+            return -1
+        else:
+            return 0
+
+
+public struct ShortestPaths:
+    dist: vec.Vec[float]
+    prev: vec.Vec[ptr_uint]
 
 
 extending Graph[T]:
@@ -232,6 +257,15 @@ extending Graph[T]:
         var offsets = vec.Vec[ptr_uint].with_capacity(n + 1)
         var targets = vec.Vec[ptr_uint].with_capacity(m)
         var weights = vec.Vec[float].with_capacity(m)
+
+        if n == 0:
+            return DenseGraph[T](
+                nodes = vec.Vec[T].create(),
+                offsets = offsets,
+                targets = targets,
+                weights = weights,
+                is_directed = this.is_directed
+            )
 
         var counts = heap.must_alloc[ptr_uint](n)
         var pos = heap.must_alloc[ptr_uint](n)
@@ -514,8 +548,211 @@ extending DenseGraph[T]:
         return order
 
 
+    public function dijkstra(source: ptr_uint) -> ShortestPaths:
+        var dist = vec.Vec[float].with_capacity(this.node_count())
+        var prev = vec.Vec[ptr_uint].with_capacity(this.node_count())
+        let n = this.node_count()
+
+        var i: ptr_uint = 0
+        while i < n:
+            dist.push(INF)
+            prev.push(NIL_NODE)
+            i += 1
+
+        if n == 0 or source >= n:
+            return ShortestPaths(dist = dist, prev = prev)
+
+        let src_dist_ptr = dist.get(source) else:
+            return ShortestPaths(dist = dist, prev = prev)
+        unsafe:
+            read(src_dist_ptr) = 0.0
+
+        var pq = heap_mod.BinaryHeap[HeapEntry].create()
+        pq.push(HeapEntry(node = source, dist = 0.0))
+
+        while not pq.is_empty():
+            let entry = pq.pop() else:
+                break
+            let u = entry.node
+            let d = entry.dist
+
+            let cur_dist_ptr = dist.get(u) else:
+                break
+            if d > unsafe: read(cur_dist_ptr):
+                continue
+
+            let start_ptr = this.offsets.get(u) else:
+                break
+            let end_ptr = this.offsets.get(u + 1) else:
+                break
+            let start = unsafe: read(start_ptr)
+            let end = unsafe: read(end_ptr)
+            var j = start
+            while j < end:
+                let t_ptr = this.targets.get(j) else:
+                    break
+                let w_ptr = this.weights.get(j) else:
+                    break
+                let v = unsafe: read(t_ptr)
+                let weight = unsafe: read(w_ptr)
+                let new_dist = d + weight
+
+                let v_dist_ptr = dist.get(v) else:
+                    continue
+                if new_dist < unsafe: read(v_dist_ptr):
+                    unsafe:
+                        read(v_dist_ptr) = new_dist
+                    let v_prev_ptr = prev.get(v) else:
+                        continue
+                    unsafe:
+                        read(v_prev_ptr) = u
+                    pq.push(HeapEntry(node = v, dist = new_dist))
+                j += 1
+
+        pq.release()
+        return ShortestPaths(dist = dist, prev = prev)
+
+
+    public function astar(source: ptr_uint, target: ptr_uint, heuristic: fn(node: ptr_uint) -> float) -> vec.Vec[ptr_uint]:
+        var path = vec.Vec[ptr_uint].create()
+        let n = this.node_count()
+        if n == 0 or source >= n or target >= n:
+            return path
+
+        var g_score = heap.must_alloc[float](n)
+        var came_from = heap.must_alloc[ptr_uint](n)
+        var i: ptr_uint = 0
+        while i < n:
+            unsafe:
+                g_score[i] = INF
+                came_from[i] = NIL_NODE
+            i += 1
+        unsafe:
+            g_score[source] = 0.0
+
+        var pq = heap_mod.BinaryHeap[HeapEntry].create()
+        pq.push(HeapEntry(node = source, dist = heuristic(source)))
+
+        while not pq.is_empty():
+            let entry = pq.pop() else:
+                break
+            let u = entry.node
+
+            if u == target:
+                var cur = target
+                while cur != source:
+                    path.push(cur)
+                    unsafe:
+                        cur = came_from[cur]
+                path.push(source)
+                var li: ptr_uint = 0
+                var lj = path.len()
+                if lj > 0:
+                    lj -= 1
+                while li < lj:
+                    let a_ptr = path.get(li) else:
+                        break
+                    let b_ptr = path.get(lj) else:
+                        break
+                    let tmp = unsafe: read(a_ptr)
+                    unsafe:
+                        read(a_ptr) = unsafe: read(b_ptr)
+                        read(b_ptr) = tmp
+                    li += 1
+                    lj -= 1
+                break
+
+            let cur_g = unsafe: g_score[u]
+
+            let start_ptr = this.offsets.get(u) else:
+                break
+            let end_ptr = this.offsets.get(u + 1) else:
+                break
+            let start = unsafe: read(start_ptr)
+            let end = unsafe: read(end_ptr)
+            var j = start
+            while j < end:
+                let t_ptr = this.targets.get(j) else:
+                    break
+                let w_ptr = this.weights.get(j) else:
+                    break
+                let v = unsafe: read(t_ptr)
+                let weight = unsafe: read(w_ptr)
+                let tentative_g = cur_g + weight
+
+                if tentative_g < unsafe: g_score[v]:
+                    unsafe:
+                        g_score[v] = tentative_g
+                        came_from[v] = u
+                    pq.push(HeapEntry(node = v, dist = tentative_g + heuristic(v)))
+                j += 1
+
+        pq.release()
+        heap.release(g_score)
+        heap.release(came_from)
+        return path
+
+
     public editable function release():
         this.nodes.release()
         this.offsets.release()
         this.targets.release()
         this.weights.release()
+
+
+extending ShortestPaths:
+    public function distance_to(node: ptr_uint) -> float:
+        let d_ptr = this.dist.get(node) else:
+            return INF
+        return unsafe: read(d_ptr)
+
+
+    public function has_path_to(node: ptr_uint) -> bool:
+        let d_ptr = this.dist.get(node) else:
+            return false
+        return unsafe: read(d_ptr) < INF
+
+
+    public function path_to(target: ptr_uint) -> vec.Vec[ptr_uint]:
+        var path = vec.Vec[ptr_uint].create()
+        if target >= this.dist.len():
+            return path
+
+        let d_ptr = this.dist.get(target) else:
+            return path
+        if unsafe: read(d_ptr) >= INF:
+            return path
+
+        var cur = target
+        path.push(cur)
+        let nil = NIL_NODE
+        while cur != nil:
+            let p_ptr = this.prev.get(cur) else:
+                break
+            cur = unsafe: read(p_ptr)
+            if cur == nil:
+                break
+            path.push(cur)
+
+        var i: ptr_uint = 0
+        var j = path.len()
+        if j > 0:
+            j -= 1
+        while i < j:
+            let a_ptr = path.get(i) else:
+                break
+            let b_ptr = path.get(j) else:
+                break
+            let tmp = unsafe: read(a_ptr)
+            unsafe:
+                read(a_ptr) = unsafe: read(b_ptr)
+                read(b_ptr) = tmp
+            i += 1
+            j -= 1
+
+        return path
+
+
+    public editable function release():
+        this.dist.release()
+        this.prev.release()

@@ -276,6 +276,40 @@ function graph_demo() -> int:
     let _ec = ec
     return int<-(nc + ncount)
 
+
+# ---------------------------------------------------------------------------
+# 17b  Graph pathfinding — Dijkstra + A*
+# ---------------------------------------------------------------------------
+
+function graph_pathfinding_demo() -> int:
+    var g = gmod.Graph[str].create()
+    var i: ptr_uint = 0
+    while i < 5:
+        let _x = g.add_node("node")
+        i += 1
+
+    g.add_weighted_edge(0, 1, 2.0)
+    g.add_weighted_edge(0, 2, 6.0)
+    g.add_weighted_edge(1, 2, 3.0)
+    g.add_weighted_edge(1, 3, 1.0)
+    g.add_weighted_edge(2, 3, 1.0)
+    g.add_weighted_edge(3, 4, 2.0)
+
+    var dg = g.compile()
+    var paths = dg.dijkstra(0)
+    let dist_3 = int<-(paths.distance_to(3))
+    let has_path = if paths.has_path_to(4): 1 else: 0
+
+    var path = paths.path_to(4)
+    let path_len = int<-(path.len())
+
+    path.release()
+    paths.release()
+    dg.release()
+    g.release()
+    return dist_3 + has_path + path_len
+
+
 # ---------------------------------------------------------------------------
 # 18  SpatialGrid[T] — uniform spatial hash grid
 # ---------------------------------------------------------------------------
@@ -386,6 +420,7 @@ function main() -> int:
     total += bitset_demo()
     total += int<-(soa_demo())
     total += graph_demo()
+    total += graph_pathfinding_demo()
     total += spatial_demo()
     total += ring_buffer_demo()
     total += sparse_set_demo()
