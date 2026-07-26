@@ -256,3 +256,119 @@ extending Tween:
 
     public editable function stop() -> void:
         this.active = false
+
+
+# ── multi-type tweens ──
+
+public struct Tween2:
+    x: Tween
+    y: Tween
+
+
+public struct Tween3:
+    x: Tween
+    y: Tween
+    z: Tween
+
+
+public struct Tween4:
+    x: Tween
+    y: Tween
+    z: Tween
+    w: Tween
+
+
+extending Tween2:
+    public static function create(from: vec2, to: vec2, duration: float, easing: Easing) -> Tween2:
+        return Tween2(
+            x = Tween.create(from.x, to.x, duration, easing),
+            y = Tween.create(from.y, to.y, duration, easing)
+        )
+
+
+    public function value() -> vec2:
+        return vec2(x = this.x.value(), y = this.y.value())
+
+
+    public editable function step(dt: float) -> bool:
+        let done_x = this.x.step(dt)
+        let done_y = this.y.step(dt)
+        return done_x or done_y
+
+
+    public editable function reset(from: vec2, to: vec2, duration: float, easing: Easing) -> void:
+        this.x.reset(from.x, to.x, duration, easing)
+        this.y.reset(from.y, to.y, duration, easing)
+
+
+    public editable function stop() -> void:
+        this.x.stop()
+        this.y.stop()
+
+
+extending Tween3:
+    public static function create(from: vec3, to: vec3, duration: float, easing: Easing) -> Tween3:
+        return Tween3(
+            x = Tween.create(from.x, to.x, duration, easing),
+            y = Tween.create(from.y, to.y, duration, easing),
+            z = Tween.create(from.z, to.z, duration, easing)
+        )
+
+
+    public function value() -> vec3:
+        return vec3(x = this.x.value(), y = this.y.value(), z = this.z.value())
+
+
+    public editable function step(dt: float) -> bool:
+        let dx = this.x.step(dt)
+        let dy = this.y.step(dt)
+        let dz = this.z.step(dt)
+        return dx or dy or dz
+
+
+    public editable function reset(from: vec3, to: vec3, duration: float, easing: Easing) -> void:
+        this.x.reset(from.x, to.x, duration, easing)
+        this.y.reset(from.y, to.y, duration, easing)
+        this.z.reset(from.z, to.z, duration, easing)
+
+
+    public editable function stop() -> void:
+        this.x.stop()
+        this.y.stop()
+        this.z.stop()
+
+
+extending Tween4:
+    public static function create(from: vec4, to: vec4, duration: float, easing: Easing) -> Tween4:
+        return Tween4(
+            x = Tween.create(from.x, to.x, duration, easing),
+            y = Tween.create(from.y, to.y, duration, easing),
+            z = Tween.create(from.z, to.z, duration, easing),
+            w = Tween.create(from.w, to.w, duration, easing)
+        )
+
+
+    public function value() -> vec4:
+        return vec4(x = this.x.value(), y = this.y.value(), z = this.z.value(), w = this.w.value())
+
+
+    public editable function step(dt: float) -> bool:
+        let dx = this.x.step(dt)
+        let dy = this.y.step(dt)
+        let dz = this.z.step(dt)
+        let dw = this.w.step(dt)
+        return dx or dy or dz or dw
+
+
+    public editable function reset(from: vec4, to: vec4, duration: float, easing: Easing) -> void:
+        this.x.reset(from.x, to.x, duration, easing)
+        this.y.reset(from.y, to.y, duration, easing)
+        this.z.reset(from.z, to.z, duration, easing)
+        this.w.reset(from.w, to.w, duration, easing)
+
+
+    public editable function stop() -> void:
+        this.x.stop()
+        this.y.stop()
+        this.z.stop()
+        this.w.stop()
