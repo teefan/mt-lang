@@ -330,11 +330,18 @@ function add(a: int, b: int) -> int:
 function greet(name: str, greeting: str = "Hello", count: int = 1) -> int:
     return count
 
+const DEFAULT_COUNT: int = 3
+
+function serve(port: int = 8080, kind: State = State.running) -> int:
+    return port
+
 function defaults_demo() -> int:
     let a = greet("World")
     let b = greet("World", greeting = "Hi")
     let c = greet("World", count = 5)
-    return a + b + c
+    let d = greet("World", count = DEFAULT_COUNT)
+    let e = serve()
+    return a + b + c + d + int<-(e)
 
 const function square(x: int) -> int:
     return x * x

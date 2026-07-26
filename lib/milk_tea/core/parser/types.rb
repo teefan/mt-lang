@@ -61,7 +61,7 @@ module MilkTea
       def parse_param_default_value
         return nil unless match(:equal)
 
-        parse_primary
+        parse_expression
       end
 
       def parse_foreign_param
