@@ -786,7 +786,7 @@ module MilkTea
 
       def check_function_call(binding, arguments, scopes:)
         arguments = canonicalize_call_arguments(arguments, binding.type.params, binding.name, binding)
-        missing_defaults = fill_positional_defaults!(arguments, binding)
+        fill_positional_defaults!(arguments, binding)
 
         expected_params = binding.type.params
         required_count = count_required_params(binding)
@@ -1057,9 +1057,8 @@ module MilkTea
       end
 
       def fill_positional_defaults!(arguments, binding)
-        return 0 unless binding.ast.params.any? { |p| p.respond_to?(:default_value) && p.default_value }
+        return unless binding.ast.params.any? { |p| p.respond_to?(:default_value) && p.default_value }
 
-        required = count_required_params(binding)
         ast_params = binding.ast.params
         while arguments.length < ast_params.length
           ast_param = ast_params[arguments.length]
