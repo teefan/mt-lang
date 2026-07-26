@@ -433,6 +433,16 @@ module MilkTea
           if type == @ctx.types.fetch("str") || type == @ctx.types.fetch("cstr")
             return IR::StringLiteral.new(value:, type:, cstring: type == @ctx.types.fetch("cstr"))
           end
+        when Hash
+          return nil unless type.is_a?(Types::Struct)
+          fields = value.map do |name, field_value|
+            field_type = type.field(name)
+            return nil unless field_type
+            lowered = lower_compile_time_literal(field_value, field_type)
+            return nil unless lowered
+            IR::AggregateField.new(name:, value: lowered)
+          end
+          return IR::AggregateLiteral.new(type:, fields:)
         end
 
         nil

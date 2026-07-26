@@ -339,7 +339,11 @@ function defaults_demo() -> int:
 const function square(x: int) -> int:
     return x * x
 
+const function make_vec2(x: float, y: float) -> Vec2:
+    return Vec2(x = x, y = y)
+
 const SQUARE_5: int = square(5)
+const ORIGIN: Vec2 = make_vec2(0.0, 0.0)
 
 function const_func_demo() -> int:
     return square(7)

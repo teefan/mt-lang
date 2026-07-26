@@ -1609,6 +1609,24 @@ module MilkTea
       def evaluate_compile_time_call(expression, env:)
         case expression.callee
         when AST::Identifier
+          if (struct_type = @ctx.types[expression.callee.name]) && struct_type.is_a?(Types::Struct)
+            fields = {}
+            expression.arguments.each do |argument|
+              val = CompileTime.evaluate(argument.value, resolve_identifier: lambda { |id|
+                if env
+                  binding = lookup_value(id.name, env)
+                  return binding[:const_value] unless binding&.fetch(:const_value, nil).nil?
+                end
+                resolve_current_module_const_value(id.name)
+              }, resolve_member_access: lambda { |ma|
+                resolve_type_member_const_value(ma)
+              }, resolve_call: nil)
+              return nil unless val
+              fields[argument.name] = val
+            end
+            return fields
+          end
+
           case expression.callee.name
           when "field_of"
             evaluate_field_of_call(expression.arguments, env:)

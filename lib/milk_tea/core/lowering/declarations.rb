@@ -72,6 +72,13 @@ module MilkTea
             lower_const_value_literal(element_type, element)
           end
           IR::ArrayLiteral.new(type:, elements:)
+        when Hash
+          fields = const_value.map do |name, field_value|
+            field_type = type.field(name)
+            raise LoweringError, "constant struct field #{name} not found in #{type}" unless field_type
+            IR::AggregateField.new(name:, value: lower_const_value_literal(field_type, field_value))
+          end
+          IR::AggregateLiteral.new(type:, fields:)
         else
           IR::IntegerLiteral.new(value: 0, type:)
         end
