@@ -211,7 +211,7 @@ module MilkTea
         unresolved_import_paths.include?(import_path)
       end
 
-    def self.path_to_uri(path)
+      def self.path_to_uri(path)
         escaped_path = path.split('/').map { |seg| CGI.escape(seg).gsub('+', '%20') }.join('/')
         "file://#{escaped_path}"
       end
