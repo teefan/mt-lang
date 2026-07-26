@@ -23,6 +23,11 @@ struct Iter[T]:
     next_fn: fn(state: ptr[void]) -> ptr[T]?
     release_fn: fn(state: ptr[void]) -> void
 
+## ── Ownership helpers ────────────────────────────────────────────────
+
+public function own_to_ptr[T](owned: own[T]) -> ptr[void]:
+    return unsafe: ptr[void]<-owned
+
 ## ── Source: Vec ─────────────────────────────────────────────────────
 
 public function from_vec[T](vec: ref[v.Vec[T]]) -> Iter[T]:
@@ -70,7 +75,8 @@ public function from_span[T](sp: span[T]) -> Iter[T]:
     let state = heap.must_alloc[SpanIterState[T]](1)
     state.index = 0
     state.sp = sp
-    return Iter[T](state = unsafe: ptr[void]<-state, next_fn = span_advance[T], release_fn = span_release[T])
+    let p = own_to_ptr(state)
+    return Iter[T](state = p, next_fn = span_advance[T], release_fn = span_release[T])
 
 ## ── Adaptor: Filter ──────────────────────────────────────────────────
 
@@ -98,7 +104,8 @@ public function iter_filter[T](iter: Iter[T], pred: fn(value: T) -> bool) -> Ite
     let state = heap.must_alloc[FilterState[T]](1)
     state.inner = iter
     state.pred = pred
-    return Iter[T](state = unsafe: ptr[void]<-state, next_fn = filter_advance[T], release_fn = filter_release[T])
+    let p = own_to_ptr(state)
+    return Iter[T](state = p, next_fn = filter_advance[T], release_fn = filter_release[T])
 
 ## ── Adaptor: Map ─────────────────────────────────────────────────────
 
@@ -130,7 +137,8 @@ public function iter_map[T, U](iter: Iter[T], f: fn(value: T) -> U) -> Iter[U]:
     let state = heap.must_alloc[MapState[T, U]](1)
     state.inner = iter
     state.map_fn = f
-    return Iter[U](state = unsafe: ptr[void]<-state, next_fn = map_advance[T, U], release_fn = map_release[T, U])
+    let p = own_to_ptr(state)
+    return Iter[U](state = p, next_fn = map_advance[T, U], release_fn = map_release[T, U])
 
 ## ── Adaptor: Take ────────────────────────────────────────────────────
 
@@ -156,7 +164,8 @@ public function iter_take[T](iter: Iter[T], n: int) -> Iter[T]:
     let state = heap.must_alloc[TakeState[T]](1)
     state.inner = iter
     state.remaining = n
-    return Iter[T](state = unsafe: ptr[void]<-state, next_fn = take_advance[T], release_fn = take_release[T])
+    let p = own_to_ptr(state)
+    return Iter[T](state = p, next_fn = take_advance[T], release_fn = take_release[T])
 
 ## ── Adaptor: Skip ────────────────────────────────────────────────────
 
@@ -184,7 +193,8 @@ public function iter_skip[T](iter: Iter[T], n: int) -> Iter[T]:
     let state = heap.must_alloc[SkipState[T]](1)
     state.inner = iter
     state.skip_count = n
-    return Iter[T](state = unsafe: ptr[void]<-state, next_fn = skip_advance[T], release_fn = skip_release[T])
+    let p = own_to_ptr(state)
+    return Iter[T](state = p, next_fn = skip_advance[T], release_fn = skip_release[T])
 
 ## ── Adaptor: Enumerate ────────────────────────────────────────────────
 
@@ -221,7 +231,9 @@ public function iter_enumerate[T](iter: Iter[T]) -> Iter[Enumerated[T]]:
     let state = heap.must_alloc[EnumerateState[T]](1)
     state.inner = iter
     state.index = 0
-    return Iter[Enumerated[T]](state = unsafe: ptr[void]<-state, next_fn = enum_advance[T], release_fn = enum_release[T])
+    let p = own_to_ptr(state)
+    let enum_it = Iter[Enumerated[T]](state = p, next_fn = enum_advance[T], release_fn = enum_release[T])
+    return enum_it
 
 ## ── Consumer: Fold ───────────────────────────────────────────────────
 
