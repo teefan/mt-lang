@@ -218,6 +218,12 @@ module MilkTea
             lower_contextual_expression(argument.value, env:, expected_type: element_type)
           end
           IR::ArrayLiteral.new(type:, elements:)
+        when :simd
+          element_type = simd_type?(type) ? type.element_type : array_element_type(type)
+          elements = expression.arguments.map do |argument|
+            lower_contextual_expression(argument.value, env:, expected_type: element_type)
+          end
+          IR::ArrayLiteral.new(type:, elements:)
         when :reinterpret
           argument = expression.arguments.fetch(0)
           source_type = infer_expression_type(argument.value, env:)

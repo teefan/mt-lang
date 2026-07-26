@@ -71,6 +71,10 @@ module MilkTea
         _intern([:soa, element_type, count]) { SoA.new(element_type, count: count) }
       end
 
+      def simd(element_type, lane_count:)
+        _intern([:simd, element_type, lane_count]) { Simd.new(element_type, lane_count: lane_count) }
+      end
+
       def lifetime_ref(name)
         LifetimeRef.new(name)
       end

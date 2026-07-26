@@ -218,11 +218,48 @@ module MilkTea
         return vector_op_result(operator, left_type, right_type) if vector_type?(left_type) || vector_type?(right_type)
         return matrix_op_result(operator, left_type, right_type) if matrix_type?(left_type) || matrix_type?(right_type)
         return quaternion_op_result(operator, left_type, right_type) if quaternion_type?(left_type) || quaternion_type?(right_type)
+        return simd_op_result(operator, left_type, right_type) if simd_type?(left_type) || simd_type?(right_type)
 
         nil
       end
 
     private
+
+      def simd_op_result(operator, left_type, right_type)
+        if simd_type?(left_type) && simd_type?(right_type) && left_type.element_type == right_type.element_type && left_type.lane_count == right_type.lane_count
+          return left_type if operator == "+" || operator == "-" || operator == "*" || operator == "/"
+        end
+
+        if simd_type?(left_type) && right_type.numeric? && right_type == left_type.element_type
+          return left_type if operator == "*" || operator == "/"
+        end
+
+        if left_type.numeric? && simd_type?(right_type) && left_type == right_type.element_type
+          return right_type if operator == "*"
+        end
+
+        nil
+      end
+
+      def simd_bitwise_result(left_type, right_type)
+        return nil unless simd_type?(left_type) && simd_type?(right_type) && left_type == right_type
+
+        left_type
+      end
+
+      def simd_mod_result(left_type, right_type)
+        return nil unless simd_type?(left_type) && left_type.element_type.integer?
+        return nil unless right_type == left_type.element_type || (simd_type?(right_type) && right_type == left_type)
+
+        left_type
+      end
+
+      def simd_shift_result(left_type, right_type)
+        return nil unless simd_type?(left_type) && left_type.element_type.integer?
+        return nil unless right_type.is_a?(Types::Primitive) && right_type.integer?
+
+        left_type
+      end
 
       def vector_op_result(operator, left_type, right_type)
         if vector_type?(left_type) && vector_type?(right_type) && left_type.element_type == right_type.element_type

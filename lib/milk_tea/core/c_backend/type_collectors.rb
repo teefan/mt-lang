@@ -270,6 +270,55 @@ module MilkTea
             end
           end
 
+          def collect_simd_types
+            simd_types = []
+            visited = {}
+
+            emitted_functions.each do |function|
+              collect_simd_type(function.return_type, simd_types, visited)
+              function.params.each do |param|
+                collect_simd_type(param.type, simd_types, visited)
+              end
+              collect_simd_from_statements(function.body, simd_types, visited)
+            end
+
+            @program.structs.each do |struct_decl|
+              struct_decl.fields.each do |field|
+                collect_simd_type(field.type, simd_types, visited)
+              end
+            end
+
+            simd_types.uniq
+          end
+
+          def collect_simd_from_statements(statements, simd_types, visited)
+            statements.each do |stmt|
+              case stmt
+              when IR::LocalDecl
+                collect_simd_type(stmt.type, simd_types, visited)
+              when IR::BlockStmt
+                collect_simd_from_statements(stmt.body, simd_types, visited)
+              when IR::IfStmt
+                collect_simd_from_statements(stmt.then_body || [], simd_types, visited)
+                collect_simd_from_statements(stmt.else_body || [], simd_types, visited)
+              when IR::WhileStmt
+                collect_simd_from_statements(stmt.body || [], simd_types, visited)
+              when IR::ForStmt
+                collect_simd_from_statements(stmt.body || [], simd_types, visited)
+              end
+            end
+          end
+
+          def collect_simd_type(type, simd_types, visited)
+            return unless type
+            return if visited[type]
+
+            if type.is_a?(Types::Simd)
+              simd_types << type
+              visited[type] = true
+            end
+          end
+
           def collect_generic_struct_decls
             collect_generic_struct_types.map do |type|
               fields = type.fields.map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) }

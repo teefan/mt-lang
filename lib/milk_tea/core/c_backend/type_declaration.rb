@@ -195,6 +195,13 @@ module MilkTea
             lines
           end
 
+          def emit_simd_type(type)
+            name = simd_type_name(type)
+            elem_c = primitive_c_type(type.element_type.name)
+            width = type.lane_count * Layout.primitive_layout(type.element_type).first
+            ["typedef #{elem_c} #{name} __attribute__((__vector_size__(#{width})));"]
+          end
+
           def struct_layout_attributes(struct_decl)
             attributes = []
             attributes << "packed" if struct_decl.packed

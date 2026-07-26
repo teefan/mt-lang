@@ -70,6 +70,13 @@ module MilkTea
         end
       when Types::GenericInstance
         generic_layout(type, stack)
+      when Types::Simd
+        element_layout = size_and_alignment(type.element_type, stack)
+        return unless element_layout
+
+        total = element_layout.first * type.lane_count
+        alignment = total > 16 ? 32 : 16
+        [total, alignment]
       else
         nil
       end

@@ -713,6 +713,7 @@ Native type operators:
 - Vectors (`vecN`/`ivecN`): `+`, `-`, `*` (component-wise) with same-type vectors; `*`, `/` with scalar; unary `-`
 - Matrices (`matN`): `+`, `-` with same-type matrices; `*`, `/` with scalar; unary `-`
 - Quaternions (`quat`): `+`, `-`, `*` (component-wise) with same-type quaternions; unary `-`
+- SIMD vectors (`simd[T, N]`): `+`, `-`, `*`, `/` (component-wise same-type or scalar), `%`, `&`, `|`, `^`, `~` (integer lanes), `<<`, `>>` (integer lanes, scalar shift), unary `-`/`~` (integer lanes for `~`)
 
 ## 10. Type System
 
@@ -762,6 +763,7 @@ Type constructors:
 - `fn(params...) -> R`
 - `proc(params...) -> R`
 - `SoA[T, N]` — Structure-of-Arrays: each struct field becomes a separate array of length `N`; access `soa[i].field` reads from column `field` at row `i`
+- `simd[T, N]` — SIMD vector: `N` numeric lanes (128 or 256 bits). Component-wise `+` `-` `*` `/` `%` `&` `|` `^` `~` `<<` `>>`. Lane access via `[i]` (compile-time index). Lowers to GCC/Clang vector extensions for portable x86/ARM vector code.
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: `{ void* data, void* vtable }`). Constructed via `adapt[Interface](value: ref[T])`. @see §6.
 - `atomic[T]` — atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load() -> T`, `store(value: T)`, `add(value: T) -> T`, `sub(value: T) -> T`, `exchange(value: T) -> T`. All operations use sequential consistency. Lowers to C11 `_Atomic T` with `__atomic_*` builtins.
 - `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.

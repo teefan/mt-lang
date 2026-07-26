@@ -38,6 +38,7 @@ module MilkTea
       when Types::Tuple then visit_tuple(type)
       when Types::Dyn then visit_dyn(type)
       when Types::SoA then visit_soa(type)
+      when Types::Simd then visit_simd(type)
       when Types::Event then visit_event(type)
       when Types::LifetimeRef then visit_lifetime_ref(type)
       else visit_default(type)
@@ -66,6 +67,7 @@ module MilkTea
     def visit_tuple(type); visit_children(type); end
     def visit_dyn(type); visit_children(type); end
     def visit_soa(type); visit_children(type); end
+    def visit_simd(type); visit_children(type); end
     def visit_event(type); visit_children(type); end
 
     def visit_type_var(type); end

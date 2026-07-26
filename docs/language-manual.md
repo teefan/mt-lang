@@ -960,6 +960,7 @@ Rules:
 - `ivec2` `ivec3` `ivec4` — integer vectors with `.x` `.y` `.z` `.w` fields
 - `mat3` `mat4` — column-major matrices; `mat3` has columns `.col0`–`.col2` (each `vec3`), `mat4` has `.col0`–`.col3` (each `vec4`)
 - `quat` — quaternion with `.x` `.y` `.z` `.w` fields; memory-layout compatible with `vec4`
+- `simd[T, N]` — SIMD vector with `N` lanes of numeric primitive type `T`; total width must be 128 or 256 bits. Supports component-wise arithmetic (`+` `-` `*` `/`), bitwise (`&` `|` `^` `~`), shift (`<<` `>>`), and compound assignment. Lane access via compile-time constant index `[i]`. Lowers to GCC/Clang `__attribute__((__vector_size__))`.
 
 Primitive type names are reserved. They cannot be reused for value bindings, parameters, locals, import aliases, or type parameters.
 
@@ -995,6 +996,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 - `Option[T]`
 - `Result[T, E]`
 - `SoA[T, N]` — Structure-of-Arrays: transforms `T`'s fields into separate arrays of length `N`; access as `soa[i].field`
+- `simd[T, N]` — SIMD vector: fixed-width vector of `N` numeric lanes. Constructed with `simd[T, N](lane0, lane1, ...)`. Supports component-wise `+` `-` `*` `/`, bitwise `&` `|` `^` `~`, shift `<<` `>>`, unary `-` `~`, and compound assignment. Lane access via compile-time constant `[i]`. Total width must be 128 or 256 bits. Lowers to GCC/Clang vector extensions.
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: data + vtable). Constructed via `adapt[Interface](value: ref[T])`. @see §3.5.
 - `atomic[T]` — atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load() -> T`, `store(value: T)`, `add(value: T) -> T`, `sub(value: T) -> T`, `exchange(value: T) -> T`. All operations use sequential consistency. Lowers to C11 `_Atomic T` with `__atomic_*` builtins. `atomic[T]` is zero-initializable and sendable.
 - `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.

@@ -511,15 +511,15 @@ module MilkTea
             )
           end
         when "%="
-          unless common_integer_type(target_type, value_type) == target_type
+          unless common_integer_type(target_type, value_type) == target_type || simd_mod_result(target_type, value_type)
             raise_sema_error("operator #{statement.operator} requires compatible integer types, got #{target_type} and #{value_type}")
           end
         when "&=", "|=", "^="
-          unless target_type == value_type && bitwise_type?(target_type)
+          unless (target_type == value_type && bitwise_type?(target_type)) || (simd_type?(target_type) && simd_type?(value_type) && target_type == value_type)
             raise_sema_error("operator #{statement.operator} requires matching integer or flags types, got #{target_type} and #{value_type}")
           end
         when "<<=", ">>="
-          unless target_type.is_a?(Types::Primitive) && target_type.integer? && value_type.is_a?(Types::Primitive) && value_type.integer?
+          unless (target_type.is_a?(Types::Primitive) && target_type.integer? && value_type.is_a?(Types::Primitive) && value_type.integer?) || simd_shift_result(target_type, value_type)
             raise_sema_error("operator #{statement.operator} requires integer operands, got #{target_type} and #{value_type}")
           end
         else

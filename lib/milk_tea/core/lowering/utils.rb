@@ -80,6 +80,10 @@ module MilkTea
           type.arguments[1].is_a?(Types::LiteralTypeArg)
       end
 
+      def simd_type?(type)
+        type.is_a?(Types::Simd)
+      end
+
       def array_element_type(type)
         return unless array_type?(type)
 
@@ -318,6 +322,10 @@ module MilkTea
         end
 
         if receiver_type.is_a?(Types::SoA)
+          return receiver_type.element_type
+        end
+
+        if simd_type?(receiver_type)
           return receiver_type.element_type
         end
 

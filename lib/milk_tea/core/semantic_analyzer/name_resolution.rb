@@ -291,6 +291,8 @@ module MilkTea
 
           return Types::Registry.soa(arguments[0], count: arguments[1].value) if name == "SoA"
 
+          return Types::Registry.simd(arguments[0], lane_count: arguments[1].value) if name == "simd"
+
           arguments = [type_ref.lifetime] + arguments if name == "ref" && type_ref.lifetime
           return Types::Registry.generic_instance(name, arguments)
         end
@@ -684,6 +686,7 @@ module MilkTea
         return true if matrix_type?(type)
         return true if quaternion_type?(type)
         return true if soa_type?(type)
+        return true if simd_type?(type)
         return true if atomic_type?(type)
 
         raise_sema_error("#{operation} does not support type #{type}")
@@ -715,6 +718,10 @@ module MilkTea
 
       def soa_type?(type)
         type.is_a?(Types::SoA)
+      end
+
+      def simd_type?(type)
+        type.is_a?(Types::Simd)
       end
 
       def array_type?(type)
@@ -926,6 +933,10 @@ module MilkTea
         end
 
         if soa_type?(receiver_type)
+          return receiver_type.element_type
+        end
+
+        if simd_type?(receiver_type)
           return receiver_type.element_type
         end
 

@@ -263,6 +263,7 @@ module MilkTea
           'Option' => 'Built-in optional type: `Option[T]`. Arms: `some(value: T)` and `none`. Use `let ... else:` or `?` for safe unwrapping.',
           'Result' => 'Built-in result type: `Result[T, E]`. Arms: `success(value: T)` and `failure(error: E)`. Use `let ... else:` or `?` for error propagation.',
           'SoA' => 'Struct-of-Arrays: `SoA[T, N]`. Each struct field becomes a separate array of length `N`. Access `soa[i].field` reads from column `field` at row `i`.',
+          'simd' => 'SIMD vector type: `simd[T, N]`. Fixed-width vector of `N` lanes of numeric primitive type `T`. Supports component-wise arithmetic, lane access via `[i]`, and explicit aligned/unaligned load/store. Lowers to GCC/Clang vector extensions for portable, readable C output.',
           'struct_handle' => 'Compile-time handle for a struct type. Obtained via reflection builtins like `fields_of`.',
           'field_handle' => 'Compile-time handle for a struct field. Exposes `.name` and `.type`. Obtained via `field_of` and `fields_of`.',
           'callable_handle' => 'Compile-time handle for a callable declaration. Obtained via `callable_of`. Used with `has_attribute`, `attribute_of`.',
@@ -1561,7 +1562,7 @@ module MilkTea
       end
 
       def builtin_type_constructor_hover_info(name, tokens, token_index)
-        return nil unless %w[array span Option Result SoA str_buffer ref ptr const_ptr own Task atomic].include?(name)
+        return nil unless %w[array span Option Result SoA str_buffer ref ptr const_ptr own Task atomic simd].include?(name)
 
         lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
@@ -1580,6 +1581,8 @@ module MilkTea
                     '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
                    when 'SoA'
                     '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
+                   when 'simd'
+                    '`simd[T, N](...)` constructs a SIMD vector value with `N` lanes of type `T`. Lanes are stored in a single vector register.'
                    when 'Option'
                     '`Option[T]` is a built-in optional type with arms `some(value: T)` and `none`.'
                    when 'Result'
@@ -1593,6 +1596,8 @@ module MilkTea
                        when 'span'
                          "builtin #{specialization}(data = ..., len = ...) -> #{specialization}"
                        when 'SoA'
+                         "builtin #{specialization}(...) -> #{specialization}"
+                       when 'simd'
                          "builtin #{specialization}(...) -> #{specialization}"
                        when 'Option'
                          "builtin #{specialization}(some: value = ...) / #{specialization}(none:)"
@@ -1610,6 +1615,8 @@ module MilkTea
                  '`span[T]` is the built-in non-owning contiguous view type.'
                when 'SoA'
                  '`SoA[T, N]` is the built-in Struct-of-Arrays type. Each struct field is stored in a separate contiguous array of `N` elements, improving SIMD/cache behavior for parallel field access.'
+               when 'simd'
+                 '`simd[T, N]` is the built-in SIMD vector type. Fixed-width vector of `N` numeric lanes. Supports component-wise arithmetic, lane access via `[i]`, and explicit aligned/unaligned load/store.'
                when 'Option'
                  '`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms.'
                when 'Result'

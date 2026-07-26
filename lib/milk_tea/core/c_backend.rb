@@ -169,6 +169,14 @@ module MilkTea
         lines << ""
       end
 
+      collect_simd_types.each do |type|
+        next if @emitted_simd_type_names&.include?(simd_type_name(type))
+        @emitted_simd_type_names ||= Set.new
+        @emitted_simd_type_names.add(simd_type_name(type))
+        lines.concat(emit_simd_type(type))
+        lines << ""
+      end
+
       if uses_entrypoint_argv_helpers?
         lines.concat(emit_entrypoint_argv_helpers)
         lines << ""

@@ -53,6 +53,24 @@ module MilkTea
         struct_type
       end
 
+      def check_simd_construction(simd_type, arguments, scopes:)
+        raise_sema_error("simd construction requires exactly #{simd_type.lane_count} positional arguments, got #{arguments.length}") unless arguments.length == simd_type.lane_count
+        raise_sema_error("simd construction does not accept named arguments") if arguments.any?(&:name)
+
+        element_type = simd_type.element_type
+        arguments.each do |argument|
+          actual_type = infer_expression(argument.value, scopes:, expected_type: element_type)
+          ensure_assignable!(
+            actual_type,
+            element_type,
+            "simd lane expects #{element_type}, got #{actual_type}",
+            expression: argument.value,
+            contextual_int_to_float: contextual_int_to_float_target?(element_type),
+          )
+        end
+        simd_type
+      end
+
       def check_struct_with_call(struct_type, _receiver_expression, arguments, scopes:)
         check_aggregate_field_arguments(struct_type, arguments, scopes:, context: "struct.with()")
         struct_type

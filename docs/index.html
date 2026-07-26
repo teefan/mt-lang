@@ -1272,6 +1272,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)</code></pre>
       <tr><td><code>fn(params...) -&gt; R</code></td><td>Function pointer type</td></tr>
       <tr><td><code>proc(params...) -&gt; R</code></td><td>Closure type (value captures)</td></tr>
       <tr><td><code>SoA[T, N]</code></td><td>Structure-of-Arrays: fields become separate arrays</td></tr>
+      <tr><td><code>simd[T, N]</code></td><td>SIMD vector: N numeric lanes (128/256-bit), GCC vector extensions</td></tr>
       <tr><td><code>dyn[Interface]</code></td><td>Runtime interface value (fat pointer)</td></tr>
       <tr><td><code>atomic[T]</code></td><td>Atomic value for lock-free concurrent access</td></tr>
       <tr><td><code>(T, U)</code></td><td>Tuple type</td></tr>
@@ -2529,7 +2530,7 @@ const TYPES = new Set([
   'bool','byte','short','int','long','ubyte','ushort','uint','ulong',
   'char','ptr_int','ptr_uint','float','double','void',
   'str','cstr','vec2','vec3','vec4','ivec2','ivec3','ivec4',
-  'mat3','mat4','quat','ptr','span','array','SoA',
+  'mat3','mat4','quat','ptr','span','array','SoA','simd',
   'Option','Result','Task','dyn','ref','const_ptr','own','str_buffer','proc',
   'field_handle','member_handle','callable_handle','attribute_handle',
   'EventError','Subscription','atomic',

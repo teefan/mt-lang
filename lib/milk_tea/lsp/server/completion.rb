@@ -15,7 +15,7 @@ module MilkTea
         ].freeze
 
         TYPE_CONSTRUCTOR_KEYWORDS = %w[
-          ptr ref span array dyn Option Result Task SoA str_buffer const_ptr
+          ptr ref span array dyn Option Result Task SoA str_buffer const_ptr simd
         ].freeze
 
         private

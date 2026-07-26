@@ -1560,6 +1560,48 @@ module MilkTea
       end
     end
 
+    class Simd < Base
+      attr_reader :name, :element_type, :lane_count, :module_name
+
+      def initialize(element_type, lane_count:)
+        @element_type = element_type
+        @lane_count = lane_count
+        @name = "simd[#{element_type}, #{lane_count}]"
+        @module_name = nil
+        @fields = {}.freeze
+        @hash = [self.class, element_type, lane_count].hash
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Simd) && other.element_type == element_type && other.lane_count == lane_count
+      end
+
+      alias == eql?
+
+      attr_reader :hash
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def numeric?
+        true
+      end
+
+      def to_s
+        @name
+      end
+
+      def children
+        [element_type]
+      end
+    end
+
     class Tuple < Base
       attr_reader :element_types, :field_names
 

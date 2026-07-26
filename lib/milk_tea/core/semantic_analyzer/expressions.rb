@@ -446,6 +446,10 @@ module MilkTea
           return receiver_type.element_type
         end
 
+        if simd_type?(receiver_type)
+          return receiver_type.element_type
+        end
+
         if array_type?(receiver_type) && !unsafe_context? && !addressable_storage_expression?(expression.receiver, scopes:)
           raise_sema_error("safe array indexing requires an addressable array value; bind it to a local first")
         end
@@ -489,6 +493,10 @@ module MilkTea
 
           operand_type
         when "~"
+          if simd_type?(operand_type)
+            raise_sema_error("operator ~ on simd requires integer element type, got #{operand_type.element_type}") unless operand_type.element_type.integer?
+            return operand_type
+          end
           raise_sema_error("operator ~ requires an integer or flags operand, got #{operand_type}") unless bitwise_type?(operand_type)
 
           operand_type
@@ -596,6 +604,9 @@ module MilkTea
           ensure_assignable!(right_type, @ctx.types.fetch("bool"), "operator #{expression.operator} requires bool operands")
           @ctx.types.fetch("bool")
         when "|", "&", "^"
+          simd_result = simd_bitwise_result(left_type, right_type)
+          return simd_result if simd_result
+
           # For Flags/Enum types, the operands must match and be bitwise-capable.
           unless left_type == right_type && (bitwise_type?(left_type) || left_type.is_a?(Types::Flags))
             raise_sema_error("operator #{expression.operator} requires matching integer or flags types, got #{left_type} and #{right_type}")
@@ -626,6 +637,9 @@ module MilkTea
 
           result_type
         when "%"
+          simd_result = simd_mod_result(left_type, right_type)
+          return simd_result if simd_result
+
           result_type = common_integer_type(left_type, right_type)
           unless result_type
             raise_sema_error("operator % requires compatible integer types, got #{left_type} and #{right_type}")
@@ -633,6 +647,9 @@ module MilkTea
 
           result_type
         when "<<", ">>"
+          simd_result = simd_shift_result(left_type, right_type)
+          return simd_result if simd_result
+
           unless left_type.is_a?(Types::Primitive) && left_type.integer? && right_type.is_a?(Types::Primitive) && right_type.integer?
             raise_sema_error("operator #{expression.operator} requires integer operands, got #{left_type} and #{right_type}")
           end
@@ -1051,6 +1068,8 @@ module MilkTea
           check_atomic_method_call(callable_kind, callable, receiver, expression.arguments, scopes:)
         when :struct
           check_aggregate_construction(callable, expression.arguments, scopes:)
+        when :simd
+          check_simd_construction(callable, expression.arguments, scopes:)
         when :struct_with
           check_struct_with_call(callable, receiver, expression.arguments, scopes:)
         when :variant_arm_ctor
@@ -1467,6 +1486,13 @@ module MilkTea
             return [:array, array_type, nil]
           end
 
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "simd"
+            raise_sema_error("simd requires exactly two type arguments") unless callee.arguments.length == 2
+
+            simd_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["simd"]), arguments: callee.arguments, nullable: false))
+            return [:simd, simd_type, nil]
+          end
+
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "span"
             raise_sema_error("span requires exactly one type argument") unless callee.arguments.length == 1
 
@@ -1526,7 +1552,7 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion)
+            return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion) || specialized_type.is_a?(Types::Simd)
           end
 
           raise_sema_error("unsupported callable specialization #{describe_expression(callee)}")

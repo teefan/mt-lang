@@ -561,6 +561,7 @@ Notes:
 ```mt
 array[T, N]      # fixed-size array
 SoA[T, N]        # Structure-of-Arrays: flatten struct fields into separate arrays
+simd[T, N]       # SIMD vector: N numeric lanes, 128/256-bit, lowers to GCC vector extensions
 str_buffer[N]   # fixed-capacity mutable UTF-8 text buffer
 ptr[T]           # raw pointer
 span[T]          # pointer + length view
@@ -771,6 +772,7 @@ Built-in vector, matrix, and quaternion types support component-wise arithmetic 
 - Vectors (`vecN`/`ivecN`): `+`, `-`, `*` (component-wise same-type); `*`, `/` (scalar); unary `-`
 - Matrices (`matN`): `+`, `-` (component-wise same-type); `*`, `/` (scalar); unary `-`
 - Quaternions (`quat`): `+`, `-`, `*` (component-wise same-type); unary `-`
+- SIMD vectors (`simd[T, N]`): `+`, `-`, `*`, `/` (component-wise same-type); `+`, `-`, `*`, `/` (scalar, when scalar matches element type); `%`, `&`, `|`, `^`, `~` (integer element types only); `<<`, `>>` (integer element types, shift-amount is scalar int); unary `-`, `~`
 
 ### Casts
 

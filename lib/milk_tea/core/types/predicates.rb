@@ -564,6 +564,17 @@ module MilkTea
         error.call("SoA element type must be a struct with fields") unless arguments.first.respond_to?(:fields) && arguments.first.fields.any?
         error.call("SoA length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
         error.call("SoA length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+      when "simd"
+        error.call("simd requires exactly two type arguments") unless arguments.length == 2
+        error.call("simd element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+        error.call("simd element type must be a numeric primitive") unless arguments.first.is_a?(Types::Primitive) && arguments.first.numeric?
+        error.call("simd lane count must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
+        error.call("simd lane count must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+        if integer_type_argument?(arguments[1])
+          width_bytes = arguments.first.name == "double" || arguments.first.name == "long" || arguments.first.name == "ulong" ? arguments[1].value * 8 : arguments.first.name == "int" || arguments.first.name == "uint" || arguments.first.name == "float" ? arguments[1].value * 4 : arguments.first.name == "short" || arguments.first.name == "ushort" ? arguments[1].value * 2 : arguments[1].value
+          valid = [16, 32].include?(width_bytes)
+          error.call("simd width must be 128 or 256 bits, got #{width_bytes * 8}") unless valid
+        end
       when "str_buffer"
         error.call("str_buffer requires exactly one type argument") unless arguments.length == 1
         error.call("str_buffer capacity must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments.first)
@@ -596,6 +607,14 @@ module MilkTea
 
     def array_type?(type)
       type.arguments.length == 2 && type.arguments[1].is_a?(Types::LiteralTypeArg) && type.arguments[1].value.is_a?(Integer)
+    end
+
+    def soa_type?(type)
+      type.is_a?(Types::SoA)
+    end
+
+    def simd_type?(type)
+      type.is_a?(Types::Simd)
     end
 
     def array_length(type)

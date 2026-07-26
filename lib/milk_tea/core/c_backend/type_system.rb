@@ -162,6 +162,9 @@ module MilkTea
             when Types::SoA
               base = soa_type_name(type)
               pointer ? "#{base}*" : base
+            when Types::Simd
+              base = simd_type_name(type)
+              pointer ? "#{base}*" : base
             when Types::Tuple
               base = tuple_type_name(type)
               pointer ? "#{base}*" : base
@@ -189,6 +192,11 @@ module MilkTea
           def soa_type_name(type)
             element_name = sanitize_identifier(type.element_type.respond_to?(:name) ? type.element_type.name : type.element_type.to_s)
             "mt_soa_#{element_name}_#{type.count}"
+          end
+
+          def simd_type_name(type)
+            element_name = sanitize_identifier(type.element_type.to_s)
+            "mt_simd_#{element_name}x#{type.lane_count}"
           end
 
           def tuple_type_name(type)

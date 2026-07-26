@@ -1503,7 +1503,58 @@ function soa_demo() -> float:
     return particles[0].x + particles[1].x + particles[0].y
 
 # =============================================================================
-# 26  emit — compile-time code generation
+# 26  SIMD vector types
+# =============================================================================
+
+function simd_demo_baseline() -> int:
+    var total: int = 0
+
+    let f4 = simd[float, 4](1.0, 2.0, 3.0, 4.0)
+    let i4 = simd[int, 4](10, 20, 30, 40)
+    let u8 = simd[ushort, 8](1, 2, 3, 4, 5, 6, 7, 8)
+
+    let fsum  = f4 + f4
+    let fdiff = f4 - f4
+    let fmul  = f4 * f4
+    let fdiv  = f4 / f4
+    let fneg  = -f4
+    let fscaled = f4 * 2.0
+    let sscaled = 3.0 * f4
+
+    let isum  = i4 + i4
+    let idiff = i4 - i4
+    let imul  = i4 * i4
+    let idiv  = i4 / i4
+    let ineg  = -i4
+
+    let lane0 = f4[0]
+    total += int<-(lane0)
+
+    var acc = simd[float, 4](0.0, 0.0, 0.0, 0.0)
+    acc += f4
+    acc -= f4
+    acc *= 2.0
+    acc /= 2.0
+
+    let _u8  = u8
+    let _fsum = fsum
+    let _fdiff = fdiff
+    let _fmul = fmul
+    let _fdiv = fdiv
+    let _fneg = fneg
+    let _fscaled = fscaled
+    let _sscaled = sscaled
+    let _isum = isum
+    let _idiff = idiff
+    let _imul = imul
+    let _idiv = idiv
+    let _ineg = ineg
+    let _acc = acc
+
+    return total
+
+# =============================================================================
+# 27  emit — compile-time code generation
 # =============================================================================
 
 const function generate_helpers() -> void:
@@ -1797,6 +1848,8 @@ function main() -> int:
     total += event_payload_demo()
     total += aio.wait(async_child())
     total += aio.wait(async_demo())
+
+    total += simd_demo_baseline()
 
     var dblr = Doubler(value = 0)
     total += apply_converter[Doubler](ref_of(dblr), 3)

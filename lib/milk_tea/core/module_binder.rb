@@ -145,6 +145,7 @@ module MilkTea
       return true if receiver_type.is_a?(Types::Matrix)
       return true if receiver_type.is_a?(Types::Quaternion)
       return true if receiver_type.is_a?(Types::SoA)
+      return true if receiver_type.is_a?(Types::Simd)
       return true if exported_types.value?(receiver_type)
       return true if imported_receiver_type?(receiver_type, analysis.imports)
       return exported_method_receiver?(receiver_type.base, analysis, exported_types) if receiver_type.is_a?(Types::Nullable)

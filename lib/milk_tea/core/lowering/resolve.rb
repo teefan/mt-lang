@@ -592,6 +592,11 @@ module MilkTea
             return [:array, nil, nil, array_type]
           end
 
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "simd"
+            simd_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["simd"]), arguments: callee.arguments, nullable: false))
+            return [:simd, nil, nil, simd_type]
+          end
+
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "span"
             span_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["span"]), arguments: callee.arguments, nullable: false))
             return [:struct_literal, nil, nil, span_type]
@@ -663,7 +668,7 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion)
+            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion) || specialized_type.is_a?(Types::Simd)
           end
 
           raise LoweringError, "unsupported specialization callee"
@@ -838,7 +843,7 @@ module MilkTea
             :reinterpret, :zero, :hash, :equal, :order,
             :dyn_method
             callee_type.return_type
-          when :struct_literal, :struct_with, :array, :variant_arm_ctor, :adapt
+          when :struct_literal, :struct_with, :array, :simd, :variant_arm_ctor, :adapt
             callee_type
           when :ref_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
@@ -2393,6 +2398,9 @@ module MilkTea
                  elsif name == "SoA"
                    validate_generic_type!(name, args)
                    Types::Registry.soa(args.fetch(0), count: args.fetch(1).value)
+                 elsif name == "simd"
+                   validate_generic_type!(name, args)
+                   Types::Registry.simd(args.fetch(0), lane_count: args.fetch(1).value)
                  else
                    validate_generic_type!(name, args)
                    args = [type_ref.lifetime] + args if name == "ref" && type_ref.lifetime
