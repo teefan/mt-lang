@@ -56,14 +56,22 @@ module MilkTea
         arms
       end
 
+      def parse_match_arm_pattern
+        pattern = parse_bitwise_xor
+        return pattern unless pattern.is_a?(AST::IntegerLiteral) && match(:dot_dot)
+
+        end_expr = parse_bitwise_xor
+        AST::RangeExpr.new(start_expr: pattern, end_expr:, line: previous.line, column: previous.column)
+      end
+
       def parse_match_expression_arm
         patterns = []
         if match(:else)
           patterns << AST::Identifier.new(name: "_", line: previous.line, column: previous.column)
         else
-          patterns << parse_bitwise_xor
+          patterns << parse_match_arm_pattern
           while match(:pipe)
-            patterns << parse_bitwise_xor
+            patterns << parse_match_arm_pattern
           end
         end
         binding_token = nil

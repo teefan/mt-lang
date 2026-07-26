@@ -551,6 +551,17 @@ function statements_demo() -> int:
         _:
             result = -1
 
+    # --- integer match with range patterns
+    var tier: int = 0
+    match result:
+        0..10:
+            tier = 1
+        11..100:
+            tier = 2
+        _:
+            tier = 3
+    result += tier
+
     # --- char-literal match on ubyte
     var ch: ubyte = '('
     match ch:

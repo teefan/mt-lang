@@ -332,9 +332,9 @@ module MilkTea
         if match(:else)
           patterns << AST::Identifier.new(name: "_", line: previous.line, column: previous.column)
         else
-          patterns << parse_bitwise_xor
+          patterns << parse_match_arm_pattern
           while match(:pipe)
-            patterns << parse_bitwise_xor
+            patterns << parse_match_arm_pattern
           end
         end
         binding_name = if match(:as)

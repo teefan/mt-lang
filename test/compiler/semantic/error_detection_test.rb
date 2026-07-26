@@ -2283,7 +2283,7 @@ class ErrorDetectionTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/must be an integer literal, char literal, or _/, error.message)
+    assert_match(/must be an integer literal, char literal, range, or _/, error.message)
   end
 
   def test_rejects_duplicate_wildcard_in_match

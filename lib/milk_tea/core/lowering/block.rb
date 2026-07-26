@@ -597,24 +597,56 @@ module MilkTea
               end
               lowered.concat(else_body)
             else
-              arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
-              cases = statement.arms.map do |arm|
-                body = lower_block(
-                  arm.body,
-                  env: local_env,
-                  active_defers: active_defers + local_defers,
-                  return_type:,
-                  loop_flow: arm_loop_flow,
-                  allow_return:,
-                )
-                if wildcard_arm_pattern?(arm.pattern)
-                  IR::SwitchDefaultCase.new(body:)
-                else
-                  value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
-                  IR::SwitchCase.new(value:, body:)
+              has_range_arms = statement.arms.any? { |arm| arm.pattern.is_a?(AST::RangeExpr) }
+
+              if has_range_arms
+                arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+                bool_type = @ctx.types.fetch("bool")
+                non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
+                wildcard = statement.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
+                else_body = if wildcard
+                              lower_block(wildcard.body, env: local_env, active_defers: active_defers + local_defers, return_type:, loop_flow: arm_loop_flow, allow_return:)
+                            else
+                              []
+                            end
+                non_wildcard.reverse_each do |arm|
+                  arm_body = lower_block(
+                    arm.body,
+                    env: local_env,
+                    active_defers: active_defers + local_defers,
+                    return_type:,
+                    loop_flow: arm_loop_flow,
+                    allow_return:,
+                  )
+                  cond = if arm.pattern.is_a?(AST::RangeExpr)
+                           lower_range_match_condition(arm.pattern, expression, bool_type, env: local_env)
+                         else
+                           lit = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+                           IR::Binary.new(operator: "==", left: expression, right: lit, type: bool_type)
+                         end
+                  else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
                 end
+                lowered.concat(else_body)
+              else
+                arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+                cases = statement.arms.map do |arm|
+                  body = lower_block(
+                    arm.body,
+                    env: local_env,
+                    active_defers: active_defers + local_defers,
+                    return_type:,
+                    loop_flow: arm_loop_flow,
+                    allow_return:,
+                  )
+                  if wildcard_arm_pattern?(arm.pattern)
+                    IR::SwitchDefaultCase.new(body:)
+                  else
+                    value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+                    IR::SwitchCase.new(value:, body:)
+                  end
+                end
+                lowered << IR::SwitchStmt.new(expression:, cases:, exhaustive: true)
               end
-              lowered << IR::SwitchStmt.new(expression:, cases:, exhaustive: true)
             end
             lowered.concat(expression_cleanups.flat_map(&:itself))
             end

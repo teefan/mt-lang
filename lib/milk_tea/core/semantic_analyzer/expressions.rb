@@ -804,8 +804,24 @@ module MilkTea
             next
           end
 
+          if arm.pattern.is_a?(AST::RangeExpr)
+            start_val = arm.pattern.start_expr
+            end_val   = arm.pattern.end_expr
+            unless (start_val.is_a?(AST::IntegerLiteral) || start_val.is_a?(AST::CharLiteral)) &&
+                   (end_val.is_a?(AST::IntegerLiteral) || end_val.is_a?(AST::CharLiteral))
+              raise_sema_error("range match arm bounds must be integer or char literals, got #{start_val.class.name}..#{end_val.class.name}")
+            end
+
+            range_key = [start_val.value, end_val.value]
+            raise_sema_error("duplicate match arm range #{range_key[0]}..#{range_key[1]}") if covered_values.key?(range_key)
+
+            covered_values[range_key] = true
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
           unless arm.pattern.is_a?(AST::IntegerLiteral) || arm.pattern.is_a?(AST::CharLiteral)
-            raise_sema_error("match arm for integer scrutinee must be an integer literal, char literal, or _, got #{arm.pattern.class.name}")
+            raise_sema_error("match arm for integer scrutinee must be an integer literal, char literal, range, or _, got #{arm.pattern.class.name}")
           end
 
           value = arm.pattern.value

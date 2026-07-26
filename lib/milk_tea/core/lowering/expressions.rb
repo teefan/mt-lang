@@ -1125,6 +1125,7 @@ module MilkTea
 
         switch_expression = lowered_expression
         string_if_chain = nil
+        range_if_chain = nil
         cases = if scrutinee_type.is_a?(Types::Variant)
                   kind_type = @ctx.types.fetch("int")
                   switch_expression = IR::Member.new(receiver: lowered_expression, member: "kind", type: kind_type)
@@ -1194,20 +1195,50 @@ module MilkTea
                   string_if_chain = else_body
                   nil
                 else
-                  expression.arms.map do |arm|
-                    arm_env = duplicate_env(env)
-                    value_setup, prepared_value = prepare_expression_for_inline_lowering(arm.value, env: arm_env, expected_type: result_type)
-                    body = value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))]
-                    if wildcard_arm_pattern?(arm.pattern)
-                      IR::SwitchDefaultCase.new(body: body)
-                    else
-                      IR::SwitchCase.new(value: lower_expression(arm.pattern, env: arm_env, expected_type: scrutinee_type), body: body)
+                  has_range_arms = expression.arms.any? { |arm| arm.pattern.is_a?(AST::RangeExpr) }
+
+                  if has_range_arms
+                    bool_type = @ctx.types.fetch("bool")
+                    non_wildcard = expression.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
+                    wildcard = expression.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
+                    else_body = []
+                    if wildcard
+                      wildcard_env = duplicate_env(env)
+                      wildcard_value_setup, wildcard_prepared = prepare_expression_for_inline_lowering(wildcard.value, env: wildcard_env, expected_type: result_type)
+                      else_body = wildcard_value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(wildcard_prepared, env: wildcard_env, expected_type: result_type))]
+                    end
+                    non_wildcard.reverse_each do |arm|
+                      arm_env = duplicate_env(env)
+                      value_setup, prepared_value = prepare_expression_for_inline_lowering(arm.value, env: arm_env, expected_type: result_type)
+                      then_body = value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))]
+                      cond = if arm.pattern.is_a?(AST::RangeExpr)
+                               lower_range_match_condition(arm.pattern, switch_expression, bool_type, env: arm_env)
+                             else
+                               lit = lower_expression(arm.pattern, env: arm_env, expected_type: scrutinee_type)
+                               IR::Binary.new(operator: "==", left: switch_expression, right: lit, type: bool_type)
+                             end
+                      else_body = [IR::IfStmt.new(condition: cond, then_body:, else_body:)]
+                    end
+                    range_if_chain = else_body
+                    nil
+                  else
+                    expression.arms.map do |arm|
+                      arm_env = duplicate_env(env)
+                      value_setup, prepared_value = prepare_expression_for_inline_lowering(arm.value, env: arm_env, expected_type: result_type)
+                      body = value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))]
+                      if wildcard_arm_pattern?(arm.pattern)
+                        IR::SwitchDefaultCase.new(body: body)
+                      else
+                        IR::SwitchCase.new(value: lower_expression(arm.pattern, env: arm_env, expected_type: scrutinee_type), body: body)
+                      end
                     end
                   end
                 end
 
         if string_if_chain
           [setup + string_if_chain, AST::Identifier.new(name: result_name)]
+        elsif range_if_chain
+          [setup + range_if_chain, AST::Identifier.new(name: result_name)]
         else
           [setup + [IR::SwitchStmt.new(expression: switch_expression, cases: cases, exhaustive: true)], AST::Identifier.new(name: result_name)]
         end

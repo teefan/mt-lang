@@ -9,6 +9,14 @@ module MilkTea
         range_expr?(expression)
       end
 
+      def lower_range_match_condition(range_pattern, scrutinee_ir, bool_type, env:)
+        start_ir = lower_expression(range_pattern.start_expr, env:, expected_type: nil)
+        end_ir   = lower_expression(range_pattern.end_expr, env:, expected_type: nil)
+        ge = IR::Binary.new(operator: ">=", left: scrutinee_ir, right: start_ir, type: bool_type)
+        le = IR::Binary.new(operator: "<=", left: scrutinee_ir, right: end_ir, type: bool_type)
+        IR::Binary.new(operator: "and", left: ge, right: le, type: bool_type)
+      end
+
       def range_start_of(iterable)
         iterable.start_expr
       end
