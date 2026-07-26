@@ -172,6 +172,43 @@ public function iter_skip[T](iter: Iter[T], n: int) -> Iter[T]:
     state.skip_count = n
     return Iter[T](state = unsafe: ptr[void]<-state, next_fn = skip_advance[T], release_fn = skip_release[T])
 
+## ── Adaptor: Enumerate ────────────────────────────────────────────────
+
+struct Enumerated[T]:
+    index: ptr_uint
+    value: T
+
+struct EnumerateState[T]:
+    inner: Iter[T]
+    index: ptr_uint
+    current: Enumerated[T]
+
+public function enum_advance[T](state: ptr[void]) -> ptr[Enumerated[T]]?:
+    let s = unsafe: ptr[EnumerateState[T]]<-state
+    let current_offset = offset_of(EnumerateState[T], current)
+    let p = unsafe: read(s)
+    let item = p.inner.next_fn(p.inner.state)
+    if item == null:
+        return null
+    let base: ptr[ubyte] = unsafe: ptr[ubyte]<-s
+    let field_ptr = unsafe: base + ptr_uint<-current_offset
+    let target: ptr[Enumerated[T]] = unsafe: ptr[Enumerated[T]]<-field_ptr
+    unsafe: read(target) = Enumerated[T](index = p.index, value = unsafe: read(item))
+    unsafe: read(s).index += 1
+    return target
+
+public function enum_release[T](state: ptr[void]) -> void:
+    let s = unsafe: ptr[EnumerateState[T]]<-state
+    let _this = unsafe: read(s)
+    _this.inner.release_fn(_this.inner.state)
+    heap.release[EnumerateState[T]](s)
+
+public function iter_enumerate[T](iter: Iter[T]) -> Iter[Enumerated[T]]:
+    let state = heap.must_alloc[EnumerateState[T]](1)
+    state.inner = iter
+    state.index = 0
+    return Iter[Enumerated[T]](state = unsafe: ptr[void]<-state, next_fn = enum_advance[T], release_fn = enum_release[T])
+
 ## ── Consumer: Fold ───────────────────────────────────────────────────
 
 public function iter_fold[T, U](iter: Iter[T], init: U, f: fn(accum: U, value: T) -> U) -> U:
