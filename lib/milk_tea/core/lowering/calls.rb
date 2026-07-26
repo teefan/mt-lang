@@ -136,6 +136,8 @@ module MilkTea
           end
         when :atomic_load, :atomic_store, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_compare_exchange
           lower_atomic_method_call(kind, receiver, expression, env:, type:)
+        when :simd_lane_with
+          lower_simd_lane_with(kind, receiver, expression, env:, type:)
         when :associated_method
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
@@ -1523,6 +1525,14 @@ module MilkTea
         end
       end
 
+      def simd_method_kind(receiver_type, name)
+        return unless simd_type?(receiver_type)
+
+        case name
+        when "with" then :simd_lane_with
+        end
+      end
+
       def lower_atomic_method_call(kind, receiver, expression, env:, type:)
         receiver_type = infer_expression_type(receiver, env:)
         elem_type = atomic_element_type(receiver_type)
@@ -1549,6 +1559,19 @@ module MilkTea
         when :atomic_compare_exchange
           raise LoweringError, "atomic compare_exchange is not yet implemented in the built-in surface; use std.sync.AtomicUint for compare-exchange operations"
         end
+      end
+
+      def lower_simd_lane_with(_kind, receiver, expression, env:, type:)
+        receiver_ir = lower_expression(receiver, env:)
+        index_ir = lower_expression(expression.arguments[0].value, env:, expected_type: @ctx.types.fetch("int"))
+        value_ir = lower_contextual_expression(expression.arguments[1].value, env:, expected_type: type.element_type)
+
+        IR::SimdLaneWith.new(
+          src: receiver_ir,
+          index: index_ir,
+          value: value_ir,
+          type:,
+        )
       end
 
       def lower_event_subscribe_call(expression, env:, runtime:, event_pointer:, type:, once: false)

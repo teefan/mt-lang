@@ -41,6 +41,10 @@ module MilkTea
       "compare_exchange" => :atomic_compare_exchange,
     }.freeze
 
+    SIMD_METHOD_KINDS = {
+      "with" => :simd_lane_with,
+    }.freeze
+
     def type_ref_from_specialization(expression)
       case expression.callee
       when AST::Identifier

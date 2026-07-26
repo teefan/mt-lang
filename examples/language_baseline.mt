@@ -1551,6 +1551,9 @@ function simd_demo_baseline() -> int:
     let _ineg = ineg
     let _acc = acc
 
+    let updated = f4.with(1, 999.0)
+    total += int<-(updated[1])
+
     return total
 
 # =============================================================================

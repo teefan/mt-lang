@@ -549,6 +549,8 @@ module MilkTea
                     when :atomic_compare_exchange then @ctx.types.fetch("bool")
                     end
               return [precomputed, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
+            when :simd_lane_with
+              return [precomputed, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: resolved_receiver_type)]
             end
           end
 
@@ -569,6 +571,13 @@ module MilkTea
                   when :atomic_compare_exchange then @ctx.types.fetch("bool")
                   end
             return [atomic_method, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
+          end
+
+          if (simd_method = simd_method_kind(resolved_receiver_type, callee.member))
+            ret = case simd_method
+                  when :simd_lane_with then resolved_receiver_type
+                  end
+            return [simd_method, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
           end
 
           field_receiver_type = infer_field_receiver_type(callee.receiver, env:)
@@ -872,7 +881,8 @@ module MilkTea
                           receiver_type.element_type
                         end
             Types::Registry.nullable(Types::Registry.generic_instance("ptr", [elem_type]))
-          when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_store, :atomic_compare_exchange
+          when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_store, :atomic_compare_exchange,
+            :simd_lane_with
             callee_type.return_type
           else
             raise LoweringError, "unsupported call kind #{kind}"

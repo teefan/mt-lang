@@ -197,7 +197,17 @@ function nested_expression_demo() -> float:
     return result[0] + combined[0]
 
 # =============================================================================
-# 9  Entrypoint
+# 9  Lane replacement with .with(index, value)
+# =============================================================================
+
+function lane_with_demo() -> float:
+    let v = simd[float, 4](1.0, 2.0, 3.0, 4.0)
+    let updated = v.with(0, 99.0)
+    let updated2 = updated.with(1, -1.0)
+    return updated2[0] + updated2[1] + updated2[2] + updated2[3]
+
+# =============================================================================
+# 10  Entrypoint
 # =============================================================================
 
 function main() -> int:
@@ -212,6 +222,7 @@ function main() -> int:
     total += int<-(array_interaction_demo())
     total += int<-(typed_declarations_demo())
     total += int<-(nested_expression_demo())
+    total += int<-(lane_with_demo())
 
     let _total = total
     return 0

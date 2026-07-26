@@ -95,6 +95,8 @@ module MilkTea
               emit_aggregate_literal(expression)
             when IR::ArrayLiteral
               emit_array_compound_literal(expression)
+            when IR::SimdLaneWith
+              emit_simd_lane_with(expression)
             when IR::VariantLiteral
               emit_variant_literal(expression)
             else
@@ -357,6 +359,15 @@ module MilkTea
 
           def emit_array_compound_literal(expression)
             "(#{c_declaration(expression.type, '')}) #{emit_array_initializer(expression)}"
+          end
+
+          def emit_simd_lane_with(expression)
+            simd_type = expression.type
+            elem_c = primitive_c_type(simd_type.element_type.name)
+            src = wrap_expression(expression.src)
+            idx = emit_expression(expression.index)
+            val = wrap_expression(expression.value)
+            "({ #{c_type(simd_type)} _mt_with = #{src}; ((#{elem_c}*)&_mt_with)[#{idx}] = #{val}; _mt_with; })"
           end
 
           def emit_zero_initializer(type)

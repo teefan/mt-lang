@@ -602,6 +602,27 @@ module MilkTea
         end
       end
 
+      def check_simd_method_call(kind, receiver_type, _receiver, arguments, scopes:)
+        raise_sema_error("simd methods do not support named arguments") if arguments.any?(&:name)
+
+        case kind
+        when :simd_lane_with
+          raise_sema_error("with expects exactly 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+          index_arg = arguments[0].value
+          index_type = infer_expression(index_arg, scopes:)
+          raise_sema_error("with index must be an integer, got #{index_type}") unless index_type.integer?
+
+          value_type = infer_expression(arguments[1].value, scopes:, expected_type: receiver_type.element_type)
+          ensure_assignable!(
+            value_type,
+            receiver_type.element_type,
+            "with expects lane value of type #{receiver_type.element_type}, got #{value_type}",
+          )
+          receiver_type
+        end
+      end
+
       def event_listener_type(event_type)
         params = []
         params << Types::Registry.parameter("value", event_type.payload_type) if event_type.payload_type
@@ -636,6 +657,12 @@ module MilkTea
         return unless atomic_type?(receiver_type)
 
         ATOMIC_METHOD_KINDS[name]
+      end
+
+      def simd_method_kind(receiver_type, name)
+        return unless simd_type?(receiver_type)
+
+        SIMD_METHOD_KINDS[name]
       end
 
       def check_atomic_method_call(kind, receiver_type, receiver, arguments, scopes:)

@@ -76,6 +76,7 @@ module MilkTea
     AggregateLiteral = Data.define(:type, :fields)
     AggregateField = Data.define(:name, :value)
     ArrayLiteral = Data.define(:type, :elements)
+    SimdLaneWith = Data.define(:src, :index, :value, :type)
     VariantDecl = Data.define(:name, :linkage_name, :arms, :source_module) do
       def initialize(name:, linkage_name:, arms:, source_module: nil) = super
     end

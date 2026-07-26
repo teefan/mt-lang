@@ -1066,6 +1066,8 @@ module MilkTea
           check_event_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :atomic_load, :atomic_store, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_compare_exchange
           check_atomic_method_call(callable_kind, callable, receiver, expression.arguments, scopes:)
+        when :simd_lane_with
+          check_simd_method_call(callable_kind, callable, receiver, expression.arguments, scopes:)
         when :struct
           check_aggregate_construction(callable, expression.arguments, scopes:)
         when :simd
@@ -1452,6 +1454,10 @@ module MilkTea
 
           if (atomic_method = atomic_method_kind(method_receiver_type, callee.member))
             return [atomic_method, method_receiver_type, callee.receiver]
+          end
+
+          if (simd_method = simd_method_kind(method_receiver_type, callee.member))
+            return [simd_method, method_receiver_type, callee.receiver]
           end
 
           field_receiver_type = infer_field_receiver_type(callee.receiver, scopes:)
