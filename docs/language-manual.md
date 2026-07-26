@@ -426,6 +426,19 @@ function add(a: int, b: int) -> int:
     return a + b
 ```
 
+Parameters may include default values using `= expr` after the type annotation. All required parameters must appear before any defaulted parameter. The default expression is inlined at each call site that omits the argument — there is zero runtime overhead and no function signature change.
+
+```mt
+function configure(host: str, port: int = 8080, debug: bool = false) -> void:
+    pass
+
+configure("localhost")                     # port=8080, debug=false
+configure("localhost", port = 3000)        # debug=false
+configure(host = "remote", debug = true)   # port=8080
+```
+
+Defaults are not supported on `external function` or `foreign function` declarations.
+
 Rules:
 
 - Parameters must be typed.

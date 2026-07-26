@@ -360,9 +360,19 @@ Ordinary functions:
 
 - Parameters must be typed.
 - Parameters are non-rebindable.
+- Parameters may include default values using `name: type = default_expr`. All required parameters must appear before defaulted parameters. Default calls are resolved at compile time by inlining the expression at each call site that omits the argument. Defaults are not supported on `external function` or `foreign function`.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
 - Generic function and method type parameters may use `implements` constraints.
+
+```mt
+function configure(host: str, port: int = 8080, debug: bool = false) -> void:
+    pass
+
+configure("localhost")                     # port=8080, debug=false
+configure("localhost", port = 3000)        # debug=false
+configure(host = "remote", debug = true)   # port=8080
+```
 
 `const function`:
 
