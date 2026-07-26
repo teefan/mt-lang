@@ -239,16 +239,37 @@ module MilkTea
             true
           elsif stmt.is_a?(AST::Assignment) && stmt.value.is_a?(AST::Identifier) && stmt.value.name == name
             true
+          elsif stmt.is_a?(AST::ReturnStmt) && own_cast_in_unsafe?(stmt.value, name)
+            true
           else
             false
           end
         end
       end
 
+      def own_cast_in_unsafe?(expr, name)
+        case expr
+        when AST::UnsafeExpr
+          case expr.expression
+          when AST::PrefixCast
+            expr.expression.expression.is_a?(AST::Identifier) && expr.expression.expression.name == name
+          end
+        else
+          false
+        end
+      end
+
       def own_struct_field_transfer?(expr, name)
-        return false unless expr.is_a?(AST::Call)
-        expr.arguments.any? do |arg|
-          arg.is_a?(AST::Argument) && arg.value.is_a?(AST::Identifier) && arg.value.name == name
+        case expr
+        when AST::Call
+          expr.arguments.any? do |arg|
+            next unless arg.is_a?(AST::Argument)
+
+            arg.value.is_a?(AST::Identifier) && arg.value.name == name ||
+              own_struct_field_transfer?(arg.value, name)
+          end
+        else
+          false
         end
       end
 
