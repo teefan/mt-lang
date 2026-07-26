@@ -6,7 +6,12 @@
 ##
 ## Usage:
 ##   import std.iter
-##   let v = iter.from_array(arr).filter(pred).map(f).take(5).collect_vec()
+##   let it = iter.from_array(ref_of(arr))
+##   let it2 = iter.iter_filter(it, pred)
+##   let v = iter.collect_vec(it2)
+##
+## Note: iter_map allocates per mapped item; prefer collect_vec or
+## fold to consume values without leaking.
 
 import std.mem.heap as heap
 import std.vec as v
@@ -64,7 +69,7 @@ public function filter_advance[T](state: ptr[void]) -> ptr[T]?:
     let _this = unsafe: read(s)
     var item = _this.inner.next_fn(_this.inner.state)
     while item != null:
-        if _this.pred(read(item)):
+        if _this.pred(unsafe: read(item)):
             return item
         item = _this.inner.next_fn(_this.inner.state)
     return null
@@ -134,6 +139,93 @@ public function iter_take[T](iter: Iter[T], n: int) -> Iter[T]:
     state.inner = iter
     state.remaining = n
     return Iter[T](state = unsafe: ptr[void]<-state, next_fn = take_advance[T], release_fn = take_release[T])
+
+## ── Adaptor: Skip ────────────────────────────────────────────────────
+
+struct SkipState[T]:
+    inner: Iter[T]
+    skip_count: int
+
+public function skip_advance[T](state: ptr[void]) -> ptr[T]?:
+    let s = unsafe: ptr[SkipState[T]]<-state
+    let _this = unsafe: read(s)
+    while _this.skip_count > 0:
+        let skipped = _this.inner.next_fn(_this.inner.state)
+        if skipped == null:
+            return null
+        unsafe: read(s).skip_count -= 1
+    return _this.inner.next_fn(_this.inner.state)
+
+public function skip_release[T](state: ptr[void]) -> void:
+    let s = unsafe: ptr[SkipState[T]]<-state
+    let _this = unsafe: read(s)
+    _this.inner.release_fn(_this.inner.state)
+    heap.release[SkipState[T]](s)
+
+public function iter_skip[T](iter: Iter[T], n: int) -> Iter[T]:
+    let state = heap.must_alloc[SkipState[T]](1)
+    state.inner = iter
+    state.skip_count = n
+    return Iter[T](state = unsafe: ptr[void]<-state, next_fn = skip_advance[T], release_fn = skip_release[T])
+
+## ── Consumer: Fold ───────────────────────────────────────────────────
+
+public function iter_fold[T, U](iter: Iter[T], init: U, f: fn(accum: U, value: T) -> U) -> U:
+    var accum = init
+    var item = iter.next_fn(iter.state)
+    while item != null:
+        accum = f(accum, unsafe: read(item))
+        item = iter.next_fn(iter.state)
+    iter.release_fn(iter.state)
+    return accum
+
+## ── Consumer: Find ───────────────────────────────────────────────────
+
+public function iter_find[T](iter: Iter[T], pred: fn(value: T) -> bool) -> Option[T]:
+    var item = iter.next_fn(iter.state)
+    while item != null:
+        if pred(unsafe: read(item)):
+            let val = unsafe: read(item)
+            iter.release_fn(iter.state)
+            return Option[T].some(value = val)
+        item = iter.next_fn(iter.state)
+    iter.release_fn(iter.state)
+    return Option[T].none
+
+## ── Consumer: Any ────────────────────────────────────────────────────
+
+public function iter_any[T](iter: Iter[T], pred: fn(value: T) -> bool) -> bool:
+    var item = iter.next_fn(iter.state)
+    while item != null:
+        if pred(unsafe: read(item)):
+            iter.release_fn(iter.state)
+            return true
+        item = iter.next_fn(iter.state)
+    iter.release_fn(iter.state)
+    return false
+
+## ── Consumer: All ────────────────────────────────────────────────────
+
+public function iter_all[T](iter: Iter[T], pred: fn(value: T) -> bool) -> bool:
+    var item = iter.next_fn(iter.state)
+    while item != null:
+        if not pred(unsafe: read(item)):
+            iter.release_fn(iter.state)
+            return false
+        item = iter.next_fn(iter.state)
+    iter.release_fn(iter.state)
+    return true
+
+## ── Consumer: Count ──────────────────────────────────────────────────
+
+public function iter_count[T](iter: Iter[T]) -> ptr_uint:
+    var count: ptr_uint = 0
+    var item = iter.next_fn(iter.state)
+    while item != null:
+        count += 1
+        item = iter.next_fn(iter.state)
+    iter.release_fn(iter.state)
+    return count
 
 ## ── Collect: Vec ─────────────────────────────────────────────────────
 
