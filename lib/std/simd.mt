@@ -50,6 +50,9 @@ public function store_unaligned_int4(ptr: ptr[int], value: simd[int, 4]) -> void
 public function horizontal_sum_int4(v: simd[int, 4]) -> int:
     return v[0] + v[1] + v[2] + v[3]
 
+public function dot_int4(a: simd[int, 4], b: simd[int, 4]) -> int:
+    return horizontal_sum_int4(a * b)
+
 ## ── simd[float, 8] (AVX) ────────────────────────────────────────────
 
 public function load_aligned_float8(ptr: ptr[float]) -> simd[float, 8]:
@@ -61,6 +64,9 @@ public function load_unaligned_float8(ptr: ptr[float]) -> simd[float, 8]:
 
 public function horizontal_sum_float8(v: simd[float, 8]) -> float:
     return v[0] + v[1] + v[2] + v[3] + v[4] + v[5] + v[6] + v[7]
+
+public function dot_float8(a: simd[float, 8], b: simd[float, 8]) -> float:
+    return horizontal_sum_float8(a * b)
 
 ## ── simd[double, 2] ─────────────────────────────────────────────────
 
