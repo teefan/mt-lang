@@ -338,7 +338,9 @@ module MilkTea
                   next resolve_enum_member_const_value(receiver_type, ma.member)
                 end
                 nil
-              }, resolve_call: nil)
+              }, resolve_call: lambda { |inner_call|
+                evaluate_compile_time_call(inner_call, scopes:)
+              })
               return nil unless val
               fields[argument.name] = val
             end

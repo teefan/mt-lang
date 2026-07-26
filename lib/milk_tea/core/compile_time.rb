@@ -109,8 +109,12 @@ module MilkTea
                 end
               end
               
-              ctx = @checker.instance_variable_get(:@ctx)
-              if (type = ctx.types[call_expr.callee.name]) && type.is_a?(Types::Struct)
+              types = if @checker.respond_to?(:types)
+                         @checker.types
+                       else
+                         @checker.instance_variable_get(:@ctx).types
+                       end
+              if (type = types[call_expr.callee.name]) && type.is_a?(Types::Struct)
                 fields = {}
                 call_expr.arguments.each do |argument|
                   val = evaluate_expression(argument.value, scopes:)

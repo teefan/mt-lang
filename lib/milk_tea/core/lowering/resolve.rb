@@ -1620,7 +1620,9 @@ module MilkTea
                 resolve_current_module_const_value(id.name)
               }, resolve_member_access: lambda { |ma|
                 resolve_type_member_const_value(ma)
-              }, resolve_call: nil)
+              }, resolve_call: lambda { |inner_call|
+                evaluate_compile_time_call(inner_call, env:)
+              })
               return nil unless val
               fields[argument.name] = val
             end
@@ -1830,12 +1832,16 @@ module MilkTea
           @lowerer = lowerer
         end
 
+        def types
+          @lowerer.instance_variable_get(:@ctx).types
+        end
+
         def evaluate_compile_time_const_value(expression, scopes: nil)
           @lowerer.send(:compile_time_const_value, expression, env: @lowerer.send(:empty_env))
         end
 
         def top_level_function(name)
-          @lowerer.instance_variable_get(:@ctx.functions)&.[](name)
+          @lowerer.instance_variable_get(:@ctx).functions&.[](name)
         end
 
         def raise_sema_error(message)
