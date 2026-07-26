@@ -579,7 +579,7 @@ Scrutinee types supported:
 
 - Enum: arm patterns must be members of that enum.
 - Variant: arm patterns must be arms of that variant; a payload arm may bind its fields with `as name` or destructure them inline with struct patterns.
-- Integer (`byte`, `short`, `int`, `long`, `ubyte`, `ushort`, `uint`, `ulong`, `ptr_int`, `ptr_uint`): arm patterns must be integer literals or char literals.
+- Integer (`byte`, `short`, `int`, `long`, `ubyte`, `ushort`, `uint`, `ulong`, `ptr_int`, `ptr_uint`): arm patterns must be integer literals, char literals, or range patterns (`a..b`).
 - `str`: arm patterns must be string literals (e.g., `"lex": ...`). Matches via full content comparison using the `equal` builtin.
 - Tuple: arm patterns must be tuple literal patterns whose elements may be integer literals, char literals, string literals, booleans, or `_` discard.
 

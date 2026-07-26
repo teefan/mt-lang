@@ -486,6 +486,17 @@ let label = match code:
     _: "other"
 ```
 
+Integer match arms also support range patterns via `start..end`:
+
+```mt
+let tier = match score:
+    0..10: "low"
+    11..50: "mid"
+    _: "high"
+```
+
+Range arms are refutable — they do not count toward exhaustiveness — and require `_`.
+
 `match` rules:
 
 - Enum and variant matches must be exhaustive unless `_` is present.

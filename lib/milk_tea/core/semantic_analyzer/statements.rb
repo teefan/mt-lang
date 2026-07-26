@@ -653,6 +653,8 @@ module MilkTea
               raise_sema_error("range match arm bounds must be integer or char literals, got #{start_val.class.name}..#{end_val.class.name}")
             end
 
+            raise_sema_error("range match arm start #{start_val.value} must be <= end #{end_val.value}") if start_val.value > end_val.value
+
             range_key = [start_val.value, end_val.value]
             raise_sema_error("duplicate match arm range #{range_key[0]}..#{range_key[1]}") if covered_values.key?(range_key)
 
