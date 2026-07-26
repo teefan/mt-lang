@@ -33,6 +33,11 @@ public function from_vec[T](vec: ref[v.Vec[T]]) -> Iter[T]:
 public function from_array[T, N](arr: ref[array[T, N]]) -> Iter[T]:
     return from_span(arr.as_span())
 
+## ── .as_iter() extending blocks ──────────────────────────────────────
+
+extending v.Vec[T]:
+    public editable function as_iter() -> Iter[T]:
+        return from_vec(ref_of(this))
 ## ── Source: span ─────────────────────────────────────────────────────
 
 struct SpanIterState[T]:

@@ -14,8 +14,8 @@ module MilkTea
 
       dispatch_receiver_type = Types::Registry.generic_instance(
         receiver_type.name,
-        receiver_type.arguments.each_with_index.map do |argument, index|
-          argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
+        receiver_type.arguments.each_with_index.map do |_argument, index|
+          Types::TypeVar.new("__receiver_arg#{index}")
         end,
       )
       dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
