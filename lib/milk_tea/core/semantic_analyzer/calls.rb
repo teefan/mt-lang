@@ -785,10 +785,14 @@ module MilkTea
       end
 
       def check_function_call(binding, arguments, scopes:)
-        arguments = canonicalize_call_arguments(arguments, binding.type.params, binding.name)
+        arguments = canonicalize_call_arguments(arguments, binding.type.params, binding.name, binding)
+        missing_defaults = fill_positional_defaults!(arguments, binding)
+
         expected_params = binding.type.params
-        unless call_arity_matches?(binding.type, arguments.length)
-          raise_sema_error(arity_error_message(binding.type, binding.name, arguments.length))
+        required_count = count_required_params(binding)
+        variadic = binding.type.is_a?(Types::Function) && binding.type.variadic
+        unless variadic ? arguments.length >= required_count : arguments.length <= expected_params.length && arguments.length >= required_count
+          raise_sema_error(arity_error_message(binding.type, binding.name, arguments.length, required_count:))
         end
 
         expected_params.each_with_index do |parameter, index|
@@ -1008,7 +1012,7 @@ module MilkTea
         resolve_interface_ref(interface_ref)
       end
 
-      def canonicalize_call_arguments(arguments, params, context_name)
+      def canonicalize_call_arguments(arguments, params, context_name, binding = nil)
         return arguments unless arguments.any?(&:name)
 
         named_seen = false
@@ -1030,7 +1034,52 @@ module MilkTea
           end
         end
 
+        fill_parameter_defaults!(by_position, params, binding, context_name)
+
         by_position.reject(&:nil?)
+      end
+
+      def fill_parameter_defaults!(by_position, params, binding, context_name)
+        return unless binding
+
+        ast_params = binding.ast.params
+        return unless ast_params.any? { |p| p.respond_to?(:default_value) && p.default_value }
+
+        params.each_with_index do |param, idx|
+          next unless by_position[idx].nil?
+          next unless idx < ast_params.length
+
+          ast_param = ast_params[idx]
+          next unless ast_param.respond_to?(:default_value) && ast_param.default_value
+
+          by_position[idx] = AST::Argument.new(name: nil, value: ast_param.default_value)
+        end
+      end
+
+      def fill_positional_defaults!(arguments, binding)
+        return 0 unless binding.ast.params.any? { |p| p.respond_to?(:default_value) && p.default_value }
+
+        required = count_required_params(binding)
+        ast_params = binding.ast.params
+        while arguments.length < ast_params.length
+          ast_param = ast_params[arguments.length]
+          if ast_param.respond_to?(:default_value) && ast_param.default_value
+            arguments << AST::Argument.new(name: nil, value: ast_param.default_value)
+          else
+            break
+          end
+        end
+      end
+
+      def count_required_params(binding)
+        return binding.type.params.length unless binding.ast.params.any? { |p| p.respond_to?(:default_value) && p.default_value }
+
+        seen_default = false
+        binding.ast.params.count do |p|
+          has_default = p.respond_to?(:default_value) && p.default_value
+          seen_default = true if has_default
+          !has_default && !seen_default
+        end
       end
     end
   end

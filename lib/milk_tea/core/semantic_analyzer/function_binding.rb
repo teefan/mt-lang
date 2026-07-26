@@ -85,6 +85,7 @@ module MilkTea
         end
 
         public_params = []
+        any_default = false
         decl.params.each do |param|
           begin
             ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.respond_to?(:line) ? param.line : decl.line, column: param.respond_to?(:column) ? param.column : nil)
@@ -93,6 +94,12 @@ module MilkTea
             reject_foreign_nullable_value_type!(type, function_name: decl.name, parameter_name: param.name) if foreign || external
             validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
             raise_sema_error("parameter #{param.name} of #{decl.name} must pass event storage through ref[...] or pointers, got #{type}") if noncopyable_event_storage_type?(type)
+
+            has_default = param.respond_to?(:default_value) && param.default_value
+            raise_sema_error("external function #{decl.name} cannot have default parameter values") if external && has_default
+            raise_sema_error("foreign function #{decl.name} cannot have default parameter values") if foreign && has_default
+            raise_sema_error("default parameter #{param.name} of #{decl.name} must appear after required parameters") if !has_default && any_default
+            any_default = true if has_default
 
             if external && array_type?(type)
               raise_sema_error("external function #{decl.name} cannot take array parameters")

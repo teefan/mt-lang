@@ -458,9 +458,11 @@ module MilkTea
       actual_count == function_type.params.length
     end
 
-    def arity_error_message(function_type, name, actual_count)
+    def arity_error_message(function_type, name, actual_count, required_count: nil)
       if function_type.is_a?(Types::Function) && function_type.variadic
         "function #{name} expects at least #{function_type.params.length} arguments, got #{actual_count}"
+      elsif required_count && required_count < function_type.params.length
+        "function #{name} expects #{required_count}..#{function_type.params.length} arguments, got #{actual_count}"
       else
         "function #{name} expects #{function_type.params.length} arguments, got #{actual_count}"
       end

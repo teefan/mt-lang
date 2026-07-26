@@ -46,8 +46,9 @@ module MilkTea
         raise error(name_token, "expected ':' and parameter type") unless match(:colon)
 
         param_type = parse_type_ref
+        default_value = parse_param_default_value
 
-        AST::Param.new(name: name_token.lexeme, type: param_type, line: name_token.line, column: name_token.column)
+        AST::Param.new(name: name_token.lexeme, type: param_type, line: name_token.line, column: name_token.column, default_value:)
       rescue ParseError => e
         raise unless @recovery_errors
 
@@ -55,6 +56,12 @@ module MilkTea
         param_name = name_token&.lexeme || "error"
         error_type = recovery_error_expr(e)
         AST::Param.new(name: param_name, type: error_type, line: name_token&.line || 1, column: name_token&.column || 1)
+      end
+
+      def parse_param_default_value
+        return nil unless match(:equal)
+
+        parse_primary
       end
 
       def parse_foreign_param

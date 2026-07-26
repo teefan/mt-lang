@@ -26,7 +26,9 @@ module MilkTea
             return lower_foreign_call_inline(expression, callee_binding, env:, type:)
           end
 
-          arguments = lower_call_arguments(expression.arguments, callee_type, env:)
+          lowered_arguments = expression.arguments
+          lowered_arguments = expand_function_defaults(lowered_arguments, callee_binding) if callee_binding
+          arguments = lower_call_arguments(lowered_arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :callable_value
           callee_expression = lower_expression(expression.callee, env:, expected_type: callee_type)
@@ -372,6 +374,49 @@ module MilkTea
         return cast_expression(lowered_expression.operand, pointer_type) if lowered_expression.is_a?(IR::Unary) && lowered_expression.operator == "*"
 
         IR::AddressOf.new(expression: lowered_expression, type: pointer_type)
+      end
+
+      def expand_function_defaults(arguments, binding)
+        return arguments unless binding.respond_to?(:ast) && binding.ast.respond_to?(:params)
+
+        ast_params = binding.ast.params
+        has_defaults = ast_params.any? { |p| p.respond_to?(:default_value) && p.default_value }
+        return arguments unless has_defaults || arguments.any?(&:name)
+
+        if arguments.any?(&:name)
+          by_position = Array.new(ast_params.length)
+          param_names = ast_params.map(&:name)
+
+          arguments.each do |arg|
+            if arg.name
+              param_idx = param_names.index(arg.name)
+              next unless param_idx
+
+              by_position[param_idx] = arg
+            else
+              first_empty = by_position.index(nil)
+              by_position[first_empty] = arg if first_empty
+            end
+          end
+
+          by_position.each_with_index do |slot, idx|
+            next if slot
+            next unless ast_params[idx].respond_to?(:default_value) && ast_params[idx].default_value
+
+            by_position[idx] = AST::Argument.new(name: nil, value: ast_params[idx].default_value)
+          end
+
+          by_position.compact
+        else
+          expanded = arguments.dup
+          while expanded.length < ast_params.length
+            ast_param = ast_params[expanded.length]
+            break unless ast_param.respond_to?(:default_value) && ast_param.default_value
+
+            expanded << AST::Argument.new(name: nil, value: ast_param.default_value)
+          end
+          expanded
+        end
       end
 
       def lower_call_arguments(arguments, callee_type, env:)

@@ -117,8 +117,8 @@ module MilkTea
     ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :mapping, :visibility, :attributes, :line) do
       def initialize(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, attributes: [], line: nil) = super
     end
-    Param = Data.define(:name, :type, :line, :column) do
-      def initialize(name:, type:, line: nil, column: nil) = super
+    Param = Data.define(:name, :type, :line, :column, :default_value) do
+      def initialize(name:, type:, line: nil, column: nil, default_value: nil) = super
     end
     ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
     LocalDecl = Data.define(:kind, :name, :type, :value, :else_binding, :else_body, :line, :column, :recovered_else, :destructure_bindings, :destructure_type_name) do

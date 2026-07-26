@@ -327,6 +327,15 @@ function simple_noop():
 function add(a: int, b: int) -> int:
     return a + b
 
+function greet(name: str, greeting: str = "Hello", count: int = 1) -> int:
+    return count
+
+function defaults_demo() -> int:
+    let a = greet("World")
+    let b = greet("World", greeting = "Hi")
+    let c = greet("World", count = 5)
+    return a + b + c
+
 const function square(x: int) -> int:
     return x * x
 
@@ -1834,6 +1843,7 @@ function main() -> int:
     total += int<-(with_demo().x) + int<-(with_demo().y)
     total += nullability_demo()
     total += named_args_demo()
+    total += defaults_demo()
     total += int<-(dyn_demo())
     total += tuple_demo()
     total += tuple_match_demo()
