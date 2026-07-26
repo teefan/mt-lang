@@ -99,6 +99,9 @@ module MilkTea
       end
 
       def lower_array_to_span_expression(expression, target_type)
+        array_type = expression.type
+        array_type = referenced_type(array_type) if ref_type?(array_type)
+
         IR::AggregateLiteral.new(
           type: target_type,
           fields: [
@@ -115,7 +118,7 @@ module MilkTea
             ),
             IR::AggregateField.new(
               name: "len",
-              value: IR::IntegerLiteral.new(value: array_length(expression.type), type: @ctx.types.fetch("ptr_uint")),
+              value: IR::IntegerLiteral.new(value: array_length(array_type), type: @ctx.types.fetch("ptr_uint")),
             ),
           ],
         )
