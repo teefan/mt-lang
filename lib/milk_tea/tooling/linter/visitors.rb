@@ -152,6 +152,7 @@ module MilkTea
             column: statement.column,
             var: statement.kind == :var
           )
+          with_scope { visit_statement_list(statement.else_body) } if statement.else_body
           check_redundant_type_annotation(statement)
           flag_redundant_widening_cast(statement.value) if statement.type && statement.value
           record_ptr_candidate(statement)
