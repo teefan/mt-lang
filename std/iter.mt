@@ -118,8 +118,7 @@ public function map_advance[T, U](state: ptr[void]) -> ptr[U]?:
     let s = unsafe: ptr[MapState[T, U]]<-state
     let current_offset = offset_of(MapState[T, U], current)
     let p = unsafe: read(s)
-    let item = p.inner.next_fn(p.inner.state)
-    if item == null:
+    let item = p.inner.next_fn(p.inner.state) else:
         return null
     let base: ptr[ubyte] = unsafe: ptr[ubyte]<-s
     let field_ptr = unsafe: base + ptr_uint<-current_offset
@@ -177,8 +176,7 @@ public function skip_advance[T](state: ptr[void]) -> ptr[T]?:
     let s = unsafe: ptr[SkipState[T]]<-state
     let _this = unsafe: read(s)
     while _this.skip_count > 0:
-        let skipped = _this.inner.next_fn(_this.inner.state)
-        if skipped == null:
+        let _ = _this.inner.next_fn(_this.inner.state) else:
             return null
         unsafe: read(s).skip_count -= 1
     return _this.inner.next_fn(_this.inner.state)
@@ -211,8 +209,7 @@ public function enum_advance[T](state: ptr[void]) -> ptr[Enumerated[T]]?:
     let s = unsafe: ptr[EnumerateState[T]]<-state
     let current_offset = offset_of(EnumerateState[T], current)
     let p = unsafe: read(s)
-    let item = p.inner.next_fn(p.inner.state)
-    if item == null:
+    let item = p.inner.next_fn(p.inner.state) else:
         return null
     let base: ptr[ubyte] = unsafe: ptr[ubyte]<-s
     let field_ptr = unsafe: base + ptr_uint<-current_offset
