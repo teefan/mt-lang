@@ -9,9 +9,13 @@
 ##
 ## Usage:
 ##   import std.iter
-##   let it = iter.from_array(ref_of(arr))
-##   let it2 = iter.iter_filter(it, pred)
-##   let v = iter.collect_vec(it2)
+##   let sp = span[T](data = ptr_of(arr[0]), len = N)
+##   let it = iter.from_span(sp)
+##   let v = iter.iter_filter(it, pred).iter_map(f).collect_vec()
+##
+## Note: from_array delegates to from_span(arr.as_span()) — the span
+## length is not emitted when N is a generic value parameter. For
+## generic code, construct the span manually with explicit length.
 
 import std.mem.heap as heap
 import std.vec as v
