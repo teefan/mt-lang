@@ -18,6 +18,7 @@ module MilkTea
           local_name = import.alias_name || import.path.parts.last
           next if ignored_binding_name?(local_name)
           next if used.include?(local_name)
+          next if import_provides_extending_methods?(import)
 
           @warnings << Warning.new(
             path: @path,
@@ -29,6 +30,15 @@ module MilkTea
             symbol_name: local_name
           )
         end
+      end
+
+      def import_provides_extending_methods?(import)
+        return false unless @sema_facts.respond_to?(:imports)
+
+        module_binding = @sema_facts.imports[import.alias_name || import.path.parts.last]
+        return false unless module_binding&.respond_to?(:methods)
+
+        module_binding.methods.any?
       end
 
       def check_platform_api_drift(source_file)
