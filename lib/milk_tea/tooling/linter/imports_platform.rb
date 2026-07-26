@@ -18,7 +18,6 @@ module MilkTea
           local_name = import.alias_name || import.path.parts.last
           next if ignored_binding_name?(local_name)
           next if used.include?(local_name)
-          next if import_provides_extending_methods?(import)
 
           @warnings << Warning.new(
             path: @path,
@@ -30,15 +29,6 @@ module MilkTea
             symbol_name: local_name
           )
         end
-      end
-
-      def import_provides_extending_methods?(import)
-        return false unless @sema_facts.respond_to?(:imports)
-
-        module_binding = @sema_facts.imports[import.alias_name || import.path.parts.last]
-        return false unless module_binding&.respond_to?(:methods)
-
-        module_binding.methods.any?
       end
 
       def check_platform_api_drift(source_file)
@@ -615,10 +605,13 @@ module MilkTea
       end
 
       def collect_method_provider_import_uses(receiver, member_name, used, binding_resolution)
-        return unless receiver.is_a?(AST::Identifier)
         return unless @sema_facts.respond_to?(:imports)
 
-        receiver_type = identifier_binding_type(receiver, binding_resolution)
+        receiver_type = if receiver.is_a?(AST::Identifier)
+          identifier_binding_type(receiver, binding_resolution)
+        else
+          resolved_expr_type(receiver)
+        end
         return unless receiver_type
 
         @sema_facts.imports.each do |local_name, module_binding|
@@ -627,6 +620,14 @@ module MilkTea
 
           used << local_name
         end
+      end
+
+      def resolved_expr_type(expr)
+        return nil unless @sema_facts.respond_to?(:ast) && @sema_facts.ast.respond_to?(:node_ids)
+        return nil unless @sema_facts.respond_to?(:resolved_expr_types)
+
+        node_id = @sema_facts.ast.node_ids[expr.object_id]
+        node_id ? @sema_facts.resolved_expr_types[node_id] : nil
       end
 
       def identifier_binding_type(identifier, binding_resolution)
@@ -663,7 +664,7 @@ module MilkTea
           Types::Registry.generic_instance(
             receiver_type.name,
             receiver_type.arguments.each_with_index.map do |argument, index|
-              argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__lint_receiver_arg#{index}")
+              argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
             end,
           )
         when Types::StructInstance
