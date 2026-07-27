@@ -16,19 +16,11 @@ module MilkTea
       severity = error.respond_to?(:severity) ? error.severity : :error
       code = error.respond_to?(:code) ? error.code : nil
 
+      # Strip location suffix from message (errors embed "at path:line:col" in message text)
+      location_suffix = " at #{path}:#{line}:#{column}"
+      error_message = error_message.delete_suffix(location_suffix).strip
+
       source ||= read_source(path)
-      return "#{severity_label(severity)}: #{error_message} at #{path}:#{line}:#{column}" unless source
-
-      source_lines = source.split("\n", -1)
-      source_line = source_lines[line - 1] || ""
-      stripped = source_line.gsub(/\t/, " ")
-
-      indent = " " * [column - 1, 0].max
-      highlight = if length && length > 1
-                    "^" + "~" * (length - 1)
-                  else
-                    "^"
-                  end
 
       bold  = color ? "\e[1m"  : ""
       red   = color ? "\e[31m" : ""
@@ -46,9 +38,21 @@ module MilkTea
 
       code_text = code ? "#{cyan}[#{code}]#{reset}" : ""
 
+      return "#{sev_color}#{sev_text}#{code_text}#{reset}: #{error_message} -- #{path}:#{line}:#{column}" unless source
+
+      source_lines = source.split("\n", -1)
+      source_line = source_lines[line - 1] || ""
+      stripped = source_line.gsub(/\t/, " ")
+
+      indent = " " * [column - 1, 0].max
+      highlight = if length && length > 1
+                    "^" + "~" * (length - 1)
+                  else
+                    "^"
+                  end
+
       [
-        "#{bold}#{sev_color}#{sev_text}#{code_text}#{reset}: #{error_message}",
-        "  #{bold}-->#{reset} #{path}:#{line}:#{column}",
+        "#{sev_color}#{sev_text}#{code_text}#{reset}: #{error_message} -- #{path}:#{line}:#{column}",
         "   #{bold}|#{reset}",
         "#{line.to_s.rjust(5)} #{bold}|#{reset} #{stripped}",
         "      #{bold}|#{reset} #{sev_color}#{indent}#{highlight}#{reset}",
