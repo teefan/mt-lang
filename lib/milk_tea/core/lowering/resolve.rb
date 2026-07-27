@@ -4,6 +4,19 @@ module MilkTea
   module LowererResolve
     private
 
+    PASS_THROUGH_BUILTINS = {
+      "fatal"         => :fatal,
+      "ref_of"        => :ref_of,
+      "const_ptr_of"   => :const_ptr_of,
+      "read"          => :read,
+      "ptr_of"        => :ptr_of,
+      "get"           => :get,
+    }.freeze
+
+    COMPILE_TIME_BUILTINS = %w[
+      field_of callable_of has_attribute attribute_of
+    ].freeze
+
 
       def direct_function_to_proc_contextual_compatibility?(expression, actual_type, env:, expected_type:)
         return false unless actual_type.is_a?(Types::Function) && proc_type?(expected_type)
@@ -397,256 +410,248 @@ module MilkTea
       def resolve_callee(callee, env, arguments: nil)
         case callee
         when AST::Identifier
-          if (binding = lookup_value(callee.name, env))
-            return [:callable_value, nil, nil, binding[:type], nil] if callable_type?(binding[:type])
-
-            raise LoweringError, "#{callee.name} is not callable"
-          end
-
-          if @ctx.functions.key?(callee.name)
-            binding = specialize_function_binding(@ctx.functions.fetch(callee.name), arguments, env)
-            callee_name = if binding.external
-                            external_function_c_name(binding)
-                          else
-                            function_binding_c_name(binding, module_name: @ctx.module_name)
-                          end
-            [ :function, callee_name, nil, binding.type, binding ]
-          elsif callee.name == "fatal"
-            [:fatal, nil, nil, nil]
-          elsif callee.name == "ref_of"
-            [:ref_of, nil, nil, nil]
-          elsif callee.name == "const_ptr_of"
-            [:const_ptr_of, nil, nil, nil]
-          elsif callee.name == "read"
-            [:read, nil, nil, nil]
-          elsif callee.name == "ptr_of"
-            [:ptr_of, nil, nil, nil]
-          elsif callee.name == "field_of"
-            [:compile_time_builtin, "field_of", nil, compile_time_builtin_function_type("field_of", arguments, env)]
-          elsif callee.name == "callable_of"
-            [:compile_time_builtin, "callable_of", nil, compile_time_builtin_function_type("callable_of", arguments, env)]
-          elsif callee.name == "has_attribute"
-            [:compile_time_builtin, "has_attribute", nil, compile_time_builtin_function_type("has_attribute", arguments, env)]
-          elsif callee.name == "attribute_of"
-            [:compile_time_builtin, "attribute_of", nil, compile_time_builtin_function_type("attribute_of", arguments, env)]
-          elsif callee.name == "get"
-            [:get, nil, nil, nil]
-          elsif (type = @ctx.types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
-            [ :struct_literal, nil, nil, type ]
-          elsif (type = @ctx.types[callee.name]).is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-            raise LoweringError, "generic type #{callee.name} requires type arguments"
-          else
-            emit_fn = @artifacts.emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
-            if emit_fn
-              return [:function, emit_fn.linkage_name, nil, emit_fn.return_type, nil]
-            end
-
-            raise LoweringError, "unknown callee #{callee.name}"
-          end
+          resolve_identifier_callee(callee, env, arguments)
         when AST::MemberAccess
-          if callee.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(callee.receiver.name)
-            imported_module = @ctx.imports.fetch(callee.receiver.name)
+          resolve_member_access_callee(callee, env, arguments)
+        when AST::Specialization
+          resolve_specialization_callee(callee, env)
+        else
+          resolve_expression_callee(callee, env)
+        end
+      end
 
-            if imported_module.functions.key?(callee.member)
-              binding = specialize_function_binding(imported_module.functions.fetch(callee.member), arguments, env)
-              unless binding.owner
-                binding = binding.with(owner: imported_module.respond_to?(:analysis) ? imported_module.analysis : imported_module)
-              end
-              return [:function, function_binding_c_name(binding, module_name: imported_module.name), nil, binding.type, binding] unless binding.external
+      def resolve_identifier_callee(callee, env, arguments)
+        if (binding = lookup_value(callee.name, env))
+          return [:callable_value, nil, nil, binding[:type], nil] if callable_type?(binding[:type])
 
-              return [:function, external_function_c_name(binding), nil, binding.type, binding]
-            end
-            imported_type = imported_module.types[callee.member]
-            if imported_type.is_a?(Types::GenericStructDefinition) || imported_type.is_a?(Types::GenericVariantDefinition)
-              raise LoweringError, "generic type #{callee.receiver.name}.#{callee.member} requires type arguments"
-            end
+          raise LoweringError, "#{callee.name} is not callable"
+        end
 
-            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
-              return [:struct_literal, nil, nil, imported_module.types.fetch(callee.member)]
-            end
+        if @ctx.functions.key?(callee.name)
+          binding = specialize_function_binding(@ctx.functions.fetch(callee.name), arguments, env)
+          callee_name = if binding.external
+                          external_function_c_name(binding)
+                        else
+                          function_binding_c_name(binding, module_name: @ctx.module_name)
+                        end
+          return [:function, callee_name, nil, binding.type, binding]
+        end
 
-            if imported_type.is_a?(Types::Variant) && imported_type.arm_names.include?(callee.member)
-              arm_name = callee.member
-              return [:variant_arm_ctor, nil, nil, imported_type, [imported_type, arm_name]]
+        if (kind = PASS_THROUGH_BUILTINS[callee.name])
+          return [kind, nil, nil, nil]
+        end
+
+        if COMPILE_TIME_BUILTINS.include?(callee.name)
+          return [:compile_time_builtin, callee.name, nil, compile_time_builtin_function_type(callee.name, arguments, env)]
+        end
+
+        type = @ctx.types[callee.name]
+        if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
+          return [:struct_literal, nil, nil, type]
+        end
+
+        if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+          raise LoweringError, "generic type #{callee.name} requires type arguments"
+        end
+
+        emit_fn = @artifacts.emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
+        if emit_fn
+          return [:function, emit_fn.linkage_name, nil, emit_fn.return_type, nil]
+        end
+
+        raise LoweringError, "unknown callee #{callee.name}"
+      end
+
+      def resolve_member_access_callee(callee, env, arguments)
+        if callee.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(callee.receiver.name)
+          imported_module = @ctx.imports.fetch(callee.receiver.name)
+
+          if imported_module.functions.key?(callee.member)
+            binding = specialize_function_binding(imported_module.functions.fetch(callee.member), arguments, env)
+            unless binding.owner
+              binding = binding.with(owner: imported_module.respond_to?(:analysis) ? imported_module.analysis : imported_module)
             end
+            return [:function, function_binding_c_name(binding, module_name: imported_module.name), nil, binding.type, binding] unless binding.external
+
+            return [:function, external_function_c_name(binding), nil, binding.type, binding]
+          end
+          imported_type = imported_module.types[callee.member]
+          if imported_type.is_a?(Types::GenericStructDefinition) || imported_type.is_a?(Types::GenericVariantDefinition)
+            raise LoweringError, "generic type #{callee.receiver.name}.#{callee.member} requires type arguments"
           end
 
-          if (type_expr = resolve_type_expression(callee.receiver))
-            if type_expr.is_a?(Types::Variant) && type_expr.arm_names.include?(callee.member)
-              arm_name = callee.member
-              return [:variant_arm_ctor, nil, nil, type_expr, [type_expr, arm_name]]
-            end
-
-            if type_expr.respond_to?(:nested_types) && type_expr.nested_types.key?(callee.member)
-              return [:struct_literal, nil, nil, type_expr.nested_types[callee.member]]
-            end
-
-            dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
-            method_entry_receiver_type = type_expr
-            method_entry = @method_definitions[[type_expr, callee.member]]
-            method_entry ||= @method_definitions[[type_expr, "static:#{callee.member}"]]
-            unless method_entry || dispatch_receiver_type == type_expr
-              method_entry_receiver_type = dispatch_receiver_type
-              method_entry = @method_definitions[[dispatch_receiver_type, callee.member]]
-              method_entry ||= @method_definitions[[dispatch_receiver_type, "static:#{callee.member}"]]
-            end
-            if method_entry
-              method_analysis, method_ast = method_entry
-              method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
-              if method_binding.type.receiver_type.nil?
-                method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: type_expr) if method_binding.type_params.any?
-                return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type), nil, method_binding.type, method_binding]
-              end
-            end
-
-            raise LoweringError, "unknown associated function #{type_expr}.#{callee.member}"
+          if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
+            return [:struct_literal, nil, nil, imported_module.types.fetch(callee.member)]
           end
 
-          resolved_receiver_type = infer_method_receiver_type(callee.receiver, env:, member_name: callee.member)
+          if imported_type.is_a?(Types::Variant) && imported_type.arm_names.include?(callee.member)
+            arm_name = callee.member
+            return [:variant_arm_ctor, nil, nil, imported_type, [imported_type, arm_name]]
+          end
+        end
 
-          if dyn_type?(resolved_receiver_type)
-            interface = resolved_receiver_type.interface_binding
-            method_binding = interface.methods[callee.member]
-            raise LoweringError, "no method '#{callee.member}' on interface #{interface.name}" unless method_binding
-            return [:dyn_method, nil, callee.receiver, method_binding, nil]
+        if (type_expr = resolve_type_expression(callee.receiver))
+          if type_expr.is_a?(Types::Variant) && type_expr.arm_names.include?(callee.member)
+            arm_name = callee.member
+            return [:variant_arm_ctor, nil, nil, type_expr, [type_expr, arm_name]]
           end
 
-          dispatch_receiver_type = method_dispatch_receiver_type(resolved_receiver_type)
-          method_entry_receiver_type = resolved_receiver_type
-          method_entry = @method_definitions[[resolved_receiver_type, callee.member]]
-          unless method_entry || dispatch_receiver_type == resolved_receiver_type
+          if type_expr.respond_to?(:nested_types) && type_expr.nested_types.key?(callee.member)
+            return [:struct_literal, nil, nil, type_expr.nested_types[callee.member]]
+          end
+
+          dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
+          method_entry_receiver_type = type_expr
+          method_entry = @method_definitions[[type_expr, callee.member]]
+          method_entry ||= @method_definitions[[type_expr, "static:#{callee.member}"]]
+          unless method_entry || dispatch_receiver_type == type_expr
             method_entry_receiver_type = dispatch_receiver_type
             method_entry = @method_definitions[[dispatch_receiver_type, callee.member]]
+            method_entry ||= @method_definitions[[dispatch_receiver_type, "static:#{callee.member}"]]
           end
           if method_entry
-        method_analysis, method_ast = method_entry
-        method_analysis_key = method_ast.kind == :static ? "static:#{method_ast.name}" : method_ast.name
-        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key)
-            method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: resolved_receiver_type)
-            return [
-              :method,
-              function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type),
-              callee.receiver,
-              method_binding.type,
-              method_binding,
-            ]
-          end
-
-          if callee.member == "with" && struct_with_target_type?(resolved_receiver_type)
-            return [:struct_with, nil, callee.receiver, resolved_receiver_type]
-          end
-
-          if (precomputed = @ctx.resolved_call_kinds[@ctx.ast.node_ids[callee.object_id]])
-            case precomputed
-            when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
-                :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
-              return [precomputed, nil, callee.receiver, str_buffer_method_type(precomputed, resolved_receiver_type)]
-            when :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait
-              event_type = infer_expression_type(callee.receiver, env:)
-              return [precomputed, nil, callee.receiver, event_method_type(precomputed, event_type)]
-            when :atomic_load, :atomic_store, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_compare_exchange
-              elem = atomic_element_type(resolved_receiver_type)
-              ret = case precomputed
-                    when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange then elem
-                    when :atomic_store then @ctx.types.fetch("void")
-                    when :atomic_compare_exchange then @ctx.types.fetch("bool")
-                    end
-              return [precomputed, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
-            when :simd_lane_with
-              return [precomputed, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: resolved_receiver_type)]
+            method_analysis, method_ast = method_entry
+            method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
+            if method_binding.type.receiver_type.nil?
+              method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: type_expr) if method_binding.type_params.any?
+              return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type), nil, method_binding.type, method_binding]
             end
           end
 
-          if (str_buffer_method = str_buffer_method_kind(resolved_receiver_type, callee.member))
-            return [str_buffer_method, nil, callee.receiver, str_buffer_method_type(str_buffer_method, resolved_receiver_type)]
-          end
+          raise LoweringError, "unknown associated function #{type_expr}.#{callee.member}"
+        end
 
-          if (event_method = event_method_kind(resolved_receiver_type, callee.member))
+        resolved_receiver_type = infer_method_receiver_type(callee.receiver, env:, member_name: callee.member)
+
+        if dyn_type?(resolved_receiver_type)
+          interface = resolved_receiver_type.interface_binding
+          method_binding = interface.methods[callee.member]
+          raise LoweringError, "no method '#{callee.member}' on interface #{interface.name}" unless method_binding
+          return [:dyn_method, nil, callee.receiver, method_binding, nil]
+        end
+
+        dispatch_receiver_type = method_dispatch_receiver_type(resolved_receiver_type)
+        method_entry_receiver_type = resolved_receiver_type
+        method_entry = @method_definitions[[resolved_receiver_type, callee.member]]
+        unless method_entry || dispatch_receiver_type == resolved_receiver_type
+          method_entry_receiver_type = dispatch_receiver_type
+          method_entry = @method_definitions[[dispatch_receiver_type, callee.member]]
+        end
+        if method_entry
+          method_analysis, method_ast = method_entry
+          method_analysis_key = method_ast.kind == :static ? "static:#{method_ast.name}" : method_ast.name
+          method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key)
+          method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: resolved_receiver_type)
+          return [
+            :method,
+            function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type),
+            callee.receiver,
+            method_binding.type,
+            method_binding,
+          ]
+        end
+
+        if callee.member == "with" && struct_with_target_type?(resolved_receiver_type)
+          return [:struct_with, nil, callee.receiver, resolved_receiver_type]
+        end
+
+        if (precomputed = @ctx.resolved_call_kinds[@ctx.ast.node_ids[callee.object_id]])
+          case precomputed
+          when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
+              :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
+            return [precomputed, nil, callee.receiver, str_buffer_method_type(precomputed, resolved_receiver_type)]
+          when :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait
             event_type = infer_expression_type(callee.receiver, env:)
-            return [event_method, nil, callee.receiver, event_method_type(event_method, event_type)]
-          end
-
-          if (atomic_method = atomic_method_kind(resolved_receiver_type, callee.member))
+            return [precomputed, nil, callee.receiver, event_method_type(precomputed, event_type)]
+          when :atomic_load, :atomic_store, :atomic_add, :atomic_sub, :atomic_exchange, :atomic_compare_exchange
             elem = atomic_element_type(resolved_receiver_type)
-            ret = case atomic_method
+            ret = case precomputed
                   when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange then elem
                   when :atomic_store then @ctx.types.fetch("void")
                   when :atomic_compare_exchange then @ctx.types.fetch("bool")
                   end
-            return [atomic_method, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
+            return [precomputed, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
+          when :simd_lane_with
+            return [precomputed, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: resolved_receiver_type)]
           end
+        end
 
-          if (simd_method = simd_method_kind(resolved_receiver_type, callee.member))
-            ret = case simd_method
-                  when :simd_lane_with then resolved_receiver_type
-                  end
-            return [simd_method, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
-          end
+        if (str_buffer_method = str_buffer_method_kind(resolved_receiver_type, callee.member))
+          return [str_buffer_method, nil, callee.receiver, str_buffer_method_type(str_buffer_method, resolved_receiver_type)]
+        end
 
-          field_receiver_type = infer_field_receiver_type(callee.receiver, env:)
-          if array_type?(field_receiver_type) && callee.member == "as_span"
-            return [:array_as_span, nil, callee.receiver, Types::Registry.span(array_element_type(field_receiver_type))]
-          end
+        if (event_method = event_method_kind(resolved_receiver_type, callee.member))
+          event_type = infer_expression_type(callee.receiver, env:)
+          return [event_method, nil, callee.receiver, event_method_type(event_method, event_type)]
+        end
 
-          member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
-          member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
-          return [:callable_value, nil, nil, member_type, nil] if callable_type?(member_type)
+        if (atomic_method = atomic_method_kind(resolved_receiver_type, callee.member))
+          elem = atomic_element_type(resolved_receiver_type)
+          ret = case atomic_method
+                when :atomic_load, :atomic_add, :atomic_sub, :atomic_exchange then elem
+                when :atomic_store then @ctx.types.fetch("void")
+                when :atomic_compare_exchange then @ctx.types.fetch("bool")
+                end
+          return [atomic_method, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
+        end
 
-          raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
-        when AST::Specialization
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "reinterpret"
+        if (simd_method = simd_method_kind(resolved_receiver_type, callee.member))
+          ret = case simd_method
+                when :simd_lane_with then resolved_receiver_type
+                end
+          return [simd_method, nil, callee.receiver, Types::Registry.function(nil, params: [], return_type: ret)]
+        end
+
+        field_receiver_type = infer_field_receiver_type(callee.receiver, env:)
+        if array_type?(field_receiver_type) && callee.member == "as_span"
+          return [:array_as_span, nil, callee.receiver, Types::Registry.span(array_element_type(field_receiver_type))]
+        end
+
+        member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
+        member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
+        return [:callable_value, nil, nil, member_type, nil] if callable_type?(member_type)
+
+        raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
+      end
+
+      def resolve_specialization_callee(callee, env)
+        if callee.callee.is_a?(AST::Identifier)
+          case callee.callee.name
+          when "reinterpret"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
             return [:reinterpret, nil, nil, Types::Registry.function("reinterpret", params: [Types::Registry.parameter("value", target_type)], return_type: target_type)]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "array"
+          when "array"
             array_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["array"]), arguments: callee.arguments, nullable: false))
             return [:array, nil, nil, array_type]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "simd"
+          when "simd"
             simd_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["simd"]), arguments: callee.arguments, nullable: false))
             return [:simd, nil, nil, simd_type]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "span"
+          when "span"
             span_type = resolve_type_ref(AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["span"]), arguments: callee.arguments, nullable: false))
             return [:struct_literal, nil, nil, span_type]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "zero"
+          when "zero"
             target_type = resolve_type_ref(callee.arguments.fetch(0).value)
             return [:zero, nil, nil, Types::Registry.function("zero", params: [], return_type: target_type)]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "hash"
+          when "hash"
             resolution = resolve_hash_specialization(callee, env:)
             return [:hash, resolution.callee_name, nil, Types::Registry.function("hash", params: [Types::Registry.parameter("value", resolution.target_type)], return_type: @ctx.types.fetch("uint")), resolution.binding]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "equal"
+          when "equal"
             resolution = resolve_equal_specialization(callee, env:)
             params = [
               Types::Registry.parameter("left", resolution.target_type),
               Types::Registry.parameter("right", resolution.target_type),
             ]
             return [:equal, resolution.callee_name, nil, Types::Registry.function("equal", params:, return_type: @ctx.types.fetch("bool")), resolution.binding]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "order"
+          when "order"
             resolution = resolve_order_specialization(callee, env:)
             params = [
               Types::Registry.parameter("left", resolution.target_type),
               Types::Registry.parameter("right", resolution.target_type),
             ]
             return [:order, resolution.callee_name, nil, Types::Registry.function("order", params:, return_type: @ctx.types.fetch("int")), resolution.binding]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "attribute_arg"
+          when "attribute_arg"
             return [:compile_time_builtin, "attribute_arg", nil, compile_time_builtin_specialization_function_type(callee)]
-          end
-
-          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "adapt"
+          when "adapt"
             raise LoweringError, "adapt requires exactly one type argument" unless callee.arguments.length == 1
 
             type_arg = callee.arguments.first.value
@@ -658,38 +663,40 @@ module MilkTea
             dyn_type = Types::Dyn.new(interface, interface.respond_to?(:type_arguments) ? (interface.type_arguments || []) : [])
             return [:adapt, nil, nil, dyn_type, interface]
           end
-
-          if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
-            callable_kind, function_binding, receiver = callable_resolution
-            if callable_kind == :method
-              return [
-                :method,
-                function_binding_c_name(function_binding, module_name: function_binding.owner.module_name, receiver_type: function_binding.type.receiver_type),
-                receiver,
-                function_binding.type,
-                function_binding,
-              ]
-            end
-
-            if function_binding.external
-              return [:function, external_function_c_name(function_binding), nil, function_binding.type, function_binding]
-            end
-
-            return [:function, function_binding_c_name(function_binding, module_name: function_binding.owner.module_name), nil, function_binding.type, function_binding]
-          end
-
-          if (type_ref = type_ref_from_specialization(callee))
-            specialized_type = resolve_type_ref(type_ref)
-            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion) || specialized_type.is_a?(Types::Simd)
-          end
-
-          raise LoweringError, "unsupported specialization callee"
-        else
-          callee_type = infer_expression_type(callee, env:)
-          return [:callable_value, nil, nil, callee_type, nil] if callable_type?(callee_type)
-
-          raise LoweringError, "unsupported callee #{callee.class.name}"
         end
+
+        if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
+          callable_kind, function_binding, receiver = callable_resolution
+          if callable_kind == :method
+            return [
+              :method,
+              function_binding_c_name(function_binding, module_name: function_binding.owner.module_name, receiver_type: function_binding.type.receiver_type),
+              receiver,
+              function_binding.type,
+              function_binding,
+            ]
+          end
+
+          if function_binding.external
+            return [:function, external_function_c_name(function_binding), nil, function_binding.type, function_binding]
+          end
+
+          return [:function, function_binding_c_name(function_binding, module_name: function_binding.owner.module_name), nil, function_binding.type, function_binding]
+        end
+
+        if (type_ref = type_ref_from_specialization(callee))
+          specialized_type = resolve_type_ref(type_ref)
+          return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion) || specialized_type.is_a?(Types::Simd)
+        end
+
+        raise LoweringError, "unsupported specialization callee"
+      end
+
+      def resolve_expression_callee(callee, env)
+        callee_type = infer_expression_type(callee, env:)
+        return [:callable_value, nil, nil, callee_type, nil] if callable_type?(callee_type)
+
+        raise LoweringError, "unsupported callee #{callee.class.name}"
       end
 
       def infer_expression_type(expression, env:, expected_type: nil)
