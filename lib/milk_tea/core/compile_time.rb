@@ -128,6 +128,19 @@ module MilkTea
                 end
                 next fields
               end
+
+              if call_expr.callee.is_a?(AST::Specialization)
+                resolved = @checker.send(:resolve_type_expression, call_expr.callee)
+                if resolved && @checker.send(:array_type?, resolved)
+                  values = []
+                  call_expr.arguments.each do |argument|
+                    val = evaluate_expression(argument.value, scopes:)
+                    return nil unless val
+                    values << val
+                  end
+                  next values
+                end
+              end
               
               @checker.send(:evaluate_compile_time_const_value, call_expr, scopes:)
             },
