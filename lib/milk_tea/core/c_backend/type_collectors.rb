@@ -483,43 +483,50 @@ module MilkTea
             proc_types
           end
 
-          def collect_proc_types_from_statements(statements, proc_types, visited)
-            statements.each do |statement|
-              case statement
+          def each_ir_statement_for_type_collection(statements, type_collector_method:, expression_walker_method:, accumulator:, visited:)
+            statements.each do |stmt|
+              case stmt
               when IR::LocalDecl
-                collect_proc_type(statement.type, proc_types, visited)
-                collect_proc_types_from_expression(statement.value, proc_types, visited)
+                send(type_collector_method, stmt.type, accumulator, visited)
+                send(expression_walker_method, stmt.value, accumulator, visited) if stmt.value
               when IR::Assignment
-                collect_proc_types_from_expression(statement.target, proc_types, visited)
-                collect_proc_types_from_expression(statement.value, proc_types, visited)
+                send(expression_walker_method, stmt.target, accumulator, visited)
+                send(expression_walker_method, stmt.value, accumulator, visited)
               when IR::BlockStmt
-                collect_proc_types_from_statements(statement.body, proc_types, visited)
+                each_ir_statement_for_type_collection(stmt.body, type_collector_method:, expression_walker_method:, accumulator:, visited:)
               when IR::WhileStmt
-                collect_proc_types_from_expression(statement.condition, proc_types, visited)
-                collect_proc_types_from_statements(statement.body, proc_types, visited)
+                send(expression_walker_method, stmt.condition, accumulator, visited)
+                each_ir_statement_for_type_collection(stmt.body, type_collector_method:, expression_walker_method:, accumulator:, visited:)
               when IR::ForStmt
-                collect_proc_types_from_statements([statement.init], proc_types, visited)
-                collect_proc_types_from_expression(statement.condition, proc_types, visited)
-                collect_proc_types_from_statements(statement.body, proc_types, visited)
-                collect_proc_types_from_statements([statement.post], proc_types, visited)
+                each_ir_statement_for_type_collection([stmt.init], type_collector_method:, expression_walker_method:, accumulator:, visited:)
+                send(expression_walker_method, stmt.condition, accumulator, visited)
+                each_ir_statement_for_type_collection(stmt.body, type_collector_method:, expression_walker_method:, accumulator:, visited:)
+                each_ir_statement_for_type_collection([stmt.post], type_collector_method:, expression_walker_method:, accumulator:, visited:)
               when IR::IfStmt
-                collect_proc_types_from_expression(statement.condition, proc_types, visited)
-                collect_proc_types_from_statements(statement.then_body, proc_types, visited)
-                collect_proc_types_from_statements(statement.else_body, proc_types, visited) if statement.else_body
+                send(expression_walker_method, stmt.condition, accumulator, visited)
+                each_ir_statement_for_type_collection(stmt.then_body, type_collector_method:, expression_walker_method:, accumulator:, visited:)
+                each_ir_statement_for_type_collection(stmt.else_body, type_collector_method:, expression_walker_method:, accumulator:, visited:) if stmt.else_body
               when IR::SwitchStmt
-                collect_proc_types_from_expression(statement.expression, proc_types, visited)
-                statement.cases.each do |switch_case|
-                  collect_proc_types_from_statements(switch_case.body, proc_types, visited)
+                send(expression_walker_method, stmt.expression, accumulator, visited)
+                stmt.cases.each do |switch_case|
+                  each_ir_statement_for_type_collection(switch_case.body, type_collector_method:, expression_walker_method:, accumulator:, visited:)
                 end
               when IR::StaticAssert
-                collect_proc_types_from_expression(statement.condition, proc_types, visited)
-                collect_proc_types_from_expression(statement.message, proc_types, visited)
+                send(expression_walker_method, stmt.condition, accumulator, visited)
+                send(expression_walker_method, stmt.message, accumulator, visited)
               when IR::ReturnStmt
-                collect_proc_types_from_expression(statement.value, proc_types, visited) if statement.value
+                send(expression_walker_method, stmt.value, accumulator, visited) if stmt.value
               when IR::ExpressionStmt
-                collect_proc_types_from_expression(statement.expression, proc_types, visited)
+                send(expression_walker_method, stmt.expression, accumulator, visited)
               end
             end
+          end
+
+          def collect_proc_types_from_statements(statements, proc_types, visited)
+            each_ir_statement_for_type_collection(statements,
+              type_collector_method: :collect_proc_type,
+              expression_walker_method: :collect_proc_types_from_expression,
+              accumulator: proc_types, visited:)
           end
 
           def collect_proc_types_from_expression(expression, proc_types, visited)
@@ -610,42 +617,10 @@ module MilkTea
           end
 
           def collect_task_types_from_statements(statements, task_types, visited)
-            statements.each do |statement|
-              case statement
-              when IR::LocalDecl
-                collect_task_type(statement.type, task_types, visited)
-                collect_task_types_from_expression(statement.value, task_types, visited)
-              when IR::Assignment
-                collect_task_types_from_expression(statement.target, task_types, visited)
-                collect_task_types_from_expression(statement.value, task_types, visited)
-              when IR::BlockStmt
-                collect_task_types_from_statements(statement.body, task_types, visited)
-              when IR::WhileStmt
-                collect_task_types_from_expression(statement.condition, task_types, visited)
-                collect_task_types_from_statements(statement.body, task_types, visited)
-              when IR::ForStmt
-                collect_task_types_from_statements([statement.init], task_types, visited)
-                collect_task_types_from_expression(statement.condition, task_types, visited)
-                collect_task_types_from_statements(statement.body, task_types, visited)
-                collect_task_types_from_statements([statement.post], task_types, visited)
-              when IR::IfStmt
-                collect_task_types_from_expression(statement.condition, task_types, visited)
-                collect_task_types_from_statements(statement.then_body, task_types, visited)
-                collect_task_types_from_statements(statement.else_body, task_types, visited) if statement.else_body
-              when IR::SwitchStmt
-                collect_task_types_from_expression(statement.expression, task_types, visited)
-                statement.cases.each do |switch_case|
-                  collect_task_types_from_statements(switch_case.body, task_types, visited)
-                end
-              when IR::StaticAssert
-                collect_task_types_from_expression(statement.condition, task_types, visited)
-                collect_task_types_from_expression(statement.message, task_types, visited)
-              when IR::ReturnStmt
-                collect_task_types_from_expression(statement.value, task_types, visited) if statement.value
-              when IR::ExpressionStmt
-                collect_task_types_from_expression(statement.expression, task_types, visited)
-              end
-            end
+            each_ir_statement_for_type_collection(statements,
+              type_collector_method: :collect_task_type,
+              expression_walker_method: :collect_task_types_from_expression,
+              accumulator: task_types, visited:)
           end
 
           def collect_task_types_from_expression(expression, task_types, visited)
@@ -771,42 +746,10 @@ module MilkTea
           end
 
           def collect_generic_variant_types_from_statements(statements, generic_variant_types, visited)
-            statements.each do |statement|
-              case statement
-              when IR::LocalDecl
-                collect_generic_variant_type(statement.type, generic_variant_types, visited)
-                collect_generic_variant_types_from_expression(statement.value, generic_variant_types, visited)
-              when IR::Assignment
-                collect_generic_variant_types_from_expression(statement.target, generic_variant_types, visited)
-                collect_generic_variant_types_from_expression(statement.value, generic_variant_types, visited)
-              when IR::BlockStmt
-                collect_generic_variant_types_from_statements(statement.body, generic_variant_types, visited)
-              when IR::WhileStmt
-                collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
-                collect_generic_variant_types_from_statements(statement.body, generic_variant_types, visited)
-              when IR::ForStmt
-                collect_generic_variant_types_from_statements([statement.init], generic_variant_types, visited)
-                collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
-                collect_generic_variant_types_from_statements(statement.body, generic_variant_types, visited)
-                collect_generic_variant_types_from_statements([statement.post], generic_variant_types, visited)
-              when IR::IfStmt
-                collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
-                collect_generic_variant_types_from_statements(statement.then_body, generic_variant_types, visited)
-                collect_generic_variant_types_from_statements(statement.else_body, generic_variant_types, visited) if statement.else_body
-              when IR::SwitchStmt
-                collect_generic_variant_types_from_expression(statement.expression, generic_variant_types, visited)
-                statement.cases.each do |switch_case|
-                  collect_generic_variant_types_from_statements(switch_case.body, generic_variant_types, visited)
-                end
-              when IR::StaticAssert
-                collect_generic_variant_types_from_expression(statement.condition, generic_variant_types, visited)
-                collect_generic_variant_types_from_expression(statement.message, generic_variant_types, visited)
-              when IR::ReturnStmt
-                collect_generic_variant_types_from_expression(statement.value, generic_variant_types, visited) if statement.value
-              when IR::ExpressionStmt
-                collect_generic_variant_types_from_expression(statement.expression, generic_variant_types, visited)
-              end
-            end
+            each_ir_statement_for_type_collection(statements,
+              type_collector_method: :collect_generic_variant_type,
+              expression_walker_method: :collect_generic_variant_types_from_expression,
+              accumulator: generic_variant_types, visited:)
           end
 
           def collect_generic_variant_types_from_expression(expression, generic_variant_types, visited)
@@ -981,42 +924,10 @@ module MilkTea
           end
 
           def collect_str_buffer_types_from_statements(statements, str_buffer_types, visited)
-            statements.each do |statement|
-              case statement
-              when IR::LocalDecl
-                collect_str_buffer_type(statement.type, str_buffer_types, visited)
-                collect_str_buffer_types_from_expression(statement.value, str_buffer_types, visited)
-              when IR::Assignment
-                collect_str_buffer_types_from_expression(statement.target, str_buffer_types, visited)
-                collect_str_buffer_types_from_expression(statement.value, str_buffer_types, visited)
-              when IR::BlockStmt
-                collect_str_buffer_types_from_statements(statement.body, str_buffer_types, visited)
-              when IR::WhileStmt
-                collect_str_buffer_types_from_expression(statement.condition, str_buffer_types, visited)
-                collect_str_buffer_types_from_statements(statement.body, str_buffer_types, visited)
-              when IR::ForStmt
-                collect_str_buffer_types_from_statements([statement.init], str_buffer_types, visited)
-                collect_str_buffer_types_from_expression(statement.condition, str_buffer_types, visited)
-                collect_str_buffer_types_from_statements(statement.body, str_buffer_types, visited)
-                collect_str_buffer_types_from_statements([statement.post], str_buffer_types, visited)
-              when IR::IfStmt
-                collect_str_buffer_types_from_expression(statement.condition, str_buffer_types, visited)
-                collect_str_buffer_types_from_statements(statement.then_body, str_buffer_types, visited)
-                collect_str_buffer_types_from_statements(statement.else_body, str_buffer_types, visited) if statement.else_body
-              when IR::SwitchStmt
-                collect_str_buffer_types_from_expression(statement.expression, str_buffer_types, visited)
-                statement.cases.each do |switch_case|
-                  collect_str_buffer_types_from_statements(switch_case.body, str_buffer_types, visited)
-                end
-              when IR::StaticAssert
-                collect_str_buffer_types_from_expression(statement.condition, str_buffer_types, visited)
-                collect_str_buffer_types_from_expression(statement.message, str_buffer_types, visited)
-              when IR::ReturnStmt
-                collect_str_buffer_types_from_expression(statement.value, str_buffer_types, visited) if statement.value
-              when IR::ExpressionStmt
-                collect_str_buffer_types_from_expression(statement.expression, str_buffer_types, visited)
-              end
-            end
+            each_ir_statement_for_type_collection(statements,
+              type_collector_method: :collect_str_buffer_type,
+              expression_walker_method: :collect_str_buffer_types_from_expression,
+              accumulator: str_buffer_types, visited:)
           end
 
           def collect_str_buffer_types_from_expression(expression, str_buffer_types, visited)
@@ -1100,42 +1011,10 @@ module MilkTea
           end
 
           def collect_generic_struct_types_from_statements(statements, generic_struct_types, visited)
-            statements.each do |statement|
-              case statement
-              when IR::LocalDecl
-                collect_generic_struct_type(statement.type, generic_struct_types, visited)
-                collect_generic_struct_types_from_expression(statement.value, generic_struct_types, visited)
-              when IR::Assignment
-                collect_generic_struct_types_from_expression(statement.target, generic_struct_types, visited)
-                collect_generic_struct_types_from_expression(statement.value, generic_struct_types, visited)
-              when IR::BlockStmt
-                collect_generic_struct_types_from_statements(statement.body, generic_struct_types, visited)
-              when IR::WhileStmt
-                collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
-                collect_generic_struct_types_from_statements(statement.body, generic_struct_types, visited)
-              when IR::ForStmt
-                collect_generic_struct_types_from_statements([statement.init], generic_struct_types, visited)
-                collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
-                collect_generic_struct_types_from_statements(statement.body, generic_struct_types, visited)
-                collect_generic_struct_types_from_statements([statement.post], generic_struct_types, visited)
-              when IR::IfStmt
-                collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
-                collect_generic_struct_types_from_statements(statement.then_body, generic_struct_types, visited)
-                collect_generic_struct_types_from_statements(statement.else_body, generic_struct_types, visited) if statement.else_body
-              when IR::SwitchStmt
-                collect_generic_struct_types_from_expression(statement.expression, generic_struct_types, visited)
-                statement.cases.each do |switch_case|
-                  collect_generic_struct_types_from_statements(switch_case.body, generic_struct_types, visited)
-                end
-              when IR::StaticAssert
-                collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
-                collect_generic_struct_types_from_expression(statement.message, generic_struct_types, visited)
-              when IR::ReturnStmt
-                collect_generic_struct_types_from_expression(statement.value, generic_struct_types, visited) if statement.value
-              when IR::ExpressionStmt
-                collect_generic_struct_types_from_expression(statement.expression, generic_struct_types, visited)
-              end
-            end
+            each_ir_statement_for_type_collection(statements,
+              type_collector_method: :collect_generic_struct_type,
+              expression_walker_method: :collect_generic_struct_types_from_expression,
+              accumulator: generic_struct_types, visited:)
           end
 
           def collect_generic_struct_types_from_expression(expression, generic_struct_types, visited)
@@ -1221,42 +1100,10 @@ module MilkTea
           end
 
           def collect_span_types_from_statements(statements, span_types, visited)
-            statements.each do |statement|
-              case statement
-              when IR::LocalDecl
-                collect_span_type(statement.type, span_types, visited)
-                collect_span_types_from_expression(statement.value, span_types, visited)
-              when IR::Assignment
-                collect_span_types_from_expression(statement.target, span_types, visited)
-                collect_span_types_from_expression(statement.value, span_types, visited)
-              when IR::BlockStmt
-                collect_span_types_from_statements(statement.body, span_types, visited)
-              when IR::WhileStmt
-                collect_span_types_from_expression(statement.condition, span_types, visited)
-                collect_span_types_from_statements(statement.body, span_types, visited)
-              when IR::ForStmt
-                collect_span_types_from_statements([statement.init], span_types, visited)
-                collect_span_types_from_expression(statement.condition, span_types, visited)
-                collect_span_types_from_statements(statement.body, span_types, visited)
-                collect_span_types_from_statements([statement.post], span_types, visited)
-              when IR::IfStmt
-                collect_span_types_from_expression(statement.condition, span_types, visited)
-                collect_span_types_from_statements(statement.then_body, span_types, visited)
-                collect_span_types_from_statements(statement.else_body, span_types, visited) if statement.else_body
-              when IR::SwitchStmt
-                collect_span_types_from_expression(statement.expression, span_types, visited)
-                statement.cases.each do |switch_case|
-                  collect_span_types_from_statements(switch_case.body, span_types, visited)
-                end
-              when IR::StaticAssert
-                collect_span_types_from_expression(statement.condition, span_types, visited)
-                collect_span_types_from_expression(statement.message, span_types, visited)
-              when IR::ReturnStmt
-                collect_span_types_from_expression(statement.value, span_types, visited) if statement.value
-              when IR::ExpressionStmt
-                collect_span_types_from_expression(statement.expression, span_types, visited)
-              end
-            end
+            each_ir_statement_for_type_collection(statements,
+              type_collector_method: :collect_span_type,
+              expression_walker_method: :collect_span_types_from_expression,
+              accumulator: span_types, visited:)
           end
 
           def collect_span_types_from_expression(expression, span_types, visited)
