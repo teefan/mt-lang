@@ -431,7 +431,7 @@ module MilkTea
       )
       lowered.concat(prepared_setup)
       if prepared_expression && (foreign_call = foreign_call_info(prepared_expression, local_env))
-        setup, value = lower_foreign_call_statement(
+        setup, _value = lower_foreign_call_statement(
           foreign_call,
           env: local_env,
           expected_type: foreign_call[:binding].type.return_type,
