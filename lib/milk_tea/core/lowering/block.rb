@@ -511,7 +511,7 @@ module MilkTea
         env: local_env,
         expected_type: target.type,
         allow_root_statement_foreign: true,
-        materialize_array_calls: !array_type?(target.type),
+        materialize_array_calls: true,
       )
       lowered.concat(prepared_setup)
       if (foreign_call = foreign_call_info(prepared_value, local_env))
@@ -700,7 +700,7 @@ module MilkTea
           env: local_env,
           expected_type: storage_type,
           allow_root_statement_foreign: true,
-          materialize_array_calls: !array_type?(storage_type),
+          materialize_array_calls: true,
         )
         lowered.concat(prepared_setup)
       end
