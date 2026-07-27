@@ -1083,5 +1083,54 @@ module MilkTea
         end
       end
 
+      def iterator_loop_info(type, env:)
+        iter_name = "__mt_for_iterable__"
+        iterator_name = "__mt_for_iterator__"
+        probe_env = duplicate_env(env)
+        current_actual_scope(probe_env[:scopes])[iter_name] = local_binding(type:, linkage_name: iter_name, mutable: false, pointer: false)
+
+        iter_call = AST::Call.new(
+          callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iter_name), member: "iter"),
+          arguments: [],
+        )
+        iterator_type = infer_expression_type(iter_call, env: probe_env)
+
+        current_actual_scope(probe_env[:scopes])[iterator_name] = local_binding(type: iterator_type, linkage_name: iterator_name, mutable: true, pointer: false)
+        next_call = AST::Call.new(
+          callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "next"),
+          arguments: [],
+        )
+        item_storage_type = infer_expression_type(next_call, env: probe_env)
+        if item_storage_type.is_a?(Types::Nullable) && nullable_iterator_item_type?(item_storage_type.base)
+          return {
+            kind: :nullable_item,
+            iterator_type:,
+            item_storage_type:,
+            item_type: item_storage_type.base,
+          }
+        end
+
+        if item_storage_type == @ctx.types.fetch("bool")
+          current_call = AST::Call.new(
+            callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "current"),
+            arguments: [],
+          )
+          current_type = infer_expression_type(current_call, env: probe_env)
+          return {
+            kind: :current_item,
+            iterator_type:,
+            item_storage_type: current_type,
+            item_type: current_type,
+          }
+        end
+
+        nil
+      rescue LoweringError
+        nil
+      end
+
+      def nullable_iterator_item_type?(type)
+        type == @ctx.types.fetch("cstr") || pointer_type?(type)
+      end
   end
 end

@@ -39,50 +39,6 @@ module MilkTea
         callee.is_a?(AST::MemberAccess) ? callee.member : nil
       end
 
-      def async_variant_match_arm_binding(arm, scrutinee_expr, scrutinee_type, env:, frame_expr: nil, local_fields: nil)
-        arm_env = duplicate_env(env)
-        binding_decl = nil
-
-        if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
-          arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-          if arm_name && scrutinee_type.has_payload?(arm_name)
-            fields = scrutinee_type.arm(arm_name)
-            payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-
-            field_key = async_match_binding_field_key(arm)
-            field_info = local_fields&.fetch(field_key, nil)
-            if field_info && frame_expr
-              target = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
-              binding_c = async_frame_field_c_name(field_info[:field_name])
-              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: false, pointer: false)
-              data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
-              arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
-              binding_decl = IR::Assignment.new(target:, operator: "=", value: arm_expr)
-            else
-              data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
-              arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
-              binding_c = c_local_name(arm.binding_name)
-              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: false, pointer: false)
-              binding_decl = IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_type, value: arm_expr)
-            end
-          end
-        end
-
-        [arm_env, binding_decl]
-      end
-
-      def bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
-        return unless scrutinee_type.is_a?(Types::Variant)
-        return unless arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
-
-        arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-        return unless arm_name && scrutinee_type.has_payload?(arm_name)
-
-        fields = scrutinee_type.arm(arm_name)
-        payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-        arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: c_local_name(arm.binding_name), mutable: true, pointer: false)
-      end
-
       def array_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "array" && type.arguments.length == 2 &&
           type.arguments[1].is_a?(Types::LiteralTypeArg)
@@ -211,56 +167,6 @@ module MilkTea
 
       def collection_loop_ref_element_type?(type)
         super
-      end
-
-      def iterator_loop_info(type, env:)
-        iter_name = "__mt_for_iterable__"
-        iterator_name = "__mt_for_iterator__"
-        probe_env = duplicate_env(env)
-        current_actual_scope(probe_env[:scopes])[iter_name] = local_binding(type:, linkage_name: iter_name, mutable: false, pointer: false)
-
-        iter_call = AST::Call.new(
-          callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iter_name), member: "iter"),
-          arguments: [],
-        )
-        iterator_type = infer_expression_type(iter_call, env: probe_env)
-
-        current_actual_scope(probe_env[:scopes])[iterator_name] = local_binding(type: iterator_type, linkage_name: iterator_name, mutable: true, pointer: false)
-        next_call = AST::Call.new(
-          callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "next"),
-          arguments: [],
-        )
-        item_storage_type = infer_expression_type(next_call, env: probe_env)
-        if item_storage_type.is_a?(Types::Nullable) && nullable_iterator_item_type?(item_storage_type.base)
-          return {
-            kind: :nullable_item,
-            iterator_type:,
-            item_storage_type:,
-            item_type: item_storage_type.base,
-          }
-        end
-
-        if item_storage_type == @ctx.types.fetch("bool")
-          current_call = AST::Call.new(
-            callee: AST::MemberAccess.new(receiver: AST::Identifier.new(name: iterator_name), member: "current"),
-            arguments: [],
-          )
-          current_type = infer_expression_type(current_call, env: probe_env)
-          return {
-            kind: :current_item,
-            iterator_type:,
-            item_storage_type: current_type,
-            item_type: current_type,
-          }
-        end
-
-        nil
-      rescue LoweringError
-        nil
-      end
-
-      def nullable_iterator_item_type?(type)
-        type == @ctx.types.fetch("cstr") || pointer_type?(type)
       end
 
       def collection_loop_item_value(iterable_ref, iterable_type, index_ref, element_type)
@@ -841,18 +747,6 @@ module MilkTea
         end
       end
 
-      def lower_async_loop_exit(target, local_defers, outer_defers, frame_expr:, raw_frame_expr:, async_info:)
-        cleanup = lower_async_cleanup_entries(local_defers, outer_defers, frame_expr:, raw_frame_expr:, async_info:)
-        if cleanup.empty?
-          [loop_exit_statement(target, local_defers:, outer_defers:)]
-        else
-          label = target[:label]
-          raise LoweringError, "structured loop exits with cleanup are unsupported" unless label
-
-          cleanup + [IR::GotoStmt.new(label:)]
-        end
-      end
-
       def contains_label_target?(statements, label)
         statements.any? do |statement|
           case statement
@@ -926,28 +820,6 @@ module MilkTea
 
       def bind_let_else_local?(statement)
         !let_else_discard_binding_syntax?(statement)
-      end
-
-      def async_local_decl_field_key(statement)
-        return "__discard_#{statement.line}" if statement.name == "_"
-
-        statement.name
-      end
-
-      def async_local_decl_field_name(statement)
-        return "local_discard_#{statement.line}" if statement.name == "_"
-
-        "local_#{statement.name}"
-      end
-
-      def async_match_binding_field_key(arm)
-        @async_binding_counter ||= 0
-        @async_binding_counter += 1
-        "match_binding_#{@async_binding_counter}"
-      end
-
-      def async_match_binding_field_name(arm)
-        "local_match_binding_#{@async_binding_counter}"
       end
 
       def let_else_storage_c_name(statement, env)
@@ -1131,100 +1003,6 @@ module MilkTea
         end
 
         [storage_type, success_type, return_type, nil]
-      end
-
-      def prepare_result_propagation_for_inline_lowering(expression, env:, allow_void_success: false)
-        storage_type, success_type, return_type, error_type = infer_result_propagation_types(expression, env:, allow_void_success:)
-        is_option = option_let_else_type?(storage_type)
-
-        env[:prepared_expression_cleanups] ||= []
-        cleanup_start = env[:prepared_expression_cleanups].length
-        operand_setup, operand = prepare_expression_for_inline_lowering(expression.operand, env:, expected_type: storage_type)
-        operand_cleanups = env[:prepared_expression_cleanups].drop(cleanup_start)
-
-        result_name = fresh_c_temp_name(env, "propagate")
-        result_ref = IR::Name.new(name: result_name, type: storage_type, pointer: false)
-        return_context = env.fetch(:return_context)
-        failure_return = if storage_type == return_type
-                           result_ref
-                         elsif is_option
-                           IR::VariantLiteral.new(
-                             type: return_type,
-                             arm_name: "none",
-                             fields: [],
-                           )
-                         else
-                           IR::VariantLiteral.new(
-                             type: return_type,
-                             arm_name: "failure",
-                             fields: [
-                               IR::AggregateField.new(
-                                 name: "error",
-                                 value: variant_binding_projection_expression(result_ref, storage_type, "failure", "error", error_type),
-                               ),
-                             ],
-                           )
-                         end
-        failure_cleanup = operand_cleanups.flat_map(&:itself)
-        failure_terminator = if return_context[:async_info]
-                               failure_cleanup +
-                                 lower_async_cleanup_entries(
-                                   return_context[:local_defers],
-                                   return_context[:active_defers],
-                                   frame_expr: return_context.fetch(:frame_expr),
-                                   raw_frame_expr: return_context.fetch(:raw_frame_expr),
-                                   async_info: return_context.fetch(:async_info),
-                                 ) +
-                                 async_complete_statements(
-                                   frame_expr: return_context.fetch(:frame_expr),
-                                   raw_frame_expr: return_context.fetch(:raw_frame_expr),
-                                   async_info: return_context.fetch(:async_info),
-                                   value: failure_return,
-                                 )
-                             else
-                               failure_cleanup +
-                                 cleanup_statements(return_context[:local_defers], return_context[:active_defers]) +
-                                 [IR::ReturnStmt.new(value: failure_return, source_path: @ctx.current_analysis_path)]
-                             end
-
-        if success_type == @ctx.types.fetch("void")
-          return [
-            operand_setup + [
-              IR::LocalDecl.new(
-                name: result_name,
-                linkage_name: result_name,
-                type: storage_type,
-                value: lower_contextual_expression(operand, env:, expected_type: storage_type),
-              ),
-              IR::IfStmt.new(
-                condition: let_else_failure_condition(result_ref, storage_type),
-                then_body: failure_terminator,
-                else_body: nil,
-              ),
-            ],
-            nil,
-          ]
-        end
-
-        projection = is_option ? :option_some_value : :result_success_value
-        register_prepared_temp!(env, result_name, success_type, storage_type:, projection:)
-
-        [
-          operand_setup + [
-            IR::LocalDecl.new(
-              name: result_name,
-              linkage_name: result_name,
-              type: storage_type,
-              value: lower_contextual_expression(operand, env:, expected_type: storage_type),
-            ),
-            IR::IfStmt.new(
-              condition: let_else_failure_condition(result_ref, storage_type),
-              then_body: failure_terminator,
-              else_body: nil,
-            ),
-          ],
-          AST::Identifier.new(name: result_name),
-        ]
       end
 
       def c_type_name(type)

@@ -1331,5 +1331,83 @@ module MilkTea
         lowered << IR::ReturnStmt.new(value: nil)
         lowered
       end
+
+      def async_variant_match_arm_binding(arm, scrutinee_expr, scrutinee_type, env:, frame_expr: nil, local_fields: nil)
+        arm_env = duplicate_env(env)
+        binding_decl = nil
+
+        if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+          arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+          if arm_name && scrutinee_type.has_payload?(arm_name)
+            fields = scrutinee_type.arm(arm_name)
+            payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+
+            field_key = async_match_binding_field_key(arm)
+            field_info = local_fields&.fetch(field_key, nil)
+            if field_info && frame_expr
+              target = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
+              binding_c = async_frame_field_c_name(field_info[:field_name])
+              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: false, pointer: false)
+              data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
+              arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+              binding_decl = IR::Assignment.new(target:, operator: "=", value: arm_expr)
+            else
+              data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
+              arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+              binding_c = c_local_name(arm.binding_name)
+              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: false, pointer: false)
+              binding_decl = IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_type, value: arm_expr)
+            end
+          end
+        end
+
+        [arm_env, binding_decl]
+      end
+
+      def bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
+        return unless scrutinee_type.is_a?(Types::Variant)
+        return unless arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+
+        arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+        return unless arm_name && scrutinee_type.has_payload?(arm_name)
+
+        fields = scrutinee_type.arm(arm_name)
+        payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+        arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: c_local_name(arm.binding_name), mutable: true, pointer: false)
+      end
+
+      def lower_async_loop_exit(target, local_defers, outer_defers, frame_expr:, raw_frame_expr:, async_info:)
+        cleanup = lower_async_cleanup_entries(local_defers, outer_defers, frame_expr:, raw_frame_expr:, async_info:)
+        if cleanup.empty?
+          [loop_exit_statement(target, local_defers:, outer_defers:)]
+        else
+          label = target[:label]
+          raise LoweringError, "structured loop exits with cleanup are unsupported" unless label
+
+          cleanup + [IR::GotoStmt.new(label:)]
+        end
+      end
+
+      def async_local_decl_field_key(statement)
+        return "__discard_#{statement.line}" if statement.name == "_"
+
+        statement.name
+      end
+
+      def async_local_decl_field_name(statement)
+        return "local_discard_#{statement.line}" if statement.name == "_"
+
+        "local_#{statement.name}"
+      end
+
+      def async_match_binding_field_key(arm)
+        @async_binding_counter ||= 0
+        @async_binding_counter += 1
+        "match_binding_#{@async_binding_counter}"
+      end
+
+      def async_match_binding_field_name(arm)
+        "local_match_binding_#{@async_binding_counter}"
+      end
   end
 end

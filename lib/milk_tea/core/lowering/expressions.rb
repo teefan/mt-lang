@@ -1672,5 +1672,99 @@ module MilkTea
         end
         expr
       end
+
+      def prepare_result_propagation_for_inline_lowering(expression, env:, allow_void_success: false)
+        storage_type, success_type, return_type, error_type = infer_result_propagation_types(expression, env:, allow_void_success:)
+        is_option = option_let_else_type?(storage_type)
+
+        env[:prepared_expression_cleanups] ||= []
+        cleanup_start = env[:prepared_expression_cleanups].length
+        operand_setup, operand = prepare_expression_for_inline_lowering(expression.operand, env:, expected_type: storage_type)
+        operand_cleanups = env[:prepared_expression_cleanups].drop(cleanup_start)
+
+        result_name = fresh_c_temp_name(env, "propagate")
+        result_ref = IR::Name.new(name: result_name, type: storage_type, pointer: false)
+        return_context = env.fetch(:return_context)
+        failure_return = if storage_type == return_type
+                           result_ref
+                         elsif is_option
+                           IR::VariantLiteral.new(
+                             type: return_type,
+                             arm_name: "none",
+                             fields: [],
+                           )
+                         else
+                           IR::VariantLiteral.new(
+                             type: return_type,
+                             arm_name: "failure",
+                             fields: [
+                               IR::AggregateField.new(
+                                 name: "error",
+                                 value: variant_binding_projection_expression(result_ref, storage_type, "failure", "error", error_type),
+                               ),
+                             ],
+                           )
+                         end
+        failure_cleanup = operand_cleanups.flat_map(&:itself)
+        failure_terminator = if return_context[:async_info]
+                               failure_cleanup +
+                                 lower_async_cleanup_entries(
+                                   return_context[:local_defers],
+                                   return_context[:active_defers],
+                                   frame_expr: return_context.fetch(:frame_expr),
+                                   raw_frame_expr: return_context.fetch(:raw_frame_expr),
+                                   async_info: return_context.fetch(:async_info),
+                                 ) +
+                                 async_complete_statements(
+                                   frame_expr: return_context.fetch(:frame_expr),
+                                   raw_frame_expr: return_context.fetch(:raw_frame_expr),
+                                   async_info: return_context.fetch(:async_info),
+                                   value: failure_return,
+                                 )
+                             else
+                               failure_cleanup +
+                                 cleanup_statements(return_context[:local_defers], return_context[:active_defers]) +
+                                 [IR::ReturnStmt.new(value: failure_return, source_path: @ctx.current_analysis_path)]
+                             end
+
+        if success_type == @ctx.types.fetch("void")
+          return [
+            operand_setup + [
+              IR::LocalDecl.new(
+                name: result_name,
+                linkage_name: result_name,
+                type: storage_type,
+                value: lower_contextual_expression(operand, env:, expected_type: storage_type),
+              ),
+              IR::IfStmt.new(
+                condition: let_else_failure_condition(result_ref, storage_type),
+                then_body: failure_terminator,
+                else_body: nil,
+              ),
+            ],
+            nil,
+          ]
+        end
+
+        projection = is_option ? :option_some_value : :result_success_value
+        register_prepared_temp!(env, result_name, success_type, storage_type:, projection:)
+
+        [
+          operand_setup + [
+            IR::LocalDecl.new(
+              name: result_name,
+              linkage_name: result_name,
+              type: storage_type,
+              value: lower_contextual_expression(operand, env:, expected_type: storage_type),
+            ),
+            IR::IfStmt.new(
+              condition: let_else_failure_condition(result_ref, storage_type),
+              then_body: failure_terminator,
+              else_body: nil,
+            ),
+          ],
+          AST::Identifier.new(name: result_name),
+        ]
+      end
   end
 end
