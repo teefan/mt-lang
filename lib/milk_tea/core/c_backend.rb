@@ -10,6 +10,7 @@ require_relative "c_backend/control_flow_emission"
 require_relative "c_backend/runtime_helpers"
 require_relative "c_backend/type_declaration"
 require_relative "c_backend/expressions"
+require_relative "c_backend/format_helpers"
 require_relative "c_backend/reinterpret"
 
 module MilkTea
@@ -288,6 +289,7 @@ module MilkTea
     include Statements
     include ControlFlowEmission
     include RuntimeHelpers
+    include FormatHelpers
     include TypeDeclaration
     include Expressions
     include Reinterpret
