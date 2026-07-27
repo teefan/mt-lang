@@ -33,7 +33,12 @@ module MilkTea
             when IR::NullableSpanIndex
               "#{nullable_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
             when IR::Call
-              raise CBackendError, "array-return call must be materialized before C emission" if array_type?(expression.type)
+              if array_type?(expression.type)
+                location = [@source_path, @current_line && "line #{@current_line}"].compact.join(" ")
+                msg = "array-return call must be materialized before C emission"
+                msg += " (#{location})" unless location.empty?
+                raise CBackendError.new(msg, line: @current_line, path: @source_path)
+              end
 
               emit_call_expression(expression)
             when IR::Unary

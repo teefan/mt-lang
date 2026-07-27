@@ -55,6 +55,8 @@ module MilkTea
       @checked_index_alias_id = 0
       @loop_guard_id = 0
       @emitted_span_type_names = Set.new
+      @source_path = program.source_path
+      @current_line = nil
     end
 
     def emit

@@ -129,9 +129,9 @@ module MilkTea
                 next fields
               end
 
-              if call_expr.callee.is_a?(AST::Specialization)
+              if call_expr.callee.is_a?(AST::Specialization) && @checker.respond_to?(:resolve_type_expression)
                 resolved = @checker.send(:resolve_type_expression, call_expr.callee)
-                if resolved && @checker.send(:array_type?, resolved)
+                if resolved && @checker.respond_to?(:array_type?) && @checker.send(:array_type?, resolved)
                   values = []
                   call_expr.arguments.each do |argument|
                     val = evaluate_expression(argument.value, scopes:)

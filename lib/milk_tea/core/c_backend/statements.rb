@@ -23,6 +23,10 @@ module MilkTea
             indent = INDENT * level
             aliases = checked_index_aliases_for_statement(statement)
             alias_lines = emit_checked_index_alias_declarations(aliases, indent)
+            if statement.respond_to?(:line) && statement.line
+              @current_line = statement.line
+              @source_path ||= statement.source_path if statement.respond_to?(:source_path) && statement.source_path
+            end
             line_directive = if @emit_line_directives && statement.respond_to?(:line) && statement.line
                                sp = (statement.respond_to?(:source_path) && statement.source_path) || @source_path
                                sp ? ["#line #{statement.line} #{sp.inspect}"] : []
