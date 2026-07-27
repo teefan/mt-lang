@@ -150,28 +150,16 @@ module MilkTea
               projection: :result_failure_error,
             )
           end
-          else_body = if statements_contain_await?(statement.else_body, async_info)
-            lower_async_cf_statements(
-              statement.else_body,
-              env: else_env,
-              frame_expr:,
-              raw_frame_expr:,
-              resume_linkage_name:,
-              async_info:,
-              active_defers:,
-              loop_flow:,
-            )
-          else
-            lower_async_non_await_statements(
-              statement.else_body,
-              env: else_env,
-              frame_expr:,
-              raw_frame_expr:,
-              async_info:,
-              active_defers:,
-              loop_flow:,
-            )
-          end
+          else_body = lower_async_body(
+            statement.else_body,
+            env: else_env,
+            frame_expr:,
+            raw_frame_expr:,
+            resume_linkage_name:,
+            async_info:,
+            active_defers:,
+            loop_flow:,
+          )
           lowered << IR::IfStmt.new(
             condition: let_else_failure_condition(target, storage_type),
             then_body: else_body,
@@ -212,6 +200,35 @@ module MilkTea
             false
           end
         end
+      end
+
+      def lower_async_body(body, env:, frame_expr:, raw_frame_expr:, async_info:, resume_linkage_name: nil, active_defers: [], loop_flow: nil)
+        if statements_contain_await?(body, async_info)
+          lower_async_cf_statements(body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
+        else
+          lower_async_non_await_statements(body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow:)
+        end
+      end
+
+      def build_async_while_with_condition_setup(condition_setup, condition, body, break_label)
+        if condition_setup.empty?
+          stmts = [IR::WhileStmt.new(condition:, body:)]
+          stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
+          return stmts
+        end
+
+        loop_body = [
+          *condition_setup,
+          IR::IfStmt.new(
+            condition: IR::Unary.new(operator: "not", operand: condition, type: @ctx.types.fetch("bool")),
+            then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
+            else_body: nil,
+          ),
+          *body,
+        ]
+        stmts = [IR::WhileStmt.new(condition: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")), body: loop_body)]
+        stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(loop_body, break_label)
+        stmts
       end
 
       # Lower a list of statements that MAY contain await expressions inside nested control flow.
@@ -304,20 +321,12 @@ module MilkTea
         branch_entries = statement.branches.map do |branch|
           condition_setup, prepared_cond = prepare_expression_for_inline_lowering(branch.condition, env:)
           condition = lower_contextual_expression(prepared_cond, env:, expected_type: @ctx.types.fetch("bool"))
-          body = if statements_contain_await?(branch.body, async_info)
-            lower_async_cf_statements(branch.body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
-          else
-            lower_async_non_await_statements(branch.body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow:)
-          end
+          body = lower_async_body(branch.body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
           { condition_setup:, condition:, body: }
         end
 
         else_body = if statement.else_body
-          if statements_contain_await?(statement.else_body, async_info)
-            lower_async_cf_statements(statement.else_body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
-          else
-            lower_async_non_await_statements(statement.else_body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow:)
-          end
+          lower_async_body(statement.else_body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow:)
         end
 
         nested_else = else_body
@@ -336,31 +345,10 @@ module MilkTea
         condition_setup, prepared_cond = prepare_expression_for_inline_lowering(statement.condition, env:)
         condition = lower_contextual_expression(prepared_cond, env:, expected_type: @ctx.types.fetch("bool"))
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
-        body = if statements_contain_await?(statement.body, async_info)
-          lower_async_cf_statements(statement.body, env: duplicate_env(env), frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
-        else
-          lower_async_non_await_statements(statement.body, env: duplicate_env(env), frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: inner_loop_flow)
-        end
+        body = lower_async_body(statement.body, env: duplicate_env(env), frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
-        if condition_setup.empty?
-          stmts = [IR::WhileStmt.new(condition:, body:)]
-          stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
-          return stmts
-        end
-
-        loop_body = [
-          *condition_setup,
-          IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: condition, type: @ctx.types.fetch("bool")),
-            then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
-            else_body: nil,
-          ),
-          *body,
-        ]
-        stmts = [IR::WhileStmt.new(condition: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")), body: loop_body)]
-        stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(loop_body, break_label)
-        stmts
+        build_async_while_with_condition_setup(condition_setup, condition, body, break_label)
       end
 
       def lower_async_cf_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:)
@@ -405,11 +393,7 @@ module MilkTea
         )
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
 
-        body = if statements_contain_await?(statement.body, async_info)
-          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
-        else
-          lower_async_non_await_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: inner_loop_flow)
-        end
+        body = lower_async_body(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
 
         cmp_op = inclusive ? "<=" : "<"
@@ -461,11 +445,7 @@ module MilkTea
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
 
         assign_item = IR::Assignment.new(target: loop_var_expr, operator: "=", value: item_value)
-        body_stmts = if statements_contain_await?(statement.body, async_info)
-          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
-        else
-          lower_async_non_await_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: inner_loop_flow)
-        end
+        body_stmts = lower_async_body(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         body_stmts << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body_stmts, continue_label)
 
         stmts = [
@@ -533,11 +513,7 @@ module MilkTea
           IR::Assignment.new(target: binding_target, operator: "=", value: loop_item_value)
         end
         inner_loop_flow = loop_flow(break_target: loop_exit_break(break_label), continue_target: loop_exit_continue(continue_label))
-        body_stmts = if statements_contain_await?(statement.body, async_info)
-          lower_async_cf_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
-        else
-          lower_async_non_await_statements(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: inner_loop_flow)
-        end
+        body_stmts = lower_async_body(statement.body, env: inner_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: inner_loop_flow)
         body_stmts << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body_stmts, continue_label)
 
         length_checks = iterable_entries.drop(1).each_with_index.map do |entry, offset|
@@ -593,11 +569,7 @@ module MilkTea
           kind_expr = IR::Member.new(receiver: match_expr, member: "kind", type: kind_type)
           cases = statement.arms.map do |arm|
             arm_env, binding_decl = async_variant_match_arm_binding(arm, match_expr, match_type, env:, frame_expr:, local_fields: async_info[:local_fields])
-            arm_body = if statements_contain_await?(arm.body, async_info)
-                         lower_async_cf_statements(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
-                       else
-                         lower_async_non_await_statements(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: arm_loop_flow)
-                       end
+            arm_body = lower_async_body(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
             body = [binding_decl, *arm_body].compact + [IR::BreakStmt.new]
             if wildcard_arm_pattern?(arm.pattern)
               IR::SwitchDefaultCase.new(body: body)
@@ -611,11 +583,7 @@ module MilkTea
         end
 
         cases = statement.arms.map do |arm|
-          arm_body = if statements_contain_await?(arm.body, async_info)
-            lower_async_cf_statements(arm.body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
-          else
-            lower_async_non_await_statements(arm.body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: arm_loop_flow)
-          end
+          arm_body = lower_async_body(arm.body, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
           if wildcard_arm_pattern?(arm.pattern)
             IR::SwitchDefaultCase.new(body: arm_body + [IR::BreakStmt.new])
           else
@@ -804,23 +772,7 @@ module MilkTea
         body << IR::LabelStmt.new(name: continue_label) if contains_label_target?(body, continue_label)
         cond = lower_expression(prepared_cond, env:, expected_type: @ctx.types.fetch("bool"))
 
-        if condition_setup.empty?
-          stmts = [IR::WhileStmt.new(condition: cond, body:)]
-          stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(body, break_label)
-          return IR::BlockStmt.new(body: stmts)
-        end
-
-        loop_body = [
-          *condition_setup,
-          IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: cond, type: @ctx.types.fetch("bool")),
-            then_body: [loop_exit_statement(loop_exit_break(break_label), local_defers: [], outer_defers: [])],
-            else_body: nil,
-          ),
-          *body,
-        ]
-        stmts = [IR::WhileStmt.new(condition: IR::BooleanLiteral.new(value: true, type: @ctx.types.fetch("bool")), body: loop_body)]
-        stmts << IR::LabelStmt.new(name: break_label) if contains_label_target?(loop_body, break_label)
+        stmts = build_async_while_with_condition_setup(condition_setup, cond, body, break_label)
         IR::BlockStmt.new(body: stmts)
       end
 
@@ -1242,28 +1194,16 @@ module MilkTea
                 projection: :result_failure_error,
               )
             end
-            else_body = if statements_contain_await?(statement.else_body, async_info)
-              lower_async_cf_statements(
-                statement.else_body,
-                env: else_env,
-                frame_expr:,
-                raw_frame_expr:,
-                resume_linkage_name:,
-                async_info:,
-                active_defers:,
-                loop_flow:,
-              )
-            else
-              lower_async_non_await_statements(
-                statement.else_body,
-                env: else_env,
-                frame_expr:,
-                raw_frame_expr:,
-                async_info:,
-                active_defers:,
-                loop_flow:,
-              )
-            end
+            else_body = lower_async_body(
+              statement.else_body,
+              env: else_env,
+              frame_expr:,
+              raw_frame_expr:,
+              resume_linkage_name:,
+              async_info:,
+              active_defers:,
+              loop_flow:,
+            )
             lowered << IR::IfStmt.new(
               condition: let_else_failure_condition(target, storage_type),
               then_body: else_body,
@@ -1315,28 +1255,16 @@ module MilkTea
           next [] if cleanup_entry[:body].empty?
 
           cleanup_env = duplicate_env(cleanup_entry[:env])
-          if statements_contain_await?(cleanup_entry[:body], async_info)
-            lower_async_cf_statements(
-              cleanup_entry[:body],
-              env: cleanup_env,
-              frame_expr:,
-              raw_frame_expr:,
-              resume_linkage_name: async_info.fetch(:resume_linkage_name),
-              async_info:,
-              active_defers: [],
-              loop_flow: nil,
-            )
-          else
-            lower_async_non_await_statements(
-              cleanup_entry[:body],
-              env: cleanup_env,
-              frame_expr:,
-              raw_frame_expr:,
-              async_info:,
-              active_defers: [],
-              loop_flow: nil,
-            )
-          end
+          lower_async_body(
+            cleanup_entry[:body],
+            env: cleanup_env,
+            frame_expr:,
+            raw_frame_expr:,
+            resume_linkage_name: async_info.fetch(:resume_linkage_name),
+            async_info:,
+            active_defers: [],
+            loop_flow: nil,
+          )
         end
       end
 
