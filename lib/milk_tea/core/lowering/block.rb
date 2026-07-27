@@ -25,631 +25,15 @@ module MilkTea
                               lower_defer_cleanup_expression(statement.expression, env: local_env)
                             end
           when AST::UnsafeStmt
-            body = lower_block(
-              statement.body,
-              env: local_env,
-              active_defers: active_defers + local_defers,
-              return_type:,
-              loop_flow: nested_loop_flow(loop_flow, local_defers),
-              allow_return:,
-            )
-            lowered << IR::BlockStmt.new(body:)
+            lower_block_unsafe_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
           when AST::LocalDecl
-            if statement.destructure_bindings
-              lower_destructure_decl(statement, env: local_env, lowered:, local_defers:, active_defers:, return_type:, loop_flow:, allow_return:)
-              next
-            end
-
-            storage_type = if statement.else_body
-                              infer_expression_type(statement.value, env: local_env)
-                            elsif statement.type
-                              resolve_type_ref(statement.type)
-                            else
-                              infer_expression_type(statement.value, env: local_env)
-                            end
-            type = if statement.else_body
-                     statement.type ? resolve_type_ref(statement.type) : let_else_success_type(storage_type)
-                   else
-                     storage_type
-                   end
-            linkage_name = let_else_storage_c_name(statement, local_env)
-            decl_name = bind_let_else_local?(statement) ? statement.name : linkage_name
-            prepared_setup = []
-            prepared_value = statement.value
-            prepared_cleanups = []
-            emitted_decl = false
-            if statement.value
-              local_env[:current_local_name] = linkage_name
-              prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
-                statement.value,
-                env: local_env,
-                expected_type: storage_type,
-                allow_root_statement_foreign: true,
-                materialize_array_calls: !array_type?(storage_type),
-              )
-              lowered.concat(prepared_setup)
-            end
-            if prepared_value && (foreign_call = foreign_call_info(prepared_value, local_env))
-              setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
-                foreign_call,
-                env: local_env,
-                expected_type: storage_type,
-                statement_position: false,
-              )
-              lowered.concat(setup)
-              raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @ctx.types.fetch("void")
-              raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
-
-              lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path)
-              lowered.concat(cleanup_statements)
-              emitted_decl = true
-            elsif prepared_value.is_a?(AST::ProcExpr)
-              setup, value = lower_proc_expression_for_local(prepared_value, env: local_env, local_name: statement.name, proc_type: storage_type)
-              lowered.concat(setup)
-            elsif prepared_value
-              value = lower_contextual_expression(
-                prepared_value,
-                env: local_env,
-                expected_type: storage_type,
-                contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
-              )
-            else
-              value = IR::ZeroInit.new(type: storage_type)
-            end
-            if value && storage_type.is_a?(Types::Nullable) && !value.type.is_a?(Types::Nullable) && !pointer_like_type?(storage_type.base)
-              value = nullable_some_literal(storage_type, value)
-            end
-            if bind_let_else_local?(statement)
-              current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
-                type:,
-                storage_type:,
-                linkage_name:,
-                mutable: statement.kind == :var,
-                pointer: false,
-                projection: statement.else_body ? let_else_binding_projection(storage_type) : nil,
-                cstr_backed: cstr_backed_storage_value?(storage_type, prepared_value, local_env),
-                cstr_list_backed: cstr_list_backed_storage_value?(storage_type, prepared_value, local_env),
-                const_value: statement.else_body ? nil : statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
-              )
-            end
-            lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path) unless emitted_decl
-            if statement.else_body
-              else_env = if statement.else_binding
-                           duplicate_env(local_env).tap do |env_with_error|
-                             current_actual_scope(env_with_error[:scopes])[statement.else_binding.name] = local_binding(
-                               type: let_else_error_type(storage_type),
-                               storage_type:,
-                               linkage_name:,
-                               mutable: false,
-                               pointer: false,
-                               projection: :result_failure_error,
-                             )
-                           end
-                         else
-                           local_env
-                         end
-              else_body = lower_block(
-                statement.else_body,
-                env: else_env,
-                active_defers: active_defers + local_defers + prepared_cleanups,
-                return_type:,
-                loop_flow: nested_loop_flow(loop_flow, local_defers),
-                allow_return:,
-              )
-              local_ref = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
-              lowered << IR::IfStmt.new(
-                condition: let_else_failure_condition(local_ref, storage_type),
-                then_body: else_body,
-                else_body: nil,
-              )
-            end
-            local_defers.concat(prepared_cleanups)
-            if contains_proc_storage_type?(storage_type)
-              local_value = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
-              # Use guarded release so zero-initialized var locals are safe (invoke == NULL guard).
-              local_defers << lower_proc_contained_guarded_release_statements(local_value, storage_type)
-              if statement.value && !expression_contains_proc_expr?(statement.value)
-                lowered.concat(lower_proc_contained_retain_statements(local_value, storage_type))
-              end
-            end
+            lower_block_local_decl_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
           when AST::Assignment
-            if statement.operator == "=" &&
-               statement.target.is_a?(AST::IndexAccess) &&
-               statement.target.index.is_a?(AST::RangeExpr) &&
-               statement.value.is_a?(AST::ExpressionList)
-              lowered.concat(lower_range_index_assignment(statement, env: local_env))
-              next
-            end
-            target = lower_assignment_target(statement.target, env: local_env)
-            prepared_cleanups = []
-            prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
-              statement.value,
-              env: local_env,
-              expected_type: target.type,
-              allow_root_statement_foreign: true,
-              materialize_array_calls: !array_type?(target.type),
-            )
-            lowered.concat(prepared_setup)
-            if (foreign_call = foreign_call_info(prepared_value, local_env))
-              setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
-                foreign_call,
-                env: local_env,
-                expected_type: target.type,
-                statement_position: false,
-              )
-              lowered.concat(setup)
-              raise LoweringError, "foreign call used in assignment must return a value" if call_type == @ctx.types.fetch("void")
-              raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
-
-              lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
-              lowered.concat(cleanup_statements)
-              update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
-              local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
-              next
-            else
-              value = if statement.operator == "="
-                        lower_contextual_expression(
-                          prepared_value,
-                          env: local_env,
-                          expected_type: target.type,
-                          external_numeric: external_numeric_assignment_target?(statement.target, env: local_env),
-                          contextual_int_to_float: contextual_int_to_float_target?(target.type),
-                        )
-                      elsif ["+=", "-=", "*=", "/="].include?(statement.operator)
-                        lower_contextual_expression(
-                          prepared_value,
-                          env: local_env,
-                          expected_type: target.type,
-                          contextual_int_to_float: contextual_int_to_float_target?(target.type),
-                        )
-                      else
-                        lower_expression(prepared_value, env: local_env, expected_type: target.type)
-                      end
-            end
-            if target.type.is_a?(Types::Nullable) && value && !value.type.is_a?(Types::Nullable) && !pointer_like_type?(target.type.base)
-              value = nullable_some_literal(target.type, value)
-            end
-            update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
-            local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
-            operator = statement.operator
-            if ["+=", "-=", "*=", "/="].include?(operator) &&
-               (target.type.is_a?(Types::Vector) || target.type.is_a?(Types::Matrix) || target.type.is_a?(Types::Quaternion))
-              binary_op = operator[0...-1]
-              expanded = lower_vector_binary_op(binary_op, target, target.type, value, value.type, target.type)
-              value = expanded || IR::Binary.new(operator: binary_op, left: target, right: value, type: target.type)
-              operator = "="
-            end
-            if operator == "=" && contains_proc_storage_type?(target.type)
-              # Materialize the RHS to a C temp to avoid evaluating aggregate literals multiple times
-              # and to ensure retain/release operate on a stable struct value throughout the sequence.
-              rhs_name = fresh_c_temp_name(local_env, "proc_assign")
-              lowered << IR::LocalDecl.new(name: rhs_name, linkage_name: rhs_name, type: target.type, value:)
-              rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
-              # Retain proc fields in the incoming value that are NOT from fresh proc expressions
-              # (fresh proc exprs carry refcount=1 and transfer ownership; existing procs need +1).
-              lowered.concat(lower_proc_selective_retain_statements(rhs, statement.value, target.type))
-              # Release old proc fields in the target (guarded: target may be zero-initialized).
-              lowered.concat(lower_proc_contained_guarded_release_statements(target, target.type))
-              lowered << IR::Assignment.new(target:, operator: "=", value: rhs)
-            else
-              lowered << IR::Assignment.new(target:, operator:, value:)
-            end
+            lower_block_assignment_stmt(statement, lowered:, local_defers:, local_env:)
           when AST::IfStmt
-            if statement.inline
-              lowered.concat(lower_inline_if_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
-              next
-            end
-
-            false_refinements = {}
-            branch_entries = []
-
-            # When inside inline for, try to const-evaluate conditions
-            unless statement.branches.empty?
-              if @bypass_sema_type_cache
-                ct_cond = compile_time_const_value(statement.branches.first.condition, env: local_env)
-                if ct_cond == true
-                  lowered.concat(lower_block(
-                    statement.branches.first.body,
-                    env: local_env,
-                    active_defers: active_defers + local_defers,
-                    return_type:,
-                    loop_flow: nested_loop_flow(loop_flow, local_defers),
-                    allow_return:,
-                  ))
-                  next
-                elsif ct_cond == false
-                  if statement.else_body
-                    lowered.concat(lower_block(
-                      statement.else_body,
-                      env: local_env,
-                      active_defers: active_defers + local_defers,
-                      return_type:,
-                      loop_flow: nested_loop_flow(loop_flow, local_defers),
-                      allow_return:,
-                    ))
-                  end
-                  next
-                end
-              end
-            end
-
-            statement.branches.each do |branch|
-              branch_env = env_with_refinements(local_env, false_refinements)
-              condition_setup, prepared_condition, condition_cleanups = prepare_expression_with_cleanups(
-                branch.condition,
-                env: branch_env,
-                expected_type: @ctx.types.fetch("bool"),
-              )
-              true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, env: branch_env))
-
-              branch_entries << [
-                condition_setup,
-                condition_cleanups,
-                lower_expression(prepared_condition, env: branch_env, expected_type: @ctx.types.fetch("bool")),
-                lower_block(
-                  branch.body,
-                  env: env_with_refinements(local_env, true_refinements),
-                  active_defers: active_defers + local_defers,
-                  return_type:,
-                  loop_flow: nested_loop_flow(loop_flow, local_defers),
-                  allow_return:,
-                ),
-              ]
-
-              false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, env: branch_env))
-            end
-
-            nested_else_body = statement.else_body ? lower_block(
-              statement.else_body,
-              env: env_with_refinements(local_env, false_refinements),
-              active_defers: active_defers + local_defers,
-              return_type:,
-              loop_flow: nested_loop_flow(loop_flow, local_defers),
-              allow_return:,
-            ) : []
-
-            nested_if = nested_else_body
-            branch_entries.reverse_each do |condition_setup, condition_cleanups, condition, then_body|
-              condition_cleanup_statements = condition_cleanups.flat_map(&:itself)
-              nested_if = [
-                *condition_setup,
-                IR::IfStmt.new(
-                  condition:,
-                  then_body: condition_cleanup_statements + then_body,
-                  else_body: condition_cleanup_statements + nested_if,
-                ),
-              ]
-            end
-            lowered.concat(nested_if)
-
-            merge_cstr_metadata_after_if_statement!(statement, local_env)
-
-            if statement.else_body.nil? && statement.branches.all? { |branch| cfg_block_always_terminates?(branch.body) }
-              local_env[:scopes] = scopes_with_refinements(local_env[:scopes], false_refinements)
-            end
+            lower_block_if_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
           when AST::MatchStmt
-            if statement.inline
-              lowered.concat(lower_inline_match_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
-            else
-            scrutinee_type = infer_expression_type(statement.expression, env: local_env)
-            expression_setup, prepared_expression, expression_cleanups = prepare_expression_with_cleanups(
-              statement.expression,
-              env: local_env,
-              expected_type: scrutinee_type,
-            )
-            lowered.concat(expression_setup)
-            expression = lower_expression(prepared_expression, env: local_env, expected_type: scrutinee_type)
-
-            if scrutinee_type.is_a?(Types::Variant) &&
-               statement.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
-               !duplicable_foreign_argument_expression?(expression)
-              scrutinee_linkage_name = fresh_c_temp_name(local_env, "match_value")
-              lowered << IR::LocalDecl.new(name: scrutinee_linkage_name, linkage_name: scrutinee_linkage_name, type: scrutinee_type, value: expression)
-              expression = IR::Name.new(name: scrutinee_linkage_name, type: scrutinee_type, pointer: false)
-            end
-
-            if scrutinee_type.is_a?(Types::Variant)
-              if statement.arms.any? { |arm| arm.pattern.is_a?(AST::Call) }
-                kind_type = @ctx.types.fetch("int")
-                arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
-                @match_label_counter ||= 0
-                @match_label_counter += 1
-                m = @match_label_counter
-                match_end_label = "__mt_match_#{m}_end"
-                arm_next_label = "__mt_match_#{m}_arm_next"
-
-                statement.arms.each_with_index do |arm, arm_index|
-                  arm_local_env = duplicate_env(local_env)
-                  arm_name = variant_match_arm_name_from_pattern(arm.pattern) unless wildcard_arm_pattern?(arm.pattern)
-
-                  # Emit label for all arms except the first (catches previous arm's goto)
-                  if arm_index > 0
-                    lowered << IR::LabelStmt.new(name: "__mt_match_#{m}_arm_#{arm_index}")
-                  end
-
-                  if arm_name && !wildcard_arm_pattern?(arm.pattern)
-                    tag_value = IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false)
-                    tag_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
-                    goto_label = if arm_index < statement.arms.length - 1
-                                   "__mt_match_#{m}_arm_#{arm_index + 1}"
-                                 else
-                                   arm_next_label
-                                 end
-                    tag_check = IR::Binary.new(operator: "!=", left: tag_expr, right: tag_value, type: @ctx.types.fetch("bool"))
-                    lowered << IR::IfStmt.new(condition: tag_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
-                  end
-
-                  if arm_name && !wildcard_arm_pattern?(arm.pattern) && scrutinee_type.has_payload?(arm_name)
-                    fields = scrutinee_type.arm(arm_name)
-                    payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-                    data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
-                    arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
-                    payload_c_name = fresh_c_temp_name(arm_local_env, "match_payload")
-                    arm_local_env[:scopes].last["__mt_payload"] = local_binding(type: payload_type, linkage_name: payload_c_name, mutable: true, pointer: false)
-
-                    arm_body_ir = []
-                    arm_body_ir << IR::LocalDecl.new(name: payload_c_name, linkage_name: payload_c_name, type: payload_type, value: arm_expr)
-
-                    nested_struct_fields = nil
-                    nested_struct_c_name = nil
-                    nested_struct_type = nil
-                    if fields.size == 1 && fields.values.first.is_a?(Types::Struct)
-                      nested_struct_type = fields.values.first
-                      nested_struct_fields = nested_struct_type.fields
-                      single_field_name = fields.keys.first
-                      nested_struct_c_name = fresh_c_temp_name(arm_local_env, "match_struct")
-                      struct_expr = IR::Member.new(
-                        receiver: IR::Name.new(name: payload_c_name, type: payload_type, pointer: false),
-                        member: single_field_name,
-                        type: nested_struct_type,
-                      )
-                      arm_body_ir << IR::LocalDecl.new(name: nested_struct_c_name, linkage_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
-                    end
-
-                    if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
-                      pattern_fields = nested_struct_fields || fields
-                      pattern_receiver_name = nested_struct_c_name || payload_c_name
-                      pattern_receiver_type = nested_struct_type || payload_type
-
-                      # Phase 1: Emit guard / equality checks (goto next arm on failure)
-                      arm.pattern.arguments.each do |arg|
-                        # Guard: hp > 0
-                        if !arg.name && arg.value.is_a?(AST::BinaryOp) && arg.value.left.is_a?(AST::Identifier)
-                          field_name = arg.value.left.name
-                          next unless pattern_fields.key?(field_name)
-
-                          field_type = pattern_fields[field_name]
-                          field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
-                          field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
-                          rhs_expr = lower_expression(arg.value.right, env: arm_local_env, expected_type: field_type)
-                          guard_condition = IR::Binary.new(operator: arg.value.operator, left: field_expr, right: rhs_expr, type: @ctx.types.fetch("bool"))
-                          arm_body_ir << IR::IfStmt.new(condition: guard_condition, then_body: [], else_body: [IR::GotoStmt.new(label: goto_label)])
-                        end
-
-                        # Equality: kind = Kind.boss
-                        if arg.name
-                          field_name = arg.name
-                          next unless pattern_fields.key?(field_name)
-
-                          field_type = pattern_fields[field_name]
-                          field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
-                          field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
-                          value_expr = lower_expression(arg.value, env: arm_local_env, expected_type: field_type)
-                          eq_check = IR::Binary.new(operator: "!=", left: field_expr, right: value_expr, type: @ctx.types.fetch("bool"))
-                          arm_body_ir << IR::IfStmt.new(condition: eq_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
-                        end
-                      end
-
-                      # Phase 2: Emit bindings (bare identifiers, excluding _ discard)
-                      arm.pattern.arguments.each do |arg|
-                        next if arg.name
-                        next unless arg.value.is_a?(AST::Identifier)
-                        next if arg.value.name == "_"
-
-                        field_name = arg.value.name
-                        next unless pattern_fields.key?(field_name)
-
-                        field_type = pattern_fields[field_name]
-                        binding_c = c_local_name(field_name)
-                        field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
-                        field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
-                        arm_body_ir << IR::LocalDecl.new(name: binding_c, linkage_name: binding_c, type: field_type, value: field_expr)
-                        arm_local_env[:scopes].last[field_name] = local_binding(type: field_type, linkage_name: binding_c, mutable: false, pointer: false)
-                      end
-                    end
-
-                    # Handle as-binding
-                    if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
-                      binding_c = c_local_name(arm.binding_name)
-                      if arm_name && scrutinee_type.has_payload?(arm_name)
-                        payload_key = "__mt_payload"
-                        if arm_local_env[:scopes].last.key?(payload_key)
-                          payload_binding = arm_local_env[:scopes].last[payload_key]
-                          arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_binding[:type], linkage_name: binding_c, mutable: true, pointer: false)
-                          payload_ref = IR::Name.new(name: payload_binding[:linkage_name], type: payload_binding[:type], pointer: false)
-                          arm_body_ir << IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_binding[:type], value: payload_ref)
-                        end
-                      end
-                    end
-
-                    body = lower_block(
-                      arm.body,
-                      env: arm_local_env,
-                      active_defers: active_defers + local_defers,
-                      return_type:,
-                      loop_flow: arm_loop_flow,
-                      allow_return:,
-                    )
-                    arm_body_ir.concat(body)
-                    arm_body_ir << IR::GotoStmt.new(label: match_end_label)
-
-                    lowered << IR::BlockStmt.new(body: arm_body_ir)
-                  else
-                    body = lower_block(
-                      arm.body,
-                      env: arm_local_env,
-                      active_defers: active_defers + local_defers,
-                      return_type:,
-                      loop_flow: arm_loop_flow,
-                      allow_return:,
-                    )
-                    lowered << IR::BlockStmt.new(body: body + [IR::GotoStmt.new(label: match_end_label)])
-                  end
-                end
-
-                lowered << IR::LabelStmt.new(name: arm_next_label)
-                lowered << IR::LabelStmt.new(name: match_end_label)
-              else
-              kind_type = @ctx.types.fetch("int")
-              kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
-              arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
-              cases = statement.arms.map do |arm|
-                arm_local_env = duplicate_env(local_env)
-                binding_decl = if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
-                                 arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-                                 if arm_name && scrutinee_type.has_payload?(arm_name)
-                                   fields = scrutinee_type.arm(arm_name)
-                                   payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-                                   data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
-                                   arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
-                                   binding_c = c_local_name(arm.binding_name)
-                                    arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: true, pointer: false)
-                                   IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_type, value: arm_expr)
-                                 end
-                               end
-                body = lower_block(
-                  arm.body,
-                  env: arm_local_env,
-                  active_defers: active_defers + local_defers,
-                  return_type:,
-                  loop_flow: arm_loop_flow,
-                  allow_return:,
-                )
-                body = [binding_decl, *body].compact if binding_decl
-                if wildcard_arm_pattern?(arm.pattern)
-                  IR::SwitchDefaultCase.new(body:)
-                else
-                  arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-                  IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body:)
-                end
-              end
-              lowered << IR::SwitchStmt.new(expression: kind_expr, cases:, exhaustive: true)
-              end  # inner if/else for struct patterns
-            elsif scrutinee_type.is_a?(Types::StringView)
-              arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
-              bool_type = @ctx.types.fetch("bool")
-              non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
-              wildcard = statement.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
-              else_body = if wildcard
-                            lower_block(
-                              wildcard.body,
-                              env: local_env,
-                              active_defers: active_defers + local_defers,
-                              return_type:,
-                              loop_flow: arm_loop_flow,
-                              allow_return:,
-                            )
-                          else
-                            []
-                          end
-              non_wildcard.reverse_each do |arm|
-                arm_body = lower_block(
-                  arm.body,
-                  env: local_env,
-                  active_defers: active_defers + local_defers,
-                  return_type:,
-                  loop_flow: arm_loop_flow,
-                  allow_return:,
-                )
-                lit = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
-                cond = IR::Binary.new(operator: "==", left: expression, right: lit, type: bool_type)
-                else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
-              end
-              lowered.concat(else_body)
-            elsif scrutinee_type.is_a?(Types::Tuple)
-              arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
-              bool_type = @ctx.types.fetch("bool")
-              non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
-              wildcard = statement.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
-              else_body = if wildcard
-                            lower_block(
-                              wildcard.body,
-                              env: local_env,
-                              active_defers: active_defers + local_defers,
-                              return_type:,
-                              loop_flow: arm_loop_flow,
-                              allow_return:,
-                            )
-                          else
-                            []
-                          end
-              non_wildcard.reverse_each do |arm|
-                arm_body = lower_block(
-                  arm.body,
-                  env: local_env,
-                  active_defers: active_defers + local_defers,
-                  return_type:,
-                  loop_flow: arm_loop_flow,
-                  allow_return:,
-                )
-                cond = tuple_arm_condition(arm, expression, scrutinee_type, bool_type, env: local_env)
-                else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
-              end
-              lowered.concat(else_body)
-            else
-              has_range_arms = statement.arms.any? { |arm| arm.pattern.is_a?(AST::RangeExpr) }
-
-              if has_range_arms
-                arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
-                bool_type = @ctx.types.fetch("bool")
-                non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
-                wildcard = statement.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
-                else_body = if wildcard
-                              lower_block(wildcard.body, env: local_env, active_defers: active_defers + local_defers, return_type:, loop_flow: arm_loop_flow, allow_return:)
-                            else
-                              []
-                            end
-                non_wildcard.reverse_each do |arm|
-                  arm_body = lower_block(
-                    arm.body,
-                    env: local_env,
-                    active_defers: active_defers + local_defers,
-                    return_type:,
-                    loop_flow: arm_loop_flow,
-                    allow_return:,
-                  )
-                  cond = if arm.pattern.is_a?(AST::RangeExpr)
-                           lower_range_match_condition(arm.pattern, expression, bool_type, env: local_env)
-                         else
-                           lit = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
-                           IR::Binary.new(operator: "==", left: expression, right: lit, type: bool_type)
-                         end
-                  else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
-                end
-                lowered.concat(else_body)
-              else
-                arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
-                cases = statement.arms.map do |arm|
-                  body = lower_block(
-                    arm.body,
-                    env: local_env,
-                    active_defers: active_defers + local_defers,
-                    return_type:,
-                    loop_flow: arm_loop_flow,
-                    allow_return:,
-                  )
-                  if wildcard_arm_pattern?(arm.pattern)
-                    IR::SwitchDefaultCase.new(body:)
-                  else
-                    value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
-                    IR::SwitchCase.new(value:, body:)
-                  end
-                end
-                lowered << IR::SwitchStmt.new(expression:, cases:, exhaustive: true)
-              end
-            end
-            lowered.concat(expression_cleanups.flat_map(&:itself))
-            end
+            lower_block_match_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
           when AST::StaticAssert
             lowered << lower_static_assert(statement, env: local_env)
           when AST::ForStmt
@@ -679,114 +63,13 @@ module MilkTea
 
             lowered.concat(lower_loop_exit(loop_flow[:continue_target], local_defers, loop_flow[:continue_defers]))
           when AST::ReturnStmt
-            raise LoweringError, "return is not allowed inside defer blocks" unless allow_return
-
-            value = nil
-            prepared_setup = []
-            prepared_value = statement.value
-            prepared_cleanups = []
-            if statement.value
-              local_env[:current_local_name] = linkage_name
-              prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
-                statement.value,
-                env: local_env,
-                expected_type: return_type,
-                allow_root_statement_foreign: true,
-                materialize_array_calls: !array_type?(return_type),
-              )
-              lowered.concat(prepared_setup)
-            end
-            if prepared_value && (foreign_call = foreign_call_info(prepared_value, local_env))
-              setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: return_type, statement_position: false)
-              lowered.concat(setup)
-            end
-            value ||= prepared_value ? lower_contextual_expression(
-              prepared_value,
-              env: local_env,
-              expected_type: return_type,
-              contextual_int_to_float: contextual_int_to_float_target?(return_type),
-            ) : nil
-            if prepared_cleanups.any? && cstr_trackable_type?(return_type)
-              raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape"
-            end
-
-            prepared_cleanup_list = prepared_cleanups.flat_map(&:itself)
-            if prepared_cleanup_list.any? && return_type.is_a?(Types::Struct) && struct_contains_string_field?(return_type)
-              prepared_cleanup_list = prepared_cleanup_list.reject { |stmt| stmt.is_a?(IR::ExpressionStmt) && stmt.expression.is_a?(IR::Call) && stmt.expression.callee == "mt_format_str_release" }
-            end
-            cleanup = prepared_cleanup_list + cleanup_statements(local_defers, active_defers)
-            needs_proc_retain = value && contains_proc_storage_type?(return_type) && !local_defers.empty? && !expression_contains_proc_expr?(prepared_value)
-            if value && (!cleanup.empty? && !cleanup_safe_return_expression?(prepared_value) || needs_proc_retain)
-              return_value_name = fresh_c_temp_name(local_env, "return_value")
-              lowered << IR::LocalDecl.new(name: return_value_name, linkage_name: return_value_name, type: return_type, value:)
-              value = IR::Name.new(name: return_value_name, type: return_type, pointer: false)
-            end
-            lowered.concat(lower_proc_contained_retain_statements(value, return_type)) if needs_proc_retain
-            lowered.concat(cleanup)
-            lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @ctx.current_analysis_path)
+            lower_block_return_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, allow_return:)
           when AST::ExpressionStmt
-            if (format_sink_statements = lower_explicit_format_sink_expression_statement(statement.expression, env: local_env, line: statement.line))
-              lowered.concat(format_sink_statements)
-              next
-            end
-
-            expression_expected_type = if statement.expression.is_a?(AST::UnaryOp) && statement.expression.operator == "?"
-                                         nil
-                                       else
-                                         infer_expression_type(statement.expression, env: local_env)
-                                       end
-            prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
-              statement.expression,
-              env: local_env,
-              expected_type: expression_expected_type,
-              allow_root_statement_foreign: true,
-              allow_void_propagation: true,
-            )
-            lowered.concat(prepared_setup)
-            if prepared_expression && (foreign_call = foreign_call_info(prepared_expression, local_env))
-              setup, value = lower_foreign_call_statement(
-                foreign_call,
-                env: local_env,
-                expected_type: foreign_call[:binding].type.return_type,
-                statement_position: true,
-                discard_result: true,
-              )
-              lowered.concat(setup)
-              lowered.concat(prepared_cleanups.flat_map(&:itself))
-              local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
-            elsif prepared_expression
-              lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line, source_path: @ctx.current_analysis_path)
-              lowered.concat(prepared_cleanups.flat_map(&:itself))
-            else
-              lowered.concat(prepared_cleanups.flat_map(&:itself))
-            end
+            lower_block_expression_stmt(statement, lowered:, local_defers:, local_env:)
           when AST::EmitStmt
             lowered.concat(lower_emit_stmt(statement, env: local_env))
           when AST::WhenStmt
-            discriminant = compile_time_const_value(statement.discriminant)
-            chosen_branch = statement.branches.find do |branch|
-              discriminant == compile_time_const_value(branch.pattern)
-            end
-
-            if chosen_branch
-              lowered.concat(lower_block(
-                chosen_branch.body,
-                env: local_env,
-                active_defers:,
-                return_type:,
-                loop_flow:,
-                allow_return:,
-              ))
-            elsif statement.else_body
-              lowered.concat(lower_block(
-                statement.else_body,
-                env: local_env,
-                active_defers:,
-                return_type:,
-                loop_flow:,
-                allow_return:,
-              ))
-            end
+            lower_block_when_stmt(statement, lowered:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
           else
             raise LoweringError, "unsupported statement #{statement.class.name}"
           end
@@ -1087,6 +370,757 @@ module MilkTea
       else
         field_expr
       end
+    end
+
+    def lower_block_unsafe_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      body = lower_block(
+        statement.body,
+        env: local_env,
+        active_defers: active_defers + local_defers,
+        return_type:,
+        loop_flow: nested_loop_flow(loop_flow, local_defers),
+        allow_return:,
+      )
+      lowered << IR::BlockStmt.new(body:)
+    end
+
+    def lower_block_when_stmt(statement, lowered:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      discriminant = compile_time_const_value(statement.discriminant)
+      chosen_branch = statement.branches.find do |branch|
+        discriminant == compile_time_const_value(branch.pattern)
+      end
+
+      if chosen_branch
+        lowered.concat(lower_block(
+          chosen_branch.body,
+          env: local_env,
+          active_defers:,
+          return_type:,
+          loop_flow:,
+          allow_return:,
+        ))
+      elsif statement.else_body
+        lowered.concat(lower_block(
+          statement.else_body,
+          env: local_env,
+          active_defers:,
+          return_type:,
+          loop_flow:,
+          allow_return:,
+        ))
+      end
+    end
+
+    def lower_block_expression_stmt(statement, lowered:, local_defers:, local_env:)
+      if (format_sink_statements = lower_explicit_format_sink_expression_statement(statement.expression, env: local_env, line: statement.line))
+        lowered.concat(format_sink_statements)
+        return
+      end
+
+      expression_expected_type = if statement.expression.is_a?(AST::UnaryOp) && statement.expression.operator == "?"
+                                    nil
+                                  else
+                                    infer_expression_type(statement.expression, env: local_env)
+                                  end
+      prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
+        statement.expression,
+        env: local_env,
+        expected_type: expression_expected_type,
+        allow_root_statement_foreign: true,
+        allow_void_propagation: true,
+      )
+      lowered.concat(prepared_setup)
+      if prepared_expression && (foreign_call = foreign_call_info(prepared_expression, local_env))
+        setup, value = lower_foreign_call_statement(
+          foreign_call,
+          env: local_env,
+          expected_type: foreign_call[:binding].type.return_type,
+          statement_position: true,
+          discard_result: true,
+        )
+        lowered.concat(setup)
+        lowered.concat(prepared_cleanups.flat_map(&:itself))
+        local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
+      elsif prepared_expression
+        lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line, source_path: @ctx.current_analysis_path)
+        lowered.concat(prepared_cleanups.flat_map(&:itself))
+      else
+        lowered.concat(prepared_cleanups.flat_map(&:itself))
+      end
+    end
+
+    def lower_block_return_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, allow_return:)
+      raise LoweringError, "return is not allowed inside defer blocks" unless allow_return
+
+      value = nil
+      prepared_setup = []
+      prepared_value = statement.value
+      prepared_cleanups = []
+      if statement.value
+        prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
+          statement.value,
+          env: local_env,
+          expected_type: return_type,
+          allow_root_statement_foreign: true,
+          materialize_array_calls: !array_type?(return_type),
+        )
+        lowered.concat(prepared_setup)
+      end
+      if prepared_value && (foreign_call = foreign_call_info(prepared_value, local_env))
+        setup, value = lower_foreign_call_statement(foreign_call, env: local_env, expected_type: return_type, statement_position: false)
+        lowered.concat(setup)
+      end
+      value ||= prepared_value ? lower_contextual_expression(
+        prepared_value,
+        env: local_env,
+        expected_type: return_type,
+        contextual_int_to_float: contextual_int_to_float_target?(return_type),
+      ) : nil
+      if prepared_cleanups.any? && cstr_trackable_type?(return_type)
+        raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape"
+      end
+
+      prepared_cleanup_list = prepared_cleanups.flat_map(&:itself)
+      if prepared_cleanup_list.any? && return_type.is_a?(Types::Struct) && struct_contains_string_field?(return_type)
+        prepared_cleanup_list = prepared_cleanup_list.reject { |stmt| stmt.is_a?(IR::ExpressionStmt) && stmt.expression.is_a?(IR::Call) && stmt.expression.callee == "mt_format_str_release" }
+      end
+      cleanup = prepared_cleanup_list + cleanup_statements(local_defers, active_defers)
+      needs_proc_retain = value && contains_proc_storage_type?(return_type) && !local_defers.empty? && !expression_contains_proc_expr?(prepared_value)
+      if value && (!cleanup.empty? && !cleanup_safe_return_expression?(prepared_value) || needs_proc_retain)
+        return_value_name = fresh_c_temp_name(local_env, "return_value")
+        lowered << IR::LocalDecl.new(name: return_value_name, linkage_name: return_value_name, type: return_type, value:)
+        value = IR::Name.new(name: return_value_name, type: return_type, pointer: false)
+      end
+      lowered.concat(lower_proc_contained_retain_statements(value, return_type)) if needs_proc_retain
+      lowered.concat(cleanup)
+      lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @ctx.current_analysis_path)
+    end
+
+    def lower_block_assignment_stmt(statement, lowered:, local_defers:, local_env:)
+      if statement.operator == "=" &&
+         statement.target.is_a?(AST::IndexAccess) &&
+         statement.target.index.is_a?(AST::RangeExpr) &&
+         statement.value.is_a?(AST::ExpressionList)
+        lowered.concat(lower_range_index_assignment(statement, env: local_env))
+        return
+      end
+      target = lower_assignment_target(statement.target, env: local_env)
+      prepared_cleanups = []
+      prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
+        statement.value,
+        env: local_env,
+        expected_type: target.type,
+        allow_root_statement_foreign: true,
+        materialize_array_calls: !array_type?(target.type),
+      )
+      lowered.concat(prepared_setup)
+      if (foreign_call = foreign_call_info(prepared_value, local_env))
+        setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
+          foreign_call,
+          env: local_env,
+          expected_type: target.type,
+          statement_position: false,
+        )
+        lowered.concat(setup)
+        raise LoweringError, "foreign call used in assignment must return a value" if call_type == @ctx.types.fetch("void")
+        raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+
+        lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
+        lowered.concat(cleanup_statements)
+        update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
+        local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
+        return
+      else
+        value = if statement.operator == "="
+                  lower_contextual_expression(
+                    prepared_value,
+                    env: local_env,
+                    expected_type: target.type,
+                    external_numeric: external_numeric_assignment_target?(statement.target, env: local_env),
+                    contextual_int_to_float: contextual_int_to_float_target?(target.type),
+                  )
+                elsif ["+=", "-=", "*=", "/="].include?(statement.operator)
+                  lower_contextual_expression(
+                    prepared_value,
+                    env: local_env,
+                    expected_type: target.type,
+                    contextual_int_to_float: contextual_int_to_float_target?(target.type),
+                  )
+                else
+                  lower_expression(prepared_value, env: local_env, expected_type: target.type)
+                end
+      end
+      if target.type.is_a?(Types::Nullable) && value && !value.type.is_a?(Types::Nullable) && !pointer_like_type?(target.type.base)
+        value = nullable_some_literal(target.type, value)
+      end
+      update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
+      local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
+      operator = statement.operator
+      if ["+=", "-=", "*=", "/="].include?(operator) &&
+         (target.type.is_a?(Types::Vector) || target.type.is_a?(Types::Matrix) || target.type.is_a?(Types::Quaternion))
+        binary_op = operator[0...-1]
+        expanded = lower_vector_binary_op(binary_op, target, target.type, value, value.type, target.type)
+        value = expanded || IR::Binary.new(operator: binary_op, left: target, right: value, type: target.type)
+        operator = "="
+      end
+      if operator == "=" && contains_proc_storage_type?(target.type)
+        rhs_name = fresh_c_temp_name(local_env, "proc_assign")
+        lowered << IR::LocalDecl.new(name: rhs_name, linkage_name: rhs_name, type: target.type, value:)
+        rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
+        lowered.concat(lower_proc_selective_retain_statements(rhs, statement.value, target.type))
+        lowered.concat(lower_proc_contained_guarded_release_statements(target, target.type))
+        lowered << IR::Assignment.new(target:, operator: "=", value: rhs)
+      else
+        lowered << IR::Assignment.new(target:, operator:, value:)
+      end
+    end
+
+    def lower_block_if_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      if statement.inline
+        lowered.concat(lower_inline_if_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
+        return
+      end
+
+      false_refinements = {}
+      branch_entries = []
+
+      unless statement.branches.empty?
+        if @bypass_sema_type_cache
+          ct_cond = compile_time_const_value(statement.branches.first.condition, env: local_env)
+          if ct_cond == true
+            lowered.concat(lower_block(
+              statement.branches.first.body,
+              env: local_env,
+              active_defers: active_defers + local_defers,
+              return_type:,
+              loop_flow: nested_loop_flow(loop_flow, local_defers),
+              allow_return:,
+            ))
+            return
+          elsif ct_cond == false
+            if statement.else_body
+              lowered.concat(lower_block(
+                statement.else_body,
+                env: local_env,
+                active_defers: active_defers + local_defers,
+                return_type:,
+                loop_flow: nested_loop_flow(loop_flow, local_defers),
+                allow_return:,
+              ))
+            end
+            return
+          end
+        end
+      end
+
+      statement.branches.each do |branch|
+        branch_env = env_with_refinements(local_env, false_refinements)
+        condition_setup, prepared_condition, condition_cleanups = prepare_expression_with_cleanups(
+          branch.condition,
+          env: branch_env,
+          expected_type: @ctx.types.fetch("bool"),
+        )
+        true_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: true, env: branch_env))
+
+        branch_entries << [
+          condition_setup,
+          condition_cleanups,
+          lower_expression(prepared_condition, env: branch_env, expected_type: @ctx.types.fetch("bool")),
+          lower_block(
+            branch.body,
+            env: env_with_refinements(local_env, true_refinements),
+            active_defers: active_defers + local_defers,
+            return_type:,
+            loop_flow: nested_loop_flow(loop_flow, local_defers),
+            allow_return:,
+          ),
+        ]
+
+        false_refinements = merge_refinements(false_refinements, flow_refinements(branch.condition, truthy: false, env: branch_env))
+      end
+
+      nested_else_body = statement.else_body ? lower_block(
+        statement.else_body,
+        env: env_with_refinements(local_env, false_refinements),
+        active_defers: active_defers + local_defers,
+        return_type:,
+        loop_flow: nested_loop_flow(loop_flow, local_defers),
+        allow_return:,
+      ) : []
+
+      nested_if = nested_else_body
+      branch_entries.reverse_each do |condition_setup, condition_cleanups, condition, then_body|
+        condition_cleanup_statements = condition_cleanups.flat_map(&:itself)
+        nested_if = [
+          *condition_setup,
+          IR::IfStmt.new(
+            condition:,
+            then_body: condition_cleanup_statements + then_body,
+            else_body: condition_cleanup_statements + nested_if,
+          ),
+        ]
+      end
+      lowered.concat(nested_if)
+
+      merge_cstr_metadata_after_if_statement!(statement, local_env)
+
+      if statement.else_body.nil? && statement.branches.all? { |branch| cfg_block_always_terminates?(branch.body) }
+        local_env[:scopes] = scopes_with_refinements(local_env[:scopes], false_refinements)
+      end
+    end
+
+    def lower_block_local_decl_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      if statement.destructure_bindings
+        lower_destructure_decl(statement, env: local_env, lowered:, local_defers:, active_defers:, return_type:, loop_flow:, allow_return:)
+        return
+      end
+
+      storage_type = if statement.else_body
+                        infer_expression_type(statement.value, env: local_env)
+                      elsif statement.type
+                        resolve_type_ref(statement.type)
+                      else
+                        infer_expression_type(statement.value, env: local_env)
+                      end
+      type = if statement.else_body
+               statement.type ? resolve_type_ref(statement.type) : let_else_success_type(storage_type)
+             else
+               storage_type
+             end
+      linkage_name = let_else_storage_c_name(statement, local_env)
+      decl_name = bind_let_else_local?(statement) ? statement.name : linkage_name
+      prepared_setup = []
+      prepared_value = statement.value
+      prepared_cleanups = []
+      emitted_decl = false
+      if statement.value
+        local_env[:current_local_name] = linkage_name
+        prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
+          statement.value,
+          env: local_env,
+          expected_type: storage_type,
+          allow_root_statement_foreign: true,
+          materialize_array_calls: !array_type?(storage_type),
+        )
+        lowered.concat(prepared_setup)
+      end
+      if prepared_value && (foreign_call = foreign_call_info(prepared_value, local_env))
+        setup, value, call_type, release_assignments, cleanup_statements = lower_foreign_call_components(
+          foreign_call,
+          env: local_env,
+          expected_type: storage_type,
+          statement_position: false,
+        )
+        lowered.concat(setup)
+        raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @ctx.types.fetch("void")
+        raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+
+        lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path)
+        lowered.concat(cleanup_statements)
+        emitted_decl = true
+      elsif prepared_value.is_a?(AST::ProcExpr)
+        setup, value = lower_proc_expression_for_local(prepared_value, env: local_env, local_name: statement.name, proc_type: storage_type)
+        lowered.concat(setup)
+      elsif prepared_value
+        value = lower_contextual_expression(
+          prepared_value,
+          env: local_env,
+          expected_type: storage_type,
+          contextual_int_to_float: statement.type && contextual_int_to_float_target?(type),
+        )
+      else
+        value = IR::ZeroInit.new(type: storage_type)
+      end
+      if value && storage_type.is_a?(Types::Nullable) && !value.type.is_a?(Types::Nullable) && !pointer_like_type?(storage_type.base)
+        value = nullable_some_literal(storage_type, value)
+      end
+      if bind_let_else_local?(statement)
+        current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
+          type:,
+          storage_type:,
+          linkage_name:,
+          mutable: statement.kind == :var,
+          pointer: false,
+          projection: statement.else_body ? let_else_binding_projection(storage_type) : nil,
+          cstr_backed: cstr_backed_storage_value?(storage_type, prepared_value, local_env),
+          cstr_list_backed: cstr_list_backed_storage_value?(storage_type, prepared_value, local_env),
+          const_value: statement.else_body ? nil : statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
+        )
+      end
+      lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path) unless emitted_decl
+      if statement.else_body
+        else_env = if statement.else_binding
+                     duplicate_env(local_env).tap do |env_with_error|
+                       current_actual_scope(env_with_error[:scopes])[statement.else_binding.name] = local_binding(
+                         type: let_else_error_type(storage_type),
+                         storage_type:,
+                         linkage_name:,
+                         mutable: false,
+                         pointer: false,
+                         projection: :result_failure_error,
+                       )
+                     end
+                   else
+                     local_env
+                   end
+        else_body = lower_block(
+          statement.else_body,
+          env: else_env,
+          active_defers: active_defers + local_defers + prepared_cleanups,
+          return_type:,
+          loop_flow: nested_loop_flow(loop_flow, local_defers),
+          allow_return:,
+        )
+        local_ref = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
+        lowered << IR::IfStmt.new(
+          condition: let_else_failure_condition(local_ref, storage_type),
+          then_body: else_body,
+          else_body: nil,
+        )
+      end
+      local_defers.concat(prepared_cleanups)
+      if contains_proc_storage_type?(storage_type)
+        local_value = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
+        local_defers << lower_proc_contained_guarded_release_statements(local_value, storage_type)
+        if statement.value && !expression_contains_proc_expr?(statement.value)
+          lowered.concat(lower_proc_contained_retain_statements(local_value, storage_type))
+        end
+      end
+    end
+
+    def lower_block_match_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      if statement.inline
+        lowered.concat(lower_inline_match_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
+        return
+      end
+      scrutinee_type = infer_expression_type(statement.expression, env: local_env)
+      expression_setup, prepared_expression, expression_cleanups = prepare_expression_with_cleanups(
+        statement.expression,
+        env: local_env,
+        expected_type: scrutinee_type,
+      )
+      lowered.concat(expression_setup)
+      expression = lower_expression(prepared_expression, env: local_env, expected_type: scrutinee_type)
+
+      if scrutinee_type.is_a?(Types::Variant) &&
+         statement.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
+         !duplicable_foreign_argument_expression?(expression)
+        scrutinee_linkage_name = fresh_c_temp_name(local_env, "match_value")
+        lowered << IR::LocalDecl.new(name: scrutinee_linkage_name, linkage_name: scrutinee_linkage_name, type: scrutinee_type, value: expression)
+        expression = IR::Name.new(name: scrutinee_linkage_name, type: scrutinee_type, pointer: false)
+      end
+
+      if scrutinee_type.is_a?(Types::Variant)
+        if statement.arms.any? { |arm| arm.pattern.is_a?(AST::Call) }
+          lower_block_variant_struct_pattern_match(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+        else
+          kind_type = @ctx.types.fetch("int")
+          kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
+          arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+          cases = statement.arms.map do |arm|
+            arm_local_env = duplicate_env(local_env)
+            binding_decl = if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+                             arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+                             if arm_name && scrutinee_type.has_payload?(arm_name)
+                               fields = scrutinee_type.arm(arm_name)
+                               payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+                               data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
+                               arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+                               binding_c = c_local_name(arm.binding_name)
+                                arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, linkage_name: binding_c, mutable: true, pointer: false)
+                               IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_type, value: arm_expr)
+                             end
+                           end
+            body = lower_block(
+              arm.body,
+              env: arm_local_env,
+              active_defers: active_defers + local_defers,
+              return_type:,
+              loop_flow: arm_loop_flow,
+              allow_return:,
+            )
+            body = [binding_decl, *body].compact if binding_decl
+            if wildcard_arm_pattern?(arm.pattern)
+              IR::SwitchDefaultCase.new(body:)
+            else
+              arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+              IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body:)
+            end
+          end
+          lowered << IR::SwitchStmt.new(expression: kind_expr, cases:, exhaustive: true)
+        end
+      elsif scrutinee_type.is_a?(Types::StringView)
+        lower_block_string_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      elsif scrutinee_type.is_a?(Types::Tuple)
+        lower_block_tuple_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      else
+        has_range_arms = statement.arms.any? { |arm| arm.pattern.is_a?(AST::RangeExpr) }
+
+        if has_range_arms
+          lower_block_range_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+        else
+          arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+          cases = statement.arms.map do |arm|
+            body = lower_block(
+              arm.body,
+              env: local_env,
+              active_defers: active_defers + local_defers,
+              return_type:,
+              loop_flow: arm_loop_flow,
+              allow_return:,
+            )
+            if wildcard_arm_pattern?(arm.pattern)
+              IR::SwitchDefaultCase.new(body:)
+            else
+              value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+              IR::SwitchCase.new(value:, body:)
+            end
+          end
+          lowered << IR::SwitchStmt.new(expression:, cases:, exhaustive: true)
+        end
+      end
+      lowered.concat(expression_cleanups.flat_map(&:itself))
+    end
+
+    def lower_block_variant_struct_pattern_match(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      kind_type = @ctx.types.fetch("int")
+      arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+      @match_label_counter ||= 0
+      @match_label_counter += 1
+      m = @match_label_counter
+      match_end_label = "__mt_match_#{m}_end"
+      arm_next_label = "__mt_match_#{m}_arm_next"
+
+      statement.arms.each_with_index do |arm, arm_index|
+        arm_local_env = duplicate_env(local_env)
+        arm_name = variant_match_arm_name_from_pattern(arm.pattern) unless wildcard_arm_pattern?(arm.pattern)
+
+        if arm_index > 0
+          lowered << IR::LabelStmt.new(name: "__mt_match_#{m}_arm_#{arm_index}")
+        end
+
+        if arm_name && !wildcard_arm_pattern?(arm.pattern)
+          tag_value = IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false)
+          tag_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
+          goto_label = if arm_index < statement.arms.length - 1
+                         "__mt_match_#{m}_arm_#{arm_index + 1}"
+                       else
+                         arm_next_label
+                       end
+          tag_check = IR::Binary.new(operator: "!=", left: tag_expr, right: tag_value, type: @ctx.types.fetch("bool"))
+          lowered << IR::IfStmt.new(condition: tag_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
+        end
+
+        if arm_name && !wildcard_arm_pattern?(arm.pattern) && scrutinee_type.has_payload?(arm_name)
+          fields = scrutinee_type.arm(arm_name)
+          payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+          data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
+          arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+          payload_c_name = fresh_c_temp_name(arm_local_env, "match_payload")
+          arm_local_env[:scopes].last["__mt_payload"] = local_binding(type: payload_type, linkage_name: payload_c_name, mutable: true, pointer: false)
+
+          arm_body_ir = []
+          arm_body_ir << IR::LocalDecl.new(name: payload_c_name, linkage_name: payload_c_name, type: payload_type, value: arm_expr)
+
+          nested_struct_fields = nil
+          nested_struct_c_name = nil
+          nested_struct_type = nil
+          if fields.size == 1 && fields.values.first.is_a?(Types::Struct)
+            nested_struct_type = fields.values.first
+            nested_struct_fields = nested_struct_type.fields
+            single_field_name = fields.keys.first
+            nested_struct_c_name = fresh_c_temp_name(arm_local_env, "match_struct")
+            struct_expr = IR::Member.new(
+              receiver: IR::Name.new(name: payload_c_name, type: payload_type, pointer: false),
+              member: single_field_name,
+              type: nested_struct_type,
+            )
+            arm_body_ir << IR::LocalDecl.new(name: nested_struct_c_name, linkage_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
+          end
+
+          if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
+            pattern_fields = nested_struct_fields || fields
+            pattern_receiver_name = nested_struct_c_name || payload_c_name
+            pattern_receiver_type = nested_struct_type || payload_type
+
+            arm.pattern.arguments.each do |arg|
+              if !arg.name && arg.value.is_a?(AST::BinaryOp) && arg.value.left.is_a?(AST::Identifier)
+                field_name = arg.value.left.name
+                next unless pattern_fields.key?(field_name)
+
+                field_type = pattern_fields[field_name]
+                field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
+                field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
+                rhs_expr = lower_expression(arg.value.right, env: arm_local_env, expected_type: field_type)
+                guard_condition = IR::Binary.new(operator: arg.value.operator, left: field_expr, right: rhs_expr, type: @ctx.types.fetch("bool"))
+                arm_body_ir << IR::IfStmt.new(condition: guard_condition, then_body: [], else_body: [IR::GotoStmt.new(label: goto_label)])
+              end
+
+              if arg.name
+                field_name = arg.name
+                next unless pattern_fields.key?(field_name)
+
+                field_type = pattern_fields[field_name]
+                field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
+                field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
+                value_expr = lower_expression(arg.value, env: arm_local_env, expected_type: field_type)
+                eq_check = IR::Binary.new(operator: "!=", left: field_expr, right: value_expr, type: @ctx.types.fetch("bool"))
+                arm_body_ir << IR::IfStmt.new(condition: eq_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
+              end
+            end
+
+            arm.pattern.arguments.each do |arg|
+              next if arg.name
+              next unless arg.value.is_a?(AST::Identifier)
+              next if arg.value.name == "_"
+
+              field_name = arg.value.name
+              next unless pattern_fields.key?(field_name)
+
+              field_type = pattern_fields[field_name]
+              binding_c = c_local_name(field_name)
+              field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
+              field_expr = dereference_if_self_ref(field_expr, field_type, scrutinee_type)
+              arm_body_ir << IR::LocalDecl.new(name: binding_c, linkage_name: binding_c, type: field_type, value: field_expr)
+              arm_local_env[:scopes].last[field_name] = local_binding(type: field_type, linkage_name: binding_c, mutable: false, pointer: false)
+            end
+          end
+
+          if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+            binding_c = c_local_name(arm.binding_name)
+            if arm_name && scrutinee_type.has_payload?(arm_name)
+              payload_key = "__mt_payload"
+              if arm_local_env[:scopes].last.key?(payload_key)
+                payload_binding = arm_local_env[:scopes].last[payload_key]
+                arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_binding[:type], linkage_name: binding_c, mutable: true, pointer: false)
+                payload_ref = IR::Name.new(name: payload_binding[:linkage_name], type: payload_binding[:type], pointer: false)
+                arm_body_ir << IR::LocalDecl.new(name: arm.binding_name, linkage_name: binding_c, type: payload_binding[:type], value: payload_ref)
+              end
+            end
+          end
+
+          body = lower_block(
+            arm.body,
+            env: arm_local_env,
+            active_defers: active_defers + local_defers,
+            return_type:,
+            loop_flow: arm_loop_flow,
+            allow_return:,
+          )
+          arm_body_ir.concat(body)
+          arm_body_ir << IR::GotoStmt.new(label: match_end_label)
+
+          lowered << IR::BlockStmt.new(body: arm_body_ir)
+        else
+          body = lower_block(
+            arm.body,
+            env: arm_local_env,
+            active_defers: active_defers + local_defers,
+            return_type:,
+            loop_flow: arm_loop_flow,
+            allow_return:,
+          )
+          lowered << IR::BlockStmt.new(body: body + [IR::GotoStmt.new(label: match_end_label)])
+        end
+      end
+
+      lowered << IR::LabelStmt.new(name: arm_next_label)
+      lowered << IR::LabelStmt.new(name: match_end_label)
+    end
+
+    def lower_block_string_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+      bool_type = @ctx.types.fetch("bool")
+      non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
+      wildcard = statement.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
+      else_body = if wildcard
+                    lower_block(
+                      wildcard.body,
+                      env: local_env,
+                      active_defers: active_defers + local_defers,
+                      return_type:,
+                      loop_flow: arm_loop_flow,
+                      allow_return:,
+                    )
+                  else
+                    []
+                  end
+      non_wildcard.reverse_each do |arm|
+        arm_body = lower_block(
+          arm.body,
+          env: local_env,
+          active_defers: active_defers + local_defers,
+          return_type:,
+          loop_flow: arm_loop_flow,
+          allow_return:,
+        )
+        lit = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+        cond = IR::Binary.new(operator: "==", left: expression, right: lit, type: bool_type)
+        else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
+      end
+      lowered.concat(else_body)
+    end
+
+    def lower_block_tuple_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+      bool_type = @ctx.types.fetch("bool")
+      non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
+      wildcard = statement.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
+      else_body = if wildcard
+                    lower_block(
+                      wildcard.body,
+                      env: local_env,
+                      active_defers: active_defers + local_defers,
+                      return_type:,
+                      loop_flow: arm_loop_flow,
+                      allow_return:,
+                    )
+                  else
+                    []
+                  end
+      non_wildcard.reverse_each do |arm|
+        arm_body = lower_block(
+          arm.body,
+          env: local_env,
+          active_defers: active_defers + local_defers,
+          return_type:,
+          loop_flow: arm_loop_flow,
+          allow_return:,
+        )
+        cond = tuple_arm_condition(arm, expression, scrutinee_type, bool_type, env: local_env)
+        else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
+      end
+      lowered.concat(else_body)
+    end
+
+    def lower_block_range_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+      arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+      bool_type = @ctx.types.fetch("bool")
+      non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
+      wildcard = statement.arms.find { |arm| wildcard_arm_pattern?(arm.pattern) }
+      else_body = if wildcard
+                    lower_block(wildcard.body, env: local_env, active_defers: active_defers + local_defers, return_type:, loop_flow: arm_loop_flow, allow_return:)
+                  else
+                    []
+                  end
+      non_wildcard.reverse_each do |arm|
+        arm_body = lower_block(
+          arm.body,
+          env: local_env,
+          active_defers: active_defers + local_defers,
+          return_type:,
+          loop_flow: arm_loop_flow,
+          allow_return:,
+        )
+        cond = if arm.pattern.is_a?(AST::RangeExpr)
+                 lower_range_match_condition(arm.pattern, expression, bool_type, env: local_env)
+               else
+                 lit = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+                 IR::Binary.new(operator: "==", left: expression, right: lit, type: bool_type)
+               end
+        else_body = [IR::IfStmt.new(condition: cond, then_body: arm_body, else_body:)]
+      end
+      lowered.concat(else_body)
     end
   end
 end
