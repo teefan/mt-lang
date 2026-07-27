@@ -16,3 +16,6 @@ extending ptr[T]:
 
     public function store_at(offset: ptr_uint, value: T) -> void:
         unsafe: read(this + offset) = value
+
+    public function cast[U]() -> ptr[U]:
+        return unsafe: ptr[U]<-this

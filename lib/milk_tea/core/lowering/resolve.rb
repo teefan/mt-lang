@@ -666,11 +666,11 @@ module MilkTea
         end
 
         if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
-          callable_kind, function_binding, receiver = callable_resolution
+          callable_kind, function_binding, receiver, method_entry_receiver_type = callable_resolution
           if callable_kind == :method
             return [
               :method,
-              function_binding_c_name(function_binding, module_name: function_binding.owner.module_name, receiver_type: function_binding.type.receiver_type),
+              function_binding_c_name(function_binding, module_name: function_binding.owner.module_name, receiver_type: method_entry_receiver_type),
               receiver,
               function_binding.type,
               function_binding,
@@ -1277,7 +1277,7 @@ module MilkTea
         return nil unless binding
 
         type_arguments = resolve_specialization_type_arguments(expression)
-        [callable_kind, instantiate_function_binding_with_receiver(binding, type_arguments, receiver_type:), receiver]
+        [callable_kind, instantiate_function_binding_with_receiver(binding, type_arguments, receiver_type:), receiver, method_entry_receiver_type]
       end
 
       def resolve_default_specialization(expression, env:)

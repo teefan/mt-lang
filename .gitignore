@@ -70,6 +70,7 @@ pnpm-debug.log*
 # Development environment files:
 .idea/
 .vscode/
+.opencode/
 .cache/
 .env
 *.code-workspace
