@@ -158,7 +158,7 @@ module MilkTea
   end
 
   class StoredRefSupportedVisitor < TypeVisitor
-    include TypePredicates
+    include Types::Predicates
 
     def initialize(allow_lifetimes: [])
       super()

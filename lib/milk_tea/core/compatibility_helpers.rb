@@ -4,7 +4,7 @@ require_relative "types/predicates"
 
 module MilkTea
   module CompatibilityHelpers
-    include TypePredicates
+    include Types::Predicates
 
     BUILTIN_CSTR = Types::Registry.primitive("cstr")
 

@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module TypePredicates
+  module Types
+    module Predicates
     def method_dispatch_receiver_type(receiver_type)
       return receiver_type.definition if receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::VariantInstance)
 
@@ -645,6 +646,7 @@ module MilkTea
 
     def array_element_type(type)
       type.arguments.first
+    end
     end
   end
 end
