@@ -627,7 +627,7 @@ module MilkTea
         raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}")
       end
 
-      def check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+      def each_integer_match_arm(statement, scrutinee_type, scopes:)
         has_wildcard = statement.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
         raise_sema_error("match on integer type #{scrutinee_type} requires a wildcard arm (_:)") unless has_wildcard
 
@@ -635,16 +635,17 @@ module MilkTea
         wildcard_seen = false
         statement.arms.each do |arm|
           if arm.pattern.is_a?(AST::ErrorExpr)
-            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            yield arm
             next
           end
 
           if wildcard_pattern?(arm.pattern)
             raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
-            check_block(arm.body, scopes:, return_type:, allow_return:)
+            yield arm
             next
           end
+
           if arm.pattern.is_a?(AST::RangeExpr)
             start_val = arm.pattern.start_expr
             end_val   = arm.pattern.end_expr
@@ -659,20 +660,23 @@ module MilkTea
             raise_sema_error("duplicate match arm range #{range_key[0]}..#{range_key[1]}") if covered_values.key?(range_key)
 
             covered_values[range_key] = true
-            check_block(arm.body, scopes:, return_type:, allow_return:)
+            yield arm
             next
           end
+
           unless arm.pattern.is_a?(AST::IntegerLiteral) || arm.pattern.is_a?(AST::CharLiteral)
             raise_sema_error("match arm for integer scrutinee must be an integer literal, char literal, range, or _, got #{arm.pattern.class.name}")
           end
+
           value = arm.pattern.value
           raise_sema_error("duplicate match arm value #{value}") if covered_values.key?(value)
+
           covered_values[value] = true
-          check_block(arm.body, scopes:, return_type:, allow_return:)
+          yield arm
         end
       end
 
-      def check_string_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+      def each_string_match_arm(statement, scrutinee_type, scopes:)
         has_wildcard = statement.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
         raise_sema_error("match on str requires a wildcard arm (_:)") unless has_wildcard
 
@@ -680,27 +684,30 @@ module MilkTea
         wildcard_seen = false
         statement.arms.each do |arm|
           if arm.pattern.is_a?(AST::ErrorExpr)
-            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            yield arm
             next
           end
 
           if wildcard_pattern?(arm.pattern)
             raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
-            check_block(arm.body, scopes:, return_type:, allow_return:)
+            yield arm
             next
           end
+
           unless arm.pattern.is_a?(AST::StringLiteral)
             raise_sema_error("match arm for str scrutinee must be a string literal or _, got #{arm.pattern.class.name}")
           end
+
           value = arm.pattern.value
           raise_sema_error("duplicate match arm value \"#{value}\"") if covered_values.key?(value)
+
           covered_values[value] = true
-          check_block(arm.body, scopes:, return_type:, allow_return:)
+          yield arm
         end
       end
 
-      def check_tuple_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+      def each_tuple_match_arm(statement, scrutinee_type, scopes:)
         has_wildcard = statement.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
         raise_sema_error("match on tuple type #{scrutinee_type} requires a wildcard arm (_:)") unless has_wildcard
 
@@ -710,14 +717,14 @@ module MilkTea
 
         statement.arms.each do |arm|
           if arm.pattern.is_a?(AST::ErrorExpr)
-            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            yield arm
             next
           end
 
           if wildcard_pattern?(arm.pattern)
             raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
-            check_block(arm.body, scopes:, return_type:, allow_return:)
+            yield arm
             next
           end
 
@@ -745,6 +752,24 @@ module MilkTea
             covered_values[values] = true
           end
 
+          yield arm
+        end
+      end
+
+      def check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        each_integer_match_arm(statement, scrutinee_type, scopes:) do |arm|
+          check_block(arm.body, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def check_string_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        each_string_match_arm(statement, scrutinee_type, scopes:) do |arm|
+          check_block(arm.body, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def check_tuple_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        each_tuple_match_arm(statement, scrutinee_type, scopes:) do |arm|
           check_block(arm.body, scopes:, return_type:, allow_return:)
         end
       end
