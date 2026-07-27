@@ -124,7 +124,7 @@ module MilkTea
       end
 
       def top_level_recovery_start?(token)
-        token.column.to_i <= 1 && (TOP_LEVEL_RECOVERY_START_TYPES.include?(token.type) || legacy_layout_modifier_start?(token))
+        token.column.to_i <= 1 && (TOP_LEVEL_RECOVERY_START_TYPES.include?(token.type) || builtin_attribute_identifier?(token))
       end
     end
   end

@@ -24,7 +24,7 @@ module MilkTea
         attributes = parse_attribute_applications
         visibility, visibility_token = parse_visibility
 
-        if legacy_layout_modifier_start?(peek)
+        if builtin_attribute_identifier?(peek)
           raise error(peek, "layout modifiers must use attributes like @[packed] or @[align(...)]")
         elsif match(:attribute)
           reject_attributes!(attributes, "attribute")
@@ -185,7 +185,7 @@ module MilkTea
         if match(:public)
           reject_attributes!(attributes)
           raise error(previous, "public is not allowed in external files")
-        elsif legacy_layout_modifier_start?(peek)
+        elsif builtin_attribute_identifier?(peek)
           raise error(peek, "layout modifiers must use attributes like @[packed] or @[align(...)]")
         elsif match(:attribute)
           reject_attributes!(attributes)

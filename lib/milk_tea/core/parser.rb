@@ -290,7 +290,7 @@ module MilkTea
       @tokens[@current + 1]&.type == :identifier
     end
 
-    def legacy_layout_modifier_start?(token)
+    def builtin_attribute_identifier?(token)
       token&.type == :identifier && BUILTIN_ATTRIBUTE_NAME_LEXEMES.include?(token.lexeme)
     end
 
