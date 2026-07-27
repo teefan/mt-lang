@@ -234,7 +234,7 @@ module MilkTea
                 changed = false
 
                 helpers.keys.each do |helper|
-                  format_helper_dependencies(helper).each do |dependency|
+                  (FORMAT_HELPER_DEPENDENCIES[helper] || []).each do |dependency|
                     next if helpers[dependency]
 
                     helpers[dependency] = true
@@ -249,60 +249,32 @@ module MilkTea
             end
           end
 
-          def format_helper_dependencies(helper)
-            case helper
-            when 'mt_format_append_str'
-              %w[mt_format_append_bytes mt_format_check_capacity]
-            when 'mt_format_append_cstr'
-              %w[mt_format_append_bytes mt_format_check_capacity mt_format_cstr_len]
-            when 'mt_format_append_bool'
-              %w[mt_format_append_bytes mt_format_check_capacity]
-            when 'mt_format_append_ptr_uint'
-              %w[mt_format_check_capacity mt_format_ptr_uint_len]
-            when 'mt_format_append_ulong'
-              %w[mt_format_check_capacity mt_format_ulong_len]
-            when 'mt_format_append_uint'
-              %w[mt_format_append_ptr_uint mt_format_check_capacity mt_format_ptr_uint_len]
-            when 'mt_format_append_long'
-              %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong mt_format_ulong_len]
-            when 'mt_format_append_int'
-              %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ptr_uint mt_format_ptr_uint_len]
-            when 'mt_format_append_ulong_hex'
-              %w[mt_format_check_capacity mt_format_ulong_hex_len]
-            when 'mt_format_append_ulong_hex_upper'
-              %w[mt_format_check_capacity mt_format_ulong_hex_len]
-            when 'mt_format_append_long_hex'
-              %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_hex mt_format_ulong_hex_len]
-            when 'mt_format_append_long_hex_upper'
-              %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_hex_upper mt_format_ulong_hex_len]
-            when 'mt_format_append_ulong_oct'
-              %w[mt_format_check_capacity mt_format_ulong_oct_len]
-            when 'mt_format_append_long_oct'
-              %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_oct mt_format_ulong_oct_len]
-            when 'mt_format_append_ulong_bin'
-              %w[mt_format_check_capacity mt_format_ulong_bin_len]
-            when 'mt_format_append_long_bin'
-              %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_bin mt_format_ulong_bin_len]
-            when 'mt_format_append_float'
-              %w[mt_format_check_capacity mt_format_float_len]
-            when 'mt_format_append_double'
-              %w[mt_format_check_capacity mt_format_double_len]
-            when 'mt_format_append_double_precision'
-              %w[mt_format_check_capacity mt_format_double_precision_len]
-            when 'mt_format_int_len'
-              %w[mt_format_ptr_uint_len]
-            when 'mt_format_long_len'
-              %w[mt_format_ulong_len]
-            when 'mt_format_long_hex_len'
-              %w[mt_format_ulong_hex_len]
-            when 'mt_format_long_oct_len'
-              %w[mt_format_ulong_oct_len]
-            when 'mt_format_long_bin_len'
-              %w[mt_format_ulong_bin_len]
-            else
-              []
-            end
-          end
+          FORMAT_HELPER_DEPENDENCIES = {
+            'mt_format_append_str' => %w[mt_format_append_bytes mt_format_check_capacity],
+            'mt_format_append_cstr' => %w[mt_format_append_bytes mt_format_check_capacity mt_format_cstr_len],
+            'mt_format_append_bool' => %w[mt_format_append_bytes mt_format_check_capacity],
+            'mt_format_append_ptr_uint' => %w[mt_format_check_capacity mt_format_ptr_uint_len],
+            'mt_format_append_ulong' => %w[mt_format_check_capacity mt_format_ulong_len],
+            'mt_format_append_uint' => %w[mt_format_append_ptr_uint mt_format_check_capacity mt_format_ptr_uint_len],
+            'mt_format_append_long' => %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong mt_format_ulong_len],
+            'mt_format_append_int' => %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ptr_uint mt_format_ptr_uint_len],
+            'mt_format_append_ulong_hex' => %w[mt_format_check_capacity mt_format_ulong_hex_len],
+            'mt_format_append_ulong_hex_upper' => %w[mt_format_check_capacity mt_format_ulong_hex_len],
+            'mt_format_append_long_hex' => %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_hex mt_format_ulong_hex_len],
+            'mt_format_append_long_hex_upper' => %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_hex_upper mt_format_ulong_hex_len],
+            'mt_format_append_ulong_oct' => %w[mt_format_check_capacity mt_format_ulong_oct_len],
+            'mt_format_append_long_oct' => %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_oct mt_format_ulong_oct_len],
+            'mt_format_append_ulong_bin' => %w[mt_format_check_capacity mt_format_ulong_bin_len],
+            'mt_format_append_long_bin' => %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_bin mt_format_ulong_bin_len],
+            'mt_format_append_float' => %w[mt_format_check_capacity mt_format_float_len],
+            'mt_format_append_double' => %w[mt_format_check_capacity mt_format_double_len],
+            'mt_format_append_double_precision' => %w[mt_format_check_capacity mt_format_double_precision_len],
+            'mt_format_int_len' => %w[mt_format_ptr_uint_len],
+            'mt_format_long_len' => %w[mt_format_ulong_len],
+            'mt_format_long_hex_len' => %w[mt_format_ulong_hex_len],
+            'mt_format_long_oct_len' => %w[mt_format_ulong_oct_len],
+            'mt_format_long_bin_len' => %w[mt_format_ulong_bin_len],
+          }.freeze
 
           def uses_format_helpers?
             !used_format_helpers.empty?

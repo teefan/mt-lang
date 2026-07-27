@@ -334,73 +334,23 @@ module MilkTea
     private_class_method :raise_platform_conflict!
 
     def check_path(path)
-      resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
-      shared_cache_mtime = nil
-      shared_cache_mtime_checked = false
+      resolved_path, ast, cached = check_module_cache(path)
+      return cached if cached
 
-      return @analysis_cache[resolved_path] if @analysis_cache.key?(resolved_path)
-
-      if use_shared_cache?
-        entry = @shared_cache[resolved_path]
-        if entry
-          shared_cache_mtime_checked = true
-          shared_cache_mtime = File.mtime(resolved_path).to_f rescue nil
-          if shared_cache_mtime && entry[:mtime] == shared_cache_mtime
-            @analysis_cache[resolved_path] = entry[:analysis]
-            return entry[:analysis]
-          end
-        end
-      end
-
-      if @checking_paths.include?(resolved_path)
-        raise ModuleLoadError.new("cyclic import detected", path: resolved_path)
-      end
-
-      @checking_paths << resolved_path
-      ast = load_file(resolved_path)
       imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
-
       global_index = build_global_import_index(ast)
       analysis = SemanticAnalyzer.check(ast, imported_modules:, path: resolved_path, global_import_index: global_index)
       @analysis_cache[resolved_path] = analysis
-
-      if use_shared_cache?
-        mtime = if shared_cache_mtime_checked
-                  shared_cache_mtime
-                else
-                  File.mtime(resolved_path).to_f rescue nil
-                end
-        @shared_cache[resolved_path] = { mtime: mtime, analysis: analysis } if mtime
-      end
-
+      update_shared_cache(resolved_path, analysis)
       analysis
     ensure
       @checking_paths.pop if @checking_paths.last == resolved_path
     end
 
     def check_path_collecting_errors(path)
-      resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
+      resolved_path, ast, cached = check_module_cache(path, extra_cache: @collecting_analysis_cache)
+      return cached if cached
 
-      return @analysis_cache[resolved_path] if @analysis_cache.key?(resolved_path)
-      return @collecting_analysis_cache[resolved_path] if @collecting_analysis_cache.key?(resolved_path)
-
-      if use_shared_cache?
-        entry = @shared_cache[resolved_path]
-        if entry
-          mtime = File.mtime(resolved_path).to_f rescue nil
-          if mtime && entry[:mtime] == mtime
-            @analysis_cache[resolved_path] = entry[:analysis]
-            return entry[:analysis]
-          end
-        end
-      end
-
-      if @checking_paths.include?(resolved_path)
-        raise ModuleLoadError.new("cyclic import detected", path: resolved_path)
-      end
-
-      @checking_paths << resolved_path
-      ast = load_file(resolved_path)
       imported_modules = imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path).modules
       result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules:, path: resolved_path)
       analysis = result[:analysis]
@@ -411,6 +361,37 @@ module MilkTea
       analysis
     ensure
       @checking_paths.pop if @checking_paths.last == resolved_path
+    end
+
+    def check_module_cache(path, extra_cache: nil)
+      resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
+
+      return [resolved_path, nil, @analysis_cache[resolved_path]] if @analysis_cache.key?(resolved_path)
+      return [resolved_path, nil, extra_cache[resolved_path]] if extra_cache&.key?(resolved_path)
+
+      if use_shared_cache?
+        entry = @shared_cache[resolved_path]
+        if entry
+          mtime = File.mtime(resolved_path).to_f rescue nil
+          if mtime && entry[:mtime] == mtime
+            @analysis_cache[resolved_path] = entry[:analysis]
+            return [resolved_path, nil, entry[:analysis]]
+          end
+        end
+      end
+
+      raise ModuleLoadError.new("cyclic import detected", path: resolved_path) if @checking_paths.include?(resolved_path)
+
+      @checking_paths << resolved_path
+      ast = load_file(resolved_path)
+      [resolved_path, ast, nil]
+    end
+
+    def update_shared_cache(resolved_path, analysis)
+      return unless use_shared_cache?
+
+      mtime = File.mtime(resolved_path).to_f rescue nil
+      @shared_cache[resolved_path] = { mtime:, analysis: } if mtime
     end
 
     def parse_file(path)
