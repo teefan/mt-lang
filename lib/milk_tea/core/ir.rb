@@ -6,7 +6,9 @@ module MilkTea
       def initialize(module_name:, includes:, constants:, globals:, opaques:, structs:, unions:, enums:, variants:, static_asserts:, functions:, source_path: nil) = super
     end
     Include = Data.define(:header)
-    Constant = Data.define(:name, :linkage_name, :type, :value)
+    Constant = Data.define(:name, :linkage_name, :type, :value, :line, :source_path) do
+      def initialize(name:, linkage_name:, type:, value:, line: nil, source_path: nil) = super
+    end
     Global = Data.define(:name, :linkage_name, :type, :value)
     OpaqueDecl = Data.define(:name, :linkage_name, :forward_declarable, :source_module) do
       def initialize(name:, linkage_name:, forward_declarable:, source_module: nil) = super

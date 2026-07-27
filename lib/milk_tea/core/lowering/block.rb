@@ -353,7 +353,8 @@ module MilkTea
         value = lower_static_storage_initializer(decl.value, env:, expected_type: decl.type ? resolve_type_ref(decl.type) : nil)
         type = decl.type ? resolve_type_ref(decl.type) : infer_expression_type(decl.value, env:)
         linkage_name = value_c_name(decl.name)
-        constant = IR::Constant.new(name: decl.name, linkage_name:, type:, value:)
+        constant = IR::Constant.new(name: decl.name, linkage_name:, type:, value:,
+                                    line: decl.line, source_path: @ctx.current_analysis_path)
         @artifacts.emitted_declarations << constant
         []
       end
