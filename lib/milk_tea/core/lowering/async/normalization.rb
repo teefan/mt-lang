@@ -166,7 +166,7 @@ module MilkTea
       when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert, AST::PassStmt
         [statement]
       else
-        raise LoweringError, "unsupported async statement #{statement.class.name}"
+        raise LoweringError.new("unsupported async statement #{statement.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
     end
 
@@ -210,10 +210,10 @@ module MilkTea
           end
           [setup, AST::Call.new(callee: target.callee, arguments: normalized_args)]
         else
-          raise LoweringError, "unsupported assignment target #{target.class.name}"
+          raise LoweringError.new("unsupported assignment target #{target.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       else
-        raise LoweringError, "unsupported assignment target #{target.class.name}"
+        raise LoweringError.new("unsupported assignment target #{target.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
     end
 
@@ -372,7 +372,7 @@ module MilkTea
         AST::TypeRef.new(name: AST::QualifiedName.new(parts: [type.name]), arguments: [], nullable: false)
       when Types::Nullable
         inner = ast_type_ref_for(type.base)
-        raise LoweringError, "nullable annotation is only valid for named/generic types" unless inner.is_a?(AST::TypeRef)
+        raise LoweringError.new("nullable annotation is only valid for named/generic types", line: 0, column: 0, path: @ctx.current_analysis_path) unless inner.is_a?(AST::TypeRef)
 
         AST::TypeRef.new(name: inner.name, arguments: inner.arguments, nullable: true)
       when Types::GenericInstance
@@ -420,7 +420,7 @@ module MilkTea
           return_type: ast_type_ref_for(type.return_type),
         )
       else
-        raise LoweringError, "unsupported type for AST normalization #{type.class.name}"
+        raise LoweringError.new("unsupported type for AST normalization #{type.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
     end
 

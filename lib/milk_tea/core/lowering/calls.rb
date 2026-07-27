@@ -21,7 +21,7 @@ module MilkTea
         case kind
         when :function
           if callee_binding && foreign_function_binding?(callee_binding)
-            raise LoweringError, "consuming foreign calls must be top-level expression statements" if foreign_call_consumes_binding?(callee_binding)
+            raise LoweringError.new("consuming foreign calls must be top-level expression statements", line: 0, column: 0, path: @ctx.current_analysis_path) if foreign_call_consumes_binding?(callee_binding)
 
             return lower_foreign_call_inline(expression, callee_binding, env:, type:)
           end
@@ -287,7 +287,7 @@ module MilkTea
           elsif receiver_type.is_a?(Types::Span)
             IR::NullableSpanIndex.new(receiver:, index:, receiver_type:, type:)
           else
-            raise LoweringError, "get expects an array or span, got #{receiver_type}"
+            raise LoweringError.new("get expects an array or span, got #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         when :ref_of
           argument = expression.arguments.fetch(0)
@@ -311,7 +311,7 @@ module MilkTea
         when :dyn_method
           lower_dyn_method_call(expression, receiver, callee_type, env:, type:)
         else
-          raise LoweringError, "unsupported call kind #{kind}"
+          raise LoweringError.new("unsupported call kind #{kind}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -488,7 +488,7 @@ module MilkTea
       def lower_foreign_call_components(foreign_call, env:, expected_type:, statement_position:)
         call = foreign_call.fetch(:call)
         binding = foreign_call.fetch(:binding)
-        raise LoweringError, "consuming foreign calls must be top-level expression statements" if foreign_call_consumes_binding?(binding) && !statement_position
+        raise LoweringError.new("consuming foreign calls must be top-level expression statements", line: 0, column: 0, path: @ctx.current_analysis_path) if foreign_call_consumes_binding?(binding) && !statement_position
 
         previous_type_substitutions = @ctx.current_type_substitutions
         @ctx.current_type_substitutions = binding.type_substitutions
@@ -540,7 +540,7 @@ module MilkTea
           return [lowered, nil]
         end
 
-        raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+        raise LoweringError.new("consuming foreign calls must return void", line: 0, column: 0, path: @ctx.current_analysis_path) unless release_assignments.empty?
 
         if discard_result
           lowered << IR::ExpressionStmt.new(expression: lowered_call)
@@ -583,12 +583,12 @@ module MilkTea
 
           argument = call.arguments.fetch(index)
           unless argument.value.is_a?(AST::Identifier)
-            raise LoweringError, "consuming foreign calls require bare nullable local or parameter bindings"
+            raise LoweringError.new("consuming foreign calls require bare nullable local or parameter bindings", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
 
           lowered_binding = lookup_value(argument.value.name, env)
           unless lowered_binding && lowered_binding[:storage_type].is_a?(Types::Nullable) && lowered_binding[:storage_type].base == parameter.type
-            raise LoweringError, "consuming foreign calls require bare nullable local or parameter bindings"
+            raise LoweringError.new("consuming foreign calls require bare nullable local or parameter bindings", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
 
           lowered_binding.merge(name: argument.value.name)
@@ -757,14 +757,14 @@ module MilkTea
             converted = foreign_identity_projection_expression(lowered_value, parameter.boundary_type)
             return converted if converted
 
-            raise LoweringError, "unsupported foreign boundary mapping #{parameter.type} as #{parameter.boundary_type}"
+            raise LoweringError.new("unsupported foreign boundary mapping #{parameter.type} as #{parameter.boundary_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         when :in
           lower_foreign_in_argument_value(parameter, argument, env:)
         when :out, :inout
           lower_foreign_pointer_argument_value(parameter, argument, env:)
         else
-          raise LoweringError, "unsupported foreign passing mode #{parameter.passing_mode}"
+          raise LoweringError.new("unsupported foreign passing mode #{parameter.passing_mode}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -779,7 +779,7 @@ module MilkTea
 
         data_expression = IR::Member.new(receiver: lowered_value, member: "data", type: pointer_to(public_element_type))
         converted_data = foreign_identity_projection_expression(data_expression, pointer_to(boundary_element_type))
-        raise LoweringError, "unsupported foreign boundary mapping #{public_type} as #{boundary_type}" unless converted_data
+        raise LoweringError.new("unsupported foreign boundary mapping #{public_type} as #{boundary_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless converted_data
 
         len_expression = IR::Member.new(receiver: lowered_value, member: "len", type: @ctx.types.fetch("ptr_uint"))
         IR::AggregateLiteral.new(
@@ -799,7 +799,7 @@ module MilkTea
         converted = foreign_identity_projection_expression(address, parameter.boundary_type)
         return converted if converted
 
-        raise LoweringError, "unsupported foreign pointer boundary mapping #{parameter.type} as #{parameter.boundary_type}"
+        raise LoweringError.new("unsupported foreign pointer boundary mapping #{parameter.type} as #{parameter.boundary_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def foreign_slot_boundary_value_type(type)
@@ -841,7 +841,7 @@ module MilkTea
         converted = foreign_identity_projection_expression(address, parameter.boundary_type)
         return converted if converted
 
-        raise LoweringError, "unsupported foreign in boundary mapping #{parameter.type} as #{parameter.boundary_type}"
+        raise LoweringError.new("unsupported foreign in boundary mapping #{parameter.type} as #{parameter.boundary_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def lower_foreign_char_pointer_buffer_argument_value(parameter, argument, env:)
@@ -869,7 +869,7 @@ module MilkTea
         converted = foreign_identity_projection_expression(lowered_value, parameter.boundary_type)
         return converted if converted
 
-        raise LoweringError, "unsupported foreign boundary mapping #{public_type} as #{parameter.boundary_type}"
+        raise LoweringError.new("unsupported foreign boundary mapping #{public_type} as #{parameter.boundary_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def lower_foreign_call_inline(expression, binding, env:, type:)
@@ -888,7 +888,7 @@ module MilkTea
           next unless total_references > 1
           next if duplicable_foreign_argument_expression?(expression.arguments.fetch(index).value)
 
-          raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} is referenced multiple times in its mapping; use it as a statement, local initializer, assignment, or return expression"
+          raise LoweringError.new("foreign call #{binding.name} cannot be used inline because #{param_ast.name} is referenced multiple times in its mapping; use it as a statement, local initializer, assignment, or return expression", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         binding.ast.params.each_with_index do |param_ast, index|
@@ -896,13 +896,13 @@ module MilkTea
           next unless automatic_foreign_cstr_temp_needed?(parameter, expression.arguments.fetch(index).value, env:) ||
                       automatic_foreign_cstr_list_temp_needed?(parameter, expression.arguments.fetch(index).value, env:)
 
-          raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression"
+          raise LoweringError.new("foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         expression.arguments.drop(binding.type.params.length).each do |argument|
           next unless automatic_variadic_foreign_cstr_temp_needed?(argument.value, env:)
 
-          raise LoweringError, "foreign call #{binding.name} cannot be used inline because a variadic argument needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression"
+          raise LoweringError.new("foreign call #{binding.name} cannot be used inline because a variadic argument needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         binding.ast.params.each_with_index do |param_ast, index|
@@ -911,7 +911,7 @@ module MilkTea
           next unless parameter.passing_mode == :in
           next if addressable_storage_expression?(foreign_argument_expression(argument))
 
-          raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary in storage; use it as a statement, local initializer, assignment, or return expression"
+          raise LoweringError.new("foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary in storage; use it as a statement, local initializer, assignment, or return expression", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         replacements = {}
@@ -978,7 +978,7 @@ module MilkTea
         )
         return lowered_argument unless temporary_foreign_cstr_expression?(lowered_argument)
 
-        raise LoweringError, "foreign variadic call cannot be used inline because an extra argument needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression" unless lowered && cleanup
+        raise LoweringError.new("foreign variadic call cannot be used inline because an extra argument needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression", line: 0, column: 0, path: @ctx.current_analysis_path) unless lowered && cleanup
 
         temp_name = fresh_c_temp_name(env, "foreign_arg")
         lowered << IR::LocalDecl.new(
@@ -1128,7 +1128,7 @@ module MilkTea
 
         case kind
         when :function
-          raise LoweringError, "consuming foreign calls must be top-level expression statements" if callee_binding && foreign_function_binding?(callee_binding) && foreign_call_consumes_binding?(callee_binding)
+          raise LoweringError.new("consuming foreign calls must be top-level expression statements", line: 0, column: 0, path: @ctx.current_analysis_path) if callee_binding && foreign_function_binding?(callee_binding) && foreign_call_consumes_binding?(callee_binding)
 
           arguments = expression.arguments.map.with_index do |argument, index|
             expected_arg_type = index < callee_type.params.length ? callee_type.params[index].type : nil
@@ -1301,7 +1301,7 @@ module MilkTea
             )
           end
         else
-          raise LoweringError, "unsupported inline foreign mapping call kind #{kind}"
+          raise LoweringError.new("unsupported inline foreign mapping call kind #{kind}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -1537,9 +1537,9 @@ module MilkTea
 
         if (callable_resolution = resolve_specialized_callable_binding(expression, env:))
           callable_kind, function_binding, = callable_resolution
-          raise LoweringError, "specialized method must be called" if callable_kind == :method
+          raise LoweringError.new("specialized method must be called", line: 0, column: 0, path: @ctx.current_analysis_path) if callable_kind == :method
 
-          raise LoweringError, "foreign function #{function_binding.name} cannot be used as a value" if foreign_function_binding?(function_binding)
+          raise LoweringError.new("foreign function #{function_binding.name} cannot be used as a value", line: 0, column: 0, path: @ctx.current_analysis_path) if foreign_function_binding?(function_binding)
 
           if function_binding.external
             return IR::Name.new(name: external_function_c_name(function_binding), type:, pointer: false)
@@ -1552,9 +1552,9 @@ module MilkTea
           )
         end
 
-        raise LoweringError, "specialization #{expression.callee.name} must be called" if expression.callee.is_a?(AST::Identifier)
+        raise LoweringError.new("specialization #{expression.callee.name} must be called", line: 0, column: 0, path: @ctx.current_analysis_path) if expression.callee.is_a?(AST::Identifier)
 
-        raise LoweringError, "unsupported specialization #{expression.class.name}"
+        raise LoweringError.new("unsupported specialization #{expression.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def atomic_method_kind(receiver_type, name)
@@ -1602,7 +1602,7 @@ module MilkTea
           arg = lower_contextual_expression(expression.arguments.first.value, env:, expected_type: elem_type)
           IR::Call.new(callee: "__atomic_exchange_n", arguments: [addr, arg, seq_cst], type: elem_type)
         when :atomic_compare_exchange
-          raise LoweringError, "atomic compare_exchange is not yet implemented in the built-in surface; use std.sync.AtomicUint for compare-exchange operations"
+          raise LoweringError.new("atomic compare_exchange is not yet implemented in the built-in surface; use std.sync.AtomicUint for compare-exchange operations", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 

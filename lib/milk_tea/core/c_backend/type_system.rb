@@ -171,7 +171,7 @@ module MilkTea
             when Types::Handle
               "void*"
             else
-              raise CBackendError, "unsupported C type #{type.class.name}"
+              raise CBackendError.new("unsupported C type #{type.class.name}", line: 0, column: 0, path: @path)
             end
           end
 
@@ -261,33 +261,33 @@ module MilkTea
           def generic_c_type(type)
             case type.name
             when "ptr"
-              raise CBackendError, "ptr requires exactly one type argument" unless type.arguments.length == 1
+              raise CBackendError.new("ptr requires exactly one type argument", line: 0, column: 0, path: @path) unless type.arguments.length == 1
 
               "#{c_type(type.arguments.first)}*"
             when "const_ptr"
-              raise CBackendError, "const_ptr requires exactly one type argument" unless type.arguments.length == 1
+              raise CBackendError.new("const_ptr requires exactly one type argument", line: 0, column: 0, path: @path) unless type.arguments.length == 1
 
               "const #{c_type(type.arguments.first)}*"
             when "own"
-              raise CBackendError, "own requires exactly one type argument" unless type.arguments.length == 1
+              raise CBackendError.new("own requires exactly one type argument", line: 0, column: 0, path: @path) unless type.arguments.length == 1
 
               "#{c_type(type.arguments.first)}*"
             when "ref"
-              raise CBackendError, "ref requires at least one type argument" unless [1, 2].include?(type.arguments.length)
+              raise CBackendError.new("ref requires at least one type argument", line: 0, column: 0, path: @path) unless [1, 2].include?(type.arguments.length)
 
               "#{c_type(type.arguments.length == 1 ? type.arguments.first : type.arguments[1])}*"
             when "array"
-              raise CBackendError, "array requires exactly two type arguments" unless type.arguments.length == 2
+              raise CBackendError.new("array requires exactly two type arguments", line: 0, column: 0, path: @path) unless type.arguments.length == 2
 
               c_type(type.arguments.first)
             when "str_buffer"
-              raise CBackendError, "str_buffer requires exactly one type argument" unless str_buffer_type?(type)
+              raise CBackendError.new("str_buffer requires exactly one type argument", line: 0, column: 0, path: @path) unless str_buffer_type?(type)
 
               str_buffer_type_name(type)
             when "atomic"
               "_Atomic #{c_type(type.arguments.first)}"
             else
-              raise CBackendError, "unsupported generic C type #{type.name}"
+              raise CBackendError.new("unsupported generic C type #{type.name}", line: 0, column: 0, path: @path)
             end
           end
 

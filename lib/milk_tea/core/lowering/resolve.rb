@@ -53,7 +53,7 @@ module MilkTea
       end
 
       def lower_direct_function_to_proc_expression(source_expression, source_function, env:, expected_type:)
-        raise LoweringError, "function-to-proc coercion requires a direct function name" unless source_function.is_a?(IR::Name)
+        raise LoweringError.new("function-to-proc coercion requires a direct function name", line: 0, column: 0, path: @ctx.current_analysis_path) unless source_function.is_a?(IR::Name)
 
         proc_id = fresh_proc_symbol
         invoke_c_name = "#{@ctx.module_prefix}__proc_#{proc_id}__invoke"
@@ -424,7 +424,7 @@ module MilkTea
         if (binding = lookup_value(callee.name, env))
           return [:callable_value, nil, nil, binding[:type], nil] if callable_type?(binding[:type])
 
-          raise LoweringError, "#{callee.name} is not callable"
+          raise LoweringError.new("#{callee.name} is not callable", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         if @ctx.functions.key?(callee.name)
@@ -451,7 +451,7 @@ module MilkTea
         end
 
         if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-          raise LoweringError, "generic type #{callee.name} requires type arguments"
+          raise LoweringError.new("generic type #{callee.name} requires type arguments", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         emit_fn = @artifacts.emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
@@ -459,7 +459,7 @@ module MilkTea
           return [:function, emit_fn.linkage_name, nil, emit_fn.return_type, nil]
         end
 
-        raise LoweringError, "unknown callee #{callee.name}"
+        raise LoweringError.new("unknown callee #{callee.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def resolve_member_access_callee(callee, env, arguments)
@@ -477,7 +477,7 @@ module MilkTea
           end
           imported_type = imported_module.types[callee.member]
           if imported_type.is_a?(Types::GenericStructDefinition) || imported_type.is_a?(Types::GenericVariantDefinition)
-            raise LoweringError, "generic type #{callee.receiver.name}.#{callee.member} requires type arguments"
+            raise LoweringError.new("generic type #{callee.receiver.name}.#{callee.member} requires type arguments", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
 
           if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
@@ -518,7 +518,7 @@ module MilkTea
             end
           end
 
-          raise LoweringError, "unknown associated function #{type_expr}.#{callee.member}"
+          raise LoweringError.new("unknown associated function #{type_expr}.#{callee.member}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         resolved_receiver_type = infer_method_receiver_type(callee.receiver, env:, member_name: callee.member)
@@ -526,7 +526,7 @@ module MilkTea
         if dyn_type?(resolved_receiver_type)
           interface = resolved_receiver_type.interface_binding
           method_binding = interface.methods[callee.member]
-          raise LoweringError, "no method '#{callee.member}' on interface #{interface.name}" unless method_binding
+          raise LoweringError.new("no method '#{callee.member}' on interface #{interface.name}", line: 0, column: 0, path: @ctx.current_analysis_path) unless method_binding
           return [:dyn_method, nil, callee.receiver, method_binding, nil]
         end
 
@@ -611,7 +611,7 @@ module MilkTea
         member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
         return [:callable_value, nil, nil, member_type, nil] if callable_type?(member_type)
 
-        raise LoweringError, "unknown callee #{callee.receiver}.#{callee.member}"
+        raise LoweringError.new("unknown callee #{callee.receiver}.#{callee.member}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def resolve_specialization_callee(callee, env)
@@ -652,10 +652,10 @@ module MilkTea
           when "attribute_arg"
             return [:compile_time_builtin, "attribute_arg", nil, compile_time_builtin_specialization_function_type(callee)]
           when "adapt"
-            raise LoweringError, "adapt requires exactly one type argument" unless callee.arguments.length == 1
+            raise LoweringError.new("adapt requires exactly one type argument", line: 0, column: 0, path: @ctx.current_analysis_path) unless callee.arguments.length == 1
 
             type_arg = callee.arguments.first.value
-            raise LoweringError, "adapt type argument must be a type" unless type_arg.is_a?(AST::TypeRef)
+            raise LoweringError.new("adapt type argument must be a type", line: 0, column: 0, path: @ctx.current_analysis_path) unless type_arg.is_a?(AST::TypeRef)
 
             parts = type_arg.name.parts
             type_args = type_arg.arguments.map { |a| a.value }
@@ -689,14 +689,14 @@ module MilkTea
           return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion) || specialized_type.is_a?(Types::Simd)
         end
 
-        raise LoweringError, "unsupported specialization callee"
+        raise LoweringError.new("unsupported specialization callee", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def resolve_expression_callee(callee, env)
         callee_type = infer_expression_type(callee, env:)
         return [:callable_value, nil, nil, callee_type, nil] if callable_type?(callee_type)
 
-        raise LoweringError, "unsupported callee #{callee.class.name}"
+        raise LoweringError.new("unsupported callee #{callee.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def infer_expression_type(expression, env:, expected_type: nil)
@@ -707,7 +707,7 @@ module MilkTea
         case expression
         when AST::AwaitExpr
           task_type = infer_expression_type(expression.expression, env:)
-          raise LoweringError, "await requires a Task value, got #{task_type}" unless task_type.is_a?(Types::Task)
+          raise LoweringError.new("await requires a Task value, got #{task_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless task_type.is_a?(Types::Task)
 
           task_type.result_type
         when AST::IntegerLiteral
@@ -895,7 +895,7 @@ module MilkTea
             :simd_lane_with
             callee_type.return_type
           else
-            raise LoweringError, "unsupported call kind #{kind}"
+            raise LoweringError.new("unsupported call kind #{kind}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         when AST::PrefixCast
           resolve_type_ref(expression.target_type)
@@ -907,14 +907,14 @@ module MilkTea
             resolve_default_specialization(expression, env:).target_type
           elsif (callable_resolution = resolve_specialized_callable_binding(expression, env:))
             callable_kind, function_binding, = callable_resolution
-            raise LoweringError, "specialized method must be called" if callable_kind == :method
+            raise LoweringError.new("specialized method must be called", line: 0, column: 0, path: @ctx.current_analysis_path) if callable_kind == :method
 
             function_binding.type
           else
-            raise LoweringError, "unsupported specialization"
+            raise LoweringError.new("unsupported specialization", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         when AST::RangeExpr
-          raise LoweringError, "range expression is not valid in this context; use it as a for-loop iterable"
+          raise LoweringError.new("range expression is not valid in this context; use it as a for-loop iterable", line: 0, column: 0, path: @ctx.current_analysis_path)
         when AST::ExpressionList
           names = []
           element_types = []
@@ -932,7 +932,7 @@ module MilkTea
         when AST::DetachExpr
           Types::Handle.new
         else
-          raise LoweringError, "unsupported expression type #{expression.class.name}"
+          raise LoweringError.new("unsupported expression type #{expression.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -1222,8 +1222,8 @@ module MilkTea
 
       def function_type_for_name(name)
         binding = @ctx.functions.fetch(name)
-        raise LoweringError, "generic function #{name} cannot be used as a value" if binding.type_params.any?
-        raise LoweringError, "foreign function #{name} cannot be used as a value" if foreign_function_binding?(binding)
+        raise LoweringError.new("generic function #{name} cannot be used as a value", line: 0, column: 0, path: @ctx.current_analysis_path) if binding.type_params.any?
+        raise LoweringError.new("foreign function #{name} cannot be used as a value", line: 0, column: 0, path: @ctx.current_analysis_path) if foreign_function_binding?(binding)
 
         binding.type
       end
@@ -1284,7 +1284,7 @@ module MilkTea
         target_type = resolve_type_ref(expression.arguments.fetch(0).value)
 
         explicit_default = resolve_explicit_default_binding(target_type, context: "default[#{target_type}]")
-        raise LoweringError, "default[#{target_type}] requires associated function #{target_type}.default()" unless explicit_default
+        raise LoweringError.new("default[#{target_type}] requires associated function #{target_type}.default()", line: 0, column: 0, path: @ctx.current_analysis_path) unless explicit_default
 
         DefaultResolution.new(target_type:, binding: explicit_default.binding, callee_name: explicit_default.callee_name)
       end
@@ -1292,7 +1292,7 @@ module MilkTea
       def resolve_hash_specialization(expression, env:)
         target_type = resolve_type_ref(expression.arguments.fetch(0).value)
         explicit_hash = resolve_explicit_hash_binding(target_type, context: "hash[#{target_type}]")
-        raise LoweringError, "hash[#{target_type}] requires associated function #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint" unless explicit_hash
+        raise LoweringError.new("hash[#{target_type}] requires associated function #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint", line: 0, column: 0, path: @ctx.current_analysis_path) unless explicit_hash
 
         HashResolution.new(target_type:, binding: explicit_hash.binding, callee_name: explicit_hash.callee_name)
       end
@@ -1300,7 +1300,7 @@ module MilkTea
       def resolve_equal_specialization(expression, env:)
         target_type = resolve_type_ref(expression.arguments.fetch(0).value)
         explicit_equal = resolve_explicit_equal_binding(target_type, context: "equal[#{target_type}]")
-        raise LoweringError, "equal[#{target_type}] requires associated function #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool" unless explicit_equal
+        raise LoweringError.new("equal[#{target_type}] requires associated function #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool", line: 0, column: 0, path: @ctx.current_analysis_path) unless explicit_equal
 
         EqualResolution.new(target_type:, binding: explicit_equal.binding, callee_name: explicit_equal.callee_name)
       end
@@ -1308,7 +1308,7 @@ module MilkTea
       def resolve_order_specialization(expression, env:)
         target_type = resolve_type_ref(expression.arguments.fetch(0).value)
         explicit_order = resolve_explicit_order_binding(target_type, context: "order[#{target_type}]")
-        raise LoweringError, "order[#{target_type}] requires associated function #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int" unless explicit_order
+        raise LoweringError.new("order[#{target_type}] requires associated function #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int", line: 0, column: 0, path: @ctx.current_analysis_path) unless explicit_order
 
         OrderResolution.new(target_type:, binding: explicit_order.binding, callee_name: explicit_order.callee_name)
       end
@@ -1316,9 +1316,9 @@ module MilkTea
       def resolve_explicit_default_binding(target_type, context:)
         requirement_message = "#{context} requires associated function #{target_type}.default()"
         resolve_explicit_associated_binding(target_type, "default", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
-          raise LoweringError, "#{context} requires #{target_type}.default() to take 0 arguments" unless method_binding.type.params.empty?
+          raise LoweringError.new("#{context} requires #{target_type}.default() to take 0 arguments", line: 0, column: 0, path: @ctx.current_analysis_path) unless method_binding.type.params.empty?
           unless method_binding.type.return_type == target_type
-            raise LoweringError, "#{context} requires #{target_type}.default() to return #{target_type}, got #{method_binding.type.return_type}"
+            raise LoweringError.new("#{context} requires #{target_type}.default() to return #{target_type}, got #{method_binding.type.return_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
       end
@@ -1327,10 +1327,10 @@ module MilkTea
         requirement_message = "#{context} requires associated function #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint"
         resolve_explicit_associated_binding(target_type, "hash", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
           unless method_binding.type.params.map(&:type) == [const_pointer_to(target_type)]
-            raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint"
+            raise LoweringError.new("#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
           unless method_binding.type.return_type == @ctx.types.fetch("uint")
-            raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint, got #{method_binding.type.return_type}"
+            raise LoweringError.new("#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint, got #{method_binding.type.return_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
       end
@@ -1340,10 +1340,10 @@ module MilkTea
         resolve_explicit_associated_binding(target_type, "equal", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
           expected_param_types = [const_pointer_to(target_type), const_pointer_to(target_type)]
           unless method_binding.type.params.map(&:type) == expected_param_types
-            raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool"
+            raise LoweringError.new("#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
           unless method_binding.type.return_type == @ctx.types.fetch("bool")
-            raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method_binding.type.return_type}"
+            raise LoweringError.new("#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method_binding.type.return_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
       end
@@ -1353,10 +1353,10 @@ module MilkTea
         resolve_explicit_associated_binding(target_type, "order", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
           expected_param_types = [const_pointer_to(target_type), const_pointer_to(target_type)]
           unless method_binding.type.params.map(&:type) == expected_param_types
-            raise LoweringError, "#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int"
+            raise LoweringError.new("#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
           unless method_binding.type.return_type == @ctx.types.fetch("int")
-            raise LoweringError, "#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int, got #{method_binding.type.return_type}"
+            raise LoweringError.new("#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int, got #{method_binding.type.return_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
       end
@@ -1373,7 +1373,7 @@ module MilkTea
         ) if length_binding && append_binding
 
         if length_binding || append_binding
-          raise LoweringError, "#{context} requires methods #{target_type}.format_len() -> ptr_uint and #{target_type}.append_format(output: ref[std.string.String]) -> void"
+          raise LoweringError.new("#{context} requires methods #{target_type}.format_len() -> ptr_uint and #{target_type}.append_format(output: ref[std.string.String]) -> void", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         nil
@@ -1382,10 +1382,10 @@ module MilkTea
       def resolve_explicit_format_len_binding(target_type, context:)
         requirement_message = "#{context} requires method #{target_type}.format_len() -> ptr_uint"
         resolve_explicit_instance_binding(target_type, "format_len", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
-          raise LoweringError, "#{context} requires #{target_type}.format_len() to take 0 arguments" unless method_binding.type.params.empty?
-          raise LoweringError, "#{context} requires #{target_type}.format_len() to be non-editable" if method_binding.type.receiver_editable
+          raise LoweringError.new("#{context} requires #{target_type}.format_len() to take 0 arguments", line: 0, column: 0, path: @ctx.current_analysis_path) unless method_binding.type.params.empty?
+          raise LoweringError.new("#{context} requires #{target_type}.format_len() to be non-editable", line: 0, column: 0, path: @ctx.current_analysis_path) if method_binding.type.receiver_editable
           unless method_binding.type.return_type == @ctx.types.fetch("ptr_uint")
-            raise LoweringError, "#{context} requires #{target_type}.format_len() -> ptr_uint, got #{method_binding.type.return_type}"
+            raise LoweringError.new("#{context} requires #{target_type}.format_len() -> ptr_uint, got #{method_binding.type.return_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
       end
@@ -1393,12 +1393,12 @@ module MilkTea
       def resolve_explicit_format_append_binding(target_type, context:)
         requirement_message = "#{context} requires method #{target_type}.append_format(output: ref[std.string.String]) -> void"
         resolve_explicit_instance_binding(target_type, "append_format", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
-          raise LoweringError, "#{context} requires #{target_type}.append_format() to be non-editable" if method_binding.type.receiver_editable
+          raise LoweringError.new("#{context} requires #{target_type}.append_format() to be non-editable", line: 0, column: 0, path: @ctx.current_analysis_path) if method_binding.type.receiver_editable
           unless method_binding.type.params.length == 1 && string_builder_ref_type?(method_binding.type.params.first.type)
-            raise LoweringError, "#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void"
+            raise LoweringError.new("#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
           unless method_binding.type.return_type == @ctx.types.fetch("void")
-            raise LoweringError, "#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void, got #{method_binding.type.return_type}"
+            raise LoweringError.new("#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void, got #{method_binding.type.return_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
       end
@@ -1420,7 +1420,7 @@ module MilkTea
 
         method_analysis, method_ast = method_entry
         method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
-        raise LoweringError, requirement_message unless method_binding.type.receiver_type.nil?
+        raise LoweringError.new(requirement_message, line: 0, column: 0, path: @ctx.current_analysis_path) unless method_binding.type.receiver_type.nil?
 
         method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
         yield method_binding, method_analysis, method_entry_receiver_type
@@ -1441,7 +1441,7 @@ module MilkTea
         when "order"
           ExplicitOrderBinding.new(binding: method_binding, callee_name:)
         else
-          raise LoweringError, "unsupported associated hook #{method_name}"
+          raise LoweringError.new("unsupported associated hook #{method_name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -1457,7 +1457,7 @@ module MilkTea
 
         method_analysis, method_ast = method_entry
         method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
-        raise LoweringError, requirement_message if method_binding.type.receiver_type.nil?
+        raise LoweringError.new(requirement_message, line: 0, column: 0, path: @ctx.current_analysis_path) if method_binding.type.receiver_type.nil?
 
         method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
         yield method_binding, method_analysis, method_entry_receiver_type
@@ -1489,7 +1489,7 @@ module MilkTea
         when AST::IntegerLiteral, AST::FloatLiteral
           Types::LiteralTypeArg.new(argument.value)
         else
-          raise LoweringError, "unsupported type argument #{argument.class.name}"
+          raise LoweringError.new("unsupported type argument #{argument.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -1532,7 +1532,7 @@ module MilkTea
         imported_module = @ctx.imports[import_name]
         return unless imported_module
         if imported_module.private_value?(value_name)
-          raise LoweringError, "#{import_name}.#{value_name} is private to module #{imported_module.name}"
+          raise LoweringError.new("#{import_name}.#{value_name} is private to module #{imported_module.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         binding = imported_module.values[value_name]
@@ -1996,7 +1996,7 @@ module MilkTea
 
       def specialize_function_binding(binding, arguments, env, receiver_type: nil)
         return binding if binding.type_params.empty?
-        raise LoweringError, "generic function #{binding.name} must be called" unless arguments
+        raise LoweringError.new("generic function #{binding.name} must be called", line: 0, column: 0, path: @ctx.current_analysis_path) unless arguments
 
         type_arguments = infer_function_type_arguments(binding, arguments, env, receiver_type:)
         instantiate_function_binding(binding, type_arguments)
@@ -2004,25 +2004,25 @@ module MilkTea
 
       def instantiate_function_binding_with_receiver(binding, explicit_type_arguments, receiver_type: nil)
         if binding.type_params.empty?
-          raise LoweringError, "function #{binding.name} is not generic and cannot be specialized"
+          raise LoweringError.new("function #{binding.name} is not generic and cannot be specialized", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         receiver_substitutions = infer_receiver_type_substitutions(binding, receiver_type)
         remaining_type_params = binding.type_params.reject { |name| receiver_substitutions.key?(name) }
         unless remaining_type_params.length == explicit_type_arguments.length
-          raise LoweringError, "function #{binding.name} expects #{remaining_type_params.length} type arguments, got #{explicit_type_arguments.length}"
+          raise LoweringError.new("function #{binding.name} expects #{remaining_type_params.length} type arguments, got #{explicit_type_arguments.length}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         substitutions = receiver_substitutions.dup
         remaining_type_params.zip(explicit_type_arguments).each do |name, type_argument|
-          raise LoweringError, "generic function #{binding.name} cannot be instantiated with ref types" if contains_ref_type?(type_argument)
+          raise LoweringError.new("generic function #{binding.name} cannot be instantiated with ref types", line: 0, column: 0, path: @ctx.current_analysis_path) if contains_ref_type?(type_argument)
 
           substitutions[name] = type_argument
         end
 
         type_arguments = binding.type_params.map do |name|
           inferred = substitutions[name]
-          raise LoweringError, "cannot infer type argument #{name} for function #{binding.name}" unless inferred
+          raise LoweringError.new("cannot infer type argument #{name} for function #{binding.name}", line: 0, column: 0, path: @ctx.current_analysis_path) unless inferred
 
           inferred
         end
@@ -2032,15 +2032,15 @@ module MilkTea
 
       def instantiate_function_binding(binding, type_arguments)
         if binding.type_params.empty?
-          raise LoweringError, "function #{binding.name} is not generic and cannot be specialized"
+          raise LoweringError.new("function #{binding.name} is not generic and cannot be specialized", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         unless binding.type_params.length == type_arguments.length
-          raise LoweringError, "function #{binding.name} expects #{binding.type_params.length} type arguments, got #{type_arguments.length}"
+          raise LoweringError.new("function #{binding.name} expects #{binding.type_params.length} type arguments, got #{type_arguments.length}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         if type_arguments.any? { |type_argument| contains_ref_type?(type_argument) }
-          raise LoweringError, "generic function #{binding.name} cannot be instantiated with ref types"
+          raise LoweringError.new("generic function #{binding.name} cannot be instantiated with ref types", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         key = type_arguments.freeze
@@ -2071,12 +2071,12 @@ module MilkTea
       def validate_function_type_param_constraints!(binding, substitutions)
         binding.type_param_constraints.each do |name, constraints|
           actual_type = substitutions[name]
-          raise LoweringError, "cannot infer type argument #{name} for function #{binding.name}" unless actual_type
+          raise LoweringError.new("cannot infer type argument #{name} for function #{binding.name}", line: 0, column: 0, path: @ctx.current_analysis_path) unless actual_type
 
           constraints.interfaces.each do |interface|
             next if type_implements_interface?(actual_type, interface)
 
-            raise LoweringError, "type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}"
+            raise LoweringError.new("type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
       end
@@ -2102,7 +2102,7 @@ module MilkTea
       def infer_function_type_arguments(binding, arguments, env, receiver_type: nil)
         expected_params = binding.type.params
         unless call_arity_matches?(binding.type, arguments.length)
-          raise LoweringError, arity_error_message(binding.type, binding.name, arguments.length)
+          raise LoweringError.new(arity_error_message(binding.type, binding.name, arguments.length), line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         substitutions = infer_receiver_type_substitutions(binding, receiver_type)
@@ -2122,7 +2122,7 @@ module MilkTea
 
         binding.type_params.map do |name|
           inferred = substitutions[name]
-          raise LoweringError, "cannot infer type argument #{name} for function #{binding.name}" unless inferred
+          raise LoweringError.new("cannot infer type argument #{name} for function #{binding.name}", line: 0, column: 0, path: @ctx.current_analysis_path) unless inferred
 
           inferred
         end
@@ -2153,7 +2153,7 @@ module MilkTea
 
         expected_names = generic_type.type_params
         unless names == expected_names
-          raise LoweringError, "extending target #{type_ref} must use the receiver type parameters directly"
+          raise LoweringError.new("extending target #{type_ref} must use the receiver type parameters directly", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         expected_names
@@ -2168,7 +2168,7 @@ module MilkTea
           value.name.parts.first
         end
 
-        raise LoweringError, "extending target #{type_ref} must use the receiver type parameters directly" if names.any?(&:nil?)
+        raise LoweringError.new("extending target #{type_ref} must use the receiver type parameters directly", line: 0, column: 0, path: @ctx.current_analysis_path) if names.any?(&:nil?)
 
         names
       end
@@ -2179,7 +2179,7 @@ module MilkTea
         case declared_receiver_type
         when Types::Nullable
           unless receiver_type.is_a?(Types::Nullable)
-            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
 
           infer_receiver_type_substitutions(
@@ -2190,7 +2190,7 @@ module MilkTea
           return {} unless declared_receiver_type.definition.is_a?(Types::GenericStructDefinition)
 
           unless receiver_type.is_a?(Types::StructInstance) && receiver_type.definition == declared_receiver_type.definition
-            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
 
           declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
@@ -2198,20 +2198,20 @@ module MilkTea
           return {} unless declared_receiver_type.definition.is_a?(Types::GenericVariantDefinition)
 
           unless receiver_type.is_a?(Types::VariantInstance) && receiver_type.definition == declared_receiver_type.definition
-            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
 
           declared_receiver_type.definition.type_params.zip(receiver_type.arguments).to_h
         when Types::GenericInstance
           unless receiver_type.is_a?(Types::GenericInstance) && receiver_type.name == declared_receiver_type.name && receiver_type.arguments.length == declared_receiver_type.arguments.length
-            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
 
           declared_receiver_type.arguments.zip(receiver_type.arguments).each_with_object({}) do |(declared_argument, actual_argument), substitutions|
             if declared_argument.is_a?(Types::TypeVar)
               substitutions[declared_argument.name] = actual_argument
             elsif declared_argument != actual_argument
-              raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+              raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
             end
           end
         when Types::Span
@@ -2221,7 +2221,7 @@ module MilkTea
           if declared_receiver_type.element_type.is_a?(Types::TypeVar)
             substitutions[declared_receiver_type.element_type.name] = receiver_type.element_type
           elsif declared_receiver_type.element_type != receiver_type.element_type
-            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
           substitutions
         when Types::Task
@@ -2231,7 +2231,7 @@ module MilkTea
           if declared_receiver_type.result_type.is_a?(Types::TypeVar)
             substitutions[declared_receiver_type.result_type.name] = receiver_type.result_type
           elsif declared_receiver_type.result_type != receiver_type.result_type
-            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
           substitutions
         when Types::SoA
@@ -2241,7 +2241,7 @@ module MilkTea
           if declared_receiver_type.element_type.is_a?(Types::TypeVar)
             substitutions[declared_receiver_type.element_type.name] = receiver_type.element_type
           elsif declared_receiver_type.element_type != receiver_type.element_type
-            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
           substitutions
         when Types::Simd
@@ -2251,7 +2251,7 @@ module MilkTea
           if declared_receiver_type.element_type.is_a?(Types::TypeVar)
             substitutions[declared_receiver_type.element_type.name] = receiver_type.element_type
           elsif declared_receiver_type.element_type != receiver_type.element_type
-            raise LoweringError, "cannot use method #{binding.name} with receiver #{receiver_type}"
+            raise LoweringError.new("cannot use method #{binding.name} with receiver #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
           substitutions
         else
@@ -2264,7 +2264,7 @@ module MilkTea
         when Types::TypeVar
           existing = substitutions[pattern_type.name]
           if existing && existing != actual_type
-            raise LoweringError, "conflicting type argument #{pattern_type.name} for function #{function_name}: got #{existing} and #{actual_type}"
+            raise LoweringError.new("conflicting type argument #{pattern_type.name} for function #{function_name}: got #{existing} and #{actual_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
 
           substitutions[pattern_type.name] ||= actual_type
@@ -2389,7 +2389,7 @@ module MilkTea
       def const_declaration_for_module(module_name, name)
         analysis = @program.analyses_by_module_name.fetch(module_name)
         declaration = analysis.ast.declarations.find { |decl| decl.is_a?(AST::ConstDecl) && decl.name == name }
-        raise LoweringError, "unknown constant #{analysis.module_name}.#{name}" unless declaration
+        raise LoweringError.new("unknown constant #{analysis.module_name}.#{name}", line: 0, column: 0, path: @ctx.current_analysis_path) unless declaration
 
         declaration
       end
@@ -2424,7 +2424,7 @@ module MilkTea
 
         if type_ref.is_a?(AST::DynType)
           interface = resolve_interface_ref(type_ref.interface)
-          raise LoweringError, "generic interface requires type arguments" if interface.respond_to?(:instantiate)
+          raise LoweringError.new("generic interface requires type arguments", line: 0, column: 0, path: @ctx.current_analysis_path) if interface.respond_to?(:instantiate)
           type_arguments = interface.respond_to?(:type_arguments) ? (interface.type_arguments || []) : []
           return Types::Dyn.new(interface, type_arguments)
         end
@@ -2450,7 +2450,7 @@ module MilkTea
                  name = parts.join(".")
                  args = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:) }
                  if name != "ref" && args.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
-                   raise LoweringError, "ref types cannot be nested inside #{name}"
+                   raise LoweringError.new("ref types cannot be nested inside #{name}", line: 0, column: 0, path: @ctx.current_analysis_path)
                  end
                  if name == "Task"
                    validate_generic_type!(name, args)
@@ -2474,8 +2474,8 @@ module MilkTea
                  type_params.fetch(parts.first)
                 elsif parts.length == 1
                   type = @ctx.types[parts.first]
-                  raise LoweringError, "unknown type #{parts.first}" unless type
-                 raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+                  raise LoweringError.new("unknown type #{parts.first}", line: 0, column: 0, path: @ctx.current_analysis_path) unless type
+                 raise LoweringError.new("generic type #{parts.first} requires type arguments", line: 0, column: 0, path: @ctx.current_analysis_path) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
                  type
          elsif parts.length >= 2
@@ -2485,25 +2485,25 @@ module MilkTea
              if @ctx.imports.key?(parts.first)
                imported_module = @ctx.imports.fetch(parts.first)
                if imported_module.private_type?(parts.last)
-                 raise LoweringError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
+                 raise LoweringError.new("#{parts.first}.#{parts.last} is private to module #{imported_module.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
                end
 
                type = imported_module.types[parts.last]
-               raise LoweringError, "unknown type #{type_ref.name}" unless type
-               raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+               raise LoweringError.new("unknown type #{type_ref.name}", line: 0, column: 0, path: @ctx.current_analysis_path) unless type
+               raise LoweringError.new("generic type #{type_ref.name} requires type arguments", line: 0, column: 0, path: @ctx.current_analysis_path) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
              elsif @type_resolution_env && (field_type = resolve_field_handle_type_ref(parts))
                type = field_type
              else
-               raise LoweringError, "unknown type #{type_ref.name}"
+               raise LoweringError.new("unknown type #{type_ref.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
              end
            end
 
            type
          else
-           raise LoweringError, "unknown type #{type_ref.name}"
+           raise LoweringError.new("unknown type #{type_ref.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
          end
 
-         raise LoweringError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
+         raise LoweringError.new("ref types are non-null and cannot be nullable", line: 0, column: 0, path: @ctx.current_analysis_path) if type_ref.nullable && ref_type?(base)
 
          type_ref.nullable ? Types::Registry.nullable(base) : base
       end
@@ -2580,10 +2580,10 @@ module MilkTea
                     elsif parts.length == 2 && @ctx.imports.key?(parts.first)
                       @ctx.imports.fetch(parts.first).interfaces[parts.last]
                     end
-        raise LoweringError, "unknown interface #{interface_ref}" unless interface
+        raise LoweringError.new("unknown interface #{interface_ref}", line: 0, column: 0, path: @ctx.current_analysis_path) unless interface
 
         if interface_ref.type_arguments.any?
-          raise LoweringError, "interface #{interface.name} is not generic" unless interface.respond_to?(:instantiate)
+          raise LoweringError.new("interface #{interface.name} is not generic", line: 0, column: 0, path: @ctx.current_analysis_path) unless interface.respond_to?(:instantiate)
           type_args = interface_ref.type_arguments.map { |arg| resolve_type_ref(arg) }
           interface.instantiate(type_args)
         else

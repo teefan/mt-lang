@@ -76,7 +76,7 @@ module MilkTea
         when Hash
           fields = const_value.map do |name, field_value|
             field_type = type.field(name)
-            raise LoweringError, "constant struct field #{name} not found in #{type}" unless field_type
+            raise LoweringError.new("constant struct field #{name} not found in #{type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless field_type
             IR::AggregateField.new(name:, value: lower_const_value_literal(field_type, field_value))
           end
           IR::AggregateLiteral.new(type:, fields:)
@@ -131,7 +131,7 @@ module MilkTea
 
       def lower_static_assert(statement, env:)
         condition_value = compile_time_const_value(statement.condition, env:)
-        raise LoweringError, "static_assert condition must lower to a compile-time bool constant" unless condition_value == true || condition_value == false
+        raise LoweringError.new("static_assert condition must lower to a compile-time bool constant", line: 0, column: 0, path: @ctx.current_analysis_path) unless condition_value == true || condition_value == false
 
         IR::StaticAssert.new(
           condition: IR::BooleanLiteral.new(value: condition_value, type: @ctx.types.fetch("bool")),

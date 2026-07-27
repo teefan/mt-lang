@@ -119,8 +119,8 @@ module MilkTea
             statement_position: false,
           )
           lowered.concat(setup)
-          raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @ctx.types.fetch("void")
-          raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+          raise LoweringError.new("foreign call used to initialize #{statement.name} must return a value", line: 0, column: 0, path: @ctx.current_analysis_path) if call_type == @ctx.types.fetch("void")
+          raise LoweringError.new("consuming foreign calls must return void", line: 0, column: 0, path: @ctx.current_analysis_path) unless release_assignments.empty?
 
           lowered << IR::Assignment.new(target:, operator: "=", value:)
           lowered.concat(cleanup_statements)
@@ -307,7 +307,7 @@ module MilkTea
           when AST::StaticAssert
             lowered.concat(lower_static_assert(statement))
           else
-            raise LoweringError, "unsupported async cf statement #{statement.class.name}"
+            raise LoweringError.new("unsupported async cf statement #{statement.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
 
@@ -412,7 +412,7 @@ module MilkTea
       def lower_async_cf_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, resume_linkage_name:, async_info:, active_defers:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
-        raise LoweringError, "for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}" unless element_type
+        raise LoweringError.new("for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless element_type
 
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
         continue_label = fresh_c_temp_name(env, "loop_continue")
@@ -468,7 +468,7 @@ module MilkTea
           iterable = statement.iterables[index]
           iterable_type = infer_expression_type(iterable, env:)
           element_type = collection_loop_type(iterable_type)
-          raise LoweringError, "parallel for loops expect arrays or spans for each iterable, got #{iterable_type}" unless element_type
+          raise LoweringError.new("parallel for loops expect arrays or spans for each iterable, got #{iterable_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless element_type
 
           {
             binding:,
@@ -744,7 +744,7 @@ module MilkTea
           when AST::StaticAssert
             lowered << lower_static_assert(statement, env: local_env)
           else
-            raise LoweringError, "unsupported async non-await statement #{statement.class.name}"
+            raise LoweringError.new("unsupported async non-await statement #{statement.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         end
 
@@ -837,7 +837,7 @@ module MilkTea
       def lower_async_collection_for_stmt(statement, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers: [])
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
-        raise LoweringError, "for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}" unless element_type
+        raise LoweringError.new("for loop expects start..stop, array[T, N], or span[T], got #{iterable_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless element_type
 
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
         iterable_linkage_name = fresh_c_temp_name(env, "for_items")
@@ -896,7 +896,7 @@ module MilkTea
           iterable = statement.iterables[index]
           iterable_type = infer_expression_type(iterable, env:)
           element_type = collection_loop_type(iterable_type)
-          raise LoweringError, "parallel for loops expect arrays or spans for each iterable, got #{iterable_type}" unless element_type
+          raise LoweringError.new("parallel for loops expect arrays or spans for each iterable, got #{iterable_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless element_type
 
           {
             binding:,
@@ -998,8 +998,8 @@ module MilkTea
             statement_position: false,
           )
           lowered.concat(setup)
-          raise LoweringError, "foreign call used in assignment must return a value" if call_type == @ctx.types.fetch("void")
-          raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+          raise LoweringError.new("foreign call used in assignment must return a value", line: 0, column: 0, path: @ctx.current_analysis_path) if call_type == @ctx.types.fetch("void")
+          raise LoweringError.new("consuming foreign calls must return void", line: 0, column: 0, path: @ctx.current_analysis_path) unless release_assignments.empty?
 
           lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
           lowered.concat(cleanup_statements)
@@ -1135,7 +1135,7 @@ module MilkTea
           expected_type: await_info[:task_type],
         )
         lowered.concat(prepared_setup)
-        raise LoweringError, "await does not support foreign task expressions" if foreign_call_info(prepared_task, env)
+        raise LoweringError.new("await does not support foreign task expressions", line: 0, column: 0, path: @ctx.current_analysis_path) if foreign_call_info(prepared_task, env)
 
         task_expr = async_frame_field_expression(frame_expr, await_info[:field_name], await_info[:task_type])
         task_frame_expr = async_task_frame_expression(task_expr, await_info[:task_type])
@@ -1382,7 +1382,7 @@ module MilkTea
           [loop_exit_statement(target, local_defers:, outer_defers:)]
         else
           label = target[:label]
-          raise LoweringError, "structured loop exits with cleanup are unsupported" unless label
+          raise LoweringError.new("structured loop exits with cleanup are unsupported", line: 0, column: 0, path: @ctx.current_analysis_path) unless label
 
           cleanup + [IR::GotoStmt.new(label:)]
         end

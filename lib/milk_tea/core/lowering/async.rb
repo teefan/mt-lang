@@ -8,7 +8,8 @@ module MilkTea
       def build_async_main_entrypoint(binding, _constructor_c_name, async_info)
         task_type = async_info[:task_type]
         signature = root_main_entrypoint_signature(binding)
-        raise LoweringError, "async main entrypoint requires a supported signature" unless signature
+        raise LoweringError.new("async main entrypoint requires a supported signature",
+          line: 0, column: 0, path: @ctx.current_analysis_path) unless signature
 
         params, setup_statements, call_arguments, cleanup_statements = build_root_main_entrypoint_bridge(signature)
         body = []
@@ -229,7 +230,8 @@ module MilkTea
             cleanup,
           ]
         else
-          raise LoweringError, "unsupported root main entrypoint bridge #{signature[:kind]}"
+          raise LoweringError.new("unsupported root main entrypoint bridge #{signature[:kind]}",
+            line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 

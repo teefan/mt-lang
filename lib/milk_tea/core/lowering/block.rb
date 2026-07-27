@@ -55,11 +55,13 @@ module MilkTea
           when AST::PassStmt
             nil
           when AST::BreakStmt
-            raise LoweringError, "break must be inside a loop" unless loop_flow
+            raise LoweringError.new("break must be inside a loop",
+              line: statement.line, column: statement.column, path: @ctx.current_analysis_path) unless loop_flow
 
             lowered.concat(lower_loop_exit(loop_flow[:break_target], local_defers, loop_flow[:break_defers]))
           when AST::ContinueStmt
-            raise LoweringError, "continue must be inside a loop" unless loop_flow
+            raise LoweringError.new("continue must be inside a loop",
+              line: statement.line, column: statement.column, path: @ctx.current_analysis_path) unless loop_flow
 
             lowered.concat(lower_loop_exit(loop_flow[:continue_target], local_defers, loop_flow[:continue_defers]))
           when AST::ReturnStmt
@@ -71,7 +73,8 @@ module MilkTea
           when AST::WhenStmt
             lower_block_when_stmt(statement, lowered:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
           else
-            raise LoweringError, "unsupported statement #{statement.class.name}"
+            raise LoweringError.new("unsupported statement #{statement.class.name}",
+              line: statement.line, column: statement.column, path: @ctx.current_analysis_path)
           end
         end
 
@@ -85,7 +88,8 @@ module MilkTea
         captures = proc_capture_entries(expression, env)
         captures.each do |capture|
           if ref_type?(capture[:type]) || contains_ref_type?(capture[:type])
-            raise LoweringError, "proc capture #{capture[:name]} cannot use ref types"
+            raise LoweringError.new("proc capture #{capture[:name]} cannot use ref types",
+              line: expression.line, column: expression.column, path: @ctx.current_analysis_path)
           end
         end
 
@@ -279,7 +283,8 @@ module MilkTea
         when AST::ConstDecl
           lower_emitted_const(decl, env:)
         else
-          raise LoweringError, "emit is not supported for #{decl.class.name}"
+          raise LoweringError.new("emit is not supported for #{decl.class.name}",
+            line: statement.line, column: statement.column, path: @ctx.current_analysis_path)
         end
       end
 
@@ -451,7 +456,8 @@ module MilkTea
     end
 
     def lower_block_return_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, allow_return:)
-      raise LoweringError, "return is not allowed inside defer blocks" unless allow_return
+      raise LoweringError.new("return is not allowed inside defer blocks",
+        line: statement.line, column: statement.column, path: @ctx.current_analysis_path) unless allow_return
 
       value = nil
       prepared_setup = []
@@ -478,7 +484,8 @@ module MilkTea
         contextual_int_to_float: contextual_int_to_float_target?(return_type),
       ) : nil
       if prepared_cleanups.any? && cstr_trackable_type?(return_type)
-        raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape"
+        raise LoweringError.new("formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape",
+          line: statement.line, column: statement.column, path: @ctx.current_analysis_path)
       end
 
       prepared_cleanup_list = prepared_cleanups.flat_map(&:itself)
@@ -523,8 +530,10 @@ module MilkTea
           statement_position: false,
         )
         lowered.concat(setup)
-        raise LoweringError, "foreign call used in assignment must return a value" if call_type == @ctx.types.fetch("void")
-        raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+        raise LoweringError.new("foreign call used in assignment must return a value",
+          line: statement.line, column: statement.column, path: @ctx.current_analysis_path) if call_type == @ctx.types.fetch("void")
+        raise LoweringError.new("consuming foreign calls must return void",
+          line: statement.line, column: statement.column, path: @ctx.current_analysis_path) unless release_assignments.empty?
 
         lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
         lowered.concat(cleanup_statements)
@@ -713,8 +722,10 @@ module MilkTea
           statement_position: false,
         )
         lowered.concat(setup)
-        raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @ctx.types.fetch("void")
-        raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
+        raise LoweringError.new("foreign call used to initialize #{statement.name} must return a value",
+          line: statement.line, column: statement.column, path: @ctx.current_analysis_path) if call_type == @ctx.types.fetch("void")
+        raise LoweringError.new("consuming foreign calls must return void",
+          line: statement.line, column: statement.column, path: @ctx.current_analysis_path) unless release_assignments.empty?
 
         lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path)
         lowered.concat(cleanup_statements)
@@ -927,16 +938,25 @@ module MilkTea
           nested_struct_c_name = nil
           nested_struct_type = nil
           if fields.size == 1 && fields.values.first.is_a?(Types::Struct)
-            nested_struct_type = fields.values.first
-            nested_struct_fields = nested_struct_type.fields
-            single_field_name = fields.keys.first
-            nested_struct_c_name = fresh_c_temp_name(arm_local_env, "match_struct")
-            struct_expr = IR::Member.new(
-              receiver: IR::Name.new(name: payload_c_name, type: payload_type, pointer: false),
-              member: single_field_name,
-              type: nested_struct_type,
-            )
-            arm_body_ir << IR::LocalDecl.new(name: nested_struct_c_name, linkage_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
+            native_field = fields.keys.first
+            has_native_reference = arm.pattern.arguments.any? do |arg|
+              next false if !arg.name && arg.value.is_a?(AST::Identifier) && arg.value.name == "_"
+
+              name = arg.name || (arg.value.is_a?(AST::Identifier) ? arg.value.name : nil)
+              name == native_field
+            end
+            unless has_native_reference
+              nested_struct_type = fields.values.first
+              nested_struct_fields = nested_struct_type.fields
+              single_field_name = fields.keys.first
+              nested_struct_c_name = fresh_c_temp_name(arm_local_env, "match_struct")
+              struct_expr = IR::Member.new(
+                receiver: IR::Name.new(name: payload_c_name, type: payload_type, pointer: false),
+                member: single_field_name,
+                type: nested_struct_type,
+              )
+              arm_body_ir << IR::LocalDecl.new(name: nested_struct_c_name, linkage_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
+            end
           end
 
           if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?

@@ -32,7 +32,7 @@ module MilkTea
 
             visit = lambda do |aggregate_decl|
               return if visited[aggregate_decl.linkage_name]
-              raise CBackendError, "cyclic aggregate dependency involving #{aggregate_decl.linkage_name}" if visiting[aggregate_decl.linkage_name]
+              raise CBackendError.new("cyclic aggregate dependency involving #{aggregate_decl.linkage_name}", line: 0, column: 0, path: @path) if visiting[aggregate_decl.linkage_name]
 
               visiting[aggregate_decl.linkage_name] = true
               aggregate_decl_dependencies(aggregate_decl).each do |dependency|

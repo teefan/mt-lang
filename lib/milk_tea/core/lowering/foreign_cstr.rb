@@ -65,7 +65,7 @@ module MilkTea
           IR::Name.new(name: items_name, type: items_type, pointer: false),
           pointer_to(boundary_type.element_type),
         )
-        raise LoweringError, "unsupported foreign boundary mapping #{public_type} as #{boundary_type}" unless converted_data
+        raise LoweringError.new("unsupported foreign boundary mapping #{public_type} as #{boundary_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless converted_data
 
         IR::AggregateLiteral.new(
           type: boundary_type,
@@ -109,7 +109,7 @@ module MilkTea
           item = IR::Member.new(receiver: item, member: "data", type: pointer_to(@ctx.types.fetch("char"))) if item_type == @ctx.types.fetch("str")
 
           converted = foreign_identity_projection_expression(item, boundary_element_type)
-          raise LoweringError, "unsupported foreign boundary mapping #{parameter.type} as #{boundary_type}" unless converted
+          raise LoweringError.new("unsupported foreign boundary mapping #{parameter.type} as #{boundary_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless converted
 
           converted
         end

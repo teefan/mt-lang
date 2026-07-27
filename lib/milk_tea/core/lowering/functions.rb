@@ -107,7 +107,7 @@ module MilkTea
           return imported_module.types.fetch(parts.last)
         end
 
-        raise LoweringError, "unsupported extending target #{type_name}"
+        raise LoweringError.new("unsupported extending target #{type_name}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def lower_function_decl(binding, receiver_type: nil)

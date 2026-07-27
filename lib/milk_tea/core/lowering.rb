@@ -114,7 +114,8 @@ module MilkTea
 
     def lower_modules(cached: nil, cached_synthetics: nil)
       if @program.root_analysis.module_kind == :raw_module
-        raise LoweringError, "cannot emit C for external file #{@program.root_analysis.module_name}"
+        raise LoweringError.new("cannot emit C for external file #{@program.root_analysis.module_name}",
+          line: 0, column: 0, path: @program.root_path)
       end
 
       per_module_synthetics = {}
@@ -228,7 +229,8 @@ module MilkTea
 
     def assemble_modules(modules)
       if @program.root_analysis.module_kind == :raw_module
-        raise LoweringError, "cannot emit C for external file #{@program.root_analysis.module_name}"
+        raise LoweringError.new("cannot emit C for external file #{@program.root_analysis.module_name}",
+          line: 0, column: 0, path: @program.root_path)
       end
 
       regenerate_cross_module_synthetics

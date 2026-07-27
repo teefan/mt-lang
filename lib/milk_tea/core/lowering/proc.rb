@@ -193,7 +193,7 @@ module MilkTea
         when AST::BreakStmt, AST::ContinueStmt, AST::PassStmt
           nil
         else
-          raise LoweringError, "unsupported proc capture statement #{statement.class.name}"
+          raise LoweringError.new("unsupported proc capture statement #{statement.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -248,7 +248,7 @@ module MilkTea
              AST::BooleanLiteral, AST::NullLiteral
           nil
         else
-          raise LoweringError, "unsupported proc capture expression #{expression.class.name}"
+          raise LoweringError.new("unsupported proc capture expression #{expression.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -321,7 +321,7 @@ module MilkTea
         when Types::Nullable
           []
         else
-          raise LoweringError, "unsupported proc lifecycle container #{type.class.name}"
+          raise LoweringError.new("unsupported proc lifecycle container #{type.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 

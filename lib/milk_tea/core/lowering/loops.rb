@@ -133,7 +133,7 @@ module MilkTea
       def lower_collection_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         element_type = collection_loop_type(iterable_type)
-        raise LoweringError, "for loop expects start..stop, array[T, N], span[T], or an iterable with iter()/next(), got #{iterable_type}" unless element_type
+        raise LoweringError.new("for loop expects start..stop, array[T, N], span[T], or an iterable with iter()/next(), got #{iterable_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless element_type
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
         binding_type = collection_loop_binding_type(iterable_type, element_type) || element_type
 
@@ -207,7 +207,7 @@ module MilkTea
           iterable = statement.iterables[index]
           iterable_type = infer_expression_type(iterable, env:)
           element_type = collection_loop_type(iterable_type)
-          raise LoweringError, "parallel for loops expect arrays or spans for each iterable, got #{iterable_type}" unless element_type
+          raise LoweringError.new("parallel for loops expect arrays or spans for each iterable, got #{iterable_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless element_type
 
           {
             binding:,
@@ -304,7 +304,7 @@ module MilkTea
       def lower_iterator_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
         iterable_type = infer_expression_type(statement.iterable, env:)
         iterator_info = iterator_loop_info(iterable_type, env:)
-        raise LoweringError, "for loop expects start..stop, array[T, N], span[T], or an iterable with iter()/next(), got #{iterable_type}" unless iterator_info
+        raise LoweringError.new("for loop expects start..stop, array[T, N], span[T], or an iterable with iter()/next(), got #{iterable_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless iterator_info
 
         iterable_setup, prepared_iterable = prepare_expression_for_inline_lowering(statement.iterable, env:, expected_type: iterable_type)
         iterator_c_name = fresh_c_temp_name(env, "for_iterator")
@@ -809,7 +809,7 @@ module MilkTea
         if captures.empty?
           worker_body = block_body.dup
         else
-          raise LoweringError, "detach with captured variables is not yet supported; use a global function call or module-level variables"
+          raise LoweringError.new("detach with captured variables is not yet supported; use a global function call or module-level variables", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         @artifacts.synthetic_functions << IR::Function.new(
@@ -833,7 +833,7 @@ module MilkTea
 
       def validate_pfor_no_ref_captures!(captures)
         captures.each do |c|
-          raise LoweringError, "cannot capture '#{c.name}' of type ref across thread boundary — ref values are not safe to share across threads" if ref_type?(c.type)
+          raise LoweringError.new("cannot capture '#{c.name}' of type ref across thread boundary — ref values are not safe to share across threads", line: 0, column: 0, path: @ctx.current_analysis_path) if ref_type?(c.type)
         end
       end
 
@@ -844,7 +844,7 @@ module MilkTea
               next if idx == other_idx
               next unless other[:capture_names].include?(name)
 
-              raise LoweringError, "write conflict in parallel block: '#{name}' is written in spawn block #{idx + 1} and accessed in spawn block #{other_idx + 1}"
+              raise LoweringError.new("write conflict in parallel block: '#{name}' is written in spawn block #{idx + 1} and accessed in spawn block #{other_idx + 1}", line: 0, column: 0, path: @ctx.current_analysis_path)
             end
           end
         end

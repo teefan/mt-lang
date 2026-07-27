@@ -178,7 +178,7 @@ module MilkTea
                 lines
                 end
               else
-                raise CBackendError, "unsupported IR statement #{statement.class.name}"
+                raise CBackendError.new("unsupported IR statement #{statement.class.name}", line: 0, column: 0, path: @path)
               end
             end
 
@@ -501,7 +501,7 @@ module MilkTea
             when IR::CheckedSpanIndex
               "#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
             else
-              raise CBackendError, "unsupported checked index alias expression #{expression.class.name}"
+              raise CBackendError.new("unsupported checked index alias expression #{expression.class.name}", line: 0, column: 0, path: @path)
             end
           end
 
@@ -533,19 +533,19 @@ module MilkTea
           def emit_for_clause_statement(statement)
             case statement
             when IR::LocalDecl
-              raise CBackendError, "array for-loop init declarations are unsupported" if array_type?(statement.type)
+              raise CBackendError.new("array for-loop init declarations are unsupported", line: 0, column: 0, path: @path) if array_type?(statement.type)
 
               "#{c_declaration(statement.type, statement.linkage_name)} = #{emit_initializer(statement.value)}"
             when IR::Assignment
               if array_type?(statement.target.type) && statement.operator == "="
-                raise CBackendError, "array for-loop assignment clauses are unsupported"
+                raise CBackendError.new("array for-loop assignment clauses are unsupported", line: 0, column: 0, path: @path)
               end
 
               "#{emit_expression(statement.target)} #{statement.operator} #{emit_expression(statement.value)}"
             when IR::ExpressionStmt
               emit_expression(statement.expression)
             else
-              raise CBackendError, "unsupported for-loop clause #{statement.class.name}"
+              raise CBackendError.new("unsupported for-loop clause #{statement.class.name}", line: 0, column: 0, path: @path)
             end
           end
 

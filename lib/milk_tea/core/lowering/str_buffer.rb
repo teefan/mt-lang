@@ -43,7 +43,7 @@ module MilkTea
                               when :str_buffer_as_cstr
                                 [@ctx.types.fetch("cstr"), []]
                               else
-                                raise LoweringError, "unsupported str_buffer method #{kind}"
+                                raise LoweringError.new("unsupported str_buffer method #{kind}", line: 0, column: 0, path: @ctx.current_analysis_path)
                               end
 
         Types::Registry.function(

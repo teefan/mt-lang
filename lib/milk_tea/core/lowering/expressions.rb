@@ -283,7 +283,7 @@ module MilkTea
                 parameter_type: append_argument_type,
               }
             else
-              raise LoweringError, "unsupported format spec #{part.format_spec.inspect}"
+              raise LoweringError.new("unsupported format spec #{part.format_spec.inspect}", line: 0, column: 0, path: @ctx.current_analysis_path)
             end
           else
             append_plan = format_string_append_plan(value_type, context: "formatted string interpolation of #{value_type}")
@@ -434,7 +434,7 @@ module MilkTea
             capacity: IR::IntegerLiteral.new(value: str_buffer_capacity(lowered_receiver.type), type: @ctx.types.fetch("ptr_uint")),
           }
         else
-          raise LoweringError, "unsupported explicit format sink #{info[:sink_kind]}"
+          raise LoweringError.new("unsupported explicit format sink #{info[:sink_kind]}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -451,7 +451,7 @@ module MilkTea
             ],
           )
         else
-          raise LoweringError, "unsupported explicit format sink #{sink_target[:kind]}"
+          raise LoweringError.new("unsupported explicit format sink #{sink_target[:kind]}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -560,7 +560,7 @@ module MilkTea
             value: offset_value,
           )
         else
-          raise LoweringError, "unsupported explicit format sink #{sink_target[:kind]}"
+          raise LoweringError.new("unsupported explicit format sink #{sink_target[:kind]}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         sink_statements.concat(copied_part_cleanups)
@@ -588,7 +588,7 @@ module MilkTea
             type: @ctx.types.fetch("void"),
           )
         else
-          raise LoweringError, "unsupported explicit format sink #{sink_target[:kind]}"
+          raise LoweringError.new("unsupported explicit format sink #{sink_target[:kind]}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -820,7 +820,7 @@ module MilkTea
         end
 
         if part[:kind] == :custom_expression
-          raise LoweringError, "custom format parts require statement lowering"
+          raise LoweringError.new("custom format parts require statement lowering", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         IR::Call.new(
@@ -837,7 +837,7 @@ module MilkTea
                   when :append
                     part[:format_binding].append_binding
                   else
-                    raise LoweringError, "unsupported custom format hook #{hook}"
+                    raise LoweringError.new("unsupported custom format hook #{hook}", line: 0, column: 0, path: @ctx.current_analysis_path)
                   end
 
         if env
@@ -883,7 +883,7 @@ module MilkTea
           }
         end
 
-        raise LoweringError, "formatted string interpolation supports str, cstr, bool, numeric primitives, integer-backed enums/flags, and types implementing format_len()/append_format(output: ref[std.string.String]), got #{type}"
+        raise LoweringError.new("formatted string interpolation supports str, cstr, bool, numeric primitives, integer-backed enums/flags, and types implementing format_len()/append_format(output: ref[std.string.String]), got #{type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def format_string_hex_append_plan(type, uppercase:)
@@ -892,7 +892,7 @@ module MilkTea
         end
 
         unless type.is_a?(Types::Primitive) && type.integer?
-          raise LoweringError, "format spec ':x' and ':X' require integer interpolation, got #{type}"
+          raise LoweringError.new("format spec ':x' and ':X' require integer interpolation, got #{type}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         if type.signed_integer?
@@ -903,7 +903,7 @@ module MilkTea
           return [uppercase ? "append_ulong_hex_upper" : "append_ulong_hex", @ctx.types.fetch("ulong")]
         end
 
-        raise LoweringError, "format spec ':x' and ':X' require integer interpolation, got #{type}"
+        raise LoweringError.new("format spec ':x' and ':X' require integer interpolation, got #{type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def format_string_oct_append_plan(type, uppercase:)
@@ -913,7 +913,7 @@ module MilkTea
         end
 
         unless type.is_a?(Types::Primitive) && type.integer?
-          raise LoweringError, "format spec ':o' and ':O' require integer interpolation, got #{type}"
+          raise LoweringError.new("format spec ':o' and ':O' require integer interpolation, got #{type}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         if type.signed_integer?
@@ -924,7 +924,7 @@ module MilkTea
           return ["append_ulong_oct", @ctx.types.fetch("ulong")]
         end
 
-        raise LoweringError, "format spec ':o' and ':O' require integer interpolation, got #{type}"
+        raise LoweringError.new("format spec ':o' and ':O' require integer interpolation, got #{type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def format_string_bin_append_plan(type, uppercase:)
@@ -934,7 +934,7 @@ module MilkTea
         end
 
         unless type.is_a?(Types::Primitive) && type.integer?
-          raise LoweringError, "format spec ':b' and ':B' require integer interpolation, got #{type}"
+          raise LoweringError.new("format spec ':b' and ':B' require integer interpolation, got #{type}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         if type.signed_integer?
@@ -945,7 +945,7 @@ module MilkTea
           return ["append_ulong_bin", @ctx.types.fetch("ulong")]
         end
 
-        raise LoweringError, "format spec ':b' and ':B' require integer interpolation, got #{type}"
+        raise LoweringError.new("format spec ':b' and ':B' require integer interpolation, got #{type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def mt_format_length_c_name(name)
@@ -1261,7 +1261,7 @@ module MilkTea
       end
 
       def materialize_prepared_expression(setup, value, env:, type:, prefix:)
-        raise LoweringError, "cannot use void expression inline" unless value
+        raise LoweringError.new("cannot use void expression inline", line: 0, column: 0, path: @ctx.current_analysis_path) unless value
 
         if value.is_a?(IR::Name)
           register_prepared_temp!(env, value.name, value.type, pointer: value.pointer)
@@ -1316,7 +1316,7 @@ module MilkTea
 
         case expression
         when AST::AwaitExpr
-          raise LoweringError, "await expressions must be lowered in async statement context"
+          raise LoweringError.new("await expressions must be lowered in async statement context", line: 0, column: 0, path: @ctx.current_analysis_path)
         when AST::IntegerLiteral
           IR::IntegerLiteral.new(value: expression.value, type:)
         when AST::CharLiteral
@@ -1341,7 +1341,7 @@ module MilkTea
         when AST::StringLiteral
           IR::StringLiteral.new(value: expression.value, type:, cstring: expression.cstring)
         when AST::FormatString
-          raise LoweringError, "unprepared format string reached raw lowering; format strings should be materialized before direct lowering"
+          raise LoweringError.new("unprepared format string reached raw lowering; format strings should be materialized before direct lowering", line: 0, column: 0, path: @ctx.current_analysis_path)
         when AST::BooleanLiteral
           IR::BooleanLiteral.new(value: expression.value, type:)
         when AST::NullLiteral
@@ -1352,12 +1352,12 @@ module MilkTea
             lower_bound_identifier(binding, expected_type:)
           elsif @ctx.functions.key?(expression.name)
             function_binding = @ctx.functions.fetch(expression.name)
-            raise LoweringError, "generic function #{expression.name} cannot be used as a value" if function_binding.type_params.any?
-            raise LoweringError, "foreign function #{expression.name} cannot be used as a value" if foreign_function_binding?(function_binding)
+            raise LoweringError.new("generic function #{expression.name} cannot be used as a value", line: 0, column: 0, path: @ctx.current_analysis_path) if function_binding.type_params.any?
+            raise LoweringError.new("foreign function #{expression.name} cannot be used as a value", line: 0, column: 0, path: @ctx.current_analysis_path) if foreign_function_binding?(function_binding)
 
             IR::Name.new(name: function_binding_c_name(function_binding, module_name: @ctx.module_name), type: type, pointer: false)
           else
-            raise LoweringError, "unsupported identifier #{expression.name}"
+            raise LoweringError.new("unsupported identifier #{expression.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
           end
         when AST::MemberAccess
           lower_member_access(expression, env:, type:)
@@ -1373,7 +1373,7 @@ module MilkTea
             IR::Index.new(receiver:, index:, type:)
           end
         when AST::UnaryOp
-          raise LoweringError, "propagation expressions must be prepared before direct lowering" if expression.operator == "?"
+          raise LoweringError.new("propagation expressions must be prepared before direct lowering", line: 0, column: 0, path: @ctx.current_analysis_path) if expression.operator == "?"
 
           operand = lower_expression(expression.operand, env:, expected_type: type)
           expanded = lower_vector_unary_op(expression.operator, operand, type)
@@ -1403,7 +1403,7 @@ module MilkTea
             type:,
           )
         when AST::MatchExpr
-          raise LoweringError, "match expressions must be prepared before direct lowering"
+          raise LoweringError.new("match expressions must be prepared before direct lowering", line: 0, column: 0, path: @ctx.current_analysis_path)
         when AST::UnsafeExpr
           lower_expression(expression.expression, env:, expected_type: type)
         when AST::ProcExpr
@@ -1444,7 +1444,7 @@ module MilkTea
             IR::AggregateLiteral.new(type:, fields:)
           end
         else
-          raise LoweringError, "unsupported expression #{expression.class.name}"
+          raise LoweringError.new("unsupported expression #{expression.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -1466,8 +1466,8 @@ module MilkTea
           imported_module = @ctx.imports.fetch(expression.receiver.name)
           if imported_module.functions.key?(expression.member)
             function_binding = imported_module.functions.fetch(expression.member)
-            raise LoweringError, "generic function #{expression.receiver.name}.#{expression.member} cannot be used as a value" if function_binding.type_params.any?
-            raise LoweringError, "foreign function #{expression.receiver.name}.#{expression.member} cannot be used as a value" if foreign_function_binding?(function_binding)
+            raise LoweringError.new("generic function #{expression.receiver.name}.#{expression.member} cannot be used as a value", line: 0, column: 0, path: @ctx.current_analysis_path) if function_binding.type_params.any?
+            raise LoweringError.new("foreign function #{expression.receiver.name}.#{expression.member} cannot be used as a value", line: 0, column: 0, path: @ctx.current_analysis_path) if foreign_function_binding?(function_binding)
 
             return IR::Name.new(name: function_binding_c_name(function_binding, module_name: imported_module.name), type:, pointer: false)
           end
@@ -1611,7 +1611,7 @@ module MilkTea
 
       def lower_soa_indexed_field_access(soa_base, index_expr, field_name, soa_type, env:, type:)
         field_type = soa_type.fields[field_name]
-        raise LoweringError, "SoA type #{soa_type} has no field #{field_name}" unless field_type
+        raise LoweringError.new("SoA type #{soa_type} has no field #{field_name}", line: 0, column: 0, path: @ctx.current_analysis_path) unless field_type
 
         receiver = lower_expression(soa_base, env:)
         index = lower_expression(index_expr, env:)

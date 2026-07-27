@@ -105,7 +105,7 @@ module MilkTea
             when IR::VariantLiteral
               emit_variant_literal(expression)
             else
-              raise CBackendError, "unsupported IR expression #{expression.class.name}"
+              raise CBackendError.new("unsupported IR expression #{expression.class.name}", line: 0, column: 0, path: @path)
             end
           end
 
@@ -163,7 +163,7 @@ module MilkTea
             when "+", "-" then 9
             when "*", "/", "%" then 10
             else
-              raise CBackendError, "unsupported binary operator #{operator}"
+              raise CBackendError.new("unsupported binary operator #{operator}", line: 0, column: 0, path: @path)
             end
           end
 
@@ -408,7 +408,7 @@ module MilkTea
             end
             return type.field(field_name) if type.respond_to?(:field)
 
-            raise CBackendError, "unsupported aggregate field lookup for #{type}"
+            raise CBackendError.new("unsupported aggregate field lookup for #{type}", line: 0, column: 0, path: @path)
           end
 
           def emit_aggregate_field_initializer(type, field)

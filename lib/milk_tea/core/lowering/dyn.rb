@@ -110,7 +110,8 @@ module MilkTea
 
       interface.methods.each do |method_name, method_binding|
         method_info = @method_definitions[[concrete_type, method_name]]
-        raise LoweringError, "no method #{method_name} for #{concrete_type}" unless method_info
+        raise LoweringError.new("no method #{method_name} for #{concrete_type}",
+          line: 0, column: 0, path: @ctx.current_analysis_path) unless method_info
 
         method_analysis, method_ast = method_info
         method_key = method_ast.kind == :static ? "static:#{method_ast.name}" : method_ast.name

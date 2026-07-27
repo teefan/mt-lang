@@ -46,7 +46,7 @@ module MilkTea
         when :event_wait
           Types::Registry.function(kind.to_s, params: [], return_type: Types::Registry.task(event_wait_result_type(event_type)))
         else
-          raise LoweringError, "unsupported event method #{kind}"
+          raise LoweringError.new("unsupported event method #{kind}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 

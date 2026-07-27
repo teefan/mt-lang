@@ -132,7 +132,7 @@ module MilkTea
         return referenced_type(handle_type) if ref_type?(handle_type)
         return pointee_type(handle_type) if pointer_type?(handle_type)
 
-        raise LoweringError, "read expects ref[...] or ptr[...], got #{handle_type}"
+        raise LoweringError.new("read expects ref[...] or ptr[...], got #{handle_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def infer_method_receiver_type(receiver_expression, env:, member_name: nil)
@@ -213,7 +213,7 @@ module MilkTea
           end
         end
 
-        raise LoweringError, "range bounds must use matching integer types, got #{start_type} and #{stop_type}" unless start_type == stop_type
+        raise LoweringError.new("range bounds must use matching integer types, got #{start_type} and #{stop_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless start_type == stop_type
 
         start_type
       end
@@ -223,7 +223,7 @@ module MilkTea
       end
 
       def infer_index_result_type(receiver_type, index_type)
-        raise LoweringError, "index must be an integer type, got #{index_type}" unless integer_type?(index_type)
+        raise LoweringError.new("index must be an integer type, got #{index_type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless integer_type?(index_type)
 
         receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
 
@@ -247,7 +247,7 @@ module MilkTea
           return pointee_type(receiver_type)
         end
 
-        raise LoweringError, "cannot index #{receiver_type}"
+        raise LoweringError.new("cannot index #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def contains_type_var?(type)
@@ -367,7 +367,7 @@ module MilkTea
         else
           nil
         end
-        raise LoweringError, "unsupported compile-time builtin #{name}" unless return_type
+        raise LoweringError.new("unsupported compile-time builtin #{name}", line: 0, column: 0, path: @ctx.current_analysis_path) unless return_type
 
         Types::Registry.function(name, params: [], return_type: return_type)
       end
@@ -522,7 +522,7 @@ module MilkTea
           return scope unless scope.is_a?(FlowScope)
         end
 
-        raise LoweringError, "missing lexical scope"
+        raise LoweringError.new("missing lexical scope", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def env_with_refinements(env, refinements)
@@ -731,7 +731,7 @@ module MilkTea
 
           IR::GotoStmt.new(label: target[:label])
         else
-          raise LoweringError, "unsupported loop exit target #{target.inspect}"
+          raise LoweringError.new("unsupported loop exit target #{target.inspect}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
@@ -741,7 +741,7 @@ module MilkTea
           [loop_exit_statement(target, local_defers:, outer_defers:)]
         else
           label = target[:label]
-          raise LoweringError, "structured loop exits with cleanup are unsupported" unless label
+          raise LoweringError.new("structured loop exits with cleanup are unsupported", line: 0, column: 0, path: @ctx.current_analysis_path) unless label
 
           cleanup + [IR::GotoStmt.new(label:)]
         end
@@ -899,7 +899,7 @@ module MilkTea
           )
         end
 
-        raise LoweringError, "unsupported let-else storage type #{storage_type}"
+        raise LoweringError.new("unsupported let-else storage type #{storage_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
 
       def lower_bound_identifier(binding, expected_type: nil)
@@ -963,27 +963,27 @@ module MilkTea
         elsif option_let_else_type?(storage_type)
           infer_option_propagation_details(storage_type, env:, allow_void_success:)
         else
-          raise LoweringError, "propagation expects Result[T, E] or Option[T], got #{storage_type}"
+          raise LoweringError.new("propagation expects Result[T, E] or Option[T], got #{storage_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
       def infer_result_propagation_details(storage_type, env:, allow_void_success:)
         success_type = let_else_success_type(storage_type)
         error_type = let_else_error_type(storage_type)
-        raise LoweringError, "propagation requires a non-void Result success type" if success_type == @ctx.types.fetch("void") && !allow_void_success
+        raise LoweringError.new("propagation requires a non-void Result success type", line: 0, column: 0, path: @ctx.current_analysis_path) if success_type == @ctx.types.fetch("void") && !allow_void_success
 
         context = env[:return_context]
-        raise LoweringError, "propagation is only allowed inside function and proc bodies" unless context
-        raise LoweringError, "propagation is not allowed inside defer blocks" unless context[:allow_return]
+        raise LoweringError.new("propagation is only allowed inside function and proc bodies", line: 0, column: 0, path: @ctx.current_analysis_path) unless context
+        raise LoweringError.new("propagation is not allowed inside defer blocks", line: 0, column: 0, path: @ctx.current_analysis_path) unless context[:allow_return]
 
         return_type = context[:return_type]
         unless result_let_else_type?(return_type)
-          raise LoweringError, "propagation requires enclosing function/proc to return Result[_, #{error_type}], got #{return_type}"
+          raise LoweringError.new("propagation requires enclosing function/proc to return Result[_, #{error_type}], got #{return_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         return_error_type = let_else_error_type(return_type)
         unless return_error_type == error_type
-          raise LoweringError, "propagation error type #{error_type} must match enclosing Result error type #{return_error_type}"
+          raise LoweringError.new("propagation error type #{error_type} must match enclosing Result error type #{return_error_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         [storage_type, success_type, return_type, error_type]
@@ -991,15 +991,15 @@ module MilkTea
 
       def infer_option_propagation_details(storage_type, env:, allow_void_success:)
         success_type = let_else_success_type(storage_type)
-        raise LoweringError, "propagation requires a non-void Option success type" if success_type == @ctx.types.fetch("void") && !allow_void_success
+        raise LoweringError.new("propagation requires a non-void Option success type", line: 0, column: 0, path: @ctx.current_analysis_path) if success_type == @ctx.types.fetch("void") && !allow_void_success
 
         context = env[:return_context]
-        raise LoweringError, "propagation is only allowed inside function and proc bodies" unless context
-        raise LoweringError, "propagation is not allowed inside defer blocks" unless context[:allow_return]
+        raise LoweringError.new("propagation is only allowed inside function and proc bodies", line: 0, column: 0, path: @ctx.current_analysis_path) unless context
+        raise LoweringError.new("propagation is not allowed inside defer blocks", line: 0, column: 0, path: @ctx.current_analysis_path) unless context[:allow_return]
 
         return_type = context[:return_type]
         unless option_let_else_type?(return_type)
-          raise LoweringError, "propagation requires enclosing function/proc to return Option[_], got #{return_type}"
+          raise LoweringError.new("propagation requires enclosing function/proc to return Option[_], got #{return_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
 
         [storage_type, success_type, return_type, nil]
@@ -1049,7 +1049,7 @@ module MilkTea
       end
 
       def validate_generic_type!(name, arguments)
-        super(name, arguments) { |msg| raise LoweringError, msg }
+        super(name, arguments) { |msg| raise LoweringError.new(msg, line: 0, column: 0, path: @ctx.current_analysis_path) }
       end
 
       def integer_type_argument?(argument)
@@ -1207,9 +1207,9 @@ module MilkTea
             return IR::Unary.new(operator: "*", operand:, type:)
           end
 
-          raise LoweringError, "unsupported assignment target #{expression.class.name}"
+          raise LoweringError.new("unsupported assignment target #{expression.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         else
-          raise LoweringError, "unsupported assignment target #{expression.class.name}"
+          raise LoweringError.new("unsupported assignment target #{expression.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
       end
 
