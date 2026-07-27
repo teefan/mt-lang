@@ -220,10 +220,16 @@ module MilkTea
       end
 
       constants.each do |constant|
+        @current_line = constant.line if constant.line
+        @source_path ||= constant.source_path if constant.source_path
         lines << "#{constant_storage(constant.type)} #{c_declaration(constant.type, constant.linkage_name)} = #{emit_initializer(constant.value)};"
       end
       @program.globals.each do |global|
         next unless emitted_globals.include?(global)
+        if global.respond_to?(:line) && global.line
+          @current_line = global.line
+          @source_path ||= global.source_path if global.respond_to?(:source_path) && global.source_path
+        end
         lines << "#{global_storage(global.type)} #{c_declaration(global.type, global.linkage_name)} = #{emit_initializer(global.value)};"
       end
       lines << "" unless constants.empty? && @program.globals.empty?
