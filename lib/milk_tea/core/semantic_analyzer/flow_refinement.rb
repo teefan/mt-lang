@@ -204,7 +204,11 @@ module MilkTea
           lines.concat(statement_list_lines(statement.body))
         when AST::MatchStmt
           statement.arms.each do |arm|
-            lines.concat(statement_list_lines(arm.body))
+            if arm.respond_to?(:body)
+              lines.concat(statement_list_lines(arm.body))
+            else
+              lines << expression_end_line(arm.value)
+            end
           end
         when AST::DeferStmt
           lines.concat(statement_list_lines(statement.body)) if statement.body
@@ -374,7 +378,13 @@ module MilkTea
           when AST::WhileStmt, AST::ForStmt, AST::UnsafeStmt, AST::ErrorBlockStmt
             [stmt.respond_to?(:line) ? stmt.line : nil, last_ast_line(stmt.body)].compact.max
           when AST::MatchStmt
-            arm_lines = stmt.arms.filter_map { |arm| last_ast_line(arm.body) }
+            arm_lines = stmt.arms.filter_map do |arm|
+              if arm.respond_to?(:body)
+                last_ast_line(arm.body)
+              elsif arm.respond_to?(:value)
+                arm.value.respond_to?(:line) ? arm.value.line : nil
+              end
+            end
             [stmt.line, *arm_lines].compact.max
           when AST::DeferStmt
             [stmt.respond_to?(:line) ? stmt.line : nil, last_ast_line(stmt.body)].compact.max

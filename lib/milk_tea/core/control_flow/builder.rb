@@ -137,7 +137,12 @@ module MilkTea
             @graph.add_edge(match_id, next_id)
           else
             stmt.arms.each do |arm|
-              arm_entry = build_block(arm.body, next_id, break_target:, continue_target:)
+              arm_body = if arm.respond_to?(:body)
+                           arm.body
+                         else
+                           [MilkTea::AST::ExpressionStmt.new(expression: arm.value, line: arm.value.respond_to?(:line) ? arm.value.line : nil)]
+                         end
+              arm_entry = build_block(arm_body, next_id, break_target:, continue_target:)
               if arm.binding_name
                 binding_key = declaration_binding_key(arm, arm.binding_name)
                 if binding_key
