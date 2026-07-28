@@ -376,7 +376,11 @@ module MilkTea
           else
             callee_name = expression.callee.callee.is_a?(AST::Identifier) ? expression.callee.callee.name : nil
             if callee_name
-              resolved_type = resolve_type_expression(expression.callee)
+              resolved_type = begin
+                resolve_type_expression(expression.callee)
+              rescue SemanticError
+                nil
+              end
               if resolved_type && resolved_type.is_a?(Types::Struct)
                 fields = {}
                 expression.arguments.each do |argument|
