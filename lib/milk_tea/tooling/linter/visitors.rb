@@ -337,6 +337,7 @@ module MilkTea
         when AST::PrefixCast
           visit_expression(expression.expression)
           check_redundant_cast(expression)
+          check_redundant_cast_parens(expression)
         else
           nil
         end
@@ -1043,6 +1044,66 @@ module MilkTea
         # controls the shift width), so it is only redundant at a coercion
         # boundary whose declared type is the target. Those cases are handled by
         # check_boundary_widening_cast at the specific boundary sites.
+      end
+
+      # ── redundant cast parentheses ────────────────────────────────────────────────────
+      # `T<-(x)` when `T<-x` would be equivalent because the inner expression needs
+      # no precedence protection.  Parens are required when the inner expression
+      # contains a binary operator, range, or inline conditional.
+
+      def check_redundant_cast_parens(cast)
+        return unless cast.respond_to?(:line) && cast.respond_to?(:column)
+
+        line_idx = Integer(cast.line) - 1
+        return if line_idx < 0 || line_idx >= @source_lines.length
+
+        line = @source_lines[line_idx].to_s
+        col = Integer(cast.column) - 1
+        arrow = line.index("<-", col)
+        return unless arrow
+        arrow_end = arrow + 2
+        return if arrow_end >= line.length
+        return unless line[arrow_end] == "("
+
+        close = match_paren(line, arrow_end)
+        return unless close
+
+        inner = line[arrow_end + 1...close].strip
+        return if inner.empty?
+        return if inner_has_top_level_operators?(inner)
+
+        emit_redundant_cast(cast, type_ref_name(cast.target_type) || "",
+          "parentheses around cast expression are redundant")
+      end
+
+      def match_paren(line, open_pos)
+        depth = 0
+        (open_pos...line.length).each do |i|
+          case line[i]
+          when "(" then depth += 1
+          when ")" then depth -= 1; return i if depth == 0
+          end
+        end
+        nil
+      end
+
+      BINARY_OP_CHARS = %w[+ - * / % & | ^ < > = ! ? :]
+
+      def inner_has_top_level_operators?(inner)
+        depth = 0
+        i = 0
+        while i < inner.length
+          case inner[i]
+          when "(", "[", "{"
+            depth += 1
+          when ")", "]", "}"
+            depth -= 1 if depth > 0
+          when *BINARY_OP_CHARS
+            return true if depth == 0
+          end
+          i += 1
+        end
+        false
       end
 
       # Reports a widening cast as redundant only when it sits *directly* at a
