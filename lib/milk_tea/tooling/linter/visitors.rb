@@ -197,14 +197,20 @@ module MilkTea
           with_scope { visit_statement_list(statement.body) }
           @unsafe_depth -= 1
         when AST::ForStmt
+          @loop_depth ||= 0
+          @loop_depth += 1
           visit_expression(statement.iterable)
           with_scope do
             declare_local(statement.name, statement.line, column: statement.column, var: false) if statement.name
             visit_statement_list(statement.body)
           end
+          @loop_depth -= 1
         when AST::WhileStmt
+          @loop_depth ||= 0
+          @loop_depth += 1
           visit_expression(statement.condition)
           with_scope { visit_statement_list(statement.body) }
+          @loop_depth -= 1
         when AST::ReturnStmt
           visit_expression(statement.value) if statement.value
           flag_redundant_widening_cast(statement.value) if statement.value
@@ -776,6 +782,7 @@ module MilkTea
         return unless stmts.all? { |s| inline_simple_statement?(s) }
 
         return if visually_inline_if?(statement, stmts)
+        return if inline_if_too_wide?(statement, stmts)
 
         emit_conciseness_hint(
           "prefer-inline-if",
@@ -783,6 +790,51 @@ module MilkTea
           column: statement.branches.first&.column,
           message: "if/else with single-statement branches can be written inline",
         )
+      end
+
+      def inline_if_too_wide?(statement, stmts)
+        return false if statement.branches.empty?
+
+        text = +""
+
+        statement.branches.each_with_index do |b, i|
+          cond_src = source_line_from(b.line, b.column)
+          return false unless cond_src
+
+          stmt_col = stmts[i].respond_to?(:column) ? stmts[i].column : nil
+          stmt_line = stmts[i].respond_to?(:line) ? stmts[i].line : nil
+          body_src = source_line_from(stmt_line, stmt_col)
+          return false unless body_src
+
+          text << cond_src
+          text << " "
+          text << body_src
+          text << " "
+        end
+
+        if statement.else_line
+          else_src = source_line_from(statement.else_line, statement.else_column)
+          return false unless else_src
+          text << else_src
+          text << " "
+        end
+
+        stmt_col = stmts.last.respond_to?(:column) ? stmts.last.column : nil
+        stmt_line = stmts.last.respond_to?(:line) ? stmts.last.line : nil
+        else_body = source_line_from(stmt_line, stmt_col)
+        return false unless else_body
+        text << else_body
+
+        text.strip.length > 120
+      end
+
+      def source_line_from(line, column)
+        return nil unless line
+        line_idx = Integer(line) - 1
+        return nil if line_idx < 0 || line_idx >= @source_lines.length
+        raw = @source_lines[line_idx].to_s
+        return raw.strip if column.nil?
+        raw[Integer(column) - 1..]&.strip
       end
 
       def visually_inline_if?(statement, stmts)
@@ -801,6 +853,7 @@ module MilkTea
         return unless statement.else_body
 
         stmts = (statement.branches.map(&:body) + [statement.else_body]).map { |b| single_statement_body(b) }
+        return if inline_if_too_wide?(statement, stmts)
         report_conditional_expression(stmts, line: statement.line, column: statement.branches.first&.column, kind: "if")
       end
 
@@ -814,6 +867,7 @@ module MilkTea
 
       def report_conditional_expression(stmts, line:, column:, kind:)
         return if stmts.empty? || stmts.any?(&:nil?)
+        return if @loop_depth && @loop_depth > 0
 
         if stmts.all? { |s| s.is_a?(AST::ReturnStmt) && s.value }
           emit_conciseness_hint(

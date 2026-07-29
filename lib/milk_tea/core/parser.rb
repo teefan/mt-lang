@@ -253,7 +253,7 @@ module MilkTea
     end
 
     def block_expression?(expression)
-      expression.is_a?(AST::ProcExpr) || expression.is_a?(AST::MatchExpr)
+      expression.is_a?(AST::ProcExpr) || expression.is_a?(AST::MatchExpr) || expression.is_a?(AST::IfExpr)
     end
 
     def parse_qualified_name

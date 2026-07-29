@@ -25,11 +25,29 @@ module MilkTea
 
       def parse_if_expression
         condition = parse_or
-        consume(:colon, "expected ':' after condition in if expression")
-        then_expression = parse_expression
-        consume(:else, "expected 'else' in if expression")
-        consume(:colon, "expected ':' after 'else' in if expression")
-        else_expression = parse_expression
+
+        if inline_block_body?
+          consume(:colon, "expected ':' after condition in if expression")
+          then_expression = parse_expression
+          consume(:else, "expected 'else' in if expression")
+          consume(:colon, "expected ':' after 'else' in if expression")
+          else_expression = parse_expression
+        else
+          consume(:colon, "expected ':' after condition in if expression")
+          consume(:newline, "expected newline after 'if condition:' in if expression")
+          consume(:indent, "expected indented body in if expression")
+          then_expression = parse_expression
+          consume_end_of_statement unless block_expression?(then_expression)
+          consume(:dedent, "expected end of if expression body")
+          consume(:else, "expected 'else' in if expression")
+          consume(:colon, "expected ':' after 'else' in if expression")
+          consume(:newline, "expected newline after 'else:' in if expression")
+          consume(:indent, "expected indented else body in if expression")
+          else_expression = parse_expression
+          consume_end_of_statement unless block_expression?(else_expression)
+          consume(:dedent, "expected end of else expression body")
+        end
+
         AST::IfExpr.new(condition:, then_expression:, else_expression:)
       end
 
