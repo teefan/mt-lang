@@ -431,8 +431,6 @@ module MilkTea
       end
     end
 
-    private
-
     def with_context(new_context)
       old = @context
       @context = new_context

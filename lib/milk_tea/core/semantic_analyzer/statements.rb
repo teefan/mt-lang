@@ -3,52 +3,50 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def check_block(statements, scopes:, return_type:, allow_return: true)
         statements ||= []
         with_return_context(return_type, allow_return:) do
           with_nested_scope(scopes) do |nested_scopes|
             with_type_resolution_scopes(nested_scopes) do
-            statements.each_with_index do |statement, idx|
-              begin
-                record_local_completion_snapshot(
-                  statement.respond_to?(:line) ? statement.line : nil,
-                  statement.respond_to?(:column) ? statement.column : 0,
-                  nested_scopes,
-                )
-                refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
-                apply_continuation_refinements!(nested_scopes, refinements)
-                if @nullability_flow_result && idx + 1 < statements.length
-                  apply_nullability_continuation_refinements!(nested_scopes, statements[idx + 1])
-                end
-                end_line = statement_end_line(statement)
-                # When the statement spans multiple lines (e.g. let … else:),
-                # record an extra snapshot at the declaration line so that
-                # hover and completion lookups on the declaration line itself
-                # can still find the new binding.
-                if end_line && statement.respond_to?(:line) && statement.line && end_line > statement.line
+              statements.each_with_index do |statement, idx|
+                begin
                   record_local_completion_snapshot(
-                    statement.line,
+                    statement.respond_to?(:line) ? statement.line : nil,
                     statement.respond_to?(:column) ? statement.column : 0,
                     nested_scopes,
                   )
+                  refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
+                  apply_continuation_refinements!(nested_scopes, refinements)
+                  if @nullability_flow_result && idx + 1 < statements.length
+                    apply_nullability_continuation_refinements!(nested_scopes, statements[idx + 1])
+                  end
+                  end_line = statement_end_line(statement)
+                  # When the statement spans multiple lines (e.g. let … else:),
+                  # record an extra snapshot at the declaration line so that
+                  # hover and completion lookups on the declaration line itself
+                  # can still find the new binding.
+                  if end_line && statement.respond_to?(:line) && statement.line && end_line > statement.line
+                    record_local_completion_snapshot(
+                      statement.line,
+                      statement.respond_to?(:column) ? statement.column : 0,
+                      nested_scopes,
+                    )
+                  end
+                  record_local_completion_snapshot(end_line, 1_000_000, nested_scopes)
+                rescue SemanticError => e
+                  if @collecting_errors
+                    @structural_errors << e
+                    next
+                  end
+
+                  raise e unless e.line.nil?
+
+                  stmt_line = statement.respond_to?(:line) ? statement.line : nil
+                  raise e if stmt_line.nil?
+
+                  raise_sema_error(e.message, statement)
                 end
-                record_local_completion_snapshot(end_line, 1_000_000, nested_scopes)
-              rescue SemanticError => e
-                if @collecting_errors
-                  @structural_errors << e
-                  next
-                end
-
-                raise e unless e.line.nil?
-
-                stmt_line = statement.respond_to?(:line) ? statement.line : nil
-                raise e if stmt_line.nil?
-
-                raise_sema_error(e.message, statement)
               end
-            end
             end
           end
         end
@@ -251,11 +249,9 @@ module MilkTea
 
         storage_type, final_type, const_value =
           if statement.else_body || statement.recovered_else
-            check_local_decl_let_else(statement, scopes:, return_type:, allow_return:,
-                                      discard_binding:, declared_type:, inferred_type:)
+            check_local_decl_let_else(statement, scopes:, return_type:, allow_return:, discard_binding:, declared_type:, inferred_type:)
           else
-            check_local_decl_plain(statement, scopes:, discard_binding:,
-                                   declared_type:, inferred_type:)
+            check_local_decl_plain(statement, scopes:, discard_binding:, declared_type:, inferred_type:)
           end
 
         if noncopyable_event_storage_type?(final_type) && !fresh_noncopyable_event_initializer?(statement.value, final_type, scopes:)
@@ -1427,7 +1423,6 @@ module MilkTea
         return false unless binding.type
         ref_type?(binding.type) || own_type?(binding.type) || (binding.mutable && binding.kind == :param)
       end
-
     end
   end
 end

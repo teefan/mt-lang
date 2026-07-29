@@ -433,8 +433,8 @@ module MilkTea
       end
 
       matching_root = @module_roots
-                      .select { |root| path_within_root?(path, root) }
-                      .max_by(&:length)
+        .select { |root| path_within_root?(path, root) }
+        .max_by(&:length)
       return module_name_for_path(path, matching_root) if matching_root
 
       File.basename(path).sub(/\.(linux|windows|wasm)\.mt\z/, ".mt").sub(/\.mt\z/, "")

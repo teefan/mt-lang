@@ -74,8 +74,6 @@ module MilkTea
       expression.is_a?(AST::RangeExpr)
     end
 
-    private
-
     def string_literal_cstr_compatibility?(expression, expected_type)
       expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == BUILTIN_CSTR
     end

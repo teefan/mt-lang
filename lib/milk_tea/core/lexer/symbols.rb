@@ -4,8 +4,6 @@ module MilkTea
   class Lexer
     # Operator / punctuation lexing and grouping-delimiter depth tracking.
     module Symbols
-      private
-
       def lex_symbol(line, index, line_number, line_offset:)
         start = index
         lexeme = line[index, 3]

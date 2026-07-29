@@ -3,8 +3,6 @@
 module MilkTea
   class Linter
     module LinterImportsPlatform
-      private
-
       # ── unused-import ────────────────────────────────────────────────────
 
       def check_unused_imports(source_file)
@@ -314,17 +312,17 @@ module MilkTea
         unless attribute.arguments.empty?
           rendered_arguments = attribute.arguments.map do |argument|
             value = case argument.value
-                    when AST::IntegerLiteral, AST::FloatLiteral
-                      argument.value.lexeme
-                    when AST::StringLiteral
-                      argument.value.lexeme
-                    when AST::Identifier
-                      argument.value.name
-                    when AST::MemberAccess
-                      "#{argument.value.receiver.name}.#{argument.value.member}"
-                    else
-                      "..."
-                    end
+            when AST::IntegerLiteral, AST::FloatLiteral
+              argument.value.lexeme
+            when AST::StringLiteral
+              argument.value.lexeme
+            when AST::Identifier
+              argument.value.name
+            when AST::MemberAccess
+              "#{argument.value.receiver.name}.#{argument.value.member}"
+            else
+              "..."
+            end
             argument.name ? "#{argument.name} = #{value}" : value
           end
           text << "(#{rendered_arguments.join(', ')})"

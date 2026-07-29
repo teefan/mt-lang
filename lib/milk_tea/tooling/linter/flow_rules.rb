@@ -3,28 +3,26 @@
 module MilkTea
   class Linter
     module LinterFlowRules
-      private
-
       def emit_dead_assignment_warnings(stmts)
         analysis = dead_assignment_analysis(stmts)
         return unless analysis
-  
+
         graph = analysis.graph
         liveness = analysis.liveness
         readable_bindings = analysis.readable_bindings
         locally_declared = analysis.locally_declared
-  
+
         graph.each_node do |node|
           node.writes_info.each do |write|
             next if write[:origin] == :call_argument
               next if write[:origin] == :declaration
-  
+
             binding_key = write[:binding_key]
             name = write[:name]
             next unless readable_bindings.include?(binding_key)
             next unless locally_declared.include?(binding_key)
             next if liveness.live_out[node.id].include?(binding_key)
-  
+
             @warnings << Warning.new(
               path: @path,
               line: write[:line],
@@ -40,15 +38,15 @@ module MilkTea
       def emit_unreachable_warnings(stmts)
         analysis = statement_flow_analysis(stmts)
         return unless analysis
-  
+
         graph = analysis.graph
         reachable = analysis.reachability
-  
+
         graph.each_node do |node|
           next if reachable.reachable_ids.include?(node.id)
           next if node.kind == :exit
           next unless node.statement
-  
+
           statement = node.statement
           line = statement.respond_to?(:line) ? statement.line : nil
           @warnings << Warning.new(
@@ -65,10 +63,10 @@ module MilkTea
       # is taken from a local variable that is also written later in the same body.
       def emit_borrow_warnings(stmts)
         return if stmts.nil? || stmts.empty?
-  
+
         borrowed = collect_borrowed_names(stmts)
         return if borrowed.empty?
-  
+
         written = collect_written_names(stmts)
         (borrowed & written).each do |name|
           # Find the earliest borrow site for the warning location
@@ -87,7 +85,7 @@ module MilkTea
       end
       def cfg_binding_resolution
         return @cfg_binding_resolution if @cfg_binding_resolution_computed
-  
+
         binding_resolution = @sema_facts&.binding_resolution
         @cfg_binding_resolution = if binding_resolution
                                     ControlFlow::BindingResolution.new(
@@ -101,7 +99,7 @@ module MilkTea
       end
       def statement_flow_analysis(stmts)
         return nil if stmts.nil? || stmts.empty?
-  
+
         @statement_flow_analysis_cache[stmts.object_id] ||= begin
           binding_resolution = cfg_binding_resolution
           graph = profile_phase("flow.graph") do
@@ -118,7 +116,7 @@ module MilkTea
       end
       def dead_assignment_analysis(stmts)
         return nil if stmts.nil? || stmts.empty?
-  
+
         @dead_assignment_analysis_cache[stmts.object_id] ||= begin
           binding_resolution = cfg_binding_resolution
           graph = profile_phase("dead_assignment.graph") do
@@ -147,7 +145,7 @@ module MilkTea
       def cfg_identifier_binding_key(identifier)
         binding_resolution = cfg_binding_resolution
         return identifier.name unless binding_resolution
-  
+
         binding_resolution.identifier_binding_ids[identifier.object_id] || identifier.name
       end
       def ignored_binding_name?(name)
@@ -159,18 +157,18 @@ module MilkTea
       # Uses ConstantPropagation to detect conditions that are always true/false.
       # Skips `while true` — it is an idiomatic infinite loop.
       # Skips if conditions inside loops, since variables can change across iterations.
-  
+
       def emit_constant_condition_warnings(stmts)
         return if stmts.nil? || stmts.empty?
-  
+
         analysis = statement_flow_analysis(stmts)
         return unless analysis
-  
+
         binding_resolution = cfg_binding_resolution
         graph = analysis.graph
         cp = analysis.constant_propagation
         loop_bodies = analysis.loop_body_nodes
-  
+
         graph.each_node do |node|
           cond_expr, line, keyword_pattern, skip_node =
             case node.kind
@@ -188,9 +186,9 @@ module MilkTea
             else
               next
             end
-  
+
           next if skip_node || cond_expr.nil?
-  
+
           in_state  = cp.in_states[node.id] || {}
           const_val = ControlFlow::ConstantPropagation.constant_value_of(
             cond_expr,
@@ -199,7 +197,7 @@ module MilkTea
             strict_binding_ids: !binding_resolution.nil?
           )
           next unless const_val == true || const_val == false
-  
+
           ctx = node.kind == :while_condition ? "loop condition" : "branch condition"
           line, column, length = condition_span(cond_expr, line:, keyword_pattern:)
           @warnings << Warning.new(
@@ -218,7 +216,7 @@ module MilkTea
       # A back-edge exists when a node is reachable from its own successors.
       private def compute_loop_body_nodes(graph)
         loop_nodes = Set.new
-  
+
         # Find all back-edges: detect cycles by checking if any successor of a node
         # can reach back to that node.
         graph.each_node do |node|
@@ -230,38 +228,38 @@ module MilkTea
             end
           end
         end
-  
+
         loop_nodes
       end
-  
+
       # Returns true if target_id is reachable from start_id via forward edges.
       private def reachable_from?(graph, start_id, target_id)
         visited = Set.new
         queue = [start_id]
-  
+
         while queue.any?
           node_id = queue.shift
           return true if node_id == target_id
           next if visited.include?(node_id)
-  
+
           visited.add(node_id)
           node = graph.nodes[node_id]
           node.succs.each { |succ| queue.push(succ) }
         end
-  
+
         false
       end
-  
+
       # Mark all nodes reachable from start_id as being inside a loop.
       private def mark_reachable_nodes(graph, start_id, loop_nodes)
         visited = Set.new
         queue = [start_id]
-  
+
         while queue.any?
           node_id = queue.shift
           loop_nodes.add(node_id)
           next if visited.include?(node_id)
-  
+
           visited.add(node_id)
           node = graph.nodes[node_id]
           node.succs.each { |succ| queue.push(succ) unless visited.include?(succ) }
@@ -270,31 +268,31 @@ module MilkTea
       # ── redundant-null-check ───────────────────────────────────────────────
       # After a variable has been narrowed to non-null by a prior check,
       # a subsequent `x != nil` guard is always true.
-  
+
       def emit_redundant_null_check_warnings(stmts)
         return if stmts.nil? || stmts.empty?
-  
+
         analysis = statement_flow_analysis(stmts)
         return unless analysis
-  
+
         graph = analysis.graph
         nf = analysis.nullability
-  
+
         graph.each_node do |node|
           next unless node.kind == :if_condition
-  
+
           branch = node.statement
           next unless branch.is_a?(AST::IfBranch)
-  
+
           identifier = null_check_identifier(branch.condition)
           next unless identifier
           next if ignored_binding_name?(identifier.name)
-  
+
           nonnull = nf.nonnull_before(branch)
           next unless nonnull.include?(cfg_identifier_binding_key(identifier))
-  
+
           line, column, length = condition_span(branch.condition, line: node.line, keyword_pattern: "else if|if")
-  
+
           @warnings << Warning.new(
             path: @path,
             line:,
@@ -307,12 +305,12 @@ module MilkTea
           )
         end
       end
-  
+
       # Returns the Identifier being nil-tested if `cond` is `x != nil` or
       # `nil != x`, otherwise nil.
       def null_check_identifier(cond)
         return nil unless cond.is_a?(AST::BinaryOp) && cond.operator == "!="
-  
+
         if cond.left.is_a?(AST::Identifier) && cond.right.is_a?(AST::NullLiteral)
           cond.left
         elsif cond.left.is_a?(AST::NullLiteral) && cond.right.is_a?(AST::Identifier)
@@ -322,13 +320,13 @@ module MilkTea
       # ── loop-single-iteration ──────────────────────────────────────────────
       # A loop whose body unconditionally exits (return/break) before the
       # back-edge is taken will execute at most once.
-  
+
       def emit_loop_single_iteration_warnings(stmts)
         return if stmts.nil? || stmts.empty?
-  
+
         walk_stmts_for_loop_check(stmts)
       end
-  
+
       def walk_stmts_for_loop_check(stmts)
         stmts.each do |stmt|
           case stmt

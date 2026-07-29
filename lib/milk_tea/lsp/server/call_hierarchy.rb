@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerCallHierarchy
-        private
-
         def handle_prepare_call_hierarchy(params)
           text_document = params["textDocument"]
           position = params["position"]

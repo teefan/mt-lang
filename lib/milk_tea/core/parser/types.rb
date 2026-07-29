@@ -3,8 +3,6 @@
 module MilkTea
   module Parse
     module Types
-      private
-
       def parse_params(allow_variadic: false)
         parse_parameter_list(allow_variadic:) { parse_param }
       end
@@ -263,14 +261,14 @@ module MilkTea
           parts << consume_path_component("expected identifier after '.'").lexeme
         end
         type_arguments = if match(:lbracket)
-                           args = parse_comma_separated_until(:rbracket) do
-                             parse_type_ref
-                           end
-                           consume(:rbracket, "expected ']' after type arguments")
-                           args
-                         else
-                           []
-                         end
+          args = parse_comma_separated_until(:rbracket) do
+            parse_type_ref
+          end
+          consume(:rbracket, "expected ']' after type arguments")
+          args
+        else
+          []
+        end
         AST::QualifiedName.new(parts:, type_arguments:, line: first_token.line, column: first_token.column)
       end
     end

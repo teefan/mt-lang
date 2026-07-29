@@ -6,8 +6,6 @@ module MilkTea
       module ServerUtilities
         PERF_LOG_THRESHOLD_MS = 20
 
-        private
-
         def register_handlers
           @handlers["initialize"] = method(:handle_initialize)
           @handlers["setBreakpoints"] = method(:handle_set_breakpoints)

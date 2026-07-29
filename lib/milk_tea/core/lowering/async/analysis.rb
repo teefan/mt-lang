@@ -2,8 +2,6 @@
 
 module MilkTea
   module LowererAsync
-    private
-
     def analyze_async_function(binding, statements)
       env = empty_env
       void_ptr = pointer_to(@ctx.types.fetch("void"))

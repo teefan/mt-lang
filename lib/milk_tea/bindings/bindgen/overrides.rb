@@ -4,8 +4,6 @@ module MilkTea
   module Bindgen
     class Generator
       module GeneratorOverrides
-        private
-
         def function_param_type_override(function_name, param_name)
           @function_param_type_overrides.dig(function_name, param_name)
         end

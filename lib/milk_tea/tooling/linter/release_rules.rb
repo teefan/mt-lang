@@ -3,8 +3,6 @@
 module MilkTea
   class Linter
     module LinterReleaseRules
-      private
-
       # Entry point — called from visit_function and proc expr in full_tier mode.
       def emit_owning_release_warnings(function_or_body)
         body = function_or_body.is_a?(Array) ? function_or_body : function_or_body.body

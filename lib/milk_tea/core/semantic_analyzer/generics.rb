@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def infer_receiver_type_substitutions(binding, receiver_type)
         declared_receiver_type = binding.declared_receiver_type
         return {} unless declared_receiver_type
@@ -117,45 +115,45 @@ module MilkTea
         receiver = nil
         receiver_type = nil
         binding = case expression.callee
-                  when AST::Identifier
-                    @ctx.top_level_functions[expression.callee.name]
-                  when AST::MemberAccess
-                    if expression.callee.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.callee.receiver.name)
-                      imported_module = @ctx.imports.fetch(expression.callee.receiver.name)
-                      imported_function = imported_module.functions[expression.callee.member]
-                      if imported_function.nil? && imported_module.private_function?(expression.callee.member)
-                        raise_sema_error("#{expression.callee.receiver.name}.#{expression.callee.member} is private to module #{imported_module.name}")
-                      end
+        when AST::Identifier
+          @ctx.top_level_functions[expression.callee.name]
+        when AST::MemberAccess
+          if expression.callee.receiver.is_a?(AST::Identifier) && @ctx.imports.key?(expression.callee.receiver.name)
+            imported_module = @ctx.imports.fetch(expression.callee.receiver.name)
+            imported_function = imported_module.functions[expression.callee.member]
+            if imported_function.nil? && imported_module.private_function?(expression.callee.member)
+              raise_sema_error("#{expression.callee.receiver.name}.#{expression.callee.member} is private to module #{imported_module.name}")
+            end
 
-                      imported_function
-                    elsif (type_expr = resolve_type_expression(expression.callee.receiver))
-                      associated_function = lookup_method(type_expr, expression.callee.member)
-                      if associated_function&.type&.receiver_type.nil?
-                        receiver_type = type_expr
-                        associated_function
-                      else
-                        if (imported_module = imported_module_with_private_method(type_expr, expression.callee.member))
-                          raise_sema_error("#{type_expr}.#{expression.callee.member} is private to module #{imported_module.name}")
-                        end
+            imported_function
+          elsif (type_expr = resolve_type_expression(expression.callee.receiver))
+            associated_function = lookup_method(type_expr, expression.callee.member)
+            if associated_function&.type&.receiver_type.nil?
+              receiver_type = type_expr
+              associated_function
+            else
+              if (imported_module = imported_module_with_private_method(type_expr, expression.callee.member))
+                raise_sema_error("#{type_expr}.#{expression.callee.member} is private to module #{imported_module.name}")
+              end
 
-                        nil
-                      end
-                    else
-                      receiver_type = infer_method_receiver_type(expression.callee.receiver, scopes:, member_name: expression.callee.member)
-                      method = lookup_method(receiver_type, expression.callee.member)
-                      if method
-                        callable_kind = :method
-                        receiver = expression.callee.receiver
-                        method
-                      else
-                        if (imported_module = imported_module_with_private_method(receiver_type, expression.callee.member))
-                          raise_sema_error("#{receiver_type}.#{expression.callee.member} is private to module #{imported_module.name}")
-                        end
+              nil
+            end
+          else
+            receiver_type = infer_method_receiver_type(expression.callee.receiver, scopes:, member_name: expression.callee.member)
+            method = lookup_method(receiver_type, expression.callee.member)
+            if method
+              callable_kind = :method
+              receiver = expression.callee.receiver
+              method
+            else
+              if (imported_module = imported_module_with_private_method(receiver_type, expression.callee.member))
+                raise_sema_error("#{receiver_type}.#{expression.callee.member} is private to module #{imported_module.name}")
+              end
 
-                        nil
-                      end
-                    end
-                  end
+              nil
+            end
+          end
+        end
         return nil unless binding
 
         type_arguments = resolve_specialization_type_arguments(expression)
@@ -265,12 +263,12 @@ module MilkTea
           argument = arguments.fetch(index)
           candidate_type = substitute_type(parameter.type, substitutions)
           expected_argument_type = if callable_type?(candidate_type)
-                                      candidate_type
-                                    elsif contains_type_var?(candidate_type)
-                                      nil
-                                    else
-                                      candidate_type
-                                    end
+            candidate_type
+          elsif contains_type_var?(candidate_type)
+            nil
+          else
+            candidate_type
+          end
           actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: expected_argument_type)
           collect_type_substitutions(parameter.type, actual_type, substitutions, binding.name)
         end
@@ -340,18 +338,18 @@ module MilkTea
           end
 
           actual_params = case actual_type
-                          when Types::Proc
-                            return unless actual_type.params.length == pattern_type.params.length
+          when Types::Proc
+            return unless actual_type.params.length == pattern_type.params.length
 
-                            actual_type.params
-                          when Types::Function
-                            return if actual_type.receiver_type || actual_type.variadic
-                            return unless actual_type.params.length == pattern_type.params.length
+            actual_type.params
+          when Types::Function
+            return if actual_type.receiver_type || actual_type.variadic
+            return unless actual_type.params.length == pattern_type.params.length
 
-                            actual_type.params
-                          else
-                            return
-                          end
+            actual_type.params
+          else
+            return
+          end
 
           pattern_type.params.zip(actual_params).each do |expected_param, actual_param|
             collect_type_substitutions(expected_param.type, actual_param.type, substitutions, function_name)

@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerCodeLens
-        private
-
         def handle_code_lens(params)
           uri = params.dig("textDocument", "uri")
           return [] unless uri
@@ -43,29 +41,29 @@ module MilkTea
 
           uri = data["uri"] || data[:uri]
           count = if uri
-                     facts = @workspace.get_facts(uri)
-                     if facts && module_level_name?(facts, name)
-                       level_kind = module_level_name?(facts, name)
-                       if level_kind == :method
-                         refs = static_method_code_lens_count(uri, name, data, facts)
-                         refs || module_level_reference_locations(uri, name, facts, include_declaration: true).length
-                       else
-                         module_level_reference_locations(uri, name, facts, include_declaration: true).length
-                       end
-                     else
-                       ast = @workspace.get_ast(uri)
-                       if ast && module_level_ast_name?(ast, name)
-                         refs = module_level_reference_locations(uri, name, nil, include_declaration: true)
-                         refs.length
-                       else
-                         refs = @workspace.find_all_references(name)
-                         refs ? refs.length : 0
-                       end
-                     end
-                   else
-                     refs = @workspace.find_all_references(name)
-                     refs ? refs.length : 0
-                   end
+            facts = @workspace.get_facts(uri)
+            if facts && module_level_name?(facts, name)
+              level_kind = module_level_name?(facts, name)
+              if level_kind == :method
+                refs = static_method_code_lens_count(uri, name, data, facts)
+                refs || module_level_reference_locations(uri, name, facts, include_declaration: true).length
+              else
+                module_level_reference_locations(uri, name, facts, include_declaration: true).length
+              end
+            else
+              ast = @workspace.get_ast(uri)
+              if ast && module_level_ast_name?(ast, name)
+                refs = module_level_reference_locations(uri, name, nil, include_declaration: true)
+                refs.length
+              else
+                refs = @workspace.find_all_references(name)
+                refs ? refs.length : 0
+              end
+            end
+          else
+            refs = @workspace.find_all_references(name)
+            refs ? refs.length : 0
+          end
 
           params["command"] = {
             "title" => "#{count} reference#{count == 1 ? "" : "s"}",

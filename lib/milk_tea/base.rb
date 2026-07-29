@@ -23,7 +23,6 @@ module MilkTea
   def self.installed_as_gem?
     root.to_s.match?(%r{/gems/mt-lang-})
   end
-  private_class_method :installed_as_gem?
 
   def self.writable_root_for(root)
     resolved = Pathname.new(File.expand_path(root.to_s))

@@ -31,8 +31,6 @@ module MilkTea
       )
     end
 
-    private
-
     def validate_target!
       if File.exist?(@path) && !File.directory?(@path)
         raise ProjectScaffoldError, "project path is not a directory: #{@path}"

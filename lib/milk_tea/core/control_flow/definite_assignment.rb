@@ -73,7 +73,6 @@ module MilkTea
         end
         universe
       end
-      private_class_method :initial_universe
     end
   end
 end

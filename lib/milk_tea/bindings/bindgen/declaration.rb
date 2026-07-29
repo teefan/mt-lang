@@ -4,8 +4,6 @@ module MilkTea
   module Bindgen
     class Generator
       module GeneratorDeclaration
-        private
-
         def select_record_declarations(nodes)
           selected = {}
           type_aliases = []

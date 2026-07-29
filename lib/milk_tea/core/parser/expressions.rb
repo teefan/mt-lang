@@ -3,8 +3,6 @@
 module MilkTea
   module Parse
     module Expressions
-      private
-
       def parse_expression
         return parse_if_expression if match(:if)
         return parse_match_expression if match(:match)

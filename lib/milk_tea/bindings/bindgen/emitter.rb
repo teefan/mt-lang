@@ -4,8 +4,6 @@ module MilkTea
   module Bindgen
     class Generator
       module GeneratorEmitter
-        private
-
         def emitted_name(raw_name)
           return raw_name unless @strip_leading_underscores
 

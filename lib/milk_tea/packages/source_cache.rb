@@ -7,10 +7,10 @@ module MilkTea
     def self.default_root(env: ENV, home: nil)
       xdg_cache_home = env.fetch("XDG_CACHE_HOME", "").to_s.strip
       base_root = if xdg_cache_home.empty?
-                    File.join(home || Dir.home, ".cache")
-                  else
-                    File.expand_path(xdg_cache_home)
-                  end
+        File.join(home || Dir.home, ".cache")
+      else
+        File.expand_path(xdg_cache_home)
+      end
 
       File.join(base_root, "milk_tea", "package_sources")
     end
@@ -57,8 +57,6 @@ module MilkTea
     def materialized?(source_or_identity)
       File.file?(manifest_path_for(source_or_identity))
     end
-
-    private
 
     def extract_identity(source_or_identity)
       if source_or_identity.respond_to?(:identity)

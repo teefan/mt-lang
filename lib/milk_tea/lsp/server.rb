@@ -255,9 +255,6 @@ module MilkTea
         raise
       end
 
-
-      private
-
       include ServerCallHierarchy
       include ServerCodeActions
       include ServerCodeLens

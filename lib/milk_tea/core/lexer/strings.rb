@@ -5,8 +5,6 @@ module MilkTea
     # String literal lexing (including adjacent-literal continuation),
     # character literal lexing, and escape-sequence decoding.
     module Strings
-      private
-
       def lex_string(lines, line_index, line, index, line_number, line_offset:, cstring: false)
         segment = scan_string_segment(line, index, line_number, cstring:, recover: @recovery_errors)
         consumed_lines = 1

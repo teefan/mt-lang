@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerProgress
-        private
-
         PROGRESS_TOKEN_PREFIX = "mt-lsp-progress"
 
         def create_progress(title:, message: nil, cancellable: false)

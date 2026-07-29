@@ -90,8 +90,6 @@ module MilkTea
         @reader_thread&.join(0.2)
       end
 
-      private
-
       def start_client_reader
         return if @reader_thread&.alive?
 

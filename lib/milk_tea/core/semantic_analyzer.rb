@@ -320,8 +320,6 @@ module MilkTea
 
         @structural_errors << error
       end
-
-
     end
   end
 end

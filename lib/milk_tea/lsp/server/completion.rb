@@ -18,8 +18,6 @@ module MilkTea
           ptr ref span array dyn Option Result Task SoA str_buffer const_ptr simd
         ].freeze
 
-        private
-
         def completion_data(name)
           { uri: @current_completion_uri || '', name: }
         end

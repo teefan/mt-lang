@@ -12,8 +12,6 @@ module MilkTea
         finish
       end
 
-      private
-
       def emit_program(program)
         module_name = program.module_name || "(anonymous)"
         line("program #{module_name}")

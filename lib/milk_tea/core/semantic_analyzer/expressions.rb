@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def infer_lvalue(expression, scopes:)
         case expression
         when AST::Identifier
@@ -1535,13 +1533,6 @@ module MilkTea
         false
       end
 
-
-
-
-
-
-
-
       def evaluate_field_of_call(arguments, scopes:)
         raise_sema_error("field_of does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("field_of expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
@@ -1554,16 +1545,12 @@ module MilkTea
         field_handle
       end
 
-
       def evaluate_callable_of_call(arguments, scopes:)
         raise_sema_error("callable_of does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("callable_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
         resolve_callable_handle_argument(arguments.first.value, scopes:)
       end
-
-
-
 
       def resolve_struct_handle_argument(expression, scopes:)
         if (type_expr = resolve_type_expression(expression))

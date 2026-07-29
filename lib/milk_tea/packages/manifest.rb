@@ -135,9 +135,9 @@ module MilkTea
       end
 
       duplicate_basenames = asset_paths.group_by { |asset_path| File.basename(asset_path) }
-                                       .select { |_basename, paths| paths.length > 1 }
-                                       .keys
-                                       .sort
+        .select { |_basename, paths| paths.length > 1 }
+        .keys
+        .sort
       return asset_paths if duplicate_basenames.empty?
 
       raise PackageManifestError, "build.assets entries must have unique basenames: #{duplicate_basenames.join(", ")}"

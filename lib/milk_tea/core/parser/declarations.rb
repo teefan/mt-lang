@@ -3,8 +3,6 @@
 module MilkTea
   module Parse
     module Declarations
-      private
-
       def parse_import
         line = previous.line
         path = parse_qualified_name

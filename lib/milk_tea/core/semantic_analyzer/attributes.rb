@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def check_attribute_applications
         expanded_declarations.each do |decl|
           with_error_node(decl) do
@@ -114,20 +112,20 @@ module MilkTea
 
         arguments.each do |argument|
           param = if argument.name
-                    params.find { |candidate| candidate.name == argument.name }.tap do |candidate|
-                      raise_sema_error("unknown attribute argument #{binding.name}.#{argument.name}") unless candidate
-                    end
-                  else
-                    while next_position < params.length && bound_arguments.key?(params[next_position].name)
-                      next_position += 1
-                    end
+            params.find { |candidate| candidate.name == argument.name }.tap do |candidate|
+              raise_sema_error("unknown attribute argument #{binding.name}.#{argument.name}") unless candidate
+            end
+          else
+            while next_position < params.length && bound_arguments.key?(params[next_position].name)
+              next_position += 1
+            end
 
-                    raise_sema_error("attribute #{binding.name} expects #{params.length} arguments, got #{arguments.length}") if next_position >= params.length
+            raise_sema_error("attribute #{binding.name} expects #{params.length} arguments, got #{arguments.length}") if next_position >= params.length
 
-                    param = params[next_position]
-                    next_position += 1
-                    param
-                  end
+            param = params[next_position]
+            next_position += 1
+            param
+          end
 
           raise_sema_error("duplicate attribute argument #{binding.name}.#{param.name}") if bound_arguments.key?(param.name)
 

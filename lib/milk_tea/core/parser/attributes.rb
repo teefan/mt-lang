@@ -3,8 +3,6 @@
 module MilkTea
   module Parse
     module Attributes
-      private
-
       def parse_attribute_applications
         attributes = []
 

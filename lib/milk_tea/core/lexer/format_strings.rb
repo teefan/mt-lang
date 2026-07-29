@@ -5,8 +5,6 @@ module MilkTea
     # Format string lexing (`f"...#{expr}..."`) and the interpolation
     # scanning / format-spec splitting shared with format heredocs.
     module FormatStrings
-      private
-
       def parse_format_heredoc_parts(content, start_line:, start_column:)
         parts = []
         text = +""
@@ -182,13 +180,13 @@ module MilkTea
           end
 
           case char
-          when "(", "[", "{"
-            depth += 1
-          when ")", "]", "}"
-            depth -= 1 if depth.positive?
-          when ":"
-            suffix = source[(index + 1)..]
-            format_spec_index = index if depth.zero? && format_spec_suffix?(suffix)
+            when "(", "[", "{"
+              depth += 1
+            when ")", "]", "}"
+              depth -= 1 if depth.positive?
+            when ":"
+              suffix = source[(index + 1)..]
+              format_spec_index = index if depth.zero? && format_spec_suffix?(suffix)
           end
 
           index += 1

@@ -4,8 +4,6 @@ module MilkTea
   module DAP
     class Server
       module ServerWire
-        private
-
         def write_response(request, body)
           write_message({
             seq: @session.next_seq,

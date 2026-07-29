@@ -91,8 +91,6 @@ module MilkTea
           @stderr_thread = nil
         end
 
-        private
-
         def next_seq
           seq = @next_seq
           @next_seq += 1

@@ -85,8 +85,6 @@ module MilkTea
           uniform
         ].freeze
 
-        private
-
         def normalize_opengl_snake_case(name)
           tokens = name.to_s.split("_").reject(&:empty?)
           normalized = []
@@ -175,12 +173,12 @@ module MilkTea
 
         def normalize_opengl_terminal_suffix(name, raw_name)
           normalized = if name.end_with?("indexedfv")
-                         "#{name.delete_suffix('indexedfv')}indexed_float_values"
-                       elsif name.end_with?("indexedf")
-                         "#{name.delete_suffix('indexedf')}indexed_float"
-                       else
-                         name
-                       end
+            "#{name.delete_suffix('indexedfv')}indexed_float_values"
+          elsif name.end_with?("indexedf")
+            "#{name.delete_suffix('indexedf')}indexed_float"
+          else
+            name
+          end
 
           raw_text = raw_name.to_s
           if raw_text.end_with?("i") && normalized.end_with?("i")

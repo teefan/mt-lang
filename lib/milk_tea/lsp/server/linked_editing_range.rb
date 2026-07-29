@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerLinkedEditingRange
-        private
-
         def handle_linked_editing_range(params)
           uri = params.dig("textDocument", "uri")
           lsp_line = params.dig("position", "line")

@@ -284,22 +284,22 @@ module MilkTea
     def resolve_cache_backed_dependency(identity, dependency:, parent_manifest:)
       context_label = "dependency #{dependency.name} in #{parent_manifest.manifest_path}"
       source = case @remote_resolution
-               when :reject
-                 raise PackageSourceResolverError,
-                       "#{context_label} uses #{identity.kind} resolution, but live dependency resolution only supports local path dependencies; run mtc deps lock and then use --locked or --frozen"
-               when :cache
-                 source_for_identity(identity, context_label)
-               when :materialize
-                 unless @source_fetcher
-                   raise PackageSourceResolverError,
-                         "#{context_label} requested #{identity.kind} materialization without a package source fetcher"
-                 end
+      when :reject
+        raise PackageSourceResolverError,
+              "#{context_label} uses #{identity.kind} resolution, but live dependency resolution only supports local path dependencies; run mtc deps lock and then use --locked or --frozen"
+      when :cache
+        source_for_identity(identity, context_label)
+      when :materialize
+        unless @source_fetcher
+          raise PackageSourceResolverError,
+                "#{context_label} requested #{identity.kind} materialization without a package source fetcher"
+        end
 
-                 @source_fetcher.materialize_identity(package_name: dependency.name, identity:)
-                 source_for_identity(identity, context_label)
-               else
-                 raise PackageSourceResolverError, "unknown remote resolution mode #{@remote_resolution.inspect}"
-               end
+        @source_fetcher.materialize_identity(package_name: dependency.name, identity:)
+        source_for_identity(identity, context_label)
+      else
+        raise PackageSourceResolverError, "unknown remote resolution mode #{@remote_resolution.inspect}"
+      end
 
       manifest = PackageManifest.load(source.local_root)
       if manifest.package_name != dependency.name
@@ -334,16 +334,16 @@ module MilkTea
 
     def source_for_identity(identity, context_label)
       local_root = if identity.is_a?(PathIdentity)
-                     identity.path
-                   else
-                     manifest_path = @source_cache.manifest_path_for(identity)
-                     unless File.file?(manifest_path)
-                       raise PackageSourceResolverError,
-                             "package source_kind #{identity.kind.inspect} in #{context_label} is not materialized in the source cache: expected #{manifest_path}"
-                     end
+        identity.path
+      else
+        manifest_path = @source_cache.manifest_path_for(identity)
+        unless File.file?(manifest_path)
+          raise PackageSourceResolverError,
+                "package source_kind #{identity.kind.inspect} in #{context_label} is not materialized in the source cache: expected #{manifest_path}"
+        end
 
-                     @source_cache.materialized_root_for(identity)
-                   end
+        @source_cache.materialized_root_for(identity)
+      end
 
       Source.new(
         identity:,
@@ -353,10 +353,10 @@ module MilkTea
 
     def registry_dependency_parent_source_key(parent_manifest:, parent_source:)
       identity = if parent_source
-                   parent_source.identity
-                 else
-                   source_for_manifest(parent_manifest).identity
-                 end
+        parent_source.identity
+      else
+        source_for_manifest(parent_manifest).identity
+      end
 
       self.class.source_key_for_identity(identity)
     end
@@ -366,21 +366,21 @@ module MilkTea
 
       versions.each_with_object({}) do |(key, version), resolved|
         normalized_key = case key
-                         when RegistryDependencyKey
-                           self.class.registry_dependency_key(
-                             parent_source_key: key.parent_source_key,
-                             dependency_name: key.dependency_name,
-                           )
-                         when Array
-                           if key.length != 2
-                             raise PackageSourceResolverError,
-                                   "registry dependency key must contain parent manifest path and dependency name"
-                           end
+        when RegistryDependencyKey
+          self.class.registry_dependency_key(
+            parent_source_key: key.parent_source_key,
+            dependency_name: key.dependency_name,
+          )
+        when Array
+          if key.length != 2
+            raise PackageSourceResolverError,
+                  "registry dependency key must contain parent manifest path and dependency name"
+          end
 
-                           self.class.registry_dependency_key(parent_source_key: key[0], dependency_name: key[1])
-                         else
-                           key.to_s
-                         end
+          self.class.registry_dependency_key(parent_source_key: key[0], dependency_name: key[1])
+        else
+          key.to_s
+        end
 
         resolved[normalized_key] = version.to_s
       end

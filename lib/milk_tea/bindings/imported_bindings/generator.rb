@@ -4,8 +4,6 @@ module MilkTea
   module ImportedBindings
     class Generator
       module GeneratorPolicy
-        private
-
         def load_policy
           JSON.parse(File.read(@policy_path))
         rescue Errno::ENOENT
@@ -914,13 +912,13 @@ module MilkTea
           signature = +""
           signature << "public " if visibility == :public
           signature << case kind
-                       when :static
-                         "static function "
-                       when :editable
-                         "editable function "
-                       else
-                         "function "
-                       end
+          when :static
+            "static function "
+          when :editable
+            "editable function "
+          else
+            "function "
+          end
           signature << name
           signature << render_type_params(type_params)
           signature << "(#{params.join(', ')}) -> #{return_type}:"

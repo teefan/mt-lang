@@ -10,8 +10,6 @@ module MilkTea
         @indent = 0
       end
 
-      private
-
       def finish
         @lines.join("\n") + "\n"
       end

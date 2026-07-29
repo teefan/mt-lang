@@ -783,8 +783,6 @@ module MilkTea
       @reserved_primitive_name_fixes
     end
 
-    private
-
     include LinterDocTags
     include LinterFlowRules
     include LinterImportsPlatform

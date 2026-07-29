@@ -3,8 +3,6 @@
 module MilkTea
   module Parse
     module Statements
-      private
-
       def check_inline_stmt_start?
         return false unless check(:inline)
 

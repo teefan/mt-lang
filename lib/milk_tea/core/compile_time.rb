@@ -58,8 +58,6 @@ module MilkTea
         result
       end
 
-      private
-
       def evaluate_expression(expression, scopes:)
         case expression
         when AST::Identifier
@@ -86,17 +84,17 @@ module MilkTea
 
                       arg_expr = call_expr.arguments[idx].value
                       arg_value = case arg_expr
-                                  when AST::Identifier
-                                    @variables[arg_expr.name] || @checker.send(:evaluate_compile_time_const_value, arg_expr, scopes:)
-                                  else
-                                    CompileTime.evaluate(
-                                      arg_expr,
-                                      resolve_identifier: ->(id) { @variables[id.name] || @checker.send(:evaluate_compile_time_const_value, id, scopes:) },
-                                      resolve_member_access: ->(ma) { @checker.send(:evaluate_compile_time_const_value, ma, scopes:) },
-                                      resolve_type_ref: nil,
-                                      resolve_call: nil,
-                                    )
-                                  end
+                      when AST::Identifier
+                        @variables[arg_expr.name] || @checker.send(:evaluate_compile_time_const_value, arg_expr, scopes:)
+                      else
+                        CompileTime.evaluate(
+                          arg_expr,
+                          resolve_identifier: ->(id) { @variables[id.name] || @checker.send(:evaluate_compile_time_const_value, id, scopes:) },
+                          resolve_member_access: ->(ma) { @checker.send(:evaluate_compile_time_const_value, ma, scopes:) },
+                          resolve_type_ref: nil,
+                          resolve_call: nil,
+                        )
+                      end
                       return nil unless arg_value
 
                       initial_vars[param.name] = arg_value
@@ -108,17 +106,17 @@ module MilkTea
                   end
                 end
               end
-              
+
               types = if @checker.respond_to?(:types)
-                         @checker.types
-                       else
-                         @checker.instance_variable_get(:@ctx).types
-                       end
+                @checker.types
+              else
+                @checker.instance_variable_get(:@ctx).types
+              end
               callee_name = if call_expr.callee.is_a?(AST::Specialization) && call_expr.callee.callee.respond_to?(:name)
-                              call_expr.callee.callee.name
-                            elsif call_expr.callee.respond_to?(:name)
-                              call_expr.callee.name
-                            end
+                call_expr.callee.callee.name
+              elsif call_expr.callee.respond_to?(:name)
+                call_expr.callee.name
+              end
               if callee_name && (type = types[callee_name]) && type.is_a?(Types::Struct)
                 fields = {}
                 call_expr.arguments.each do |argument|
@@ -141,7 +139,7 @@ module MilkTea
                   next values
                 end
               end
-              
+
               @checker.send(:evaluate_compile_time_const_value, call_expr, scopes:)
             },
           )
@@ -273,8 +271,8 @@ module MilkTea
 
         value = evaluate(expression)
         return value if value.is_a?(Types::Struct) || value.is_a?(Types::Primitive) ||
-                       value.is_a?(Types::Union) || value.is_a?(Types::Nullable) ||
-                       value.is_a?(Types::StructInstance)
+          value.is_a?(Types::Union) || value.is_a?(Types::Nullable) ||
+          value.is_a?(Types::StructInstance)
 
         nil
       end
@@ -357,7 +355,6 @@ module MilkTea
           Types::BUILTIN_TYPE_META_TYPE
         end
       end
-
     end
   end
 end

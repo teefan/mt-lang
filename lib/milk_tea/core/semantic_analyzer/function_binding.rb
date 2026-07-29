@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def declare_functions
         expanded_declarations.each do |decl|
           with_error_node(decl) do
@@ -529,13 +527,13 @@ module MilkTea
 
       def infer_member_access_field_type(value, scopes)
         receiver_type = case value.receiver
-                        when AST::Identifier
-                          if value.receiver.name == "this"
-                            (binding = lookup_value("this", scopes)) ? binding.type : nil
-                          else
-                            (binding = lookup_value(value.receiver.name, scopes)) ? binding.type : nil
-                          end
-                        end
+        when AST::Identifier
+          if value.receiver.name == "this"
+            (binding = lookup_value("this", scopes)) ? binding.type : nil
+          else
+            (binding = lookup_value(value.receiver.name, scopes)) ? binding.type : nil
+          end
+        end
         return nil unless receiver_type
 
         field_receiver = receiver_type_for_fields(receiver_type)
@@ -683,7 +681,6 @@ module MilkTea
         @current_specialization_owner = previous_specialization_owner
         @checking_function_bindings.delete(binding.object_id)
       end
-
     end
   end
 end

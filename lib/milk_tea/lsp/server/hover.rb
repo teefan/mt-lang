@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerHover
-        private
-
         KEYWORD_HOVER_INFO = {
           'size_of' => {
             signature: 'size_of(Type) -> ptr_uint',
@@ -562,19 +560,19 @@ module MilkTea
         end
 
         definition_entry = if source_location
-                             measure_perf_stage(stages, 'definition_entry') { hover_definition_entry_from_location(source_location) }
-                           elsif resolved_via_type_member
-                             nil
-                           else
-                             measure_perf_stage(stages, 'global_definition') do
-                               @workspace.find_definition_token_global(
-                                 name,
-                                 preferred_uri: uri,
-                                 before_line: lsp_line + 1,
-                                 before_char: lsp_char + 1,
-                               )
-                             end
-                           end
+          measure_perf_stage(stages, 'definition_entry') { hover_definition_entry_from_location(source_location) }
+        elsif resolved_via_type_member
+          nil
+        else
+          measure_perf_stage(stages, 'global_definition') do
+            @workspace.find_definition_token_global(
+              name,
+              preferred_uri: uri,
+              before_line: lsp_line + 1,
+              before_char: lsp_char + 1,
+            )
+          end
+        end
 
         source_uri = hover_source_uri_for_definition(definition_entry) || hover_source_uri_from_location(source_location)
         source_line = hover_source_line_for_definition(definition_entry) || hover_source_line_from_location(source_location)
@@ -1388,25 +1386,25 @@ module MilkTea
         if binding.respond_to?(:type) && binding.type
           params_str = format_params(binding.type.params)
           keyword = case binding.ast.kind
-                    when :editable
-                      "editable function"
-                    when :static
-                      "static function"
-                    else
-                      "function"
-                    end
+          when :editable
+            "editable function"
+          when :static
+            "static function"
+          else
+            "function"
+          end
 
           "#{async_prefix}#{keyword} #{binding.name}(#{params_str}) -> #{binding.type.return_type}"
         else
           params_str = binding.params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
           keyword = case binding.kind
-                    when :editable
-                      "editable function"
-                    when :static
-                      "static function"
-                    else
-                      "function"
-                    end
+          when :editable
+            "editable function"
+          when :static
+            "static function"
+          else
+            "function"
+          end
 
           "#{async_prefix}#{keyword} #{binding.name}(#{params_str}) -> #{binding.return_type}"
         end
@@ -1574,68 +1572,68 @@ module MilkTea
         after_bracket_index = next_non_trivia_token_index(tokens, rbracket_index + 1)
 
         if after_bracket_index && tokens[after_bracket_index].type == :lparen
-           docs = case name
-                   when 'array'
-                    '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
-                   when 'span'
-                    '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
-                   when 'SoA'
-                    '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
-                   when 'simd'
-                    '`simd[T, N](...)` constructs a SIMD vector value with `N` lanes of type `T`. Lanes are stored in a single vector register.'
-                   when 'Option'
-                    '`Option[T]` is a built-in optional type with arms `some(value: T)` and `none`.'
-                   when 'Result'
-                    '`Result[T, E]` is a built-in result type with arms `success(value: T)` and `failure(error: E)`.'
-                   end
+            docs = case name
+          when 'array'
+            '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
+          when 'span'
+            '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
+          when 'SoA'
+            '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
+          when 'simd'
+            '`simd[T, N](...)` constructs a SIMD vector value with `N` lanes of type `T`. Lanes are stored in a single vector register.'
+          when 'Option'
+           '`Option[T]` is a built-in optional type with arms `some(value: T)` and `none`.'
+          when 'Result'
+            '`Result[T, E]` is a built-in result type with arms `success(value: T)` and `failure(error: E)`.'
+          end
 
           return {
             signature: case name
-                       when 'array'
-                         "builtin #{specialization}(...) -> #{specialization}"
-                       when 'span'
-                         "builtin #{specialization}(data = ..., len = ...) -> #{specialization}"
-                       when 'SoA'
-                         "builtin #{specialization}(...) -> #{specialization}"
-                       when 'simd'
-                         "builtin #{specialization}(...) -> #{specialization}"
-                       when 'Option'
-                         "builtin #{specialization}(some: value = ...) / #{specialization}(none:)"
-                       when 'Result'
-                         "builtin #{specialization}(success: value = ...) / #{specialization}(failure: error = ...)"
-                       end,
+            when 'array'
+              "builtin #{specialization}(...) -> #{specialization}"
+            when 'span'
+              "builtin #{specialization}(data = ..., len = ...) -> #{specialization}"
+            when 'SoA'
+              "builtin #{specialization}(...) -> #{specialization}"
+            when 'simd'
+              "builtin #{specialization}(...) -> #{specialization}"
+            when 'Option'
+              "builtin #{specialization}(some: value = ...) / #{specialization}(none:)"
+            when 'Result'
+              "builtin #{specialization}(success: value = ...) / #{specialization}(failure: error = ...)"
+            end,
             docs: docs,
           }
         end
 
         docs = case name
-               when 'array'
-                 '`array[T, N]` is the built-in fixed-length array type.'
-               when 'span'
-                 '`span[T]` is the built-in non-owning contiguous view type.'
-               when 'SoA'
-                 '`SoA[T, N]` is the built-in Struct-of-Arrays type. Each struct field is stored in a separate contiguous array of `N` elements, improving SIMD/cache behavior for parallel field access.'
-               when 'simd'
-                 '`simd[T, N]` is the built-in SIMD vector type. Fixed-width vector of `N` numeric lanes. Supports component-wise arithmetic, lane access via `[i]`, and explicit aligned/unaligned load/store.'
-               when 'Option'
-                 '`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms.'
-               when 'Result'
-                  '`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms.'
-                when 'str_buffer'
-                  '`str_buffer[N]` is a fixed-capacity mutable UTF-8 text buffer. Methods: `assign`, `append`, `assign_format`, `append_format`, `clear`, `len`, `as_str`, `as_cstr`.'
-                when 'ref'
-                  '`ref[T]` is a non-null borrow reference. Auto-dereferences for member access and method calls. Cannot be stored in module-level variables, constants, or nested containers.'
-                when 'ptr'
-                  '`ptr[T]` is a raw mutable pointer. Indexing, dereference, and arithmetic require `unsafe`. Nullable via `ptr[T]?`.'
-                when 'const_ptr'
-                  '`const_ptr[T]` is a read-only pointer. Does not require `unsafe` for dereference.'
-                when 'own'
-                  '`own[T]` is an owning heap pointer. Auto-dereferences like `ref`. Storable, returnable, and nullable. Allocated via `heap.must_alloc[T](count)`.'
-                when 'Task'
-                  '`Task[T]` is an async task future. Returned by `async function`. Use `await` to unwrap, or `aio.wait`/`aio.run` to drive.'
-                when 'atomic'
-                  '`atomic[T]` is an atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load`, `store`, `add`, `sub`, `exchange`.'
-                end
+        when 'array'
+          '`array[T, N]` is the built-in fixed-length array type.'
+        when 'span'
+          '`span[T]` is the built-in non-owning contiguous view type.'
+        when 'SoA'
+          '`SoA[T, N]` is the built-in Struct-of-Arrays type. Each struct field is stored in a separate contiguous array of `N` elements, improving SIMD/cache behavior for parallel field access.'
+        when 'simd'
+          '`simd[T, N]` is the built-in SIMD vector type. Fixed-width vector of `N` numeric lanes. Supports component-wise arithmetic, lane access via `[i]`, and explicit aligned/unaligned load/store.'
+        when 'Option'
+          '`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms.'
+        when 'Result'
+          '`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms.'
+        when 'str_buffer'
+          '`str_buffer[N]` is a fixed-capacity mutable UTF-8 text buffer. Methods: `assign`, `append`, `assign_format`, `append_format`, `clear`, `len`, `as_str`, `as_cstr`.'
+        when 'ref'
+          '`ref[T]` is a non-null borrow reference. Auto-dereferences for member access and method calls. Cannot be stored in module-level variables, constants, or nested containers.'
+        when 'ptr'
+          '`ptr[T]` is a raw mutable pointer. Indexing, dereference, and arithmetic require `unsafe`. Nullable via `ptr[T]?`.'
+        when 'const_ptr'
+          '`const_ptr[T]` is a read-only pointer. Does not require `unsafe` for dereference.'
+        when 'own'
+          '`own[T]` is an owning heap pointer. Auto-dereferences like `ref`. Storable, returnable, and nullable. Allocated via `heap.must_alloc[T](count)`.'
+        when 'Task'
+          '`Task[T]` is an async task future. Returned by `async function`. Use `await` to unwrap, or `aio.wait`/`aio.run` to drive.'
+        when 'atomic'
+          '`atomic[T]` is an atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load`, `store`, `add`, `sub`, `exchange`.'
+        end
 
         {
           signature: "builtin type #{specialization}",
@@ -1669,22 +1667,22 @@ module MilkTea
         end
 
         docs = case name
-               when 'hash'
-                 '`hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint` after borrowing safe lvalues or forwarding existing refs and pointers.'
-               when 'equal'
-                 '`equal[T](left, right)` lowers to `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool` after borrowing safe lvalues or forwarding existing refs and pointers.'
-               when 'order'
-                 '`order[T](left, right)` lowers to `T.order(left: const_ptr[T], right: const_ptr[T]) -> int` after borrowing safe lvalues or forwarding existing refs and pointers.'
-               end
+        when 'hash'
+          '`hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint` after borrowing safe lvalues or forwarding existing refs and pointers.'
+        when 'equal'
+          '`equal[T](left, right)` lowers to `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool` after borrowing safe lvalues or forwarding existing refs and pointers.'
+        when 'order'
+          '`order[T](left, right)` lowers to `T.order(left: const_ptr[T], right: const_ptr[T]) -> int` after borrowing safe lvalues or forwarding existing refs and pointers.'
+        end
 
         signature = case name
-                    when 'hash'
-                      "builtin #{specialization}(value) -> uint"
-                    when 'equal'
-                      "builtin #{specialization}(left, right) -> bool"
-                    when 'order'
-                      "builtin #{specialization}(left, right) -> int"
-                    end
+        when 'hash'
+          "builtin #{specialization}(value) -> uint"
+        when 'equal'
+          "builtin #{specialization}(left, right) -> bool"
+        when 'order'
+          "builtin #{specialization}(left, right) -> int"
+        end
 
         {
           signature: signature,

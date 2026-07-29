@@ -63,14 +63,14 @@ module MilkTea
 
       def to_s
         prefix = case operator
-                 when :eq then "="
-                 when :gt then ">"
-                 when :gte then ">="
-                 when :lt then "<"
-                 when :lte then "<="
-                 else
-                   raise PackageVersionError, "unsupported package version operator #{operator.inspect}"
-                 end
+        when :eq then "="
+        when :gt then ">"
+        when :gte then ">="
+        when :lt then "<"
+        when :lte then "<="
+        else
+          raise PackageVersionError, "unsupported package version operator #{operator.inspect}"
+        end
 
         "#{prefix}#{version}"
       end

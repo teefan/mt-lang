@@ -205,8 +205,6 @@ module MilkTea
         Formatter.format_source(source, path: generated_module_path, mode: :tidy)
       end
 
-      private
-
       include GeneratorPolicy
       include GeneratorMethodSource
       include GeneratorNaming

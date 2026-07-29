@@ -4,8 +4,6 @@ module MilkTea
   module DAP
     class Server
       module ServerPauseDiagnostics
-        private
-
         def emit_pause_diagnostic_async(body)
           return unless body.is_a?(Hash)
 
@@ -80,22 +78,22 @@ module MilkTea
           line = dap_value(frame, "line")
 
           location_source = if !source_path.empty? && !source_path.include?("`")
-                              source_path
-                            elsif !source_name.empty?
-                              source_name
-                            elsif !source_path.empty?
-                              source_path
-                            else
-                              instruction_pointer
-                            end
+            source_path
+          elsif !source_name.empty?
+            source_name
+          elsif !source_path.empty?
+            source_path
+          else
+            instruction_pointer
+          end
 
           location = if location_source.to_s.empty?
-                       "(unknown)"
-                     elsif line.to_i.positive? && !location_source.include?(":#{line}")
-                       "#{location_source}:#{line}"
-                     else
-                       location_source
-                     end
+            "(unknown)"
+          elsif line.to_i.positive? && !location_source.include?(":#{line}")
+            "#{location_source}:#{line}"
+          else
+            location_source
+          end
 
           if include_ip && !instruction_pointer.empty? && location != instruction_pointer
             "#{frame_name} @ #{location} ip=#{instruction_pointer}"

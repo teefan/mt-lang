@@ -265,21 +265,21 @@ module MilkTea
             next unless id_tok.type == :identifier
 
             kind = case kw_tok.type
-                   when :function then 'function'
-                   when :struct  then 'struct'
-                   when :union   then 'union'
-                   when :enum    then 'enum'
-                   when :flags   then 'flags'
-                   when :variant then 'variant'
-                   when :type    then 'type_alias'
-                   when :const   then 'constant'
-                   when :let     then 'variable'
-                   when :var     then 'variable'
-                   when :event   then 'event'
-                   when :extending then 'struct'
-                   when :opaque  then 'struct'
-                   when :interface then 'interface'
-                   end
+            when :function then 'function'
+            when :struct  then 'struct'
+            when :union   then 'union'
+            when :enum    then 'enum'
+            when :flags   then 'flags'
+            when :variant then 'variant'
+            when :type    then 'type_alias'
+            when :const   then 'constant'
+            when :let     then 'variable'
+            when :var     then 'variable'
+            when :event   then 'event'
+            when :extending then 'struct'
+            when :opaque  then 'struct'
+            when :interface then 'interface'
+            end
 
             symbols << {
               name:   id_tok.lexeme,
@@ -447,10 +447,10 @@ module MilkTea
           clamped_line = [[line.to_i, 0].max, lines.length - 1].min
 
           preceding = if clamped_line.zero?
-                        ''
-                      else
-                        lines[0...clamped_line].join("\n") + "\n"
-                      end
+            ''
+          else
+            lines[0...clamped_line].join("\n") + "\n"
+          end
 
           line_text = lines[clamped_line] || ''
           target_units = [char.to_i, 0].max

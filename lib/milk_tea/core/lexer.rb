@@ -178,8 +178,6 @@ module MilkTea
       @tokens
     end
 
-    private
-
     include CharacterClasses
     include Trivia
     include Indentation

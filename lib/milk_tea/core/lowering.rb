@@ -359,8 +359,6 @@ module MilkTea
       ordered
     end
 
-    private
-
     include LowererScans
     include LowererDeclarations
     include LowererEvents

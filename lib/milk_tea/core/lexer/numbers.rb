@@ -4,8 +4,6 @@ module MilkTea
   class Lexer
     # Integer and float literal lexing, including type suffixes and exponents.
     module Numbers
-      private
-
       def lex_number(line, index, line_number, line_offset:)
         start = index
         type = :integer

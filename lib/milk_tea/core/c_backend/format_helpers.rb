@@ -3,8 +3,6 @@
 module MilkTea
   class CBackend
     module FormatHelpers
-      private
-
       def emit_format_helpers
         helpers = used_format_helpers
         lines = []

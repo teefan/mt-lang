@@ -4,8 +4,6 @@ module MilkTea
   module DAP
     class Server
       module ServerBreakpoints
-        private
-
         def sync_breakpoints_to_backend
           return if @breakpoints_synced_to_backend
 

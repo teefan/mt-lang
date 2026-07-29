@@ -4,8 +4,6 @@ module MilkTea
   module DAP
     class Server
       module ServerLLDBBackend
-        private
-
         def using_lldb_backend?
           @session.backend_kind == "lldb-dap"
         end
@@ -22,14 +20,14 @@ module MilkTea
                              end
 
           @lldb_backend = if @backend_factory
-                             build_backend_via_factory(adapter_command)
-                           else
-                             Backends::LLDBDAP.new(
-                               adapter_command: adapter_command,
-                               on_event: method(:handle_backend_event),
-                               on_request: method(:handle_backend_request)
-                             )
-                           end
+            build_backend_via_factory(adapter_command)
+          else
+            Backends::LLDBDAP.new(
+              adapter_command: adapter_command,
+              on_event: method(:handle_backend_event),
+              on_request: method(:handle_backend_request)
+            )
+          end
           @lldb_backend.start!
         end
 

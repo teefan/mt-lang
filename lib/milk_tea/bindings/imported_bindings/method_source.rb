@@ -4,8 +4,6 @@ module MilkTea
   module ImportedBindings
     class Generator
       module GeneratorMethodSource
-        private
-
         def load_method_sources(method_specs)
           method_specs.each_with_object({}) do |spec, sources|
             next unless spec[:module_name]

@@ -171,21 +171,21 @@ module MilkTea
 
       versions.each_with_object({}) do |(key, version), locked|
         normalized_key = case key
-                         when PackageSourceResolver::RegistryDependencyKey
-                           PackageSourceResolver.registry_dependency_key(
-                             parent_source_key: key.parent_source_key,
-                             dependency_name: key.dependency_name,
-                           )
-                         when Array
-                           if key.length != 2
-                             raise PackageDependencySolverError,
-                                   "registry dependency key must contain parent manifest path and dependency name"
-                           end
+        when PackageSourceResolver::RegistryDependencyKey
+          PackageSourceResolver.registry_dependency_key(
+            parent_source_key: key.parent_source_key,
+            dependency_name: key.dependency_name,
+          )
+        when Array
+          if key.length != 2
+            raise PackageDependencySolverError,
+                  "registry dependency key must contain parent manifest path and dependency name"
+          end
 
-                           PackageSourceResolver.registry_dependency_key(parent_source_key: key[0], dependency_name: key[1])
-                         else
-                           key.to_s
-                         end
+          PackageSourceResolver.registry_dependency_key(parent_source_key: key[0], dependency_name: key[1])
+        else
+          key.to_s
+        end
 
         locked[normalized_key] = version.to_s
       end

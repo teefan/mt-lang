@@ -4,8 +4,6 @@ module MilkTea
   module DAP
     class Server
       module ServerLaunch
-        private
-
         def request_start(message)
           if @session.launched?
             write_error_response(message, "Program already launched")

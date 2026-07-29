@@ -2,8 +2,6 @@
 
 module MilkTea
   module LowererDyn
-    private
-
     def lower_adapt_call(expression, env:, type:, interface:)
       argument = expression.arguments.fetch(0)
       arg_value = lower_expression(argument.value, env:)
@@ -126,54 +124,54 @@ module MilkTea
         ]
 
         body = if is_editable
-                 [
-                   IR::ReturnStmt.new(value: IR::Call.new(
-                     callee: real_c_name,
-                     arguments: [
-                       IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete),
-                       *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
-                     ],
-                     type: method_binding.return_type,
-                   )),
-                 ]
-               else
-                  if method_ast.kind == :static
-                    [
-                      IR::ReturnStmt.new(value: IR::Call.new(
-                        callee: real_c_name,
-                        arguments: method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
-                        type: method_binding.return_type,
-                      )),
-                    ]
-                  elsif receiver_type_uses_pointer_lowering?(concrete_type)
-                    [
-                      IR::ReturnStmt.new(value: IR::Call.new(
-                        callee: real_c_name,
-                        arguments: [
-                          IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete),
-                          *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
-                        ],
-                        type: method_binding.return_type,
-                      )),
-                    ]
-                  else
-                    # The receiver is always passed here; the C backend's
-                    # omitted-receiver call logic drops it when the target
-                    # method's unused receiver parameter was omitted (the same
-                    # single source of truth every ordinary method call uses,
-                    # which requires a String callee).
-                    [
-                      IR::ReturnStmt.new(value: IR::Call.new(
-                        callee: real_c_name,
-                        arguments: [
-                          IR::Unary.new(operator: "*", operand: IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete), type: concrete_type),
-                          *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
-                        ],
-                        type: method_binding.return_type,
-                      )),
-                    ]
-                  end
-               end
+          [
+            IR::ReturnStmt.new(value: IR::Call.new(
+              callee: real_c_name,
+              arguments: [
+                IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete),
+                *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
+              ],
+              type: method_binding.return_type,
+            )),
+          ]
+        else
+          if method_ast.kind == :static
+            [
+              IR::ReturnStmt.new(value: IR::Call.new(
+                callee: real_c_name,
+                arguments: method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
+                type: method_binding.return_type,
+              )),
+            ]
+          elsif receiver_type_uses_pointer_lowering?(concrete_type)
+            [
+              IR::ReturnStmt.new(value: IR::Call.new(
+                callee: real_c_name,
+                arguments: [
+                  IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete),
+                  *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
+                ],
+                type: method_binding.return_type,
+              )),
+            ]
+          else
+            # The receiver is always passed here; the C backend's
+            # omitted-receiver call logic drops it when the target
+            # method's unused receiver parameter was omitted (the same
+            # single source of truth every ordinary method call uses,
+            # which requires a String callee).
+            [
+              IR::ReturnStmt.new(value: IR::Call.new(
+                callee: real_c_name,
+                arguments: [
+                  IR::Unary.new(operator: "*", operand: IR::Cast.new(target_type: ptr_to_concrete, expression: IR::Name.new(name: "data", type: void_ptr, pointer: false), type: ptr_to_concrete), type: concrete_type),
+                  *method_binding.params.map.with_index { |p, i| IR::Name.new(name: p.name || "arg#{i}", type: p.type, pointer: false) },
+                ],
+                type: method_binding.return_type,
+              )),
+            ]
+          end
+        end
 
         @artifacts.synthetic_functions << IR::Function.new(
           name: "__dyn_#{concrete_type_name}_#{method_name}",

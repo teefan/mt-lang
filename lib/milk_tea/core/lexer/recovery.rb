@@ -5,8 +5,6 @@ module MilkTea
     # Error-recovery heuristics: detecting a top-level declaration line to
     # resynchronize on after an unterminated grouping or heredoc.
     module Recovery
-      private
-
       def top_level_resync_line?(line)
         return false if line.strip.empty?
         return false if leading_space_count(line).positive?

@@ -4,8 +4,6 @@ module MilkTea
   module DAP
     class Server
       module ServerHandlers
-        private
-
         def handle_initialize(message)
           if @session.initialized?
             write_error_response(message, "initialize can only be called once")

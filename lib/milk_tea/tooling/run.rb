@@ -87,8 +87,6 @@ module MilkTea
         restore_signal_handlers(previous_handlers) if previous_handlers
       end
 
-      private
-
       def handle_client(socket)
         request_line = socket.gets
         return unless request_line

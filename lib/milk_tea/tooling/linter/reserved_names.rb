@@ -3,8 +3,6 @@
 module MilkTea
   class Linter
     module LinterReservedNames
-      private
-
       def declare_reserved_value_type_module_binding(name, kind_label:, line:, column:, unavailable_names:)
         declare_reserved_module_binding(
           name,
@@ -15,7 +13,7 @@ module MilkTea
           reserved_names: RESERVED_VALUE_TYPE_NAMES,
         )
       end
-  
+
       def declare_reserved_import_alias_module_binding(name, kind_label:, line:, column:, unavailable_names:)
         declare_reserved_module_binding(
           name,
@@ -26,7 +24,7 @@ module MilkTea
           reserved_names: RESERVED_IMPORT_ALIAS_NAMES,
         )
       end
-  
+
       def declare_reserved_module_binding(name, kind_label:, line:, column:, unavailable_names:, reserved_names:)
         replacement_name = nil
         replacement_base_name = nil
@@ -37,7 +35,7 @@ module MilkTea
             unavailable_names,
           )
         end
-  
+
         binding = Binding.new(
           name:,
           line:,
@@ -52,13 +50,13 @@ module MilkTea
         register_reserved_primitive_name_fix(binding, kind_label:, replacement_name:) if replacement_name
         @module_bindings[name] = binding
       end
-  
+
       def declare_reserved_primitive_module_binding(name, kind_label:, line:, column:, unavailable_names:)
         declare_reserved_value_type_module_binding(name, kind_label:, line:, column:, unavailable_names:)
       end
       def warn_reserved_primitive_name(name, line:, column:, kind_label:, reserved_names: RESERVED_VALUE_TYPE_NAMES)
         return unless reserved_names.include?(name)
-  
+
         @warnings << Warning.new(
           path: @path,
           line:,
@@ -70,10 +68,10 @@ module MilkTea
           symbol_name: name,
         )
       end
-  
+
       def warn_large_event_capacity(event_decl, owner_name:)
         label = owner_name ? "#{owner_name}.#{event_decl.name}" : event_decl.name
-  
+
         @warnings << Warning.new(
           path: @path,
           line: event_decl.line,
@@ -85,16 +83,16 @@ module MilkTea
           symbol_name: event_decl.name,
         )
       end
-  
+
       def warn_redundant_ignored_match_binding(name, line:, column:)
         return unless name == "_"
-  
+
         span = nil
         if line && column
           source_line = @source_lines[line - 1].to_s
           span = self.class.redundant_ignored_match_binding_span(source_line, column:)
         end
-  
+
         @warnings << Warning.new(
           path: @path,
           line:,
@@ -105,7 +103,7 @@ module MilkTea
           severity: :hint,
         )
       end
-  
+
       def warn_reserved_primitive_type_params(type_params, kind_label:)
         Array(type_params).each do |type_param|
           warn_reserved_primitive_name(
@@ -120,7 +118,7 @@ module MilkTea
       def register_reserved_primitive_name_fix(binding, kind_label:, replacement_name:)
         warn_reserved_primitive_name(binding.name, line: binding.line, column: binding.column, kind_label:)
         return unless binding.line && binding.column
-  
+
         binding.fix_index = @reserved_primitive_name_fixes.length
         @reserved_primitive_name_fixes << ReservedPrimitiveNameFix.new(
           kind: kind_label,
@@ -129,7 +127,7 @@ module MilkTea
           sites: [ReservedPrimitiveNameSite.new(line: binding.line, column: binding.column, length: binding.name.length)],
         )
       end
-  
+
       def suggested_reserved_primitive_name(name, kind_label:)
         case kind_label
         when "function"
@@ -140,20 +138,20 @@ module MilkTea
           "#{name}_value"
         end
       end
-  
+
       def next_available_reserved_primitive_name(base_name, unavailable_names)
         unavailable = unavailable_names.to_set
         return base_name unless unavailable.include?(base_name)
-  
+
         suffix = 2
         loop do
           candidate = "#{base_name}_#{suffix}"
           return candidate unless unavailable.include?(candidate)
-  
+
           suffix += 1
         end
       end
-  
+
       def visible_binding_names(excluding_name: nil)
         names = visible_bindings.each_with_object(Set.new) do |binding, result|
           result << binding.name
@@ -162,24 +160,24 @@ module MilkTea
         names.delete(excluding_name) if excluding_name
         names
       end
-  
+
       def visible_bindings
         @module_bindings.values + @scopes.flat_map(&:values)
       end
-  
+
       def resolve_reserved_primitive_name_conflicts!(declared_name)
         visible_bindings.each do |binding|
           next unless binding.replacement_name == declared_name
-  
+
           replacement_name = next_available_reserved_primitive_name(
             binding.replacement_base_name || binding.replacement_name,
             visible_binding_names(excluding_name: binding.name),
           )
           next if replacement_name == binding.replacement_name
-  
+
           binding.replacement_name = replacement_name
           next unless binding.fix_index
-  
+
           fix = @reserved_primitive_name_fixes[binding.fix_index]
           @reserved_primitive_name_fixes[binding.fix_index] = fix.with(replacement_name:)
         end
@@ -187,7 +185,7 @@ module MilkTea
       def record_reserved_primitive_identifier_use(binding, identifier)
         return unless binding.fix_index
         return unless identifier&.line && identifier&.column
-  
+
         @reserved_primitive_name_fixes[binding.fix_index].sites << ReservedPrimitiveNameSite.new(
           line: identifier.line,
           column: identifier.column,

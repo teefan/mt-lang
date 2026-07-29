@@ -3,14 +3,12 @@
 module MilkTea
   class Linter
     module LinterDocTags
-      private
-
       def emit_doc_tag_warnings(source_file)
         return if @source_lines.empty?
-  
+
         each_doc_comment_definition(source_file) do |declaration, doc_lines|
           parsed = parse_doc_tag_block(doc_lines)
-  
+
           parsed[:errors].each do |error|
             @warnings << Warning.new(
               path: @path,
@@ -22,7 +20,7 @@ module MilkTea
               severity: :hint,
             )
           end
-  
+
           validate_doc_tags_for_declaration(declaration, parsed[:tags])
         end
       end
@@ -35,34 +33,34 @@ module MilkTea
             declaration
           end
         end
-  
+
         declarations.each do |declaration|
           docs = collect_doc_comment_block_for_line(declaration.line)
           next if docs.nil? || docs.empty?
-  
+
           yield declaration, docs
         end
       end
-  
+
       def collect_doc_comment_block_for_line(line)
         index = line.to_i - 2
         return nil if index.negative?
-  
+
         docs = []
         while index >= 0
           stripped = @source_lines[index].to_s.strip
           break if stripped.empty?
           break unless stripped.start_with?('##')
-  
+
           docs << {
             line: index + 1,
             text: stripped.sub(/\A##\s?/, ''),
           }
           index -= 1
         end
-  
+
         return nil if docs.empty?
-  
+
         docs.reverse
       end
       def parse_doc_tag_block(lines)
@@ -73,16 +71,16 @@ module MilkTea
           see: [],
         }
         errors = []
-  
+
         lines.each do |entry|
           text = entry[:text].to_s
           match = text.match(/\A\s*@([A-Za-z_][A-Za-z0-9_-]*)(?:\s+(.*))?\z/)
           next unless match
-  
+
           tag = match[1].to_s.downcase
           payload = match[2].to_s.strip
           column = doc_tag_column(entry[:line])
-  
+
           case tag
           when 'param'
             if payload.empty?
@@ -94,7 +92,7 @@ module MilkTea
               }
               next
             end
-  
+
             name_match = payload.match(/\A([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.*))?\z/)
             unless name_match
               errors << {
@@ -105,7 +103,7 @@ module MilkTea
               }
               next
             end
-  
+
             tags[:params] << {
               name: name_match[1],
               text: name_match[2].to_s.strip,
@@ -139,7 +137,7 @@ module MilkTea
             }
           end
         end
-  
+
         {
           tags: tags,
           errors: errors,
@@ -149,7 +147,7 @@ module MilkTea
         callable = declaration.respond_to?(:params) && declaration.respond_to?(:return_type)
         param_tags = Array(tags[:params])
         return_tag = tags[:returns]
-  
+
         unless callable
           ([*param_tags, return_tag].compact).each do |tag_entry|
             @warnings << Warning.new(
@@ -164,14 +162,14 @@ module MilkTea
           end
           return
         end
-  
+
         params = Array(declaration.params)
         param_names = params.map(&:name)
         param_name_set = param_names.to_set
-  
+
         param_tags.each do |tag_entry|
           next if param_name_set.include?(tag_entry[:name])
-  
+
           @warnings << Warning.new(
             path: @path,
             line: tag_entry[:line],
@@ -183,12 +181,12 @@ module MilkTea
             symbol_name: tag_entry[:name],
           )
         end
-  
+
         return unless return_tag
-  
+
         return_type_text = declaration.return_type.to_s
         return unless return_type_text == 'void'
-  
+
         @warnings << Warning.new(
           path: @path,
           line: return_tag[:line],
@@ -199,12 +197,12 @@ module MilkTea
           severity: :hint,
         )
       end
-  
+
       def doc_tag_column(line)
         text = @source_lines[line.to_i - 1].to_s
         at_index = text.index('@')
         return 1 if at_index.nil?
-  
+
         at_index + 1
       end
     end

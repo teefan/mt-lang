@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerSelectionRange
-        private
-
         def handle_selection_range(params)
           positions = params["positions"] || []
           uri = params["textDocument"]["uri"]
@@ -21,8 +19,6 @@ module MilkTea
             build_selection_range(lines, line, char)
           end
         end
-
-        private
 
         def build_selection_range(lines, lsp_line, lsp_char)
           line_str = lines[lsp_line] || ""

@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerExecuteCommand
-        private
-
         def handle_execute_command(params)
           command = params["command"]
           case command

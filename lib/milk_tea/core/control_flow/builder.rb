@@ -45,8 +45,6 @@ module MilkTea
         @graph = nil
       end
 
-      private
-
       def build_block(stmts, next_id, break_target:, continue_target:)
         current_next = next_id
         stmts.reverse_each do |stmt|

@@ -3,8 +3,6 @@
 module MilkTea
   class Linter
     module LinterVisitors
-      private
-
       def visit_source_file(source_file)
         @declared_callable_names = declared_callable_names(source_file)
         @declared_directional_functions = declared_directional_functions(source_file)
@@ -29,14 +27,14 @@ module MilkTea
       end
       def seed_module_bindings(source_file)
         @module_bindings = {}
-  
+
         import_names = source_file.imports.filter_map do |import|
           import.alias_name || import.path.parts.last
         end
         source_file.imports.each do |import|
           local_name = import.alias_name || import.path.parts.last
           next if ignored_binding_name?(local_name)
-  
+
           declare_reserved_import_alias_module_binding(
             local_name,
             kind_label: "import alias",
@@ -45,7 +43,7 @@ module MilkTea
             unavailable_names: import_names,
           )
         end
-  
+
         source_file.declarations.each do |declaration|
           kind_label = case declaration
                        when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl
@@ -61,7 +59,7 @@ module MilkTea
                        end
           next unless kind_label
           next if ignored_binding_name?(declaration.name)
-  
+
           declare_reserved_primitive_module_binding(
             declaration.name,
             kind_label:,
@@ -87,7 +85,7 @@ module MilkTea
         source_file.declarations.each_with_object({}) do |declaration, functions|
           next unless declaration.is_a?(AST::ExternFunctionDecl) || declaration.is_a?(AST::ForeignFunctionDecl)
           next unless declaration.params.any? { |param| %i[in out inout].include?(param.mode) }
-  
+
           functions[declaration.name] = declaration
         end
       end
@@ -134,7 +132,7 @@ module MilkTea
         terminated = false
         stmts.each do |stmt|
           next if terminated  # skip visitation only; ControlFlow emits the warning
-  
+
           visit_statement(stmt)
           terminated = true if terminator?(stmt)
         end
@@ -325,7 +323,7 @@ module MilkTea
         when AST::FormatString
           expression.parts.each do |part|
             next unless part.is_a?(AST::FormatExprPart)
-  
+
             visit_expression(part.expression)
           end
         when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral
@@ -370,28 +368,28 @@ module MilkTea
       end
       def mark_assignment_target_reads(target, operator)
         return if operator == "="
-  
+
         mark_used(target.name, identifier: target) if target.is_a?(AST::Identifier)
       end
       def mark_mutated(target)
         return unless target.is_a?(AST::Identifier) || target.is_a?(AST::IndexAccess) || target.is_a?(AST::MemberAccess)
-  
+
         # For direct identifier assignment (e.g., x = value), mark x as mutated.
         if target.is_a?(AST::Identifier)
           @scopes.reverse_each do |scope|
             binding = scope[target.name]
             next unless binding
-  
+
             binding.mutated = true
             return
           end
         end
-  
+
         # For index assignment (e.g., array[0] = value), mark the array as mutated.
         if target.is_a?(AST::IndexAccess)
           mark_mutated(target.receiver)
         end
-  
+
         # For field assignment (e.g., rect.w = value), mark the struct variable as mutated.
         if target.is_a?(AST::MemberAccess)
           mark_mutated(target.receiver)
@@ -402,12 +400,12 @@ module MilkTea
           mark_mutated(expression)
           return
         end
-  
+
         if expression.is_a?(AST::UnaryOp) && %w[out inout].include?(expression.operator)
           mark_mutated(expression.operand)
           return
         end
-  
+
         # ref_of(x) and ptr_of(x) can expose writable aliases — treat as potential
         # mutation since callees may write through them (common C-FFI out-param pattern).
         if expression.is_a?(AST::Call) &&
@@ -419,10 +417,10 @@ module MilkTea
       end
       def mutating_argument_identifier?(expression)
         return false unless expression.is_a?(AST::Identifier)
-  
+
         binding_resolution = @sema_facts&.binding_resolution
         return false unless binding_resolution
-  
+
         binding_resolution.mutating_argument_identifier_ids&.key?(expression.object_id) ||
           binding_resolution.mutable_lvalue_argument_identifier_ids&.key?(expression.object_id)
       end
@@ -430,7 +428,7 @@ module MilkTea
         return unless expression.is_a?(AST::Call)
         return unless expression.callee.is_a?(AST::MemberAccess)
         return unless editable_receiver_expression?(expression.callee.receiver)
-  
+
         mark_mutated(expression.callee.receiver)
       end
       def mark_alias_source_mutated(expression)
@@ -438,12 +436,12 @@ module MilkTea
         return unless expression.callee.is_a?(AST::Identifier)
         return unless %w[ref_of ptr_of].include?(expression.callee.name)
         return unless expression.arguments.length == 1
-  
+
         mark_mutated(expression.arguments.first.value)
       end
       def editable_receiver_expression?(expression)
         return true unless @sema_facts
-  
+
         @sema_facts&.binding_resolution&.editable_receiver_expression_ids&.key?(expression.object_id)
       end
       def with_scope
@@ -454,9 +452,9 @@ module MilkTea
       end
       def declare_local(name, line, column: nil, var: false)
         return if ignored_binding_name?(name)
-  
+
         resolve_reserved_primitive_name_conflicts!(name)
-  
+
         replacement_name = nil
         replacement_base_name = nil
         if RESERVED_VALUE_TYPE_NAMES.include?(name)
@@ -466,7 +464,7 @@ module MilkTea
             visible_binding_names(excluding_name: name),
           )
         end
-  
+
         # shadow: check whether any outer scope already has a binding for this name
         if @scopes.length > 1
           @scopes[0..-2].each do |outer_scope|
@@ -480,7 +478,7 @@ module MilkTea
             end
           end
         end
-  
+
         @scopes.last[name] = Binding.new(
           name:, line:, column:, used: false,
           binding_kind: :local,
@@ -493,9 +491,9 @@ module MilkTea
       end
       def declare_param(name, line: nil, column: nil)
         return if ignored_binding_name?(name)
-  
+
         resolve_reserved_primitive_name_conflicts!(name)
-  
+
         replacement_name = nil
         replacement_base_name = nil
         if RESERVED_VALUE_TYPE_NAMES.include?(name)
@@ -505,7 +503,7 @@ module MilkTea
             visible_binding_names(excluding_name: name),
           )
         end
-  
+
         @scopes.last[name] = Binding.new(
           name:, line:, column:, used: false,
           binding_kind: :param,
@@ -1207,15 +1205,15 @@ module MilkTea
         end
       end
       # ── borrow facts helpers ──────────────────────────────────────────────────
-  
+
       BORROW_CALL_NAMES = %w[ref_of ptr_of].freeze
-  
+
       def collect_borrowed_names(stmts)
         names = Set.new
         stmts.each { |s| collect_borrows_from_stmt(s, names) }
         names
       end
-  
+
       def collect_borrows_from_stmt(stmt, names)
         case stmt
         when AST::LocalDecl
@@ -1251,7 +1249,7 @@ module MilkTea
           stmt.else_body&.each { |s| collect_borrows_from_stmt(s, names) }
         end
       end
-  
+
       def collect_borrows_from_expr(expr, names, inside_call_argument: false)
         case expr
         when nil then nil
@@ -1283,13 +1281,13 @@ module MilkTea
           collect_borrows_from_expr(expr.index, names, inside_call_argument:)
         end
       end
-  
+
       def collect_written_names(stmts)
         names = Set.new
         stmts.each { |s| collect_writes_from_stmt(s, names) }
         names
       end
-  
+
       def collect_writes_from_stmt(stmt, names)
         case stmt
         when AST::Assignment
@@ -1313,15 +1311,15 @@ module MilkTea
           stmt.body&.each { |s| collect_writes_from_stmt(s, names) }
         end
       end
-  
+
       def collect_writes_from_stmt_list(stmts, names)
         stmts.each { |s| collect_writes_from_stmt(s, names) }
       end
-  
+
       def stmt_sub_stmts(_stmt)
         []
       end
-  
+
       def find_borrow_location(stmts, name)
         stmts.each do |stmt|
           location = find_borrow_location_in_stmt(stmt, name)
@@ -1329,7 +1327,7 @@ module MilkTea
         end
         nil
       end
-  
+
       def find_borrow_location_in_stmt(stmt, name)
         case stmt
         when AST::LocalDecl
@@ -1381,7 +1379,7 @@ module MilkTea
           nil
         end
       end
-  
+
       def find_borrow_location_in_expr(expr, name)
         case expr
         when nil then nil

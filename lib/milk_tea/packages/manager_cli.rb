@@ -341,7 +341,7 @@ module MilkTea
       end
       selected_ids = Set.new
       queue = locked_packages.select { |package| requested_names.include?(package.package_name) }
-                           .map(&:instance_id)
+        .map(&:instance_id)
 
       until queue.empty?
         package_id = queue.shift

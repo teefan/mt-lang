@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def validate_consuming_foreign_parameter!(type, function_name:, parameter_name:)
         if type.is_a?(Types::Nullable) || !(opaque_type?(type) || pointer_type?(type))
           raise_sema_error("consuming parameter #{parameter_name} of #{function_name} must use a non-null opaque or ptr[...] type")
@@ -153,6 +151,5 @@ module MilkTea
         binding
       end
     end
-
   end
 end

@@ -615,8 +615,6 @@ module MilkTea
         end
       end
 
-      private
-
       def char_array_text_type?(type)
         return false unless array_type?(type)
 

@@ -100,8 +100,6 @@ module MilkTea
           end
         end
 
-        private
-
         def clear_dependency_index
           @dependency_module_name_by_uri.clear
           @dependency_imports_by_uri.clear
@@ -111,10 +109,10 @@ module MilkTea
 
         def update_dependency_index(uri, facts)
           imported_module_names = if facts
-                                    facts.imports.each_value.filter_map(&:name).to_set
-                                  else
-                                    dependency_index_imports_for(uri)
-                                  end
+            facts.imports.each_value.filter_map(&:name).to_set
+          else
+            dependency_index_imports_for(uri)
+          end
 
           if imported_module_names&.empty?
             imported_module_names = dependency_index_imports_for(uri) || Set.new
@@ -246,14 +244,10 @@ module MilkTea
           open_document_uris
         end
 
-        public
-
         def reverse_import_dependents_for(module_name)
           ensure_full_reverse_import_index
           @reverse_import_dependents[module_name]
         end
-
-        private
 
         def ensure_full_reverse_import_index
           return if @full_reverse_index_built

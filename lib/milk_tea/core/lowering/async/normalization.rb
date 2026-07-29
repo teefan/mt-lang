@@ -2,8 +2,6 @@
 
 module MilkTea
   module LowererAsync
-    private
-
     def normalize_async_body(binding, statements)
       counter = { value: 0 }
       env = empty_env

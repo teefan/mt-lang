@@ -21,10 +21,10 @@ module MilkTea
 
       xdg_data_home = env.fetch("XDG_DATA_HOME", "").to_s.strip
       base_root = if xdg_data_home.empty?
-                    File.join(home || Dir.home, ".local", "share")
-                  else
-                    File.expand_path(xdg_data_home)
-                  end
+        File.join(home || Dir.home, ".local", "share")
+      else
+        File.expand_path(xdg_data_home)
+      end
 
       File.join(base_root, "milk_tea", "registry")
     end
@@ -154,8 +154,6 @@ module MilkTea
     def upstream_http?
       self.class.http_url?(@upstream_root)
     end
-
-    private
 
     def extract_package_version(package_or_identity, version)
       if package_or_identity.respond_to?(:package_name) && package_or_identity.respond_to?(:version)

@@ -35,45 +35,45 @@ module MilkTea
       def install_builtin_types
         INSTALLABLE_BUILTIN_TYPE_NAMES.each do |name|
           @ctx.types[name] = case name
-                          when "str"
-                            Types::Registry.string_view
-                          when "Subscription"
-                           builtin_subscription_type
-                         when "EventError"
-                           builtin_event_error_type
-                         when "struct_handle"
-                           builtin_struct_handle_type
-                         when "field_handle"
-                           builtin_field_handle_type
-                         when "callable_handle"
-                           builtin_callable_handle_type
-                          when "attribute_handle"
-                            builtin_attribute_handle_type
-                          when "member_handle"
-                            builtin_member_handle_type
-                          when "type"
-                            builtin_type_meta_type
-                          when "vec2"
-                            Types::Vector.new("vec2", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 2)
-                          when "vec3"
-                            Types::Vector.new("vec3", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 3)
-                          when "vec4"
-                            Types::Vector.new("vec4", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 4)
-                          when "ivec2"
-                            Types::Vector.new("ivec2", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 2)
-                          when "ivec3"
-                            Types::Vector.new("ivec3", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 3)
-                          when "ivec4"
-                            Types::Vector.new("ivec4", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 4)
-                          when "mat3"
-                            Types::Matrix.new("mat3", dim: 3)
-                          when "mat4"
-                            Types::Matrix.new("mat4", dim: 4)
-                          when "quat"
-                            Types::Quaternion.new("quat")
-                          else
-                            Types::Registry.primitive(name)
-                         end
+          when "str"
+            Types::Registry.string_view
+          when "Subscription"
+            builtin_subscription_type
+          when "EventError"
+            builtin_event_error_type
+          when "struct_handle"
+            builtin_struct_handle_type
+          when "field_handle"
+            builtin_field_handle_type
+          when "callable_handle"
+            builtin_callable_handle_type
+          when "attribute_handle"
+            builtin_attribute_handle_type
+          when "member_handle"
+            builtin_member_handle_type
+          when "type"
+            builtin_type_meta_type
+          when "vec2"
+            Types::Vector.new("vec2", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 2)
+          when "vec3"
+            Types::Vector.new("vec3", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 3)
+          when "vec4"
+            Types::Vector.new("vec4", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 4)
+          when "ivec2"
+            Types::Vector.new("ivec2", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 2)
+          when "ivec3"
+            Types::Vector.new("ivec3", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 3)
+          when "ivec4"
+            Types::Vector.new("ivec4", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 4)
+          when "mat3"
+            Types::Matrix.new("mat3", dim: 3)
+          when "mat4"
+            Types::Matrix.new("mat4", dim: 4)
+          when "quat"
+            Types::Quaternion.new("quat")
+          else
+            Types::Registry.primitive(name)
+          end
         end
       end
 
@@ -226,27 +226,27 @@ module MilkTea
               validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
               @ctx.types[decl.name] = if decl.type_params.empty?
-                                    Types::Struct.new(
-                                      decl.name,
-                                      module_name: @ctx.module_name,
-                                      external: raw_module?,
-                                      packed: decl.packed,
-                                      alignment: decl.alignment,
-                                      linkage_name: decl.c_name,
-                                      lifetime_params: decl.lifetime_params,
-                                    )
-                                  else
-                                    Types::GenericStructDefinition.new(
-                                      decl.name,
-                                      decl.type_params.map(&:name),
-                                      module_name: @ctx.module_name,
-                                      external: raw_module?,
-                                      packed: decl.packed,
-                                      alignment: decl.alignment,
-                                      linkage_name: decl.c_name,
-                                      lifetime_params: decl.lifetime_params,
-                                    )
-                                  end
+                Types::Struct.new(
+                  decl.name,
+                  module_name: @ctx.module_name,
+                  external: raw_module?,
+                  packed: decl.packed,
+                  alignment: decl.alignment,
+                  linkage_name: decl.c_name,
+                  lifetime_params: decl.lifetime_params,
+                )
+              else
+                Types::GenericStructDefinition.new(
+                  decl.name,
+                  decl.type_params.map(&:name),
+                  module_name: @ctx.module_name,
+                  external: raw_module?,
+                  packed: decl.packed,
+                  alignment: decl.alignment,
+                  linkage_name: decl.c_name,
+                  lifetime_params: decl.lifetime_params,
+                )
+              end
               register_nested_struct_types(decl)
             when AST::UnionDecl
               validate_explicit_aggregate_c_name!(decl)
@@ -255,14 +255,14 @@ module MilkTea
             when AST::VariantDecl
               ensure_available_type_name!(decl.name)
               @ctx.types[decl.name] = if decl.type_params.empty?
-                                    Types::Variant.new(decl.name, module_name: @ctx.module_name)
-                                  else
-                                    Types::GenericVariantDefinition.new(
-                                      decl.name,
-                                      decl.type_params.map(&:name),
-                                      module_name: @ctx.module_name,
-                                    )
-                                  end
+                Types::Variant.new(decl.name, module_name: @ctx.module_name)
+              else
+                Types::GenericVariantDefinition.new(
+                  decl.name,
+                  decl.type_params.map(&:name),
+                  module_name: @ctx.module_name,
+                )
+              end
             when AST::EnumDecl
               ensure_available_type_name!(decl.name)
               @ctx.types[decl.name] = Types::Enum.new(decl.name, module_name: @ctx.module_name, external: raw_module?)
@@ -454,16 +454,16 @@ module MilkTea
             struct_type = @ctx.types.fetch(decl.name)
             struct_type.ast_declaration = decl if struct_type.respond_to?(:ast_declaration=)
             type_params = if struct_type.is_a?(Types::GenericStructDefinition)
-                             seen = {}
-                             struct_type.type_params.each_with_object({}) do |name, params|
-                               raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if seen.key?(name)
+              seen = {}
+              struct_type.type_params.each_with_object({}) do |name, params|
+                raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if seen.key?(name)
 
-                               seen[name] = true
-                               params[name] = Types::TypeVar.new(name)
-                             end
-                           else
-                             {}
-                           end
+                seen[name] = true
+                params[name] = Types::TypeVar.new(name)
+              end
+            else
+              {}
+            end
             decl.lifetime_params.each do |lt|
               type_params[lt] = Types::LifetimeRef.new(lt)
             end if decl.respond_to?(:lifetime_params)
@@ -630,16 +630,16 @@ module MilkTea
 
             variant_type = @ctx.types.fetch(decl.name)
             type_params = if variant_type.is_a?(Types::GenericVariantDefinition)
-                            seen = {}
-                            variant_type.type_params.each_with_object({}) do |name, params|
-                              raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if seen.key?(name)
+              seen = {}
+              variant_type.type_params.each_with_object({}) do |name, params|
+                raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if seen.key?(name)
 
-                              seen[name] = true
-                              params[name] = Types::TypeVar.new(name)
-                            end
-                          else
-                            {}
-                          end
+                seen[name] = true
+                params[name] = Types::TypeVar.new(name)
+              end
+            else
+              {}
+            end
             type_param_constraints = variant_type.is_a?(Types::GenericVariantDefinition) ? variant_type.type_param_constraints : {}
             seen_arms = []
             arms_hash = {}
@@ -852,10 +852,10 @@ module MilkTea
           qualified_name = "#{parent_name}.#{nested.name}"
           ensure_available_type_name!(qualified_name)
           nested_c_name = if @ctx.module_name && !raw_module?
-                            "#{@ctx.module_name.to_s.tr('.', '_')}_#{qualified_name.tr('.', '_')}"
-                          else
-                            qualified_name.tr('.', '_')
-                          end
+            "#{@ctx.module_name.to_s.tr('.', '_')}_#{qualified_name.tr('.', '_')}"
+          else
+            qualified_name.tr('.', '_')
+          end
           if nested.type_params.empty?
             @ctx.types[qualified_name] = Types::Struct.new(nested.name, module_name: @ctx.module_name, external: raw_module?, packed: nested.packed, alignment: nested.alignment, linkage_name: nested_c_name, lifetime_params: nested.lifetime_params)
           else
@@ -867,4 +867,3 @@ module MilkTea
     end
   end
 end
-

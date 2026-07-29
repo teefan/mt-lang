@@ -46,7 +46,7 @@ module MilkTea
         log_error("DAP protocol write error: #{e.message}")
       end
 
-      private def log_error(message)
+      def log_error(message)
         return unless @error_output
 
         @error_output.puts(message)

@@ -20,22 +20,22 @@ module MilkTea
 
     def source_resolver(mode)
       @source_resolvers[mode] ||= case mode
-                                  when :reject
-                                    PackageSourceResolver.new(source_cache: source_cache)
-                                  when :cache
-                                    PackageSourceResolver.new(
-                                      source_cache: source_cache,
-                                      remote_resolution: :cache,
-                                    )
-                                  when :materialize
-                                    PackageSourceResolver.new(
-                                      source_cache: source_cache,
-                                      remote_resolution: :materialize,
-                                      source_fetcher: source_fetcher,
-                                    )
-                                  else
-                                    raise ArgumentError, "unknown dependency source resolution mode #{mode.inspect}"
-                                  end
+      when :reject
+        PackageSourceResolver.new(source_cache: source_cache)
+      when :cache
+        PackageSourceResolver.new(
+          source_cache: source_cache,
+          remote_resolution: :cache,
+        )
+      when :materialize
+        PackageSourceResolver.new(
+          source_cache: source_cache,
+          remote_resolution: :materialize,
+          source_fetcher: source_fetcher,
+        )
+      else
+        raise ArgumentError, "unknown dependency source resolution mode #{mode.inspect}"
+      end
     end
   end
 end

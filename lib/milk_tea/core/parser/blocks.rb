@@ -3,8 +3,6 @@
 module MilkTea
   module Parse
     module Blocks
-      private
-
       def parse_block
         consume(:colon, "expected ':' before block")
         consume(:newline, "expected newline before block")

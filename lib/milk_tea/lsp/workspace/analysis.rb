@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Workspace
       module WorkspaceAnalysis
-        private
-
         # ── Compilation helpers ─────────────────────────────────────────────────
 
         def lex_document(uri)
@@ -127,46 +125,46 @@ module MilkTea
           def analyze_document(uri)
             path = uri_to_path(uri)
             snapshot = if path && File.file?(path)
-                         parse_result = MilkTea::Parser.parse_collecting_errors(get_content(uri), path: uri)
-                         ast = parse_result.ast
-                         return @last_good_tooling_snapshot_cache[uri] if ast.nil?
+              parse_result = MilkTea::Parser.parse_collecting_errors(get_content(uri), path: uri)
+              ast = parse_result.ast
+              return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
-                         @ast_cache[uri] = ast
+              @ast_cache[uri] = ast
 
-                         resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
-                         return nil unless resolution.ok?
+              resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
+              return nil unless resolution.ok?
 
-                         effective_platform = effective_platform_for_path(path)
-                         ensure_root_platform_compatible!(path, effective_platform)
+              effective_platform = effective_platform_for_path(path)
+              ensure_root_platform_compatible!(path, effective_platform)
 
-                         loader = MilkTea::ModuleLoader.new(
-                           module_roots: module_roots_for_path(path, locked: resolution.locked),
-                           package_graph: package_graph_for_path(path, locked: resolution.locked),
-                           shared_cache: @shared_module_cache,
-                           source_overrides: file_backed_source_overrides,
-                           platform: effective_platform,
-                         )
-                         ast = with_inferred_module_name(ast, loader:, path:)
-                         import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
-                         MilkTea::SemanticAnalyzer.tooling_snapshot(
-                           ast,
-                           imported_modules: import_resolution.modules,
-                           allow_missing_imports: true,
-                           path: path,
-                         )
-                        else
-                          ast = get_ast(uri)
-                          return @last_good_tooling_snapshot_cache[uri] if ast.nil?
+              loader = MilkTea::ModuleLoader.new(
+                module_roots: module_roots_for_path(path, locked: resolution.locked),
+                package_graph: package_graph_for_path(path, locked: resolution.locked),
+                shared_cache: @shared_module_cache,
+                source_overrides: file_backed_source_overrides,
+                platform: effective_platform,
+              )
+              ast = with_inferred_module_name(ast, loader:, path:)
+              import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
+              MilkTea::SemanticAnalyzer.tooling_snapshot(
+                ast,
+                imported_modules: import_resolution.modules,
+                allow_missing_imports: true,
+                path: path,
+              )
+            else
+              ast = get_ast(uri)
+              return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
-                           result = MilkTea::SemanticAnalyzer.check_collecting_errors(ast, path:)
-                           facts = result[:analysis]
-                           MilkTea::SemanticAnalyzer::ToolingSnapshot.new(facts:, diagnostics: (Array(result[:errors]).map { |e| e.to_diagnostic(path:) } || []).freeze)
-                        end
-              if snapshot&.facts
-                @last_good_tooling_snapshot_cache[uri] = snapshot
-                @last_good_facts_cache[uri] = snapshot.facts
-                @document_module_names[uri] = snapshot.facts.module_name
-              end
+                result = MilkTea::SemanticAnalyzer.check_collecting_errors(ast, path:)
+                facts = result[:analysis]
+                MilkTea::SemanticAnalyzer::ToolingSnapshot.new(facts:, diagnostics: (Array(result[:errors]).map { |e| e.to_diagnostic(path:) } || []).freeze)
+            end
+            if snapshot&.facts
+              @last_good_tooling_snapshot_cache[uri] = snapshot
+              @last_good_facts_cache[uri] = snapshot.facts
+              @document_module_names[uri] = snapshot.facts.module_name
+            end
             snapshot
           rescue MilkTea::LexError, MilkTea::SemanticError, ModuleLoadError, PackageLockError
             @last_good_tooling_snapshot_cache[uri]

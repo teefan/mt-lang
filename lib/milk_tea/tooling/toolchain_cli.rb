@@ -38,8 +38,6 @@ module MilkTea
       end
     end
 
-    private
-
     def extract_options!
       remaining = []
       until @argv.empty?

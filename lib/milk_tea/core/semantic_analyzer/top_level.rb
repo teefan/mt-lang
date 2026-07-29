@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def check_top_level_values
         expanded_declarations.each do |decl|
           with_error_node(decl) do
@@ -477,16 +475,16 @@ module MilkTea
         func.ast.params.each_with_index do |param, idx|
           arg_expr = arguments[idx].value
           arg_value = if scopes
-                        evaluate_compile_time_const_value(arg_expr, scopes:)
-                      else
-                        CompileTime.evaluate(
-                          arg_expr,
-                          resolve_identifier: lambda { |id| resolve_current_module_const_value(id.name) },
-                          resolve_member_access: nil,
-                          resolve_type_ref: lambda { |tr| resolve_type_ref(tr) },
-                          resolve_call: nil,
-                        )
-                      end
+            evaluate_compile_time_const_value(arg_expr, scopes:)
+          else
+            CompileTime.evaluate(
+              arg_expr,
+              resolve_identifier: lambda { |id| resolve_current_module_const_value(id.name) },
+              resolve_member_access: nil,
+              resolve_type_ref: lambda { |tr| resolve_type_ref(tr) },
+              resolve_call: nil,
+            )
+          end
           return nil unless arg_value
 
           initial_vars[param.name] = arg_value

@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerDebugInfo
-        private
-
         def handle_debug_info(params)
           uri = params.dig('textDocument', 'uri')
           return { text: 'error: no textDocument.uri' } unless uri

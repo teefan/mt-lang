@@ -5,8 +5,6 @@ module MilkTea
     # Trivia collection (comments, blank lines, whitespace) used only when
     # lexing in :with_trivia mode for the concrete syntax tree / formatter.
     module Trivia
-      private
-
       def with_trivia?
         @mode == :with_trivia
       end

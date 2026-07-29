@@ -24,16 +24,16 @@ module MilkTea
 
         base_scopes = scopes.last.is_a?(FlowScope) ? scopes[0...-1] : scopes
         merged_refinements = if scopes.last.is_a?(FlowScope)
-                               scopes.last.each_with_object({}) do |(name, binding), result|
-                                 result[name] = if name.is_a?(String) && binding.respond_to?(:type)
-                                                  binding.type
-                                                else
-                                                  binding
-                                                end
-                               end
-                             else
-                               {}
-                             end
+          scopes.last.each_with_object({}) do |(name, binding), result|
+            result[name] = if name.is_a?(String) && binding.respond_to?(:type)
+              binding.type
+            else
+              binding
+            end
+          end
+        else
+          {}
+        end
         merged_refinements = merge_refinements(merged_refinements, refinements)
         flow_scope = FlowScope.new
 
@@ -397,7 +397,6 @@ module MilkTea
           end
         end.compact.max
       end
-
     end
   end
 end

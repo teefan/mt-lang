@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerOnTypeFormatting
-        private
-
         BLOCK_INTRODUCING_KEYWORDS = %w[function async editable const public
           struct enum flags variant union
           interface if elif else while for match unsafe extending defer when].freeze

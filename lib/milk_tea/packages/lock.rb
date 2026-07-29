@@ -137,10 +137,10 @@ module MilkTea
       end
 
       root_package_id = if schema_version == 1
-                          root_package_name
-                        else
-                          required_string(config, "root_package_id", lock_path)
-                        end
+        root_package_name
+      else
+        required_string(config, "root_package_id", lock_path)
+      end
 
       [root_manifest, lock_path, root_package_name, root_package_id, schema_version, packages]
     end

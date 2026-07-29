@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def check_definite_assignment(binding)
         return unless binding.ast.respond_to?(:body)
 
@@ -415,7 +413,6 @@ module MilkTea
 
         nil
       end
-
     end
   end
 end

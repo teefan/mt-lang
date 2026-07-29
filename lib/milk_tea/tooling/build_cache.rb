@@ -197,8 +197,6 @@ module MilkTea
       @shared_analysis_cache ||= {}
     end
 
-    private
-
     def program_dir(key)
       File.join(@cache_root, "programs", key[0, 2], key)
     end

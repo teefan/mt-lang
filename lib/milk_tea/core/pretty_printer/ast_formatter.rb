@@ -14,8 +14,6 @@ module MilkTea
         finish
       end
 
-      private
-
       def build_comment_map(trivia)
         @blank_line_set = {}
         map = {}
@@ -300,19 +298,19 @@ module MilkTea
 
       def render_function_signature(function, prefix: "")
         signature_prefix = if function.is_a?(AST::MethodDef)
-                             case function.kind
-                             when :editable
-                               "editable function "
-                             when :static
-                               "static function "
-                             else
-                               "function "
-                             end
-                           elsif function.is_a?(AST::ForeignFunctionDecl)
-                             "foreign function "
-                           else
-                             "function "
-                           end
+          case function.kind
+          when :editable
+            "editable function "
+          when :static
+            "static function "
+          else
+            "function "
+          end
+        elsif function.is_a?(AST::ForeignFunctionDecl)
+          "foreign function "
+        else
+          "function "
+        end
         async_prefix = function.respond_to?(:async) && function.async ? "async " : ""
         text = +"#{prefix}#{visibility_prefix(function)}#{async_prefix}#{signature_prefix}#{function.name}#{render_type_params(function.type_params)}(#{render_signature_params(function)})"
         text << " -> #{render_type(function.return_type)}" if function.return_type
@@ -323,10 +321,10 @@ module MilkTea
         return "" if @current_module_kind == :raw_module
 
         visibility = if declaration_or_visibility.is_a?(Symbol)
-                       declaration_or_visibility
-                     elsif declaration_or_visibility.respond_to?(:visibility)
-                       declaration_or_visibility.visibility
-                     end
+          declaration_or_visibility
+        elsif declaration_or_visibility.respond_to?(:visibility)
+          declaration_or_visibility.visibility
+        end
 
         visibility == :public ? "public " : ""
       end
@@ -414,11 +412,11 @@ module MilkTea
         prefix = +""
         prefix << "async " if method.async
         prefix << case method.kind
-                  when :editable
-                    "editable function "
-                  else
-                    "function "
-                  end
+        when :editable
+          "editable function "
+        else
+          "function "
+        end
 
         text = "#{prefix}#{method.name}(#{method.params.map { |param| render_param(param) }.join(', ')})"
         text << " -> #{render_type(method.return_type)}" if method.return_type
@@ -851,11 +849,11 @@ module MilkTea
           escape_format_text(part.value)
         when AST::FormatExprPart
           spec = case part.format_spec&.fetch(:kind)
-                 when :precision then ":.#{part.format_spec[:value]}"
-                 when :hex then part.format_spec[:uppercase] ? ":X" : ":x"
-                 when :oct then part.format_spec[:uppercase] ? ":O" : ":o"
-                 when :bin then part.format_spec[:uppercase] ? ":B" : ":b"
-                 end
+          when :precision then ":.#{part.format_spec[:value]}"
+          when :hex then part.format_spec[:uppercase] ? ":X" : ":x"
+          when :oct then part.format_spec[:uppercase] ? ":O" : ":o"
+          when :bin then part.format_spec[:uppercase] ? ":B" : ":b"
+          end
           "\#{#{render_expression(part.expression)}#{spec}}"
         else
           raise ArgumentError, "unsupported format string part #{part.class.name}"

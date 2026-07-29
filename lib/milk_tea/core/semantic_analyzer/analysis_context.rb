@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def with_unsafe
         @unsafe_depth += 1
         yield

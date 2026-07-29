@@ -17,8 +17,6 @@ module MilkTea
       modules["std.async"] = @bind_block.call(import_analysis)
     end
 
-    private
-
     def async_main_declared?(ast)
       ast.declarations.any? do |decl|
         decl.is_a?(AST::FunctionDef) && decl.name == "main" && decl.async

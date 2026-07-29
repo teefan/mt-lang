@@ -83,6 +83,5 @@ module MilkTea
         end
       end
     end
-    private_class_method :add_env_roots!
   end
 end

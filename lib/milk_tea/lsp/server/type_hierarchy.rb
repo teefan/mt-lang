@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerTypeHierarchy
-        private
-
         TYPE_KIND_MAP = {
           struct: 22,
           enum: 13,

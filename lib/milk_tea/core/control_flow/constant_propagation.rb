@@ -59,7 +59,6 @@ module MilkTea
 
         a == b ? a : NAC
       end
-      private_class_method :join_lattice
 
       def self.eval_const(statement, _write, in_state, binding_resolution:, strict_binding_ids:)
         case statement
@@ -71,7 +70,6 @@ module MilkTea
           NAC
         end
       end
-      private_class_method :eval_const
 
       def self.eval_assignment_const(statement, in_state, binding_resolution:, strict_binding_ids:)
         return NAC unless statement.target.is_a?(AST::Identifier)
@@ -86,24 +84,23 @@ module MilkTea
 
         begin
           v = case statement.operator
-              when "+="  then lhs.value + rhs.value
-              when "-="  then lhs.value - rhs.value
-              when "*="  then lhs.value * rhs.value
-              when "/="  then rhs.value.zero? ? (return NAC) : lhs.value / rhs.value
-              when "%="  then rhs.value.zero? ? (return NAC) : lhs.value % rhs.value
-              when "&="  then lhs.value & rhs.value
-              when "|="  then lhs.value | rhs.value
-              when "^="  then lhs.value ^ rhs.value
-              when "<<=" then lhs.value << rhs.value
-              when ">>=" then lhs.value >> rhs.value
-              else return NAC
-              end
+          when "+="  then lhs.value + rhs.value
+          when "-="  then lhs.value - rhs.value
+          when "*="  then lhs.value * rhs.value
+          when "/="  then rhs.value.zero? ? (return NAC) : lhs.value / rhs.value
+          when "%="  then rhs.value.zero? ? (return NAC) : lhs.value % rhs.value
+          when "&="  then lhs.value & rhs.value
+          when "|="  then lhs.value | rhs.value
+          when "^="  then lhs.value ^ rhs.value
+          when "<<=" then lhs.value << rhs.value
+          when ">>=" then lhs.value >> rhs.value
+          else return NAC
+          end
           ConstVal.new(v)
         rescue ZeroDivisionError, RangeError
           NAC
         end
       end
-      private_class_method :eval_assignment_const
 
       def self.eval_expr_const(expr, state, binding_resolution:, strict_binding_ids:)
         return NAC if expr.nil?
@@ -121,7 +118,6 @@ module MilkTea
         )
         value.nil? ? NAC : ConstVal.new(value)
       end
-      private_class_method :eval_expr_const
 
       def self.constant_value_of(expr, in_state, binding_resolution: nil, strict_binding_ids: false)
         result = send(:eval_expr_const, expr, in_state, binding_resolution:, strict_binding_ids:)
@@ -137,7 +133,6 @@ module MilkTea
 
         identifier_expression.name
       end
-      private_class_method :identifier_key
     end
   end
 end

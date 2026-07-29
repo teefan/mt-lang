@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def call_argument_compatible?(actual_type, expected_type, scopes:, external:, expression: nil)
         return true if array_to_span_call_argument_compatible?(actual_type, expected_type, expression:, scopes:)
         return true if argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:, contextual_int_to_float: !external)
@@ -223,8 +221,6 @@ module MilkTea
         nil
       end
 
-    private
-
       def simd_op_result(operator, left_type, right_type)
         if simd_type?(left_type) && simd_type?(right_type) && left_type.element_type == right_type.element_type && left_type.lane_count == right_type.lane_count
           return left_type if operator == "+" || operator == "-" || operator == "*" || operator == "/"
@@ -337,8 +333,6 @@ module MilkTea
       def function_pointer_type?(type)
         type.is_a?(Types::Function)
       end
-
-
     end
   end
 end

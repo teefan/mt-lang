@@ -4,8 +4,6 @@ module MilkTea
   module Bindgen
     class Generator
       module GeneratorAstParser
-        private
-
         def dump_ast
           Tempfile.create(["milk-tea-bindgen", ".c"]) do |translation_unit|
             @translation_unit_path = translation_unit.path

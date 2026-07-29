@@ -4,8 +4,6 @@ module MilkTea
   module LSP
     class Server
       module ServerFoldingRange
-        private
-
         BLOCK_START_PATTERN = /\A(public\s+)?(async\s+)?(editable\s+)?(function|struct|enum|flags|variant|union|interface|if|while|for|match|unsafe|extending|defer)\b/
 
         CONTINUATION_KEYWORDS = %w[else elif when].freeze
@@ -26,8 +24,6 @@ module MilkTea
 
           folds
         end
-
-        private
 
         def compute_block_folds(lines, folds)
           stack = [] # [[start_line, indent], ...]

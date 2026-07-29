@@ -8,8 +8,6 @@ module MilkTea
         opaque extending foreign async function event external static_assert link include compiler_flag
       ].freeze
 
-      private
-
       def synchronize_to_top_level_boundary
         seen_newline = false
 

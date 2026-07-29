@@ -5,8 +5,6 @@ module MilkTea
     # Heredoc lexing (`<<-TAG`, `c<<-TAG`, `f<<-TAG`) including content
     # dedenting, terminator detection, and recovery.
     module Heredocs
-      private
-
       def lex_heredoc(lines, line_index, index, line_number, line_offset, cstring:, format: false)
         line = lines.fetch(line_index).delete_suffix("\n").b
         prefix_length = heredoc_prefix(cstring:, format:).length
@@ -91,17 +89,18 @@ module MilkTea
             content_margin = heredoc_content_margin(content_lines)
 
             literal = if format
-                         parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
-                       else
-                         value
-                       end
+              parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
+            else
+              value
+            end
+
             token_type = if format
-                           :fstring
-                         elsif cstring
-                           :cstring
-                         else
-                           :string
-                         end
+              :fstring
+            elsif cstring
+              :cstring
+            else
+              :string
+            end
 
             @tokens << token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
             emit_line_newline(last_line, last_line_number, last_line_offset, last_line_has_newline)
@@ -118,17 +117,18 @@ module MilkTea
         content_margin = heredoc_content_margin(content_lines)
 
         literal = if format
-                     parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
-                   else
-                     value
-                   end
+          parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
+        else
+          value
+        end
+
         token_type = if format
-                       :fstring
-                     elsif cstring
-                       :cstring
-                     else
-                       :string
-                     end
+          :fstring
+        elsif cstring
+          :cstring
+        else
+          :string
+        end
 
         @tokens << token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
         emit_line_newline(terminator_line, terminator_line_number, terminator_line_offset, terminator_has_newline)

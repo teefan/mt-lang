@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def check_interface_conformances
         expanded_declarations.each do |decl|
           with_error_node(decl) do

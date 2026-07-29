@@ -285,8 +285,6 @@ module MilkTea
       lines.join("\n").rstrip + "\n"
     end
 
-    private
-
     EQUALITY_OPERATORS = ["==", "!="].freeze
 
     include AggregateUtils

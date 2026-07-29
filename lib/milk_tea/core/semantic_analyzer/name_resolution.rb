@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def current_type_params
         @current_type_substitutions || {}
       end
@@ -1442,8 +1440,6 @@ module MilkTea
 
         nil
       end
-
-
     end
   end
 end

@@ -90,14 +90,14 @@ module MilkTea
             cross_by_uri = {}
             target_path = path.is_a?(String) ? File.expand_path(path) : nil
             sema_snapshot.diagnostics.reject { |diagnostic| redundant_unknown_import_diagnostic?(diagnostic, unresolved_import_paths) }
-                           .each do |diagnostic|
-                             if target_path && diagnostic.path && File.expand_path(diagnostic.path) != target_path
-                               target_uri = path_to_uri(diagnostic.path)
-                               (cross_by_uri[target_uri] ||= []) << format_tooling_diagnostic(diagnostic, stage: 'sema')
-                             else
-                               diagnostics << format_tooling_diagnostic(diagnostic, stage: 'sema')
-                             end
-                           end
+              .each do |diagnostic|
+                if target_path && diagnostic.path && File.expand_path(diagnostic.path) != target_path
+                  target_uri = path_to_uri(diagnostic.path)
+                  (cross_by_uri[target_uri] ||= []) << format_tooling_diagnostic(diagnostic, stage: 'sema')
+                else
+                  diagnostics << format_tooling_diagnostic(diagnostic, stage: 'sema')
+                end
+              end
             sema_ms = elapsed_ms(sema_start) if sema_start
           rescue StandardError => e
             log_diagnostics_warning("Error collecting diagnostics: #{e.message}")
@@ -369,12 +369,12 @@ module MilkTea
         start_char, end_char = extract_warning_range(diagnostic, content)
 
         lsp_severity = case diagnostic.severity
-                       when :error   then 1
-                       when :warning then 2
-                       when :info    then 3
-                       when :hint    then 4
-                       else               2
-                       end
+        when :error   then 1
+        when :warning then 2
+        when :info    then 3
+        when :hint    then 4
+        else               2
+        end
         {
           range: {
             start: { line: line_index, character: start_char },

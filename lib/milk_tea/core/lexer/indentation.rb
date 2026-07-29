@@ -4,8 +4,6 @@ module MilkTea
   class Lexer
     # Indentation-to-INDENT/DEDENT token conversion and error recovery.
     module Indentation
-      private
-
       def emit_indentation(indent, line_number, line_offset)
         if (indent % 4) != 0
           raise LexError.new("indentation must use multiples of 4 spaces", line: line_number, column: indent + 1, path: @path)

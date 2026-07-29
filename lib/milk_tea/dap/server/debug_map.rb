@@ -4,8 +4,6 @@ module MilkTea
   module DAP
     class Server
       module ServerDebugMap
-        private
-
         def load_debug_map(runnable_path)
           @debug_map = runnable_path ? DebugMap.load_for_binary(runnable_path) : nil
           @frame_debug_functions = {}

@@ -165,8 +165,6 @@ module MilkTea
     end
 
     class << self
-      private
-
       def load_entries(entries)
         Array(entries).map do |entry|
           Entry.new(name: entry.fetch("name"), linkage_name: entry.fetch("cName"), line: entry["line"])

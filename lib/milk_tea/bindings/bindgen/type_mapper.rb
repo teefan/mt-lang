@@ -4,64 +4,62 @@ module MilkTea
   module Bindgen
     class Generator
       module GeneratorTypeMapper
-        private
-
         def map_c_type(qual_type, context:)
           normalized = normalize_c_type(qual_type)
           raise BindgenError, "missing C type for #{context}" if normalized.empty?
           normalized, nullability = extract_top_level_nullability(normalized)
           mapped_type = if array_type?(normalized)
-                          map_array_type(normalized, context:)
-                        elsif function_pointer_type?(normalized)
-                          map_function_pointer_type(normalized, context:)
-                        else
-                          pointer_candidate = strip_pointer_suffix_qualifiers(normalized)
-                          if pointer_type?(pointer_candidate)
-                            if va_list_pointer?(pointer_candidate)
-                              synthesize_typedef_dependency("va_list")
-                              "va_list"
-                            elsif c_string_pointer?(pointer_candidate)
-                              "cstr"
-                            else
-                              pointee = pointer_candidate.sub(/\s*\*\z/, "")
-                              pointer_name = top_level_const_qualified?(pointee) ? "const_ptr" : "ptr"
-                              "#{pointer_name}[#{map_c_type(pointee, context:)}]"
-                            end
-                          else
-                            unqualified = strip_qualifiers(normalized)
-                            if unqualified == "__va_list_tag" || unqualified == "struct __va_list_tag"
-                              synthesize_typedef_dependency("__va_list_tag")
-                              "__va_list_tag"
-                            elsif standard_typedef_primitive(unqualified)
-                              standard_typedef_primitive(unqualified)
-                            elsif PRIMITIVE_TYPE_MAP.key?(unqualified)
-                              PRIMITIVE_TYPE_MAP.fetch(unqualified)
-                            elsif @type_overrides.key?(unqualified)
-                              @type_overrides.fetch(unqualified)
-                            elsif unqualified.start_with?("long") || unqualified.start_with?("unsigned long") || unqualified.start_with?("signed long")
-                              map_long_type(unqualified, context:)
-                            elsif unqualified.start_with?("struct ") || unqualified.start_with?("union ") || unqualified.start_with?("enum ")
-                              tag_name = unqualified.split.last
-                              @type_overrides.fetch(tag_name) do
-                                if unqualified.start_with?("struct ")
-                                  record_name_for(unqualified)
-                                elsif unqualified.start_with?("union ")
-                                  record_name_for(unqualified)
-                                else
-                                  enum_name_for(unqualified)
-                                end
-                              end
-                            elsif unqualified.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
-                              if known_generated_type_name?(unqualified, @visible_typedef_names)
-                                visible_type_name(unqualified)
-                              else
-                                raise BindgenError, "unknown referenced C type #{unqualified.inspect} for #{context}"
-                              end
-                            else
-                              raise BindgenError, "unsupported C type #{qual_type.inspect} for #{context}"
-                            end
-                          end
-                        end
+            map_array_type(normalized, context:)
+          elsif function_pointer_type?(normalized)
+            map_function_pointer_type(normalized, context:)
+          else
+            pointer_candidate = strip_pointer_suffix_qualifiers(normalized)
+            if pointer_type?(pointer_candidate)
+              if va_list_pointer?(pointer_candidate)
+                synthesize_typedef_dependency("va_list")
+                "va_list"
+              elsif c_string_pointer?(pointer_candidate)
+                "cstr"
+              else
+                pointee = pointer_candidate.sub(/\s*\*\z/, "")
+                pointer_name = top_level_const_qualified?(pointee) ? "const_ptr" : "ptr"
+                "#{pointer_name}[#{map_c_type(pointee, context:)}]"
+              end
+            else
+              unqualified = strip_qualifiers(normalized)
+              if unqualified == "__va_list_tag" || unqualified == "struct __va_list_tag"
+                synthesize_typedef_dependency("__va_list_tag")
+                "__va_list_tag"
+              elsif standard_typedef_primitive(unqualified)
+                standard_typedef_primitive(unqualified)
+              elsif PRIMITIVE_TYPE_MAP.key?(unqualified)
+                PRIMITIVE_TYPE_MAP.fetch(unqualified)
+              elsif @type_overrides.key?(unqualified)
+                @type_overrides.fetch(unqualified)
+              elsif unqualified.start_with?("long") || unqualified.start_with?("unsigned long") || unqualified.start_with?("signed long")
+                map_long_type(unqualified, context:)
+              elsif unqualified.start_with?("struct ") || unqualified.start_with?("union ") || unqualified.start_with?("enum ")
+                tag_name = unqualified.split.last
+                @type_overrides.fetch(tag_name) do
+                  if unqualified.start_with?("struct ")
+                    record_name_for(unqualified)
+                  elsif unqualified.start_with?("union ")
+                    record_name_for(unqualified)
+                  else
+                    enum_name_for(unqualified)
+                  end
+                end
+              elsif unqualified.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+                if known_generated_type_name?(unqualified, @visible_typedef_names)
+                  visible_type_name(unqualified)
+                else
+                  raise BindgenError, "unknown referenced C type #{unqualified.inspect} for #{context}"
+                end
+              else
+                raise BindgenError, "unsupported C type #{qual_type.inspect} for #{context}"
+              end
+            end
+          end
 
           apply_nullability(mapped_type, nullability)
         end

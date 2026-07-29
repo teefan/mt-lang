@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def resolved_attribute_applications_for_target(target)
         target_id = case target
         when Types::StructHandle then target.declaration.object_id

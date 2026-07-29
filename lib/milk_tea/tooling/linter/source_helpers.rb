@@ -3,18 +3,16 @@
 module MilkTea
   class Linter
     module LinterSourceHelpers
-      private
-
       def emit_line_too_long_warnings
         return unless @max_line_length.positive?
         return if @source.empty?
-  
+
         @source_lines.each_with_index do |line, index|
           next if line.empty?
           next if external_or_foreign_function_header_line?(line)
           next unless line.length > @max_line_length
           next unless Formatter.wrappable_long_line_candidate_text?(line)
-  
+
           fix = Formatter.build_long_line_wrap_fix(
             @source,
             index,
@@ -43,11 +41,11 @@ module MilkTea
       def emit_event_capacity_warnings(source_file)
         each_event_declaration(source_file) do |event_decl, owner_name|
           next unless event_decl.capacity >= EVENT_STACK_SNAPSHOT_WARNING_THRESHOLD
-  
+
           warn_large_event_capacity(event_decl, owner_name:)
         end
       end
-  
+
       def each_event_declaration(source_file)
         source_file.declarations.each do |declaration|
           case declaration
@@ -71,60 +69,60 @@ module MilkTea
       end
       def profile_phase(name)
         return yield unless @profile
-  
+
         @profile.measure(name) { yield }
       end
       def param_line(param, fallback: nil)
         line = param.respond_to?(:line) ? param.line : nil
         line || fallback
       end
-  
+
       def param_column(param)
         param.respond_to?(:column) ? param.column : nil
       end
-  
+
       def declaration_column(declaration)
         declaration.respond_to?(:column) ? declaration.column : nil
       end
       def source_line_text(line)
         return nil unless line && line >= 1 && line <= @source_lines.length
-  
+
         @source_lines[line - 1]
       end
-  
+
       def source_code_line(line)
         text = source_line_text(line)
         return nil unless text
-  
+
         text.rstrip
       end
-  
+
       def source_statement_span(line)
         text = source_code_line(line)
         return nil unless text
-  
+
         start_index = text.index(/\S/)
         return nil unless start_index
-  
+
         [start_index + 1, text.length - start_index]
       end
       def source_condition_span(line, keyword_pattern:)
         text = source_code_line(line)
         return nil unless text
-  
+
         match = text.match(/\A\s*(?:#{keyword_pattern})\s+(.*?)\s*:/)
         return nil unless match
-  
+
         condition = match[1].rstrip
         return nil if condition.empty?
-  
+
         [match.begin(1) + 1, condition.length]
       end
       def expression_line(expr)
         return nil unless expr
-  
+
         return expr.line if expr.respond_to?(:line) && expr.line
-  
+
         case expr
         when AST::BinaryOp
           expression_line(expr.left) || expression_line(expr.right)
@@ -156,14 +154,14 @@ module MilkTea
           nil
         end
       end
-  
+
       def expression_column(expr)
         return nil unless expr
-  
+
         if expr.respond_to?(:column) && expr.column
           return expr.column
         end
-  
+
         case expr
         when AST::BinaryOp
           expression_column(expr.left) || expression_column(expr.right)
@@ -191,10 +189,10 @@ module MilkTea
           nil
         end
       end
-  
+
       def expression_length(expr)
         return nil unless expr
-  
+
         case expr
         when AST::Identifier
           expr.name.length
@@ -225,14 +223,14 @@ module MilkTea
           1
         end
       end
-  
+
       def statement_column(statement)
         return nil unless statement
-  
+
         if statement.respond_to?(:column) && statement.column
           return statement.column
         end
-  
+
         case statement
         when AST::IfStmt
           statement.branches.first&.column || statement.else_column
@@ -250,14 +248,14 @@ module MilkTea
           nil
         end
       end
-  
+
       def statement_length(statement)
         return nil unless statement
-  
+
         if statement.respond_to?(:length) && statement.length
           return statement.length
         end
-  
+
         case statement
         when AST::LocalDecl, AST::ForStmt
           statement.name.length
@@ -277,7 +275,7 @@ module MilkTea
           nil
         end
       end
-  
+
       def condition_span(expr, line:, keyword_pattern:)
         source_span = source_condition_span(line, keyword_pattern:)
         if source_span
@@ -286,7 +284,7 @@ module MilkTea
           [expression_line(expr) || line, expression_column(expr), expression_length(expr)]
         end
       end
-  
+
       def condition_symbol_name(expr)
         case expr
         when AST::Identifier
@@ -344,10 +342,10 @@ module MilkTea
           statement.body.each { |s| each_statement_expression(s, &block) }
         end
       end
-  
+
       def walk_expression_tree(expression, &block)
         return unless expression
-  
+
         yield expression
         case expression
         when AST::MemberAccess
@@ -386,7 +384,7 @@ module MilkTea
       end
       def walk_statement_lists(stmts, &block)
         return if stmts.nil? || stmts.empty?
-  
+
         yield stmts
         stmts.each do |statement|
           case statement

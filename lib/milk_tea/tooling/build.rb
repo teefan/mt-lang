@@ -120,20 +120,18 @@ module MilkTea
         )
       end.freeze
     end
-    private_class_method :frontend_modules
 
     def self.default_raw_bindings(root: MilkTea.root)
       require_relative "../bindings"
 
       RawBindings.default_registry(root:)
     end
-    private_class_method :default_raw_bindings
 
     def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, sanitize: false, kind: :executable, debug_guards: nil)
       @kind = case kind
-              when :executable, :static, :shared then kind
-              else raise BuildError, "unknown build kind #{kind}; expected executable|static|shared"
-              end
+      when :executable, :static, :shared then kind
+      else raise BuildError, "unknown build kind #{kind}; expected executable|static|shared"
+      end
       @explicit_output_path = !output_path.nil?
       resolved_source = use_package_build_for?(path)
       if resolved_source
@@ -243,8 +241,6 @@ module MilkTea
         build_uncached
       end
     end
-
-    private
 
     def build_static_library
       cache = @no_cache ? nil : BuildCache.new(root: MilkTea.root)

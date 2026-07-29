@@ -88,8 +88,6 @@ module MilkTea
         html
       end
 
-      private
-
       def snapshot_script_path
         return @snapshot_script_path if defined?(@snapshot_script_path)
 
