@@ -662,7 +662,7 @@ module MilkTea
 
       def unsafe_inline_trivia_conflict?(unsafe_stmt, nested)
         unsafe_line = unsafe_stmt.line
-        nested_line = nested.line
+        nested_line = nested&.line
         return false unless unsafe_line && nested_line && nested_line > unsafe_line
 
         @comment_map.keys.any? { |line| line >= unsafe_line + 1 && line <= nested_line } ||

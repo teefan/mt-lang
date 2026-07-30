@@ -800,8 +800,8 @@ module MilkTea
           cond_src = source_line_from(b.line, b.column)
           return false unless cond_src
 
-          stmt_col = stmts[i].column
-          stmt_line = stmts[i].line
+          stmt_col = stmts[i]&.column
+          stmt_line = stmts[i]&.line
           body_src = source_line_from(stmt_line, stmt_col)
           return false unless body_src
 
@@ -818,8 +818,8 @@ module MilkTea
           text << " "
         end
 
-        stmt_col = stmts.last.column
-        stmt_line = stmts.last.line
+        stmt_col = stmts.last&.column
+        stmt_line = stmts.last&.line
         else_body = source_line_from(stmt_line, stmt_col)
         return false unless else_body
         text << else_body
