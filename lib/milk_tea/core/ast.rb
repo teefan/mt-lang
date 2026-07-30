@@ -9,8 +9,8 @@ module MilkTea
       end
     end
 
-    TypeParamConstraint = Data.define(:kind, :interface_ref) do
-      def initialize(kind:, interface_ref: nil) = super
+    TypeParamConstraint = Data.define(:kind, :interface_ref, :line, :column) do
+      def initialize(kind:, interface_ref: nil, line: nil, column: nil) = super
     end
 
     TypeParam = Data.define(:name, :constraints, :line, :column, :length) do
@@ -19,7 +19,9 @@ module MilkTea
     ValueTypeParam = Data.define(:name, :type, :line, :column, :length) do
       def initialize(name:, type:, line: nil, column: nil, length: nil) = super
     end
-    TypeArgument = Data.define(:value)
+    TypeArgument = Data.define(:value, :line, :column) do
+      def initialize(value:, line: nil, column: nil) = super
+    end
     class TypeRef < Data.define(:name, :arguments, :nullable, :lifetime, :line, :column, :length)
       def initialize(name:, arguments:, nullable:, lifetime: nil, line: nil, column: nil, length: nil) = super
 
@@ -40,23 +42,33 @@ module MilkTea
         nullable ? "#{text}?" : text
       end
     end
-    FunctionType = Data.define(:params, :return_type)
-    ProcType = Data.define(:params, :return_type)
-    TupleType = Data.define(:element_types, :nullable) do
-      def initialize(element_types:, nullable: false) = super
+    FunctionType = Data.define(:params, :return_type, :line, :column) do
+      def initialize(params:, return_type:, line: nil, column: nil) = super
+    end
+    ProcType = Data.define(:params, :return_type, :line, :column) do
+      def initialize(params:, return_type:, line: nil, column: nil) = super
+    end
+    TupleType = Data.define(:element_types, :nullable, :line, :column) do
+      def initialize(element_types:, nullable: false, line: nil, column: nil) = super
     end
     DynType = Data.define(:interface, :nullable, :line, :column, :length) do
       def initialize(interface:, nullable: false, line: nil, column: nil, length: nil) = super
     end
-    SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line, :node_ids, :node_path_ids) do
-      def initialize(module_name:, module_kind:, imports:, directives:, declarations:, line: nil, node_ids: {}, node_path_ids: {}) = super
+    SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line, :column, :node_ids, :node_path_ids) do
+      def initialize(module_name:, module_kind:, imports:, directives:, declarations:, line: nil, column: nil, node_ids: {}, node_path_ids: {}) = super
     end
     Import = Data.define(:path, :alias_name, :line, :column, :length) do
       def initialize(path:, alias_name:, line: nil, column: nil, length: nil) = super
     end
-    LinkDirective = Data.define(:value)
-    IncludeDirective = Data.define(:value)
-    CompilerFlagDirective = Data.define(:value)
+    LinkDirective = Data.define(:value, :line, :column) do
+      def initialize(value:, line: nil, column: nil) = super
+    end
+    IncludeDirective = Data.define(:value, :line, :column) do
+      def initialize(value:, line: nil, column: nil) = super
+    end
+    CompilerFlagDirective = Data.define(:value, :line, :column) do
+      def initialize(value:, line: nil, column: nil) = super
+    end
     ConstDecl = Data.define(:name, :type, :value, :block_body, :visibility, :attributes, :line, :column) do
       def initialize(name:, type:, value:, block_body: nil, visibility:, attributes: [], line: nil, column: nil) = super
     end
@@ -111,16 +123,18 @@ module MilkTea
     MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async, :attributes, :line, :column) do
       def initialize(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, attributes: [], line: nil, column: nil) = super
     end
-    ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :attributes, :line, :mapping) do
-      def initialize(name:, type_params:, params:, return_type:, variadic:, attributes: [], line: nil, mapping: nil) = super
+    ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :attributes, :line, :column, :mapping) do
+      def initialize(name:, type_params:, params:, return_type:, variadic:, attributes: [], line: nil, column: nil, mapping: nil) = super
     end
-    ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :mapping, :visibility, :attributes, :line) do
-      def initialize(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, attributes: [], line: nil) = super
+    ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :mapping, :visibility, :attributes, :line, :column) do
+      def initialize(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, attributes: [], line: nil, column: nil) = super
     end
     Param = Data.define(:name, :type, :line, :column, :default_value) do
       def initialize(name:, type:, line: nil, column: nil, default_value: nil) = super
     end
-    ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
+    ForeignParam = Data.define(:name, :type, :mode, :boundary_type, :line, :column) do
+      def initialize(name:, type:, mode:, boundary_type:, line: nil, column: nil) = super
+    end
     LocalDecl = Data.define(:kind, :name, :type, :value, :else_binding, :else_body, :line, :column, :recovered_else, :destructure_bindings, :destructure_type_name) do
       def initialize(kind:, name:, type:, value:, else_binding: nil, else_body: nil, line: nil, column: nil, recovered_else: false, destructure_bindings: nil, destructure_type_name: nil) = super
     end
@@ -130,13 +144,15 @@ module MilkTea
     IfBranch = Data.define(:condition, :body, :line, :column, :length) do
       def initialize(condition:, body:, line: nil, column: nil, length: nil) = super
     end
-    IfStmt = Data.define(:branches, :else_body, :inline, :line, :else_line, :else_column) do
-      def initialize(branches:, else_body:, inline: false, line: nil, else_line: nil, else_column: nil) = super
+    IfStmt = Data.define(:branches, :else_body, :inline, :line, :column, :else_line, :else_column) do
+      def initialize(branches:, else_body:, inline: false, line: nil, column: nil, else_line: nil, else_column: nil) = super
     end
     VariantDecl = Data.define(:name, :type_params, :arms, :visibility, :attributes, :line, :column) do
       def initialize(name:, type_params:, arms:, visibility:, attributes: [], line: nil, column: nil) = super
     end
-    VariantArm = Data.define(:name, :fields)
+    VariantArm = Data.define(:name, :fields, :line, :column) do
+      def initialize(name:, fields:, line: nil, column: nil) = super
+    end
     MatchArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body) do
       def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil) = super
     end
@@ -155,8 +171,8 @@ module MilkTea
     UnsafeStmt = Data.define(:body, :line, :column, :length) do
       def initialize(body:, line: nil, column: nil, length: nil) = super
     end
-    StaticAssert = Data.define(:condition, :message, :line) do
-      def initialize(condition:, message:, line: nil) = super
+    StaticAssert = Data.define(:condition, :message, :line, :column) do
+      def initialize(condition:, message:, line: nil, column: nil) = super
     end
     EmitStmt = Data.define(:declaration, :line, :column) do
       def initialize(declaration:, line: nil, column: nil) = super
@@ -208,8 +224,8 @@ module MilkTea
     ErrorExpr = Data.define(:line, :column, :length, :message) do
       def initialize(line: nil, column: nil, length: nil, message: nil) = super
     end
-    ExpressionStmt = Data.define(:expression, :line) do
-      def initialize(expression:, line: nil) = super
+    ExpressionStmt = Data.define(:expression, :line, :column) do
+      def initialize(expression:, line: nil, column: nil) = super
     end
 
     Identifier = Data.define(:name, :line, :column) do
@@ -218,36 +234,78 @@ module MilkTea
     MemberAccess = Data.define(:receiver, :member, :line, :column) do
       def initialize(receiver:, member:, line: nil, column: nil) = super
     end
-    IndexAccess = Data.define(:receiver, :index)
-    Specialization = Data.define(:callee, :arguments)
-    Call = Data.define(:callee, :arguments)
-    Argument = Data.define(:name, :value)
-    UnaryOp = Data.define(:operator, :operand)
-    BinaryOp = Data.define(:operator, :left, :right)
-    RangeExpr = Data.define(:start_expr, :end_expr, :line, :column)
-    ExpressionList = Data.define(:elements, :line, :column)
-    IfExpr = Data.define(:condition, :then_expression, :else_expression)
+    IndexAccess = Data.define(:receiver, :index, :line, :column) do
+      def initialize(receiver:, index:, line: nil, column: nil) = super
+    end
+    Specialization = Data.define(:callee, :arguments, :line, :column) do
+      def initialize(callee:, arguments:, line: nil, column: nil) = super
+    end
+    Call = Data.define(:callee, :arguments, :line, :column) do
+      def initialize(callee:, arguments:, line: nil, column: nil) = super
+    end
+    Argument = Data.define(:name, :value, :line, :column) do
+      def initialize(name:, value:, line: nil, column: nil) = super
+    end
+    UnaryOp = Data.define(:operator, :operand, :line, :column) do
+      def initialize(operator:, operand:, line: nil, column: nil) = super
+    end
+    BinaryOp = Data.define(:operator, :left, :right, :line, :column) do
+      def initialize(operator:, left:, right:, line: nil, column: nil) = super
+    end
+    RangeExpr = Data.define(:start_expr, :end_expr, :line, :column) do
+      def initialize(start_expr:, end_expr:, line: nil, column: nil) = super
+    end
+    ExpressionList = Data.define(:elements, :line, :column) do
+      def initialize(elements:, line: nil, column: nil) = super
+    end
+    IfExpr = Data.define(:condition, :then_expression, :else_expression, :line, :column) do
+      def initialize(condition:, then_expression:, else_expression:, line: nil, column: nil) = super
+    end
     MatchExpr = Data.define(:expression, :arms, :line, :column, :length, :desugared_from_is) do
       def initialize(expression:, arms:, line: nil, column: nil, length: nil, desugared_from_is: false) = super
     end
     UnsafeExpr = Data.define(:expression, :line, :column, :length) do
       def initialize(expression:, line: nil, column: nil, length: nil) = super
     end
-    ProcExpr = Data.define(:params, :return_type, :body)
-    AwaitExpr = Data.define(:expression)
-    SizeofExpr = Data.define(:type)
-    AlignofExpr = Data.define(:type)
-    OffsetofExpr = Data.define(:type, :field)
-    IntegerLiteral = Data.define(:lexeme, :value)
-    FloatLiteral = Data.define(:lexeme, :value)
-    StringLiteral = Data.define(:lexeme, :value, :cstring)
-    FormatString = Data.define(:parts)
-    FormatTextPart = Data.define(:value)
-    FormatExprPart = Data.define(:expression, :format_spec)
+    ProcExpr = Data.define(:params, :return_type, :body, :line, :column) do
+      def initialize(params:, return_type:, body:, line: nil, column: nil) = super
+    end
+    AwaitExpr = Data.define(:expression, :line, :column) do
+      def initialize(expression:, line: nil, column: nil) = super
+    end
+    SizeofExpr = Data.define(:type, :line, :column) do
+      def initialize(type:, line: nil, column: nil) = super
+    end
+    AlignofExpr = Data.define(:type, :line, :column) do
+      def initialize(type:, line: nil, column: nil) = super
+    end
+    OffsetofExpr = Data.define(:type, :field, :line, :column) do
+      def initialize(type:, field:, line: nil, column: nil) = super
+    end
+    IntegerLiteral = Data.define(:lexeme, :value, :line, :column) do
+      def initialize(lexeme:, value:, line: nil, column: nil) = super
+    end
+    FloatLiteral = Data.define(:lexeme, :value, :line, :column) do
+      def initialize(lexeme:, value:, line: nil, column: nil) = super
+    end
+    StringLiteral = Data.define(:lexeme, :value, :cstring, :line, :column) do
+      def initialize(lexeme:, value:, cstring: false, line: nil, column: nil) = super
+    end
+    FormatString = Data.define(:parts, :line, :column) do
+      def initialize(parts:, line: nil, column: nil) = super
+    end
+    FormatTextPart = Data.define(:value, :line, :column) do
+      def initialize(value:, line: nil, column: nil) = super
+    end
+    FormatExprPart = Data.define(:expression, :format_spec, :line, :column) do
+      def initialize(expression:, format_spec: nil, line: nil, column: nil) = super
+    end
     CharLiteral = Data.define(:lexeme, :value, :line, :column) do
       def initialize(lexeme:, value:, line: nil, column: nil) = super
     end
-    BooleanLiteral = Data.define(:value)
+    BooleanLiteral = Data.define(:value, :line, :column) do
+      def initialize(value:, line: nil, column: nil) = super
+    end
     NullLiteral = Data.define(:type, :line, :column) do
       def initialize(type:, line: nil, column: nil) = super
     end
