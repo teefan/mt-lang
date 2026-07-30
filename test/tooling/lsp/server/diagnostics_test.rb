@@ -429,6 +429,34 @@ class DiagnosticsTest < Minitest::Test
     end
   end
 
+  def test_strict_root_collects_diagnostic_for_invalid_main
+    Dir.mktmpdir("mt-strict-root-unit") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      path = File.join(dir, "main.mt")
+      source = "function main(value: int) -> int:\n    return value\n"
+      File.write(path, source)
+
+      ast = MilkTea::Parser.parse(source, path: path)
+      loader = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(dir) + [dir])
+      imports = loader.send(:imported_modules_for_ast_collecting_errors, ast, importer_path: path)
+      sema_result = MilkTea::SemanticAnalyzer.check_collecting_errors(ast, imported_modules: imports.modules, path: path)
+      sema_facts = sema_result[:analysis]
+
+      diagnostics = MilkTea::LSP::Diagnostics.send(:collect_strict_root_diagnostics,
+        path, ast, sema_facts, [],
+        resolution: Data.define(:locked).new(locked: false),
+        effective_platform: :linux,
+        workspace_root_path: dir,
+      )
+
+      refute_empty diagnostics, "expected strict-root diagnostic"
+      strict_root = diagnostics.first
+      assert_equal "build/error", strict_root[:code]
+      assert_includes strict_root[:message], "root main is not a valid executable entrypoint"
+    end
+  end
+
+
   def test_document_diagnostic_refreshes_after_imported_module_watched_change
     Dir.mktmpdir("milk-tea-lsp-watch-diagnostics") do |dir|
       Dir.mkdir(File.join(dir, "std"))

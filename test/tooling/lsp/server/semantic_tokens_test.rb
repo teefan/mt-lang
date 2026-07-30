@@ -557,6 +557,64 @@ class SemanticTokensTest < Minitest::Test
     end
   end
 
+def test_semantic_tokens_refresh_after_imported_module_did_change
+  Dir.mktmpdir("mt_lsp_semantic_tokens_import_change") do |dir|
+    Dir.mkdir(File.join(dir, "std"))
+    api_path = File.join(dir, "api.mt")
+    main_path = File.join(dir, "main.mt")
+
+    api_initial = <<~MT
+    MT
+    api_updated = <<~MT
+      public type Answer = int
+    MT
+    main_source = <<~MT
+      import api as api
+
+      public type Reply = api.Answer
+    MT
+
+    File.write(api_path, api_initial)
+    File.write(main_path, main_source)
+
+    with_lsp_server do |client|
+      init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+      api_uri = path_to_uri(api_path)
+      main_uri = path_to_uri(main_path)
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => api_uri, "languageId" => "milk-tea", "version" => 1, "text" => api_initial }
+      })
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+      })
+
+      first = client.send_request("textDocument/semanticTokens/full", {
+        "textDocument" => { "uri" => main_uri }
+      })
+      legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => api_uri, "version" => 2 },
+        "contentChanges" => [{ "text" => api_updated }]
+      })
+
+      second_answer = nil
+      10.times do
+        second_resp = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        second_entries = decode_semantic_token_entries(second_resp.fetch("result").fetch("data"), legend)
+        second_answer = second_entries && semantic_entry_for_lexeme(main_source, second_entries, "Answer")
+        break if second_answer && second_answer.fetch("tokenType") == "type"
+        sleep 0.1
+      end
+
+      refute_nil second_answer, "expected Answer to appear in tokens after import edit"
+      assert_equal "type", second_answer.fetch("tokenType")
+    end
+  end
+end
+
   def test_semantic_tokens_do_not_refresh_after_non_export_imported_module_edit
     Dir.mktmpdir("mt_lsp_semantic_tokens_import_no_surface_change") do |dir|
       Dir.mkdir(File.join(dir, "std"))
@@ -978,6 +1036,41 @@ class SemanticTokensTest < Minitest::Test
         assert_equal "property", current_started.fetch("tokenType")
       end
     end
+
+def test_semantic_tokens_classify_receiver_type_parameter
+  with_lsp_server do |client|
+    init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+    source = <<~MT
+      public struct Container[T]:
+          values: int
+
+      extending Container[T]:
+          public static function create() -> Container[T]:
+              return Container[T](values = 0)
+
+          public editable function push(value: T) -> void:
+              pass
+    MT
+    uri = "file:///tmp/lsp_semantic_type_param_test.mt"
+    client.send_notification("textDocument/didOpen", {
+      "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+    })
+
+    response = client.send_request("textDocument/semanticTokens/full", {
+      "textDocument" => { "uri" => uri }
+    })
+
+    legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+    entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+    refute_empty entries, "expected semantic token entries"
+
+    header_line = source.lines.index { |l| l == "extending Container[T]:
+" }
+    header_t = semantic_entry_for_lexeme_on_line(source, entries, "T", header_line)
+    assert_equal "typeParameter", header_t.fetch("tokenType")
+    assert_includes header_t.fetch("modifierNames"), "declaration"
+  end
+end
 
     def test_semantic_tokens_classify_priority_queue_receiver_type_parameter_and_members
       with_lsp_server do |client|
