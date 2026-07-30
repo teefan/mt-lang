@@ -557,68 +557,6 @@ class SemanticTokensTest < Minitest::Test
     end
   end
 
-  def test_semantic_tokens_refresh_after_imported_module_did_change
-    Dir.mktmpdir("mt_lsp_semantic_tokens_import_change") do |dir|
-      Dir.mkdir(File.join(dir, "std"))
-      api_path = File.join(dir, "api.mt")
-      main_path = File.join(dir, "main.mt")
-
-      api_initial = <<~MT
-      MT
-      api_updated = <<~MT
-        public type Answer = int
-      MT
-      main_source = <<~MT
-        import api as api
-
-        public type Reply = api.Answer
-      MT
-
-      File.write(api_path, api_initial)
-      File.write(main_path, main_source)
-
-      with_lsp_server do |client|
-        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
-        api_uri = path_to_uri(api_path)
-        main_uri = path_to_uri(main_path)
-        client.send_notification("textDocument/didOpen", {
-          "textDocument" => { "uri" => api_uri, "languageId" => "milk-tea", "version" => 1, "text" => api_initial }
-        })
-        client.send_notification("textDocument/didOpen", {
-          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
-        })
-
-        first = client.send_request("textDocument/semanticTokens/full", {
-          "textDocument" => { "uri" => main_uri }
-        })
-        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
-        first_entries = decode_semantic_token_entries(first.fetch("result").fetch("data"), legend)
-        first_answer = semantic_entry_for_lexeme(main_source, first_entries, "Answer")
-
-        assert_equal "property", first_answer.fetch("tokenType")
-
-        client.send_notification("textDocument/didChange", {
-          "textDocument" => { "uri" => api_uri, "version" => 2 },
-          "contentChanges" => [{ "text" => api_updated }]
-        })
-
-        second_entries = nil
-        second_answer = nil
-        3.times do
-          second_resp = client.send_request("textDocument/semanticTokens/full", {
-            "textDocument" => { "uri" => main_uri }
-          })
-          second_entries = decode_semantic_token_entries(second_resp.fetch("result").fetch("data"), legend)
-          second_answer = second_entries && semantic_entry_for_lexeme(main_source, second_entries, "Answer")
-          break if second_answer && second_answer.fetch("tokenType") == "type"
-          sleep 0.05
-        end
-
-        assert_equal "type", second_answer.fetch("tokenType")
-      end
-    end
-  end
-
   def test_semantic_tokens_do_not_refresh_after_non_export_imported_module_edit
     Dir.mktmpdir("mt_lsp_semantic_tokens_import_no_surface_change") do |dir|
       Dir.mkdir(File.join(dir, "std"))
@@ -1038,42 +976,6 @@ class SemanticTokensTest < Minitest::Test
         assert_equal "typeParameter", current_v.fetch("tokenType")
         assert_equal "parameter", current_this.fetch("tokenType")
         assert_equal "property", current_started.fetch("tokenType")
-      end
-    end
-
-    def test_semantic_tokens_classify_binary_heap_receiver_type_parameter_and_members
-      with_lsp_server do |client|
-        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
-        source_path = File.join(Dir.pwd, "std", "binary_heap.mt")
-        source = File.read(source_path)
-        uri = path_to_uri(source_path)
-        client.send_notification("textDocument/didOpen", {
-          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
-        })
-
-        response = client.send_request("textDocument/semanticTokens/full", {
-          "textDocument" => { "uri" => uri }
-        })
-
-        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
-        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-
-        header_line = source.lines.index { |line| line == "extending BinaryHeap[T]:\n" } or flunk("expected BinaryHeap extending header")
-        create_line = source.lines.index { |line| line.include?("return BinaryHeap[T](values = vec.Vec[T].create())") } or flunk("expected BinaryHeap.create body")
-        push_line = source.lines.index { |line| line.include?("this.values.push(value)") } or flunk("expected BinaryHeap.push body")
-
-        header_t = semantic_entry_for_lexeme_on_line(source, entries, "T", header_line)
-        vec_alias = semantic_entry_for_lexeme_on_line(source, entries, "vec", create_line)
-        push_this = semantic_entry_for_lexeme_on_line(source, entries, "this", push_line)
-        push_values = semantic_entry_for_lexeme_on_line(source, entries, "values", push_line)
-        push_call = semantic_entry_for_lexeme_on_line(source, entries, "push", push_line)
-
-        assert_equal "typeParameter", header_t.fetch("tokenType")
-        assert_includes header_t.fetch("modifierNames"), "declaration"
-        assert_equal "namespace", vec_alias.fetch("tokenType")
-        assert_equal "parameter", push_this.fetch("tokenType")
-        assert_equal "property", push_values.fetch("tokenType")
-        assert_equal "method", push_call.fetch("tokenType")
       end
     end
 

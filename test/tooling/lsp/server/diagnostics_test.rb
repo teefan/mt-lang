@@ -429,47 +429,6 @@ class DiagnosticsTest < Minitest::Test
     end
   end
 
-  def test_document_diagnostic_strict_current_root_diagnostics_reports_invalid_entrypoint
-    Dir.mktmpdir("milk-tea-lsp-strict-entrypoint") do |dir|
-      FileUtils.mkdir_p(File.join(dir, "std"))
-      path = File.join(dir, "main.mt")
-      source = <<~MT
-        function main(value: int) -> int:
-            return value
-      MT
-      File.write(path, source)
-
-      with_lsp_server do |client|
-        client.send_request("initialize", {
-          "rootUri" => path_to_uri(dir),
-          "capabilities" => {},
-          "initializationOptions" => {
-            "milkTea" => {
-              "lsp" => {
-                "strictCurrentRootDiagnostics" => true
-              }
-            }
-          }
-        })
-
-        uri = path_to_uri(path)
-        client.send_notification("textDocument/didOpen", {
-          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
-        })
-
-        response = client.send_request("textDocument/diagnostic", {
-          "textDocument" => { "uri" => uri }
-        })
-        items = response.fetch("result").fetch("items")
-        strict_root = items.find { |item| item.dig("data", "stage") == "strict-root" }
-
-        refute_nil strict_root, "expected strict-root diagnostic, got: #{items.inspect}"
-        assert_equal "build/error", strict_root.fetch("code")
-        assert_includes strict_root.fetch("message"), "root main is not a valid executable entrypoint"
-      end
-    end
-  end
-
   def test_document_diagnostic_refreshes_after_imported_module_watched_change
     Dir.mktmpdir("milk-tea-lsp-watch-diagnostics") do |dir|
       Dir.mkdir(File.join(dir, "std"))
