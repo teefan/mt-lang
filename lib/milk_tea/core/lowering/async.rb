@@ -95,7 +95,7 @@ module MilkTea
 
     def async_main_runtime_callee_name(function_name, type_arguments: [])
       binding = analysis_for_module("std.async").functions.fetch(function_name)
-      binding = binding.owner.send(:instantiate_function_binding, binding, type_arguments) if type_arguments.any?
+      binding = binding.owner.instantiate_function_binding(binding, type_arguments) if type_arguments.any?
       function_binding_c_name(binding, module_name: binding.owner.module_name)
     end
 

@@ -542,24 +542,25 @@ module MilkTea
           )
         end
 
-        parser = self.class.send(:new, tokens, path: @path)
+        parser = self.class.new(tokens, path: @path)
         parser.instance_variable_set(:@known_type_names, @known_type_names.dup)
         parser.instance_variable_set(:@known_import_aliases, @known_import_aliases.dup)
         parser.instance_variable_set(:@known_generic_callable_names, @known_generic_callable_names.dup)
         parser.instance_variable_set(:@current_type_param_names, @current_type_param_names.dup)
 
-        expression = parser.send(:parse_expression)
-        parser.send(:skip_newlines)
-        raise parser.send(:error, parser.send(:peek), "expected end of interpolation") unless parser.send(:eof?)
+        expression = parser.parse_expression
+        parser.skip_newlines
+        raise parser.error(parser.peek, "expected end of interpolation") unless parser.eof?
 
         expression
       end
 
       def parse_left_associative(operand_method, *operator_types)
-        expression = send(operand_method)
+        operand = method(operand_method)
+        expression = operand.call
         while match(*operator_types)
           operator = previous.lexeme
-          right = send(operand_method)
+          right = operand.call
           expression = AST::BinaryOp.new(operator:, left: expression, right:)
         end
         expression

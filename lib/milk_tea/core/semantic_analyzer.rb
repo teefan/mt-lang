@@ -184,7 +184,7 @@ module MilkTea
         @return_context_stack = []
       end
 
-      STRUCTURAL_PHASES = %i[
+      def check
         install_builtin_types
         install_builtin_attributes
         install_imports
@@ -201,10 +201,6 @@ module MilkTea
         check_attribute_applications
         declare_functions
         check_interface_conformances
-      ].freeze
-
-      def check
-        STRUCTURAL_PHASES.each { |phase| send(phase) }
         check_top_level_values
         finalize_top_level_const_values
         check_top_level_static_asserts
@@ -279,7 +275,22 @@ module MilkTea
         @collecting_errors = true
         @structural_errors = []
 
-        STRUCTURAL_PHASES.each { |phase| catch_structural { send(phase) } }
+        catch_structural { install_builtin_types }
+        catch_structural { install_builtin_attributes }
+        catch_structural { install_imports }
+        catch_structural { install_prelude_types }
+        catch_structural { declare_named_types }
+        catch_structural { resolve_generic_type_param_constraints }
+        catch_structural { resolve_type_aliases }
+        catch_structural { declare_attributes }
+        catch_structural { resolve_aggregate_fields }
+        catch_structural { resolve_enum_members }
+        catch_structural { resolve_variant_arms }
+        catch_structural { collect_emit_declarations }
+        catch_structural { declare_top_level_values }
+        catch_structural { check_attribute_applications }
+        catch_structural { declare_functions }
+        catch_structural { check_interface_conformances }
 
         errors = @structural_errors.dup
 

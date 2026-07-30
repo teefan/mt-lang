@@ -26,7 +26,7 @@ module MilkTea
         fallback_owner = specialization_lookup_owner
         return nil unless fallback_owner
 
-        fallback_owner.send(:lookup_method_local_or_imported, receiver_type, name)
+        fallback_owner.lookup_method_local_or_imported(receiver_type, name)
       end
 
       def lookup_static_method(receiver_type, name)
@@ -37,7 +37,7 @@ module MilkTea
         fallback_owner = specialization_lookup_owner
         return nil unless fallback_owner
 
-        fallback_owner.send(:lookup_method_local_or_imported, receiver_type, static_name)
+        fallback_owner.lookup_method_local_or_imported(receiver_type, static_name)
       end
 
       def lookup_method_local_or_imported(receiver_type, name)
@@ -1009,7 +1009,7 @@ module MilkTea
         fallback_owner = specialization_lookup_owner
         return nil unless fallback_owner
 
-        fallback_owner.send(:imported_module_with_private_method_local, receiver_type, method_name)
+        fallback_owner.imported_module_with_private_method_local(receiver_type, method_name)
       end
 
       def imported_module_with_private_method_local(receiver_type, method_name)

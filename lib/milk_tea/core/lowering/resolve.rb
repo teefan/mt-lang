@@ -1822,7 +1822,7 @@ module MilkTea
       end
 
       def evaluate_compile_time_const_value(expression, scopes: nil)
-        @lowerer.send(:compile_time_const_value, expression, env: @lowerer.send(:empty_env))
+        @lowerer.compile_time_const_value(expression, env: @lowerer.empty_env)
       end
 
       def top_level_function(name)

@@ -62,20 +62,20 @@ module MilkTea
         case expression
         when AST::Identifier
           return @variables[expression.name] if @variables.key?(expression.name)
-          @checker.send(:evaluate_compile_time_const_value, expression, scopes:)
+          @checker.evaluate_compile_time_const_value(expression, scopes:)
         else
           CompileTime.evaluate(
             expression,
             resolve_identifier: ->(id_expr) {
               return @variables[id_expr.name] if @variables.key?(id_expr.name)
-              @checker.send(:evaluate_compile_time_const_value, id_expr, scopes:)
+              @checker.evaluate_compile_time_const_value(id_expr, scopes:)
             },
             resolve_member_access: ->(ma_expr) {
-              @checker.send(:evaluate_compile_time_const_value, ma_expr, scopes:)
+              @checker.evaluate_compile_time_const_value(ma_expr, scopes:)
             },
             resolve_call: ->(call_expr) {
               if call_expr.callee.is_a?(AST::Identifier)
-                func = @checker.send(:top_level_function, call_expr.callee.name)
+                func = @checker.top_level_function(call_expr.callee.name)
                 if func&.ast&.respond_to?(:const) && func.ast.const
                   begin
                     initial_vars = {}
@@ -85,12 +85,12 @@ module MilkTea
                       arg_expr = call_expr.arguments[idx].value
                       arg_value = case arg_expr
                       when AST::Identifier
-                        @variables[arg_expr.name] || @checker.send(:evaluate_compile_time_const_value, arg_expr, scopes:)
+                        @variables[arg_expr.name] || @checker.evaluate_compile_time_const_value(arg_expr, scopes:)
                       else
                         CompileTime.evaluate(
                           arg_expr,
-                          resolve_identifier: ->(id) { @variables[id.name] || @checker.send(:evaluate_compile_time_const_value, id, scopes:) },
-                          resolve_member_access: ->(ma) { @checker.send(:evaluate_compile_time_const_value, ma, scopes:) },
+                          resolve_identifier: ->(id) { @variables[id.name] || @checker.evaluate_compile_time_const_value(id, scopes:) },
+                          resolve_member_access: ->(ma) { @checker.evaluate_compile_time_const_value(ma, scopes:) },
                           resolve_type_ref: nil,
                           resolve_call: nil,
                         )
@@ -128,8 +128,8 @@ module MilkTea
               end
 
               if call_expr.callee.is_a?(AST::Specialization) && @checker.respond_to?(:resolve_type_expression)
-                resolved = @checker.send(:resolve_type_expression, call_expr.callee)
-                if resolved && @checker.respond_to?(:array_type?) && @checker.send(:array_type?, resolved)
+                resolved = @checker.resolve_type_expression(call_expr.callee)
+                if resolved && @checker.respond_to?(:array_type?) && @checker.array_type?(resolved)
                   values = []
                   call_expr.arguments.each do |argument|
                     val = evaluate_expression(argument.value, scopes:)
@@ -140,7 +140,7 @@ module MilkTea
                 end
               end
 
-              @checker.send(:evaluate_compile_time_const_value, call_expr, scopes:)
+              @checker.evaluate_compile_time_const_value(call_expr, scopes:)
             },
           )
         end

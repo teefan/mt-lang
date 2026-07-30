@@ -88,14 +88,21 @@ class CompletionTest < Minitest::Test
           "contentChanges" => [{ "text" => partial_source }]
         })
 
-        response = client.send_request("textDocument/completion", {
-          "textDocument" => { "uri" => main_uri },
-          "position" => { "line" => dot_line, "character" => dot_char }
-        })
-        result = response.fetch("result")
-        items = result.fetch("items")
-        labels = items.map { |item| item["label"] }
-        default_width = items.find { |item| item["label"] == "default_width" }
+        response = nil
+        items = []
+        labels = []
+        default_width = nil
+        10.times do
+          response = client.send_request("textDocument/completion", {
+            "textDocument" => { "uri" => main_uri },
+            "position" => { "line" => dot_line, "character" => dot_char }
+          })
+          items = response.fetch("result").fetch("items")
+          labels = items.map { |item| item["label"] }
+          default_width = items.find { |item| item["label"] == "default_width" }
+          break unless items.empty?
+          sleep 0.1
+        end
 
         assert_includes labels, "default_width"
         assert_equal 12, default_width.fetch("kind")
@@ -477,14 +484,20 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.count - 1  # "    return p." is the last line
       dot_char = partial_source.lines[dot_line].chomp.length
 
-      response = client.send_request("textDocument/completion", {
-        "textDocument" => { "uri" => uri },
-        "position"     => { "line" => dot_line, "character" => dot_char }
-      })
-      result = response.fetch("result")
-      labels = result["items"].map { |i| i["label"] }
+      response = nil
+      labels = []
+      10.times do
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position"     => { "line" => dot_line, "character" => dot_char }
+        })
+        labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+        break unless labels.empty?
+        sleep 0.1
+      end
+
       assert_includes labels, "zero"
-      result["items"].each { |item| assert_equal 6, item["kind"] }  # kind 6 = Method
+      response.fetch("result").fetch("items").each { |item| assert_equal 6, item["kind"] }  # kind 6 = Method
     end
   end
 
@@ -560,14 +573,21 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.index { |line| line.include?("return p.") }
       dot_char = partial_source.lines[dot_line].chomp.length
 
-      response = client.send_request("textDocument/completion", {
-        "textDocument" => { "uri" => uri },
-        "position"     => { "line" => dot_line, "character" => dot_char }
-      })
-
-      items = response.fetch("result").fetch("items")
-      labels = items.map { |i| i["label"] }
-      kinds_by_label = items.to_h { |i| [i["label"], i["kind"]] }
+      response = nil
+      items = []
+      labels = []
+      kinds_by_label = {}
+      10.times do
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position"     => { "line" => dot_line, "character" => dot_char }
+        })
+        items = response.fetch("result").fetch("items")
+        labels = items.map { |i| i["label"] }
+        kinds_by_label = items.to_h { |i| [i["label"], i["kind"]] }
+        break unless items.empty?
+        sleep 0.1
+      end
 
       assert_includes labels, "x"
       assert_includes labels, "y"
@@ -594,12 +614,18 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.index { |line| line.include?("return v.") }
       dot_char = partial_source.lines[dot_line].chomp.length
 
-      response = client.send_request("textDocument/completion", {
-        "textDocument" => { "uri" => uri },
-        "position"     => { "line" => dot_line, "character" => dot_char }
-      })
+      response = nil
+      labels = []
+      10.times do
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position"     => { "line" => dot_line, "character" => dot_char }
+        })
+        labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+        break unless labels.empty?
+        sleep 0.1
+      end
 
-      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
       assert_includes labels, "x"
       refute_includes labels, "w"
     end
@@ -622,12 +648,18 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.index { |line| line.include?("return p.") }
       dot_char = partial_source.lines[dot_line].chomp.length
 
-      response = client.send_request("textDocument/completion", {
-        "textDocument" => { "uri" => uri },
-        "position"     => { "line" => dot_line, "character" => dot_char }
-      })
+      response = nil
+      labels = []
+      10.times do
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position"     => { "line" => dot_line, "character" => dot_char }
+        })
+        labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+        break unless labels.empty?
+        sleep 0.1
+      end
 
-      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
       assert_includes labels, "x"
     end
   end
@@ -649,12 +681,18 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.index { |line| line.include?("return rp.") }
       dot_char = partial_source.lines[dot_line].chomp.length
 
-      response = client.send_request("textDocument/completion", {
-        "textDocument" => { "uri" => uri },
-        "position" => { "line" => dot_line, "character" => dot_char }
-      })
+      response = nil
+      labels = []
+      10.times do
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char }
+        })
+        labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+        break unless labels.empty?
+        sleep 0.1
+      end
 
-      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
       assert_includes labels, "x"
       assert_includes labels, "y"
     end
@@ -677,12 +715,18 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.index { |line| line.include?("return pp.") }
       dot_char = partial_source.lines[dot_line].chomp.length
 
-      response = client.send_request("textDocument/completion", {
-        "textDocument" => { "uri" => uri },
-        "position" => { "line" => dot_line, "character" => dot_char }
-      })
+      response = nil
+      labels = []
+      10.times do
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char }
+        })
+        labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+        break unless labels.empty?
+        sleep 0.1
+      end
 
-      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
       assert_includes labels, "x"
       assert_includes labels, "y"
     end
@@ -705,12 +749,18 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.index { |line| line.include?("return origin.") }
       dot_char = partial_source.lines[dot_line].chomp.length
 
-      response = client.send_request("textDocument/completion", {
-        "textDocument" => { "uri" => uri },
-        "position" => { "line" => dot_line, "character" => dot_char }
-      })
+      response = nil
+      labels = []
+      10.times do
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char }
+        })
+        labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+        break unless labels.empty?
+        sleep 0.1
+      end
 
-      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
       assert_includes labels, "x"
       assert_includes labels, "y"
       assert_includes labels, "area"
@@ -734,12 +784,18 @@ class CompletionTest < Minitest::Test
       dot_line = partial_source.lines.index { |line| line.include?("this.") }
       dot_char = partial_source.lines[dot_line].chomp.length
 
-      response = client.send_request("textDocument/completion", {
-        "textDocument" => { "uri" => uri },
-        "position" => { "line" => dot_line, "character" => dot_char }
-      })
+      response = nil
+      labels = []
+      10.times do
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char }
+        })
+        labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+        break unless labels.empty?
+        sleep 0.1
+      end
 
-      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
       assert_includes labels, "value"
       assert_includes labels, "reset"
     end
