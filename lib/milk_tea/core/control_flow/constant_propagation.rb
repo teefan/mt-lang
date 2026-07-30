@@ -117,6 +117,8 @@ module MilkTea
           resolve_member_access: nil,
         )
         value.nil? ? NAC : ConstVal.new(value)
+      rescue CompileTime::Error
+        NAC
       end
 
       def self.constant_value_of(expr, in_state, binding_resolution: nil, strict_binding_ids: false)
