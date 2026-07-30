@@ -351,7 +351,7 @@ class LldbBridgeTest < Minitest::Test
           MilkTea::DebugMap::Function.new(
             name: "add",
             linkage_name: "debug_map_add",
-            source_path: source_path,
+            path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
             locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
@@ -407,7 +407,7 @@ class LldbBridgeTest < Minitest::Test
           MilkTea::DebugMap::Function.new(
             name: "add",
             linkage_name: "debug_map_add",
-            source_path: source_path,
+            path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
             locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
@@ -489,7 +489,7 @@ class LldbBridgeTest < Minitest::Test
           MilkTea::DebugMap::Function.new(
             name: "add",
             linkage_name: "debug_map_add",
-            source_path: source_path,
+            path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
             locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
@@ -552,7 +552,7 @@ class LldbBridgeTest < Minitest::Test
           MilkTea::DebugMap::Function.new(
             name: "add",
             linkage_name: "debug_map_add",
-            source_path: source_path,
+            path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
             locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
@@ -755,7 +755,7 @@ class LldbBridgeTest < Minitest::Test
           MilkTea::DebugMap::Function.new(
             name: "add",
             linkage_name: "debug_map_add",
-            source_path: source_path,
+            path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", linkage_name: "left", line: nil)],
             locals: [MilkTea::DebugMap::Entry.new(name: "int", linkage_name: "int_", line: 4)]
