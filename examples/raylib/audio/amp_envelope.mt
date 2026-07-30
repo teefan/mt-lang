@@ -25,7 +25,7 @@ struct Envelope:
 
 
 function fill_audio_buffer(index: int, buffer: ptr[float], envelope_value: float, audio_time: ref[float]) -> void:
-    let frequency: float = 440.0
+    let frequency = 440.0
     unsafe: read(buffer + ptr_uint<-index) = envelope_value * float<-math.sin(double<-(2.0 * rl.PI * frequency * read(audio_time)))
     read(audio_time) += 1.0 / float<-SAMPLE_RATE
 
@@ -56,7 +56,7 @@ function draw_adsr_graph(env: ref[Envelope], bounds: rl.Rectangle) -> void:
     rl.draw_rectangle_rec(bounds, rl.fade(rl.LIGHTGRAY, 0.3))
     rl.draw_rectangle_lines_ex(bounds, 1.0, rl.GRAY)
 
-    let sustain_width: float = 1.0
+    let sustain_width = 1.0
     let total_time = read(env).attack_time + read(env).decay_time + sustain_width + read(env).release_time
     let scale_x = bounds.width / total_time
     let scale_y = bounds.height

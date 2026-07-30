@@ -123,8 +123,8 @@ function draw_text_3d(
 ) -> void:
     let length = int<-rl.text_length(body_text)
     let scale = font_size / float<-font.baseSize
-    var text_offset_x = float<-0.0
-    var text_offset_y = float<-0.0
+    var text_offset_x = 0.0
+    var text_offset_y = 0.0
     var index = 0
 
     while index < length:
@@ -139,7 +139,7 @@ function draw_text_3d(
 
         let glyph_index = rl.get_glyph_index(font, codepoint)
         var glyph_advance_x = 0
-        var rec_width = float<-0.0
+        var rec_width = 0.0
         unsafe:
             glyph_advance_x = read(font.glyphs + ptr_uint<-glyph_index).advanceX
             rec_width = read(font.recs + ptr_uint<-glyph_index).width
@@ -180,8 +180,8 @@ function draw_text_wave_3d(
 ) -> void:
     let length = int<-rl.text_length(body_text)
     let scale = font_size / float<-font.baseSize
-    var text_offset_x = float<-0.0
-    var text_offset_y = float<-0.0
+    var text_offset_x = 0.0
+    var text_offset_y = 0.0
     var wave = false
     var char_index = 0
     var index = 0
@@ -198,7 +198,7 @@ function draw_text_wave_3d(
 
         let glyph_index = rl.get_glyph_index(font, codepoint)
         var glyph_advance_x = 0
-        var rec_width = float<-0.0
+        var rec_width = 0.0
         unsafe:
             glyph_advance_x = read(font.glyphs + ptr_uint<-glyph_index).advanceX
             rec_width = read(font.recs + ptr_uint<-glyph_index).width
@@ -257,9 +257,9 @@ function measure_text_wave_3d(
     let scale = font_size / float<-font.baseSize
     var temp_len = 0
     var len_counter = 0
-    var temp_text_width = float<-0.0
+    var temp_text_width = 0.0
     var text_height = scale
-    var text_width = float<-0.0
+    var text_width = 0.0
     var index = 0
 
     while index < length:
@@ -274,7 +274,7 @@ function measure_text_wave_3d(
 
         let glyph_index = rl.get_glyph_index(font, codepoint)
         var glyph_advance_x = 0
-        var rec_width = float<-0.0
+        var rec_width = 0.0
         var glyph_offset_x = 0
         unsafe:
             glyph_advance_x = read(font.glyphs + ptr_uint<-glyph_index).advanceX
@@ -318,7 +318,7 @@ function measure_text_wave_3d(
 function generate_random_color(saturation: float, value: float) -> rl.Color:
     let phi = 0.618033988749895
     var hue = float<-rl.get_random_value(0, 360)
-    hue = float<-math.mod(double<-(hue + hue * float<-phi), 360.0)
+    hue = float<-math.mod(double<-(hue + hue * phi), 360.0)
     return rl.color_from_hsv(hue, saturation, value)
 
 
@@ -346,9 +346,9 @@ function main() -> int:
 
     var font = rl.get_font_default()
     var owns_font = false
-    var font_size = float<-0.8
-    var font_spacing = float<-0.05
-    var line_spacing = float<-(-0.1)
+    var font_size = 0.8
+    var font_spacing = 0.05
+    var line_spacing = (-0.1)
 
     var text_buffer: array[char, TEXT_BUFFER_CAPACITY] = zero[array[char, TEXT_BUFFER_CAPACITY]]
     rl.text_copy(ptr_of(text_buffer[0]), "Hello ~~World~~ in 3D!")
@@ -356,13 +356,13 @@ function main() -> int:
     var text_box = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
     var layers = 1
     var quads = 0
-    var layer_distance = float<-0.01
+    var layer_distance = 0.01
     let wave_config = WaveTextConfig(
         wave_range = rl.Vector3(x = 0.45, y = 0.45, z = 0.45),
         wave_speed = rl.Vector3(x = 3.0, y = 3.0, z = 0.5),
         wave_offset = rl.Vector3(x = 0.35, y = 0.35, z = 0.35)
     )
-    var time_value = float<-0.0
+    var time_value = 0.0
     var light = rl.MAROON
     var dark = rl.RED
 

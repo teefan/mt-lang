@@ -239,7 +239,7 @@ function main() -> int:
         anim_current_frame0 = (anim_current_frame0 + 1) % anim0.keyframeCount
         anim_current_frame1 = (anim_current_frame1 + 1) % anim1.keyframeCount
 
-        var blend_factor = float<-0.5
+        var blend_factor = 0.5
         if upper_body_blend:
             blend_factor = 1.0
         update_model_animation_bones(

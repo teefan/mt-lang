@@ -61,26 +61,26 @@ function main() -> int:
     var anim_index0 = 0
     if anim_count > 10:
         anim_index0 = 10
-    var anim_current_frame0 = float<-0.0
-    var anim_frame_speed0 = float<-0.5
+    var anim_current_frame0 = 0.0
+    var anim_frame_speed0 = 0.5
     var anim_index1 = 0
     if anim_count > 6:
         anim_index1 = 6
     else if anim_count > 1:
         anim_index1 = 1
-    var anim_current_frame1 = float<-0.0
-    var anim_frame_speed1 = float<-0.5
+    var anim_current_frame1 = 0.0
+    var anim_frame_speed1 = 0.5
 
-    var anim_blend_factor = float<-0.0
-    let anim_blend_time = float<-2.0
-    var anim_blend_time_counter = float<-0.0
+    var anim_blend_factor = 0.0
+    let anim_blend_time = 2.0
+    var anim_blend_time_counter = 0.0
 
     var anim_pause = false
     var dropdown_edit_mode0 = false
     var dropdown_edit_mode1 = false
-    var anim_frame_progress0 = float<-0.0
-    var anim_frame_progress1 = float<-0.0
-    var anim_blend_progress = float<-0.0
+    var anim_frame_progress0 = 0.0
+    var anim_frame_progress1 = 0.0
+    var anim_blend_progress = 0.0
 
     rl.set_target_fps(60)
 

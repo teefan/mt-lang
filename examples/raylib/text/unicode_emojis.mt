@@ -97,7 +97,7 @@ function main() -> int:
             selected_pos = hovered_pos
 
         let mouse = rl.get_mouse_position()
-        var position = rl.Vector2(x = float<-28.8, y = float<-10.0)
+        var position = rl.Vector2(x = 28.8, y = 10.0)
         hovered = -1
 
         rl.begin_drawing()
@@ -129,49 +129,49 @@ function main() -> int:
                 hovered_pos = position
 
             if index != 0 and (index % EMOJI_PER_WIDTH) == 0:
-                position.y += float<-font_emoji.baseSize + float<-24.25
-                position.x = float<-28.8
+                position.y += float<-font_emoji.baseSize + 24.25
+                position.x = 28.8
             else:
-                position.x += float<-font_emoji.baseSize + float<-28.8
+                position.x += float<-font_emoji.baseSize + 28.8
             index += 1
 
         if selected != -1:
             let message = messages[emoji_slots[selected].message]
             let selected_font = if uses_asian_font(message.language): font_asian else: font_default
-            let horizontal_padding = float<-20.0
-            let vertical_padding = float<-30.0
+            let horizontal_padding = 20.0
+            let vertical_padding = 30.0
             var size = rl.measure_text_ex(selected_font, message.text, float<-selected_font.baseSize, 1.0)
             if size.x > 300.0:
-                size.y *= size.x / float<-300.0
-                size.x = float<-300.0
+                size.y *= size.x / 300.0
+                size.x = 300.0
             else if size.x < 160.0:
-                size.x = float<-160.0
+                size.x = 160.0
 
             var message_rect = rl.Rectangle(
-                x = selected_pos.x - float<-38.8,
+                x = selected_pos.x - 38.8,
                 y = selected_pos.y,
-                width = float<-2.0 * horizontal_padding + size.x,
-                height = float<-2.0 * vertical_padding + size.y
+                width = 2.0 * horizontal_padding + size.x,
+                height = 2.0 * vertical_padding + size.y
             )
             message_rect.y -= message_rect.height
 
             var a = rl.Vector2(x = selected_pos.x, y = message_rect.y + message_rect.height)
-            var b = rl.Vector2(x = a.x + float<-8.0, y = a.y + float<-10.0)
-            var c = rl.Vector2(x = a.x + float<-10.0, y = a.y)
+            var b = rl.Vector2(x = a.x + 8.0, y = a.y + 10.0)
+            var c = rl.Vector2(x = a.x + 10.0, y = a.y)
 
-            if message_rect.x < float<-10.0:
-                message_rect.x += float<-28.0
-            if message_rect.y < float<-10.0:
-                message_rect.y = selected_pos.y + float<-84.0
+            if message_rect.x < 10.0:
+                message_rect.x += 28.0
+            if message_rect.y < 10.0:
+                message_rect.y = selected_pos.y + 84.0
                 a.y = message_rect.y
                 c.y = a.y
-                b.y = a.y - float<-10.0
+                b.y = a.y - 10.0
                 let temp = a
                 a = b
                 b = temp
 
             if message_rect.x + message_rect.width > float<-SCREEN_WIDTH:
-                message_rect.x -= message_rect.x + message_rect.width - float<-SCREEN_WIDTH + float<-10.0
+                message_rect.x -= message_rect.x + message_rect.width - float<-SCREEN_WIDTH + 10.0
 
             rl.draw_rectangle_rec(message_rect, emoji_slots[selected].color)
             rl.draw_triangle(a, b, c, emoji_slots[selected].color)

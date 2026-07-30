@@ -27,9 +27,9 @@ function draw_text_styled(
     let text_len = int<-rl.text_length(styled_text)
     var front_color = color
     var back_color = rl.BLANK
-    let back_padding = float<-4.0
-    var text_offset_y = float<-0.0
-    var text_offset_x = float<-0.0
+    let back_padding = 4.0
+    var text_offset_y = 0.0
+    var text_offset_x = 0.0
     let scale_factor = font_size / float<-font.baseSize
 
     var index = 0
@@ -86,14 +86,14 @@ function draw_text_styled(
 
         let glyph_index = rl.get_glyph_index(font, codepoint)
         var glyph_advance_x = 0
-        var glyph_width = float<-0.0
+        var glyph_width = 0.0
         unsafe:
             glyph_advance_x = read(font.glyphs + ptr_uint<-glyph_index).advanceX
             glyph_width = read(font.recs + ptr_uint<-glyph_index).width
 
-        var increase_x = float<-0.0
+        var increase_x = 0.0
         if glyph_advance_x == 0:
-            increase_x = float<-glyph_width * scale_factor + spacing
+            increase_x = glyph_width * scale_factor + spacing
         else:
             increase_x = float<-glyph_advance_x * scale_factor + spacing
 
@@ -129,7 +129,7 @@ function measure_text_styled(font_arg: rl.Font, styled_text: str, font_size: flo
         font = rl.get_font_default()
 
     let text_len = int<-rl.text_length(styled_text)
-    var text_width = float<-0.0
+    var text_width = 0.0
     let text_height = font_size
     let scale_factor = font_size / float<-font.baseSize
     var valid_codepoint_counter = 0
@@ -175,7 +175,7 @@ function measure_text_styled(font_arg: rl.Font, styled_text: str, font_size: flo
         if codepoint != 10:
             let glyph_index = rl.get_glyph_index(font, codepoint)
             var glyph_advance_x = 0
-            var glyph_width = float<-0.0
+            var glyph_width = 0.0
             var glyph_offset_x = 0
             unsafe:
                 glyph_advance_x = read(font.glyphs + ptr_uint<-glyph_index).advanceX
@@ -185,7 +185,7 @@ function measure_text_styled(font_arg: rl.Font, styled_text: str, font_size: flo
             if glyph_advance_x > 0:
                 text_width += float<-glyph_advance_x
             else:
-                text_width += float<-(glyph_width + glyph_offset_x)
+                text_width += (glyph_width + glyph_offset_x)
             valid_codepoint_counter += 1
 
         index += advance

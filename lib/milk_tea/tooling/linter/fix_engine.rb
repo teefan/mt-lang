@@ -279,11 +279,21 @@ module MilkTea
           when ")", "]", "}"
             depth -= 1 if depth > 0
           when *BINARY_OP_CHARS
+            if depth == 0 && (inner[i] == "-" || inner[i] == "~") && start_of_expression?(inner, i)
+              i += 1
+              next
+            end
             return true if depth == 0
           end
           i += 1
         end
         false
+      end
+
+      def self.start_of_expression?(inner, pos)
+        return true if pos == 0
+        prev = pos - 1
+        prev >= 0 && (inner[prev] == " " || inner[prev] == "\t" || inner[prev] == "(")
       end
     end
   end

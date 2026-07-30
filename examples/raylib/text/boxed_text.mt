@@ -135,7 +135,7 @@ public function draw_text_boxed(
     let raw_lines = rl.load_text_lines(body_text, ptr_of(line_count))
     defer rl.unload_text_lines(raw_lines, line_count)
 
-    var offset_y = float<-0.0
+    var offset_y = 0.0
     var line_index = 0
     while line_index < line_count:
         let line_text = unsafe: text.chars_as_str(read(raw_lines + ptr_uint<-line_index))

@@ -54,13 +54,13 @@ function main() -> int:
 
     var font_position = rl.Vector2(x = 40.0, y = float<-SCREEN_HEIGHT / 2.0 - 50.0)
     var text_size = rl.Vector2(x = 0.0, y = 0.0)
-    var font_size = float<-16.0
+    var font_size = 16.0
     var current_font = 0
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        font_size += float<-(rl.get_mouse_wheel_move() * 8.0)
+        font_size += (rl.get_mouse_wheel_move() * 8.0)
         if font_size < 6.0:
             font_size = 6.0
 
