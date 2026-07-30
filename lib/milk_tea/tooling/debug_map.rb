@@ -19,7 +19,7 @@ module MilkTea
       end
     end
 
-    Function = Data.define(:name, :linkage_name, :source_path, :line, :params, :locals) do
+    Function = Data.define(:name, :linkage_name, :path, :line, :params, :locals) do
       def to_h(base_dir: nil)
         payload = {
           "name" => name,
@@ -27,7 +27,7 @@ module MilkTea
           "params" => params.map(&:to_h),
           "locals" => locals.map(&:to_h),
         }
-        serialized_source_path = DebugMap.path_for_payload(source_path, base_dir)
+        serialized_source_path = DebugMap.path_for_payload(self.path, base_dir)
         payload["sourcePath"] = serialized_source_path if serialized_source_path
         payload["line"] = line if line
         payload
@@ -57,7 +57,7 @@ module MilkTea
         Function.new(
           name: function.fetch("name"),
           linkage_name: function.fetch("cName"),
-          source_path: path_from_payload(function["sourcePath"], base_dir),
+          path: path_from_payload(function["sourcePath"], base_dir),
           line: function["line"],
           params: load_entries(function["params"]),
           locals: load_entries(function["locals"])
@@ -82,18 +82,18 @@ module MilkTea
 
     def self.from_ir(ir_program, binary_path:)
       functions = ir_program.functions.map do |function|
-        source_path = first_statement_source_path(function.body) || ir_program.source_path
+        source_path = first_statement_source_path(function.body) || ir_program.path
         Function.new(
           name: function.name.to_s,
           linkage_name: function.linkage_name.to_s,
-          source_path: source_path ? File.expand_path(source_path) : nil,
+          path: source_path ? File.expand_path(source_path) : nil,
           line: first_statement_line(function.body),
           params: function.params.map { |param| Entry.new(name: param.name.to_s, linkage_name: param.linkage_name.to_s, line: nil) },
           locals: collect_locals(function.body)
         )
       end
 
-      new(binary_path:, program_source_path: ir_program.source_path, functions:)
+      new(binary_path:, program_source_path: ir_program.path, functions:)
     end
 
     def write(path)
@@ -197,8 +197,8 @@ module MilkTea
 
       def first_statement_source_path(statements)
         Array(statements).each do |statement|
-          if statement.respond_to?(:source_path) && statement.source_path
-            return statement.source_path
+          if statement.respond_to?(:path) && statement.path
+            return statement.path
           end
 
           nested = nested_statements(statement)

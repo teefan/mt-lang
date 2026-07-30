@@ -477,7 +477,7 @@ module MilkTea
               ),
             ),
             line:,
-            source_path: @ctx.current_analysis_path,
+            path: @ctx.current_analysis_path,
           ),
           *sink_cleanups.flat_map(&:itself),
         ]
@@ -500,7 +500,7 @@ module MilkTea
           sink_statements << IR::ExpressionStmt.new(
             expression: IR::Call.new(callee: "std_string_String_clear", arguments: [sink_target[:value]], type: @ctx.types.fetch("void")),
             line:,
-            source_path: @ctx.current_analysis_path,
+            path: @ctx.current_analysis_path,
           )
         end
 
@@ -508,7 +508,7 @@ module MilkTea
           sink_statements << IR::ExpressionStmt.new(
             expression: explicit_format_sink_append_call(part, sink_value: sink_target[:value], env:),
             line:,
-            source_path: @ctx.current_analysis_path,
+            path: @ctx.current_analysis_path,
           )
         end
       when :str_buffer
@@ -525,7 +525,7 @@ module MilkTea
               type: @ctx.types.fetch("void"),
             ),
             line:,
-            source_path: @ctx.current_analysis_path,
+            path: @ctx.current_analysis_path,
           )
         end
 
@@ -1721,7 +1721,7 @@ module MilkTea
       else
         failure_cleanup +
           cleanup_statements(return_context[:local_defers], return_context[:active_defers]) +
-          [IR::ReturnStmt.new(value: failure_return, source_path: @ctx.current_analysis_path)]
+          [IR::ReturnStmt.new(value: failure_return, path: @ctx.current_analysis_path)]
       end
 
       if success_type == @ctx.types.fetch("void")

@@ -356,7 +356,7 @@ module MilkTea
       value = lower_static_storage_initializer(decl.value, env:, expected_type: decl.type ? resolve_type_ref(decl.type) : nil)
       type = decl.type ? resolve_type_ref(decl.type) : infer_expression_type(decl.value, env:)
       linkage_name = value_c_name(decl.name)
-      constant = IR::Constant.new(name: decl.name, linkage_name:, type:, value:, line: decl.line, source_path: @ctx.current_analysis_path)
+      constant = IR::Constant.new(name: decl.name, linkage_name:, type:, value:, line: decl.line, path: @ctx.current_analysis_path)
       @artifacts.emitted_declarations << constant
       []
     end
@@ -445,7 +445,7 @@ module MilkTea
         lowered.concat(prepared_cleanups.flat_map(&:itself))
         local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
       elsif prepared_expression
-        lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line, source_path: @ctx.current_analysis_path)
+        lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line, path: @ctx.current_analysis_path)
         lowered.concat(prepared_cleanups.flat_map(&:itself))
       else
         lowered.concat(prepared_cleanups.flat_map(&:itself))
@@ -498,7 +498,7 @@ module MilkTea
       end
       lowered.concat(lower_proc_contained_retain_statements(value, return_type)) if needs_proc_retain
       lowered.concat(cleanup)
-      lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @ctx.current_analysis_path)
+      lowered << IR::ReturnStmt.new(value:, line: statement.line, path: @ctx.current_analysis_path)
     end
 
     def lower_block_assignment_stmt(statement, lowered:, local_defers:, local_env:)
@@ -724,7 +724,7 @@ module MilkTea
         raise LoweringError.new("consuming foreign calls must return void",
           line: statement.line, column: statement.column, path: @ctx.current_analysis_path) unless release_assignments.empty?
 
-        lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path)
+        lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, path: @ctx.current_analysis_path)
         lowered.concat(cleanup_statements)
         emitted_decl = true
       elsif prepared_value.is_a?(AST::ProcExpr)
@@ -756,7 +756,7 @@ module MilkTea
           const_value: statement.else_body ? nil : statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
         )
       end
-      lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, source_path: @ctx.current_analysis_path) unless emitted_decl
+      lowered << IR::LocalDecl.new(name: decl_name, linkage_name:, type: storage_type, value:, line: statement.line, path: @ctx.current_analysis_path) unless emitted_decl
       if statement.else_body
         else_env = if statement.else_binding
           duplicate_env(local_env).tap do |env_with_error|

@@ -1072,7 +1072,7 @@ module MilkTea
         )
         lowered.concat(setup)
       elsif prepared_expression
-        lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:), line: statement.line, source_path: @ctx.current_analysis_path)
+        lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:), line: statement.line, path: @ctx.current_analysis_path)
       end
 
       lowered

@@ -39,7 +39,7 @@ module MilkTea
           value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
         end
 
-        IR::Constant.new(name: decl.name, linkage_name: value_c_name(decl.name), type:, value:, line: decl.line, source_path: @ctx.current_analysis_path)
+        IR::Constant.new(name: decl.name, linkage_name: value_c_name(decl.name), type:, value:, line: decl.line, path: @ctx.current_analysis_path)
       end
     end
 

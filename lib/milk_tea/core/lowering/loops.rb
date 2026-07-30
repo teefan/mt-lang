@@ -901,9 +901,9 @@ module MilkTea
           value: rewrite_pfor_expr(stmt.value, array_names),
         )
       when IR::LocalDecl
-        stmt.value ? IR::LocalDecl.new(name: stmt.name, linkage_name: stmt.linkage_name, type: stmt.type, value: rewrite_pfor_expr(stmt.value, array_names), line: stmt.line, source_path: stmt.source_path) : stmt
+        stmt.value ? IR::LocalDecl.new(name: stmt.name, linkage_name: stmt.linkage_name, type: stmt.type, value: rewrite_pfor_expr(stmt.value, array_names), line: stmt.line, path: stmt.path) : stmt
       when IR::ExpressionStmt
-        IR::ExpressionStmt.new(expression: rewrite_pfor_expr(stmt.expression, array_names), line: stmt.line, source_path: stmt.source_path)
+        IR::ExpressionStmt.new(expression: rewrite_pfor_expr(stmt.expression, array_names), line: stmt.line, path: stmt.path)
       when IR::IfStmt
         IR::IfStmt.new(
           condition: rewrite_pfor_expr(stmt.condition, array_names),
@@ -931,7 +931,7 @@ module MilkTea
           exhaustive: stmt.exhaustive,
         )
       when IR::ReturnStmt
-        stmt.value ? IR::ReturnStmt.new(value: rewrite_pfor_expr(stmt.value, array_names), line: stmt.line, source_path: stmt.source_path) : stmt
+        stmt.value ? IR::ReturnStmt.new(value: rewrite_pfor_expr(stmt.value, array_names), line: stmt.line, path: stmt.path) : stmt
       else
         stmt
       end

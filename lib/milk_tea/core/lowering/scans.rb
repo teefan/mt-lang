@@ -193,9 +193,9 @@ module MilkTea
       end
     end
 
-    def prepare_analysis(analysis, source_path: nil)
+    def prepare_analysis(analysis, path: nil)
       @ctx.install(analysis)
-      @ctx.current_analysis_path = source_path
+      @ctx.current_analysis_path = path
       @ctx.module_prefix = module_c_prefix(@ctx.module_name)
     end
 

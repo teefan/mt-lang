@@ -139,7 +139,7 @@ module MilkTea
         next if analysis.module_kind == :raw_module
         next if modules.key?(analysis.module_name)
 
-        prepare_analysis(analysis, source_path: path)
+        prepare_analysis(analysis, path: path)
         collect_structs
 
         synth_before_s = @artifacts.synthetic_structs.length
@@ -159,7 +159,7 @@ module MilkTea
           variants: lower_variants.dup,
           static_asserts: lower_static_asserts.dup,
           functions: [],
-          source_path: path,
+          path: path,
         )
         per_module_funcs[analysis.module_name].concat(lower_functions)
 
@@ -178,7 +178,7 @@ module MilkTea
         ordered_analysis_pairs.each do |path, analysis|
           next if analysis.module_kind == :raw_module
 
-          prepare_analysis(analysis, source_path: path)
+          prepare_analysis(analysis, path: path)
           ensure_events_for_analysis(analysis)
 
           synth_before_s = @artifacts.synthetic_structs.length
@@ -279,7 +279,7 @@ module MilkTea
         variants: all_variants,
         static_asserts: all_static_asserts,
         functions: all_functions,
-        source_path: @program.root_path,
+        path: @program.root_path,
       )
     end
 
@@ -287,7 +287,7 @@ module MilkTea
       ordered_analysis_pairs.each do |path, analysis|
         next if analysis.module_kind == :raw_module
 
-        prepare_analysis(analysis, source_path: path)
+        prepare_analysis(analysis, path: path)
         analysis.ast.declarations.grep(AST::EventDecl).each do |decl|
           event_type = analysis.values.fetch(decl.name).type
           ensure_event_runtime(event_type) if event_type.is_a?(Types::Event)

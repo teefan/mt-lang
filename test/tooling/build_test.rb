@@ -1098,7 +1098,7 @@ function main() -> int:
       loaded = MilkTea::DebugMap.load(debug_map_path)
       assert_equal File.expand_path(output_path), loaded.binary_path
       assert_equal File.expand_path(source_path), loaded.program_source_path
-      assert_equal File.expand_path(source_path), loaded.function_for_c_name("debug_map_add").source_path
+      assert_equal File.expand_path(source_path), loaded.function_for_c_name("debug_map_add").path
     end
   end
 

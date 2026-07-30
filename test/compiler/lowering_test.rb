@@ -404,7 +404,7 @@ class MilkTeaLoweringTest < Minitest::Test
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
       ir = MilkTea::Lowering.lower(program)
-      assert_equal root_path, ir.source_path
+      assert_equal root_path, ir.path
     end
   end
 
