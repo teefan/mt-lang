@@ -24,7 +24,7 @@ module MilkTea
       end
 
       def self.apply_fix_edits(lines, edits)
-        edits.sort_by { |e| [-e.start_line, -e.start_char] }.reverse_each do |edit|
+        edits.sort_by { |e| [-e.start_line, -e.start_char] }.each do |edit|
           if edit.start_line == edit.end_line
             line = lines[edit.start_line]
             next unless line
@@ -207,20 +207,34 @@ module MilkTea
         start = warning.column - 1
         return [] unless start >= 0 && start < line.length
 
-        # The warning column points at the cast target type. Delete the
-        # `TargetType<-` prefix, keeping the inner expression as-is. This
-        # covers both bare (`ulong<-x`) and parenthesized (`uint<-(a - b)`)
-        # forms; type refs never contain `<`, so the first `<-` at/after the
-        # column is the cast arrow.
         arrow = line.index("<-", start)
         return [] unless arrow
 
         type_ref = line[start...arrow]
         return [] unless type_ref.match?(/\A[A-Za-z_][A-Za-z0-9_\[\]\.,\s@]*\z/)
 
-        # When the cast is inside an `unsafe:` expression, also remove the
-        # `unsafe: ` wrapper. Look backward from the cast for `unsafe:`.
+        arrow_end = arrow + 2
+
+        # When only the parentheses are redundant (the cast itself is still
+        # needed), remove just the `(` and matching `)`.
+        if warning.message&.include?("parentheses")
+          return [] unless arrow_end < line.length && line[arrow_end] == "("
+
+          open_paren = arrow_end
+          close_paren = match_paren(line, open_paren)
+          return [] unless close_paren
+
+          return [FixEdit.new(start_line: line_idx, start_char: open_paren, end_line: line_idx, end_char: open_paren + 1, new_text: ""),
+                  FixEdit.new(start_line: line_idx, start_char: close_paren, end_line: line_idx, end_char: close_paren + 1, new_text: "")]
+        end
+
+        # Cast to same type / own->ptr / widening are redundant — remove the
+        # `TargetType<-` prefix. When the inner expression is then left
+        # parenthesized with no operators, also strip the orphaned parens.
         new_start = start
+
+        # When the cast is inside an `unsafe:` expression, also remove the
+        # `unsafe: ` wrapper.
         unsafe_keyword = line.rindex("unsafe:", new_start)
         if unsafe_keyword
           prefix = line[unsafe_keyword...new_start]
@@ -229,7 +243,47 @@ module MilkTea
           end
         end
 
-        [FixEdit.new(start_line: line_idx, start_char: new_start, end_line: line_idx, end_char: arrow + 2, new_text: "")]
+        edits = [FixEdit.new(start_line: line_idx, start_char: new_start, end_line: line_idx, end_char: arrow_end, new_text: "")]
+
+        if arrow_end < line.length && line[arrow_end] == "("
+          close_paren = match_paren(line, arrow_end)
+          if close_paren && !inner_has_top_level_operators?(line[arrow_end + 1...close_paren])
+            edits << FixEdit.new(start_line: line_idx, start_char: arrow_end, end_line: line_idx, end_char: arrow_end + 1, new_text: "")
+            edits << FixEdit.new(start_line: line_idx, start_char: close_paren, end_line: line_idx, end_char: close_paren + 1, new_text: "")
+          end
+        end
+
+        edits
+      end
+
+      def self.match_paren(line, open_pos)
+        depth = 0
+        (open_pos...line.length).each do |i|
+          case line[i]
+          when "(" then depth += 1
+          when ")" then depth -= 1; return i if depth == 0
+          end
+        end
+        nil
+      end
+
+      BINARY_OP_CHARS = %w[+ - * / % & | ^ < > = ! ? :].freeze
+
+      def self.inner_has_top_level_operators?(inner)
+        depth = 0
+        i = 0
+        while i < inner.length
+          case inner[i]
+          when "(", "[", "{"
+            depth += 1
+          when ")", "]", "}"
+            depth -= 1 if depth > 0
+          when *BINARY_OP_CHARS
+            return true if depth == 0
+          end
+          i += 1
+        end
+        false
       end
     end
   end
