@@ -8,16 +8,16 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::FunctionDef
-              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.column)
               @ctx.top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::ExternFunctionDecl
-              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.column)
               if decl.mapping && !decl.mapping.is_a?(AST::StringLiteral)
                 raise_sema_error("external function #{decl.name} mapping must be a c-string literal")
               end
               @ctx.top_level_functions[decl.name] = declare_function_binding(decl, external: true)
             when AST::ForeignFunctionDecl
-              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.column)
               @ctx.top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::ExtendingBlock
               dispatch_receiver_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints = resolve_methods_receiver_target(decl.type_name)
@@ -86,7 +86,7 @@ module MilkTea
         any_default = false
         decl.params.each do |param|
           begin
-            ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.respond_to?(:line) ? param.line : decl.line, column: param.respond_to?(:column) ? param.column : nil)
+            ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.line || decl.line, column: param.column)
             type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
             validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
             reject_foreign_nullable_value_type!(type, function_name: decl.name, parameter_name: param.name) if foreign || external

@@ -487,8 +487,8 @@ module MilkTea
                 ensure_non_reserved_type_binding_name!(
                   field.name,
                   kind_label: "field #{decl.name}",
-                  line: field.respond_to?(:line) ? field.line : decl.line,
-                  column: field.respond_to?(:column) ? field.column : nil,
+                  line: field.line || decl.line,
+                  column: field.column,
                 )
               end
 
@@ -581,8 +581,8 @@ module MilkTea
                 ensure_non_reserved_type_binding_name!(
                   member.name,
                   kind_label: "member #{decl.name}",
-                  line: member.respond_to?(:line) ? member.line : decl.line,
-                  column: member.respond_to?(:column) ? member.column : nil,
+                  line: member.line || decl.line,
+                  column: member.column,
                 )
               end
 
@@ -650,8 +650,8 @@ module MilkTea
                   ensure_non_reserved_type_binding_name!(
                     arm.name,
                     kind_label: "arm #{decl.name}",
-                    line: arm.respond_to?(:line) ? arm.line : decl.line,
-                    column: arm.respond_to?(:column) ? arm.column : nil,
+                    line: arm.line || decl.line,
+                    column: arm.column,
                   )
                 end
 
@@ -666,8 +666,8 @@ module MilkTea
                       ensure_non_reserved_type_binding_name!(
                         field.name,
                         kind_label: "field #{decl.name}.#{arm.name}",
-                        line: field.respond_to?(:line) ? field.line : decl.line,
-                        column: field.respond_to?(:column) ? field.column : nil,
+                        line: field.line || decl.line,
+                        column: field.column,
                       )
                     end
 
@@ -740,7 +740,7 @@ module MilkTea
             case decl
             when AST::ConstDecl
               begin
-                ensure_available_value_name!(decl.name, kind_label: "constant", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+                ensure_available_value_name!(decl.name, kind_label: "constant", line: decl.line, column: decl.column)
                 type = resolve_type_ref(decl.type)
                 validate_stored_ref_type!(type, "constant #{decl.name}")
                 raise_sema_error("constant #{decl.name} cannot store proc values") if contains_proc_type?(type)
@@ -760,7 +760,7 @@ module MilkTea
                 ) unless @ctx.top_level_values.key?(decl.name)
               end
             when AST::VarDecl
-              ensure_available_value_name!(decl.name, kind_label: "module variable", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+              ensure_available_value_name!(decl.name, kind_label: "module variable", line: decl.line, column: decl.column)
               raise_sema_error("module variable #{decl.name} requires an explicit type") unless decl.type
 
               type = resolve_type_ref(decl.type)

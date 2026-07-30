@@ -112,7 +112,7 @@ module MilkTea
             cond_id = @graph.add_node(
               kind: :if_condition,
               statement: branch,
-              line: branch.respond_to?(:line) ? branch.line : stmt.line,
+              line: branch.line || stmt.line,
               reads: branch_reads,
               reads_info: branch_reads_info,
             )
@@ -138,7 +138,7 @@ module MilkTea
               arm_body = if arm.respond_to?(:body)
                            arm.body
                          else
-                           [MilkTea::AST::ExpressionStmt.new(expression: arm.value, line: arm.value.respond_to?(:line) ? arm.value.line : nil)]
+                           [MilkTea::AST::ExpressionStmt.new(expression: arm.value, line: arm.value.line)]
                          end
               arm_entry = build_block(arm_body, next_id, break_target:, continue_target:)
               if arm.binding_name
@@ -265,7 +265,7 @@ module MilkTea
       end
 
       def add_linear_node(kind, stmt, next_id, reads: Set.new, reads_info: [], writes: Set.new, writes_info: [])
-        node_id = @graph.add_node(kind:, statement: stmt, line: stmt.respond_to?(:line) ? stmt.line : nil, reads:, reads_info:, writes:, writes_info:)
+        node_id = @graph.add_node(kind:, statement: stmt, line: stmt.line, reads:, reads_info:, writes:, writes_info:)
         @graph.add_edge(node_id, next_id)
         node_id
       end

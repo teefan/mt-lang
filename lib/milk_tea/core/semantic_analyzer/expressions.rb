@@ -853,7 +853,7 @@ module MilkTea
         proc_scopes = scopes.map { |scope| freeze_scope_bindings(scope) }
         proc_scope = {}
         expression.params.each do |param|
-          ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.respond_to?(:line) ? param.line : nil, column: param.respond_to?(:column) ? param.column : nil)
+          ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.line, column: param.column)
           param_type = resolve_type_ref(param.type)
           validate_parameter_ref_type!(param_type, function_name: "proc", parameter_name: param.name, external: false)
           validate_parameter_proc_type!(param_type, function_name: "proc", parameter_name: param.name, external: false, foreign: false)

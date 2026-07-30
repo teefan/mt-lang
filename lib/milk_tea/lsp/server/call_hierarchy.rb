@@ -174,8 +174,8 @@ module MilkTea
         end
 
         def binding_range(binding)
-          line = binding.ast.respond_to?(:line) ? binding.ast.line - 1 : 0
-          col = binding.ast.respond_to?(:column) ? binding.ast.column - 1 : 0
+          line = binding.ast.line ? binding.ast.line - 1 : 0
+          col = binding.ast.column ? binding.ast.column - 1 : 0
           length = binding.name.length
           {
             start: { line: line, character: col },
@@ -186,8 +186,8 @@ module MilkTea
         def selection_range_from_binding(binding)
           name_len = binding.name.length
           ast = binding.ast
-          line = ast.respond_to?(:line) ? ast.line - 1 : 0
-          col = ast.respond_to?(:column) ? ast.column - 1 : 0
+          line = ast.line ? ast.line - 1 : 0
+          col = ast.column ? ast.column - 1 : 0
 
           if ast.respond_to?(:name)
             name_ast = ast.name
@@ -224,11 +224,12 @@ module MilkTea
             callee_name = extract_callee_name(node.callee, facts)
             next unless callee_name
 
+            callee = node.callee
+            line_start = callee.line ? callee.line - 1 : 0
+            col_start = callee.column ? callee.column - 1 : 0
             range = {
-              start: { line: node.callee.respond_to?(:line) ? node.callee.line - 1 : 0,
-                       character: node.callee.respond_to?(:column) ? node.callee.column - 1 : 0 },
-              end: { line: node.callee.respond_to?(:line) ? node.callee.line - 1 : 0,
-                     character: (node.callee.respond_to?(:column) ? node.callee.column - 1 : 0) + callee_name.length },
+              start: { line: line_start, character: col_start },
+              end: { line: line_start, character: col_start + callee_name.length },
             }
 
             callees[callee_name] ||= []
@@ -258,8 +259,8 @@ module MilkTea
         end
 
         def token_range(token)
-          line = token.respond_to?(:line) ? token.line - 1 : 0
-          col = token.respond_to?(:column) ? token.column - 1 : 0
+          line = token.line ? token.line - 1 : 0
+          col = token.column ? token.column - 1 : 0
           len = token.respond_to?(:lexeme) ? token.lexeme.length : 0
           {
             start: { line: line, character: col },

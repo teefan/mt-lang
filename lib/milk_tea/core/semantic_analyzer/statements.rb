@@ -11,8 +11,8 @@ module MilkTea
               statements.each_with_index do |statement, idx|
                 begin
                   record_local_completion_snapshot(
-                    statement.respond_to?(:line) ? statement.line : nil,
-                    statement.respond_to?(:column) ? statement.column : 0,
+                    statement.line,
+                    statement.column || 0,
                     nested_scopes,
                   )
                   refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
@@ -25,10 +25,10 @@ module MilkTea
                   # record an extra snapshot at the declaration line so that
                   # hover and completion lookups on the declaration line itself
                   # can still find the new binding.
-                  if end_line && statement.respond_to?(:line) && statement.line && end_line > statement.line
+                  if end_line && statement.line && end_line > statement.line
                     record_local_completion_snapshot(
                       statement.line,
-                      statement.respond_to?(:column) ? statement.column : 0,
+                      statement.column || 0,
                       nested_scopes,
                     )
                   end
@@ -41,7 +41,7 @@ module MilkTea
 
                   raise e unless e.line.nil?
 
-                  stmt_line = statement.respond_to?(:line) ? statement.line : nil
+                  stmt_line = statement.line
                   raise e if stmt_line.nil?
 
                   raise_sema_error(e.message, statement)

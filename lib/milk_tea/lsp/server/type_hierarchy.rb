@@ -115,12 +115,12 @@ module MilkTea
         def find_type_info(facts, name)
           if (t = facts.types[name])
             ast = t.respond_to?(:ast_declaration) ? t.ast_declaration : nil
-            return { kind: type_kind_from_object(t), line: ast&.line, column: ast.respond_to?(:column) ? ast.column : 0 }
+            return { kind: type_kind_from_object(t), line: ast&.line, column: ast.column || 0 }
           end
 
           if (t = facts.interfaces[name])
             ast = t.respond_to?(:ast_declaration) ? t.ast_declaration : nil
-            return { kind: :interface, line: ast&.line, column: ast.respond_to?(:column) ? ast.column : 0 }
+            return { kind: :interface, line: ast&.line, column: ast.column || 0 }
           end
 
           nil

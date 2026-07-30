@@ -757,8 +757,8 @@ module MilkTea
     def sort_by_location(errors)
       errors.sort_by do |e|
         actual = e.respond_to?(:error) ? e.error : e
-        line = actual.respond_to?(:line) ? actual.line.to_i : 0
-        column = actual.respond_to?(:column) ? actual.column.to_i : 0
+        line = actual.line.to_i
+        column = actual.column.to_i
         [line, column]
       end
     end

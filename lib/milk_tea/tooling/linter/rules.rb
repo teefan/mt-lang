@@ -13,7 +13,7 @@ module MilkTea
         @warnings << Warning.new(
           path: @path,
           line: function.line,
-          column: function.respond_to?(:column) ? function.column : nil,
+          column: function.column,
           length: function.name.length,
           code: "missing-return",
           message: "function '#{function.name}' does not always return a value",
@@ -139,7 +139,7 @@ module MilkTea
         return unless stmt.branches.all? { |b| always_returns?(b.body) }
 
         # Use the line of the first else-body statement as the diagnostic anchor.
-        else_line = stmt.else_body.first.respond_to?(:line) ? stmt.else_body.first.line : stmt.line
+        else_line = stmt.else_body.first.line || stmt.line
         @warnings << Warning.new(
           path: @path,
           line: stmt.else_line || else_line,
@@ -168,13 +168,13 @@ module MilkTea
         return if expr.is_a?(AST::UnaryOp) && expr.operator == "?"
         return if contains_side_effecting_expression?(expr)
 
-        line = expression_line(expr) || (stmt.respond_to?(:line) ? stmt.line : nil)
+        line = expression_line(expr) || (stmt.line)
         column = expression_column(expr)
         length = expression_length(expr)
-        if line && (!column || !length || !expr.respond_to?(:column) || expr.is_a?(AST::UnsafeExpr))
+        if line && (!column || !length || expr.is_a?(AST::UnsafeExpr))
           fallback_span = source_statement_span(line)
           column ||= fallback_span&.first
-          length = fallback_span&.last if !length || !expr.respond_to?(:column) || expr.is_a?(AST::UnsafeExpr)
+          length = fallback_span&.last if !length || expr.is_a?(AST::UnsafeExpr)
         end
 
         @warnings << Warning.new(

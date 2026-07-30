@@ -77,7 +77,7 @@ module MilkTea
               imports: ast.respond_to?(:imports) ? (ast.imports || []) : [],
               directives: ast.respond_to?(:directives) ? (ast.directives || []) : [],
               declarations: ast.respond_to?(:declarations) ? (ast.declarations || []) : [],
-              line: ast.respond_to?(:line) ? ast.line : 1,
+              line: ast.line || 1,
               node_ids: ast.respond_to?(:node_ids) ? ast.node_ids : {},
             )
           end
@@ -312,8 +312,8 @@ module MilkTea
       def self.format_strict_root_error(error, path:)
         diagnostic = Diagnostic.new(
           path: path,
-          line: error.respond_to?(:line) && error.line ? error.line : 1,
-          column: error.respond_to?(:column) && error.column ? error.column : 1,
+          line: error.line ? error.line : 1,
+          column: error.column ? error.column : 1,
           code: strict_root_diagnostic_code(error),
           message: "strict current-root check failed: #{error.message}",
           severity: :error,
@@ -393,7 +393,7 @@ module MilkTea
       # Returns [start_char, end_char] in 0-based LSP coordinates.
       # Falls back to [0, 1] when a precise token span cannot be inferred.
       def self.extract_warning_range(warning, content)
-        if warning.respond_to?(:column) && warning.column
+        if warning.column
           start_char = [warning.column.to_i - 1, 0].max
           len = warning.respond_to?(:length) ? warning.length.to_i : 0
           len = 1 if len <= 0

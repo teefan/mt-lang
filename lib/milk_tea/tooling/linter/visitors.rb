@@ -297,7 +297,7 @@ module MilkTea
           @unsafe_depth -= 1
         when AST::ProcExpr
           with_scope do
-            fallback_line = expression.respond_to?(:line) ? expression.line : nil
+            fallback_line = expression.line
             expression.params.each do |param|
               declare_param(
                 param.name,
@@ -800,8 +800,8 @@ module MilkTea
           cond_src = source_line_from(b.line, b.column)
           return false unless cond_src
 
-          stmt_col = stmts[i].respond_to?(:column) ? stmts[i].column : nil
-          stmt_line = stmts[i].respond_to?(:line) ? stmts[i].line : nil
+          stmt_col = stmts[i].column
+          stmt_line = stmts[i].line
           body_src = source_line_from(stmt_line, stmt_col)
           return false unless body_src
 
@@ -818,8 +818,8 @@ module MilkTea
           text << " "
         end
 
-        stmt_col = stmts.last.respond_to?(:column) ? stmts.last.column : nil
-        stmt_line = stmts.last.respond_to?(:line) ? stmts.last.line : nil
+        stmt_col = stmts.last.column
+        stmt_line = stmts.last.line
         else_body = source_line_from(stmt_line, stmt_col)
         return false unless else_body
         text << else_body
@@ -839,9 +839,9 @@ module MilkTea
       def visually_inline_if?(statement, stmts)
         n = statement.branches.length
         statement.branches.each_with_index.all? { |b, i|
-          stmts[i].respond_to?(:line) && stmts[i].line == b.line
+          stmts[i].line == b.line
         } && (
-          stmts[n].respond_to?(:line) && statement.else_line && stmts[n].line == statement.else_line
+          stmts[n].line && statement.else_line && stmts[n].line == statement.else_line
         )
       end
 
@@ -896,8 +896,8 @@ module MilkTea
           next unless node_fingerprint(body_of.call(first)) == node_fingerprint(body_of.call(second))
 
           pattern = second.pattern
-          pattern_line = pattern.respond_to?(:line) ? pattern.line : second.binding_line
-          pattern_column = pattern.respond_to?(:column) ? pattern.column : second.binding_column
+          pattern_line = pattern.line || second.binding_line
+          pattern_column = pattern.column || second.binding_column
           emit_conciseness_hint(
             "prefer-or-pattern",
             line: pattern_line,
@@ -934,8 +934,8 @@ module MilkTea
         source_text = expr_source_name(copied.first.value.receiver)
         emit_conciseness_hint(
           "prefer-struct-with",
-          line: call.callee.respond_to?(:line) ? call.callee.line : nil,
-          column: call.callee.respond_to?(:column) ? call.callee.column : nil,
+          line: call.callee.line,
+          column: call.callee.column,
           message: "copies #{copied.size} field(s) from `#{source_text}`; use `#{source_text}.with(#{changed_names.join(", ")} = …)`",
         )
       end
@@ -967,8 +967,8 @@ module MilkTea
 
         emit_conciseness_hint(
           "prefer-try",
-          line: scrutinee.respond_to?(:line) ? scrutinee.line : nil,
-          column: scrutinee.respond_to?(:column) ? scrutinee.column : nil,
+          line: scrutinee.line,
+          column: scrutinee.column,
           message: "this #{base} match only propagates the failure branch; consider `expr?`",
         )
       end
@@ -1050,7 +1050,6 @@ module MilkTea
       # contains a binary operator, range, or inline conditional.
 
       def check_redundant_cast_parens(cast)
-        return unless cast.respond_to?(:line) && cast.respond_to?(:column)
 
         line_idx = Integer(cast.line) - 1
         return if line_idx < 0 || line_idx >= @source_lines.length
@@ -1147,8 +1146,8 @@ module MilkTea
       end
 
       def emit_redundant_cast(cast_expr, target_name, reason)
-        line = cast_expr.respond_to?(:line) ? cast_expr.line : expression_line(cast_expr)
-        column = cast_expr.respond_to?(:column) ? cast_expr.column : expression_column(cast_expr)
+        line = cast_expr.line || expression_line(cast_expr)
+        column = cast_expr.column || expression_column(cast_expr)
 
         @warnings << Warning.new(
           path: @path,

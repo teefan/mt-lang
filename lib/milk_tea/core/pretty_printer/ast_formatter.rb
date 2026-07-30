@@ -144,7 +144,7 @@ module MilkTea
       end
 
       def emit_declaration(declaration)
-        decl_line = declaration.respond_to?(:line) ? declaration.line : nil
+        decl_line = declaration.line
         flush_leading_comments_before(decl_line)
         header_idx = @lines.length
 
@@ -443,7 +443,7 @@ module MilkTea
       end
 
       def emit_statement(statement)
-        stmt_line = statement.respond_to?(:line) ? statement.line : nil
+        stmt_line = statement.line
         flush_leading_comments_before(stmt_line)
         header_idx = @lines.length
 
@@ -661,8 +661,8 @@ module MilkTea
       end
 
       def unsafe_inline_trivia_conflict?(unsafe_stmt, nested)
-        unsafe_line = unsafe_stmt.respond_to?(:line) ? unsafe_stmt.line : nil
-        nested_line = nested.respond_to?(:line) ? nested.line : nil
+        unsafe_line = unsafe_stmt.line
+        nested_line = nested.line
         return false unless unsafe_line && nested_line && nested_line > unsafe_line
 
         @comment_map.keys.any? { |line| line >= unsafe_line + 1 && line <= nested_line } ||

@@ -204,8 +204,8 @@ module MilkTea
 
     def self.ast_node_header(node)
       name_attr = node.respond_to?(:name) ? node.name : nil
-      loc = if node.respond_to?(:line) && node.line
-              col = node.respond_to?(:column) && node.column ? ", Col #{node.column}" : ''
+      loc = if node.line
+              col = node.column ? ", Col #{node.column}" : ''
               " [Ln #{node.line}#{col}]"
             else
               ''
@@ -278,8 +278,8 @@ module MilkTea
 
       buf = ["── Parse Errors  #{errors.length}  " + '─' * 55]
       errors.each do |e|
-        line = e.respond_to?(:line) ? e.line : '?'
-        col = e.respond_to?(:column) ? e.column : '?'
+        line = e.line || '?'
+        col = e.column || '?'
         buf << "  ERROR [Ln #{line}, Col #{col}]: #{e.message}"
       end
       buf.join("\n")
@@ -443,8 +443,8 @@ module MilkTea
       diags.each do |d|
         severity = d.respond_to?(:severity) ? d.severity.to_s.upcase : '?'
         code = d.respond_to?(:code) ? d.code : '?'
-        line = d.respond_to?(:line) ? d.line : '?'
-        col = d.respond_to?(:column) ? d.column : '?'
+        line = d.line || '?'
+        col = d.column || '?'
         msg = d.respond_to?(:message) ? d.message : d.to_s
         buf << "  #{severity[0]} #{severity.ljust(7)} #{code} [Ln #{line}, Col #{col}]: #{msg}"
       end

@@ -1362,7 +1362,7 @@ module MilkTea
               next unless binding.name == token.lexeme
               next unless binding.ast.is_a?(AST::MethodDef)
               next unless binding.ast.line == token.line
-              next unless binding.ast.respond_to?(:column) && binding.ast.column == token.column
+              next unless binding.ast.column == token.column
 
               return binding
             end
@@ -1371,8 +1371,8 @@ module MilkTea
           facts.interfaces.each_value do |interface_binding|
             interface_binding.methods.each_value do |method_binding|
               next unless method_binding.name == token.lexeme
-              next unless method_binding.ast.respond_to?(:line) && method_binding.ast.line == token.line
-              next unless method_binding.ast.respond_to?(:column) && method_binding.ast.column == token.column
+              next unless method_binding.ast.line == token.line
+              next unless method_binding.ast.column == token.column
 
               return method_binding
             end

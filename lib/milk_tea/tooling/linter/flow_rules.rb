@@ -48,7 +48,7 @@ module MilkTea
           next unless node.statement
 
           statement = node.statement
-          line = statement.respond_to?(:line) ? statement.line : nil
+          line = statement.line
           @warnings << Warning.new(
             path: @path,
             line:,

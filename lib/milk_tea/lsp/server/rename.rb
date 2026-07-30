@@ -417,7 +417,7 @@ module MilkTea
           end
 
           return nil if node.is_a?(AST::ForStmt)
-          return nil unless node.respond_to?(:name) && node.respond_to?(:line) && node.respond_to?(:column)
+          return nil unless node.respond_to?(:name)
           return nil unless node.name.is_a?(String) && node.line && node.column
 
           ast_name_range(node.name, node.line, node.column)

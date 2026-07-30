@@ -302,15 +302,15 @@ module MilkTea
         end
 
         def child_nested_struct_symbol(nested)
-          return nil unless nested.respond_to?(:name) && nested.name && nested.respond_to?(:line) && nested.line
+          return nil unless nested.respond_to?(:name) && nested.name && nested.line
 
           grandchildren = child_symbols_for(nested)
           {
             name: nested.name, kind: 23,
             range: { start: { line: nested.line - 1, character: 0 }, end: { line: nested.line, character: 0 } },
             selectionRange: {
-              start: { line: nested.line - 1, character: (nested.respond_to?(:column) && nested.column ? nested.column - 1 : 0) },
-              end: { line: nested.line - 1, character: (nested.respond_to?(:column) && nested.column ? nested.column - 1 + nested.name.length : 0) },
+              start: { line: nested.line - 1, character: (nested.column ? nested.column - 1 : 0) },
+              end: { line: nested.line - 1, character: (nested.column ? nested.column - 1 + nested.name.length : 0) },
             },
           }.tap { |s| s[:children] = grandchildren if grandchildren&.any? }
         end
@@ -325,21 +325,21 @@ module MilkTea
         end
 
         def child_field_symbol(f)
-          return nil unless f.respond_to?(:name) && f.name && f.respond_to?(:line) && f.line
+          return nil unless f.respond_to?(:name) && f.name && f.line
           detail = f.respond_to?(:type) ? type_detail_string(f.type) : nil
           {
             name: f.name, kind: 8,
             detail: detail,
             range: { start: { line: f.line - 1, character: 0 }, end: { line: f.line, character: 0 } },
             selectionRange: {
-              start: { line: f.line - 1, character: (f.respond_to?(:column) && f.column ? f.column - 1 : 0) },
-              end: { line: f.line - 1, character: (f.respond_to?(:column) && f.column ? f.column - 1 + f.name.length : 0) },
+              start: { line: f.line - 1, character: (f.column ? f.column - 1 : 0) },
+              end: { line: f.line - 1, character: (f.column ? f.column - 1 + f.name.length : 0) },
             },
           }.compact
         end
 
         def child_event_symbol(e)
-          return nil unless e.respond_to?(:name) && e.name && e.respond_to?(:line) && e.line
+          return nil unless e.respond_to?(:name) && e.name && e.line
 
           parts = ["event[#{e.capacity}]"]
           parts << "(#{type_detail_string(e.payload_type)})" if e.respond_to?(:payload_type) && e.payload_type
@@ -349,17 +349,17 @@ module MilkTea
             detail: parts.join,
             range: { start: { line: e.line - 1, character: 0 }, end: { line: e.line, character: 0 } },
             selectionRange: {
-              start: { line: e.line - 1, character: (e.respond_to?(:column) && e.column ? e.column - 1 : 0) },
-              end: { line: e.line - 1, character: (e.respond_to?(:column) && e.column ? e.column - 1 + e.name.length : 0) },
+              start: { line: e.line - 1, character: (e.column ? e.column - 1 : 0) },
+              end: { line: e.line - 1, character: (e.column ? e.column - 1 + e.name.length : 0) },
             },
           }
         end
 
         def child_member_symbol(m, default_line: nil)
-          line = (m.respond_to?(:line) && m.line) ? m.line : default_line
+          line = (m.line) ? m.line : default_line
           return nil unless m.respond_to?(:name) && m.name && line
 
-          col = m.respond_to?(:column) && m.column ? m.column : 1
+          col = m.column ? m.column : 1
           {
             name: m.name, kind: 22,
             range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
@@ -371,9 +371,9 @@ module MilkTea
         end
 
         def child_variant_arm_symbol(a, default_line: nil)
-          line = (a.respond_to?(:line) && a.line) ? a.line : default_line
+          line = (a.line) ? a.line : default_line
           return nil unless a.respond_to?(:name) && a.name && line
-          col = a.respond_to?(:column) && a.column ? a.column : 1
+          col = a.column ? a.column : 1
           {
             name: a.name, kind: 22,
             range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
@@ -461,9 +461,9 @@ module MilkTea
 
         def type_param_child_symbol(tp)
           return nil unless tp.respond_to?(:name) && tp.name
-          return nil unless tp.respond_to?(:line) && tp.line
+          return nil unless tp.line
 
-          col = tp.respond_to?(:column) && tp.column ? tp.column : 1
+          col = tp.column ? tp.column : 1
           {
             name: tp.name, kind: 26,
             range: { start: { line: tp.line - 1, character: col - 1 }, end: { line: tp.line - 1, character: col - 1 + tp.name.length } },
@@ -481,7 +481,7 @@ module MilkTea
         end
 
         def child_method_symbol(m)
-          return nil unless m.respond_to?(:name) && m.name && m.respond_to?(:line) && m.line
+          return nil unless m.respond_to?(:name) && m.name && m.line
 
           detail_parts = []
           detail_parts << 'mut' if m.respond_to?(:kind) && m.kind == :editable_function
@@ -494,8 +494,8 @@ module MilkTea
             name: m.name, kind: 6,
             range: { start: { line: m.line - 1, character: 0 }, end: { line: (m.respond_to?(:end_line) && m.end_line ? m.end_line : m.line), character: 0 } },
             selectionRange: {
-              start: { line: m.line - 1, character: (m.respond_to?(:column) && m.column ? m.column - 1 : 0) },
-              end: { line: m.line - 1, character: (m.respond_to?(:column) && m.column ? m.column - 1 + m.name.length : 0) },
+              start: { line: m.line - 1, character: (m.column ? m.column - 1 : 0) },
+              end: { line: m.line - 1, character: (m.column ? m.column - 1 + m.name.length : 0) },
             },
             detail: detail_parts.empty? ? nil : detail_parts.join(' '),
           }.compact

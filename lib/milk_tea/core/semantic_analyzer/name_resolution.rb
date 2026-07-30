@@ -510,7 +510,7 @@ module MilkTea
 
       def source_line(node)
         return nil unless node
-        return node.line if node.respond_to?(:line) && node.line
+        return node.line if node.line
 
         case node
         when AST::MemberAccess then source_line(node.receiver)
@@ -549,7 +549,7 @@ module MilkTea
 
       def source_column(node)
         return nil unless node
-        return node.column if node.respond_to?(:column) && node.column
+        return node.column if node.column
 
         case node
         when AST::MemberAccess then source_column(node.receiver)

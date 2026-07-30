@@ -81,7 +81,7 @@ module MilkTea
             if type_name
               result[stmt.name] = {
                 line: stmt.line,
-                column: stmt.respond_to?(:column) ? stmt.column : nil,
+                column: stmt.column,
                 type_name: type_name,
               }
             end
@@ -287,7 +287,7 @@ module MilkTea
             if type_name
               result[stmt.name] = {
                 line: stmt.line,
-                column: stmt.respond_to?(:column) ? stmt.column : nil,
+                column: stmt.column,
                 type_name: type_name,
               }
             end
@@ -723,7 +723,7 @@ module MilkTea
       end
 
       def extract_line(stmt)
-        stmt.respond_to?(:line) ? stmt.line : nil
+        stmt.line
       end
 
       def owning_base_name(qname)

@@ -107,7 +107,7 @@ module MilkTea
           snapshots: [],
         }
         @active_local_completion_stack << frame
-        record_local_completion_snapshot(binding.ast.respond_to?(:line) ? binding.ast.line : nil, 0, scopes)
+        record_local_completion_snapshot(binding.ast.line, 0, scopes)
       end
 
       def finish_local_completion_frame(binding)
@@ -119,7 +119,7 @@ module MilkTea
           return
         end
 
-        start_line = [binding.ast.respond_to?(:line) ? binding.ast.line : nil, snapshots.first.line].compact.min
+        start_line = [binding.ast.line, snapshots.first.line].compact.min
         end_line = snapshots.last.line
 
         # Extend end_line to cover the actual function body so that completion
@@ -186,7 +186,7 @@ module MilkTea
       def statement_end_line(statement)
         return nil unless statement
 
-        lines = [statement.respond_to?(:line) ? statement.line : nil]
+        lines = [statement.line]
 
         case statement
         when AST::ErrorBlockStmt
@@ -237,7 +237,7 @@ module MilkTea
       def expression_end_line(node)
         return nil unless node
 
-        lines = [node.respond_to?(:line) ? node.line : nil]
+        lines = [node.line]
 
         case node
         when AST::MemberAccess
@@ -376,24 +376,24 @@ module MilkTea
             else_lines = last_ast_line(stmt.else_body)
             [stmt.line, *branch_lines, else_lines].compact.max
           when AST::WhileStmt, AST::ForStmt, AST::UnsafeStmt, AST::ErrorBlockStmt
-            [stmt.respond_to?(:line) ? stmt.line : nil, last_ast_line(stmt.body)].compact.max
+            [stmt.line, last_ast_line(stmt.body)].compact.max
           when AST::MatchStmt
             arm_lines = stmt.arms.filter_map do |arm|
               if arm.respond_to?(:body)
                 last_ast_line(arm.body)
               elsif arm.respond_to?(:value)
-                arm.value.respond_to?(:line) ? arm.value.line : nil
+                arm.value.line
               end
             end
             [stmt.line, *arm_lines].compact.max
           when AST::DeferStmt
-            [stmt.respond_to?(:line) ? stmt.line : nil, last_ast_line(stmt.body)].compact.max
+            [stmt.line, last_ast_line(stmt.body)].compact.max
           when AST::WhenStmt
             branch_lines = stmt.branches.filter_map { |b| last_ast_line(b.body) }
             else_lines = last_ast_line(stmt.else_body)
             [stmt.line, *branch_lines, else_lines].compact.max
           else
-            stmt.respond_to?(:line) ? stmt.line : nil
+            stmt.line
           end
         end.compact.max
       end

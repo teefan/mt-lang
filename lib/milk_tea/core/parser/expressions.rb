@@ -16,7 +16,7 @@ module MilkTea
         return expr unless match(:dot_dot)
 
         line = previous.line
-        column = expr.respond_to?(:column) ? expr.column : 0
+        column = expr.column || 0
         end_expr = parse_or
         AST::RangeExpr.new(start_expr: expr, end_expr:, line:, column:)
       end

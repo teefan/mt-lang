@@ -152,7 +152,7 @@ module MilkTea
               next nil unless local_binding
 
               ast_node = local_binding.respond_to?(:ast) ? local_binding.ast : nil
-              if ast_node&.line && ast_node.respond_to?(:column) && ast_node.column
+              if ast_node&.line && ast_node.column
                 {
                   uri: uri,
                   range: {
@@ -256,7 +256,7 @@ module MilkTea
               if current_type.respond_to?(:nested_types) && (nested = current_type.nested_types[segment[:name]])
                 if segment[:token_index] == token_index
                   decl = nested.respond_to?(:ast_declaration) ? nested.ast_declaration : nil
-                  if decl&.line && decl.respond_to?(:column) && decl.column
+                  if decl&.line && decl.column
                     return {
                       uri: current_uri,
                       range: {
@@ -413,7 +413,7 @@ module MilkTea
           return nil unless path
 
           ast = binding.respond_to?(:ast) ? binding.ast : nil
-          if ast&.line && ast.respond_to?(:column) && ast.column
+          if ast&.line && ast.column
             start_line = ast.line - 1
             start_char = ast.column - 1
 
@@ -646,7 +646,7 @@ module MilkTea
             method_binding = interface_binding.methods[token.lexeme]
             next unless method_binding
             next unless method_binding.ast.line == token.line
-            next unless method_binding.ast.respond_to?(:column) && method_binding.ast.column == token.column
+            next unless method_binding.ast.column == token.column
 
             return { interface: interface_binding, method: method_binding }
           end

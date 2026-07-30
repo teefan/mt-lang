@@ -279,7 +279,7 @@ module MilkTea
         end
 
         def declaration_name_range_fallback(node, uri, name)
-          return nil unless node.respond_to?(:line) && node.line
+          return nil unless node.line
 
           row = get_content_line(uri, node.line - 1)
           return nil unless row

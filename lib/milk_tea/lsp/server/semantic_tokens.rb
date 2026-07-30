@@ -846,8 +846,8 @@ module MilkTea
 
         def generic_binding_scope(node, bindings, end_line)
           {
-            start_line: node.respond_to?(:line) && node.line ? node.line : 0,
-            start_column: node.respond_to?(:column) && node.column ? node.column : 0,
+            start_line: node.line ? node.line : 0,
+            start_column: node.column ? node.column : 0,
             end_line: end_line,
             bindings: bindings.dup,
           }
@@ -865,19 +865,19 @@ module MilkTea
           case statement
           when AST::IfStmt
             branch_lines = Array(statement.branches).map do |branch|
-              generic_statement_list_end_line(Array(branch.body), branch.respond_to?(:line) ? branch.line : statement.line)
+              generic_statement_list_end_line(Array(branch.body), branch.line || statement.line)
             end
             else_line = generic_statement_list_end_line(Array(statement.else_body), statement.line)
             ([statement.line, else_line] + branch_lines).compact.max
           when AST::MatchStmt
             arm_lines = Array(statement.arms).map do |arm|
-              generic_statement_list_end_line(Array(arm.body), arm.respond_to?(:line) ? arm.line : statement.line)
+              generic_statement_list_end_line(Array(arm.body), arm.line || statement.line)
             end
             ([statement.line] + arm_lines).compact.max
           when AST::UnsafeStmt, AST::WhileStmt, AST::ForStmt, AST::DeferStmt
             [statement.line, generic_statement_list_end_line(Array(statement.body), statement.line)].compact.max
           else
-            statement.respond_to?(:line) ? statement.line : 0
+            statement.line || 0
           end
         end
 
@@ -1324,7 +1324,7 @@ module MilkTea
         end
 
         def nested_declaration_scope_end_line(decls, index, fallback_end_line:)
-          next_decl = decls[(index + 1)..]&.find { |candidate| candidate.respond_to?(:line) && !candidate.line.nil? }
+          next_decl = decls[(index + 1)..]&.find { |candidate| candidate.line }
           next_decl ? next_decl.line - 1 : fallback_end_line
         end
 
@@ -1723,7 +1723,7 @@ module MilkTea
 
         def generic_function_binding_for_line(facts, line)
           generic_function_bindings(facts).filter_map do |binding|
-            next unless binding.ast.respond_to?(:body) && binding.ast.respond_to?(:line)
+            next unless binding.ast.respond_to?(:body) && binding.ast.line
 
             start_line = binding.ast.line
             end_line = generic_statement_list_end_line(Array(binding.ast.body), start_line)

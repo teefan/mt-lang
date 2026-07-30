@@ -71,7 +71,7 @@ module MilkTea
         end
         return first_export_site if first_export_site
 
-        first_declaration = source_file.declarations.find { |declaration| declaration.respond_to?(:line) && declaration.line }
+        first_declaration = source_file.declarations.find { |declaration| declaration.line }
         return declaration_anchor(first_declaration) if first_declaration
 
         { line: source_file.line || 1, column: 1, length: 1, symbol_name: nil }
@@ -126,9 +126,9 @@ module MilkTea
 
         symbol_name = declaration.respond_to?(:name) ? declaration.name : nil
         length = symbol_name.to_s.empty? ? 1 : symbol_name.to_s.length
-        line = declaration.respond_to?(:line) && declaration.line ? declaration.line : 1
+        line = declaration.line ? declaration.line : 1
 
-        if declaration.respond_to?(:column) && declaration.column
+        if declaration.column
           return { line:, column: declaration.column, length:, symbol_name: }
         end
 

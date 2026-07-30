@@ -73,16 +73,16 @@ module MilkTea
         @profile.measure(name) { yield }
       end
       def param_line(param, fallback: nil)
-        line = param.respond_to?(:line) ? param.line : nil
+        line = param.line
         line || fallback
       end
 
       def param_column(param)
-        param.respond_to?(:column) ? param.column : nil
+        param.column
       end
 
       def declaration_column(declaration)
-        declaration.respond_to?(:column) ? declaration.column : nil
+        declaration.column
       end
       def source_line_text(line)
         return nil unless line && line >= 1 && line <= @source_lines.length
@@ -121,7 +121,7 @@ module MilkTea
       def expression_line(expr)
         return nil unless expr
 
-        return expr.line if expr.respond_to?(:line) && expr.line
+        return expr.line if expr.line
 
         case expr
         when AST::BinaryOp
@@ -158,7 +158,7 @@ module MilkTea
       def expression_column(expr)
         return nil unless expr
 
-        if expr.respond_to?(:column) && expr.column
+        if expr.column
           return expr.column
         end
 
@@ -227,7 +227,7 @@ module MilkTea
       def statement_column(statement)
         return nil unless statement
 
-        if statement.respond_to?(:column) && statement.column
+        if statement.column
           return statement.column
         end
 
