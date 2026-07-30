@@ -4,9 +4,8 @@ require_relative "../types/layout"
 
 module MilkTea
   module ConstEval
-    module_function
 
-    def evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
+    def self.evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
       Evaluator.new(
         resolve_identifier:,
         resolve_member_access:,
@@ -15,7 +14,7 @@ module MilkTea
       ).evaluate(expression)
     end
 
-    def equality_result(left, right)
+    def self.equality_result(left, right)
       return left == right if left.is_a?(Numeric) && right.is_a?(Numeric)
       return left == right if left.is_a?(String) && right.is_a?(String)
       return left == right if boolean_value?(left) && boolean_value?(right)
@@ -24,13 +23,11 @@ module MilkTea
       nil
     end
 
-    def boolean_value?(value)
+    def self.boolean_value?(value)
       value == true || value == false
     end
 
     class Evaluator
-      include Layout
-
       def initialize(resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
         @resolve_identifier = resolve_identifier
         @resolve_member_access = resolve_member_access
@@ -58,20 +55,20 @@ module MilkTea
           @resolve_call&.call(expression)
         when AST::SizeofExpr
           type = resolve_layout_type(expression.type)
-          type && size_of(type)
+          type && Layout.size_of(type)
         when AST::AlignofExpr
           type = resolve_layout_type(expression.type)
-          type && alignment_of(type)
+          type && Layout.alignment_of(type)
         when AST::OffsetofExpr
           type = resolve_layout_type(expression.type)
           if type
-            result = offset_of(type, expression.field)
+            result = Layout.offset_of(type, expression.field)
             return result if result
 
             id_expr = AST::Identifier.new(name: expression.field)
             value = @resolve_identifier&.call(id_expr)
             if value.is_a?(Types::FieldHandle)
-              return offset_of(type, value.field_name)
+              return Layout.offset_of(type, value.field_name)
             end
           end
           nil
@@ -88,8 +85,6 @@ module MilkTea
           nil
         end
       end
-
-      private
 
       def resolve_layout_type(type_ref)
         return unless @resolve_type_ref

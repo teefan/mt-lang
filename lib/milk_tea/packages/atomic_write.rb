@@ -5,15 +5,14 @@ require "tempfile"
 
 module MilkTea
   module PackageAtomicWrite
-    module_function
 
-    def write(path, content, binmode: false)
+    def self.write(path, content, binmode: false)
       open(path, binmode:) do |file|
         file.write(content)
       end
     end
 
-    def open(path, binmode: false)
+    def self.open(path, binmode: false)
       expanded_path = File.expand_path(path)
       directory = File.dirname(expanded_path)
 
@@ -35,13 +34,13 @@ module MilkTea
       expanded_path
     end
 
-    def replace(source_path, destination_path)
+    def self.replace(source_path, destination_path)
       File.rename(source_path, destination_path)
     rescue Errno::EACCES, Errno::EEXIST, Errno::EPERM
       replace_via_backup(source_path, destination_path)
     end
 
-    def replace_via_backup(source_path, destination_path)
+    def self.replace_via_backup(source_path, destination_path)
       backup_path = "#{destination_path}.bak.#{$$}.#{Thread.current.object_id}"
 
       File.rename(destination_path, backup_path) if File.exist?(destination_path)

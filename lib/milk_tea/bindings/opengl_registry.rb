@@ -23,18 +23,16 @@ module MilkTea
     FeatureEntry = Data.define(:name, :api, :number, :blocks)
     ExtensionEntry = Data.define(:name, :supported, :blocks)
 
-    module_function
-
-    def helper_header_path(root: MilkTea.root)
+    def self.helper_header_path(root: MilkTea.root)
       root.join("std/c/#{HELPER_HEADER_BASENAME}")
     end
 
-    def source(root: MilkTea.root)
+    def self.source(root: MilkTea.root)
       UpstreamSources.default_sources(root:).find { |entry| entry.name == SOURCE_NAME } ||
         raise(Error, "missing upstream source definition for #{SOURCE_NAME}")
     end
 
-    def prepare!(root: MilkTea.root, api: DEFAULT_API, version: DEFAULT_VERSION, profile: DEFAULT_PROFILE, extensions: [])
+    def self.prepare!(root: MilkTea.root, api: DEFAULT_API, version: DEFAULT_VERSION, profile: DEFAULT_PROFILE, extensions: [])
       registry_source = source(root:)
       registry_source.bootstrap!
 
@@ -89,8 +87,6 @@ module MilkTea
           commands: active_commands,
         )
       end
-
-      private
 
       def parse_registry
         document = REXML::Document.new(@xml_source)

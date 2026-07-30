@@ -12,9 +12,7 @@ module MilkTea
       -lm
     ].freeze
 
-    module_function
-
-    def library(root: MilkTea.root)
+    def self.library(root: MilkTea.root)
       resolved_root = Pathname.new(File.expand_path(root.to_s))
       @libraries ||= {}
       @libraries[resolved_root.to_s] ||= VendoredCLibrary::Archive.new(
@@ -29,23 +27,23 @@ module MilkTea
       )
     end
 
-    def source_root(root: MilkTea.root)
+    def self.source_root(root: MilkTea.root)
       MilkTea.writable_root_for(root).join("third_party/cjson-upstream")
     end
 
-    def build_root(root: MilkTea.root)
+    def self.build_root(root: MilkTea.root)
       MilkTea.writable_root_for(root).join("tmp/vendored-cjson")
     end
 
-    def archive_path(root: MilkTea.root)
+    def self.archive_path(root: MilkTea.root)
       build_root(root:).join("libcjson.a")
     end
 
-    def link_flags(root: MilkTea.root)
+    def self.link_flags(root: MilkTea.root)
       library(root:).link_flags
     end
 
-    def prepare!(root: MilkTea.root, **kwargs)
+    def self.prepare!(root: MilkTea.root, **kwargs)
       library(root:).prepare!(**kwargs)
     end
   end

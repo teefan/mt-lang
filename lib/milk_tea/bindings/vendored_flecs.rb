@@ -19,14 +19,12 @@ module MilkTea
       -std=gnu99
     ].freeze
 
-    module_function
-
-    def source(root: MilkTea.root)
+    def self.source(root: MilkTea.root)
       UpstreamSources.default_sources(root:).find { |entry| entry.name == SOURCE_NAME } ||
         raise(Error, "missing upstream source definition for #{SOURCE_NAME}")
     end
 
-    def library(root: MilkTea.root)
+    def self.library(root: MilkTea.root)
       resolved_root = Pathname.new(File.expand_path(root.to_s))
       @libraries ||= {}
       @libraries[resolved_root.to_s] ||= VendoredCLibrary::Archive.new(
@@ -42,35 +40,35 @@ module MilkTea
       )
     end
 
-    def source_root(root: MilkTea.root)
+    def self.source_root(root: MilkTea.root)
       source(root:).checkout_root
     end
 
-    def include_root(root: MilkTea.root)
+    def self.include_root(root: MilkTea.root)
       source_root(root:).join("distr")
     end
 
-    def header_path(root: MilkTea.root)
+    def self.header_path(root: MilkTea.root)
       include_root(root:).join("flecs.h")
     end
 
-    def build_root(root: MilkTea.root)
+    def self.build_root(root: MilkTea.root)
       MilkTea.writable_root_for(root).join("tmp/vendored-flecs")
     end
 
-    def archive_path(root: MilkTea.root)
+    def self.archive_path(root: MilkTea.root)
       build_root(root:).join("libflecs.a")
     end
 
-    def include_flags(root: MilkTea.root)
+    def self.include_flags(root: MilkTea.root)
       library(root:).include_flags
     end
 
-    def link_flags(root: MilkTea.root)
+    def self.link_flags(root: MilkTea.root)
       library(root:).link_flags
     end
 
-    def prepare!(root: MilkTea.root, **kwargs)
+    def self.prepare!(root: MilkTea.root, **kwargs)
       source(root:).bootstrap!
       library(root:).prepare!(**kwargs)
     end

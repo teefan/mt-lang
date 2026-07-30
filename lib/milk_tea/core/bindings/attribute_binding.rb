@@ -4,9 +4,7 @@ module MilkTea
   AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
   BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated test expect_fatal].freeze
 
-  module_function
-
-  def builtin_attribute_binding(name, types)
+  def self.builtin_attribute_binding(name, types)
     case name
     when "packed"
       AttributeBinding.new(

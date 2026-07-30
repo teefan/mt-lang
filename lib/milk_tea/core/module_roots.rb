@@ -2,9 +2,8 @@
 
 module MilkTea
   module ModuleRoots
-    module_function
 
-    def roots_for_path(path, env: ENV, locked: false)
+    def self.roots_for_path(path, env: ENV, locked: false)
       roots = []
 
       add_env_roots!(roots, env)
@@ -24,7 +23,7 @@ module MilkTea
            .select { |root| File.directory?(root) }
     end
 
-    def package_roots_for_path(path, locked: false)
+    def self.package_roots_for_path(path, locked: false)
       PackageGraph.load(path, locked:).source_roots
     rescue PackageManifestError
       package_root = package_root_for_path(path)
@@ -33,7 +32,7 @@ module MilkTea
       [package_root]
     end
 
-    def project_root_for_path(path)
+    def self.project_root_for_path(path)
       return nil unless path
 
       current = File.expand_path(File.directory?(path) ? path : File.dirname(path))
@@ -47,7 +46,7 @@ module MilkTea
       end
     end
 
-    def package_root_for_path(path)
+    def self.package_root_for_path(path)
       return nil unless path
 
       current = File.expand_path(File.directory?(path) ? path : File.dirname(path))
@@ -61,7 +60,7 @@ module MilkTea
       end
     end
 
-    def normalize_root(root)
+    def self.normalize_root(root)
       return nil if root.nil? || root.to_s.strip.empty?
 
       expanded = File.expand_path(root.to_s)
@@ -72,7 +71,7 @@ module MilkTea
       end
     end
 
-    def add_env_roots!(roots, env)
+    def self.add_env_roots!(roots, env)
       env_keys = %w[MILK_TEA_MODULE_ROOT MILK_TEA_STD_ROOT]
       env_keys.each do |key|
         value = env[key]

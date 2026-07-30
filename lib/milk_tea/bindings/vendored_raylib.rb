@@ -92,39 +92,35 @@ module MilkTea
         archive_for(platform).prepare!(env:, cc:, platform:)
       end
 
-      private
-
       def archive_for(platform)
         platform == :wasm ? @wasm_archive : @desktop_archive
       end
     end
 
-    module_function
-
-    def library(root: MilkTea.root)
+    def self.library(root: MilkTea.root)
       resolved_root = Pathname.new(File.expand_path(root.to_s))
       @libraries ||= {}
       @libraries[resolved_root.to_s] ||= AdaptiveArchive.new(root: resolved_root)
     end
 
-    def source_root(root: MilkTea.root)
+    def self.source_root(root: MilkTea.root)
       MilkTea.writable_root_for(root).join("third_party/raylib-upstream/src")
     end
 
-    def build_root(root: MilkTea.root, platform: nil)
+    def self.build_root(root: MilkTea.root, platform: nil)
       suffix = platform == :wasm ? "tmp/vendored-raylib-web" : "tmp/vendored-raylib-opengl43"
       MilkTea.writable_root_for(root).join(suffix)
     end
 
-    def archive_path(root: MilkTea.root, platform: nil)
+    def self.archive_path(root: MilkTea.root, platform: nil)
       build_root(root:, platform:).join("libraylib.a")
     end
 
-    def link_flags(root: MilkTea.root, platform: nil)
+    def self.link_flags(root: MilkTea.root, platform: nil)
       library(root:).link_flags(platform:)
     end
 
-    def prepare!(root: MilkTea.root, platform: nil, **kwargs)
+    def self.prepare!(root: MilkTea.root, platform: nil, **kwargs)
       library(root:).prepare!(platform:, **kwargs)
     end
   end

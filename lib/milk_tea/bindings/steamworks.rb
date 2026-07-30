@@ -38,26 +38,24 @@ module MilkTea
       windows: "steam_api64.dll",
     }.freeze
 
-    module_function
-
-    def helper_header_path(root: MilkTea.root)
+    def self.helper_header_path(root: MilkTea.root)
       root.join("std/c/#{HELPER_HEADER_BASENAME}")
     end
 
-    def source(root: MilkTea.root)
+    def self.source(root: MilkTea.root)
       UpstreamSources.default_sources(root:).find { |entry| entry.name == SOURCE_NAME } ||
         raise(Error, "missing upstream source definition for #{SOURCE_NAME}")
     end
 
-    def host_platform
+    def self.host_platform
       MilkTea.host_platform
     end
 
-    def default_link_libraries(platform: host_platform)
+    def self.default_link_libraries(platform: host_platform)
       [LINK_LIBRARY_NAME_BY_PLATFORM.fetch(platform)]
     end
 
-    def sdk_root(root: MilkTea.root, env: ENV, bootstrap: false)
+    def self.sdk_root(root: MilkTea.root, env: ENV, bootstrap: false)
       candidates = []
       env_root = env[SDK_ROOT_ENV_VAR]
       candidates << canonical_sdk_root(env_root) if env_root && !env_root.empty?
@@ -76,7 +74,7 @@ module MilkTea
       candidates.find { |path| sdk_layout_present?(path) }
     end
 
-    def api_json_path(root: MilkTea.root, env: ENV, bootstrap: false)
+    def self.api_json_path(root: MilkTea.root, env: ENV, bootstrap: false)
       explicit_path = env[API_JSON_ENV_VAR]
       if explicit_path && !explicit_path.empty?
         candidate = Pathname.new(File.expand_path(explicit_path))
@@ -94,7 +92,7 @@ module MilkTea
       raise Error, "Steamworks metadata not found under #{resolved_sdk_root}"
     end
 
-    def redistributable_directory(root: MilkTea.root, env: ENV, platform: host_platform, bootstrap: false)
+    def self.redistributable_directory(root: MilkTea.root, env: ENV, platform: host_platform, bootstrap: false)
       resolved_sdk_root = sdk_root(root:, env:, bootstrap:)
       return unless resolved_sdk_root
 
@@ -104,7 +102,7 @@ module MilkTea
       nil
     end
 
-    def import_library_path(root: MilkTea.root, env: ENV, platform: host_platform, bootstrap: false)
+    def self.import_library_path(root: MilkTea.root, env: ENV, platform: host_platform, bootstrap: false)
       directory = redistributable_directory(root:, env:, platform:, bootstrap:)
       return unless directory
 
@@ -114,7 +112,7 @@ module MilkTea
       nil
     end
 
-    def runtime_library_path(root: MilkTea.root, env: ENV, platform: host_platform, bootstrap: false)
+    def self.runtime_library_path(root: MilkTea.root, env: ENV, platform: host_platform, bootstrap: false)
       directory = redistributable_directory(root:, env:, platform:, bootstrap:)
       return unless directory
 
@@ -124,7 +122,7 @@ module MilkTea
       nil
     end
 
-    def prepare!(root: MilkTea.root, env: ENV)
+    def self.prepare!(root: MilkTea.root, env: ENV)
       path = helper_header_path(root:)
       existing = File.exist?(path)
       json_path = api_json_path(root:, env:, bootstrap: !existing)
@@ -139,7 +137,7 @@ module MilkTea
       path.to_s
     end
 
-    def canonical_sdk_root(path)
+    def self.canonical_sdk_root(path)
       root = Pathname.new(File.expand_path(path.to_s))
       sdk_child = root.join("sdk")
       return sdk_child if sdk_layout_present?(sdk_child)
@@ -148,7 +146,7 @@ module MilkTea
     end
     private_class_method :canonical_sdk_root
 
-    def sdk_layout_present?(root)
+    def self.sdk_layout_present?(root)
       File.file?(root.join(API_JSON_RELATIVE_PATH))
     end
     private_class_method :sdk_layout_present?
@@ -279,8 +277,6 @@ module MilkTea
         lines << "#endif"
         lines.join("\n") + "\n"
       end
-
-      private
 
       def metadata
         @metadata ||= JSON.parse(@json_source)

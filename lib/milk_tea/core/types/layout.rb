@@ -5,19 +5,18 @@ require_relative "types"
 
 module MilkTea
   module Layout
-    module_function
 
     POINTER_SIZE = Fiddle::SIZEOF_VOIDP
 
-    def size_of(type)
+    def self.size_of(type)
       size_and_alignment(type, {})&.first
     end
 
-    def alignment_of(type)
+    def self.alignment_of(type)
       size_and_alignment(type, {})&.last
     end
 
-    def offset_of(type, field_name)
+    def self.offset_of(type, field_name)
       case type
       when Types::Struct, Types::StructInstance, Types::Span, Types::StringView, Types::Task
         fields = ordered_fields(type)
@@ -38,7 +37,7 @@ module MilkTea
       end
     end
 
-    def size_and_alignment(type, stack)
+    def self.size_and_alignment(type, stack)
       case type
       when Types::Primitive
         primitive_layout(type)
@@ -82,7 +81,7 @@ module MilkTea
       end
     end
 
-    def primitive_layout(type)
+    def self.primitive_layout(type)
       case type.name
       when "bool", "byte", "ubyte", "char"
         [1, 1]
@@ -99,7 +98,7 @@ module MilkTea
       end
     end
 
-    def generic_layout(type, stack)
+    def self.generic_layout(type, stack)
       case type.name
       when "ptr", "const_ptr", "own", "ref"
         [POINTER_SIZE, POINTER_SIZE]
@@ -120,7 +119,7 @@ module MilkTea
       end
     end
 
-    def variant_layout(type, stack:)
+    def self.variant_layout(type, stack:)
       payload_layouts = type.arm_names.filter_map do |arm_name|
         fields = type.arm(arm_name)
         next if fields.nil? || fields.empty?
@@ -134,7 +133,7 @@ module MilkTea
       struct_layout_from_infos(field_infos, packed: false, alignment: nil)
     end
 
-    def struct_layout(fields, packed:, alignment:, stack:)
+    def self.struct_layout(fields, packed:, alignment:, stack:)
       field_infos = fields.map do |field_name, field_type|
         field_layout = size_and_alignment(field_type, stack)
         return nil unless field_layout
@@ -145,7 +144,7 @@ module MilkTea
       struct_layout_from_infos(field_infos, packed:, alignment:)
     end
 
-    def union_layout(fields, packed:, alignment:, stack:)
+    def self.union_layout(fields, packed:, alignment:, stack:)
       field_infos = fields.map do |_field_name, field_type|
         field_layout = size_and_alignment(field_type, stack)
         return nil unless field_layout
@@ -156,7 +155,7 @@ module MilkTea
       union_layout_from_layouts(field_infos.map { |size, field_alignment| { size:, alignment: field_alignment } }, packed:, alignment:)
     end
 
-    def struct_layout_from_infos(field_infos, packed:, alignment:)
+    def self.struct_layout_from_infos(field_infos, packed:, alignment:)
       offsets = {}
       offset = 0
       natural_alignment = 1
@@ -177,7 +176,7 @@ module MilkTea
       }
     end
 
-    def union_layout_from_layouts(layouts, packed:, alignment:)
+    def self.union_layout_from_layouts(layouts, packed:, alignment:)
       natural_alignment = packed ? 1 : (layouts.map { |layout| layout[:alignment] }.max || 1)
       overall_alignment = [natural_alignment, alignment || 1].max
       size = layouts.map { |layout| layout[:size] }.max || 0
@@ -188,27 +187,27 @@ module MilkTea
       }
     end
 
-    def ordered_fields(type)
+    def self.ordered_fields(type)
       type.fields
     end
 
-    def packed_layout?(type)
+    def self.packed_layout?(type)
       type.respond_to?(:packed) && type.packed
     end
 
-    def explicit_alignment(type)
+    def self.explicit_alignment(type)
       type.respond_to?(:alignment) ? type.alignment : nil
     end
 
-    def array_type?(type)
+    def self.array_type?(type)
       type.arguments.length == 2 && type.arguments[1].is_a?(Types::LiteralTypeArg) && type.arguments[1].value.is_a?(Integer)
     end
 
-    def str_buffer_type?(type)
+    def self.str_buffer_type?(type)
       type.arguments.length == 1 && type.arguments.first.is_a?(Types::LiteralTypeArg) && type.arguments.first.value.is_a?(Integer)
     end
 
-    def str_buffer_fields(type)
+    def self.str_buffer_fields(type)
       storage_capacity = type.arguments.first.value + 1
       {
         "data" => Types::Registry.generic_instance("array", [Types::Registry.primitive("char"), Types::LiteralTypeArg.new(storage_capacity)]),
@@ -217,28 +216,28 @@ module MilkTea
       }
     end
 
-    def layout_pointer_like_nullable_base?(base)
+    def self.layout_pointer_like_nullable_base?(base)
       return true if base.is_a?(Types::Function) || base.is_a?(Types::Proc) || base.is_a?(Types::Opaque)
       return true if base.is_a?(Types::Primitive) && base.name == "cstr"
 
       base.is_a?(Types::GenericInstance) && %w[ptr const_ptr own ref].include?(base.name)
     end
 
-    def nullable_opt_layout_fields(base)
+    def self.nullable_opt_layout_fields(base)
       {
         "has_value" => Types::Registry.primitive("bool"),
         "value" => base,
       }
     end
 
-    def align_up(value, alignment)
+    def self.align_up(value, alignment)
       return value if alignment <= 1
 
       remainder = value % alignment
       remainder.zero? ? value : value + alignment - remainder
     end
 
-    def with_stack(type, stack)
+    def self.with_stack(type, stack)
       return if stack[type]
 
       stack[type] = true

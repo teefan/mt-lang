@@ -259,7 +259,6 @@ module MilkTea
     end
 
     class Evaluator < ConstEval::Evaluator
-      private
 
       def resolve_layout_type(type_ref)
         super
@@ -280,9 +279,7 @@ module MilkTea
 
     end
 
-    module_function
-
-    def evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
+    def self.evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
       Evaluator.new(
         resolve_identifier:,
         resolve_member_access:,
@@ -291,7 +288,7 @@ module MilkTea
       ).evaluate(expression)
     end
 
-    def boolean_value?(value)
+    def self.boolean_value?(value)
       ConstEval.boolean_value?(value)
     end
 

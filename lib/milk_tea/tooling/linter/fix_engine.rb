@@ -5,9 +5,8 @@ module MilkTea
     FixEdit = Data.define(:start_line, :start_char, :end_line, :end_char, :new_text)
 
     module FixEngine
-      module_function
 
-      def edits_for_rule(code, lines, warning)
+      def self.edits_for_rule(code, lines, warning)
         case code
         when "prefer-let"             then prefer_let_edits(lines, warning)
         when "redundant-ignored-match-binding" then redundant_ignored_match_binding_edits(lines, warning)
@@ -24,7 +23,7 @@ module MilkTea
         end
       end
 
-      def apply_fix_edits(lines, edits)
+      def self.apply_fix_edits(lines, edits)
         edits.sort_by { |e| [-e.start_line, -e.start_char] }.reverse_each do |edit|
           if edit.start_line == edit.end_line
             line = lines[edit.start_line]
@@ -40,7 +39,7 @@ module MilkTea
         lines
       end
 
-      def edits_to_lsp_text_edits(edits, uri)
+      def self.edits_to_lsp_text_edits(edits, uri)
         edits.map do |edit|
           {
             range: {
@@ -54,7 +53,7 @@ module MilkTea
 
       # ── per-rule edit generators ──────────────────────────────────────────
 
-      def prefer_let_edits(lines, warning)
+      def self.prefer_let_edits(lines, warning)
         return [] unless warning.line
 
         line_idx = warning.line - 1
@@ -65,7 +64,7 @@ module MilkTea
         [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: new_line)]
       end
 
-      def redundant_ignored_match_binding_edits(lines, warning)
+      def self.redundant_ignored_match_binding_edits(lines, warning)
         return [] unless warning.line && warning.column
 
         line_idx = warning.line - 1
@@ -78,7 +77,7 @@ module MilkTea
         [FixEdit.new(start_line: line_idx, start_char: span[:start_char], end_line: line_idx, end_char: span[:end_char], new_text: "")]
       end
 
-      def prefer_let_else_edits(lines, warning)
+      def self.prefer_let_else_edits(lines, warning)
         return [] unless warning.line
 
         fix = Linter.build_prefer_let_else_fix(lines, warning.line - 1, symbol_name: warning.symbol_name)
@@ -87,11 +86,11 @@ module MilkTea
         [FixEdit.new(start_line: fix[:start_line_idx], start_char: 0, end_line: fix[:end_line_idx] + 1, end_char: 0, new_text: fix[:new_text])]
       end
 
-      def prefer_var_else_edits(lines, warning)
+      def self.prefer_var_else_edits(lines, warning)
         prefer_let_else_edits(lines, warning)
       end
 
-      def redundant_bool_compare_edits(lines, warning)
+      def self.redundant_bool_compare_edits(lines, warning)
         return [] unless warning.line && warning.column && warning.length
 
         line_idx = warning.line - 1
@@ -109,7 +108,7 @@ module MilkTea
         [FixEdit.new(start_line: line_idx, start_char:, end_line: line_idx, end_char:, new_text: replacement)]
       end
 
-      def redundant_else_edits(lines, warning)
+      def self.redundant_else_edits(lines, warning)
         return [] unless warning.line
 
         diag_idx = warning.line - 1
@@ -144,7 +143,7 @@ module MilkTea
         [FixEdit.new(start_line: else_idx, start_char: 0, end_line: body_end_idx + 1, end_char: 0, new_text: new_body)]
       end
 
-      def redundant_return_edits(lines, warning)
+      def self.redundant_return_edits(lines, warning)
         return [] unless warning.line
 
         line_idx = warning.line - 1
@@ -153,7 +152,7 @@ module MilkTea
         [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: "")]
       end
 
-      def unused_import_edits(lines, warning)
+      def self.unused_import_edits(lines, warning)
         return [] unless warning.line
 
         line_idx = warning.line - 1
@@ -162,7 +161,7 @@ module MilkTea
         [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: "")]
       end
 
-      def trailing_list_comma_edits(lines, warning)
+      def self.trailing_list_comma_edits(lines, warning)
         return [] unless warning.line && warning.column
 
         line_idx = warning.line - 1
@@ -176,7 +175,7 @@ module MilkTea
         [FixEdit.new(start_line: line_idx, start_char: char_idx, end_line: line_idx, end_char: char_idx + 1, new_text: "")]
       end
 
-      def redundant_type_annotation_edits(lines, warning)
+      def self.redundant_type_annotation_edits(lines, warning)
         return [] unless warning.line
 
         line_idx = warning.line - 1
@@ -198,7 +197,7 @@ module MilkTea
         [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: new_line)]
       end
 
-      def redundant_cast_edits(lines, warning)
+      def self.redundant_cast_edits(lines, warning)
         return [] unless warning.line && warning.column
 
         line_idx = warning.line - 1

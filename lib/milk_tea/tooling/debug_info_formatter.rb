@@ -9,9 +9,7 @@ module MilkTea
       FormatString FormatTextPart FormatExprPart
     ].to_set.freeze
 
-    module_function
-
-    def format_all(content:, tokens:, ast:, parse_errors:, facts:, snapshot:, path:, semantic_entries: nil)
+    def self.format_all(content:, tokens:, ast:, parse_errors:, facts:, snapshot:, path:, semantic_entries: nil)
       sections = []
       sections << format_header(content, path)
       sections << format_tokens(tokens, semantic_entries:)
@@ -25,7 +23,7 @@ module MilkTea
 
     # ── Header ────────────────────────────────────────────────────────────────────
 
-    def format_header(content, path)
+    def self.format_header(content, path)
       lines = content.count("\n") + 1
       bytes = content.bytesize
       ["File: #{path}", "Content: #{lines} lines, #{bytes} bytes"].join("\n")
@@ -33,7 +31,7 @@ module MilkTea
 
     # ── Tokens ─────────────────────────────────────────────────────────────────────
 
-    def format_tokens(tokens, semantic_entries: nil)
+    def self.format_tokens(tokens, semantic_entries: nil)
       return '── Tokens  0 ──' if tokens.nil? || tokens.empty?
 
       max_len = tokens.reject { |t| [:newline, :indent, :dedent].include?(t.type) }
@@ -69,7 +67,7 @@ module MilkTea
       lines.join("\n")
     end
 
-    def build_sema_map(entries)
+    def self.build_sema_map(entries)
       return {} unless entries.is_a?(Array) && !entries.empty?
 
       entries.each_with_object({}) do |e, map|
@@ -80,7 +78,7 @@ module MilkTea
 
     # ── AST ────────────────────────────────────────────────────────────────────────
 
-    def format_ast(ast)
+    def self.format_ast(ast)
       return '── AST  (not available) ──' unless ast
 
       counts = %w[imports directives declarations].filter_map do |m|
@@ -93,7 +91,7 @@ module MilkTea
       buf.join("\n")
     end
 
-    def format_ast_node(node, prefix:, is_last:, buf:)
+    def self.format_ast_node(node, prefix:, is_last:, buf:)
       return if node.nil?
 
       if node.is_a?(Array)
@@ -152,11 +150,11 @@ module MilkTea
       end
     end
 
-    def compact_ast_node?(node)
+    def self.compact_ast_node?(node)
       COMPACT_AST_TYPES.include?(node.class.name.split('::').last)
     end
 
-    def compact_ast_repr(node)
+    def self.compact_ast_repr(node)
       kind = node.class.name.split('::').last
       case kind
       when 'QualifiedName'
@@ -197,14 +195,14 @@ module MilkTea
       end
     end
 
-    def type_arg_str(arg)
+    def self.type_arg_str(arg)
       return value_repr(arg) unless arg.respond_to?(:value)
 
       val = arg.value
       ast_node?(val) && compact_ast_node?(val) ? compact_ast_repr(val) : value_repr(val)
     end
 
-    def ast_node_header(node)
+    def self.ast_node_header(node)
       name_attr = node.respond_to?(:name) ? node.name : nil
       loc = if node.respond_to?(:line) && node.line
               col = node.respond_to?(:column) && node.column ? ", Col #{node.column}" : ''
@@ -216,21 +214,21 @@ module MilkTea
       name_attr ? "#{kind} ◆ #{name_attr}#{loc}" : "#{kind}#{loc}"
     end
 
-    def ast_node?(val)
+    def self.ast_node?(val)
       val.class.name.to_s.start_with?('MilkTea::AST::')
     rescue StandardError
       false
     end
 
-    def array_of_ast_nodes?(val)
+    def self.array_of_ast_nodes?(val)
       val.is_a?(Array) && val.any? { |e| ast_node?(e) }
     end
 
-    def skip_child_value?(val)
+    def self.skip_child_value?(val)
       val.nil? || val == false || val == [] || val == {} || val == :private
     end
 
-    def keep_child?(val)
+    def self.keep_child?(val)
       return false if skip_child_value?(val)
       return true if val.is_a?(Array) && val.any?
       return true if ast_node?(val) || val.class.name.to_s.start_with?('MilkTea::')
@@ -238,19 +236,19 @@ module MilkTea
       true
     end
 
-    def symbol_icon(count)
+    def self.symbol_icon(count)
       count > 0 ? '◆' : '◇'
     end
 
-    def compact_array_repr(arr)
+    def self.compact_array_repr(arr)
       arr.map { |e| value_repr(e) }.join(', ')
     end
 
-    def simple_value_array?(arr)
+    def self.simple_value_array?(arr)
       arr.all? { |e| e.is_a?(String) || e.is_a?(Symbol) || e.is_a?(Numeric) || e.nil? }
     end
 
-    def value_repr(val)
+    def self.value_repr(val)
       case val
       when nil then 'nil'
       when true then 'true'
@@ -275,7 +273,7 @@ module MilkTea
 
     # ── Parse Errors ────────────────────────────────────────────────────────────────
 
-    def format_parse_errors(errors)
+    def self.format_parse_errors(errors)
       return '── Parse Errors  0 ──' if errors.nil? || errors.empty?
 
       buf = ["── Parse Errors  #{errors.length}  " + '─' * 55]
@@ -289,7 +287,7 @@ module MilkTea
 
     # ── Facts ───────────────────────────────────────────────────────────────────────
 
-    def format_facts(facts)
+    def self.format_facts(facts)
       return '── Facts  (not available) ──' unless facts
 
       counts = []
@@ -356,7 +354,7 @@ module MilkTea
       buf.join("\n")
     end
 
-    def format_function_binding(name, binding, indent:)
+    def self.format_function_binding(name, binding, indent:)
       buf = []
       buf << "#{indent}#{name}"
       buf << "#{indent}  type: #{type_repr(binding.type)}"
@@ -377,14 +375,14 @@ module MilkTea
       buf
     end
 
-    def type_repr(type)
+    def self.type_repr(type)
       return 'nil' unless type
       return type.to_s if type.respond_to?(:to_s)
 
       type.class.name&.split('::')&.last || type.class.to_s
     end
 
-    def value_binding_repr(vb)
+    def self.value_binding_repr(vb)
       mutable = vb.mutable ? 'mut' : '  '
       kind = vb.kind.to_s
       type = vb.flow_type || vb.storage_type
@@ -393,7 +391,7 @@ module MilkTea
 
     # ── Bindings ────────────────────────────────────────────────────────────────────
 
-    def format_bindings(facts)
+    def self.format_bindings(facts)
       return '── Bindings  (not available) ──' unless facts&.binding_resolution
 
       res = facts.binding_resolution
@@ -427,7 +425,7 @@ module MilkTea
 
     # ── Diagnostics ─────────────────────────────────────────────────────────────────
 
-    def format_diagnostics(snapshot)
+    def self.format_diagnostics(snapshot)
       return '── Diagnostics  (not available) ──' unless snapshot
 
       diags = snapshot.diagnostics

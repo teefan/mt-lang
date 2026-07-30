@@ -38,8 +38,6 @@ module MilkTea
         end
       end
 
-      private
-
       def run_git!(*args)
         stdout, stderr, status = Open3.capture3("git", *args)
         return if status.success?
@@ -51,13 +49,11 @@ module MilkTea
       end
     end
 
-    module_function
-
-    def revisions_path(root: MilkTea.root)
+    def self.revisions_path(root: MilkTea.root)
       Pathname.new(File.expand_path(root.to_s)).join(CONFIG_DIR, REVISIONS_FILE)
     end
 
-    def load_version_overrides(root: MilkTea.root)
+    def self.load_version_overrides(root: MilkTea.root)
       path = revisions_path(root:)
       return {} unless File.file?(path)
 
@@ -78,7 +74,7 @@ module MilkTea
       overrides
     end
 
-    def load_sentinel_overrides(root: MilkTea.root)
+    def self.load_sentinel_overrides(root: MilkTea.root)
       path = revisions_path(root:)
       return {} unless File.file?(path)
 
@@ -95,7 +91,7 @@ module MilkTea
       overrides
     end
 
-    def write_version_override(name, revision, root: MilkTea.root)
+    def self.write_version_override(name, revision, root: MilkTea.root)
       path = revisions_path(root:)
       data = File.file?(path) ? (YAML.safe_load(File.read(path)) || {}) : {}
       existing = data[name.to_s]
@@ -108,7 +104,7 @@ module MilkTea
       File.write(path, data.to_yaml)
     end
 
-    def remove_version_override(name, root: MilkTea.root)
+    def self.remove_version_override(name, root: MilkTea.root)
       path = revisions_path(root:)
       return unless File.file?(path)
 
@@ -121,7 +117,7 @@ module MilkTea
       end
     end
 
-    def resolve_ref(repository_url, ref)
+    def self.resolve_ref(repository_url, ref)
       return ref if ref.match?(/\A[0-9a-f]{40}\z/i)
 
       output, status = Open3.capture2("git", "ls-remote", "--refs", repository_url, ref.to_s)
@@ -140,11 +136,11 @@ module MilkTea
       lines.first.split(/\s+/, 2).first
     end
 
-    def find_source(name, root: MilkTea.root)
+    def self.find_source(name, root: MilkTea.root)
       default_sources(root:).find { |source| source.name == name.to_s }
     end
 
-    def default_sources(root: MilkTea.root)
+    def self.default_sources(root: MilkTea.root)
       data = MilkTea.writable_root_for(root)
       sources = [
         Source.new(
@@ -338,11 +334,11 @@ module MilkTea
       sources
     end
 
-    def bootstrap_all!(root: MilkTea.root)
+    def self.bootstrap_all!(root: MilkTea.root)
       default_sources(root:).map(&:bootstrap!)
     end
 
-    def bootstrap_one(name, root: MilkTea.root)
+    def self.bootstrap_one(name, root: MilkTea.root)
       source = find_source(name, root:)
       raise Error, "unknown upstream source: #{name}" unless source
 

@@ -6,9 +6,7 @@ module MilkTea
   module VendoredSteamworks
     Error = VendoredCLibrary::Error
 
-    module_function
-
-    def library(root: MilkTea.root)
+    def self.library(root: MilkTea.root)
       resolved_root = Pathname.new(File.expand_path(root.to_s))
       @libraries ||= {}
       @libraries[resolved_root.to_s] ||= Library.new(root: resolved_root)
@@ -50,8 +48,6 @@ module MilkTea
       rescue Errno::ENOENT => e
         raise tool_not_found(e)
       end
-
-      private
 
       def copy_if_present(path)
         return unless path && File.file?(path)
