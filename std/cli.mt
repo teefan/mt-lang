@@ -576,7 +576,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
             pass
 
     var command_options: span[OptionSpec] = zero[span[OptionSpec]]
-    var index: ptr_uint = 0
+    var index: ptr_uint = 1
     var end_of_options = false
 
     while index < args.len:

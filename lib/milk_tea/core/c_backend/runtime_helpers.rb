@@ -303,7 +303,7 @@ module MilkTea
         if emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_entry_argv_to_span_str]) }
           lines.concat([
             "static mt_span_str mt_entry_argv_to_span_str(int32_t argc, char** argv, mt_str** items_out) {",
-            "#{INDENT}uintptr_t len = argc > 1 ? (uintptr_t)(argc - 1) : 0;",
+            "#{INDENT}uintptr_t len = argc > 0 ? (uintptr_t)argc : 0;",
             "#{INDENT}mt_str* items = NULL;",
             "#{INDENT}uintptr_t index = 0;",
             "#{INDENT}if (len > 0) {",
@@ -311,7 +311,7 @@ module MilkTea
             "#{INDENT * 2}if (items == NULL) abort();",
             "#{INDENT}}",
             "#{INDENT}while (index < len) {",
-            "#{INDENT * 2}char* value = argv[index + 1];",
+            "#{INDENT * 2}char* value = argv[index];",
             "#{INDENT * 2}items[index] = (mt_str){ .data = value, .len = (uintptr_t)strlen(value) };",
             "#{INDENT * 2}index++;",
             "#{INDENT}}",

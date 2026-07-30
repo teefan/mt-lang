@@ -407,7 +407,7 @@ const READ_BUFFER_SIZE: ptr_uint = 4096
 
 
 function parse_port(args: span[str]) -> int:
-    var index: ptr_uint = 0
+    var index: ptr_uint = 1
     while index < args.len:
         let arg = unsafe: read(args.data + index)
         if arg.equal("--port") or arg.equal("-p"):
@@ -436,7 +436,7 @@ function parse_port(args: span[str]) -> int:
 
 
 function parse_serve_dir(args: span[str]) -> str:
-    var index: ptr_uint = 0
+    var index: ptr_uint = 1
     while index < args.len:
         let arg = unsafe: read(args.data + index)
         if arg.equal("--root") or arg.equal("-r"):

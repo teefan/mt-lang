@@ -1335,9 +1335,9 @@ function main() -> int:
       File.write(source_path, <<~MT
 
 function main(args: span[str]) -> int:
-    if args.len != 2:
+    if args.len != 3:
         return 9
-    return int<-args[0].len + int<-args[1].len
+    return int<-args[1].len + int<-args[2].len
 
       MT
 
@@ -1366,9 +1366,9 @@ function main(args: span[str]) -> int:
       File.write(source_path, <<~MT
 
 async function main(args: span[str]) -> int:
-    if args.len != 2:
+    if args.len != 3:
         return 9
-    return int<-args[0].len + int<-args[1].len
+    return int<-args[1].len + int<-args[2].len
 
       MT
 
