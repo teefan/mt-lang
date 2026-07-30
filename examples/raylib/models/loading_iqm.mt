@@ -34,7 +34,7 @@ function main() -> int:
         fatal("could not load iqm animations")
     defer rl.unload_model_animations(animations, anim_count)
 
-    var anim_current_frame = float<-0.0
+    var anim_current_frame = 0.0
 
     rl.set_target_fps(60)
 

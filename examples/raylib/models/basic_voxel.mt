@@ -57,7 +57,7 @@ function main() -> int:
             )
             let ray = rl.get_screen_to_world_ray(screen_center, camera)
 
-            var closest_distance = float<-99999.0
+            var closest_distance = 99999.0
             var closest_x = -1
             var closest_y = -1
             var closest_z = -1

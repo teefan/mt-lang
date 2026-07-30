@@ -45,7 +45,7 @@ function main() -> int:
     var bary = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     let sphere_position = rl.Vector3(x = -30.0, y = 5.0, z = 5.0)
-    let sphere_radius = float<-4.0
+    let sphere_radius = 4.0
 
     rl.set_target_fps(60)
 

@@ -299,7 +299,7 @@ function main() -> int:
     camera.position = rl.Vector3(x = 0.0, y = model_bbox.max.y * 1.2, z = model_size * 3.0)
 
     let decal_size = model_size * 0.25
-    let decal_offset: float = 0.01
+    let decal_offset = 0.01
 
     var placement_cube = rl.load_model_from_mesh(rl.gen_mesh_cube(decal_size, decal_size, decal_size))
     defer rl.unload_model(placement_cube)

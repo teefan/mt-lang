@@ -25,7 +25,7 @@ function main() -> int:
     let skillbot = rl.load_texture("skillbot.png")
     defer rl.unload_texture(skillbot)
 
-    var anim_timer = float<-0.0
+    var anim_timer = 0.0
     var anim = 0
 
     rl.set_target_fps(60)

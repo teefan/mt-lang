@@ -59,11 +59,11 @@ function main() -> int:
     var anim_index = 0
     if anim_count > 10:
         anim_index = 10
-    var anim_current_frame = float<-0.0
-    var anim_frame_speed = float<-0.5
+    var anim_current_frame = 0.0
+    var anim_frame_speed = 0.5
     var anim_pause = false
     var dropdown_edit_mode = false
-    var anim_frame_progress = float<-0.0
+    var anim_frame_progress = 0.0
 
     rl.set_target_fps(60)
 

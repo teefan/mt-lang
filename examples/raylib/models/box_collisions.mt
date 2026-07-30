@@ -39,7 +39,7 @@ function main() -> int:
     let enemy_box_size = rl.Vector3(x = 2.0, y = 2.0, z = 2.0)
 
     let enemy_sphere_pos = rl.Vector3(x = 4.0, y = 0.0, z = 0.0)
-    let enemy_sphere_size = float<-1.5
+    let enemy_sphere_size = 1.5
 
     rl.set_target_fps(60)
 

@@ -25,10 +25,10 @@ function gen_mesh_custom() -> rl.Mesh:
     var mesh = rl.Mesh(
         triangleCount = 1,
         vertexCount = 3,
-        vertices = unsafe: ptr[float]<-ptr_of(vertices[0]),
-        texcoords = unsafe: ptr[float]<-ptr_of(texcoords[0]),
+        vertices = ptr_of(vertices[0]),
+        texcoords = ptr_of(texcoords[0]),
         texcoords2 = zero[ptr[float]],
-        normals = unsafe: ptr[float]<-ptr_of(normals[0]),
+        normals = ptr_of(normals[0]),
         tangents = zero[ptr[float]],
         colors = zero[ptr[ubyte]],
         indices = null,

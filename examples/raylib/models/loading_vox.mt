@@ -188,13 +188,13 @@ function main() -> int:
             camera_rotation.x = 0.0
             camera_rotation.y = 0.0
 
-        var movement_z = float<-0.0
+        var movement_z = 0.0
         if rl.is_key_down(rl.KeyboardKey.KEY_W) or rl.is_key_down(rl.KeyboardKey.KEY_UP):
             movement_z += 0.1
         if rl.is_key_down(rl.KeyboardKey.KEY_S) or rl.is_key_down(rl.KeyboardKey.KEY_DOWN):
             movement_z -= 0.1
 
-        var movement_x = float<-0.0
+        var movement_x = 0.0
         if rl.is_key_down(rl.KeyboardKey.KEY_D) or rl.is_key_down(rl.KeyboardKey.KEY_RIGHT):
             movement_x += 0.1
         if rl.is_key_down(rl.KeyboardKey.KEY_A) or rl.is_key_down(rl.KeyboardKey.KEY_LEFT):

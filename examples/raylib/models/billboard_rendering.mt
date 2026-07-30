@@ -30,7 +30,7 @@ function main() -> int:
     let billboard_up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
     let size = rl.Vector2(x = source.width / source.height, y = 1.0)
     let origin = rm.vector2_scale(size, 0.5)
-    var rotation = float<-0.0
+    var rotation = 0.0
 
     rl.set_target_fps(60)
 

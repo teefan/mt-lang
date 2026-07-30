@@ -46,7 +46,7 @@ function main() -> int:
         rl.update_camera(camera, rl.CameraMode.CAMERA_FIRST_PERSON)
 
         let player_position = rl.Vector2(x = camera.position.x, y = camera.position.z)
-        let player_radius = float<-0.1
+        let player_radius = 0.1
 
         var player_cell_x = int<-(player_position.x - map_position.x + 0.5)
         var player_cell_y = int<-(player_position.y - map_position.z + 0.5)
