@@ -485,11 +485,8 @@ function parse_long_option_impl(
 
         match inline_value:
             Option.some as inline_payload:
-                match set_option_value(result, spec, inline_payload.value):
-                    Result.failure as set_error:
-                        return Result[ptr_uint, Error].failure(error= set_error.error)
-                    Result.success:
-                        return Result[ptr_uint, Error].success(value= consumed)
+                let _ = set_option_value(result, spec, inline_payload.value)?
+                return Result[ptr_uint, Error].success(value= consumed)
             Option.none:
                 pass
 
@@ -497,12 +494,9 @@ function parse_long_option_impl(
             let missing = fmt.format(f"--#{spec.long_name}")
             return Result[ptr_uint, Error].failure(error= require_value_arg(missing.as_str()))
 
-        match set_option_value(result, spec, value_arg):
-            Result.failure as payload:
-                return Result[ptr_uint, Error].failure(error= payload.error)
-            Result.success:
-                consumed = 2z
-                return Result[ptr_uint, Error].success(value= consumed)
+        let _ = set_option_value(result, spec, value_arg)?
+        consumed = 2z
+        return Result[ptr_uint, Error].success(value= consumed)
 
     match inline_value:
         Option.some:
@@ -510,11 +504,8 @@ function parse_long_option_impl(
         Option.none:
             pass
 
-    match set_option_flag(result, spec):
-        Result.failure as payload:
-            return Result[ptr_uint, Error].failure(error= payload.error)
-        Result.success:
-            return Result[ptr_uint, Error].success(value= 1z)
+    let _ = set_option_flag(result, spec)?
+    return Result[ptr_uint, Error].success(value= 1z)
 
 
 function parse_short_option_impl(
@@ -537,28 +528,18 @@ function parse_short_option_impl(
 
             if short_index + 1 < arg.len:
                 let value = arg.slice(short_index + 1, arg.len - short_index - 1)
-                match set_option_value(result, spec, value):
-                    Result.failure as payload:
-                        return Result[ptr_uint, Error].failure(error= payload.error)
-                    Result.success:
-                        return Result[ptr_uint, Error].success(value= consumed)
+                let _ = set_option_value(result, spec, value)?
+                return Result[ptr_uint, Error].success(value= consumed)
 
             let value_arg = next_arg else:
                 let missing = fmt.format(f"-#{short_name}")
                 return Result[ptr_uint, Error].failure(error= require_value_arg(missing.as_str()))
 
-            match set_option_value(result, spec, value_arg):
-                Result.failure as payload:
-                    return Result[ptr_uint, Error].failure(error= payload.error)
-                Result.success:
-                    consumed = 2z
-                    return Result[ptr_uint, Error].success(value= consumed)
+            let _ = set_option_value(result, spec, value_arg)?
+            consumed = 2z
+            return Result[ptr_uint, Error].success(value= consumed)
 
-        match set_option_flag(result, spec):
-            Result.failure as payload:
-                return Result[ptr_uint, Error].failure(error= payload.error)
-            Result.success:
-                pass
+        let _ = set_option_flag(result, spec)?
 
         short_index += 1
 
@@ -576,7 +557,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
             pass
 
     var command_options: span[OptionSpec] = zero[span[OptionSpec]]
-    var index: ptr_uint = 1
+    var index: ptr_uint = 0
     var end_of_options = false
 
     while index < args.len:

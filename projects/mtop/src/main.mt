@@ -103,7 +103,8 @@ function main(args: span[str]) -> int:
     )
 
     let app = app_definition(options, commands)
-    match cli.parse(app, args):
+    let cli_args = unsafe: span[str](data = args.data + 1, len = args.len - 1)
+    match cli.parse(app, cli_args):
         Result.failure as payload:
             var error = payload.error
             defer error.release()
