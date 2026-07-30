@@ -588,7 +588,7 @@ def test_semantic_tokens_refresh_after_imported_module_did_change
         "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
       })
 
-      first = client.send_request("textDocument/semanticTokens/full", {
+      _first = client.send_request("textDocument/semanticTokens/full", {
         "textDocument" => { "uri" => main_uri }
       })
       legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")

@@ -19,16 +19,16 @@ function main() -> int:
     let frame_height = scarfy.height
 
     let source_rect = rl.Rectangle(
-        x = float<-0.0,
-        y = float<-0.0,
+        x = 0.0,
+        y = 0.0,
         width = float<-frame_width,
         height = float<-frame_height
     )
     let dest_rect = rl.Rectangle(
-        x = float<-SCREEN_WIDTH / float<-2.0,
-        y = float<-SCREEN_HEIGHT / float<-2.0,
-        width = float<-frame_width * float<-2.0,
-        height = float<-frame_height * float<-2.0
+        x = float<-SCREEN_WIDTH / 2.0,
+        y = float<-SCREEN_HEIGHT / 2.0,
+        width = float<-frame_width * 2.0,
+        height = float<-frame_height * 2.0
     )
     let origin = rl.Vector2(x = float<-frame_width, y = float<-frame_height)
 

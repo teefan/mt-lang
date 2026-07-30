@@ -11,8 +11,8 @@ const RAD_TO_DEG: float = 180.0 / rl.PI
 
 function calculate_pendulum_end_point(length: float, theta: float) -> rl.Vector2:
     return rl.Vector2(
-        x = float<-(10.0 * length * float<-math.sin(double<-theta)),
-        y = float<-(10.0 * length * float<-math.cos(double<-theta))
+        x = (10.0 * length * float<-math.sin(double<-theta)),
+        y = (10.0 * length * float<-math.cos(double<-theta))
     )
 
 
@@ -24,7 +24,7 @@ function calculate_double_pendulum_end_point(
 ) -> rl.Vector2:
     let endpoint1 = calculate_pendulum_end_point(length1, theta1)
     let endpoint2 = calculate_pendulum_end_point(length2, theta2)
-    return rl.Vector2(x = float<-(endpoint1.x + endpoint2.x), y = float<-(endpoint1.y + endpoint2.y))
+    return rl.Vector2(x = (endpoint1.x + endpoint2.x), y = (endpoint1.y + endpoint2.y))
 
 
 function main() -> int:
@@ -32,15 +32,15 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - double pendulum")
     defer rl.close_window()
 
-    let length1: float = 15.0
-    let mass1: float = 0.2
+    let length1 = 15.0
+    let mass1 = 0.2
     var theta1: float = DEG_TO_RAD * 170.0
     var velocity1: float = 0.0
-    let length2: float = 15.0
-    let mass2: float = 0.1
+    let length2 = 15.0
+    let mass2 = 0.1
     var theta2: float = 0.0
     var velocity2: float = 0.0
-    let length_scaler: float = 0.1
+    let length_scaler = 0.1
     let total_mass = mass1 + mass2
 
     var previous_position = calculate_double_pendulum_end_point(length1, theta1, length2, theta2)
@@ -49,9 +49,9 @@ function main() -> int:
 
     let scaled_length1 = length1 * length_scaler
     let scaled_length2 = length2 * length_scaler
-    let line_thickness: float = 20.0
-    let trail_thickness: float = 2.0
-    let trail_fade_alpha: float = 0.01
+    let line_thickness = 20.0
+    let trail_thickness = 2.0
+    let trail_fade_alpha = 0.01
 
     let target = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
     defer rl.unload_render_texture(target)
@@ -129,8 +129,8 @@ function main() -> int:
         let endpoint1 = calculate_pendulum_end_point(length1, theta1)
         rl.draw_rectangle_pro(
             rl.Rectangle(
-                x = float<-(float<-SCREEN_WIDTH / 2.0 + endpoint1.x),
-                y = float<-(float<-SCREEN_HEIGHT / 2.0 - 100.0 + endpoint1.y),
+                x = (float<-SCREEN_WIDTH / 2.0 + endpoint1.x),
+                y = (float<-SCREEN_HEIGHT / 2.0 - 100.0 + endpoint1.y),
                 width = 10.0 * length2,
                 height = line_thickness
             ),

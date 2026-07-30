@@ -419,7 +419,7 @@ function parse_port(args: span[str]) -> int:
             var port: int = 0
             var digit_index: ptr_uint = 0
             while digit_index < port_arg.len:
-                let digit = int<-(port_arg.byte_at(digit_index)) - 48
+                let digit = int<-port_arg.byte_at(digit_index) - 48
                 if digit < 0 or digit > 9:
                     return 0
                 port = port * 10 + digit

@@ -16,8 +16,8 @@ function main() -> int:
     var points: array[rl.Vector2, POINT_CAPACITY] = zero[array[rl.Vector2, POINT_CAPACITY]]
     let center = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0 - 125.0, y = float<-SCREEN_HEIGHT / 2.0)
     var segments: float = 6.0
-    let inside_radius: float = 100.0
-    let outside_radius: float = 150.0
+    let inside_radius = 100.0
+    let outside_radius = 150.0
     var outline = true
 
     rl.set_target_fps(60)

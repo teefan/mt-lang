@@ -22,7 +22,7 @@ extending vec2:
 
 
     public function length() -> float:
-        return float<-math.sqrt(double<-(this.length_squared()))
+        return float<-math.sqrt(double<-this.length_squared())
 
 
     public function normalized() -> vec2:
@@ -37,7 +37,7 @@ extending vec2:
 
 
     public function distance_to(v: vec2) -> float:
-        return float<-math.sqrt(double<-(this.distance_squared_to(v)))
+        return float<-math.sqrt(double<-this.distance_squared_to(v))
 
 
     public function lerp(target: vec2, t: float) -> vec2:
@@ -65,7 +65,7 @@ extending vec3:
 
 
     public function length() -> float:
-        return float<-math.sqrt(double<-(this.length_squared()))
+        return float<-math.sqrt(double<-this.length_squared())
 
 
     public function normalized() -> vec3:
@@ -81,7 +81,7 @@ extending vec3:
 
 
     public function distance_to(v: vec3) -> float:
-        return float<-math.sqrt(double<-(this.distance_squared_to(v)))
+        return float<-math.sqrt(double<-this.distance_squared_to(v))
 
 
     public function cross(v: vec3) -> vec3:
@@ -117,7 +117,7 @@ extending vec4:
 
 
     public function length() -> float:
-        return float<-math.sqrt(double<-(this.length_squared()))
+        return float<-math.sqrt(double<-this.length_squared())
 
 
     public function normalized() -> vec4:
@@ -134,7 +134,7 @@ extending vec4:
 
 
     public function distance_to(v: vec4) -> float:
-        return float<-math.sqrt(double<-(this.distance_squared_to(v)))
+        return float<-math.sqrt(double<-this.distance_squared_to(v))
 
 
     public function lerp(target: vec4, t: float) -> vec4:

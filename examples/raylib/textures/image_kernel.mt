@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 
 function normalize_kernel(kernel: ref[array[float, 9]]) -> void:
-    var sum = float<-0.0
+    var sum = 0.0
     var index = 0
     while index < 9:
         sum += read(kernel)[index]
@@ -20,7 +20,7 @@ function normalize_kernel(kernel: ref[array[float, 9]]) -> void:
 
 
 function kernel_span(kernel: ref[array[float, 9]]) -> span[float]:
-    return unsafe: span[float](data = ptr[float]<-ptr_of(read(kernel)[0]), len = 9)
+    return unsafe: span[float](data = ptr_of(read(kernel)[0]), len = 9)
 
 
 function main() -> int:

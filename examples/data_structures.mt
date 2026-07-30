@@ -201,7 +201,7 @@ function counter_demo() -> int:
     let cnt = c.count(1)
     let _cnt = cnt
     c.release()
-    return int<-(total)
+    return int<-total
 
 # ---------------------------------------------------------------------------
 # 14  MultiSet[T] — bag
@@ -216,7 +216,7 @@ function multiset_demo() -> int:
     let distinct = s.distinct_len()
     let _distinct = distinct
     s.release()
-    return int<-(total)
+    return int<-total
 
 # ---------------------------------------------------------------------------
 # 15  Bitset — bit-level set
@@ -232,7 +232,7 @@ function bitset_demo() -> int:
     b.toggle(7)
     let _hf = has_five
     b.release()
-    return int<-(has_three)
+    return int<-has_three
 
 # ---------------------------------------------------------------------------
 # 16  SoA[T,N] — Structure of Arrays
@@ -297,11 +297,11 @@ function graph_pathfinding_demo() -> int:
 
     var dg = g.compile()
     var paths = dg.dijkstra(0)
-    let dist_3 = int<-(paths.distance_to(3))
+    let dist_3 = int<-paths.distance_to(3)
     let has_path = if paths.has_path_to(4): 1 else: 0
 
     var path = paths.path_to(4)
-    let path_len = int<-(path.len())
+    let path_len = int<-path.len()
 
     path.release()
     paths.release()
@@ -323,7 +323,7 @@ function spatial_demo() -> int:
     let _rc = r.len()
     r.release()
     grid.release()
-    return int<-(count)
+    return int<-count
 
 # ---------------------------------------------------------------------------
 # 19  RingBuffer[T] — fixed-capacity circular buffer
@@ -354,7 +354,7 @@ function sparse_set_demo() -> int:
     let _val = val
     s.remove(7)
     s.release()
-    return int<-(has)
+    return int<-has
 
 # ---------------------------------------------------------------------------
 # 21  LruCache[K,V] — capacity-bounded LRU eviction map
@@ -369,7 +369,7 @@ function lru_cache_demo() -> int:
     let has_b = c.contains("b")
     let _hb = has_b
     c.release()
-    return int<-(has_a) + 1
+    return int<-has_a + 1
 
 # ---------------------------------------------------------------------------
 # 22  Iter[T] — composable lazy iteration over collections
@@ -395,7 +395,7 @@ function iter_demo() -> int:
     let len = result.len()
     let _result = result
     v.release()
-    return int<-(len)
+    return int<-len
 
 # ---------------------------------------------------------------------------
 # 23  Entrypoint
@@ -418,7 +418,7 @@ function main() -> int:
     total += counter_demo()
     total += multiset_demo()
     total += bitset_demo()
-    total += int<-(soa_demo())
+    total += int<-soa_demo()
     total += graph_demo()
     total += graph_pathfinding_demo()
     total += spatial_demo()

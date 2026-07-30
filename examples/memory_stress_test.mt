@@ -262,7 +262,7 @@ function own_basic_alloc() -> own[int]:
     return p
 
 function own_nullable_flow() -> int:
-    var p: own[int]? = heap.alloc[int](1)
+    let p: own[int]? = heap.alloc[int](1)
     defer heap.release(unsafe: ptr[int]<-p)
     if p != null:
         return 0
@@ -387,7 +387,7 @@ function ptr_of_struct_field_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function nullable_own_guard() -> int:
-    var owned: own[int]? = heap.alloc[int](1)
+    let owned: own[int]? = heap.alloc[int](1)
     defer:
         if owned != null:
             heap.release(owned)
@@ -397,8 +397,8 @@ function nullable_own_guard() -> int:
         return read(handle)
 
 function nullable_own_flow_control() -> int:
-    var a: own[int]? = null
-    var b: own[int]? = heap.alloc[int](1)
+    let a: own[int]? = null
+    let b: own[int]? = heap.alloc[int](1)
     defer:
         heap.release(a)
         heap.release(b)
@@ -412,7 +412,7 @@ function nullable_own_flow_control() -> int:
 # ---------------------------------------------------------------------------
 
 function reinterpret_struct_as_bytes() -> uint:
-    var point = TestPoint(x = 1.0, y = 2.0, flag = true)
+    let point = TestPoint(x = 1.0, y = 2.0, flag = true)
     unsafe:
         return reinterpret[uint](point.x)
 
@@ -421,11 +421,11 @@ function reinterpret_struct_as_bytes() -> uint:
 # ---------------------------------------------------------------------------
 
 function get_on_empty_span() -> ptr[int]?:
-    var empty = zero_length_span()
+    let empty = zero_length_span()
     return get(empty, 0)
 
 function get_on_in_bounds() -> int:
-    var arr: array[int, 2] = array[int, 2](42, 99)
+    let arr: array[int, 2] = array[int, 2](42, 99)
     let item = get(arr, 1) else:
         return -1
     unsafe:
@@ -438,7 +438,7 @@ function get_on_in_bounds() -> int:
 function own_to_raw_alias() -> int:
     let owned = heap.must_alloc[int](1)
     defer heap.release(owned)
-    var raw = unsafe: ptr[int]<-owned
+    let raw = owned
     unsafe:
         read(raw) = 99
         return read(owned)

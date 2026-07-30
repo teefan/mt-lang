@@ -208,7 +208,7 @@ extending str:
 
         if not utf8_boundary(this, start):
             fatal(c"str slice start must be a UTF-8 boundary")
-        var actual_stop = start + len
+        let actual_stop = start + len
         if not utf8_boundary(this, actual_stop):
             fatal(c"str slice end must be a UTF-8 boundary")
 

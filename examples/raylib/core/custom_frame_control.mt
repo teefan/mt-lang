@@ -84,9 +84,9 @@ function main() -> int:
                 current_time = rl.get_time()
                 delta_time = float<-(current_time - previous_time)
             else:
-                delta_time = float<-update_draw_time
+                delta_time = update_draw_time
         else:
-            delta_time = float<-update_draw_time
+            delta_time = update_draw_time
 
         previous_time = current_time
 

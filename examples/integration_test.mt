@@ -87,7 +87,7 @@ extending Counter:
 
     # generic method
     editable function set_to[T](source: T) -> void:
-        this.value = int<-(source)
+        this.value = int<-source
 
 # --- generic method usage
 function counter_demo() -> int:
@@ -131,7 +131,7 @@ function lifetime_compose_demo() -> bool:
     var storage: array[ubyte, 64]
     var sp = span[ubyte](data = ptr_of(storage[0]), len = 64)
     var view = SliceView(data = ref_of(sp), offset = 0, length = 32)
-    var b = slice_first_byte(ref_of(view))
+    let b = slice_first_byte(ref_of(view))
     return b == 0
 
 # ============================================================================
@@ -202,7 +202,7 @@ function handle_event(ev: Event) -> int:
         Event.key as k:
             return k.code
         Event.idle(ms):
-            return int<-(ms)
+            return ms
         _:
             return 0
 
@@ -254,11 +254,11 @@ struct MeasurableCounter implements Measurable:
 
 extending MeasurableCounter:
     function measure() -> float:
-        return float<-(this.value)
+        return float<-this.value
 
 function dyn_adapt_demo() -> float:
     var c = MeasurableCounter(value = 42)
-    var handler: dyn[Measurable] = adapt[Measurable](ref_of(c))
+    let handler: dyn[Measurable] = adapt[Measurable](ref_of(c))
     return handler.measure()
 
 # ============================================================================
@@ -307,7 +307,7 @@ function main() -> int:
     let id_str = identity_of[Indexed[int]](ref_of(idx))
     let _id_str = id_str
 
-    total += int<-(dyn_adapt_demo())
+    total += int<-dyn_adapt_demo()
 
     let _total = total
     return 0

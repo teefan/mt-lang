@@ -19,7 +19,7 @@ function main() -> int:
 
     var triangle_index = -1
     var lines_mode = false
-    let handle_radius: float = 8.0
+    let handle_radius = 8.0
 
     rl.set_target_fps(60)
 

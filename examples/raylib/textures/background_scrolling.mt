@@ -19,63 +19,63 @@ function main() -> int:
     let foreground = rl.load_texture("cyberpunk_street_foreground.png")
     defer rl.unload_texture(foreground)
 
-    var scrolling_back = float<-0.0
-    var scrolling_mid = float<-0.0
-    var scrolling_fore = float<-0.0
+    var scrolling_back = 0.0
+    var scrolling_mid = 0.0
+    var scrolling_fore = 0.0
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        scrolling_back -= float<-0.1
-        scrolling_mid -= float<-0.5
-        scrolling_fore -= float<-1.0
+        scrolling_back -= 0.1
+        scrolling_mid -= 0.5
+        scrolling_fore -= 1.0
 
         if scrolling_back <= -float<-(background.width * 2):
-            scrolling_back = float<-0.0
+            scrolling_back = 0.0
         if scrolling_mid <= -float<-(midground.width * 2):
-            scrolling_mid = float<-0.0
+            scrolling_mid = 0.0
         if scrolling_fore <= -float<-(foreground.width * 2):
-            scrolling_fore = float<-0.0
+            scrolling_fore = 0.0
 
         rl.begin_drawing()
         rl.clear_background(rl.get_color(0x052c46ff))
 
         rl.draw_texture_ex(
             background,
-            rl.Vector2(x = scrolling_back, y = float<-20.0),
-            float<-0.0,
-            float<-2.0,
+            rl.Vector2(x = scrolling_back, y = 20.0),
+            0.0,
+            2.0,
             rl.WHITE
         )
         rl.draw_texture_ex(
             background,
-            rl.Vector2(x = float<-(background.width * 2) + scrolling_back, y = float<-20.0),
-            float<-0.0,
-            float<-2.0,
+            rl.Vector2(x = float<-(background.width * 2) + scrolling_back, y = 20.0),
+            0.0,
+            2.0,
             rl.WHITE
         )
 
-        rl.draw_texture_ex(midground, rl.Vector2(x = scrolling_mid, y = float<-20.0), float<-0.0, float<-2.0, rl.WHITE)
+        rl.draw_texture_ex(midground, rl.Vector2(x = scrolling_mid, y = 20.0), 0.0, 2.0, rl.WHITE)
         rl.draw_texture_ex(
             midground,
-            rl.Vector2(x = float<-(midground.width * 2) + scrolling_mid, y = float<-20.0),
-            float<-0.0,
-            float<-2.0,
+            rl.Vector2(x = float<-(midground.width * 2) + scrolling_mid, y = 20.0),
+            0.0,
+            2.0,
             rl.WHITE
         )
 
         rl.draw_texture_ex(
             foreground,
-            rl.Vector2(x = scrolling_fore, y = float<-70.0),
-            float<-0.0,
-            float<-2.0,
+            rl.Vector2(x = scrolling_fore, y = 70.0),
+            0.0,
+            2.0,
             rl.WHITE
         )
         rl.draw_texture_ex(
             foreground,
-            rl.Vector2(x = float<-(foreground.width * 2) + scrolling_fore, y = float<-70.0),
-            float<-0.0,
-            float<-2.0,
+            rl.Vector2(x = float<-(foreground.width * 2) + scrolling_fore, y = 70.0),
+            0.0,
+            2.0,
             rl.WHITE
         )
 

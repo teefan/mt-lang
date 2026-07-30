@@ -81,8 +81,8 @@ extending vec2:
             return zero[vec2]
         let forward = set_magnitude(velocity, 1.0)
         let circle_center = forward * wander_distance
-        let wx = circle_center.x + wander_radius * float<-(math.cos(double<-(wander_angle)))
-        let wy = circle_center.y + wander_radius * float<-(math.sin(double<-(wander_angle)))
+        let wx = circle_center.x + wander_radius * float<-math.cos(double<-wander_angle)
+        let wy = circle_center.y + wander_radius * float<-math.sin(double<-wander_angle)
         let displacement = vec2(x = wx, y = wy)
         return displacement
 
@@ -98,7 +98,7 @@ extending vec2:
                 steer = steer + repulsion
                 count += 1
         if count > 0:
-            steer = steer / float<-(count)
+            steer = steer / float<-count
         return steer
 
 
@@ -109,7 +109,7 @@ extending vec2:
             sum = sum + nv
             count += 1
         if count > 0:
-            let avg = sum / float<-(count)
+            let avg = sum / float<-count
             return avg - velocity
         return zero[vec2]
 
@@ -123,7 +123,7 @@ extending vec2:
                 sum = sum + np
                 count += 1
         if count > 0:
-            let center = sum / float<-(count)
+            let center = sum / float<-count
             return center - position
         return zero[vec2]
 

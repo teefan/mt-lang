@@ -11,7 +11,7 @@ const HANDS_MOVE_DURATION: float = 0.5
 
 
 function parse_ascii_digit(value: ubyte) -> int:
-    return int<-(value - 48ub)
+    return (value - 48ub)
 
 
 function parse_two_digits(value_text: str, offset: ptr_uint) -> int:
@@ -26,9 +26,9 @@ function main() -> int:
     let bg_color = rl.color_lerp(rl.DARKBLUE, rl.BLACK, 0.75)
     let hands_color = rl.color_lerp(rl.YELLOW, rl.RAYWHITE, 0.25)
 
-    let clock_face_size: float = 24.0
-    let clock_face_spacing: float = 8.0
-    let section_spacing: float = 16.0
+    let clock_face_size = 24.0
+    let clock_face_spacing = 8.0
+    let section_spacing = 16.0
 
     let TL = rl.Vector2(x = 0.0, y = 90.0)
     let TR = rl.Vector2(x = 90.0, y = 180.0)

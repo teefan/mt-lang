@@ -87,7 +87,7 @@ function main() -> int:
     let texture = rl.load_texture("cat.png")
     defer rl.unload_texture(texture)
 
-    var angle = float<-0.0
+    var angle = 0.0
 
     rl.set_target_fps(60)
 

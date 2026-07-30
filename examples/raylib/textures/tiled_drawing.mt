@@ -247,8 +247,8 @@ function main() -> int:
 
     var active_pattern = 0
     var active_color = 0
-    var scale = float<-1.0
-    var rotation = float<-0.0
+    var scale = 1.0
+    var rotation = 0.0
 
     rl.set_target_fps(60)
 

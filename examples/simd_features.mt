@@ -23,7 +23,7 @@ function construction_demo() -> int:
     let s8 = simd[short, 8](1, 2, 3, 4, 5, 6, 7, 8)
     let b16 = simd[ubyte, 16](
         1, 2, 3, 4, 5, 6, 7, 8,
-        9, 10, 11, 12, 13, 14, 15, 16,
+        9, 10, 11, 12, 13, 14, 15, 16
     )
 
     let _d2 = d2
@@ -31,7 +31,7 @@ function construction_demo() -> int:
     let _s8 = s8
     let _b16 = b16
 
-    total += int<-(f4[0]) + int<-(i4[0])
+    total += int<-f4[0] + i4[0]
     return total
 
 # =============================================================================
@@ -95,7 +95,7 @@ function integer_simd_demo() -> int:
     let shl = a << 2
     let shr = b >> 1
 
-    total += int<-(sum[0] + diff[0] + prod[0] + quot[0] + rem[0])
+    total += (sum[0] + diff[0] + prod[0] + quot[0] + rem[0])
 
     let _neg = neg
     let _and = and_val
@@ -127,7 +127,7 @@ function lane_access_demo() -> float:
 
 function compound_assignment_demo() -> float:
     var a = simd[float, 4](1.0, 2.0, 3.0, 4.0)
-    var b = simd[float, 4](5.0, 6.0, 7.0, 8.0)
+    let b = simd[float, 4](5.0, 6.0, 7.0, 8.0)
 
     a += b
     a -= b
@@ -135,7 +135,7 @@ function compound_assignment_demo() -> float:
     a /= 2.0
 
     var c = simd[int, 4](10, 20, 30, 40)
-    var d = simd[int, 4](3, 4, 5, 6)
+    let d = simd[int, 4](3, 4, 5, 6)
 
     c += d
     c -= d
@@ -157,10 +157,10 @@ function compound_assignment_demo() -> float:
 # =============================================================================
 
 function array_interaction_demo() -> float:
-    var data: array[float, 12] = array[float, 12](
+    let data: array[float, 12] = array[float, 12](
         1.0, 2.0, 3.0, 4.0,
         5.0, 6.0, 7.0, 8.0,
-        9.0, 10.0, 11.0, 12.0,
+        9.0, 10.0, 11.0, 12.0
     )
     var acc = simd[float, 4](0.0, 0.0, 0.0, 0.0)
     var i: int = 0
@@ -231,13 +231,13 @@ function main() -> int:
     total += arithmetic_demo()
     total += integer_simd_demo()
 
-    total += int<-(lane_access_demo())
-    total += int<-(compound_assignment_demo())
-    total += int<-(array_interaction_demo())
-    total += int<-(typed_declarations_demo())
-    total += int<-(nested_expression_demo())
-    total += int<-(lane_with_demo())
-    total += int<-(simd_helpers_demo())
+    total += int<-lane_access_demo()
+    total += int<-compound_assignment_demo()
+    total += int<-array_interaction_demo()
+    total += int<-typed_declarations_demo()
+    total += int<-nested_expression_demo()
+    total += int<-lane_with_demo()
+    total += int<-simd_helpers_demo()
 
     let _total = total
     return 0

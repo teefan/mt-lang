@@ -1568,7 +1568,7 @@ module MilkTea
       IR::AggregateLiteral.new(fields:, type: result_type)
     end
 
-  def lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
+    def lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
       if left_type.is_a?(Types::Vector) && right_type.is_a?(Types::Vector)
         return lower_aggregate_binary_op(operator, left, right, result_type)
       end

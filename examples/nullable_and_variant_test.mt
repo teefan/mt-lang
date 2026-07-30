@@ -30,15 +30,15 @@ variant Forest:
 
 
 function build_ast() -> Expr:
-    var a = Expr.integer_literal(value = 1)
-    var b = Expr.integer_literal(value = 2)
+    let a = Expr.integer_literal(value = 1)
+    let b = Expr.integer_literal(value = 2)
     return Expr.binary_op(operator = "+", left = a, right = b)
 
 
 function build_tree() -> Forest:
-    var left = Forest.empty
-    var right = Forest.empty
-    var t = Tree(label = string.String.from_str("root"), count = 0)
+    let left = Forest.empty
+    let right = Forest.empty
+    let t = Tree(label = string.String.from_str("root"), count = 0)
     return Forest.node(tree = t, left = left, right = right)
 
 
@@ -47,8 +47,8 @@ function eval_expr(expr: Expr) -> int:
         Expr.integer_literal as lit:
             return lit.value
         Expr.binary_op as bin:
-            var l = eval_expr(bin.left)
-            var r = eval_expr(bin.right)
+            let l = eval_expr(bin.left)
+            let r = eval_expr(bin.right)
             return l + r
         Expr.unary_op as u:
             return 0 - eval_expr(u.operand)
@@ -65,8 +65,8 @@ function forest_depth(f: Forest) -> int:
         Forest.empty:
             return 0
         Forest.node as n:
-            var ld = forest_depth(n.left)
-            var rd = forest_depth(n.right)
+            let ld = forest_depth(n.left)
+            let rd = forest_depth(n.right)
             if ld > rd:
                 return ld + 1
             return rd + 1
@@ -109,8 +109,8 @@ function exercise_nullable_struct_fields() -> int:
         meta = Meta(version = make_version(), debug = true))
 
     # Bug 6: nullable struct field from addressable local
-    var version_local: int = 5
-    var meta2 = Meta(version = version_local, debug = false)
+    let version_local = 5
+    let meta2 = Meta(version = version_local, debug = false)
     var cfg2 = Config(port = port, label = string.String.from_str("hello"), meta = meta2)
 
     return 0
@@ -131,20 +131,20 @@ function consume_bool(val: bool) -> bool:
 
 function exercise_let_else_primitive() -> int:
     # let-else on int? (non-null case — should unwrap)
-    var a: int? = 42
+    let a: int? = 42
     let a_val = a else:
         return 1
-    var a_result = consume_int(a_val)       ## must pass value, not pointer
+    let a_result = consume_int(a_val)       ## must pass value, not pointer
 
     # let-else on int? (also non-null)
-    var b: int? = 99
+    let b: int? = 99
     let b_val = b else:
         return 2
     var b_result = consume_int(b_val)
 
     # var-else on bool?
-    var c: bool? = true
-    var c_val = c else:
+    let c: bool? = true
+    let c_val = c else:
         return 3
     var c_result = consume_bool(c_val)
 
@@ -166,19 +166,19 @@ function consume_tree(t: Forest) -> int:
 
 function exercise_let_else_struct() -> int:
     # let-else on struct?
-    var cfg: Config? = Config(
+    let cfg: Config? = Config(
         port = 3000,
         label = string.String.from_str("config"),
         meta = Meta(version = 1, debug = true))
     let cfg_val = cfg else:
         return 10
-    var cfg_result = consume_config(cfg_val)  ## must pass value, not pointer
+    let cfg_result = consume_config(cfg_val)  ## must pass value, not pointer
 
     # let-else on variant?
-    var tree: Forest? = Forest.empty
+    let tree: Forest? = Forest.empty
     let tree_val = tree else:
         return 11
-    var tree_result = consume_tree(tree_val)  ## must pass value, not pointer
+    let tree_result = consume_tree(tree_val)  ## must pass value, not pointer
 
     return cfg_result + tree_result
 
@@ -188,7 +188,7 @@ function exercise_let_else_struct() -> int:
 # ============================================================
 
 function make_value() -> int?:
-    var result: int? = 7
+    let result: int? = 7
     return result
 
 function double_make(val: int?) -> int?:
@@ -196,8 +196,8 @@ function double_make(val: int?) -> int?:
 
 
 function exercise_chained_let_else() -> int:
-    var x: int? = 10
-    var y: int? = 20
+    let x: int? = 10
+    let y: int? = 20
 
     let x_val = x else:
         return 100
@@ -257,16 +257,16 @@ function main() -> int:
 
     # Section 1 — self-referencing variants: build and eval in same scope
     # (local variables must outlive the variant's pointer fields)
-    var a = Expr.integer_literal(value = 1)
-    var b = Expr.integer_literal(value = 2)
-    var ast = Expr.binary_op(operator = "+", left = a, right = b)
+    let a = Expr.integer_literal(value = 1)
+    let b = Expr.integer_literal(value = 2)
+    let ast = Expr.binary_op(operator = "+", left = a, right = b)
     if eval_expr(ast) != 3:
         failures = failures + 1
 
-    var t = Tree(label = string.String.from_str("root"), count = 0)
-    var left_f = Forest.empty
-    var right_f = Forest.empty
-    var forest = Forest.node(tree = t, left = left_f, right = right_f)
+    let t = Tree(label = string.String.from_str("root"), count = 0)
+    let left_f = Forest.empty
+    let right_f = Forest.empty
+    let forest = Forest.node(tree = t, left = left_f, right = right_f)
     if forest_depth(forest) != 1:
         failures = failures + 1
 
@@ -274,17 +274,17 @@ function main() -> int:
     exercise_nullable_struct_fields()
 
     # Section 3
-    var s3 = exercise_let_else_primitive()
+    let s3 = exercise_let_else_primitive()
     if s3 != 43:
         failures = failures + 1
 
     # Section 4
-    var s4 = exercise_let_else_struct()
+    let s4 = exercise_let_else_struct()
     if s4 != 0:
         failures = failures + 1
 
     # Section 5
-    var s5 = exercise_chained_let_else()
+    let s5 = exercise_chained_let_else()
     if s5 != 30:
         failures = failures + 1
 
@@ -293,7 +293,7 @@ function main() -> int:
     build_with_nullable()
 
     # Section 7
-    var s7 = nullable_from_func()
+    let s7 = nullable_from_func()
     if s7 != 14:
         failures = failures + 1
 

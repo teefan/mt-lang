@@ -47,8 +47,8 @@ function grad3d(hash: int, x: float, y: float, z: float) -> float:
 # ── internal noise functions ──
 
 function perlin2d_impl(perm: array[ubyte, 512], x: float, y: float) -> float:
-    let ix = int<-(x)
-    let iy = int<-(y)
+    let ix = int<-x
+    let iy = int<-y
     let X = ix & 255
     let Y = iy & 255
     let xf = x - float<-(ix - (ix & ~255))
@@ -57,12 +57,12 @@ function perlin2d_impl(perm: array[ubyte, 512], x: float, y: float) -> float:
     let u = fade(if xf < 0.0: xf + 1.0 else: xf)
     let v = fade(if yf < 0.0: yf + 1.0 else: yf)
 
-    let A = int<-(perm[X]) + Y
-    let B = int<-(perm[X + 1]) + Y
-    let aa = int<-(perm[A])
-    let ab = int<-(perm[A + 1])
-    let ba = int<-(perm[B])
-    let bb = int<-(perm[B + 1])
+    let A = int<-perm[X] + Y
+    let B = int<-perm[X + 1] + Y
+    let aa = int<-perm[A]
+    let ab = int<-perm[A + 1]
+    let ba = int<-perm[B]
+    let bb = int<-perm[B + 1]
 
     let x1 = lerp(grad2d(aa, xf, yf), grad2d(ba, xf - 1.0, yf), u)
     let x2 = lerp(grad2d(ab, xf, yf - 1.0), grad2d(bb, xf - 1.0, yf - 1.0), u)
@@ -71,9 +71,9 @@ function perlin2d_impl(perm: array[ubyte, 512], x: float, y: float) -> float:
 
 
 function perlin3d_impl(perm: array[ubyte, 512], x: float, y: float, z: float) -> float:
-    let ix = int<-(x)
-    let iy = int<-(y)
-    let iz = int<-(z)
+    let ix = int<-x
+    let iy = int<-y
+    let iz = int<-z
     let X = ix & 255
     let Y = iy & 255
     let Z = iz & 255
@@ -85,19 +85,19 @@ function perlin3d_impl(perm: array[ubyte, 512], x: float, y: float, z: float) ->
     let v = fade(if yf < 0.0: yf + 1.0 else: yf)
     let w = fade(if zf < 0.0: zf + 1.0 else: zf)
 
-    let A = int<-(perm[X]) + Y
-    let AA = int<-(perm[A]) + Z
-    let AB = int<-(perm[A + 1]) + Z
-    let B = int<-(perm[X + 1]) + Y
-    let BA = int<-(perm[B]) + Z
-    let BB = int<-(perm[B + 1]) + Z
+    let A = int<-perm[X] + Y
+    let AA = int<-perm[A] + Z
+    let AB = int<-perm[A + 1] + Z
+    let B = int<-perm[X + 1] + Y
+    let BA = int<-perm[B] + Z
+    let BB = int<-perm[B + 1] + Z
 
-    let x1 = lerp(grad3d(int<-(perm[AA]), xf, yf, zf), grad3d(int<-(perm[BA]), xf - 1.0, yf, zf), u)
-    let x2 = lerp(grad3d(int<-(perm[AB]), xf, yf - 1.0, zf), grad3d(int<-(perm[BB]), xf - 1.0, yf - 1.0, zf), u)
+    let x1 = lerp(grad3d(int<-perm[AA], xf, yf, zf), grad3d(int<-perm[BA], xf - 1.0, yf, zf), u)
+    let x2 = lerp(grad3d(int<-perm[AB], xf, yf - 1.0, zf), grad3d(int<-perm[BB], xf - 1.0, yf - 1.0, zf), u)
     let y1 = lerp(x1, x2, v)
 
-    let x3 = lerp(grad3d(int<-(perm[AA + 1]), xf, yf, zf - 1.0), grad3d(int<-(perm[BA + 1]), xf - 1.0, yf, zf - 1.0), u)
-    let x4 = lerp(grad3d(int<-(perm[AB + 1]), xf, yf - 1.0, zf - 1.0), grad3d(int<-(perm[BB + 1]), xf - 1.0, yf - 1.0, zf - 1.0), u)
+    let x3 = lerp(grad3d(int<-perm[AA + 1], xf, yf, zf - 1.0), grad3d(int<-perm[BA + 1], xf - 1.0, yf, zf - 1.0), u)
+    let x4 = lerp(grad3d(int<-perm[AB + 1], xf, yf - 1.0, zf - 1.0), grad3d(int<-perm[BB + 1], xf - 1.0, yf - 1.0, zf - 1.0), u)
     let y2 = lerp(x3, x4, v)
 
     return lerp(y1, y2, w)
@@ -106,8 +106,8 @@ function perlin3d_impl(perm: array[ubyte, 512], x: float, y: float, z: float) ->
 # ── float floor for negative numbers ──
 
 function floor_f(x: float) -> int:
-    let i = int<-(x)
-    if x < 0.0 and float<-(i) != x:
+    let i = int<-x
+    if x < 0.0 and float<-i != x:
         return i - 1
     return i
 

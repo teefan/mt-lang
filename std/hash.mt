@@ -16,10 +16,10 @@ extending int:
             let fnv: uint = 0x811C9DC5
             let prime: uint = 0x01000193
             var h = fnv
-            h = (h ^ (as_uint & uint<-(0xFF))) * prime
-            h = (h ^ ((as_uint >> uint<-(8)) & uint<-(0xFF))) * prime
-            h = (h ^ ((as_uint >> uint<-(16)) & uint<-(0xFF))) * prime
-            h = (h ^ ((as_uint >> uint<-(24)) & uint<-(0xFF))) * prime
+            h = (h ^ (as_uint & uint<-0xFF)) * prime
+            h = (h ^ ((as_uint >> uint<-8) & uint<-0xFF)) * prime
+            h = (h ^ ((as_uint >> uint<-16) & uint<-0xFF)) * prime
+            h = (h ^ ((as_uint >> uint<-24) & uint<-0xFF)) * prime
             return h
 
 
@@ -49,10 +49,10 @@ extending uint:
             let fnv: uint = 0x811C9DC5
             let prime: uint = 0x01000193
             var h = fnv
-            h = (h ^ (uint<-(ubyte<-(v & uint<-(0xFF))))) * prime
-            h = (h ^ (uint<-(ubyte<-((v >> uint<-(8)) & uint<-(0xFF))))) * prime
-            h = (h ^ (uint<-(ubyte<-((v >> uint<-(16)) & uint<-(0xFF))))) * prime
-            h = (h ^ (uint<-(ubyte<-((v >> uint<-(24)) & uint<-(0xFF))))) * prime
+            h = (h ^ (uint<-(ubyte<-(v & uint<-0xFF)))) * prime
+            h = (h ^ (uint<-(ubyte<-((v >> uint<-8) & uint<-0xFF)))) * prime
+            h = (h ^ (uint<-(ubyte<-((v >> uint<-16) & uint<-0xFF)))) * prime
+            h = (h ^ (uint<-(ubyte<-((v >> uint<-24) & uint<-0xFF)))) * prime
             return h
 
 
@@ -141,7 +141,7 @@ extending double:
             if v == 0.0:
                 return 0
             let bits: ulong = reinterpret[ulong](v)
-            return uint<-((bits >> uint<-(32)) ^ bits)
+            return uint<-((bits >> uint<-32) ^ bits)
 
 
     public static function equal(a: const_ptr[double], b: const_ptr[double]) -> bool:
@@ -193,15 +193,15 @@ function hash_uint(value: uint) -> uint:
     let fnv: uint = 0x811C9DC5
     let prime: uint = 0x01000193
     var h = fnv
-    h = (h ^ (value & uint<-(0xFF))) * prime
-    h = (h ^ ((value >> uint<-(8)) & uint<-(0xFF))) * prime
-    h = (h ^ ((value >> uint<-(16)) & uint<-(0xFF))) * prime
-    h = (h ^ ((value >> uint<-(24)) & uint<-(0xFF))) * prime
+    h = (h ^ (value & uint<-0xFF)) * prime
+    h = (h ^ ((value >> uint<-8) & uint<-0xFF)) * prime
+    h = (h ^ ((value >> uint<-16) & uint<-0xFF)) * prime
+    h = (h ^ ((value >> uint<-24) & uint<-0xFF)) * prime
     return h
 
 
 function hash_ulong(value: ulong) -> uint:
-    return hash_uint(uint<-((value >> uint<-(32)) ^ value))
+    return hash_uint(uint<-((value >> uint<-32) ^ value))
 
 
 extending byte:

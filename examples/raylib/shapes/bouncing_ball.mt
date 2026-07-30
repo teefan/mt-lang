@@ -12,7 +12,7 @@ function main() -> int:
     var ball_position = rl.Vector2(x = float<-rl.get_screen_width() / 2.0, y = float<-rl.get_screen_height() / 2.0)
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)
     let ball_radius = 20
-    let gravity: float = 0.2
+    let gravity = 0.2
     var use_gravity = true
     var pause = false
     var frames_counter = 0

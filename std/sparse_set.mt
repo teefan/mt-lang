@@ -18,7 +18,7 @@ extending SparseSet[T]:
         return SparseSet[T](
             sparse = vec.Vec[ptr_uint].create(),
             dense = vec.Vec[T].create(),
-            keys = vec.Vec[ptr_uint].create(),
+            keys = vec.Vec[ptr_uint].create()
         )
 
 

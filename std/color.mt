@@ -50,8 +50,8 @@ function fabs(x: float) -> float:
 function fmod(x: float, m: float) -> float:
     # x - floor(x / m) * m
     let div = x / m
-    let fl = float<-(int<-(div))
-    if div < 0.0 and float<-(int<-(div)) != div:
+    let fl = float<-(int<-div)
+    if div < 0.0 and float<-(int<-div) != div:
         return x - (fl - 1.0) * m
     return x - fl * m
 
@@ -143,9 +143,9 @@ extending Color:
 
 
     public function to_hsl() -> (float, float, float):
-        let rf = float<-(this.r) / 255.0
-        let gf = float<-(this.g) / 255.0
-        let bf = float<-(this.b) / 255.0
+        let rf = float<-this.r / 255.0
+        let gf = float<-this.g / 255.0
+        let bf = float<-this.b / 255.0
 
         let mx = fmax(fmax(rf, gf), bf)
         let mn = fmin(fmin(rf, gf), bf)
@@ -171,9 +171,9 @@ extending Color:
 
 
     public function to_hsv() -> (float, float, float):
-        let rf = float<-(this.r) / 255.0
-        let gf = float<-(this.g) / 255.0
-        let bf = float<-(this.b) / 255.0
+        let rf = float<-this.r / 255.0
+        let gf = float<-this.g / 255.0
+        let bf = float<-this.b / 255.0
 
         let mx = fmax(fmax(rf, gf), bf)
         let mn = fmin(fmin(rf, gf), bf)
@@ -198,11 +198,11 @@ extending Color:
 
 
     public function lerp(target: Color, t: float) -> Color:
-        let r = float<-(this.r) + (float<-(target.r) - float<-(this.r)) * t
-        let g = float<-(this.g) + (float<-(target.g) - float<-(this.g)) * t
-        let b = float<-(this.b) + (float<-(target.b) - float<-(this.b)) * t
-        let a = float<-(this.a) + (float<-(target.a) - float<-(this.a)) * t
-        return Color(r = ubyte<-(r), g = ubyte<-(g), b = ubyte<-(b), a = ubyte<-(a))
+        let r = float<-this.r + (float<-target.r - float<-this.r) * t
+        let g = float<-this.g + (float<-target.g - float<-this.g) * t
+        let b = float<-this.b + (float<-target.b - float<-this.b) * t
+        let a = float<-this.a + (float<-target.a - float<-this.a) * t
+        return Color(r = ubyte<-r, g = ubyte<-g, b = ubyte<-b, a = ubyte<-a)
 
 
     public function alpha_blend(background: Color) -> Color:
@@ -211,33 +211,33 @@ extending Color:
         if this.a == 255:
             return this
 
-        let sa = float<-(this.a) / 255.0
-        let da = float<-(background.a) / 255.0
+        let sa = float<-this.a / 255.0
+        let da = float<-background.a / 255.0
 
-        let r_out = float<-(this.r) * sa + float<-(background.r) * da * (1.0 - sa)
-        let g_out = float<-(this.g) * sa + float<-(background.g) * da * (1.0 - sa)
-        let b_out = float<-(this.b) * sa + float<-(background.b) * da * (1.0 - sa)
+        let r_out = float<-this.r * sa + float<-background.r * da * (1.0 - sa)
+        let g_out = float<-this.g * sa + float<-background.g * da * (1.0 - sa)
+        let b_out = float<-this.b * sa + float<-background.b * da * (1.0 - sa)
         let a_out = sa + da * (1.0 - sa)
 
         return Color(
-            r = ubyte<-(r_out),
-            g = ubyte<-(g_out),
-            b = ubyte<-(b_out),
+            r = ubyte<-r_out,
+            g = ubyte<-g_out,
+            b = ubyte<-b_out,
             a = ubyte<-(a_out * 255.0)
         )
 
 
     public function scale(factor: float) -> Color:
-        let r = fmin(fmax(float<-(this.r) * factor, 0.0), 255.0)
-        let g = fmin(fmax(float<-(this.g) * factor, 0.0), 255.0)
-        let b = fmin(fmax(float<-(this.b) * factor, 0.0), 255.0)
-        return Color(r = ubyte<-(r), g = ubyte<-(g), b = ubyte<-(b), a = this.a)
+        let r = fmin(fmax(float<-this.r * factor, 0.0), 255.0)
+        let g = fmin(fmax(float<-this.g * factor, 0.0), 255.0)
+        let b = fmin(fmax(float<-this.b * factor, 0.0), 255.0)
+        return Color(r = ubyte<-r, g = ubyte<-g, b = ubyte<-b, a = this.a)
 
 
     public function multiply(other: Color) -> Color:
-        let r = ubyte<-(int<-((int<-(this.r) * int<-(other.r)) / 255))
-        let g = ubyte<-(int<-((int<-(this.g) * int<-(other.g)) / 255))
-        let b = ubyte<-(int<-((int<-(this.b) * int<-(other.b)) / 255))
+        let r = ubyte<-((int<-this.r * int<-other.r) / 255)
+        let g = ubyte<-((int<-this.g * int<-other.g) / 255)
+        let b = ubyte<-((int<-this.b * int<-other.b) / 255)
         return Color(r = r, g = g, b = b, a = this.a)
 
 

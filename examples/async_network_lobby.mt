@@ -84,7 +84,7 @@ async function main() -> int:
                                                                     if ev_p.value.kind == mgr.NetworkEventKind.player_joined:
                                                                         stdio.print_format(
                                                                             "HOST: joined ticks=%d\n",
-                                                                            uint<-frame
+                                                                            frame
                                                                         )
                                                                         host_ok = true
                                                                 Option.none:
@@ -98,7 +98,7 @@ async function main() -> int:
                                                                     if ev_p.value.kind == mgr.NetworkEventKind.connected:
                                                                         stdio.print_format(
                                                                             "CLIENT: connected id=%d\n",
-                                                                            uint<-ev_p.value.player_id
+                                                                            ev_p.value.player_id
                                                                         )
                                                                         client_ok = true
                                                                 Option.none:

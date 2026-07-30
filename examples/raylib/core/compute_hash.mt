@@ -74,7 +74,7 @@ function main() -> int:
             var base64_text_size = 0
             let encoded = rl.encode_data_base64(input_data, input_len, ptr_of(base64_text_size))
             if encoded != null:
-                base64_text.assign(text.chars_as_str(ptr[char]<-encoded))
+                base64_text.assign(text.chars_as_str(encoded))
                 rl.mem_free(encoded)
             else:
                 base64_text.clear()

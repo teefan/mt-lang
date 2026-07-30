@@ -58,7 +58,7 @@ var defer_cleaned: bool = false
 
 async function with_cleanup() -> int:
     defer:
-        unsafe: read(unsafe: ptr[bool]<-ptr_of(defer_cleaned)) = true
+        unsafe: read(ptr_of(defer_cleaned)) = true
     let _ = await aio.sleep(10z)
     return 1
 
@@ -372,7 +372,7 @@ async function test_await_in_expression_contexts() -> int:
     # await inside call argument
     let sum = await await_in_call_args_test(
         await leaf_value(),
-        await leaf_value(),
+        await leaf_value()
     )
     check("await in call arguments", sum == 84)
 

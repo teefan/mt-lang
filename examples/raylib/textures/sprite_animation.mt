@@ -17,11 +17,11 @@ function main() -> int:
     let scarfy = rl.load_texture("scarfy.png")
     defer rl.unload_texture(scarfy)
 
-    let position = rl.Vector2(x = float<-350.0, y = float<-280.0)
+    let position = rl.Vector2(x = 350.0, y = 280.0)
     var frame_rect = rl.Rectangle(
-        x = float<-0.0,
-        y = float<-0.0,
-        width = float<-scarfy.width / float<-6.0,
+        x = 0.0,
+        y = 0.0,
+        width = float<-scarfy.width / 6.0,
         height = float<-scarfy.height
     )
     var current_frame = 0

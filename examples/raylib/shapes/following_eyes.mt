@@ -17,10 +17,10 @@ function main() -> int:
         x = float<-rl.get_screen_width() / 2.0 + 100.0,
         y = float<-rl.get_screen_height() / 2.0
     )
-    let sclera_radius: float = 80.0
+    let sclera_radius = 80.0
     var iris_left_position = sclera_left_position
     var iris_right_position = sclera_right_position
-    let iris_radius: float = 24.0
+    let iris_radius = 24.0
     var angle: float = 0.0
     var dx: float = 0.0
     var dy: float = 0.0

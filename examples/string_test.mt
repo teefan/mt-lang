@@ -19,37 +19,37 @@ import std.vec as vec
 # ============================================================
 
 function test_str_equality() -> bool:
-    var a = "hello"
-    var b = "hello"
-    var c = "world"
+    let a = "hello"
+    let b = "hello"
+    let c = "world"
     return a.equal(b) and not a.equal(c)
 
 
 function test_str_starts_ends() -> bool:
-    var s = "hello world"
+    let s = "hello world"
     return s.starts_with("hello") and s.ends_with("world")
 
 
 function test_str_contains() -> bool:
-    var s = "hello world"
+    let s = "hello world"
     return s.contains_substring("lo wo") and not s.contains_substring("xyz")
 
 
 function test_str_slice() -> bool:
-    var s = "hello world"
-    var sub = s.slice(0, 5)         ## "hello"
+    let s = "hello world"
+    let sub = s.slice(0, 5)         ## "hello"
     return sub.equal("hello")
 
 
 function test_str_trim() -> bool:
-    var s = "  hello  "
-    var trimmed = s.trim_ascii_whitespace()
+    let s = "  hello  "
+    let trimmed = s.trim_ascii_whitespace()
     return trimmed.equal("hello")
 
 
 function test_str_find() -> bool:
-    var hello = "hello"
-    var found = hello.find_byte("h".byte_at(0))
+    let hello = "hello"
+    let found = hello.find_byte("h".byte_at(0))
     match found:
         Option[ptr_uint].some:
             return true
@@ -62,12 +62,12 @@ function test_str_find() -> bool:
 # ============================================================
 
 function test_string_create_empty() -> bool:
-    var s = string.String.create()
+    let s = string.String.create()
     return s.is_empty()
 
 
 function test_string_from_str() -> bool:
-    var s = string.String.from_str("hello")
+    let s = string.String.from_str("hello")
     return s.as_str().equal("hello")
 
 
@@ -89,7 +89,7 @@ function test_string_assign() -> bool:
 
 
 function test_string_starts_ends() -> bool:
-    var s = string.String.from_str("hello world")
+    let s = string.String.from_str("hello world")
     return s.starts_with("hello") and s.ends_with("world")
 
 
@@ -104,7 +104,7 @@ function test_string_len_capacity() -> bool:
 # ============================================================
 
 function test_fmt_format_str() -> bool:
-    var s = fmt.format("hello")
+    let s = fmt.format("hello")
     return s.as_str().equal("hello")
 
 
@@ -136,18 +136,18 @@ function test_fmt_append_multiple() -> bool:
 # ============================================================
 
 function test_cstr_basic() -> bool:
-    var c = c"hello"
+    let c = c"hello"
     return c == c  ## cstr can compare against itself
 
 
 function test_cstr_as_str() -> bool:
-    var c = c"hello"
-    var s = str.cstr_as_str(c)
+    let c = c"hello"
+    let s = str.cstr_as_str(c)
     return s.equal("hello")
 
 
 function test_cstr_len() -> bool:
-    var c = c"hello"
+    let c = c"hello"
     return str.cstr_len(c) == 5
 
 
@@ -164,7 +164,7 @@ function test_nullable_string_assignment() -> bool:
 
 
 function test_nullable_string_passed_to_function() -> bool:
-    var opt: string.String? = string.String.from_str("world")
+    let opt: string.String? = string.String.from_str("world")
     let val = opt else:
         return false
     return consume_string(val)
@@ -219,21 +219,21 @@ function consume_string(s: string.String) -> bool:
 # (for when format strings are passed as parameters). Using an `f"..."`
 # literal directly works fine:
 function test_format_string_compiler_support() -> bool:
-    var s = string.String.from_str(f"hello")
+    let s = string.String.from_str(f"hello")
     return s.as_str().equal("hello")
 
 
 # ISSUE 2 (FIXED): `String.split(sep)` and `String.replace(old, new)` were
 # missing. They are now implemented in `std/string.mt`:
 function test_string_split() -> bool:
-    var s = string.String.from_str("a,b,c")
-    var parts = s.split(",")
+    let s = string.String.from_str("a,b,c")
+    let parts = s.split(",")
     return parts.len() == 3
 
 
 function test_string_replace() -> bool:
-    var s = string.String.from_str("hello world")
-    var result = s.replace("world", "there")
+    let s = string.String.from_str("hello world")
+    let result = s.replace("world", "there")
     return result.as_str().equal("hello there")
 
 
@@ -241,8 +241,8 @@ function test_string_replace() -> bool:
 # The language has no lifetime tracking; callers must ensure the underlying
 # buffer (String, cstr, array) outlives the str. Not fixable at stdlib level.
 function test_str_lifetime_safe_in_scope() -> bool:
-    var s = string.String.from_str("hello")
-    var borrowed = s.as_str()
+    let s = string.String.from_str("hello")
+    let borrowed = s.as_str()
     return borrowed.equal("hello")
     ## s still in scope here — safe
 
@@ -250,8 +250,8 @@ function test_str_lifetime_safe_in_scope() -> bool:
 # ISSUE 4 (FIXED): `String.equals(other)` is now available. Previously
 # the only option was the static `String.equal(left, right: const_ptr)`.
 function test_string_equal() -> bool:
-    var a = string.String.from_str("one")
-    var b = string.String.from_str("one")
+    let a = string.String.from_str("one")
+    let b = string.String.from_str("one")
     return a.equal(b)
 
 
@@ -259,7 +259,7 @@ function test_string_equal() -> bool:
 # with data=null, len=0. The implementation correctly panics only when
 # len > 0 but data is null.
 function test_empty_string_as_str_valid() -> bool:
-    var s = string.String.create()
+    let s = string.String.create()
     return s.as_str().equal("")
 
 
@@ -267,8 +267,8 @@ function test_empty_string_as_str_valid() -> bool:
 # `.unwrap()` equivalent) — §3.2. The `let x = opt else: ...` pattern
 # already extracts `some.value` transparently.
 function test_option_let_else() -> bool:
-    var s = string.String.from_str("hello")
-    var found = s.find_substring("ell")
+    let s = string.String.from_str("hello")
+    let found = s.find_substring("ell")
     let idx = found else:
         return false
     return idx == 1  ## idx is ptr_uint, extracted from some.value
@@ -278,8 +278,8 @@ function test_option_let_else() -> bool:
 # extended from stdlib. No `.is_some()` / `.is_none()` can be added without
 # compiler changes. Checking existence requires `match`:
 function test_option_exists_needs_match() -> bool:
-    var s = string.String.from_str("hello")
-    var found = s.find_substring("xyz")
+    let s = string.String.from_str("hello")
+    let found = s.find_substring("xyz")
     match found:
         Option[ptr_uint].some:
             return false   ## unreachable — "xyz" not found

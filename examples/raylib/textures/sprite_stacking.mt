@@ -18,16 +18,16 @@ function main() -> int:
     let booth = rl.load_texture("booth.png")
     defer rl.unload_texture(booth)
 
-    let stack_scale = float<-3.0
-    var stack_spacing = float<-2.0
-    var rotation_speed = float<-30.0
-    var rotation = float<-0.0
-    let speed_change = float<-0.25
+    let stack_scale = 3.0
+    var stack_spacing = 2.0
+    var rotation_speed = 30.0
+    var rotation = 0.0
+    let speed_change = 0.25
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        stack_spacing += rl.get_mouse_wheel_move() * float<-0.1
+        stack_spacing += rl.get_mouse_wheel_move() * 0.1
         stack_spacing = rm.clamp(stack_spacing, 0.0, 5.0)
 
         if rl.is_key_down(rl.KeyboardKey.KEY_LEFT) or rl.is_key_down(rl.KeyboardKey.KEY_A):

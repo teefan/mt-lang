@@ -459,8 +459,7 @@ function type_code[T]() -> int:
         return 1
     else if T == float:
         return 2
-    else:
-        return 0
+    return 0
 
 
 function test_reflective_equal() -> int:

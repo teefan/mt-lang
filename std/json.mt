@@ -401,7 +401,7 @@ public function parse(text_value: str) -> Result[Value, Error]:
         let error_ptr = raw.cJSON_GetErrorPtr()
         if error_ptr == null:
             return Result[Value, Error].failure(error = error_message("json parse failed"))
-        let error_text = text.cstr_as_str(unsafe: cstr<-error_ptr)
+        let error_text = text.cstr_as_str(error_ptr)
         if error_text.len == 0:
             return Result[Value, Error].failure(error = error_message("json parse failed"))
         return Result[Value, Error].failure(error = Error(message = string.String.from_str(error_text)))

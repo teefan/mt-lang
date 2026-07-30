@@ -45,7 +45,7 @@ function main() -> int:
         "PARROTS & CAT",
         rl.Vector2(x = 300.0, y = 230.0),
         float<-font.baseSize,
-        float<--2.0,
+        -2.0,
         rl.WHITE
     )
 

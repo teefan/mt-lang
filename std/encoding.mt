@@ -47,15 +47,15 @@ public function decode_utf8_codepoint(text: str, byte_offset: ptr_uint) -> Optio
         return Option[uint].none
 
     if len == 1:
-        return Option[uint].some(value = uint<-(b0))
+        return Option[uint].some(value = uint<-b0)
 
     var codepoint: uint = (b0)
     if len == 2:
-        codepoint = codepoint & uint<-(0x1F)
+        codepoint = codepoint & uint<-0x1F
     else if len == 3:
-        codepoint = codepoint & uint<-(0x0F)
+        codepoint = codepoint & uint<-0x0F
     else if len == 4:
-        codepoint = codepoint & uint<-(0x07)
+        codepoint = codepoint & uint<-0x07
     var i: ptr_uint = 1
     while i < len:
         codepoint = (codepoint << 6) | uint<-(text.byte_at(byte_offset + i) & 0x3F)

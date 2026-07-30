@@ -21,7 +21,7 @@ function main() -> int:
 
     let symmetry = 6
     let angle: float = 360.0 / float<-symmetry
-    let thickness: float = 3.0
+    let thickness = 3.0
     let reset_button_rec = rl.Rectangle(x = float<-SCREEN_WIDTH - 55.0, y = 5.0, width = 50.0, height = 25.0)
     let back_button_rec = rl.Rectangle(
         x = float<-SCREEN_WIDTH - 55.0,

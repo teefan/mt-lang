@@ -17,10 +17,10 @@ function main() -> int:
 
     var sine_points: array[rl.Vector2, WAVE_POINTS] = zero[array[rl.Vector2, WAVE_POINTS]]
     var cos_points: array[rl.Vector2, WAVE_POINTS] = zero[array[rl.Vector2, WAVE_POINTS]]
-    let center = rl.Vector2(x = float<-(float<-SCREEN_WIDTH / 2.0 - 30.0), y = float<-(float<-SCREEN_HEIGHT / 2.0))
+    let center = rl.Vector2(x = (float<-SCREEN_WIDTH / 2.0 - 30.0), y = (float<-SCREEN_HEIGHT / 2.0))
     let graph_bounds = rl.Rectangle(x = 20.0, y = float<-SCREEN_HEIGHT - 120.0, width = 200.0, height = 100.0)
     let half_graph_height = graph_bounds.height / 2.0
-    let radius: float = 130.0
+    let radius = 130.0
     var angle: float = 0.0
     var pause = false
 
@@ -29,12 +29,12 @@ function main() -> int:
         let t = float<-index / float<-(WAVE_POINTS - 1)
         let current_angle = t * 360.0 * DEG_TO_RAD
         sine_points[index] = rl.Vector2(
-            x = float<-(graph_bounds.x + t * graph_bounds.width),
-            y = float<-(graph_bounds.y + half_graph_height - float<-math.sin(double<-current_angle) * half_graph_height)
+            x = (graph_bounds.x + t * graph_bounds.width),
+            y = (graph_bounds.y + half_graph_height - float<-math.sin(double<-current_angle) * half_graph_height)
         )
         cos_points[index] = rl.Vector2(
-            x = float<-(graph_bounds.x + t * graph_bounds.width),
-            y = float<-(graph_bounds.y + half_graph_height - float<-math.cos(double<-current_angle) * half_graph_height)
+            x = (graph_bounds.x + t * graph_bounds.width),
+            y = (graph_bounds.y + half_graph_height - float<-math.cos(double<-current_angle) * half_graph_height)
         )
         index += 1
 
@@ -45,9 +45,9 @@ function main() -> int:
         let cos_rad = float<-math.cos(double<-angle_rad)
         let sin_rad = float<-math.sin(double<-angle_rad)
 
-        let point = rl.Vector2(x = float<-(center.x + cos_rad * radius), y = float<-(center.y - sin_rad * radius))
-        let limit_min = rl.Vector2(x = float<-(center.x - radius), y = float<-(center.y - radius))
-        let limit_max = rl.Vector2(x = float<-(center.x + radius), y = float<-(center.y + radius))
+        let point = rl.Vector2(x = (center.x + cos_rad * radius), y = (center.y - sin_rad * radius))
+        let limit_min = rl.Vector2(x = (center.x - radius), y = (center.y - radius))
+        let limit_max = rl.Vector2(x = (center.x + radius), y = (center.y + radius))
 
         let complementary = 90.0 - angle
         let supplementary = 180.0 - angle
@@ -55,8 +55,8 @@ function main() -> int:
 
         let tangent = rm.clamp(float<-math.tan(double<-angle_rad), -10.0, 10.0)
         let cotangent = if tangent > 0.001 or tangent < -0.001: rm.clamp(1.0 / tangent, -radius, radius) else: 0.0
-        let tangent_point = rl.Vector2(x = float<-(center.x + radius), y = float<-(center.y - tangent * radius))
-        let cotangent_point = rl.Vector2(x = float<-(center.x + cotangent * radius), y = float<-(center.y - radius))
+        let tangent_point = rl.Vector2(x = (center.x + radius), y = (center.y - tangent * radius))
+        let cotangent_point = rl.Vector2(x = (center.x + cotangent * radius), y = (center.y - radius))
 
         angle = rm.wrap(angle + (if not pause: 1.0 else: 0.0), 0.0, 360.0)
 
@@ -64,8 +64,8 @@ function main() -> int:
         rl.clear_background(rl.RAYWHITE)
 
         rl.draw_line_ex(
-            rl.Vector2(x = float<-center.x, y = float<-limit_min.y),
-            rl.Vector2(x = float<-cotangent_point.x, y = float<-limit_min.y),
+            rl.Vector2(x = center.x, y = limit_min.y),
+            rl.Vector2(x = cotangent_point.x, y = limit_min.y),
             2.0,
             rl.ORANGE
         )
@@ -88,38 +88,38 @@ function main() -> int:
 
         rl.draw_circle_lines_v(center, radius, rl.GRAY)
         rl.draw_line_ex(
-            rl.Vector2(x = float<-center.x, y = float<-limit_min.y),
-            rl.Vector2(x = float<-center.x, y = float<-limit_max.y),
+            rl.Vector2(x = center.x, y = limit_min.y),
+            rl.Vector2(x = center.x, y = limit_max.y),
             1.0,
             rl.GRAY
         )
         rl.draw_line_ex(
-            rl.Vector2(x = float<-limit_min.x, y = float<-center.y),
-            rl.Vector2(x = float<-limit_max.x, y = float<-center.y),
+            rl.Vector2(x = limit_min.x, y = center.y),
+            rl.Vector2(x = limit_max.x, y = center.y),
             1.0,
             rl.GRAY
         )
 
         rl.draw_line_ex(
-            rl.Vector2(x = float<-graph_bounds.x, y = float<-graph_bounds.y),
-            rl.Vector2(x = float<-graph_bounds.x, y = float<-(graph_bounds.y + graph_bounds.height)),
+            rl.Vector2(x = graph_bounds.x, y = graph_bounds.y),
+            rl.Vector2(x = graph_bounds.x, y = (graph_bounds.y + graph_bounds.height)),
             2.0,
             rl.GRAY
         )
         rl.draw_line_ex(
-            rl.Vector2(x = float<-(graph_bounds.x + graph_bounds.width), y = float<-graph_bounds.y),
+            rl.Vector2(x = (graph_bounds.x + graph_bounds.width), y = graph_bounds.y),
             rl.Vector2(
-                x = float<-(graph_bounds.x + graph_bounds.width),
-                y = float<-(graph_bounds.y + graph_bounds.height)
+                x = (graph_bounds.x + graph_bounds.width),
+                y = (graph_bounds.y + graph_bounds.height)
             ),
             2.0,
             rl.GRAY
         )
         rl.draw_line_ex(
-            rl.Vector2(x = float<-graph_bounds.x, y = float<-(graph_bounds.y + half_graph_height)),
+            rl.Vector2(x = graph_bounds.x, y = (graph_bounds.y + half_graph_height)),
             rl.Vector2(
-                x = float<-(graph_bounds.x + graph_bounds.width),
-                y = float<-(graph_bounds.y + half_graph_height)
+                x = (graph_bounds.x + graph_bounds.width),
+                y = (graph_bounds.y + half_graph_height)
             ),
             2.0,
             rl.GRAY
@@ -138,14 +138,14 @@ function main() -> int:
         )
 
         rl.draw_line_ex(
-            rl.Vector2(x = float<-center.x, y = float<-center.y),
-            rl.Vector2(x = float<-center.x, y = float<-point.y),
+            rl.Vector2(x = center.x, y = center.y),
+            rl.Vector2(x = center.x, y = point.y),
             2.0,
             rl.RED
         )
         rl.draw_line_dashed(
-            rl.Vector2(x = float<-point.x, y = float<-center.y),
-            rl.Vector2(x = float<-point.x, y = float<-point.y),
+            rl.Vector2(x = point.x, y = center.y),
+            rl.Vector2(x = point.x, y = point.y),
             10,
             4,
             rl.RED
@@ -153,8 +153,8 @@ function main() -> int:
         rl.draw_text(text.cstr_as_str(rl.text_format("Sine %.2f", sin_rad)), 640, 190, 6, rl.RED)
         rl.draw_circle_v(
             rl.Vector2(
-                x = float<-(graph_bounds.x + (angle / 360.0) * graph_bounds.width),
-                y = float<-(graph_bounds.y + ((-sin_rad + 1.0) * half_graph_height))
+                x = (graph_bounds.x + (angle / 360.0) * graph_bounds.width),
+                y = (graph_bounds.y + ((-sin_rad + 1.0) * half_graph_height))
             ),
             4.0,
             rl.RED
@@ -162,14 +162,14 @@ function main() -> int:
         rl.draw_spline_linear_ptr(ptr_of(sine_points[0]), WAVE_POINTS, 1.0, rl.RED)
 
         rl.draw_line_ex(
-            rl.Vector2(x = float<-center.x, y = float<-center.y),
-            rl.Vector2(x = float<-point.x, y = float<-center.y),
+            rl.Vector2(x = center.x, y = center.y),
+            rl.Vector2(x = point.x, y = center.y),
             2.0,
             rl.BLUE
         )
         rl.draw_line_dashed(
-            rl.Vector2(x = float<-center.x, y = float<-point.y),
-            rl.Vector2(x = float<-point.x, y = float<-point.y),
+            rl.Vector2(x = center.x, y = point.y),
+            rl.Vector2(x = point.x, y = point.y),
             10,
             4,
             rl.BLUE
@@ -177,8 +177,8 @@ function main() -> int:
         rl.draw_text(text.cstr_as_str(rl.text_format("Cosine %.2f", cos_rad)), 640, 210, 6, rl.BLUE)
         rl.draw_circle_v(
             rl.Vector2(
-                x = float<-(graph_bounds.x + (angle / 360.0) * graph_bounds.width),
-                y = float<-(graph_bounds.y + ((-cos_rad + 1.0) * half_graph_height))
+                x = (graph_bounds.x + (angle / 360.0) * graph_bounds.width),
+                y = (graph_bounds.y + ((-cos_rad + 1.0) * half_graph_height))
             ),
             4.0,
             rl.BLUE
@@ -186,8 +186,8 @@ function main() -> int:
         rl.draw_spline_linear_ptr(ptr_of(cos_points[0]), WAVE_POINTS, 1.0, rl.BLUE)
 
         rl.draw_line_ex(
-            rl.Vector2(x = float<-limit_max.x, y = float<-center.y),
-            rl.Vector2(x = float<-limit_max.x, y = float<-tangent_point.y),
+            rl.Vector2(x = limit_max.x, y = center.y),
+            rl.Vector2(x = limit_max.x, y = tangent_point.y),
             2.0,
             rl.PURPLE
         )
@@ -211,7 +211,7 @@ function main() -> int:
         rl.draw_text(text.cstr_as_str(rl.text_format("Explementary %.0f deg", explementary)), 640, 170, 6, rl.PINK)
 
         rl.draw_circle_sector_lines(center, radius * 0.7, -angle, 0.0, 36, rl.LIME)
-        rl.draw_line_ex(rl.Vector2(x = float<-center.x, y = float<-center.y), point, 2.0, rl.BLACK)
+        rl.draw_line_ex(rl.Vector2(x = center.x, y = center.y), point, 2.0, rl.BLACK)
         rl.draw_circle_v(point, 4.0, rl.BLACK)
 
         gui.toggle(rl.Rectangle(x = 640.0, y = 70.0, width = 120.0, height = 20.0), "Pause", pause)

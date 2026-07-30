@@ -341,7 +341,7 @@ function defaults_demo() -> int:
     let c = greet("World", count = 5)
     let d = greet("World", count = DEFAULT_COUNT)
     let e = serve()
-    return a + b + c + d + int<-(e)
+    return a + b + c + d + e
 
 const function square(x: int) -> int:
     return x * x
@@ -831,7 +831,7 @@ function expressions_demo(x: int, y: int) -> int:
     let chosen = if x > y: x else: y
 
     let v = Vec2(x = 1.0, y = 2.0)
-    let vx_val = int<-(v.x)
+    let vx_val = int<-v.x
     let buf: array[int, 4]
     let elem = buf[0]
 
@@ -850,8 +850,8 @@ function expressions_demo(x: int, y: int) -> int:
     let enum_gt  = s_running >  s_idle
     let enum_ge  = s_running >= s_idle
     let enum_op  = (
-        int<-(s_idle) + int<-(enum_eq) + int<-(enum_ne)
-        + int<-(enum_lt) + int<-(enum_le) + int<-(enum_gt) + int<-(enum_ge)
+        int<-s_idle + int<-enum_eq + int<-enum_ne
+        + int<-enum_lt + int<-enum_le + int<-enum_gt + int<-enum_ge
     )
 
     let mask_a = Mask.a
@@ -865,7 +865,7 @@ function expressions_demo(x: int, y: int) -> int:
 
     let enum_backing: bool = State.idle == ubyte<-0
 
-    return expr_result + enum_op + int<-(flags_eq) + int<-(flags_ne) + int<-(flags_or) + int<-(flags_and) + int<-(flags_xor) + int<-(flags_not) + int<-(enum_backing)
+    return expr_result + enum_op + int<-flags_eq + int<-flags_ne + int<-flags_or + int<-flags_and + int<-flags_xor + int<-flags_not + int<-enum_backing
 
 # =============================================================================
 # 10  Built-in callable surface
@@ -908,7 +908,7 @@ function builtins_demo() -> int:
     let int_eq   = equal[int](ptr_of(int_left), ptr_of(int_right))
     let int_ord  = order[int](ptr_of(int_left), ptr_of(int_right))
 
-    return val_ref + val_ptr + zeroed + default_npc.hp + int<-(int_hash) + int<-(int_eq) + int_ord
+    return val_ref + val_ptr + zeroed + default_npc.hp + int<-int_hash + int<-int_eq + int_ord
 
 # =============================================================================
 # 11  unsafe blocks
@@ -1089,12 +1089,12 @@ function on_updated(delta: Seconds) -> void:
     let _d = delta
 
 function fire_updated() -> void:
-    updated.emit(float<-1.5)
+    updated.emit(1.5)
 
 function event_payload_demo() -> int:
     let h = updated.subscribe(on_updated) else:
         return 0
-    updated.emit(Seconds<-2.0)
+    updated.emit(2.0)
     updated.unsubscribe(h)
     return 1
 
@@ -1123,7 +1123,7 @@ function format_demo() -> str:
     let oct = f"oct=#{count:o} upper=#{count:O}"
     let bin = f"bin=#{count:b} upper=#{count:B}"
 
-    let dist: float = 3.14
+    let dist = 3.14
     let precise = f"dist=#{dist:.2}"
 
     let heredoc = <<-MSG
@@ -1151,7 +1151,7 @@ function generics_demo() -> int:
 
     match some_opt:
         Option.some as s:
-            return int<-(s.value) + pair.first
+            return int<-s.value + pair.first
         Option.none:
             return 0
     return 0
@@ -1381,7 +1381,7 @@ function comptime_demo() -> int:
     let _label    = label
     let _fav      = fav
     let _sizes    = sizes
-    return pow2 + int<-hash + int<-(all_float) + rounded + colors
+    return pow2 + int<-hash + int<-all_float + rounded + colors
 
 function type_label_demo() -> int:
     if type_label[int]() == "int32":
@@ -1423,10 +1423,10 @@ function vector_demo() -> float:
     let _vp = v3_partial
 
     return (
-        v2.x + v3.x + v4.x + float<-(iv2.x)
+        v2.x + v3.x + v4.x + float<-iv2.x
         + vsum.x + vdiff.x + vmul.x + vneg.x
         + vscaled.x + sscaled.x + vdiv.x
-        + float<-(isum.x) + float<-(iscaled.x) + float<-(ineg.x)
+        + float<-isum.x + float<-iscaled.x + float<-ineg.x
         + squared + dot_val + len_val + cross_val.x
     )
 
@@ -1512,7 +1512,7 @@ function vector_compound_demo() -> float:
     let _m4 = m4
     let _m3 = m3
     let _q = q
-    return a.x + float<-(c.x) + m4.col0.x + m3.col0.x + q.x
+    return a.x + float<-c.x + m4.col0.x + m3.col0.x + q.x
 
 # =============================================================================
 # 25  SoA (Structure-of-Arrays)
@@ -1559,7 +1559,7 @@ function simd_demo_baseline() -> int:
     let ineg  = -i4
 
     let lane0 = f4[0]
-    total += int<-(lane0)
+    total += int<-lane0
 
     var acc = simd[float, 4](0.0, 0.0, 0.0, 0.0)
     acc += f4
@@ -1583,7 +1583,7 @@ function simd_demo_baseline() -> int:
     let _acc = acc
 
     let updated = f4.with(1, 999.0)
-    total += int<-(updated[1])
+    total += int<-updated[1]
 
     return total
 
@@ -1787,7 +1787,7 @@ function atomic_demo() -> int:
     counter.store(0)
     let prev = counter.add(1)
     let value = counter.load()
-    return int<-(prev) + value
+    return prev + value
 
 # =============================================================================
 # 35  Endian & move_bytes helpers
@@ -1843,11 +1843,11 @@ function main() -> int:
     total += proc_tuple_demo()
     total += proc_generic_demo()
 
-    total += int<-(vector_demo())
-    total += int<-(matrix_demo())
-    total += int<-(quat_demo())
-    total += int<-(vector_compound_demo())
-    total += int<-(soa_demo())
+    total += int<-vector_demo()
+    total += int<-matrix_demo()
+    total += int<-quat_demo()
+    total += int<-vector_compound_demo()
+    total += int<-soa_demo()
 
     unsafe_demo()
     emit_ready()
@@ -1862,21 +1862,21 @@ function main() -> int:
     var npc = NPC.default()
     interface_demo(ref_of(npc))
 
-    total += int<-(with_demo().x) + int<-(with_demo().y)
+    total += int<-with_demo().x + int<-with_demo().y
     total += nullability_demo()
     total += named_args_demo()
     total += defaults_demo()
-    total += int<-(dyn_demo())
+    total += int<-dyn_demo()
     total += tuple_demo()
     total += tuple_match_demo()
     total += underscore_repeat_demo()
-    total += int<-(nested_struct_demo())
+    total += int<-nested_struct_demo()
     total += traced_demo()
     total += atomic_demo()
     total += foreign_demo()
     total += attributes_demo()
     total += custom_iter_demo()
-    total += int<-(dyn_generic_demo())
+    total += dyn_generic_demo()
     total += type_label_demo()
     total += member_value_demo()
 

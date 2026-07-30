@@ -22,18 +22,18 @@ function main() -> int:
     defer rl.unload_texture(button)
 
     let frame_height = float<-button.height / float<-NUM_FRAMES
-    var source_rect = rl.Rectangle(x = float<-0.0, y = float<-0.0, width = float<-button.width, height = frame_height)
+    var source_rect = rl.Rectangle(x = 0.0, y = 0.0, width = float<-button.width, height = frame_height)
 
     let button_bounds = rl.Rectangle(
-        x = float<-SCREEN_WIDTH / float<-2.0 - float<-button.width / float<-2.0,
-        y = float<-SCREEN_HEIGHT / float<-2.0 - float<-button.height / float<-NUM_FRAMES / float<-2.0,
+        x = float<-SCREEN_WIDTH / 2.0 - float<-button.width / 2.0,
+        y = float<-SCREEN_HEIGHT / 2.0 - float<-button.height / float<-NUM_FRAMES / 2.0,
         width = float<-button.width,
         height = frame_height
     )
 
     var button_state = 0
     var button_action = false
-    var mouse_point = rl.Vector2(x = float<-0.0, y = float<-0.0)
+    var mouse_point = rl.Vector2(x = 0.0, y = 0.0)
 
     rl.set_target_fps(60)
 

@@ -61,19 +61,19 @@ public struct Tween:
 # ── math helpers ──
 
 function pow_f(base: float, exp: float) -> float:
-    return float<-(math.pow(double<-(base), double<-(exp)))
+    return float<-math.pow(double<-base, double<-exp)
 
 
 function sin_f(x: float) -> float:
-    return float<-(math.sin(double<-(x)))
+    return float<-math.sin(double<-x)
 
 
 function cos_f(x: float) -> float:
-    return float<-(math.cos(double<-(x)))
+    return float<-math.cos(double<-x)
 
 
 function sqrt_f(x: float) -> float:
-    return float<-(math.sqrt(double<-(x)))
+    return float<-math.sqrt(double<-x)
 
 
 function ease_out_bounce_f(t: float) -> float:

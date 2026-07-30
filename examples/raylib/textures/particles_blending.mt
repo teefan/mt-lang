@@ -25,20 +25,20 @@ function main() -> int:
 
     var index = 0
     while index < MAX_PARTICLES:
-        mouse_tail[index].position = rl.Vector2(x = float<-0.0, y = float<-0.0)
+        mouse_tail[index].position = rl.Vector2(x = 0.0, y = 0.0)
         mouse_tail[index].color = rl.Color(
             r = ubyte<-rl.get_random_value(0, 255),
             g = ubyte<-rl.get_random_value(0, 255),
             b = ubyte<-rl.get_random_value(0, 255),
             a = 255
         )
-        mouse_tail[index].alpha = float<-1.0
-        mouse_tail[index].size = float<-rl.get_random_value(1, 30) / float<-20.0
+        mouse_tail[index].alpha = 1.0
+        mouse_tail[index].size = float<-rl.get_random_value(1, 30) / 20.0
         mouse_tail[index].rotation = float<-rl.get_random_value(0, 360)
         mouse_tail[index].active = false
         index += 1
 
-    let gravity = float<-3.0
+    let gravity = 3.0
 
     let smoke = rl.load_texture("spark_flame.png")
     defer rl.unload_texture(smoke)
@@ -52,7 +52,7 @@ function main() -> int:
         while index < MAX_PARTICLES:
             if not mouse_tail[index].active:
                 mouse_tail[index].active = true
-                mouse_tail[index].alpha = float<-1.0
+                mouse_tail[index].alpha = 1.0
                 mouse_tail[index].position = rl.get_mouse_position()
                 break
             index += 1
@@ -60,13 +60,13 @@ function main() -> int:
         index = 0
         while index < MAX_PARTICLES:
             if mouse_tail[index].active:
-                mouse_tail[index].position.y += gravity / float<-2.0
-                mouse_tail[index].alpha -= float<-0.005
+                mouse_tail[index].position.y += gravity / 2.0
+                mouse_tail[index].alpha -= 0.005
 
-                if mouse_tail[index].alpha <= float<-0.0:
+                if mouse_tail[index].alpha <= 0.0:
                     mouse_tail[index].active = false
 
-                mouse_tail[index].rotation += float<-2.0
+                mouse_tail[index].rotation += 2.0
             index += 1
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):

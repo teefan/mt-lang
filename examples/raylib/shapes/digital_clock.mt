@@ -11,7 +11,7 @@ const DEG_TO_RAD: float = rl.PI / 180.0
 
 
 function parse_ascii_digit(value: ubyte) -> int:
-    return int<-(value - 48ub)
+    return (value - 48ub)
 
 
 function parse_two_digits(value_text: str, offset: ptr_uint) -> int:
@@ -59,15 +59,15 @@ function update_clock(clock: ref[Clock]) -> void:
     read(clock).minute.value = minute_value
     read(clock).hour.value = hour_value
 
-    read(clock).hour.angle = float<-((hour_value % 12) * 180.0 / 6.0)
-    read(clock).hour.angle += float<-((minute_value % 60) * 30.0 / 60.0)
+    read(clock).hour.angle = ((hour_value % 12) * 180.0 / 6.0)
+    read(clock).hour.angle += ((minute_value % 60) * 30.0 / 60.0)
     read(clock).hour.angle -= 90.0
 
-    read(clock).minute.angle = float<-((minute_value % 60) * 6.0)
-    read(clock).minute.angle += float<-((second_value % 60) * 6.0 / 60.0)
+    read(clock).minute.angle = ((minute_value % 60) * 6.0)
+    read(clock).minute.angle += ((second_value % 60) * 6.0 / 60.0)
     read(clock).minute.angle -= 90.0
 
-    read(clock).second.angle = float<-((second_value % 60) * 6.0)
+    read(clock).second.angle = ((second_value % 60) * 6.0)
     read(clock).second.angle -= 90.0
 
 
@@ -81,20 +81,20 @@ function draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
         var outer_radius: float = float<-clock.second.length
         var line_thickness: float = 1.0
         if long_tick:
-            outer_radius = float<-(outer_radius + 6.0)
+            outer_radius = (outer_radius + 6.0)
             line_thickness = 3.0
         else:
-            outer_radius = float<-(outer_radius + 10.0)
+            outer_radius = (outer_radius + 10.0)
         let inner_radius = float<-clock.second.length + 20.0
-        let angle = float<-(6.0 * float<-index - 90.0)
+        let angle = (6.0 * float<-index - 90.0)
         rl.draw_line_ex(
             rl.Vector2(
-                x = float<-(position.x + outer_radius * float<-math.cos(double<-(angle * DEG_TO_RAD))),
-                y = float<-(position.y + outer_radius * float<-math.sin(double<-(angle * DEG_TO_RAD)))
+                x = (position.x + outer_radius * float<-math.cos(double<-(angle * DEG_TO_RAD))),
+                y = (position.y + outer_radius * float<-math.sin(double<-(angle * DEG_TO_RAD)))
             ),
             rl.Vector2(
-                x = float<-(position.x + inner_radius * float<-math.cos(double<-(angle * DEG_TO_RAD))),
-                y = float<-(position.y + inner_radius * float<-math.sin(double<-(angle * DEG_TO_RAD)))
+                x = (position.x + inner_radius * float<-math.cos(double<-(angle * DEG_TO_RAD))),
+                y = (position.y + inner_radius * float<-math.sin(double<-(angle * DEG_TO_RAD)))
             ),
             line_thickness,
             rl.DARKGRAY

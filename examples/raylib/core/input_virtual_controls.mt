@@ -64,8 +64,8 @@ function main() -> int:
     defer rl.close_window()
 
     let pad_position = rl.Vector2(x = 100.0, y = 350.0)
-    let button_radius: float = 30.0
-    let button_step: float = button_radius * (float<-1.5)
+    let button_radius = 30.0
+    let button_step: float = button_radius * (1.5)
     let button_positions = array[rl.Vector2, 4](
         rl.Vector2(x = pad_position.x, y = pad_position.y - button_step),
         rl.Vector2(x = pad_position.x - button_step, y = pad_position.y),
@@ -77,7 +77,7 @@ function main() -> int:
     var pressed_button = BUTTON_NONE
     var input_position = rl.Vector2(x = 0.0, y = 0.0)
     var player_position = rl.Vector2(x = float<-(SCREEN_WIDTH / 2), y = float<-(SCREEN_HEIGHT / 2))
-    let player_speed: float = 75.0
+    let player_speed = 75.0
 
     rl.set_target_fps(60)
 

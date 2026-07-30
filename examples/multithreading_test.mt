@@ -9,13 +9,13 @@ var fork_result_b: int = 0
 
 function fill_via_span(data: span[int], count: int, multiplier: int) -> void:
     parallel for i in 0..count:
-        data[i] = int<-i * multiplier
+        data[i] = i * multiplier
 
 
 function compute_a() -> void:
     var sum = 0
     for i in 0..500:
-        sum += int<-i
+        sum += i
 
     fork_result_a = sum
 
@@ -23,7 +23,7 @@ function compute_a() -> void:
 function compute_b() -> void:
     var sum = 0
     for i in 500..1000:
-        sum += int<-i
+        sum += i
 
     fork_result_b = sum
 
@@ -35,12 +35,12 @@ function increment_many(n: int) -> void:
 
 function run_tests() -> int:
     var failures = 0
-    var buf: array[int, 1000]
+    let buf: array[int, 1000]
 
     fill_via_span(buf.as_span(), SIZE, 3)
 
     for i in 0..SIZE:
-        if buf[i] != int<-i * 3:
+        if buf[i] != i * 3:
             failures += 1
 
     if failures > 0:

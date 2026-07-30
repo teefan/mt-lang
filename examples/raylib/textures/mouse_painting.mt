@@ -47,7 +47,7 @@ function main() -> int:
     var color_selected = 0
     var color_selected_prev = 0
     var color_mouse_hover = -1
-    var brush_size = float<-20.0
+    var brush_size = 20.0
     var mouse_was_pressed = false
 
     let save_button = rl.Rectangle(x = 750.0, y = 10.0, width = 40.0, height = 30.0)

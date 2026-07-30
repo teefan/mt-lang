@@ -71,7 +71,7 @@ function main() -> int:
     let log_button1 = rl.Rectangle(x = 53.0, y = 7.0, width = 48.0, height = 26.0)
     let log_button2 = rl.Rectangle(x = 108.0, y = 7.0, width = 36.0, height = 26.0)
     let gesture_log_position = rl.Vector2(x = 10.0, y = 10.0)
-    let angle_length: float = 90.0
+    let angle_length = 90.0
     var current_angle_degrees: float = 0.0
     var final_vector = rl.Vector2(x = 0.0, y = 0.0)
     let protractor_position = rl.Vector2(x = 266.0, y = 315.0)

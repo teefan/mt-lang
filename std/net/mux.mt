@@ -807,7 +807,7 @@ function find_frag_buffer(buffers: ref[vec.Vec[FragBuffer]], peer_id: uint, grou
 
 
 function prune_frag_buffers(buffers: ref[vec.Vec[FragBuffer]], frame: uint, timeout_frames: uint) -> void:
-    var index: int = int<-(buffers.len())
+    var index: int = int<-buffers.len()
     index -= 1
     while index >= 0:
         let buf_ptr = buffers.get(ptr_uint<-index) else:

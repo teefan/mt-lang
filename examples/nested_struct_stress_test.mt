@@ -77,7 +77,7 @@ function deeply_nested_demo() -> float:
     l1.data = 1
     l1.mid.tag = 2
     l1.mid.inner.value = 3.0
-    return float<-(l1.data) + float<-(l1.mid.tag) + l1.mid.inner.value
+    return float<-l1.data + float<-l1.mid.tag + l1.mid.inner.value
 
 # ---------------------------------------------------------------------------
 # 4  Qualified-name access to deeply nested struct
@@ -108,7 +108,7 @@ function packed_nested_demo() -> float:
     op.header = 1
     op.body.a = 10
     op.body.b = 20
-    return float<-(op.header) + float<-(op.body.a) + float<-(op.body.b)
+    return float<-op.header + float<-op.body.a + float<-op.body.b
 
 # ---------------------------------------------------------------------------
 # 6  Nested struct with events
@@ -223,17 +223,17 @@ function extend_nested_demo() -> float:
 function main() -> int:
     var total: int = 0
 
-    total += int<-(basic_nested_demo())
-    total += int<-(multi_sibling_demo())
-    total += int<-(deeply_nested_demo())
-    total += int<-(qualified_nested_demo())
-    total += int<-(packed_nested_demo())
-    total += int<-(event_nested_demo())
-    total += int<-(only_nested_demo())
-    total += int<-(sibling_ref_demo())
-    total += int<-(param_nested_demo())
-    total += int<-(mixed_inline_demo())
-    total += int<-(extend_nested_demo())
+    total += int<-basic_nested_demo()
+    total += int<-multi_sibling_demo()
+    total += int<-deeply_nested_demo()
+    total += int<-qualified_nested_demo()
+    total += int<-packed_nested_demo()
+    total += event_nested_demo()
+    total += only_nested_demo()
+    total += sibling_ref_demo()
+    total += int<-param_nested_demo()
+    total += int<-mixed_inline_demo()
+    total += int<-extend_nested_demo()
 
     let _total = total
     return 0

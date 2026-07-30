@@ -58,7 +58,7 @@ function main() -> int:
     )
     let canvas = rl.Rectangle(x = 0.0, y = 0.0, width = panel_pos.x, height = float<-SCREEN_HEIGHT)
     let center = rl.Vector2(x = canvas.width / 2.0, y = canvas.height / 2.0)
-    let radius: float = 205.0
+    let radius = 205.0
 
     rl.set_target_fps(60)
 
@@ -77,9 +77,9 @@ function main() -> int:
             let distance = float<-math.sqrt(double<-((dx * dx) + (dy * dy)))
 
             if distance <= radius:
-                var angle: float = float<-(float<-math.atan2(double<-dy, double<-dx) * RAD_TO_DEG)
+                var angle: float = (float<-math.atan2(double<-dy, double<-dx) * RAD_TO_DEG)
                 if angle < 0.0:
-                    angle = float<-(angle + 360.0)
+                    angle = (angle + 360.0)
 
                 var current_angle: float = 0.0
                 index = 0
@@ -88,7 +88,7 @@ function main() -> int:
                     if angle >= current_angle and angle < (current_angle + sweep):
                         hovered_slice = index
                         break
-                    current_angle = float<-(current_angle + sweep)
+                    current_angle = (current_angle + sweep)
                     index += 1
 
         rl.begin_drawing()
@@ -102,7 +102,7 @@ function main() -> int:
             let color = rl.color_from_hsv((float<-index / float<-slice_count) * 360.0, 0.75, 0.9)
             var current_radius: float = radius
             if index == hovered_slice:
-                current_radius = float<-(current_radius + 20.0)
+                current_radius = (current_radius + 20.0)
 
             rl.draw_circle_sector(center, current_radius, start_angle, start_angle + sweep_angle, 120, color)
 
@@ -120,12 +120,12 @@ function main() -> int:
                     let text_size = rl.measure_text_ex(rl.get_font_default(), label_text, 20.0, 1.0)
                     let label_radius = radius * 0.7
                     let label_position = rl.Vector2(
-                        x = float<-(center.x + float<-math.cos(double<-(mid_angle * DEG_TO_RAD)) * label_radius - text_size.x / 2.0),
-                        y = float<-(center.y + float<-math.sin(double<-(mid_angle * DEG_TO_RAD)) * label_radius - text_size.y / 2.0)
+                        x = (center.x + float<-math.cos(double<-(mid_angle * DEG_TO_RAD)) * label_radius - text_size.x / 2.0),
+                        y = (center.y + float<-math.sin(double<-(mid_angle * DEG_TO_RAD)) * label_radius - text_size.y / 2.0)
                     )
                     rl.draw_text(label_text, int<-label_position.x, int<-label_position.y, 20, rl.WHITE)
 
-            start_angle = float<-(start_angle + sweep_angle)
+            start_angle = (start_angle + sweep_angle)
             index += 1
 
         if show_donut:

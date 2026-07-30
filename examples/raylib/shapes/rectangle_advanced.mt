@@ -71,12 +71,12 @@ function draw_rectangle_rounded_gradient_h(
             rlgl.color4ub(color.r, color.g, color.b, color.a)
             rlgl.vertex2f(center.x, center.y)
             rlgl.vertex2f(
-                float<-(center.x + float<-math.cos(double<-((angle + step_length) * rl.PI / 180.0)) * radius),
-                float<-(center.y + float<-math.sin(double<-((angle + step_length) * rl.PI / 180.0)) * radius)
+                (center.x + float<-math.cos(double<-((angle + step_length) * rl.PI / 180.0)) * radius),
+                (center.y + float<-math.sin(double<-((angle + step_length) * rl.PI / 180.0)) * radius)
             )
             rlgl.vertex2f(
-                float<-(center.x + float<-math.cos(double<-(angle * rl.PI / 180.0)) * radius),
-                float<-(center.y + float<-math.sin(double<-(angle * rl.PI / 180.0)) * radius)
+                (center.x + float<-math.cos(double<-(angle * rl.PI / 180.0)) * radius),
+                (center.y + float<-math.sin(double<-(angle * rl.PI / 180.0)) * radius)
             )
             angle += step_length
             segment += 1

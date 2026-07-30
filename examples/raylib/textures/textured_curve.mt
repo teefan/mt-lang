@@ -25,7 +25,7 @@ function draw_textured_curve(
 
     var previous = curve_start_position
     var previous_tangent = rl.Vector2(x = 0.0, y = 0.0)
-    var previous_v = float<-0.0
+    var previous_v = 0.0
     var tangent_set = false
 
     rlgl.set_texture(texture.id)
@@ -89,7 +89,7 @@ function main() -> int:
     rl.set_texture_filter(road_texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
     var show_curve = false
-    var curve_width = float<-50.0
+    var curve_width = 50.0
     var curve_segments = 24
     var curve_start_position = rl.Vector2(x = 80.0, y = 100.0)
     var curve_start_position_tangent = rl.Vector2(x = 100.0, y = 300.0)

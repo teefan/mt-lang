@@ -141,7 +141,7 @@ function draw_penrose_lsystem(ls: ref[PenroseLSystem]) -> void:
         else if step == ASCII_RBRACKET:
             turtle = pop_turtle_state()
         else if step >= ASCII_ZERO and step <= ASCII_NINE:
-            repeats = int<-(step - ASCII_ZERO)
+            repeats = (step - ASCII_ZERO)
         index += 1
 
     turtle_top = -1
@@ -152,7 +152,7 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - penrose tile")
     defer rl.close_window()
 
-    let draw_length: float = 460.0
+    let draw_length = 460.0
     let min_generations = 0
     let max_generations = 4
     var generations = 0

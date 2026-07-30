@@ -45,7 +45,7 @@ extending InputMap:
 
     public editable function add_action(name: str) -> ptr_uint:
         let id = this.actions.len()
-        var action = InputAction(name = name, bindings = vec.Vec[InputBinding].create())
+        let action = InputAction(name = name, bindings = vec.Vec[InputBinding].create())
         this.actions.push(action)
         return id
 
