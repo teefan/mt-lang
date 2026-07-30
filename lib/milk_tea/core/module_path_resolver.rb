@@ -37,8 +37,6 @@ module MilkTea
       @source_overrides.key?(resolved_path) || File.file?(resolved_path)
     end
 
-    private
-
     def resolve_package_module_path(module_name, importer_path: nil)
       return nil unless @package_graph && importer_path
 

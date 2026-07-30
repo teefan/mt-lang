@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def current_actual_scope(scopes)
         scopes.reverse_each do |scope|
           return scope unless scope.is_a?(FlowScope)

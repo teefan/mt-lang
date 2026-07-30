@@ -321,8 +321,6 @@ module MilkTea
       @collecting_path_errors
     end
 
-    private
-
     def self.raise_platform_conflict!(path, pinned_platform, active_platform, error_class: nil)
       if error_class == ModuleLoadError
         raise ModuleLoadError.new("source file targets platform #{pinned_platform}; active platform is #{active_platform}", path:)
@@ -331,7 +329,6 @@ module MilkTea
       message = "source file #{path} targets platform #{pinned_platform}; active platform is #{active_platform}"
       raise(error_class || ArgumentError, message)
     end
-    private_class_method :raise_platform_conflict!
 
     def check_path(path)
       resolved_path, ast, cached = check_module_cache(path)

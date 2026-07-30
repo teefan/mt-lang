@@ -3,8 +3,6 @@
 module MilkTea
   class SemanticAnalyzer
     class Checker
-      private
-
       def build_analysis
         Analysis.new(
           ast: @ctx.ast,

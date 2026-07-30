@@ -188,8 +188,6 @@ module MilkTea
     end
     alias visit_function visit_proc
 
-    private
-
     def visit_children(type)
       type.children.each do |child|
         visit(child)

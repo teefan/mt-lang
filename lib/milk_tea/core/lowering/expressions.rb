@@ -1027,7 +1027,7 @@ module MilkTea
       ]
     end
 
-    private def ensure_tuple_struct(tuple_type)
+    def ensure_tuple_struct(tuple_type)
       return unless tuple_type.is_a?(Types::Tuple)
 
       @registered_tuple_types ||= {}
@@ -1049,7 +1049,7 @@ module MilkTea
       @registered_tuple_types[tuple_type] = true
     end
 
-    private def tuple_type_name(type)
+    def tuple_type_name(type)
       sanitized = type.element_types.map { |et| sanitize_type_name_for_tuple(et) }.join("_")
       base = "mt_tuple_#{sanitized}"
       default_names = type.element_types.each_with_index.map { |_, i| "_#{i}" }
@@ -1059,7 +1059,7 @@ module MilkTea
       base
     end
 
-    private def sanitize_type_name_for_tuple(type)
+    def sanitize_type_name_for_tuple(type)
       type.to_s.gsub(/[^a-zA-Z0-9]/, "_").gsub(/_+/, "_").gsub(/^_|_$/, "")
     end
 
@@ -1568,9 +1568,7 @@ module MilkTea
       IR::AggregateLiteral.new(fields:, type: result_type)
     end
 
-  private
-
-    def lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
+  def lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
       if left_type.is_a?(Types::Vector) && right_type.is_a?(Types::Vector)
         return lower_aggregate_binary_op(operator, left, right, result_type)
       end

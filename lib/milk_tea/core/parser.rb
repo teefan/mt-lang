@@ -92,8 +92,6 @@ module MilkTea
       @recovery_errors = previous_recovery_errors
     end
 
-    private
-
     BUILTIN_ATTRIBUTE_NAME_LEXEMES = %w[packed align].freeze
 
     def parse_source_file(errors: nil)

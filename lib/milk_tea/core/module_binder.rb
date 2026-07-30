@@ -61,8 +61,6 @@ module MilkTea
       )
     end
 
-    private
-
     def exported_declaration?(analysis, declaration)
       return true if analysis.module_kind == :raw_module
       return false unless declaration.respond_to?(:visibility)
