@@ -43,9 +43,9 @@ function main() -> int:
                     let block_scale = float<-(x + y + z) / 30.0
                     let scatter = float<-math.sin(double<-(block_scale * 20.0) + (time * 4.0))
                     let cube_pos = rl.Vector3(
-                        x = float<-(x - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter,
-                        y = float<-(y - float<-NUM_BLOCKS / 2.0) * (scale * 2.0) + scatter,
-                        z = float<-(z - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter
+                        x = (x - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter,
+                        y = (y - float<-NUM_BLOCKS / 2.0) * (scale * 2.0) + scatter,
+                        z = (z - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter
                     )
                     let cube_color = rl.color_from_hsv(float<-(((x + y + z) * 18) % 360), 0.75, 0.9)
                     let cube_size = (2.4 - scale) * block_scale

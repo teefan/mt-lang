@@ -56,10 +56,10 @@ function main() -> int:
     let rounded_rectangle = create_rounded_rectangle(shader)
 
     let corner_radius = array[float, 4](5.0, 10.0, 15.0, 20.0)
-    let shadow_radius: float = 20.0
+    let shadow_radius = 20.0
     let shadow_offset = array[float, 2](0.0, -5.0)
-    let shadow_scale: float = 0.95
-    let border_thickness: float = 5.0
+    let shadow_scale = 0.95
+    let border_thickness = 5.0
 
     rl.set_shader_value(
         shader,

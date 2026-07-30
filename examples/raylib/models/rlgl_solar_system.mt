@@ -79,11 +79,11 @@ function main() -> int:
         projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
-    let rotation_speed = float<-0.2
-    var earth_rotation = float<-0.0
-    var earth_orbit_rotation = float<-0.0
-    var moon_rotation = float<-0.0
-    var moon_orbit_rotation = float<-0.0
+    let rotation_speed = 0.2
+    var earth_rotation = 0.0
+    var earth_orbit_rotation = 0.0
+    var moon_rotation = 0.0
+    var moon_orbit_rotation = 0.0
 
     rl.set_target_fps(60)
 

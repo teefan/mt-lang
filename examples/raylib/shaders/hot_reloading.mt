@@ -18,7 +18,7 @@ function main() -> int:
         fatal("could not enter examples/raylib/resources")
 
     let frag_shader_file_name = rl.text_format("shaders/glsl%i/reload.fs", GLSL_VERSION)
-    var frag_shader_file_mod_time = time.Timestamp<-rl.get_file_mod_time(frag_shader_file_name)
+    var frag_shader_file_mod_time = rl.get_file_mod_time(frag_shader_file_name)
 
     var shader = rl.load_shader(null, frag_shader_file_name)
     defer rl.unload_shader(shader)
@@ -43,7 +43,7 @@ function main() -> int:
         rl.set_shader_value(shader, mouse_location, mouse_position, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
         if shader_auto_reloading or rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
-            let current_frag_shader_mod_time = time.Timestamp<-rl.get_file_mod_time(frag_shader_file_name)
+            let current_frag_shader_mod_time = rl.get_file_mod_time(frag_shader_file_name)
             if current_frag_shader_mod_time != frag_shader_file_mod_time:
                 let updated_shader = rl.load_shader(null, frag_shader_file_name)
                 if updated_shader.id != rlgl.get_shader_id_default():

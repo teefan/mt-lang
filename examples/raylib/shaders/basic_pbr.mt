@@ -127,7 +127,7 @@ function main() -> int:
     let ambient_color_location = rl.get_shader_location(shader, "ambientColor")
     let ambient_intensity_location = rl.get_shader_location(shader, "ambient")
     let ambient_color = array[float, 3](26.0 / 255.0, 32.0 / 255.0, 135.0 / 255.0)
-    let ambient_intensity: float = 0.02
+    let ambient_intensity = 0.02
     rl.set_shader_value(
         shader,
         ambient_color_location,
@@ -304,7 +304,7 @@ function main() -> int:
         rl.draw_model(floor, rl.Vector3(x = 0.0, y = 0.0, z = 0.0), 5.0, rl.WHITE)
 
         let car_emissive = color_vector(unsafe: car.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION].color)
-        let emissive_intensity: float = 0.01
+        let emissive_intensity = 0.01
         rl.set_shader_value(
             shader,
             texture_tiling_location,

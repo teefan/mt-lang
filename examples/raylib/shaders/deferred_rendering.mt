@@ -247,7 +247,7 @@ function main() -> int:
         deferred_shader
     )
 
-    let cube_scale: float = 0.25
+    let cube_scale = 0.25
     var cube_positions: array[rl.Vector3, MAX_CUBES] = zero[array[rl.Vector3, MAX_CUBES]]
     var cube_rotations: array[float, MAX_CUBES] = zero[array[float, MAX_CUBES]]
     var cube_index = 0

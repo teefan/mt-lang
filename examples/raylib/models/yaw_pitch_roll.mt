@@ -29,9 +29,9 @@ function main() -> int:
     rl.set_texture_wrap(texture, int<-rl.TextureWrap.TEXTURE_WRAP_REPEAT)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
-    var pitch = float<-0.0
-    var roll = float<-0.0
-    var yaw = float<-0.0
+    var pitch = 0.0
+    var roll = 0.0
+    var yaw = 0.0
 
     rl.set_target_fps(60)
 

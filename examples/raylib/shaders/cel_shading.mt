@@ -170,7 +170,7 @@ function main() -> int:
 
         rl.begin_mode_3d(camera)
         if outline_enabled:
-            let thickness: float = 0.005
+            let thickness = 0.005
             rl.set_shader_value(
                 outline_shader,
                 outline_thickness_location,

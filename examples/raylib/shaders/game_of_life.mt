@@ -144,8 +144,8 @@ function main() -> int:
         else:
             let offset_decimal_x = offset_x - float<-(int<-offset_x)
             let offset_decimal_y = offset_y - float<-(int<-offset_y)
-            var size_in_world_x = int<-((float<-(WINDOW_WIDTH) + offset_decimal_x * float<-zoom + float<-(zoom - 1)) / float<-zoom)
-            var size_in_world_y = int<-((float<-(WINDOW_HEIGHT) + offset_decimal_y * float<-zoom + float<-(zoom - 1)) / float<-zoom)
+            var size_in_world_x = int<-((float<-WINDOW_WIDTH + offset_decimal_x * float<-zoom + float<-(zoom - 1)) / float<-zoom)
+            var size_in_world_y = int<-((float<-WINDOW_HEIGHT + offset_decimal_y * float<-zoom + float<-(zoom - 1)) / float<-zoom)
             if offset_x + float<-size_in_world_x >= WORLD_WIDTH:
                 size_in_world_x = WORLD_WIDTH - int<-offset_x
             if offset_y + float<-size_in_world_y >= WORLD_HEIGHT:

@@ -212,7 +212,7 @@ function main() -> int:
         frame_counter = (frame_counter + 1) % animation.keyframeCount
         rl.update_model_animation(robot, animation, float<-frame_counter)
 
-        let camera_speed: float = 0.05
+        let camera_speed = 0.05
         if rl.is_key_down(rl.KeyboardKey.KEY_LEFT) and light_dir.x < 0.6:
             light_dir.x += camera_speed * 60.0 * delta_time
         if rl.is_key_down(rl.KeyboardKey.KEY_RIGHT) and light_dir.x > -0.6:

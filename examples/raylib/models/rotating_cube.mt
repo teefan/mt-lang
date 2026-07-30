@@ -40,7 +40,7 @@ function main() -> int:
 
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
-    var rotation = float<-0.0
+    var rotation = 0.0
 
     rl.set_target_fps(60)
 
