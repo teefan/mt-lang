@@ -76,7 +76,6 @@ pnpm-debug.log*
 *.code-workspace
 .github/copilot-instructions.md
 coverage.json
-AGENTS.md
 examples/**/*.bmp
 third_party/**/*
 __mt_test_*

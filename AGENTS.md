@@ -8,6 +8,12 @@
 
 Prioritize these instructions in this order: accuracy first, then minimal correct changes, then tone and workflow preferences.
 
+### 0. Ruby Coding Conventions
+
+- Do not use `module_function`. Prefer `self.` for class/module method definitions. Everything is public. No `private`/`public` scope.
+- Do not use `.send()`. Call methods directly.
+- Do not define private methods. Everything is public by default.
+
 ### 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
