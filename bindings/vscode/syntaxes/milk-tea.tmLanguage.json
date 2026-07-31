@@ -21,6 +21,8 @@
     { "include": "#keyword-lifetime-ref" },
     { "include": "#bare-arm-name" },
     { "include": "#member-access-keyword" },
+    { "include": "#type-param-in-brackets" },
+    { "include": "#import-alias-name" },
     { "include": "#keyword-operator" },
     { "include": "#keyword-modifier" },
     { "include": "#keyword-builtin" },
@@ -754,6 +756,16 @@
     "member-access-keyword": {
       "name": "variable.other.member.milk-tea",
       "match": "(?<=\\.)\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
+    },
+
+    "type-param-in-brackets": {
+      "name": "entity.name.type.parameter.milk-tea",
+      "match": "(?<=[\\[,])\\s*\\b(return|let|var|type|function|if|else|while|for|match|enum|variant|const|opaque|interface|extending|external|async|when|await|pass|break|continue|defer|unsafe|emit|foreign|inline|fn|proc|is|and|or|not)\\b"
+    },
+
+    "import-alias-name": {
+      "name": "variable.other.milk-tea",
+      "match": "(?<=\\bas\\s)([a-zA-Z_][a-zA-Z0-9_]*)"
     },
 
     "identifier": {
