@@ -379,6 +379,7 @@ Language-level keywords and reserved words are accepted as:
 - lifetime parameter names (`struct Buf[@return]`)
 - type parameter names (`struct Box[return]`, `identity[type]`)
 - named arguments in struct/variant literals (`Meta(return = 1)`)
+- named tuple fields (`(return = 1, let = 2)`)
 
 Primitive type names (`int`, `str`, `bool`, `ref`, `ptr`, `span`, `type`, etc.) remain reserved and cannot be used as names.
 
