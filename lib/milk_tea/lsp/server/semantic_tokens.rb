@@ -276,9 +276,11 @@ module MilkTea
 
           if KEYWORD_TOKEN_TYPES.include?(tok.type)
             return [:typeParameter, []] if keyword_lifetime_or_type_param?(tokens, index)
+            return [:type, []] if keyword_type_annotation?(tokens, index)
             return [:enumMember, [:declaration]] if variant_enum_member_declaration?(tokens, index)
             return [:property, [:declaration]] if keyword_field_declaration_token?(tokens, index)
             return [:property, []] if keyword_member_access?(tokens, index)
+            return [:parameter, []] if keyword_named_argument_token?(tokens, index)
             return [:keyword, []]
           end
 
@@ -555,9 +557,8 @@ module MilkTea
         end
 
         def keyword_field_declaration_token?(tokens, index)
-          return false unless first_non_trivia_token_on_line?(tokens, index)
-          return false if parameter_declaration_token?(tokens, index)
           return false if match_arm_binding_token?(tokens, index)
+          return false if destructure_let_binding?(tokens, index)
 
           next_tok = next_non_trivia_token(tokens, index + 1)
           next_tok&.type == :colon
@@ -574,7 +575,43 @@ module MilkTea
           prev_index = previous_non_trivia_token_index(tokens, index)
           return false unless prev_index
 
-          tokens[prev_index].type == :at
+          prev_type = tokens[prev_index].type
+          return true if prev_type == :at
+          return true if prev_type == :lbracket
+          return true if prev_type == :comma && inside_type_params?(tokens, prev_index)
+          false
+        end
+
+        def inside_type_params?(tokens, comma_index)
+          i = comma_index - 1
+          while i >= 0
+            t = tokens[i]
+            break if t.type == :lbracket
+            return false if t.type == :newline || t.type == :rbracket || t.type == :lparen
+            i -= 1
+          end
+          return false if i < 0
+
+          prev = previous_non_trivia_token_index(tokens, i)
+          return true if prev && %i[struct variant enum flags function fn proc].include?(tokens[prev].type)
+          return true if prev && tokens[prev].type == :rbracket
+          return true if prev && tokens[prev].type == :identifier
+
+          false
+        end
+
+        def keyword_named_argument_token?(tokens, index)
+          next_tok = next_non_trivia_token(tokens, index + 1)
+          next_tok&.type == :equal
+        end
+
+        def keyword_type_annotation?(tokens, index)
+          tok = tokens[index]
+          prev_index = previous_non_trivia_token_index(tokens, index)
+          return false unless prev_index
+          return false unless %i[colon arrow].include?(tokens[prev_index].type)
+
+          tokens[prev_index].line == tok.line
         end
 
         def destructure_let_binding?(tokens, index)
