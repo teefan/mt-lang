@@ -645,7 +645,7 @@ module MilkTea
               begin
                 raise_sema_error("duplicate arm #{decl.name}.#{arm.name}") if seen_arms.include?(arm.name)
                 unless raw_module?
-                  ensure_non_reserved_type_binding_name!(
+                  ensure_non_reserved_value_type_name!(
                     arm.name,
                     kind_label: "arm #{decl.name}",
                     line: arm.line || decl.line,

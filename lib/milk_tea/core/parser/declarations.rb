@@ -493,7 +493,7 @@ module MilkTea
         name = name_token.lexeme
         type_params = parse_declaration_type_params
         arms = parse_named_block do
-          arm_name = consume_name("expected variant arm name").lexeme
+          arm_name = consume_name_allowing_keywords("expected variant arm name").lexeme
           fields = if match(:lparen)
                      parsed = parse_comma_separated_until(:rparen) do
                        field_name = consume_name("expected field name").lexeme
