@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>reserved_words_usage.mt &mdash; Milk Tea Snapshot</title>
+<style>
+body {
+  background-color: #121314;
+  color: #BBBEBF;
+  font-family: ui-monospace, SFMono-Regular, 'Cascadia Code', Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 16px;
+}
+.line {
+  display: block;
+  white-space: pre;
+}
+.ln {
+  display: inline-block;
+  width: 5ch;
+  margin-right: 1ch;
+  text-align: right;
+  color: #858889;
+  user-select: none;
+}
+.tk-comment { color:#8b949e }
+.tk-keyword-other { color:#ff7b72 }
+.tk-variable-other { color:#c9d1d9 }
+.tk-keyword-operator { color:#d4d4d4 }
+.tk-support-type { color:#4EC9B0 }
+.tk-entity-name { color:#d2a8ff }
+.tk-meta-function { color:#ffa657 }
+.tk-number { color:#b5cea8 }
+.tk-string { color:#a5d6ff }
+.tk-constant-language { color:#569cd6 }
+.tk-variable-other-79c0ff { color:#79c0ff }
+</style>
+</head>
+<body>
+<span class="line" id="L1"><span class="ln">  1</span><span class="tk-comment">## Comprehensive reserved-word usage demo</span></span>
+<span class="line" id="L2"><span class="ln">  2</span><span class="tk-comment">##</span></span>
+<span class="line" id="L3"><span class="ln">  3</span><span class="tk-comment">## Exercises all contexts where keywords/reserved words are accepted</span></span>
+<span class="line" id="L4"><span class="ln">  4</span><span class="tk-comment">## as names.  Should parse, type-check, and lower to C without errors.</span></span>
+<span class="line" id="L5"><span class="ln">  5</span><span class="tk-comment">##</span></span>
+<span class="line" id="L6"><span class="ln">  6</span><span class="tk-comment">## Contexts:</span></span>
+<span class="line" id="L7"><span class="ln">  7</span><span class="tk-comment">##   1. Variant arm names</span></span>
+<span class="line" id="L8"><span class="ln">  8</span><span class="tk-comment">##   2. Struct field names (declaration)</span></span>
+<span class="line" id="L9"><span class="ln">  9</span><span class="tk-comment">##   3. Union field names</span></span>
+<span class="line" id="L10"><span class="ln"> 10</span><span class="tk-comment">##   4. Enum member names</span></span>
+<span class="line" id="L11"><span class="ln"> 11</span><span class="tk-comment">##   5. Variant payload field names</span></span>
+<span class="line" id="L12"><span class="ln"> 12</span><span class="tk-comment">##   6. Lifetime parameter names</span></span>
+<span class="line" id="L13"><span class="ln"> 13</span><span class="tk-comment">##   7. Type parameter names</span></span>
+<span class="line" id="L14"><span class="ln"> 14</span><span class="tk-comment">##   8. Named arguments in struct/variant literals</span></span>
+<span class="line" id="L15"><span class="ln"> 15</span><span class="tk-comment">##   9. Match arm extraction</span></span>
+<span class="line" id="L16"><span class="ln"> 16</span><span class="tk-comment">##  10. Import paths and aliases</span></span>
+<span class="line" id="L17"><span class="ln"> 17</span><span class="tk-comment">##</span></span>
+<span class="line" id="L18"><span class="ln"> 18</span><span class="tk-comment">## Keywords NOT used inside struct bodies (parse conflicts):</span></span>
+<span class="line" id="L19"><span class="ln"> 19</span><span class="tk-comment">##   struct, union, event, public — these have parser-level special</span></span>
+<span class="line" id="L20"><span class="ln"> 20</span><span class="tk-comment">##   handling inside struct member positions.</span></span>
+<span class="line" id="L21"><span class="ln"> 21</span></span>
+<span class="line" id="L22"><span class="ln"> 22</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L23"><span class="ln"> 23</span><span class="tk-comment"># 10  Imports — keywords as import path components and aliases</span></span>
+<span class="line" id="L24"><span class="ln"> 24</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L25"><span class="ln"> 25</span></span>
+<span class="line" id="L26"><span class="ln"> 26</span><span class="tk-keyword-other">import</span> <span class="tk-variable-other">std</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">option</span> <span class="tk-keyword-other">as</span> <span class="tk-variable-other">opt</span></span>
+<span class="line" id="L27"><span class="ln"> 27</span><span class="tk-keyword-other">import</span> <span class="tk-variable-other">std</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">result</span> <span class="tk-keyword-other">as</span> <span class="tk-variable-other">res</span></span>
+<span class="line" id="L28"><span class="ln"> 28</span><span class="tk-keyword-other">import</span> <span class="tk-variable-other">std</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">str</span> <span class="tk-keyword-other">as</span> <span class="tk-support-type">str</span></span>
+<span class="line" id="L29"><span class="ln"> 29</span></span>
+<span class="line" id="L30"><span class="ln"> 30</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">use_imports</span>(<span class="tk-meta-function">value</span>: <span class="tk-meta-function">int</span>) <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">str</span>:</span>
+<span class="line" id="L31"><span class="ln"> 31</span>    <span class="tk-keyword-other">if</span> <span class="tk-variable-other">value</span> <span class="tk-keyword-operator">&lt;</span> <span class="tk-number">0</span>:</span>
+<span class="line" id="L32"><span class="ln"> 32</span>        <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">none</span><span class="tk-string">"</span></span>
+<span class="line" id="L33"><span class="ln"> 33</span>    <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">done</span><span class="tk-string">"</span></span>
+<span class="line" id="L34"><span class="ln"> 34</span></span>
+<span class="line" id="L35"><span class="ln"> 35</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L36"><span class="ln"> 36</span><span class="tk-comment"># 1  Variant arm names — keywords as arm names</span></span>
+<span class="line" id="L37"><span class="ln"> 37</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L38"><span class="ln"> 38</span></span>
+<span class="line" id="L39"><span class="ln"> 39</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">variant</span> <span class="tk-meta-function">AST</span>:</span>
+<span class="line" id="L40"><span class="ln"> 40</span><span class="tk-meta-function">    return</span>(<span class="tk-meta-function">val</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L41"><span class="ln"> 41</span><span class="tk-meta-function">    let</span>(<span class="tk-meta-function">name</span>: <span class="tk-support-type">str</span>, <span class="tk-meta-function">init</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L42"><span class="ln"> 42</span><span class="tk-meta-function">    var</span>(<span class="tk-meta-function">name</span>: <span class="tk-support-type">str</span>, <span class="tk-meta-function">init</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L43"><span class="ln"> 43</span><span class="tk-meta-function">    type</span>(<span class="tk-meta-function">inner</span>: <span class="tk-support-type">str</span>)</span>
+<span class="line" id="L44"><span class="ln"> 44</span><span class="tk-meta-function">    function</span>(<span class="tk-meta-function">name</span>: <span class="tk-support-type">str</span>, <span class="tk-meta-function">body</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L45"><span class="ln"> 45</span><span class="tk-meta-function">    if</span>(<span class="tk-meta-function">cond</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">then</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">else</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L46"><span class="ln"> 46</span><span class="tk-meta-function">    else</span>(<span class="tk-meta-function">value</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L47"><span class="ln"> 47</span><span class="tk-meta-function">    while</span>(<span class="tk-meta-function">cond</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">body</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L48"><span class="ln"> 48</span><span class="tk-meta-function">    for</span>(<span class="tk-meta-function">binding</span>: <span class="tk-support-type">str</span>, <span class="tk-meta-function">it</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">body</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L49"><span class="ln"> 49</span><span class="tk-meta-function">    match</span>(<span class="tk-meta-function">scrutinee</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">arms</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L50"><span class="ln"> 50</span><span class="tk-meta-function">    enum</span>(<span class="tk-meta-function">members</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L51"><span class="ln"> 51</span><span class="tk-meta-function">    variant</span>(<span class="tk-meta-function">arms</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L52"><span class="ln"> 52</span><span class="tk-meta-function">    const</span>(<span class="tk-meta-function">value</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L53"><span class="ln"> 53</span><span class="tk-meta-function">    opaque</span>(<span class="tk-meta-function">handle</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L54"><span class="ln"> 54</span><span class="tk-meta-function">    interface</span>(<span class="tk-meta-function">methods</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L55"><span class="ln"> 55</span><span class="tk-meta-function">    extending</span>(<span class="tk-meta-function">base</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L56"><span class="ln"> 56</span><span class="tk-meta-function">    external</span>(<span class="tk-meta-function">symbol</span>: <span class="tk-support-type">str</span>)</span>
+<span class="line" id="L57"><span class="ln"> 57</span><span class="tk-meta-function">    async</span>(<span class="tk-meta-function">promise</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L58"><span class="ln"> 58</span><span class="tk-meta-function">    when</span>(<span class="tk-meta-function">cond</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">branch</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L59"><span class="ln"> 59</span><span class="tk-meta-function">    await</span>(<span class="tk-meta-function">target</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L60"><span class="ln"> 60</span><span class="tk-meta-function">    pass</span></span>
+<span class="line" id="L61"><span class="ln"> 61</span><span class="tk-meta-function">    break</span>(<span class="tk-meta-function">value</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L62"><span class="ln"> 62</span><span class="tk-meta-function">    continue</span>(<span class="tk-meta-function">value</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L63"><span class="ln"> 63</span><span class="tk-meta-function">    defer</span>(<span class="tk-meta-function">work</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L64"><span class="ln"> 64</span><span class="tk-meta-function">    unsafe</span>(<span class="tk-meta-function">ptr</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L65"><span class="ln"> 65</span><span class="tk-meta-function">    emit</span>(<span class="tk-meta-function">code</span>: <span class="tk-support-type">str</span>)</span>
+<span class="line" id="L66"><span class="ln"> 66</span><span class="tk-meta-function">    foreign</span>(<span class="tk-meta-function">name</span>: <span class="tk-support-type">str</span>)</span>
+<span class="line" id="L67"><span class="ln"> 67</span><span class="tk-meta-function">    inline</span>(<span class="tk-meta-function">body</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L68"><span class="ln"> 68</span><span class="tk-meta-function">    fn</span>(<span class="tk-meta-function">sig</span>: <span class="tk-support-type">str</span>)</span>
+<span class="line" id="L69"><span class="ln"> 69</span><span class="tk-meta-function">    proc</span>(<span class="tk-meta-function">body</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L70"><span class="ln"> 70</span><span class="tk-meta-function">    is</span>(<span class="tk-meta-function">arm</span>: <span class="tk-support-type">str</span>)</span>
+<span class="line" id="L71"><span class="ln"> 71</span><span class="tk-meta-function">    and</span>(<span class="tk-meta-function">left</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">right</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L72"><span class="ln"> 72</span><span class="tk-meta-function">    or</span>(<span class="tk-meta-function">left</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">right</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L73"><span class="ln"> 73</span><span class="tk-meta-function">    not</span>(<span class="tk-meta-function">val</span>: <span class="tk-support-type">int</span>)</span>
+<span class="line" id="L74"><span class="ln"> 74</span><span class="tk-meta-function">    noop</span></span>
+<span class="line" id="L75"><span class="ln"> 75</span></span>
+<span class="line" id="L76"><span class="ln"> 76</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L77"><span class="ln"> 77</span><span class="tk-comment"># 2  Struct field names — keywords as field declarations</span></span>
+<span class="line" id="L78"><span class="ln"> 78</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L79"><span class="ln"> 79</span></span>
+<span class="line" id="L80"><span class="ln"> 80</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">struct</span> <span class="tk-meta-function">Meta</span>:</span>
+<span class="line" id="L81"><span class="ln"> 81</span><span class="tk-variable-other">    return</span>: <span class="tk-support-type">int</span></span>
+<span class="line" id="L82"><span class="ln"> 82</span><span class="tk-variable-other">    let</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L83"><span class="ln"> 83</span><span class="tk-variable-other">    var</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L84"><span class="ln"> 84</span><span class="tk-variable-other">    type</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L85"><span class="ln"> 85</span><span class="tk-variable-other">    function</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L86"><span class="ln"> 86</span><span class="tk-variable-other">    if</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L87"><span class="ln"> 87</span><span class="tk-variable-other">    else</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L88"><span class="ln"> 88</span><span class="tk-variable-other">    while</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L89"><span class="ln"> 89</span><span class="tk-variable-other">    for</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L90"><span class="ln"> 90</span><span class="tk-variable-other">    match</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L91"><span class="ln"> 91</span><span class="tk-variable-other">    enum</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L92"><span class="ln"> 92</span><span class="tk-variable-other">    variant</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L93"><span class="ln"> 93</span><span class="tk-variable-other">    const</span>: <span class="tk-support-type">int</span></span>
+<span class="line" id="L94"><span class="ln"> 94</span><span class="tk-variable-other">    opaque</span>: <span class="tk-support-type">int</span></span>
+<span class="line" id="L95"><span class="ln"> 95</span><span class="tk-variable-other">    interface</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L96"><span class="ln"> 96</span><span class="tk-variable-other">    extending</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L97"><span class="ln"> 97</span><span class="tk-variable-other">    external</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L98"><span class="ln"> 98</span><span class="tk-variable-other">    async</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L99"><span class="ln"> 99</span><span class="tk-variable-other">    when</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L100"><span class="ln">100</span><span class="tk-variable-other">    await</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L101"><span class="ln">101</span><span class="tk-variable-other">    pass</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L102"><span class="ln">102</span><span class="tk-variable-other">    break</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L103"><span class="ln">103</span><span class="tk-variable-other">    continue</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L104"><span class="ln">104</span><span class="tk-variable-other">    defer</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L105"><span class="ln">105</span><span class="tk-variable-other">    unsafe</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L106"><span class="ln">106</span><span class="tk-variable-other">    emit</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L107"><span class="ln">107</span><span class="tk-variable-other">    foreign</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L108"><span class="ln">108</span><span class="tk-variable-other">    inline</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L109"><span class="ln">109</span><span class="tk-variable-other">    fn</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L110"><span class="ln">110</span><span class="tk-variable-other">    proc</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L111"><span class="ln">111</span><span class="tk-variable-other">    is</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L112"><span class="ln">112</span><span class="tk-variable-other">    and</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L113"><span class="ln">113</span><span class="tk-variable-other">    or</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L114"><span class="ln">114</span><span class="tk-variable-other">    not</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L115"><span class="ln">115</span><span class="tk-variable-other">    noop</span>: <span class="tk-support-type">bool</span></span>
+<span class="line" id="L116"><span class="ln">116</span></span>
+<span class="line" id="L117"><span class="ln">117</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L118"><span class="ln">118</span><span class="tk-comment"># 3  Union field names</span></span>
+<span class="line" id="L119"><span class="ln">119</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L120"><span class="ln">120</span></span>
+<span class="line" id="L121"><span class="ln">121</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">union</span> <span class="tk-meta-function">Value</span>:</span>
+<span class="line" id="L122"><span class="ln">122</span><span class="tk-variable-other">    return</span>: <span class="tk-support-type">int</span></span>
+<span class="line" id="L123"><span class="ln">123</span><span class="tk-variable-other">    let</span>: <span class="tk-support-type">float</span></span>
+<span class="line" id="L124"><span class="ln">124</span><span class="tk-variable-other">    var</span>: <span class="tk-support-type">ptr</span>[<span class="tk-support-type">void</span>]</span>
+<span class="line" id="L125"><span class="ln">125</span><span class="tk-variable-other">    type</span>: <span class="tk-support-type">str</span></span>
+<span class="line" id="L126"><span class="ln">126</span></span>
+<span class="line" id="L127"><span class="ln">127</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L128"><span class="ln">128</span><span class="tk-comment"># 4  Enum member names</span></span>
+<span class="line" id="L129"><span class="ln">129</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L130"><span class="ln">130</span></span>
+<span class="line" id="L131"><span class="ln">131</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">enum</span> <span class="tk-meta-function">Kind</span>: <span class="tk-support-type">int</span></span>
+<span class="line" id="L132"><span class="ln">132</span>    <span class="tk-meta-function">return </span><span class="tk-keyword-operator">=</span> <span class="tk-number">1</span></span>
+<span class="line" id="L133"><span class="ln">133</span>    <span class="tk-meta-function">let </span><span class="tk-keyword-operator">=</span> <span class="tk-number">2</span></span>
+<span class="line" id="L134"><span class="ln">134</span>    <span class="tk-meta-function">var </span><span class="tk-keyword-operator">=</span> <span class="tk-number">3</span></span>
+<span class="line" id="L135"><span class="ln">135</span>    <span class="tk-meta-function">type </span><span class="tk-keyword-operator">=</span> <span class="tk-number">4</span></span>
+<span class="line" id="L136"><span class="ln">136</span>    <span class="tk-meta-function">function </span><span class="tk-keyword-operator">=</span> <span class="tk-number">5</span></span>
+<span class="line" id="L137"><span class="ln">137</span>    <span class="tk-meta-function">if </span><span class="tk-keyword-operator">=</span> <span class="tk-number">6</span></span>
+<span class="line" id="L138"><span class="ln">138</span>    <span class="tk-meta-function">else </span><span class="tk-keyword-operator">=</span> <span class="tk-number">7</span></span>
+<span class="line" id="L139"><span class="ln">139</span>    <span class="tk-meta-function">while </span><span class="tk-keyword-operator">=</span> <span class="tk-number">8</span></span>
+<span class="line" id="L140"><span class="ln">140</span>    <span class="tk-meta-function">for </span><span class="tk-keyword-operator">=</span> <span class="tk-number">9</span></span>
+<span class="line" id="L141"><span class="ln">141</span>    <span class="tk-meta-function">match </span><span class="tk-keyword-operator">=</span> <span class="tk-number">10</span></span>
+<span class="line" id="L142"><span class="ln">142</span>    <span class="tk-meta-function">enum_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">11</span></span>
+<span class="line" id="L143"><span class="ln">143</span>    <span class="tk-meta-function">variant_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">12</span></span>
+<span class="line" id="L144"><span class="ln">144</span>    <span class="tk-meta-function">const_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">13</span></span>
+<span class="line" id="L145"><span class="ln">145</span>    <span class="tk-meta-function">opaque_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">14</span></span>
+<span class="line" id="L146"><span class="ln">146</span>    <span class="tk-meta-function">interface_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">15</span></span>
+<span class="line" id="L147"><span class="ln">147</span>    <span class="tk-meta-function">async_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">16</span></span>
+<span class="line" id="L148"><span class="ln">148</span>    <span class="tk-meta-function">when_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">17</span></span>
+<span class="line" id="L149"><span class="ln">149</span>    <span class="tk-meta-function">unsafe_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">18</span></span>
+<span class="line" id="L150"><span class="ln">150</span>    <span class="tk-meta-function">is_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">19</span></span>
+<span class="line" id="L151"><span class="ln">151</span>    <span class="tk-meta-function">and_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">20</span></span>
+<span class="line" id="L152"><span class="ln">152</span>    <span class="tk-meta-function">or_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">21</span></span>
+<span class="line" id="L153"><span class="ln">153</span>    <span class="tk-meta-function">not_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">22</span></span>
+<span class="line" id="L154"><span class="ln">154</span>    <span class="tk-meta-function">pass_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">23</span></span>
+<span class="line" id="L155"><span class="ln">155</span>    <span class="tk-meta-function">fn_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">24</span></span>
+<span class="line" id="L156"><span class="ln">156</span>    <span class="tk-meta-function">proc_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">25</span></span>
+<span class="line" id="L157"><span class="ln">157</span>    <span class="tk-meta-function">noop_value </span><span class="tk-keyword-operator">=</span> <span class="tk-number">26</span></span>
+<span class="line" id="L158"><span class="ln">158</span></span>
+<span class="line" id="L159"><span class="ln">159</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L160"><span class="ln">160</span><span class="tk-comment"># 5  Variant payload field names</span></span>
+<span class="line" id="L161"><span class="ln">161</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L162"><span class="ln">162</span></span>
+<span class="line" id="L163"><span class="ln">163</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">variant</span> <span class="tk-meta-function">Action</span>:</span>
+<span class="line" id="L164"><span class="ln">164</span><span class="tk-meta-function">    execute</span>(<span class="tk-meta-function">return</span>: <span class="tk-support-type">int</span>, <span class="tk-meta-function">let</span>: <span class="tk-support-type">str</span>, <span class="tk-meta-function">type</span>: <span class="tk-support-type">str</span>, <span class="tk-meta-function">function</span>: <span class="tk-support-type">str</span>)</span>
+<span class="line" id="L165"><span class="ln">165</span></span>
+<span class="line" id="L166"><span class="ln">166</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L167"><span class="ln">167</span><span class="tk-comment"># 6  Lifetime parameter names</span></span>
+<span class="line" id="L168"><span class="ln">168</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L169"><span class="ln">169</span></span>
+<span class="line" id="L170"><span class="ln">170</span><span class="tk-keyword-other">struct</span> <span class="tk-support-type">Buffer</span>[@<span class="tk-support-type">return</span>]:</span>
+<span class="line" id="L171"><span class="ln">171</span><span class="tk-variable-other">    data</span>: <span class="tk-support-type">ref</span>[@<span class="tk-support-type">return</span>, <span class="tk-keyword-other">span</span>[<span class="tk-support-type">ubyte</span>]]</span>
+<span class="line" id="L172"><span class="ln">172</span></span>
+<span class="line" id="L173"><span class="ln">173</span><span class="tk-keyword-other">struct</span> <span class="tk-support-type">DualBuffer</span>[@<span class="tk-support-type">let</span>, @<span class="tk-support-type">var</span>]:</span>
+<span class="line" id="L174"><span class="ln">174</span><span class="tk-variable-other">    a</span>: <span class="tk-support-type">ref</span>[@<span class="tk-support-type">let</span>, <span class="tk-keyword-other">span</span>[<span class="tk-support-type">ubyte</span>]]</span>
+<span class="line" id="L175"><span class="ln">175</span><span class="tk-variable-other">    b</span>: <span class="tk-support-type">ref</span>[@<span class="tk-support-type">var</span>, <span class="tk-keyword-other">span</span>[<span class="tk-support-type">ubyte</span>]]</span>
+<span class="line" id="L176"><span class="ln">176</span></span>
+<span class="line" id="L177"><span class="ln">177</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L178"><span class="ln">178</span><span class="tk-comment"># 7  Type parameter names</span></span>
+<span class="line" id="L179"><span class="ln">179</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L180"><span class="ln">180</span></span>
+<span class="line" id="L181"><span class="ln">181</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">struct</span> <span class="tk-support-type">Box</span>[<span class="tk-keyword-other">return</span>]:</span>
+<span class="line" id="L182"><span class="ln">182</span><span class="tk-variable-other">    value</span>: <span class="tk-support-type">return</span></span>
+<span class="line" id="L183"><span class="ln">183</span></span>
+<span class="line" id="L184"><span class="ln">184</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">struct</span> <span class="tk-support-type">Pair</span>[<span class="tk-keyword-other">let</span>, <span class="tk-keyword-other">var</span>]:</span>
+<span class="line" id="L185"><span class="ln">185</span><span class="tk-variable-other">    first</span>: <span class="tk-support-type">let</span></span>
+<span class="line" id="L186"><span class="ln">186</span><span class="tk-variable-other">    second</span>: <span class="tk-support-type">var</span></span>
+<span class="line" id="L187"><span class="ln">187</span></span>
+<span class="line" id="L188"><span class="ln">188</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">identity</span>[<span class="tk-variable-other">type</span>](<span class="tk-meta-function">x</span>: <span class="tk-meta-function">type</span>) <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">type</span>:</span>
+<span class="line" id="L189"><span class="ln">189</span>    <span class="tk-keyword-other">return</span> <span class="tk-variable-other">x</span></span>
+<span class="line" id="L190"><span class="ln">190</span></span>
+<span class="line" id="L191"><span class="ln">191</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">pair_of</span>[<span class="tk-variable-other">let</span>, <span class="tk-variable-other">var</span>](<span class="tk-meta-function">a</span>: <span class="tk-meta-function">let</span>, <span class="tk-meta-function">b</span>: <span class="tk-meta-function">var</span>) <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">Pair[let, var]</span>:</span>
+<span class="line" id="L192"><span class="ln">192</span>    <span class="tk-keyword-other">return</span> <span class="tk-support-type">Pair</span>[<span class="tk-keyword-other">let</span>, <span class="tk-keyword-other">var</span>](<span class="tk-meta-function">first </span><span class="tk-keyword-operator">=</span> <span class="tk-variable-other">a</span>, <span class="tk-meta-function">second </span><span class="tk-keyword-operator">=</span> <span class="tk-variable-other">b</span>)</span>
+<span class="line" id="L193"><span class="ln">193</span></span>
+<span class="line" id="L194"><span class="ln">194</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L195"><span class="ln">195</span><span class="tk-comment"># 8  Named arguments in struct/variant literals</span></span>
+<span class="line" id="L196"><span class="ln">196</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L197"><span class="ln">197</span></span>
+<span class="line" id="L198"><span class="ln">198</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">make_meta</span>() <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">Meta</span>:</span>
+<span class="line" id="L199"><span class="ln">199</span>    <span class="tk-keyword-other">return</span> <span class="tk-entity-name">Meta</span>(</span>
+<span class="line" id="L200"><span class="ln">200</span>        <span class="tk-meta-function">return </span><span class="tk-keyword-operator">=</span> <span class="tk-number">1</span>,</span>
+<span class="line" id="L201"><span class="ln">201</span>        <span class="tk-meta-function">let </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">hello</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L202"><span class="ln">202</span>        <span class="tk-meta-function">var </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">world</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L203"><span class="ln">203</span>        <span class="tk-meta-function">type </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">str</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L204"><span class="ln">204</span>        <span class="tk-meta-function">function </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">main</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L205"><span class="ln">205</span>        <span class="tk-meta-function">if </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">true</span>,</span>
+<span class="line" id="L206"><span class="ln">206</span>        <span class="tk-meta-function">else </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L207"><span class="ln">207</span>        <span class="tk-meta-function">while </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L208"><span class="ln">208</span>        <span class="tk-meta-function">for </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L209"><span class="ln">209</span>        <span class="tk-meta-function">match </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L210"><span class="ln">210</span>        <span class="tk-meta-function">enum </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">Kind</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L211"><span class="ln">211</span>        <span class="tk-meta-function">variant </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">AST</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L212"><span class="ln">212</span>        <span class="tk-meta-function">const </span><span class="tk-keyword-operator">=</span> <span class="tk-number">42</span>,</span>
+<span class="line" id="L213"><span class="ln">213</span>        <span class="tk-meta-function">opaque </span><span class="tk-keyword-operator">=</span> <span class="tk-number">0</span>,</span>
+<span class="line" id="L214"><span class="ln">214</span>        <span class="tk-meta-function">interface </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">Shape</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L215"><span class="ln">215</span>        <span class="tk-meta-function">extending </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">Base</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L216"><span class="ln">216</span>        <span class="tk-meta-function">external </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">sym</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L217"><span class="ln">217</span>        <span class="tk-meta-function">async </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L218"><span class="ln">218</span>        <span class="tk-meta-function">when </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">now</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L219"><span class="ln">219</span>        <span class="tk-meta-function">await </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L220"><span class="ln">220</span>        <span class="tk-meta-function">pass </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">true</span>,</span>
+<span class="line" id="L221"><span class="ln">221</span>        <span class="tk-meta-function">break </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L222"><span class="ln">222</span>        <span class="tk-meta-function">continue </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L223"><span class="ln">223</span>        <span class="tk-meta-function">defer </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L224"><span class="ln">224</span>        <span class="tk-meta-function">unsafe </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L225"><span class="ln">225</span>        <span class="tk-meta-function">emit </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">code</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L226"><span class="ln">226</span>        <span class="tk-meta-function">foreign </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">c_fn</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L227"><span class="ln">227</span>        <span class="tk-meta-function">inline </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L228"><span class="ln">228</span>        <span class="tk-meta-function">fn </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">fn_type</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L229"><span class="ln">229</span>        <span class="tk-meta-function">proc </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">fn_ptr</span><span class="tk-string">"</span>,</span>
+<span class="line" id="L230"><span class="ln">230</span>        <span class="tk-meta-function">is </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">true</span>,</span>
+<span class="line" id="L231"><span class="ln">231</span>        <span class="tk-meta-function">and </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">true</span>,</span>
+<span class="line" id="L232"><span class="ln">232</span>        <span class="tk-meta-function">or </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">false</span>,</span>
+<span class="line" id="L233"><span class="ln">233</span>        <span class="tk-meta-function">not </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">true</span>,</span>
+<span class="line" id="L234"><span class="ln">234</span>        <span class="tk-meta-function">noop </span><span class="tk-keyword-operator">=</span> <span class="tk-constant-language">true</span></span>
+<span class="line" id="L235"><span class="ln">235</span>    )</span>
+<span class="line" id="L236"><span class="ln">236</span></span>
+<span class="line" id="L237"><span class="ln">237</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L238"><span class="ln">238</span><span class="tk-comment"># 9  Variant constructors with keyword-named arguments</span></span>
+<span class="line" id="L239"><span class="ln">239</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L240"><span class="ln">240</span></span>
+<span class="line" id="L241"><span class="ln">241</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">make_ast_nodes</span>() <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">AST</span>:</span>
+<span class="line" id="L242"><span class="ln">242</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_retval </span><span class="tk-keyword-operator">=</span> <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">return</span>(<span class="tk-meta-function">val </span><span class="tk-keyword-operator">=</span> <span class="tk-number">42</span>)</span>
+<span class="line" id="L243"><span class="ln">243</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_letval </span><span class="tk-keyword-operator">=</span> <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">let</span>(<span class="tk-meta-function">name </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">x</span><span class="tk-string">"</span>, <span class="tk-meta-function">init </span><span class="tk-keyword-operator">=</span> <span class="tk-number">1</span>)</span>
+<span class="line" id="L244"><span class="ln">244</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_typeval </span><span class="tk-keyword-operator">=</span> <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">type</span>(<span class="tk-meta-function">inner </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">int</span><span class="tk-string">"</span>)</span>
+<span class="line" id="L245"><span class="ln">245</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_fnval </span><span class="tk-keyword-operator">=</span> <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">function</span>(<span class="tk-meta-function">name </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">main</span><span class="tk-string">"</span>, <span class="tk-meta-function">body </span><span class="tk-keyword-operator">=</span> <span class="tk-number">0</span>)</span>
+<span class="line" id="L246"><span class="ln">246</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_ifval </span><span class="tk-keyword-operator">=</span> <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">if</span>(<span class="tk-meta-function">cond </span><span class="tk-keyword-operator">=</span> <span class="tk-number">1</span>, <span class="tk-meta-function">then </span><span class="tk-keyword-operator">=</span> <span class="tk-number">2</span>, <span class="tk-meta-function">else </span><span class="tk-keyword-operator">=</span> <span class="tk-number">0</span>)</span>
+<span class="line" id="L247"><span class="ln">247</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_nop </span><span class="tk-keyword-operator">=</span> <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">noop</span></span>
+<span class="line" id="L248"><span class="ln">248</span>    <span class="tk-keyword-other">return</span> <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">noop</span></span>
+<span class="line" id="L249"><span class="ln">249</span></span>
+<span class="line" id="L250"><span class="ln">250</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">make_action</span>() <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">Action</span>:</span>
+<span class="line" id="L251"><span class="ln">251</span>    <span class="tk-keyword-other">return</span> <span class="tk-support-type">Action</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">execute</span>(<span class="tk-meta-function">return </span><span class="tk-keyword-operator">=</span> <span class="tk-number">42</span>, <span class="tk-meta-function">let </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">x</span><span class="tk-string">"</span>, <span class="tk-meta-function">type </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">int</span><span class="tk-string">"</span>, <span class="tk-meta-function">function </span><span class="tk-keyword-operator">=</span> <span class="tk-string">"</span><span class="tk-string">main</span><span class="tk-string">"</span>)</span>
+<span class="line" id="L252"><span class="ln">252</span></span>
+<span class="line" id="L253"><span class="ln">253</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L254"><span class="ln">254</span><span class="tk-comment"># 10  Match on variant with keyword arm names</span></span>
+<span class="line" id="L255"><span class="ln">255</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L256"><span class="ln">256</span></span>
+<span class="line" id="L257"><span class="ln">257</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">match_ast</span>(<span class="tk-meta-function">node</span>: <span class="tk-meta-function">AST</span>) <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">str</span>:</span>
+<span class="line" id="L258"><span class="ln">258</span>    <span class="tk-keyword-other">match</span> <span class="tk-meta-function">node</span>:</span>
+<span class="line" id="L259"><span class="ln">259</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">return</span> <span class="tk-keyword-other">as</span> <span class="tk-meta-function">r</span>:</span>
+<span class="line" id="L260"><span class="ln">260</span>            <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">return</span><span class="tk-string">"</span></span>
+<span class="line" id="L261"><span class="ln">261</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">let</span> <span class="tk-keyword-other">as</span> <span class="tk-meta-function">l</span>:</span>
+<span class="line" id="L262"><span class="ln">262</span>            <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">let</span><span class="tk-string">"</span></span>
+<span class="line" id="L263"><span class="ln">263</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">type</span> <span class="tk-keyword-other">as</span> <span class="tk-meta-function">t</span>:</span>
+<span class="line" id="L264"><span class="ln">264</span>            <span class="tk-keyword-other">return</span> <span class="tk-variable-other">t</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">inner</span></span>
+<span class="line" id="L265"><span class="ln">265</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-meta-function">function</span>:</span>
+<span class="line" id="L266"><span class="ln">266</span>            <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">function</span><span class="tk-string">"</span></span>
+<span class="line" id="L267"><span class="ln">267</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-meta-function">pass</span>:</span>
+<span class="line" id="L268"><span class="ln">268</span>            <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">pass</span><span class="tk-string">"</span></span>
+<span class="line" id="L269"><span class="ln">269</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-meta-function">noop</span>:</span>
+<span class="line" id="L270"><span class="ln">270</span>            <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">noop</span><span class="tk-string">"</span></span>
+<span class="line" id="L271"><span class="ln">271</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">is</span> <span class="tk-keyword-other">as</span> <span class="tk-meta-function">is_val</span>:</span>
+<span class="line" id="L272"><span class="ln">272</span>            <span class="tk-keyword-other">return</span> <span class="tk-variable-other">is_val</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">arm</span></span>
+<span class="line" id="L273"><span class="ln">273</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">and</span> <span class="tk-keyword-other">as</span> <span class="tk-meta-function">and_val</span>:</span>
+<span class="line" id="L274"><span class="ln">274</span>            <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">and</span><span class="tk-string">"</span></span>
+<span class="line" id="L275"><span class="ln">275</span>        <span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">or</span> <span class="tk-keyword-other">as</span> <span class="tk-meta-function">or_val</span>:</span>
+<span class="line" id="L276"><span class="ln">276</span>            <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">or</span><span class="tk-string">"</span></span>
+<span class="line" id="L277"><span class="ln">277</span><span class="tk-variable-other">        else</span>:</span>
+<span class="line" id="L278"><span class="ln">278</span>            <span class="tk-keyword-other">return</span> <span class="tk-string">"</span><span class="tk-string">other</span><span class="tk-string">"</span></span>
+<span class="line" id="L279"><span class="ln">279</span></span>
+<span class="line" id="L280"><span class="ln">280</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L281"><span class="ln">281</span><span class="tk-comment"># 11  Enum member access with keyword names</span></span>
+<span class="line" id="L282"><span class="ln">282</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L283"><span class="ln">283</span></span>
+<span class="line" id="L284"><span class="ln">284</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">use_enum</span>() <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">Kind</span>:</span>
+<span class="line" id="L285"><span class="ln">285</span>    <span class="tk-keyword-other">return</span> <span class="tk-support-type">Kind</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">return</span></span>
+<span class="line" id="L286"><span class="ln">286</span></span>
+<span class="line" id="L287"><span class="ln">287</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L288"><span class="ln">288</span><span class="tk-comment"># 12  Type parameter instantiation with keywords</span></span>
+<span class="line" id="L289"><span class="ln">289</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L290"><span class="ln">290</span></span>
+<span class="line" id="L291"><span class="ln">291</span><span class="tk-keyword-other">public</span> <span class="tk-keyword-other">function</span> <span class="tk-entity-name">use_generics</span>() <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">int</span>:</span>
+<span class="line" id="L292"><span class="ln">292</span>    <span class="tk-keyword-other">return</span> <span class="tk-variable-other">identity</span>[<span class="tk-support-type">int</span>](<span class="tk-number">42</span>)</span>
+<span class="line" id="L293"><span class="ln">293</span></span>
+<span class="line" id="L294"><span class="ln">294</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L295"><span class="ln">295</span><span class="tk-comment"># 13  Entrypoint</span></span>
+<span class="line" id="L296"><span class="ln">296</span><span class="tk-comment"># =============================================================================</span></span>
+<span class="line" id="L297"><span class="ln">297</span></span>
+<span class="line" id="L298"><span class="ln">298</span><span class="tk-keyword-other">function</span> <span class="tk-entity-name">main</span>() <span class="tk-keyword-operator">-</span><span class="tk-keyword-operator">&gt;</span> <span class="tk-support-type">int</span>:</span>
+<span class="line" id="L299"><span class="ln">299</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_meta </span><span class="tk-keyword-operator">=</span> <span class="tk-entity-name">make_meta</span>()</span>
+<span class="line" id="L300"><span class="ln">300</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_ast </span><span class="tk-keyword-operator">=</span> <span class="tk-entity-name">make_ast_nodes</span>()</span>
+<span class="line" id="L301"><span class="ln">301</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_act </span><span class="tk-keyword-operator">=</span> <span class="tk-entity-name">make_action</span>()</span>
+<span class="line" id="L302"><span class="ln">302</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_kind </span><span class="tk-keyword-operator">=</span> <span class="tk-entity-name">use_enum</span>()</span>
+<span class="line" id="L303"><span class="ln">303</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_gen </span><span class="tk-keyword-operator">=</span> <span class="tk-entity-name">use_generics</span>()</span>
+<span class="line" id="L304"><span class="ln">304</span>    <span class="tk-keyword-other">let</span> <span class="tk-meta-function">_ </span><span class="tk-keyword-operator">=</span> <span class="tk-entity-name">match_ast</span>(<span class="tk-support-type">AST</span><span class="tk-keyword-operator">.</span><span class="tk-variable-other">noop</span>)</span>
+<span class="line" id="L305"><span class="ln">305</span><span class="tk-variable-other-79c0ff">    return </span><span class="tk-number">0</span></span>
+<span class="line" id="L306"><span class="ln">306</span></span>
+</body>
+</html>
