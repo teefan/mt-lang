@@ -105,6 +105,8 @@ module MilkTea
             binding_line: binding_token&.line,
             binding_column: binding_token&.column,
             value:,
+            line: pattern.line,
+            column: pattern.column,
           )
         end
       end
@@ -153,6 +155,8 @@ module MilkTea
                 binding_line: nil,
                 binding_column: nil,
                 value: AST::BooleanLiteral.new(value: true),
+                line: arm_pattern.line,
+                column: arm_pattern.column,
               ),
               AST::MatchExprArm.new(
                 pattern: AST::Identifier.new(name: "_", line:, column:),
@@ -160,6 +164,8 @@ module MilkTea
                 binding_line: nil,
                 binding_column: nil,
                 value: AST::BooleanLiteral.new(value: false),
+                line:,
+                column:,
               ),
             ],
             line:,

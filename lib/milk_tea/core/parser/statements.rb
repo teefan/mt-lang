@@ -351,6 +351,8 @@ module MilkTea
               binding_line: binding_token&.line,
               binding_column: binding_token&.column,
               value:,
+              line: pattern.line,
+              column: pattern.column,
             )
           end
         else
@@ -619,6 +621,8 @@ module MilkTea
             binding_line: binding_token.line,
             binding_column: binding_token.column,
             body:,
+            line: pattern.line,
+            column: pattern.column,
           )
           skip_newlines
         end

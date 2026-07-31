@@ -159,11 +159,11 @@ module MilkTea
     MatchStmt = Data.define(:expression, :arms, :inline, :line, :column, :length) do
       def initialize(expression:, arms:, inline: false, line: nil, column: nil, length: nil) = super
     end
-    MatchExprArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :value) do
-      def initialize(pattern:, binding_name:, value:, binding_line: nil, binding_column: nil) = super
+    MatchExprArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :value, :line, :column) do
+      def initialize(pattern:, binding_name:, value:, binding_line: nil, binding_column: nil, line: nil, column: nil) = super
     end
-    WhenBranch = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body) do
-      def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil) = super
+    WhenBranch = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body, :line, :column) do
+      def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil, line: nil, column: nil) = super
     end
     WhenStmt = Data.define(:discriminant, :branches, :else_body, :line, :column, :length) do
       def initialize(discriminant:, branches:, else_body:, line: nil, column: nil, length: nil) = super

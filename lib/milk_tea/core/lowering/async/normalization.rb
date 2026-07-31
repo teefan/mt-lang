@@ -307,6 +307,8 @@ module MilkTea
             binding_line: arm.binding_line,
             binding_column: arm.binding_column,
             value: normalized_value,
+            line: arm.line,
+            column: arm.column,
           )]
         end
 
