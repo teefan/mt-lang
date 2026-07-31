@@ -839,14 +839,10 @@ class LSPWorkspaceTest < Minitest::Test
       expected_start = content.lines.first.index("span")
       expected_end = expected_start + "span".length
 
-      sema = diagnostics.find { |diagnostic| diagnostic.dig(:data, :stage) == "sema" }
       lint = diagnostics.find { |diagnostic| diagnostic[:code] == "reserved-primitive-name" }
 
-      refute_nil sema
       refute_nil lint
-      assert_equal 0, sema.dig(:range, :start, :line)
-      assert_equal expected_start, sema.dig(:range, :start, :character)
-      assert_equal expected_end, sema.dig(:range, :end, :character)
+      assert_equal 0, lint.dig(:range, :start, :line)
       assert_equal expected_start, lint.dig(:range, :start, :character)
       assert_equal expected_end, lint.dig(:range, :end, :character)
     ensure

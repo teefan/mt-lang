@@ -332,22 +332,16 @@ class BuiltinTest < Minitest::Test
     assert_match(/expected '\]' after type parameters/, error.message)
   end
 
-  def test_rejects_type_parameter_named_after_non_primitive_builtin_type
+  def test_allows_type_parameter_named_after_non_primitive_builtin_type
     source = <<~MT
-      # module demo.bad
+      # module demo.ok
 
       function identity[span](value: span) -> span:
           return value
     MT
 
-    error = assert_raises(MilkTea::SemanticError) do
-      check_source(source)
-    end
-
-    assert_match(/type parameter span uses reserved built-in type name span/, error.message)
-    assert_equal 3, error.line
-    assert_equal source.lines[2].index("span") + 1, error.column
-    assert_equal "span".length, error.length
+    analysis = check_source(source)
+    assert_equal true, analysis.functions.key?("identity")
   end
 
   def test_rejects_type_declaration_named_after_reserved_builtin_type
@@ -396,20 +390,17 @@ class BuiltinTest < Minitest::Test
     assert_match(/field Frame ptr_uint uses reserved built-in type name ptr_uint/, error.message)
   end
 
-  def test_rejects_variant_arm_named_after_reserved_builtin_type
+  def test_allows_variant_arm_named_after_reserved_builtin_type
     source = <<~MT
-      # module demo.bad
+      # module demo.ok
 
       variant Event:
           span
           payload(value: int)
     MT
 
-    error = assert_raises(MilkTea::SemanticError) do
-      check_source(source)
-    end
-
-    assert_match(/arm Event span uses reserved built-in type name span/, error.message)
+    analysis = check_source(source)
+    assert_equal true, analysis.types.key?("Event")
   end
 
   def test_rejects_variant_field_named_after_reserved_builtin_type

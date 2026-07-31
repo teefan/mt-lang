@@ -1953,17 +1953,15 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "kind", event_decl.fields.first.name
   end
 
-  def test_rejects_reserved_keyword_as_struct_field_name
+  def test_allows_keyword_as_struct_field_name
     source = <<~MT
       struct Event:
           type: int
     MT
 
-    error = assert_raises(MilkTea::ParseError) do
-      MilkTea::Parser.parse(source)
-    end
-
-    assert_match(/keyword 'type' cannot be used as field name/, error.message)
+    ast = MilkTea::Parser.parse(source)
+    struct_decl = ast.declarations[0]
+    assert_equal "type", struct_decl.fields.first.name
   end
 
   def test_rejects_untyped_non_self_parameters
