@@ -42,15 +42,7 @@ module MilkTea
       link opaque public static_assert struct type union var variant extending event
     ].freeze
 
-    LINE_CONTINUATION_OPERATORS = %i[
-      dot_dot
-      plus minus star slash percent
-      pipe amp caret
-      or and
-      equal_equal bang_equal
-      less less_equal greater greater_equal
-      shift_left shift_right
-    ].freeze
+    LINE_CONTINUATION_OPERATORS = Token::LINE_CONTINUATION_OPERATORS
 
     THREE_CHAR_TOKENS = {
       "..." => :ellipsis,
@@ -358,7 +350,7 @@ module MilkTea
       newline_start = line_offset + line.length
       newline_end = has_newline ? (newline_start + 1) : newline_start
       if @grouping_depth.zero?
-        if LINE_CONTINUATION_OPERATORS.include?(@tokens.last&.type)
+        if Token::LINE_CONTINUATION_OPERATORS.include?(@tokens.last&.type)
           @continuation_pending = true
         else
           @tokens << token(:newline, "\n", nil, line_number, line.length + 1, start_offset: newline_start, end_offset: newline_end)

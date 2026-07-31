@@ -1206,6 +1206,68 @@ class MilkTeaParserTest < Minitest::Test
     assert_match(/unexpected indentation in statement block/, error.message)
   end
 
+  def test_rejects_operator_starting_a_statement_at_same_indentation
+    operators = {
+      "+" => "2", "-" => "2", "*" => "2", "/" => "2", "%" => "2",
+      "|" => "2", "&" => "2", "^" => "2", "~" => "2",
+      "<<" => "2", ">>" => "2",
+      "==" => "2", "!=" => "2", "<" => "2", "<=" => "2", ">" => "2", ">=" => "2",
+      "and" => "true", "or" => "false", "is" => "true", ".." => "4",
+    }
+
+    operators.each do |operator, operand|
+      source = <<~MT
+        function main() -> int:
+            var a = 1
+            #{operator} #{operand}
+            return a
+      MT
+
+      error = assert_raises(MilkTea::ParseError, "expected #{operator.inspect} at line start to be rejected") do
+        MilkTea::Parser.parse(source)
+      end
+
+      assert_match(/operator '#{Regexp.escape(operator)}' cannot start a statement/, error.message)
+    end
+  end
+
+  def test_rejects_unary_plus_minus_tilde_expression_statement
+    ["+ 2", "- 2", "~ 2"].each do |line|
+      source = <<~MT
+        function main() -> int:
+            var a = 1
+            #{line}
+            return a
+      MT
+
+      error = assert_raises(MilkTea::ParseError) do
+        MilkTea::Parser.parse(source)
+      end
+
+      assert_match(/cannot start a statement/, error.message)
+    end
+  end
+
+  def test_parses_is_expression_continued_after_operator
+    source = <<~MT
+      variant Token:
+          ident
+          eof
+
+      function main() -> bool:
+          let tk = Token.ident
+          let hit = tk is
+              Token.ident
+          return hit
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.last
+    let_decl = main_fn.body[1]
+
+    assert_instance_of MilkTea::AST::MatchExpr, let_decl.value
+  end
+
   def test_parses_const_pointer_types_and_ro_addr_calls
     source = <<~MT
       external function inspect(values: const_ptr[int]) -> void

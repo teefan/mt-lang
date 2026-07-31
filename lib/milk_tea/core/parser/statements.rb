@@ -35,7 +35,18 @@ module MilkTea
         check(:when)
       end
 
+      def reject_operator_statement_start!
+        return unless Token::LINE_START_OPERATOR_TYPES.include?(peek.type)
+
+        operator = peek.lexeme
+        raise error(
+          peek,
+          "operator '#{operator}' cannot start a statement; end the previous line with it or wrap the expression in ( )"
+        )
+      end
+
       def parse_statement
+        reject_operator_statement_start!
         if match(:let)
           parse_local_decl(:let)
         elsif match(:var)

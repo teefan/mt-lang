@@ -343,7 +343,7 @@ function main() -> int:
       <tr><td><code>mtc check &lt;path&gt;</code></td><td>Type-check + lint; reports all diagnostics sorted by line</td></tr>
       <tr><td><code>mtc run &lt;path&gt;</code></td><td>Build and execute</td></tr>
       <tr><td><code>mtc build &lt;path&gt;</code></td><td>Build only (emit C, compile, link)</td></tr>
-      <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format sources in place (<code>--check</code> for dry-run)</td></tr>
+      <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format source to stdout (<code>--write</code> rewrites in place, <code>--check</code> verifies)</td></tr>
       <tr><td><code>mtc lint &lt;path&gt;</code></td><td>Run linter (<code>--fix</code> to apply fixes)</td></tr>
       <tr><td><code>mtc test &lt;path&gt;</code></td><td>Discover and run <code>@[test]</code> functions</td></tr>
       <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package</td></tr>
@@ -403,6 +403,7 @@ void main_Vec2_scale(main_Vec2* this, float factor) {
 <pre><code>## ── Imports ──────────────────────────────────────────────────────────
 import std.stdio as io
 import std.hash
+import std.str
 import std.vec
 import std.map
 import std.math
@@ -888,6 +889,7 @@ import mylib.utils</code></pre>
     <li>Indentation must be a multiple of <strong>4 spaces</strong></li>
     <li>Indentation increases by <strong>one level at a time</strong></li>
     <li>Newlines end statements except inside <code>()</code> and <code>[]</code>, or when the previous line ends with a binary operator</li>
+    <li>Starting a line with an operator is a hard parse error (<code>operator '&lt;op&gt;' cannot start a statement</code>); continuation is signaled by ending the previous line with the operator, never by starting the next one with it</li>
   </ul>
 
 <div class="code-wrap">
@@ -902,7 +904,16 @@ let total = (
 ## Also accepted: operator-led continuation.
 let total = subtotal +
     tax -
-    discount</code></pre>
+    discount
+
+## The continuation operator set is closed:
+## + - * / % | &amp; ^ &lt;&lt; &gt;&gt; == != &lt; &lt;= &gt; &gt;= and or is ..
+## Member-access chains exceeding one line wrap in () with leading dots:
+let total = (
+    values.iter()
+        .filter(pred)
+        .fold(0, add)
+)</code></pre>
 </div>
 
   <h3>Naming Conventions</h3>
@@ -1733,14 +1744,16 @@ let sized = name[32]</code></pre>
       <tr><th>Precedence</th><th>Operators</th></tr>
       <tr><td>1 (lowest)</td><td><code>or</code></td></tr>
       <tr><td>2</td><td><code>and</code></td></tr>
-      <tr><td>3</td><td><code>|</code></td></tr>
-      <tr><td>4</td><td><code>^</code></td></tr>
-      <tr><td>5</td><td><code>&amp;</code></td></tr>
-      <tr><td>6</td><td><code>==</code> <code>!=</code></td></tr>
-      <tr><td>7</td><td><code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td></tr>
-      <tr><td>8</td><td><code>&lt;&lt;</code> <code>&gt;&gt;</code></td></tr>
-      <tr><td>9</td><td><code>+</code> <code>-</code></td></tr>
-      <tr><td>10 (highest)</td><td><code>*</code> <code>/</code> <code>%</code></td></tr>
+      <tr><td>3</td><td><code>not</code> (unary prefix)</td></tr>
+      <tr><td>4</td><td><code>is</code></td></tr>
+      <tr><td>5</td><td><code>|</code></td></tr>
+      <tr><td>6</td><td><code>^</code></td></tr>
+      <tr><td>7</td><td><code>&amp;</code></td></tr>
+      <tr><td>8</td><td><code>==</code> <code>!=</code></td></tr>
+      <tr><td>9</td><td><code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td></tr>
+      <tr><td>10</td><td><code>&lt;&lt;</code> <code>&gt;&gt;</code></td></tr>
+      <tr><td>11</td><td><code>+</code> <code>-</code></td></tr>
+      <tr><td>12 (highest)</td><td><code>*</code> <code>/</code> <code>%</code></td></tr>
     </table>
   </div>
 
@@ -2169,7 +2182,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>std.spatial</code></td><td><code>SpatialGrid[T]</code></td><td>&mdash;</td><td>Uniform spatial hash grid (returns Vec)</td></tr>
       <tr><td><code>std.ring_buffer</code></td><td><code>RingBuffer[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>Fixed-capacity circular buffer</td></tr>
       <tr><td><code>std.sparse_set</code></td><td><code>SparseSet[T]</code></td><td>Mutable <code>ptr[T]?</code></td><td>O(1) insert/remove; dense iteration</td></tr>
-      <tr><td><code>std.lru_cache</code></td><td><code>LruCache[K,V]</code></td><td><code>entries()</code></td><td>Capacity-bounded LRU eviction map</td></tr>
+      <tr><td><code>std.lru_cache</code></td><td><code>LruCache[K,V]</code></td><td><code>iter()</code> → <code>linked_map.Entries[K, V]</code></td><td>Capacity-bounded LRU eviction map</td></tr>
     </table>
   </div>
 
@@ -2236,7 +2249,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>mtc lint &lt;path&gt;</code></td><td>Run linter (<code>--fix</code>, <code>--select</code>, <code>--ignore</code>)</td></tr>
       <tr><td><code>mtc test &lt;path&gt;</code></td><td>Discover and run <code>@[test]</code> functions</td></tr>
       <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package (<code>package.toml</code> + <code>src/main.mt</code>)</td></tr>
-      <tr><td><code>mtc run-module &lt;module&gt;</code></td><td>Run a pre-built module by name</td></tr>
+      <tr><td><code>mtc run-module &lt;module&gt;</code></td><td>Resolve a module by name, build it, and run it</td></tr>
       <tr><td><code>mtc completions &lt;shell&gt;</code></td><td>Print a bash/zsh/fish completion script</td></tr>
     </table>
   </div>
@@ -2263,7 +2276,19 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>mtc toolchain doctor</code></td><td>Diagnose toolchain setup</td></tr>
       <tr><td><code>mtc toolchain tools</code></td><td>List available native tools</td></tr>
       <tr><td><code>mtc cache status</code></td><td>Show build cache stats</td></tr>
+      <tr><td><code>mtc cache purge</code></td><td>Remove the entire build cache</td></tr>
       <tr><td><code>mtc docs [--open] [--port PORT]</code></td><td>Start a local HTTP server serving the language reference</td></tr>
+    </table>
+  </div>
+
+  <h3>Tooling</h3>
+  <div class="table-wrap">
+    <table class="attr-table">
+      <tr><th>Command</th><th>Description</th></tr>
+      <tr><td><code>mtc bindgen &lt;header.h&gt;</code></td><td>Generate an external binding module from a C header</td></tr>
+      <tr><td><code>mtc snapshot &lt;path&gt;</code></td><td>Render a highlighted HTML snapshot of a source file</td></tr>
+      <tr><td><code>mtc lsp</code></td><td>Start the Language Server Protocol server (editor IntelliSense)</td></tr>
+      <tr><td><code>mtc dap</code></td><td>Start the Debug Adapter Protocol server (debugging)</td></tr>
     </table>
   </div>
 
@@ -2385,6 +2410,7 @@ import std.math  # intentionally available for downstream</code></pre>
     <li>Enum and flags values do not implicitly coerce to backing integers</li>
     <li><code>+</code> does not support <code>str</code>/<code>cstr</code> concatenation</li>
     <li><code>==</code> and <code>!=</code> not supported on struct types; use <code>equal[T]</code></li>
+    <li>A statement cannot begin with a binary operator (including <code>+</code>, <code>-</code>, <code>and</code>, <code>or</code>, <code>is</code>, <code>..</code>); continuation requires ending the previous line with the operator or wrapping in <code>()</code></li>
     <li>Bare function and method names are not usable as values (cannot be assigned or passed without calling). Use <code>fn(...)</code> function pointer types or <code>proc(...)</code> closures for callable values.</li>
   </ul>
 

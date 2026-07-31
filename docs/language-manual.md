@@ -83,7 +83,17 @@ let total = subtotal +
     discount
 ```
 
-Starting a new physical line with the operator is not part of the supported source contract; wrap in `()` instead if that layout is clearer.
+The continuation operator set is closed: `+` `-` `*` `/` `%`, `|` `&` `^`, `<<` `>>`, `==` `!=` `<` `<=` `>` `>=`, `and` `or` `is`, and `..`. Assignment operators and unary `not` are excluded — wrap in `()` when a break is needed there.
+
+Starting a new physical line with an operator is a hard error (`operator '<op>' cannot start a statement`); end the previous line with the operator, or wrap the expression in `()` if that layout is clearer. Member-access chains that exceed one line wrap in `()` with leading dots:
+
+```mt
+let total = (
+    values.iter()
+        .filter(pred)
+        .fold(0, add)
+)
+```
 
 ### 2.2 Comments
 

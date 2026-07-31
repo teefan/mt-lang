@@ -43,7 +43,7 @@ Blocks are indentation-based:
 - Tabs are rejected.
 - Indentation must be a multiple of 4 spaces.
 - Indentation can increase by only one level at a time.
-- Newlines end statements except inside `()` and `[]`, or when the previous physical line ends with a binary operator such as `+`, `and`, or `==`.
+- Newlines end statements except inside `()` and `[]`, or when the previous physical line ends with a binary operator such as `+`, `and`, `==`, or `is`.
 - Comma-separated lists inside `()` and `[]` accept trailing commas. Prefer them for multiline parameters, arguments, and type lists.
 
 Long expressions should usually be wrapped with delimiters, following the same broad shape as Python's implicit line joining:
@@ -71,7 +71,15 @@ let values = 1 ..
     4
 ```
 
-Do not rely on starting the next physical line with the operator; wrap the expression in `()` instead if that layout reads better.
+Starting a physical line with an operator is a hard parse error (`operator '<op>' cannot start a statement`). Continue by ending the previous line with the operator, or wrap the expression in `()` if that layout reads better. The continuation operator set is closed: `+` `-` `*` `/` `%`, `|` `&` `^`, `<<` `>>`, `==` `!=` `<` `<=` `>` `>=`, `and` `or` `is`, and `..`. Member-access chains that exceed one line wrap in `()` with leading dots:
+
+```mt
+let total = (
+    values.iter()
+        .filter(pred)
+        .fold(0, add)
+)
+```
 
 Comments:
 
@@ -869,9 +877,9 @@ Core modules in `std/`:
 
 - `std.linear_algebra` — extends native vector/matrix/quaternion types with `dot`, `cross`, `length`, `normalized`, `lerp`, `identity`, `transpose`, `conjugate` (pure Mt, no C dependency beyond `std.math` for `sqrt`)
 - `std.graph.Graph[T]` — adjacency-list graph with `add_node`, `add_edge`, `has_edge`, `remove_edge`, `neighbors`, `bfs`, `dfs`, `toposort`; directed or undirected; `compile()` converts to CSR-based `DenseGraph[T]` for O(degree) neighbor iteration
-- `std.str` — extends `str` with `byte_at`, `equal`, `starts_with`, `ends_with`, `find_substring`, `is_valid_utf8`, `slice`, `to_cstr`, `hash`, `order`
+- `std.str` — extends `str` with `byte_at`, `equal`, `starts_with`, `ends_with`, `find_substring`, `is_valid_utf8`, `slice`, `to_cstr`, `hash`, `order`; also provides C-string conversion helpers (`cstr_len`, `cstr_as_str`, `chars_as_str`, `nullable_cstr_as_str`)
 - `std.hash` — extends the primitive integer types (`byte`/`ubyte`/`short`/`ushort`/`int`/`uint`/`long`/`ulong`/`ptr_int`/`ptr_uint`), `bool`, `float`, `double`, and `char` with canonical `hash`/`equal`/`order` hooks; import once to use primitives as Map/Set/BinaryHeap/OrderedMap keys (`str` keys come from `std.str`). Also provides generic `hash_struct[T]`, `equal_struct[T]`, `order_struct[T]` that dispatch each field through its own canonical hook via `field.type` (content-correct, including `str` and nested-struct fields).
-- `std.cstring` — C string helpers (`cstr_len`, `cstr_as_str`)
+- `std.cstring` — low-level byte and C-string helpers (`copy_bytes`, `move_bytes`, `set_bytes`, `compare_bytes`, `find_byte`, `length`, `compare`, `compare_prefix`, `find_char`, `find_last_char`, `find_substring`)
 - `std.math` — `sqrt`, `sin`, `cos`, `abs`, `pow`, etc. via C math
 - `std.encoding` — UTF-8 validation (`is_valid_utf8`, `utf8_codepoint_count`, `decode_utf8_codepoint`, `utf8_overlong_check`)
 - `std.string.String` — growable owned UTF-8 text
@@ -1113,6 +1121,7 @@ Current compiler rejects:
 - range expressions are restricted to `for`-loop iterables and range-index assignment targets
 - functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
 - `read(...)` of a raw pointer requires `unsafe`
+- a statement cannot begin with a binary operator (including `+`, `-`, `and`, `or`, `is`, `..`); continuation requires ending the previous line with the operator or wrapping in `()`
 
 ### Control flow restrictions
 
@@ -1163,11 +1172,12 @@ mtc build  <path>             # Build only (emit C, compile, link, --no-cache to
 mtc run    <path>             # Build and execute (--no-cache to build and run without cache)
 mtc debug  <file.mt>          # Print debug info (tokens, AST, facts, bindings, diagnostics)
 mtc emit-c <path>             # Emit generated C to stdout
-mtc format <path>             # Format sources in place (--check for dry-run)
+mtc format <path>             # Format source to stdout (--write rewrites in place, --check verifies)
 mtc lint   <path>             # Run linter (--fix to apply fixes, --select/--ignore to filter)
 mtc test   <path>             # Discover and run @[test] functions (--timeout, --mem, --jobs)
 mtc new    <name>             # Scaffold a new package (package.toml + src/main.mt)
 mtc cache status              # Show build cache stats
+mtc cache purge               # Remove the entire build cache
 mtc lex    <file.mt>          # Print lexer token stream
 mtc parse  <path>             # Print parsed AST
 mtc lower  <path>             # Print lowered IR
@@ -1185,10 +1195,10 @@ mtc deps publish <path>       # Publish a package to the local registry
 mtc deps fetch <path>         # Materialize cache-backed sources
 ```
 
-Run a pre-built module (no compilation):
+Resolve a module by name, build it, and run it:
 
 ```
-mtc run-module <module>       # Run compiled module by name (e.g. std.fmt.bench)
+mtc run-module <module>       # Resolve, build, and run a module by name (e.g. std.http.server)
 ```
 
 Toolchain maintenance:
@@ -1199,9 +1209,19 @@ mtc toolchain doctor          # Diagnose toolchain setup
 mtc toolchain tools           # List available native tools
 ```
 
+Tooling and editors:
+
+```
+mtc bindgen <header.h>        # Generate an external binding module from a C header
+mtc snapshot <path>           # Render a highlighted HTML snapshot of a source file
+mtc lsp                       # Start the Language Server Protocol server
+mtc dap                       # Start the Debug Adapter Protocol server
+mtc docs [--open] [--port P]  # Serve the local documentation site
+```
+
 Build and run commands support `--profile`, `--platform`, `--cc`, `--keep-c`, `--locked`, `--frozen`, and `-I` include paths. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
 
-Global options work with any command (before or after the subcommand, up to a `--` separator): `-h`/`--help` (also `mtc help <command>` for command-specific help), `-V`/`--version`, `-q`/`--quiet` (suppress informational output), `-v`/`--verbose` (per-file progress), and `--color auto|always|never`. Generate shell completions with `mtc completions bash|zsh|fish`. Timing breakdowns use `--timings` (on `format`, `lint`, `build`, `run`, `test`); `lint` reports warnings with per-file progress.
+Global options work with any command (before or after the subcommand, up to a `--` separator): `-h`/`--help` (also `mtc help <command>` for command-specific help), `-V`/`--version`, `-q`/`--quiet` (suppress informational output), `-v`/`--verbose` (per-file progress), and `--color auto|always|never`. Generate shell completions with `mtc completions bash|zsh|fish`. Timing breakdowns use `--timings` (on `format` and `lint`); `lint` reports warnings with per-file progress.
 
 Diagnostic output uses standard compiler format (file:line:column with source context, error codes, and caret highlighting):
 

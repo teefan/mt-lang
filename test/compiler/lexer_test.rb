@@ -99,6 +99,12 @@ class MilkTeaLexerTest < Minitest::Test
     refute_includes types.each_cons(2).to_a, [:dot_dot, :newline]
   end
 
+  def test_suppresses_newlines_after_is_operator_continuation
+    types = MilkTea::Lexer.lex("function main() -> bool:\n    let hit = tk is\n        Token.ident\n    return hit\n").map(&:type)
+
+    refute_includes types.each_cons(2).to_a, [:is, :newline]
+  end
+
   def test_lexes_bitwise_tokens_and_normal_strings
     source = <<~MT
       const mask: uint = ~0 | 1 & 2 ^ 4 << 1 >> 0
