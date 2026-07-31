@@ -17,6 +17,8 @@
     { "include": "#variant-arm-name" },
     { "include": "#enum-member-name" },
     { "include": "#named-argument" },
+    { "include": "#keyword-type-reference" },
+    { "include": "#keyword-lifetime-ref" },
     { "include": "#keyword-operator" },
     { "include": "#keyword-modifier" },
     { "include": "#keyword-builtin" },
@@ -730,6 +732,16 @@
     "named-argument": {
       "name": "variable.parameter.milk-tea",
       "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?==)"
+    },
+
+    "keyword-type-reference": {
+      "name": "support.type.milk-tea",
+      "match": "(?<=:\\s*)([a-zA-Z_][a-zA-Z0-9_]*)"
+    },
+
+    "keyword-lifetime-ref": {
+      "name": "entity.name.type.parameter.milk-tea",
+      "match": "(?<=@)([a-zA-Z_][a-zA-Z0-9_]*)"
     },
 
     "identifier": {
