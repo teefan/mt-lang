@@ -275,6 +275,7 @@ module MilkTea
           end
 
           if KEYWORD_TOKEN_TYPES.include?(tok.type)
+            return [:typeParameter, []] if keyword_lifetime_or_type_param?(tokens, index)
             return [:enumMember, [:declaration]] if variant_enum_member_declaration?(tokens, index)
             return [:property, [:declaration]] if keyword_field_declaration_token?(tokens, index)
             return [:property, []] if keyword_member_access?(tokens, index)
@@ -567,6 +568,13 @@ module MilkTea
           return false unless prev_index
 
           tokens[prev_index].type == :dot
+        end
+
+        def keyword_lifetime_or_type_param?(tokens, index)
+          prev_index = previous_non_trivia_token_index(tokens, index)
+          return false unless prev_index
+
+          tokens[prev_index].type == :at
         end
 
         def destructure_let_binding?(tokens, index)

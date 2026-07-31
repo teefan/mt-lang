@@ -338,7 +338,7 @@ module MilkTea
       end
 
       def parse_call_argument
-        if check_name && check_next(:equal)
+        if (check_name || keyword_token?(peek)) && check_next(:equal)
           name = advance.lexeme
           consume(:equal, "expected '=' after named argument name")
           AST::Argument.new(name:, value: parse_expression)
