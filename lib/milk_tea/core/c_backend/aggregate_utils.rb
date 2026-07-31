@@ -107,17 +107,26 @@ module MilkTea
       end
 
       def aggregate_field_creates_cycle?(field_type, outer_c)
-        return true if variant_self_reference?(field_type, outer_c)
+        resolved = resolved_aggregate_c_name(field_type)
+        return false unless resolved
+
+        return true if resolved == outer_c
         return false unless @cyclic_aggregate_pairs
 
-        target_name = case field_type
-        when Types::Variant, Types::VariantInstance, Types::Struct, Types::StructInstance, Types::Union
-          named_type_c_name(field_type)
-        else
-          return false
-        end
+        @cyclic_aggregate_pairs.include?([outer_c, resolved])
+      end
 
-        @cyclic_aggregate_pairs.include?([outer_c, target_name])
+      def resolved_aggregate_c_name(type)
+        case type
+        when Types::Variant, Types::VariantInstance, Types::Struct, Types::StructInstance, Types::Union
+          named_type_c_name(type)
+        when Types::Nullable
+          resolved_aggregate_c_name(type.base)
+        when Types::GenericInstance
+          if array_type?(type) || str_buffer_type?(type)
+            resolved_aggregate_c_name(array_element_type(type))
+          end
+        end
       end
 
       def aggregate_type_dependencies(type)
