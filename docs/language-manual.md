@@ -746,7 +746,6 @@ parallel:
 Rules:
 
 - A `parallel:` block must contain at least two statements.
-- `do` is a contextual keyword — only recognized inside `parallel:` blocks, not reserved globally.
 - Each statement must not contain `break`, `continue`, `return`, or `defer`.
 - The compiler enforces single-writer-or-multiple-readers: if a variable is written in one statement, no other block may access it.
 - Captured `ref[T]` values are rejected at compile time.

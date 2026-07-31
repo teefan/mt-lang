@@ -490,7 +490,7 @@ Milk Tea has first-class compiler support for multithreading. The threading mode
 parallel for i in 0..entity_count:
     positions[i] += velocities[i] * dt
 
-# Structured fork-join: each do block runs on a separate thread
+# Structured fork-join: each statement runs on a separate thread
 parallel:
     textures = load_textures(path)
     sounds = load_sounds(path)
@@ -501,7 +501,6 @@ Design choices:
 - **Structured, not fire-and-forget.** All `parallel for` and `parallel:` blocks are synchronous barriers — the calling thread blocks until all work completes. This guarantees that captured local variables remain alive for the duration and eliminates lifetime concerns without ownership annotations.
 - **Compile-time safety.** `ref[T]` captures are rejected because mutable aliases across thread boundaries create data races. The `parallel:` block enforces single-writer-or-multiple-readers: if one statement writes a variable, no other block may read or write it.
 - **Value capture, pointer-based arrays.** Scalars and spans are captured by value (the span's data pointer still references the original storage). Arrays are captured as pointers to their first element, so writes in the worker affect the original array.
-- **`do` is a keyword.** It is recognized inside `parallel:` blocks to introduce each concurrent unit of work.
 - **Real OS threads via libuv.** Thread dispatch uses `uv_thread_create` / `uv_thread_join`, consistent with `std.thread` and `std.sync`. CPU count is detected at runtime via `uv_cpu_info`. The first chunk runs on the calling thread to avoid unnecessary dispatch when the workload is small.
 - **No forced dependency.** The build system automatically detects `parallel for` and `parallel:` usage via a sema-level flag and links libuv only when needed.
 
