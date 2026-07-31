@@ -275,6 +275,7 @@ module MilkTea
           end
 
           if KEYWORD_TOKEN_TYPES.include?(tok.type)
+            return [:enumMember, [:declaration]] if variant_enum_member_declaration?(tokens, index)
             return [:keyword, []]
           end
 
