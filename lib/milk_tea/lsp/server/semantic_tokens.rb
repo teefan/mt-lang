@@ -276,6 +276,8 @@ module MilkTea
 
           if KEYWORD_TOKEN_TYPES.include?(tok.type)
             return [:enumMember, [:declaration]] if variant_enum_member_declaration?(tokens, index)
+            return [:property, [:declaration]] if keyword_field_declaration_token?(tokens, index)
+            return [:property, []] if keyword_member_access?(tokens, index)
             return [:keyword, []]
           end
 
@@ -549,6 +551,22 @@ module MilkTea
 
           next_tok = next_non_trivia_token(tokens, index + 1)
           next_tok&.type == :colon
+        end
+
+        def keyword_field_declaration_token?(tokens, index)
+          return false unless first_non_trivia_token_on_line?(tokens, index)
+          return false if parameter_declaration_token?(tokens, index)
+          return false if match_arm_binding_token?(tokens, index)
+
+          next_tok = next_non_trivia_token(tokens, index + 1)
+          next_tok&.type == :colon
+        end
+
+        def keyword_member_access?(tokens, index)
+          prev_index = previous_non_trivia_token_index(tokens, index)
+          return false unless prev_index
+
+          tokens[prev_index].type == :dot
         end
 
         def destructure_let_binding?(tokens, index)

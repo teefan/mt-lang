@@ -482,7 +482,7 @@ module MilkTea
               raise_sema_error("duplicate field #{decl.name}.#{field.name}") if fields.key?(field.name)
               raise_sema_error("duplicate member #{decl.name}.#{field.name}") if events.key?(field.name)
               unless raw_module?
-                ensure_non_reserved_type_binding_name!(
+                ensure_non_reserved_value_type_name!(
                   field.name,
                   kind_label: "field #{decl.name}",
                   line: field.line || decl.line,
@@ -576,7 +576,7 @@ module MilkTea
             decl.members.each do |member|
               raise_sema_error("duplicate member #{decl.name}.#{member.name}") if member_names.include?(member.name)
               unless raw_module?
-                ensure_non_reserved_type_binding_name!(
+                ensure_non_reserved_value_type_name!(
                   member.name,
                   kind_label: "member #{decl.name}",
                   line: member.line || decl.line,
@@ -661,7 +661,7 @@ module MilkTea
                   begin
                     raise_sema_error("duplicate field #{arm.name}.#{field.name}") if seen_fields.include?(field.name)
                     unless raw_module?
-                      ensure_non_reserved_type_binding_name!(
+                      ensure_non_reserved_value_type_name!(
                         field.name,
                         kind_label: "field #{decl.name}.#{arm.name}",
                         line: field.line || decl.line,

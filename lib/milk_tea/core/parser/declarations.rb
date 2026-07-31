@@ -419,7 +419,7 @@ module MilkTea
 
         raise error(visibility_token, "public is only allowed on struct events") if visibility == :public
 
-        field_token = consume_name("expected field name")
+        field_token = consume_name_allowing_keywords("expected field name")
         field_name = field_token.lexeme
         consume(:colon, "expected ':' after field name")
         field_type = parse_type_ref
@@ -440,7 +440,7 @@ module MilkTea
         name = name_token.lexeme
         c_name = parse_optional_explicit_c_name
         fields = parse_named_block do
-          field_name = consume_name("expected field name").lexeme
+                       field_name = consume_name_allowing_keywords("expected field name").lexeme
           consume(:colon, "expected ':' after field name")
           field_type = parse_type_ref
           consume_end_of_statement
@@ -471,7 +471,7 @@ module MilkTea
         members = []
         skip_newlines
         until check(:dedent) || eof?
-          member_token = consume_name("expected member name")
+          member_token = consume_name_allowing_keywords("expected member name")
           member_name = member_token.lexeme
           if match(:equal)
             value = parse_expression
@@ -496,7 +496,7 @@ module MilkTea
           arm_name = consume_name_allowing_keywords("expected variant arm name").lexeme
           fields = if match(:lparen)
                      parsed = parse_comma_separated_until(:rparen) do
-                       field_name = consume_name("expected field name").lexeme
+          field_name = consume_name_allowing_keywords("expected field name").lexeme
                        consume(:colon, "expected ':' after field name")
                        field_type = parse_type_ref
                        AST::Field.new(name: field_name, type: field_type)
