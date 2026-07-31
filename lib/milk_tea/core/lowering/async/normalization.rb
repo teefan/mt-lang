@@ -93,7 +93,7 @@ module MilkTea
         arms = statement.arms.map do |arm|
           arm_env = duplicate_env(env)
           bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
-          AST::MatchArm.new(pattern: arm.pattern, binding_name: arm.binding_name, body: normalize_async_statements(arm.body, counter, arm_env, return_type:))
+          AST::MatchArm.new(pattern: arm.pattern, binding_name: arm.binding_name, body: normalize_async_statements(arm.body, counter, arm_env, return_type:), line: arm.line, column: arm.column)
         end
         expr_setup + [AST::MatchStmt.new(expression:, arms:)]
       when AST::WhileStmt
@@ -326,6 +326,8 @@ module MilkTea
                 binding_line: arm.binding_line,
                 binding_column: arm.binding_column,
                 body: pattern_setup + value_setup + [AST::Assignment.new(target: AST::Identifier.new(name: temp_name), operator: "=", value: arm.value)],
+                line: arm.line,
+                column: arm.column,
               )
             end,
             line: expression.line,

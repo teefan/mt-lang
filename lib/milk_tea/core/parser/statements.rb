@@ -362,6 +362,8 @@ module MilkTea
               binding_line: binding_token&.line,
               binding_column: binding_token&.column,
               body:,
+              line: pattern.line,
+              column: pattern.column,
             )
           end
         end
@@ -376,6 +378,8 @@ module MilkTea
           binding_line: binding_token&.line,
           binding_column: binding_token&.column,
           body: recovered_body,
+          line: patterns.first&.line,
+          column: patterns.first&.column,
         )] if recovered_body
 
         raise

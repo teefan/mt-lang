@@ -153,8 +153,8 @@ module MilkTea
     VariantArm = Data.define(:name, :fields, :line, :column) do
       def initialize(name:, fields:, line: nil, column: nil) = super
     end
-    MatchArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body) do
-      def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil) = super
+    MatchArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body, :line, :column) do
+      def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil, line: nil, column: nil) = super
     end
     MatchStmt = Data.define(:expression, :arms, :inline, :line, :column, :length) do
       def initialize(expression:, arms:, inline: false, line: nil, column: nil, length: nil) = super

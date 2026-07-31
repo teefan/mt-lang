@@ -204,7 +204,7 @@ module MilkTea
 
     def self.ast_node_header(node)
       name_attr = node.respond_to?(:name) ? node.name : nil
-      loc = if node.respond_to?(:line) && node.line
+      loc = if node.line
               col = node.column ? ", Col #{node.column}" : ''
               " [Ln #{node.line}#{col}]"
             else
