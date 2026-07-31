@@ -567,12 +567,8 @@ class MilkTeaLinterTest < Minitest::Test
     MT
     warnings = MilkTea::Linter.lint_source(source, path: "demo.mt")
 
-    assert_equal 1, warnings.length
-    warning = warnings.first
-    assert_equal "reserved-primitive-name", warning.code
-    assert_equal 1, warning.line
-    assert_equal source.lines.first.index("span") + 1, warning.column
-    assert_match(/type parameter 'span' uses reserved built-in type name 'span'/, warning.message)
+    span_warnings = warnings.select { |warning| warning.code == "reserved-primitive-name" }
+    assert_equal 0, span_warnings.length, "linter warns on span but sema allows it — linter should match sema"
   end
 
   def test_warns_on_large_event_capacity

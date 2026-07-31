@@ -394,7 +394,7 @@ module MilkTea
         elsif match(:lparen)
           line = previous.line
           column = previous.column
-          first = if check_name && check_next(:equal)
+          first = if (check_name || keyword_token?(peek)) && check_next(:equal)
                     name_token = advance
                     consume(:equal, "expected '=' after named tuple field")
                     AST::Argument.new(name: name_token.lexeme, value: parse_expression)
@@ -404,7 +404,7 @@ module MilkTea
           if match(:comma)
             elements = [first]
             loop do
-              if check_name && check_next(:equal)
+              if (check_name || keyword_token?(peek)) && check_next(:equal)
                 name_token = advance
                 consume(:equal, "expected '=' after named tuple field")
                 value = parse_expression

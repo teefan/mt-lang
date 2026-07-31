@@ -150,7 +150,19 @@ module MilkTea
             column: statement.column,
             var: statement.kind == :var
           )
-          with_scope { visit_statement_list(statement.else_body) } if statement.else_body
+          if statement.else_body || statement.else_binding
+            with_scope do
+              if statement.else_binding
+                declare_local(
+                  statement.else_binding.name,
+                  statement.else_binding.line,
+                  column: statement.else_binding.column,
+                  var: false
+                )
+              end
+              visit_statement_list(statement.else_body) if statement.else_body
+            end
+          end
           check_redundant_type_annotation(statement)
           flag_redundant_widening_cast(statement.value) if statement.type && statement.value
           record_ptr_candidate(statement)

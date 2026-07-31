@@ -111,7 +111,7 @@ module MilkTea
             line: type_param.line,
             column: type_param.column,
             kind_label:,
-            reserved_names: RESERVED_TYPE_BINDING_NAMES,
+            reserved_names: RESERVED_VALUE_TYPE_NAMES,
           )
         end
       end

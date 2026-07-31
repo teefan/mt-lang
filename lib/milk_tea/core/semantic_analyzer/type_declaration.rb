@@ -314,6 +314,12 @@ module MilkTea
         expanded_declarations.grep(AST::AttributeDecl).each do |decl|
           with_error_node(decl) do
             raise_sema_error("duplicate attribute #{decl.name}") if @ctx.attributes.key?(decl.name)
+            ensure_non_reserved_value_type_name!(
+              decl.name,
+              kind_label: "attribute",
+              line: decl.line,
+              column: decl.column,
+            )
 
             params = []
             seen = {}
@@ -463,6 +469,15 @@ module MilkTea
               {}
             end
             decl.lifetime_params.each do |lt|
+              raw_name = lt.delete_prefix("@")
+              unless raw_module?
+                ensure_non_reserved_value_type_name!(
+                  raw_name,
+                  kind_label: "lifetime parameter #{decl.name}",
+                  line: decl.line,
+                  column: decl.column,
+                )
+              end
               type_params[lt] = Types::LifetimeRef.new(lt)
             end if decl.respond_to?(:lifetime_params)
             type_param_constraints = struct_type.is_a?(Types::GenericStructDefinition) ? struct_type.type_param_constraints : {}
@@ -528,7 +543,7 @@ module MilkTea
                 raise_sema_error("duplicate event #{decl.name}.#{event_decl.name}") if events.key?(event_decl.name)
                 raise_sema_error("duplicate member #{decl.name}.#{event_decl.name}") if fields.key?(event_decl.name)
                 unless raw_module?
-                  ensure_non_reserved_type_binding_name!(
+                  ensure_non_reserved_value_type_name!(
                     event_decl.name,
                     kind_label: "event #{decl.name}",
                     line: event_decl.line,
@@ -811,6 +826,14 @@ module MilkTea
           fields = {}
           nested.fields.each do |field|
             raise_sema_error("duplicate field #{qualified_name}.#{field.name}") if fields.key?(field.name)
+            unless raw_module?
+              ensure_non_reserved_value_type_name!(
+                field.name,
+                kind_label: "field #{qualified_name}",
+                line: field.line || nested.line,
+                column: field.column,
+              )
+            end
             begin
               field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:, nested_types: nested_scope)
               validate_stored_ref_type!(field_type, "field #{qualified_name}.#{field.name}")
@@ -824,6 +847,14 @@ module MilkTea
           nested_events = {}
           nested.events.each do |event_decl|
             raise_sema_error("duplicate event #{qualified_name}.#{event_decl.name}") if nested_events.key?(event_decl.name)
+            unless raw_module?
+              ensure_non_reserved_value_type_name!(
+                event_decl.name,
+                kind_label: "event #{qualified_name}",
+                line: event_decl.line,
+                column: event_decl.column,
+              )
+            end
             begin
               nested_events[event_decl.name] = resolve_event_decl_type(event_decl, type_params:, type_param_constraints:, owner_type_name: qualified_name, nested_types: nested_scope)
             rescue SemanticError => e

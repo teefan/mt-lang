@@ -826,7 +826,7 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_reserved_type_param_anchor") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        function identity[span](value: span) -> span:
+        function identity[byte](value: byte) -> byte:
             return value
       MT
       File.write(path, content)
@@ -836,8 +836,8 @@ class LSPWorkspaceTest < Minitest::Test
       workspace.open_document(uri, content)
 
       diagnostics = workspace.collect_diagnostics(uri)
-      expected_start = content.lines.first.index("span")
-      expected_end = expected_start + "span".length
+      expected_start = content.lines.first.index("byte")
+      expected_end = expected_start + "byte".length
 
       lint = diagnostics.find { |diagnostic| diagnostic[:code] == "reserved-primitive-name" }
 
