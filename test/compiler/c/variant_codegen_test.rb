@@ -255,4 +255,50 @@ class VariantCodegenTest < Minitest::Test
     assert_match(/\.data\.case_/, generated,
                 "C keyword arm case must be sanitized as case_")
   end
+
+  def test_mutually_recursive_variants_emit_cycle_fields_as_pointers
+    source = <<~MT
+      # module demo.mutual
+
+      variant Expr:
+          literal(value: int)
+          block_stmts(stmts: Stmt)
+
+      variant Stmt:
+          expr_stmt(e: Expr)
+          nop
+
+      function main() -> int:
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/demo_mutual_Stmt \*stmts;/, generated,
+                "Expr -> Stmt must be a pointer to break mutual cycle")
+    assert_match(/demo_mutual_Expr \*e;/, generated,
+                "Stmt -> Expr must be a pointer to break mutual cycle")
+    refute_match(/demo_mutual_Stmt stmts;/, generated,
+                "Expr must NOT embed Stmt by value")
+    refute_match(/demo_mutual_Expr e;/, generated,
+                "Stmt must NOT embed Expr by value")
+  end
+
+  def test_variant_through_option_generic_breaks_cycle_with_pointer
+    source = <<~MT
+      # module demo.optcycle
+
+      variant Expr:
+          literal(value: int)
+          cond(test: Expr, else_b: Option[Expr])
+
+      function main() -> int:
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/demo_optcycle_Expr \*test;/, generated,
+                "Expr self-reference must be pointer")
+    refute_match(/std_option_Option_demo_optcycle_Expr else_b;/, generated,
+                "Option[Expr] in variant arm must NOT be embedded by value")
+  end
 end

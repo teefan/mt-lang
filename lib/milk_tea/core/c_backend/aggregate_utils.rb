@@ -51,17 +51,73 @@ module MilkTea
       end
 
       def aggregate_decl_dependencies(aggregate_decl)
-        case aggregate_decl
+        own_name = aggregate_decl.linkage_name
+        deps = case aggregate_decl
         when IR::StructDecl, IR::UnionDecl
-          aggregate_decl.fields.flat_map { |field| aggregate_type_dependencies(field.type) }.uniq
+          aggregate_decl.fields.flat_map { |field| aggregate_type_dependencies(field.type) }
         when IR::VariantDecl
-          own_name = aggregate_decl.linkage_name
           aggregate_decl.arms.flat_map { |arm| arm.fields.flat_map { |field| aggregate_type_dependencies(field.type) } }
-            .uniq
-            .reject { |dep| dep == own_name }
         else
           []
         end
+
+        deps.uniq.reject do |dep|
+          next true if dep == own_name
+          next false unless aggregate_decl.is_a?(IR::VariantDecl)
+
+          (@cyclic_aggregate_pairs || Set.new).include?([own_name, dep])
+        end
+      end
+
+      def build_cyclic_aggregate_pairs(all_decls)
+        by_name = all_decls.each_with_object({}) { |d, h| h[d.linkage_name] = d }
+        value_refs = {}
+        all_decls.each { |d| value_refs[d.linkage_name] = Set.new }
+
+        all_decls.each do |decl|
+          own = decl.linkage_name
+          fields = case decl
+          when IR::StructDecl, IR::UnionDecl then decl.fields
+          when IR::VariantDecl then decl.arms.flat_map(&:fields)
+          else []
+          end
+          fields.each do |f|
+            aggregate_type_dependencies(f.type).each do |dep|
+              value_refs[own] << dep if by_name.key?(dep) && dep != own
+            end
+          end
+        end
+
+        pairs = Set.new
+        value_refs.each do |a, refs|
+          refs.each do |b|
+            pairs << [a, b] if aggregate_can_reach?(b, a, value_refs)
+          end
+        end
+        pairs
+      end
+
+      def aggregate_can_reach?(from, to, value_refs, visited = {})
+        return false if visited[from]
+        return true if from == to
+        return true if (value_refs[from] || Set.new).include?(to)
+
+        visited[from] = true
+        (value_refs[from] || Set.new).any? { |next_name| aggregate_can_reach?(next_name, to, value_refs, visited) }
+      end
+
+      def aggregate_field_creates_cycle?(field_type, outer_c)
+        return true if variant_self_reference?(field_type, outer_c)
+        return false unless @cyclic_aggregate_pairs
+
+        target_name = case field_type
+        when Types::Variant, Types::VariantInstance, Types::Struct, Types::StructInstance, Types::Union
+          named_type_c_name(field_type)
+        else
+          return false
+        end
+
+        @cyclic_aggregate_pairs.include?([outer_c, target_name])
       end
 
       def aggregate_type_dependencies(type)

@@ -76,7 +76,7 @@ module MilkTea
           payload_arms.each do |arm|
             lines << "struct #{arm.linkage_name} {"
             arm.fields.each do |field|
-              if variant_self_reference?(field.type, outer_c)
+              if aggregate_field_creates_cycle?(field.type, outer_c)
                 lines << "#{INDENT}#{c_declaration(field.type, "*#{sanitize_c_identifier(field.name)}")};"
               else
                 lines << "#{INDENT}#{c_field_declaration(field.type, sanitize_c_identifier(field.name))};"
