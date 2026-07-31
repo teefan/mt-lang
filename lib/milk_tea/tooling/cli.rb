@@ -259,7 +259,7 @@ module MilkTea
 
       tokens = Lexer.lex(read_source_file(path), path: path)
       if sexpr
-        @out.write(SexprDumper.dump_tokens(tokens))
+        @out.puts(SexprDumper.dump_tokens(tokens))
       else
         @out.write(PP.pp(tokens, +""))
       end
@@ -298,10 +298,10 @@ module MilkTea
       paths.each_with_index do |path, index|
         ast = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).load_file(path)
         if multiple
-          @out.puts("# --- #{path} ---")
+          @out.puts("# --- #{path} ---") unless sexpr
         end
         if sexpr
-          @out.write(SexprDumper.dump_ast(ast))
+          @out.puts(SexprDumper.dump_ast(ast))
         else
           @out.write(PrettyPrinter.format_ast(ast))
         end
@@ -783,10 +783,15 @@ module MilkTea
     end
 
     def lower_command
+      sexpr = false
       args = @argv.dup
       @argv = []
       until args.empty?
         arg = args.shift
+        if arg == "--sexpr"
+          sexpr = true
+          next
+        end
         @argv << arg
       end
 
@@ -809,10 +814,13 @@ module MilkTea
       paths.each_with_index do |path, index|
         program = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).check_program(path)
         if multiple
-          @out.puts("# --- #{path} ---")
+          @out.puts("# --- #{path} ---") unless sexpr
         end
-        @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
-        @out.puts if multiple && index < paths.length - 1
+        if sexpr
+          @out.puts(SexprDumper.dump_ir(Lowering.lower(program)))
+        else
+          @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
+        end
       end
       0
     end
