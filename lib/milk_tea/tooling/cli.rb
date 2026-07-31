@@ -229,12 +229,18 @@ module MilkTea
 
     def lex_command
       path = nil
+      sexpr = false
 
       args = @argv.dup
       @argv = []
       until args.empty?
         arg = args.shift
         next if arg == "--"
+
+        if arg == "--sexpr"
+          sexpr = true
+          next
+        end
 
         if path.nil?
           path = arg
@@ -252,15 +258,24 @@ module MilkTea
       end
 
       tokens = Lexer.lex(read_source_file(path), path: path)
-      @out.write(PP.pp(tokens, +""))
+      if sexpr
+        @out.write(SexprDumper.dump_tokens(tokens))
+      else
+        @out.write(PP.pp(tokens, +""))
+      end
       0
     end
 
     def parse_command
+      sexpr = false
       args = @argv.dup
       @argv = []
       until args.empty?
         arg = args.shift
+        if arg == "--sexpr"
+          sexpr = true
+          next
+        end
         @argv << arg
       end
 
@@ -285,7 +300,11 @@ module MilkTea
         if multiple
           @out.puts("# --- #{path} ---")
         end
-        @out.write(PrettyPrinter.format_ast(ast))
+        if sexpr
+          @out.write(SexprDumper.dump_ast(ast))
+        else
+          @out.write(PrettyPrinter.format_ast(ast))
+        end
         @out.puts if multiple && index < paths.length - 1
       end
       0
