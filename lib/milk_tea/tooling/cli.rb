@@ -1611,6 +1611,7 @@ module MilkTea
       input_path = nil
       theme_path = nil
       output_path = nil
+      textmate_only = false
 
       until @argv.empty?
         arg = @argv.first
@@ -1629,6 +1630,9 @@ module MilkTea
             @err.puts("snapshot: missing value for --output")
             return 1
           end
+        when "--textmate-only"
+          @argv.shift
+          textmate_only = true
         else
           if arg.start_with?("-")
             @err.puts("snapshot: unknown option #{arg}")
@@ -1674,10 +1678,12 @@ module MilkTea
       args.push("-o", output_path) if output_path
 
       semantic_result = nil
-      begin
-        semantic_result = MilkTea::LSP::Server.semantic_tokens_for_path(input_path)
-      rescue => e
-        @err.puts("snapshot: semantic analysis skipped: #{e.message}")
+      unless textmate_only
+        begin
+          semantic_result = MilkTea::LSP::Server.semantic_tokens_for_path(input_path)
+        rescue => e
+          @err.puts("snapshot: semantic analysis skipped: #{e.message}")
+        end
       end
 
       if semantic_result && semantic_result[:entries] && !semantic_result[:entries].empty?
