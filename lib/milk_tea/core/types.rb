@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 require "fiddle"
-require_relative "registry"
-require_relative "visitor"
+require_relative "types/registry"
+require_relative "types/visitor"
 
 module MilkTea
   module Types

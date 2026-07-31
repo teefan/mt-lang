@@ -348,10 +348,6 @@ module MilkTea
         )
       when "StringView"
         Types::Registry.string_view
-      when "Subscription"
-        Types::Subscription.new
-      when "Handle"
-        Types::Handle.new
       else
         _construct_types_fallback(short, fields)
       end
