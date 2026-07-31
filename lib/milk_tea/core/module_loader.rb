@@ -187,10 +187,12 @@ module MilkTea
 
       # Phase 4: Check cycle members with iterative refinement
       # Pass 1: Check with forward bindings — registers type declarations.
+      # SemanticError is expected (forward types lack fields/constructors)
+      # but ModuleLoadError indicates a broken dependency graph.
       cycle_members.each do |resolved_path|
         check_path(resolved_path)
-      rescue ModuleLoadError, SemanticError => e
-        # Expected for modules that construct types from other cycle members.
+      rescue SemanticError
+        # Forward types can't satisfy constructors. Pass 2 will retry.
       end
 
       # Update forward type objects in-place with field/arm info from the
@@ -222,7 +224,7 @@ module MilkTea
       cycle_members.each do |resolved_path|
         previous = @analysis_cache.delete(resolved_path)
         check_path(resolved_path)
-      rescue ModuleLoadError, SemanticError => e
+      rescue SemanticError
         @analysis_cache[resolved_path] = previous if previous
       end
       @forward_bindings.clear
