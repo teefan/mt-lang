@@ -175,8 +175,25 @@ module MilkTea
         return true if checked_index_alias(expression)
         return pointer_member_receiver?(expression.operand) if expression.is_a?(IR::Unary) && expression.operator == "*"
 
+        if expression.is_a?(IR::Member)
+          field_type = variant_arm_payload_field_type(expression)
+          if field_type && expression.receiver.type.is_a?(Types::VariantArmPayload)
+            parent_c = named_type_c_name(expression.receiver.type.variant_type)
+            return true if aggregate_field_creates_cycle?(field_type, parent_c)
+          end
+        end
+
         (expression.is_a?(IR::Name) && expression.pointer) ||
           (expression.respond_to?(:type) && (raw_pointer_type?(expression.type) || ref_type?(expression.type) || nullable_pointer_like_ir_type?(expression.type)))
+      end
+
+      def variant_arm_payload_field_type(member_expr)
+        receiver_type = member_expr.receiver.type
+        return nil unless receiver_type.is_a?(Types::VariantArmPayload)
+
+        arm_name = receiver_type.arm_name
+        variant_type = receiver_type.variant_type
+        variant_type.arm(arm_name)&.fetch(member_expr.member)
       end
 
       def nullable_pointer_like_ir_type?(type)

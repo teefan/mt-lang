@@ -62,6 +62,10 @@ module MilkTea
     def emit
       lines = []
       constants = emitted_constants
+      all_struct_decls = emitted_aggregate_structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_dyn_decls + collect_str_buffer_decls + collect_nullable_opt_decls
+      all_variant_decls = emitted_aggregate_variants + collect_generic_variant_decls
+      all_decls_for_cycle = all_struct_decls + emitted_aggregate_unions + all_variant_decls
+      @cyclic_aggregate_pairs = build_cyclic_aggregate_pairs(all_decls_for_cycle)
       headers = @program.includes.map(&:header)
       if headers.include?("\"fs_support.h\"") || headers.include?("\"tls_support.h\"") || uses_parallel_for_helper? || uses_spawn_all_helper? || uses_detach_helper?
         lines << "#ifndef _GNU_SOURCE"
@@ -142,10 +146,6 @@ module MilkTea
       end
 
       opaque_decls = @program.opaques
-      all_struct_decls = emitted_aggregate_structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_dyn_decls + collect_str_buffer_decls + collect_nullable_opt_decls
-      all_variant_decls = emitted_aggregate_variants + collect_generic_variant_decls
-      all_decls_for_cycle = all_struct_decls + emitted_aggregate_unions + all_variant_decls
-      @cyclic_aggregate_pairs = build_cyclic_aggregate_pairs(all_decls_for_cycle)
       aggregate_decls = sort_aggregate_decls(
         all_struct_decls,
         emitted_aggregate_unions,

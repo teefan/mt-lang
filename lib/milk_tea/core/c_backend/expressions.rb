@@ -440,7 +440,13 @@ module MilkTea
         elsif aggregate_field_creates_cycle?(field_type, named_type_c_name(type)) &&
               !field_type.is_a?(Types::GenericInstance)
           field_c_name = named_type_c_name(field_type)
-          "((#{field_c_name}*)memcpy(malloc(sizeof(#{field_c_name})), &(#{emit_initializer(field.value)}), sizeof(#{field_c_name})))"
+          init = emit_initializer(field.value)
+          source_expr = if init.start_with?("{")
+            "&(#{c_type(field_type)})#{init}"
+          else
+            "&(#{init})"
+          end
+          "((#{field_c_name}*)memcpy(malloc(sizeof(#{field_c_name})), #{source_expr}, sizeof(#{field_c_name})))"
         elsif void_storage_field?(field_type)
           emit_void_field_initializer(field.value)
         else
