@@ -19,6 +19,8 @@
     { "include": "#named-argument" },
     { "include": "#keyword-type-reference" },
     { "include": "#keyword-lifetime-ref" },
+    { "include": "#bare-arm-name" },
+    { "include": "#member-access-keyword" },
     { "include": "#keyword-operator" },
     { "include": "#keyword-modifier" },
     { "include": "#keyword-builtin" },
@@ -742,6 +744,16 @@
     "keyword-lifetime-ref": {
       "name": "entity.name.type.parameter.milk-tea",
       "match": "(?<=@)([a-zA-Z_][a-zA-Z0-9_]*)"
+    },
+
+    "bare-arm-name": {
+      "name": "entity.name.variant.member.milk-tea",
+      "match": "^\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*$"
+    },
+
+    "member-access-keyword": {
+      "name": "variable.other.member.milk-tea",
+      "match": "(?<=\\.)\\s*([a-zA-Z_][a-zA-Z0-9_]*)"
     },
 
     "identifier": {
