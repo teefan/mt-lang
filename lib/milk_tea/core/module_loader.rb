@@ -391,7 +391,7 @@ module MilkTea
       resolved_path, ast, cached = check_module_cache(path)
       return cached if cached
 
-      if @checking_paths.count(resolved_path) > 1 && !@forward_bindings.key?(resolved_path)
+      if @checking_paths.include?(resolved_path) && !@forward_bindings.key?(resolved_path)
         raise ModuleLoadError.new("circular import not resolvable: module #{@parse_cache[resolved_path]&.module_name || File.basename(path)}", path: resolved_path)
       end
 
@@ -410,7 +410,7 @@ module MilkTea
       resolved_path, ast, cached = check_module_cache(path, extra_cache: @collecting_analysis_cache)
       return cached if cached
 
-      if @checking_paths.count(resolved_path) > 1 && !@forward_bindings.key?(resolved_path)
+      if @checking_paths.include?(resolved_path) && !@forward_bindings.key?(resolved_path)
         raise ModuleLoadError.new("circular import not resolvable: module #{@parse_cache[resolved_path]&.module_name || File.basename(path)}", path: resolved_path)
       end
 
@@ -444,7 +444,6 @@ module MilkTea
         end
       end
 
-      @checking_paths << resolved_path
       ast = load_file(resolved_path)
       [resolved_path, ast, nil]
     end

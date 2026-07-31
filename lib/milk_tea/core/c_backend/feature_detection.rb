@@ -165,7 +165,8 @@ module MilkTea
       end
 
       def uses_cyclic_variant_heap_copy?
-        emitted_aggregate_variants.any? do |v|
+        all_variants = emitted_aggregate_variants + collect_generic_variant_decls
+        all_variants.any? do |v|
           v.arms.any? do |arm|
             arm.fields.any? do |f|
               aggregate_field_creates_cycle?(f.type, v.linkage_name)
