@@ -234,9 +234,6 @@ module MilkTea
         else
           check_level_parallel(level_paths)
         end
-      rescue ModuleLoadError, SemanticError => e
-        # Acyclic module check failures are real errors — propagate them.
-        raise
       end
     end
 
@@ -394,6 +391,10 @@ module MilkTea
       resolved_path, ast, cached = check_module_cache(path)
       return cached if cached
 
+      if @checking_paths.count(resolved_path) > 1 && !@forward_bindings.key?(resolved_path)
+        raise ModuleLoadError.new("circular import not resolvable: module #{@parse_cache[resolved_path]&.module_name || File.basename(path)}", path: resolved_path)
+      end
+
       @checking_paths << resolved_path
       imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
       global_index = build_global_import_index(ast)
@@ -408,6 +409,10 @@ module MilkTea
     def check_path_collecting_errors(path)
       resolved_path, ast, cached = check_module_cache(path, extra_cache: @collecting_analysis_cache)
       return cached if cached
+
+      if @checking_paths.count(resolved_path) > 1 && !@forward_bindings.key?(resolved_path)
+        raise ModuleLoadError.new("circular import not resolvable: module #{@parse_cache[resolved_path]&.module_name || File.basename(path)}", path: resolved_path)
+      end
 
       @checking_paths << resolved_path
       imported_modules = imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path).modules
