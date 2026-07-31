@@ -14,6 +14,9 @@
     { "include": "#attribute-declaration" },
     { "include": "#field-declaration" },
     { "include": "#parameter-declaration" },
+    { "include": "#variant-arm-name" },
+    { "include": "#enum-member-name" },
+    { "include": "#named-argument" },
     { "include": "#keyword-operator" },
     { "include": "#keyword-modifier" },
     { "include": "#keyword-builtin" },
@@ -712,6 +715,21 @@
     "parameter-declaration": {
       "name": "variable.parameter.milk-tea",
       "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=:)"
+    },
+
+    "variant-arm-name": {
+      "name": "entity.name.variant.member.milk-tea",
+      "match": "^\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+    },
+
+    "enum-member-name": {
+      "name": "variable.other.enummember.milk-tea",
+      "match": "^\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s+(?=\\d)"
+    },
+
+    "named-argument": {
+      "name": "variable.parameter.milk-tea",
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?==)"
     },
 
     "identifier": {
