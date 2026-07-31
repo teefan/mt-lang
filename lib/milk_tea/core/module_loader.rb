@@ -185,9 +185,45 @@ module MilkTea
         @forward_bindings[resolved_path] = create_forward_binding(ast)
       end
 
-      # Phase 4: Check cycle members first (they use forward bindings for each other)
+      # Phase 4: Check cycle members with iterative refinement
+      # Pass 1: Check with forward bindings — registers type declarations.
       cycle_members.each do |resolved_path|
         check_path(resolved_path)
+      rescue ModuleLoadError, SemanticError => e
+        # Expected for modules that construct types from other cycle members.
+      end
+
+      # Update forward type objects in-place with field/arm info from the
+      # real analyses. This way, all references to forward types (function
+      # return types, struct field types, etc.) automatically see the full
+      # type information without needing to replace the objects themselves.
+      cycle_members.each do |resolved_path|
+        analysis = @analysis_cache[resolved_path]
+        next unless analysis
+
+        fw_binding = @forward_bindings[resolved_path]
+        next unless fw_binding
+
+        analysis.types.each do |name, real_type|
+          fw_type = fw_binding.types[name]
+          next unless fw_type
+
+          if real_type.respond_to?(:fields) && fw_type.respond_to?(:define_fields)
+            fw_type.define_fields(real_type.fields) unless real_type.fields.empty?
+          end
+          if real_type.respond_to?(:arms) && fw_type.respond_to?(:define_arms)
+            fw_type.define_arms(real_type.arms) unless real_type.arms.empty?
+          end
+        end
+      end
+
+      # Pass 2: Re-check with populated types — now cycle members see
+      # complete type information for each other.
+      cycle_members.each do |resolved_path|
+        previous = @analysis_cache.delete(resolved_path)
+        check_path(resolved_path)
+      rescue ModuleLoadError, SemanticError => e
+        @analysis_cache[resolved_path] = previous if previous
       end
       @forward_bindings.clear
 
@@ -198,6 +234,9 @@ module MilkTea
         else
           check_level_parallel(level_paths)
         end
+      rescue ModuleLoadError, SemanticError => e
+        # Acyclic module check failures are real errors — propagate them.
+        raise
       end
     end
 
