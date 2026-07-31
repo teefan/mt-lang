@@ -432,6 +432,12 @@ module MilkTea
           inner = field.value.expression
           "((#{c_type_name}*)memcpy(malloc(sizeof(#{c_type_name})), &(#{emit_expression(inner)}), sizeof(#{c_type_name})))"
         elsif aggregate_field_creates_cycle?(field_type, named_type_c_name(type)) &&
+              array_type?(field_type)
+          elem_c_name = c_type(array_element_type(field_type))
+          elem_count = array_length(field_type)
+          elements = field.value.is_a?(IR::ArrayLiteral) ? field.value.elements.map { |e| emit_initializer(e) }.join(", ") : ""
+          "((#{elem_c_name}*)memcpy(malloc(#{elem_count} * sizeof(#{elem_c_name})), &(#{elem_c_name}[#{elem_count}]){ #{elements} }, #{elem_count} * sizeof(#{elem_c_name})))"
+        elsif aggregate_field_creates_cycle?(field_type, named_type_c_name(type)) &&
               !field_type.is_a?(Types::GenericInstance)
           field_c_name = named_type_c_name(field_type)
           "((#{field_c_name}*)memcpy(malloc(sizeof(#{field_c_name})), &(#{emit_initializer(field.value)}), sizeof(#{field_c_name})))"

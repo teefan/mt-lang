@@ -75,7 +75,7 @@ module MilkTea
       if uses_fatal_helper? || uses_format_helpers?
         headers << "<stdio.h>"
       end
-      if uses_fatal_helper? || uses_format_helpers? || uses_async_memory_helpers? || uses_foreign_temp_cstr_helpers? || uses_detach_helper?
+      if uses_fatal_helper? || uses_format_helpers? || uses_async_memory_helpers? || uses_foreign_temp_cstr_helpers? || uses_detach_helper? || uses_cyclic_variant_heap_copy?
         headers << "<stdlib.h>"
       end
       if uses_parallel_for_helper? || uses_spawn_all_helper? || uses_detach_helper?

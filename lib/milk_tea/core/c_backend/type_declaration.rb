@@ -77,7 +77,11 @@ module MilkTea
             lines << "struct #{arm.linkage_name} {"
             arm.fields.each do |field|
               if aggregate_field_creates_cycle?(field.type, outer_c)
-                lines << "#{INDENT}#{c_declaration(field.type, "*#{sanitize_c_identifier(field.name)}")};"
+                if array_type?(field.type)
+                  lines << "#{INDENT}#{c_declaration(array_element_type(field.type), "*#{sanitize_c_identifier(field.name)}")};"
+                else
+                  lines << "#{INDENT}#{c_declaration(field.type, "*#{sanitize_c_identifier(field.name)}")};"
+                end
               else
                 lines << "#{INDENT}#{c_field_declaration(field.type, sanitize_c_identifier(field.name))};"
               end

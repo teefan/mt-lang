@@ -164,6 +164,16 @@ module MilkTea
         emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_async_alloc mt_async_free]) }
       end
 
+      def uses_cyclic_variant_heap_copy?
+        emitted_aggregate_variants.any? do |v|
+          v.arms.any? do |arm|
+            arm.fields.any? do |f|
+              aggregate_field_creates_cycle?(f.type, v.linkage_name)
+            end
+          end
+        end
+      end
+
       def uses_parallel_for_helper?
         emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_parallel_for]) }
       end
