@@ -150,8 +150,11 @@ function buildSemanticOverlay(entries, theme) {
     const lineNum = entry.line;
     if (!overlay[lineNum]) overlay[lineNum] = {};
     const fg = themeSemColors[entry.tokenType] || deriveSemanticColor(entry, resolveTextMate);
-    if (!fg) continue;
-    const result = { foreground: fg };
+    const result = {
+      foreground: fg || null,
+      tokenType: entry.tokenType,
+      modifiers: entry.modifiers || [],
+    };
     for (const mod of entry.modifiers || []) {
       const style = MODIFIER_STYLES[mod];
       if (!style) continue;
@@ -339,10 +342,18 @@ function buildLineHtml(line, tokens, resolveTextMate, semanticLine, styles) {
       }
     }
 
-    if (foreground) {
-      const tmScopes = fromSemantic ? null : token.scopes;
-      const cls = styles.register(foreground, bold, italic, strikethrough, tmScopes);
-      html += `<span class="${cls}">${text}</span>`;
+    const hasSemanticMeta = sem && sem.tokenType;
+    if (foreground || hasSemanticMeta) {
+      const tmScopes = (!foreground || fromSemantic) ? null : token.scopes;
+      const cls = foreground ? styles.register(foreground, bold, italic, strikethrough, tmScopes) : "";
+      html += `<span${cls ? ` class="${cls}"` : ""}`;
+      if (hasSemanticMeta) {
+        html += ` data-token-type="${sem.tokenType}"`;
+        if (sem.modifiers && sem.modifiers.length > 0) {
+          html += ` data-token-modifier="${sem.modifiers.join(" ")}"`;
+        }
+      }
+      html += `>${text}</span>`;
     } else {
       html += text;
     }
