@@ -51,6 +51,7 @@ Rules:
 - Valid platform filename suffixes are `linux`, `windows`, and `wasm`.
 - The platform suffix is not part of the module name. `import a.b.c` stays the same on every target.
 - Milk Tea does not have a source-level conditional compilation syntax such as `#if`, `#ifdef`, or per-declaration platform attributes.
+- Circular module imports are supported. When two modules import each other, the compiler uses forward-declaration bindings for the first pass and full type-checked bindings for the second pass, enabling cross-module type references and constructors in cycle groups.
 
 ## 2. Lexical Rules
 
@@ -359,6 +360,17 @@ struct Mat4:
 Compile-time reflection over validated attributes uses `has_attribute`, `attribute_of`, `attribute_arg[T]`, `field_of`, and `callable_of`.
 
 The current C backend lowers `packed` / `align(...)` attributes with GNU-style `__attribute__((...))`, so these layout controls currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these attributes today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
+
+Language-level keywords and reserved words are accepted as:
+- variant arm names (`return(val: int)`, `if(arg: bool)`)
+- struct and union field names (`return: int`, `let: str`)
+- enum and flags member names (`return = 1`, `if = 6`)
+- variant arm payload field names (`execute(return: int)`)
+- lifetime parameter names (`struct Buf[@return]`)
+- type parameter names (`struct Box[return]`, `identity[type]`)
+- named arguments in struct/variant literals (`Meta(return = 1)`)
+
+Primitive type names (`int`, `str`, `bool`, `ref`, `ptr`, `span`, `type`, etc.) remain reserved and cannot be used as names.
 
 ### 3.4a Enum and flags operators
 

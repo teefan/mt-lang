@@ -30,6 +30,7 @@ Package manifests, build workflow, and run workflow are documented separately in
 - External files are the dedicated raw ABI surface, usually for generated or low-level `std.c.*` bindings.
 - Module lookup resolves `a.b.c` to `a/b/c.mt`.
 - Inside a package, the file path relative to `package.source_root` defines the module name; platform-specific files such as `name.linux.mt` still map to module `name`.
+- Circular module imports are supported via forward-declaration bindings and two-pass checking. Cycle members see each other's type declarations in the first pass and full type information in the second pass.
 - In ordinary files, `import` statements appear only at the top.
 - In external files, leading `import` statements are allowed after `external`.
 - Only external files accept `include`, `link`, and `compiler_flag` directives.
@@ -314,6 +315,7 @@ Rules:
 - Compile-time reflection over validated attributes uses `has_attribute`, `attribute_of`, `attribute_arg[T]`, `field_of`, and `callable_of`.
 - `field_of(...)`, `callable_of(...)`, and `attribute_of(...)` produce compile-time handle values with source-visible handle types `field_handle`, `callable_handle`, and `attribute_handle`.
 - The current C backend lowers `packed` / `align(...)` attributes with GNU-style `__attribute__((...))`, so these layout controls currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these attributes today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
+- Keywords and reserved words are accepted as variant arm names, struct/union field names, enum/flags member names, lifetime parameters (`@return`), type parameters (`Box[return]`), and named constructor arguments (`Meta(return = 1)`). Primitive type names (`int`, `str`, `ref`, etc.) remain reserved and cannot be used in these positions.
 
 Enum and flags values support the full set of comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) against values of the same enum type and against their backing integer type. Comparisons use the underlying integer backing values. Flags also support bitwise operators (`|`, `&`, `^`, `~`).
 
