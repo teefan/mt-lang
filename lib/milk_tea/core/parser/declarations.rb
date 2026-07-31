@@ -372,10 +372,10 @@ module MilkTea
           break if check(:rbracket)
 
           if match(:at)
-            name_token = consume_name("expected lifetime name after @")
+            name_token = consume_name_allowing_keywords("expected lifetime name after @")
             lifetime_params << "@#{name_token.lexeme}"
           else
-            name_token = consume_name("expected type parameter name")
+            name_token = consume_name_allowing_keywords("expected type parameter name")
             if match(:colon)
               value_type = parse_type_ref
               type_params << AST::ValueTypeParam.new(

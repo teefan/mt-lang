@@ -92,7 +92,7 @@ module MilkTea
 
         first_token = peek
         if match(:at)
-          lt_token = consume_name("expected lifetime name after @")
+          lt_token = consume_name_allowing_keywords("expected lifetime name after @")
           return AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["@#{lt_token.lexeme}"]), arguments: [], nullable: false, lifetime: nil, line: first_token.line, column: first_token.column, length: lt_token.lexeme.length + 1)
         end
         name = parse_qualified_name
@@ -101,7 +101,7 @@ module MilkTea
         if match(:lbracket)
           if check(:at) && name.to_s == "ref"
             match(:at)
-            lt_token = consume_name("expected lifetime name after @")
+            lt_token = consume_name_allowing_keywords("expected lifetime name after @")
             lifetime = "@#{lt_token.lexeme}"
             consume(:comma, "expected ',' after lifetime in type arguments")
           end
@@ -167,7 +167,7 @@ module MilkTea
       end
 
       def parse_function_type_param
-        name_token = consume_name("expected function type parameter name")
+        name_token = consume_name_allowing_keywords("expected function type parameter name")
         name = name_token.lexeme
         consume(:colon, "expected ':' after function type parameter name")
         type = parse_type_ref
@@ -190,7 +190,7 @@ module MilkTea
         return [] unless match(:lbracket)
 
         params = parse_comma_separated_until(:rbracket) do
-          name_token = consume_name("expected type parameter name")
+          name_token = consume_name_allowing_keywords("expected type parameter name")
           name = name_token.lexeme
           if match(:colon)
             value_type = parse_type_ref
