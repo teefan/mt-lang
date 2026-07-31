@@ -98,6 +98,7 @@ module MilkTea
       @collecting_analysis_cache = {}
       @collecting_path_errors = {}
       @checking_paths = []
+      @forward_bindings = {}
       @platform = self.class.normalize_platform_name(platform)
       @package_graph = package_graph
       @package_manifest_cache = {}
@@ -176,7 +177,21 @@ module MilkTea
       # Phase 3: Topological sort into independent levels
       levels = topo_sort_levels(graph)
 
-      # Phase 4: Check each level (parallel within level, sequential across levels)
+      # Pre-register forward bindings for cycle members
+      all_checked = levels.flatten.to_set
+      cycle_members = graph.keys.reject { |p| all_checked.include?(p) }
+      cycle_members.each do |resolved_path|
+        ast = @parse_cache[resolved_path]
+        @forward_bindings[resolved_path] = create_forward_binding(ast)
+      end
+
+      # Phase 4: Check cycle members first (they use forward bindings for each other)
+      cycle_members.each do |resolved_path|
+        check_path(resolved_path)
+      end
+      @forward_bindings.clear
+
+      # Phase 5: Check acyclic modules (they see fully-checked analyses for all imports)
       levels.each do |level_paths|
         if level_paths.length == 1
           check_path(level_paths.first)
@@ -189,10 +204,6 @@ module MilkTea
     def parse_all(resolved_path)
       return if @parse_cache.key?(resolved_path)
 
-      if @checking_paths.include?(resolved_path)
-        raise ModuleLoadError.new("cyclic import detected", path: resolved_path)
-      end
-
       @checking_paths << resolved_path
       ast = load_file(resolved_path)
       @parse_cache[resolved_path] = ast
@@ -202,7 +213,7 @@ module MilkTea
         parse_all(import_path)
       end
     ensure
-      @checking_paths.pop if @checking_paths.last == resolved_path
+      @checking_paths.pop
     end
 
     def topo_sort_levels(graph)
@@ -252,8 +263,13 @@ module MilkTea
 
       ast.imports.each do |import|
         import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
-        import_analysis = check_path(import_path)
-        modules[import.path.to_s] = @binder.module_binding(import_analysis)
+
+        if @forward_bindings.key?(import_path)
+          modules[import.path.to_s] = @forward_bindings[import_path]
+        else
+          import_analysis = check_path(import_path)
+          modules[import.path.to_s] = @binder.module_binding(import_analysis)
+        end
       end
 
       @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: false)
@@ -291,8 +307,13 @@ module MilkTea
       ast.imports.each do |import|
         begin
           import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
-          import_analysis = check_path_collecting_errors(import_path)
-          modules[import.path.to_s] = @binder.module_binding(import_analysis)
+
+          if @forward_bindings.key?(import_path)
+            modules[import.path.to_s] = @forward_bindings[import_path]
+          else
+            import_analysis = check_path_collecting_errors(import_path)
+            modules[import.path.to_s] = @binder.module_binding(import_analysis)
+          end
         rescue ModuleLoadError, PackageLockError, SemanticError => e
           errors << ImportResolutionError.new(import:, error: e)
         end
@@ -334,6 +355,7 @@ module MilkTea
       resolved_path, ast, cached = check_module_cache(path)
       return cached if cached
 
+      @checking_paths << resolved_path
       imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
       global_index = build_global_import_index(ast)
       analysis = SemanticAnalyzer.check(ast, imported_modules:, path: resolved_path, global_import_index: global_index)
@@ -341,13 +363,14 @@ module MilkTea
       update_shared_cache(resolved_path, analysis)
       analysis
     ensure
-      @checking_paths.pop if @checking_paths.last == resolved_path
+      @checking_paths.pop
     end
 
     def check_path_collecting_errors(path)
       resolved_path, ast, cached = check_module_cache(path, extra_cache: @collecting_analysis_cache)
       return cached if cached
 
+      @checking_paths << resolved_path
       imported_modules = imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path).modules
       result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules:, path: resolved_path)
       analysis = result[:analysis]
@@ -357,7 +380,7 @@ module MilkTea
       @collecting_analysis_cache[resolved_path] = analysis
       analysis
     ensure
-      @checking_paths.pop if @checking_paths.last == resolved_path
+      @checking_paths.pop
     end
 
     def check_module_cache(path, extra_cache: nil)
@@ -376,8 +399,6 @@ module MilkTea
           end
         end
       end
-
-      raise ModuleLoadError.new("cyclic import detected", path: resolved_path) if @checking_paths.include?(resolved_path)
 
       @checking_paths << resolved_path
       ast = load_file(resolved_path)
@@ -448,6 +469,36 @@ module MilkTea
       normalized_path = File.expand_path(path)
       normalized_root = File.expand_path(root)
       normalized_path == normalized_root || normalized_path.start_with?(normalized_root + File::SEPARATOR)
+    end
+
+    def create_forward_binding(ast)
+      module_name = ast.module_name.to_s
+      types = {}
+
+      ast.declarations.each do |decl|
+        case decl
+        when AST::StructDecl
+          types[decl.name] = Types::Struct.new(decl.name, module_name:)
+        when AST::VariantDecl
+          types[decl.name] = Types::Variant.new(decl.name, module_name:)
+        when AST::EnumDecl
+          types[decl.name] = Types::Enum.new(decl.name, module_name:)
+        when AST::FlagsDecl
+          types[decl.name] = Types::Flags.new(decl.name, module_name:)
+        when AST::OpaqueDecl
+          types[decl.name] = Types::Opaque.new(decl.name, module_name:, external: false)
+        end
+      end
+
+      ModuleBinding.new(
+        name: module_name, types:, type_declarations: {},
+        interfaces: {}, attributes: {}, attribute_applications: {},
+        values: {}, functions: {}, methods: {},
+        implemented_interfaces: {}, imports: {},
+        private_types: {}, private_interfaces: {}, private_attributes: {},
+        private_values: {}, private_functions: {}, private_methods: {},
+        private_implemented_interfaces: {},
+      )
     end
 
     def use_shared_cache?
