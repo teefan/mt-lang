@@ -198,6 +198,35 @@ class VariantCodegenTest < Minitest::Test
                 "arm name sizeof must NOT appear as standalone C identifier")
   end
 
+  def test_variant_equality_with_non_pointer_nullable_field_uses_field_by_field_comparison
+    source = <<~MT
+      # module demo.nullableeq
+
+      variant Item:
+          tagged(flag: int?, label: str)
+          empty
+
+      function main() -> int:
+          let a = Item.tagged(flag = 42, label = "hello")
+          let b = Item.tagged(flag = 99, label = "world")
+          let c = Item.empty
+          if a == b:
+              return 1
+          if a == c:
+              return 2
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    refute_match(/\.flag != .*\.flag/, generated,
+                "must NOT emit raw struct != for nullable non-pointer fields")
+    assert_match(/\.flag\.has_value != .*\.flag\.has_value/, generated,
+                "must compare has_value flags first")
+    assert_match(/\.flag\.has_value && .*\.flag\.value != .*\.flag\.value/, generated,
+                "must compare value fields only when both are present")
+  end
+
   def test_c_keyword_arm_name_case_default
     source = <<~MT
       # module demo.ckw2

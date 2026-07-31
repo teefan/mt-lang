@@ -65,7 +65,14 @@ module MilkTea
                 lines << "#{INDENT * 3}if (!mt_str_equal(#{left_expr}, #{right_expr})) return false;"
               elsif field_type.is_a?(Types::Variant)
                 lines << "#{INDENT * 3}if (!mt_variant_eq_#{named_type_c_name(field_type)}(#{left_expr}, #{right_expr})) return false;"
-              elsif field_type.is_a?(Types::Primitive) || field_type.is_a?(Types::EnumBase) || field_type.is_a?(Types::Nullable)
+              elsif field_type.is_a?(Types::Nullable)
+                if c_backend_pointer_like_type?(field_type.base)
+                  lines << "#{INDENT * 3}if (#{left_expr} != #{right_expr}) return false;"
+                else
+                  lines << "#{INDENT * 3}if (#{left_expr}.has_value != #{right_expr}.has_value) return false;"
+                  lines << "#{INDENT * 3}if (#{left_expr}.has_value && #{left_expr}.value != #{right_expr}.value) return false;"
+                end
+              elsif field_type.is_a?(Types::Primitive) || field_type.is_a?(Types::EnumBase)
                 lines << "#{INDENT * 3}if (#{left_expr} != #{right_expr}) return false;"
               else
                 lines << "#{INDENT * 3}if (#{left_expr} != #{right_expr}) return false;"

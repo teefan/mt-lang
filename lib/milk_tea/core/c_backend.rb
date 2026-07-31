@@ -208,7 +208,13 @@ module MilkTea
       end
 
       if uses_variant_equality_helper?
-        lines.concat(emit_str_equality_helper) unless uses_str_equality_helper?
+        unless uses_str_equality_helper?
+          variant_needs_str_eq = emitted_aggregate_variants.any? { |v| v.arms.any? { |a| a.fields.any? { |f| f.type.is_a?(Types::StringView) } } }
+          if variant_needs_str_eq
+            lines.concat(emit_string_type) unless uses_string_view?
+            lines.concat(emit_str_equality_helper)
+          end
+        end
         lines.concat(emit_variant_equality_helpers)
         lines << ""
       end
