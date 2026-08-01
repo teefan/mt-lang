@@ -16,7 +16,7 @@ The output target is beautiful C. The generated C should be readable enough that
 2. Stay statically typed. Public APIs must be explicit and unsurprising.
 3. Feel good for game programming. Tight loops, structs, arrays, arenas, handles, and FFI should be first-class.
 4. Interoperate with C as a native citizen. C libraries are not a side feature; they are part of the core story.
-5. Generate C that mirrors the source closely. No hidden runtime, hidden heap traffic, or hidden dispatch.
+5. Generate C that mirrors the source closely. Ordinary value operations do not add hidden heap traffic or dispatch; explicit runtime surfaces such as `dyn` and captured `proc` environments remain visible in the language model.
 
 ## Non-goals
 
@@ -28,7 +28,7 @@ The output target is beautiful C. The generated C should be readable enough that
 - No macro system that rewrites arbitrary ASTs
 - No garbage collector
 - No implicit conversions between unrelated primitive types
-- No user-invisible allocation for strings, collections, closures, or method calls. If a surface allocates owned text or storage, the allocating surface must be spelled in source.
+- No user-invisible allocation for strings, collections, ordinary values, or method calls. Capturing a `proc` may allocate a ref-counted closure environment as part of proc value semantics; owned text and other storage use explicit allocating surfaces.
 
 ## Design rules
 
@@ -291,7 +291,7 @@ The rule is fixed and inspectable. There is no method lookup at runtime.
 ### Interfaces
 
 Interfaces are explicit nominal method-set contracts for static polymorphism.
-They do not introduce inheritance, hidden dispatch, or a second object model.
+They do not introduce inheritance, hidden dispatch, or a second object model. Runtime polymorphism is an explicit `dyn[Interface]` surface.
 
 ```mt
 interface Damageable:
@@ -363,7 +363,7 @@ Because fixed arrays copy by value, mutating interface-constrained collection co
 
 Iteration stays structural in v1 rather than going through a nominal `Iterator[T]` or `Iterable[T]` interface. Arrays, spans, and ranges keep their built-in behavior, and custom iterables participate by exposing the same method shape the compiler already recognizes: a non-editable `iter()` method on the iterable, then either `next() ->` nullable pointer-like item or `next() -> bool` together with `current()` on the iterator.
 
-This is deliberate. Interfaces are compile-time-only nominal contracts and are not generic today, so introducing a central iterator interface hierarchy now would either erase the item type or duplicate type-specific interfaces. The standard library should instead standardize on one iterator convention:
+This is deliberate. Interfaces are nominal contracts, and generic interfaces are supported, but introducing a central iterator interface hierarchy would still either erase the item type or duplicate type-specific interfaces. The standard library should instead standardize on one iterator convention:
 
 - `collection.iter()` is the canonical traversal surface.
 - Alternate traversals use explicit view methods such as `map.keys()`, `map.values()`, and `map.entries()`.
@@ -484,7 +484,7 @@ The default async model is a language-integrated entry boundary. `std.async` rem
 
 #### Concurrency: `parallel for` and `parallel:` blocks
 
-Milk Tea has first-class compiler support for multithreading. The threading model is structured: all spawned work completes before the parent scope continues. There is no hidden thread pool, no garbage collector interaction, and no fire-and-forget. Every thread boundary is visible in source.
+Milk Tea has first-class compiler support for multithreading. The compiler-integrated `parallel for` and `parallel:` forms use structured barriers; explicit `detach` work continues until a matching `gather`. There is no hidden thread pool, no garbage collector interaction, and no implicit fire-and-forget cleanup. Every thread boundary is visible in source.
 
 ```mt
 # Data-parallel: each iteration runs on a separate CPU core
@@ -876,7 +876,7 @@ The memory model must feel like C with better defaults and cleaner surfaces.
 - Fixed arrays copy by value.
 - Returning a struct is allowed and lowers to normal C return or out-parameter lowering as needed.
 
-There is no hidden reference counting and no hidden heap boxing.
+Ordinary values do not carry hidden reference counts or heap boxes. Captured `proc` values are the explicit callable-model exception: their environments retain and release nested captured procs so stored closures have a defined lifecycle.
 
 ### Explicit allocation
 
@@ -1100,7 +1100,7 @@ Rules:
 - one module identity per file, derived from its path
 - explicit imports only
 - no wildcard imports in v1
-- no cyclic imports
+- cyclic imports are supported through forward-declaration bindings and two-pass checking
 - package naming stays filesystem-friendly
 
 Recommended layout:

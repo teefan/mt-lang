@@ -311,7 +311,7 @@ function main() -> int:
   <div class="table-wrap">
     <table class="attr-table">
       <tr><th>Principle</th><th>Description</th></tr>
-      <tr><td><strong>What you see is what runs</strong></td><td>No hidden allocation, dispatch, or heap traffic. Every cost is spelled in source.</td></tr>
+      <tr><td><strong>What you see is what runs</strong></td><td>Ordinary values have no hidden allocation or dispatch. Runtime interface dispatch and closure environments are explicit language features with their own costs.</td></tr>
       <tr><td><strong>C is the ABI ground truth</strong></td><td>Structs, unions, pointers, and calling conventions map directly without lossy translation.</td></tr>
       <tr><td><strong>Safe by default, unsafe by choice</strong></td><td>Pointer operations require <code>unsafe</code>. Indexing is bounds-checked. Conversions are explicit.</td></tr>
       <tr><td><strong>Data-oriented first</strong></td><td>Plain structs, arrays, spans, pools, and arenas matter more than elaborate object systems.</td></tr>
@@ -355,7 +355,7 @@ function main() -> int:
 <!-- ────────────────────────────────────────────────────────────────────────── -->
 <section id="generated-c">
   <h2>Generated C</h2>
-  <p>Milk Tea compiles to readable C that mirrors the source structure. No hidden runtime, no hidden heap traffic, no hidden dispatch. The output is designed for a human to debug, diff, and ship.</p>
+  <p>Milk Tea compiles to readable C that mirrors the source structure. Ordinary value operations do not introduce hidden heap traffic or dispatch; runtime interface values and closure environments remain explicit language features. The output is designed for a human to debug, diff, and ship.</p>
 
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
@@ -466,7 +466,7 @@ variant Action:
     heal(amount: int)
     idle
 
-## ── Interfaces (nominal contracts, no hidden dispatch) ──────────────
+## ── Interfaces (nominal contracts; dyn provides explicit dispatch) ───
 public interface Damageable:
     editable function take_damage(amount: int) -&gt; void
     function is_alive() -&gt; bool
@@ -680,7 +680,7 @@ function main() -&gt; int:
             break
         io.print_line(f"value #{v}")
 
-    ## Parallel for (arrays/spans only, lengths must match)
+    ## Lockstep for over arrays/spans (lengths must match)
     let xs = array[float, 3](1.0, 2.0, 3.0)
     let ys = array[float, 3](4.0, 5.0, 6.0)
     for x, y in xs, ys:
@@ -840,7 +840,7 @@ function main() -&gt; int:
   <p>Milk Tea source files use the <code class="code-inline">.mt</code> extension. A file is either an <strong>ordinary</strong> source file or an <strong>external</strong> file for raw ABI bindings. There are no wildcard imports — every module must be imported by name.</p>
 
   <h3>Ordinary Files</h3>
-  <p>The normal source form. No module header; module identity is inferred from the file path relative to <code class="code-inline">package.source_root</code>. <code class="code-inline">import</code> statements appear only at the top.</p>
+  <p>The normal source form. No module header; module identity is inferred from the file path relative to <code class="code-inline">package.source_root</code>. <code class="code-inline">import</code> statements appear only at the top. Circular module imports are supported through forward-declaration bindings and two-pass checking.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>import std.math as math
@@ -1184,7 +1184,7 @@ static_assert(MAX_ENTITIES &gt; 0, "need at least one entity")</code></pre>
   <h2>Interfaces &amp; Methods</h2>
 
   <h3>Interfaces</h3>
-  <p>Explicit nominal method-set contracts for static polymorphism. No inheritance, no hidden dispatch.</p>
+  <p>Explicit nominal method-set contracts for static polymorphism. No inheritance or hidden dispatch; runtime polymorphism is explicit through <code>dyn[I]</code>.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>public interface Damageable:
@@ -1304,7 +1304,7 @@ let handle = null[ptr[char]]</code></pre>
 </div>
 
   <h3>Memory Model</h3>
-  <p>Milk Tea follows <strong>value semantics by default</strong>. Scalars, structs, and fixed arrays copy by value. There is no hidden heap boxing, no garbage collector, and no hidden reference counting. Heap allocation is always explicit and allocator-driven:</p>
+  <p>Milk Tea follows <strong>value semantics by default</strong>. Scalars, structs, and fixed arrays copy by value. Ordinary values do not carry hidden heap boxes or reference counts; captured <code>proc</code> values may allocate ref-counted closure environments as part of their lifecycle. User-owned heap allocation remains explicit and allocator-driven:</p>
   <div class="table-wrap">
     <table class="attr-table">
       <tr><th>Module</th><th>Use Case</th></tr>
@@ -1450,8 +1450,8 @@ for item in items:
     process(item)</code></pre>
 </div>
 
-  <h3>for (Parallel)</h3>
-  <p>Arrays and spans only. Lengths must match.</p>
+  <h3>for (Lockstep)</h3>
+  <p>This is the lockstep multi-iterable form, distinct from <code>parallel for</code>. Arrays and spans only; lengths must match.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>for entity, position, velocity in entities, positions, velocities:
@@ -1628,7 +1628,7 @@ unsafe:
   <h2>Compile-Time Control Flow</h2>
 
   <h3>when</h3>
-  <p>Evaluates discriminant at compile time; only the chosen branch is type-checked and emitted.</p>
+  <p>Evaluates discriminant at compile time; only the chosen branch is type-checked and emitted. <code>when</code> may also appear at module level to conditionally include declarations, imports, or type definitions.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>when TARGET_OS:
@@ -2012,7 +2012,7 @@ let r = aio.result(task)</code></pre>
 <!-- ────────────────────────────────────────────────────────────────────────── -->
 <section id="concurrency">
   <h2>Concurrency</h2>
-  <p>Milk Tea has first-class compiler support for multithreading using real OS threads (libuv). All concurrency is structured: spawned work completes before the parent scope continues. No hidden thread pool, no GC interaction, no fire-and-forget.</p>
+  <p>Milk Tea has first-class compiler support for multithreading using real OS threads (libuv). <code>parallel for</code> and <code>parallel:</code> are structured barriers; <code>detach</code> continues asynchronously until an explicit <code>gather</code>. There is no GC interaction or implicit fire-and-forget cleanup.</p>
 
   <h3>Parallel For (data-parallel)</h3>
   <p>Dispatches loop iterations across CPU cores. Each iteration writes to its own index range &mdash; the bread and butter of data-oriented game programming.</p>
@@ -2245,7 +2245,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>mtc lower &lt;path&gt;</code></td><td>Print lowered IR</td></tr>
       <tr><td><code>mtc debug &lt;file.mt&gt;</code></td><td>Print debug info (tokens, AST, facts, bindings, diagnostics)</td></tr>
       <tr><td><code>mtc emit-c &lt;path&gt;</code></td><td>Emit generated C to stdout</td></tr>
-      <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format sources in place (<code>--check</code> for dry-run)</td></tr>
+      <tr><td><code>mtc format &lt;path&gt;</code></td><td>Format source to stdout (<code>--write</code> rewrites in place, <code>--check</code> verifies)</td></tr>
       <tr><td><code>mtc lint &lt;path&gt;</code></td><td>Run linter (<code>--fix</code>, <code>--select</code>, <code>--ignore</code>)</td></tr>
       <tr><td><code>mtc test &lt;path&gt;</code></td><td>Discover and run <code>@[test]</code> functions</td></tr>
       <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package (<code>package.toml</code> + <code>src/main.mt</code>)</td></tr>
@@ -2416,9 +2416,17 @@ import std.math  # intentionally available for downstream</code></pre>
 
   <h3>Event Restrictions</h3>
   <ul style="margin-left:1.25rem;margin-bottom:1rem">
-    <li>Event payload cannot be <code>ref[T]</code></li>
-    <li><code>emit</code> is only callable from within the declaring module</li>
-    <li>Events not allowed in external files</li>
+     <li>Event payload types must be storable and cannot be event storage types</li>
+     <li>Event payload cannot be <code>ref[T]</code></li>
+     <li>Event storage types cannot be returned, passed through ordinary value parameters, or copied into locals</li>
+     <li><code>emit</code> is only callable from within the declaring module</li>
+     <li>Events not allowed in external files</li>
+  </ul>
+
+  <h3>Interface Restrictions</h3>
+  <ul style="margin-left:1.25rem;margin-bottom:1rem">
+     <li>Interface methods cannot be <code>async</code> or declare their own type parameters</li>
+     <li>Interface conformance must be declared on the nominal type, not an <code>extending</code> block</li>
   </ul>
 </section>
 
