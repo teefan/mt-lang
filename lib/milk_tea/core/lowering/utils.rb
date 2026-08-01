@@ -1161,7 +1161,7 @@ module MilkTea
       cached = cache[text]
       return cached if cached
 
-      identifier = text.gsub(/[^A-Za-z0-9_]+/, "_").gsub(/_+/, "_").sub(/_+$/, "").sub(/^_{2,}/, "_")
+      identifier = text.gsub(/[^A-Za-z0-9_]+/, "_").gsub(/_+/, "_").sub(/_+$/, "").sub(/^_+/, "")
       cache[text] = identifier.empty? ? "value" : identifier
     end
 
