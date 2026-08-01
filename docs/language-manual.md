@@ -1007,7 +1007,7 @@ Rules:
 - `ivec2` `ivec3` `ivec4` — integer vectors with `.x` `.y` `.z` `.w` fields
 - `mat3` `mat4` — column-major matrices; `mat3` has columns `.col0`–`.col2` (each `vec3`), `mat4` has `.col0`–`.col3` (each `vec4`)
 - `quat` — quaternion with `.x` `.y` `.z` `.w` fields; memory-layout compatible with `vec4`
-- `simd[T, N]` — SIMD vector with `N` lanes of numeric primitive type `T`; total width must be 128 or 256 bits. Supports component-wise arithmetic (`+` `-` `*` `/`), bitwise (`&` `|` `^` `~`), shift (`<<` `>>`), and compound assignment. Lane access via compile-time constant index `[i]`. Lowers to GCC/Clang `__attribute__((__vector_size__))`.
+- `simd[T, N]` — SIMD vector with `N` lanes of numeric primitive type `T`; total width must be 128 or 256 bits. Supports component-wise arithmetic (`+` `-` `*` `/`, and `%` for integer lanes), bitwise (`&` `|` `^` `~`), shift (`<<` `>>`), and compound assignment. Lane access via compile-time constant index `[i]`. Lowers to GCC/Clang `__attribute__((__vector_size__))`.
 
 Primitive type names are reserved. They cannot be reused for value bindings, parameters, locals, import aliases, or type parameters.
 
@@ -1043,7 +1043,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 - `Option[T]`
 - `Result[T, E]`
 - `SoA[T, N]` — Structure-of-Arrays: transforms `T`'s fields into separate arrays of length `N`; access as `soa[i].field`
-- `simd[T, N]` — SIMD vector: fixed-width vector of `N` numeric lanes. Constructed with `simd[T, N](lane0, lane1, ...)`. Supports component-wise `+` `-` `*` `/`, bitwise `&` `|` `^` `~`, shift `<<` `>>`, unary `-` `~`, and compound assignment. Lane access via compile-time constant `[i]`. Total width must be 128 or 256 bits. Lowers to GCC/Clang vector extensions.
+- `simd[T, N]` — SIMD vector: fixed-width vector of `N` numeric lanes. Constructed with `simd[T, N](lane0, lane1, ...)`. Supports component-wise `+` `-` `*` `/` (and `%` for integer lanes), bitwise `&` `|` `^` `~`, shift `<<` `>>`, unary `-` `~`, and compound assignment. Lane access via compile-time constant `[i]`. Total width must be 128 or 256 bits. Lowers to GCC/Clang vector extensions.
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: data + vtable). Constructed via `adapt[Interface](value: ref[T])`. @see §3.5.
 - `atomic[T]` — atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load() -> T`, `store(value: T)`, `add(value: T) -> T`, `sub(value: T) -> T`, `exchange(value: T) -> T`. All operations use sequential consistency. Lowers to C11 `_Atomic T` with `__atomic_*` builtins. `atomic[T]` is zero-initializable and sendable.
 - `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.
@@ -1054,7 +1054,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 - for pointer-like bases (`ptr[T]`, `const_ptr[T]`, `own[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer with `null` as the absent value
 - for non-pointer value bases (`int`, `bool`, `float`, structs, ...), `T?` is stored inline by value as a tagged optional (a presence flag plus the value); it copies by value with no hidden heap allocation or pointer aliasing
 - `null` expresses absence in any nullable context; the explicit typed `null[...]` form's target must be pointer-like
-- in nullable pointer-like contexts, use `null` instead of `zero[ptr[T]]`
+- in nullable pointer-like contexts, `zero[ptr[T]]` is rejected; use `null` instead
 - at an FFI boundary (`external` / `foreign function` parameters and returns), only pointer-like `T?` is allowed; a non-pointer value nullable such as `int?` is rejected — use `ptr[T]?` or pass an explicit struct
 
 ### 6.4 Generics

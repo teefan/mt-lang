@@ -521,7 +521,6 @@ The type system must stay simple, explicit, and close to C.
 ### Primitive types
 
 - `bool`
-- `byte`
 - `char`
 - `byte`, `short`, `int`, `long`
 - `ubyte`, `ushort`, `uint`, `ulong`
@@ -587,7 +586,7 @@ Notes:
 - If low-level code needs to validate raw `array[char, N]` storage as text, that conversion belongs in an explicit helper or imported boundary, not as a built-in method family on raw arrays.
 - Addressable `str_buffer[N]` values also coerce to `span[char]`, so writable foreign text APIs can still accept builders directly when they do not want a second application-facing text abstraction.
 - `str_buffer[N]` is not an ABI type. Raw bindings still spell writable text as `ptr[char]` or `span[char]`; `str_buffer[N]` is the caller-side text object.
-- `str_buffer[N]` has a built-in text surface: `.clear()`, `.assign(str)`, `.append(str)`, `.len()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
+- `str_buffer[N]` has a built-in text surface: `.clear()`, `.assign(str)`, `.append(str)`, `.assign_format(str)`, `.append_format(str)`, `.len()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
 - `.assign(...)` replaces the current contents and traps at runtime if the new text exceeds capacity.
 - `.append(...)` extends the current contents and traps at runtime if the appended text would exceed capacity.
 - `.len()` returns the tracked text length, revalidating UTF-8 and rescanning for the trailing NUL if the builder was passed through a writable `span[char]` or `ptr[char]` alias.
@@ -650,7 +649,7 @@ joins the path with underscores (e.g., `module_Rectangle_Edge`).
 
 #### Enums
 
-Enums always have an explicit backing type.
+Enums use an integer backing type, defaulting to `int` when omitted; members auto-increment from 0 or the previous explicit value.
 
 ```mt
 enum WeaponKind: ubyte
@@ -661,7 +660,7 @@ enum WeaponKind: ubyte
 
 #### Flags
 
-Flags are named bitmasks with a fixed integer backing type.
+Flags are named bitmasks with an integer backing type (defaulting to `int` when omitted).
 
 ```mt
 flags WindowFlags: uint
