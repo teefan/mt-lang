@@ -204,8 +204,11 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source, imported)
 
-    assert_match(/event\.type/, generated)
-    refute_match(/event\.type_/, generated)
+    # Field access must agree with the emitted struct/union definition: a
+    # source field named `type_` stays `type_` in C (C-keyword escaping is
+    # applied only to actual C keywords at emit time).
+    assert_match(/event\.type_/, generated)
+    refute_match(/event\.type\b/, generated)
   end
 
   def test_generate_c_for_unsafe_pointer_cast_and_arithmetic

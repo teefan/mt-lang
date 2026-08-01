@@ -850,9 +850,6 @@ module MilkTea
       end
 
       def field_c_name(name)
-        stripped = name.delete_suffix("_")
-        return stripped if stripped != name && MilkTea::KEYWORDS.key?(stripped)
-
         name
       end
 
@@ -961,9 +958,6 @@ module MilkTea
       end
 
       def field_c_name(name)
-        stripped = name.delete_suffix("_")
-        return stripped if stripped != name && MilkTea::KEYWORDS.key?(stripped)
-
         name
       end
 
