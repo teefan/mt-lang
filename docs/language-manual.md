@@ -292,7 +292,7 @@ Callable and `ref[...]` rules:
 - External functions still cannot take `ref[...]` parameters, and ordinary functions still cannot return `ref[...]`.
 - `proc` captures are value captures. A captured local is not a mutable alias back to the outer binding. Any storable type may be captured, including scalars, arrays, structs, and other `proc` values. Captured `proc` values participate in the ref-counted lifecycle: the capturing proc retains the captured proc on creation and releases it when the env is freed.
 - `ref[T]` values are not capturable by design since they are non-owning.
-- Shared mutable proc state should use explicit storage such as `std.cell.alloc[T](...)` or other explicit pointer-backed state, not implicit mutable capture.
+- Shared mutable proc state should use explicit storage such as `std.box.alloc[T](...)` or other explicit pointer-backed state, not implicit mutable capture.
 
 ### 3.4 Struct, union, enum, flags, opaque
 

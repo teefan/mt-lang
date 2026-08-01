@@ -3,42 +3,42 @@ import std.mem.heap as heap
 ## Explicit single-value heap storage.
 ##
 ## This is the intended escape hatch for shared mutable proc state.
-## Allocation stays visible at the call site via `cell.alloc(...)`.
-public struct Cell[T]:
+## Allocation stays visible at the call site via `box.alloc(...)`.
+public struct Box[T]:
     storage: own[T]?
 
 
-public function alloc[T](value: T) -> Cell[T]:
+public function alloc[T](value: T) -> Box[T]:
     let storage = heap.must_alloc[T](1)
     read(storage) = value
-    return Cell[T](storage = storage)
+    return Box[T](storage = storage)
 
 
-extending Cell[T]:
+extending Box[T]:
     public function as_ptr() -> ptr[T]:
         let storage = this.storage else:
-            fatal(c"cell.Cell.as_ptr released cell")
+            fatal(c"box.Box.as_ptr released box")
 
         return storage
 
 
     public function get() -> T:
         let storage = this.storage else:
-            fatal(c"cell.Cell.get released cell")
+            fatal(c"box.Box.get released box")
 
         return read(storage)
 
 
     public function set(value: T) -> void:
         let storage = this.storage else:
-            fatal(c"cell.Cell.set released cell")
+            fatal(c"box.Box.set released box")
 
         read(storage) = value
 
 
     public function replace(value: T) -> T:
         let storage = this.storage else:
-            fatal(c"cell.Cell.replace released cell")
+            fatal(c"box.Box.replace released box")
 
         let previous = read(storage)
         read(storage) = value

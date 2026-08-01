@@ -236,7 +236,7 @@ Callable and `ref[...]` rules:
 - External functions still cannot take `ref[...]` parameters, and ordinary functions still cannot return `ref[...]`.
 - `proc` captures are value captures. A captured local is not a mutable alias back to the outer binding. Any storable type may be captured, including scalars, arrays, structs, and other `proc` values. Captured `proc` values participate in the ref-counted lifecycle: the capturing proc retains the captured proc on creation and releases it when the env is freed.
 - `ref[T]` values are not capturable by design since they are non-owning.
-- Shared mutable proc state should use explicit storage such as `std.cell.alloc[T](...)` or other explicit pointer-backed state, not implicit mutable capture.
+- Shared mutable proc state should use explicit storage such as `std.box.alloc[T](...)` or other explicit pointer-backed state, not implicit mutable capture.
 
 ## 5. Data Declarations
 
@@ -902,7 +902,7 @@ Core modules in `std/`:
 
 **Compression**: `std.gzip`, `std.tar`
 
-**Other**: `std.bytes`, `std.ctype`, `std.asset_pack`, `std.cell`
+**Other**: `std.bytes`, `std.ctype`, `std.asset_pack`, `std.box`
 
 See module source for full method surface. Iterator forms:
 - Pointer-returning (`next() -> nullable ptr[T]`): `Vec`, `Deque`, `BinaryHeap`/`PriorityQueue`/`OrderedSet` (read-only), `OrderedMap.keys`/`Map.keys`/`Set`/`LinkedMap.keys`/`LinkedSet`/`Counter.keys`/`MultiSet.values`, `Queue`/`Stack` (mutable), `RingBuffer`, `SparseSet`

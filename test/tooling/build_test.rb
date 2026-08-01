@@ -1251,12 +1251,12 @@ function main() -> int:
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    Dir.mktmpdir("milk-tea-build-cell-proc-state") do |dir|
-      source_path = File.join(dir, "cell-proc-state.mt")
-      output_path = File.join(dir, "cell-proc-state")
+    Dir.mktmpdir("milk-tea-build-box-proc-state") do |dir|
+      source_path = File.join(dir, "box-proc-state.mt")
+      output_path = File.join(dir, "box-proc-state")
 
         source = [
-        "import std.cell as cell",
+        "import std.box as box",
         "",
         "struct Counter:",
         "    value: int",
@@ -1270,10 +1270,10 @@ function main() -> int:
         "    return next",
         "",
         "function main() -> int:",
-        "    var count = cell.alloc[int](0)",
+        "    var count = box.alloc[int](0)",
         "    defer count.release()",
         "",
-        "    var counter = cell.alloc[Counter](Counter(value = 1))",
+        "    var counter = box.alloc[Counter](Counter(value = 1))",
         "    defer counter.release()",
         "",
         "    let bump = proc() -> int:",
