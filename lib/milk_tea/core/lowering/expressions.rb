@@ -1506,10 +1506,54 @@ module MilkTea
       return false unless receiver_type.is_a?(Types::VariantArmPayload)
 
       outer = receiver_type.variant_type
-      return field_type == outer if outer.is_a?(Types::Variant)
-      return field_type == outer if outer.is_a?(Types::VariantInstance)
+      return false unless outer.is_a?(Types::Variant) || outer.is_a?(Types::VariantInstance)
 
-      false
+      # The C backend pointer-breaks every cyclic field, including cycles that
+      # run through generic instantiations such as `Option[Atom]` inside `Atom`.
+      # Deref the access whenever the field type can reach the outer variant.
+      type_reaches_target?(field_type, outer)
+    end
+
+    def type_reaches_target?(type, target)
+      type_reaches_target_with_visited?(type, target, {})
+    end
+
+    def type_reaches_target_with_visited?(type, target, visited)
+      return true if type == target
+      return false if visited[type.object_id]
+
+      visited[type.object_id] = true
+      reachability_children(type).any? do |child|
+        type_reaches_target_with_visited?(child, target, visited)
+      end
+    end
+
+    # Structural expansion used by cyclic-field reachability. Mirrors the
+    # CBackend's `aggregate_type_dependencies` so the deref injected for a
+    # pointer-broken cyclic field agrees with the emitted C struct layout.
+    def reachability_children(type)
+      case type
+      when Types::Nullable
+        [type.base]
+      when Types::GenericInstance
+        if pointer_type?(type)
+          []
+        elsif array_type?(type)
+          [array_element_type(type)]
+        else
+          []
+        end
+      when Types::Span
+        [type.element_type]
+      when Types::Struct, Types::StructInstance, Types::Union
+        type.fields.values
+      when Types::Variant, Types::VariantInstance
+        type.arm_names.flat_map { |name| type.arm(name).values }
+      when Types::VariantArmPayload
+        type.fields.values
+      else
+        []
+      end
     end
 
     def lower_compile_time_handle_member(handle, member, type)

@@ -943,7 +943,12 @@ module MilkTea
       payload_type = Types::VariantArmPayload.new(storage_type, arm_name, storage_type.arm(arm_name))
       data_expr = IR::Member.new(receiver: storage_expr, member: "data", type: nil)
       arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
-      IR::Member.new(receiver: arm_expr, member: field_name, type: field_type)
+      member_expr = IR::Member.new(receiver: arm_expr, member: field_name, type: field_type)
+      if type_reaches_target?(field_type, payload_type.variant_type)
+        return IR::Unary.new(operator: "*", operand: member_expr, type: field_type)
+      end
+
+      member_expr
     end
 
     def infer_result_propagation_type(expression, env:)
