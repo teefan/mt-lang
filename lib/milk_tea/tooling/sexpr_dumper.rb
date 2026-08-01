@@ -38,6 +38,7 @@ module MilkTea
       when Float   then buf << format_float(value)
       when String  then emit_string(value, buf)
       when Symbol  then buf << ":" << value.to_s.tr("_", "-")
+      when Hash, Set then nil
       else buf << escape_string(value.to_s)
       end
     end
@@ -50,6 +51,7 @@ module MilkTea
       buf << "(" << type_name
       members.each do |field|
         val = node.public_send(field)
+        next if val.is_a?(Hash) || val.is_a?(Set)
         buf << " :" << field.to_s << " "
         emit_value(val, buf)
       end
