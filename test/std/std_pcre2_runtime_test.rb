@@ -43,24 +43,24 @@ function pcre2_free(memory: ptr[void], user_data: ptr[void]) -> void:
 
 function main() -> int:
     let user_data = heap.must_alloc_bytes(1)
-    defer heap.release_bytes(user_data)
+    defer: heap.release_bytes(user_data)
 
     let general = re.general_context_create_8(pcre2_alloc, pcre2_free, user_data)
-    defer re.general_context_free_8(general)
+    defer: re.general_context_free_8(general)
 
     let compile_context = re.compile_context_create_8(general)
-    defer re.compile_context_free_8(compile_context)
+    defer: re.compile_context_free_8(compile_context)
 
     let match_context = re.match_context_create_8(general)
-    defer re.match_context_free_8(match_context)
+    defer: re.match_context_free_8(match_context)
 
     let compiled = runtime.compile_str(\"cat\", 0, compile_context)
     let code = compiled.code else:
         return 1
-    defer re.code_free_8(code)
+    defer: re.code_free_8(code)
 
     let match_data = re.match_data_create_from_pattern_8(code, general)
-    defer re.match_data_free_8(match_data)
+    defer: re.match_data_free_8(match_data)
 
     let rc = runtime.match_str(code, \"a cat nap\", 0, 0, match_data, match_context)
     if rc <= 0:

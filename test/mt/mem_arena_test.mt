@@ -17,7 +17,7 @@ struct Mat4:
 @[test]
 function test_arena_lifetime_flow() -> t.Check:
     var scratch = arena.create(32)
-    defer scratch.release()
+    defer: scratch.release()
 
     let start = scratch.mark()
     t.expect(start == 0, "initial mark == 0")?
@@ -42,7 +42,7 @@ function test_arena_lifetime_flow() -> t.Check:
 @[test]
 function test_arena_typed_allocation() -> t.Check:
     var scratch = arena.create_for[Pair](1)
-    defer scratch.release()
+    defer: scratch.release()
 
     let pair = scratch.alloc[Pair](1)
     t.expect(pair != null, "pair alloc non-null")?
@@ -62,7 +62,7 @@ function test_arena_typed_allocation() -> t.Check:
 @[test]
 function test_arena_cstr_helpers() -> t.Check:
     var scratch = arena.create(16)
-    defer scratch.release()
+    defer: scratch.release()
 
     let copied = scratch.try_to_cstr("milk")
     if copied == null:
@@ -76,7 +76,7 @@ function test_arena_cstr_helpers() -> t.Check:
 @[test]
 function test_arena_aligned_allocation() -> t.Check:
     var scratch = arena.create_for[Mat4](1)
-    defer scratch.release()
+    defer: scratch.release()
 
     let matrix = scratch.alloc[Mat4](1)
     t.expect(matrix != null, "matrix alloc non-null")?
@@ -88,7 +88,7 @@ function test_arena_aligned_allocation() -> t.Check:
 @[test] @[expect_fatal]
 function test_arena_invalid_mark_aborts() -> t.Check:
     var scratch = arena.create(32)
-    defer scratch.release()
+    defer: scratch.release()
 
     let first = scratch.alloc_bytes(8)
     t.expect(first != null, "alloc non-null")?

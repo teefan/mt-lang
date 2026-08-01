@@ -8,18 +8,18 @@ const NUM_FRAMES: int = 3
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - sprite button")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let fx_button = rl.load_sound("buttonfx.wav")
-    defer rl.unload_sound(fx_button)
+    defer: rl.unload_sound(fx_button)
     let button = rl.load_texture("button.png")
-    defer rl.unload_texture(button)
+    defer: rl.unload_texture(button)
 
     let frame_height = float<-button.height / float<-NUM_FRAMES
     var source_rect = rl.Rectangle(x = 0.0, y = 0.0, width = float<-button.width, height = frame_height)

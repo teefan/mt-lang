@@ -42,17 +42,17 @@ function uses_asian_font(language: str) -> bool:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - unicode emojis")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let font_default = rl.load_font("dejavu.fnt")
-    defer rl.unload_font(font_default)
+    defer: rl.unload_font(font_default)
     let font_asian = rl.load_font("noto_cjk.fnt")
-    defer rl.unload_font(font_asian)
+    defer: rl.unload_font(font_asian)
     let font_emoji = rl.load_font("symbola.fnt")
-    defer rl.unload_font(font_emoji)
+    defer: rl.unload_font(font_emoji)
 
     let emoji_texts = array[str, EMOJI_COUNT](
         "🌀", "😀", "😂", "🤣", "😃", "😆", "😉", "😋",

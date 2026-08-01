@@ -28,7 +28,7 @@ function generate_random_color_rect_sequence(
     var rectangles = vec.Vec[ColorRect].with_capacity(ptr_uint<-rect_count)
     let sequence = rl.load_random_sequence(uint<-rect_count, 0, rect_count - 1) else:
         fatal("could not allocate random sequence")
-    defer rl.unload_random_sequence(sequence)
+    defer: rl.unload_random_sequence(sequence)
 
     let rect_sequence_width = (float<-rect_count) * rect_width
     let start_x = (screen_width - rect_sequence_width) * 0.5
@@ -55,7 +55,7 @@ function generate_random_color_rect_sequence(
 function shuffle_color_rect_sequence(rectangles: ref[vec.Vec[ColorRect]], rect_count: int) -> void:
     let sequence = rl.load_random_sequence(uint<-rect_count, 0, rect_count - 1) else:
         fatal("could not allocate random sequence")
-    defer rl.unload_random_sequence(sequence)
+    defer: rl.unload_random_sequence(sequence)
 
     var index = 0
     while index < rect_count:
@@ -79,7 +79,7 @@ function shuffle_color_rect_sequence(rectangles: ref[vec.Vec[ColorRect]], rect_c
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - random sequence")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var rect_count = 20
     var rect_size = (float<-SCREEN_WIDTH) / (float<-rect_count)
@@ -89,7 +89,7 @@ function main() -> int:
         float<-SCREEN_WIDTH,
         0.75 * float<-SCREEN_HEIGHT
     )
-    defer rectangles.release()
+    defer: rectangles.release()
 
     rl.set_target_fps(60)
 

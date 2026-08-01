@@ -198,13 +198,13 @@ function draw_texture_tiled(
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - tiled drawing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let pattern_texture = rl.load_texture("patterns.png")
-    defer rl.unload_texture(pattern_texture)
+    defer: rl.unload_texture(pattern_texture)
     rl.set_texture_filter(pattern_texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
     let patterns = array[rl.Rectangle, MAX_PATTERNS](

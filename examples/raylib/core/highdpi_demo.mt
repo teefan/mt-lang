@@ -18,7 +18,7 @@ function draw_text_center(text: str, x: int, y: int, font_size: int, color: rl.C
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_HIGHDPI | rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - highdpi demo")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.set_window_min_size(MIN_WINDOW_SIZE, MIN_WINDOW_SIZE)
 

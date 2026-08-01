@@ -17,7 +17,7 @@ var lines: array[Line, MAX_DRAW_LINES] = zero[array[Line, MAX_DRAW_LINES]]
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - kaleidoscope")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let symmetry = 6
     let angle: float = 360.0 / float<-symmetry

@@ -209,7 +209,7 @@ module MilkTea
             end
           end
         when AST::DeferStmt
-          lines.concat(statement_list_lines(statement.body)) if statement.body
+          lines.concat(statement_list_lines(statement.body))
         when AST::Assignment
           lines << expression_end_line(statement.value)
         when AST::ReturnStmt

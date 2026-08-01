@@ -29,7 +29,7 @@ function projection_name(projection: int) -> str:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - 3d camera first person")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var camera = rl.Camera3D(
         position = rl.Vector3(x = 0.0, y = 2.0, z = 4.0),

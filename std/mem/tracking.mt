@@ -47,7 +47,7 @@ extending Tracker:
             return
 
         var sb = string.String.create()
-        defer sb.release()
+        defer: sb.release()
 
         sb.append("[tracking] ")
         sb.append(fmt.format(f"#{this.entries.len()} leaked allocation(s):\n").as_str())

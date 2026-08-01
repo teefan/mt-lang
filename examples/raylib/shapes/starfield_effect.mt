@@ -9,7 +9,7 @@ const STAR_COUNT: int = 420
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - starfield effect")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let bg_color = rl.color_lerp(rl.DARKBLUE, rl.BLACK, 0.69)
     var speed: float = 10.0 / 9.0

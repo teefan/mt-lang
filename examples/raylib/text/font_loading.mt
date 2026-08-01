@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - font loading")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -15,9 +15,9 @@ function main() -> int:
     let msg = "!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHI\nJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmn\nopqrstuvwxyz{|}~¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓ\nÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷\nøùúûüýþÿ"
 
     let font_bm = rl.load_font("pixantiqua.fnt")
-    defer rl.unload_font(font_bm)
+    defer: rl.unload_font(font_bm)
     let font_ttf = rl.load_font_ex("pixantiqua.ttf", 32, null, 250)
-    defer rl.unload_font(font_ttf)
+    defer: rl.unload_font(font_ttf)
 
     rl.set_text_line_spacing(16)
 

@@ -38,7 +38,7 @@ struct PresetPattern:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - game of life")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -73,15 +73,15 @@ function main() -> int:
     var button_slower = false
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/game_of_life.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
     let resolution_location = rl.get_shader_location(shader, "resolution")
     let resolution = array[float, 2](float<-WORLD_WIDTH, float<-WORLD_HEIGHT)
     rl.set_shader_value(shader, resolution_location, resolution, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     let world1 = rl.load_render_texture(WORLD_WIDTH, WORLD_HEIGHT)
-    defer rl.unload_render_texture(world1)
+    defer: rl.unload_render_texture(world1)
     let world2 = rl.load_render_texture(WORLD_WIDTH, WORLD_HEIGHT)
-    defer rl.unload_render_texture(world2)
+    defer: rl.unload_render_texture(world2)
     rl.begin_texture_mode(world2)
     rl.clear_background(rl.RAYWHITE)
     rl.end_texture_mode()

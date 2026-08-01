@@ -129,7 +129,7 @@ function draw_particles(head: int, tail: int) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - simple particles")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var head = 0
     var tail = 0

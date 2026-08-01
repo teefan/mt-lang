@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input keys")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var ball_position = rl.Vector2(x = 400.0, y = 225.0)
 

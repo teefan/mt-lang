@@ -116,9 +116,9 @@ function gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: flo
     let clip_distance = decal_size * 0.5
 
     var read_builder = create_mesh_builder()
-    defer release_mesh_builder(ref_of(read_builder))
+    defer: release_mesh_builder(ref_of(read_builder))
     var write_builder = create_mesh_builder()
-    defer release_mesh_builder(ref_of(write_builder))
+    defer: release_mesh_builder(ref_of(write_builder))
 
     var mesh_index = 0
     while mesh_index < target.meshCount:
@@ -261,7 +261,7 @@ function draw_button(bounds: rl.Rectangle, label: str) -> bool:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - decals")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -275,10 +275,10 @@ function main() -> int:
     )
 
     let model = rl.load_model("models/obj/character.obj")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
 
     let model_texture = rl.load_texture("models/obj/character_diffuse.png")
-    defer rl.unload_texture(model_texture)
+    defer: rl.unload_texture(model_texture)
     rl.set_texture_filter(model_texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, model_texture)
 
@@ -302,7 +302,7 @@ function main() -> int:
     let decal_offset = 0.01
 
     var placement_cube = rl.load_model_from_mesh(rl.gen_mesh_cube(decal_size, decal_size, decal_size))
-    defer rl.unload_model(placement_cube)
+    defer: rl.unload_model(placement_cube)
     unsafe: placement_cube.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = rl.LIME
 
     var decal_material = rl.load_material_default()
@@ -311,7 +311,7 @@ function main() -> int:
     var decal_image = rl.load_image("raylib_logo.png")
     rl.image_resize_nn(decal_image, decal_image.width / 4, decal_image.height / 4)
     let decal_texture = rl.load_texture_from_image(decal_image)
-    defer rl.unload_texture(decal_texture)
+    defer: rl.unload_texture(decal_texture)
     rl.unload_image(decal_image)
 
     rl.set_texture_filter(decal_texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)

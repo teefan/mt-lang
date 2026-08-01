@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - writing anim")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let message = "This sample illustrates a text writing\nanimation effect! Check it out! ;)"
     var frames_counter = 0

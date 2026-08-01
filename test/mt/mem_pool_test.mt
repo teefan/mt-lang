@@ -16,7 +16,7 @@ struct Mat4:
 @[test]
 function test_pool_stable_storage_flow() -> t.Check:
     var objects = pool.create(8, 2)
-    defer objects.release()
+    defer: objects.release()
 
     t.expect(objects.remaining_slots() == 2, "2 slots remaining")?
 
@@ -43,7 +43,7 @@ function test_pool_stable_storage_flow() -> t.Check:
 @[test]
 function test_pool_typed_helpers() -> t.Check:
     var objects = pool.create_for[Pair](2)
-    defer objects.release()
+    defer: objects.release()
 
     let first = objects.alloc[Pair]()
     let second = objects.alloc[Pair]()
@@ -67,7 +67,7 @@ function test_pool_typed_helpers() -> t.Check:
 @[test]
 function test_pool_alignment_contracts() -> t.Check:
     var raw = pool.create(6, 2)
-    defer raw.release()
+    defer: raw.release()
 
     t.expect(raw.alloc[int]() == null, "int alloc in 6-byte slot is null")?
 
@@ -75,7 +75,7 @@ function test_pool_alignment_contracts() -> t.Check:
     t.expect(small != null, "short alloc non-null")?
 
     var aligned = pool.create_for[Mat4](1)
-    defer aligned.release()
+    defer: aligned.release()
 
     let matrix = aligned.alloc[Mat4]()
     return t.expect(matrix != null, "Mat4 alloc non-null")
@@ -84,7 +84,7 @@ function test_pool_alignment_contracts() -> t.Check:
 @[test]
 function test_pool_empty_without_backing_storage() -> t.Check:
     var empty = pool.create(8, 0)
-    defer empty.release()
+    defer: empty.release()
 
     t.expect(empty.remaining_slots() == 0, "no slots")?
     return t.expect(empty.alloc_bytes() == null, "alloc on empty pool is null")

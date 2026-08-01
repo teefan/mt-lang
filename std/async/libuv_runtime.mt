@@ -475,7 +475,7 @@ public function result[T](task: Task[T]) -> T:
     if not completed[T](task):
         fatal(c"async.result called before task completed")
 
-    defer task.release(task.frame)
+    defer: task.release(task.frame)
     return task.take_result(task.frame)
 
 
@@ -484,7 +484,7 @@ public function wait_on[T](runtime: Runtime, task: Task[T]) -> T:
     while not task.ready(task.frame):
         runtime_poll(runtime)
 
-    defer task.release(task.frame)
+    defer: task.release(task.frame)
     return task.take_result(task.frame)
 
 
@@ -503,7 +503,7 @@ public function wait[T](root: proc() -> Task[T]) -> T:
 
     var runtime = runtime_create()
     runtime_activate(runtime)
-    defer runtime_release(ref_of(runtime))
+    defer: runtime_release(ref_of(runtime))
     return wait_on[T](runtime, root())
 
 
@@ -514,7 +514,7 @@ public function run(root: proc() -> Task[void]) -> void:
 
     var runtime = runtime_create()
     runtime_activate(runtime)
-    defer runtime_release(ref_of(runtime))
+    defer: runtime_release(ref_of(runtime))
     run_on(runtime, root())
 
 
@@ -524,7 +524,7 @@ public function with_runtime[T](body: proc(runtime: Runtime) -> T) -> T:
 
     var runtime = runtime_create()
     runtime_activate(runtime)
-    defer runtime_release(ref_of(runtime))
+    defer: runtime_release(ref_of(runtime))
     return body(runtime)
 
 
@@ -535,5 +535,5 @@ public function run_with_runtime(body: proc(runtime: Runtime) -> void) -> void:
 
     var runtime = runtime_create()
     runtime_activate(runtime)
-    defer runtime_release(ref_of(runtime))
+    defer: runtime_release(ref_of(runtime))
     body(runtime)

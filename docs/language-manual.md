@@ -596,6 +596,8 @@ if x > 10: return "big" else if x > 5: return "med" else: return "small"
 
 The inline form supports all statement kinds in the body (`return`, `let`, `var`, `defer`, assignment, expression statement, etc.). Blocks and inline form may be mixed: any branch may use either form independently.
 
+Every block-taking statement follows the same rule: a `:` followed by a newline starts an indented block, while a `:` followed by anything else on the same line introduces exactly one inline statement. This applies uniformly to `if`/`else`, `while`, `for`, `defer`, and `unsafe` (§4.3, §4.4, §4.5). `match` arms are the exception: their inline form is a single value expression (§4.2).
+
 ### 4.2 Match
 
 Scrutinee types supported:
@@ -717,6 +719,13 @@ Single-form `for` supports:
 - `span[T]`
 - custom structural iterables with a non-editable zero-argument `iter()` method
 
+Every loop body accepts either a `:`-newline-indented block or a single statement on the same line as the header:
+
+```mt
+while ready: poll()
+for value in values: accumulate(value)
+```
+
 Iterator protocol for custom structural iterables:
 
 - the iterable value must expose `iter()` with no parameters
@@ -795,10 +804,10 @@ Rules:
 
 ### 4.4 Defer
 
-Forms:
+Both forms use the block-header `:` introduced in §4:
 
 ```mt
-defer cleanup()
+defer: cleanup()
 
 # or
 
@@ -807,7 +816,10 @@ defer:
     release_b()
 ```
 
-`return` is not allowed inside defer blocks.
+Rules:
+
+- `defer` always requires `:`. A single statement may follow on the same line (`defer: release_a()`), or a `:`-newline-indented block may hold several statements.
+- `return` is not allowed inside defer blocks.
 
 ### 4.5 Unsafe
 
@@ -1363,8 +1375,8 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
     let closed_sub = window.closed.subscribe(on_close)?
     let resized_sub = window.resized.subscribe(on_resize)?
 
-    defer window.closed.unsubscribe(closed_sub)
-    defer window.resized.unsubscribe(resized_sub)
+    defer: window.closed.unsubscribe(closed_sub)
+    defer: window.resized.unsubscribe(resized_sub)
 
     return Result[void, EventError].success()
 ```

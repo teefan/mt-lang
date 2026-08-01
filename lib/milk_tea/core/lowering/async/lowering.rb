@@ -194,7 +194,7 @@ module MilkTea
         when AST::UnsafeStmt
           statements_contain_await?(s.body, async_info)
         when AST::DeferStmt
-          (s.body && statements_contain_await?(s.body, async_info)) || (s.expression && async_expression_contains_await?(s.expression))
+          statements_contain_await?(s.body, async_info)
         else
           false
         end
@@ -1237,15 +1237,7 @@ module MilkTea
     end
 
     def lower_async_defer_cleanup(statement, env:, async_info:)
-      body = if statement.body
-                statement.body
-              elsif statement.expression
-                [AST::ExpressionStmt.new(expression: statement.expression, line: statement.line)]
-              else
-                []
-              end
-
-      { body:, env: snapshot_env(env) }
+      { body: statement.body, env: snapshot_env(env) }
     end
 
     def lower_async_cleanup_entries(local_defers, outer_defers, frame_expr:, raw_frame_expr:, async_info:)

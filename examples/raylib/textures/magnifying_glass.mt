@@ -24,24 +24,24 @@ function draw_hidden_bunnies(bunny: rl.Texture2D) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - magnifying glass")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let bunny = rl.load_texture("raybunny.png")
-    defer rl.unload_texture(bunny)
+    defer: rl.unload_texture(bunny)
     let parrots = rl.load_texture("parrots.png")
-    defer rl.unload_texture(parrots)
+    defer: rl.unload_texture(parrots)
 
     var circle = rl.gen_image_color(GLASS_SIZE, GLASS_SIZE, rl.BLANK)
     rl.image_draw_circle(circle, GLASS_SIZE / 2, GLASS_SIZE / 2, GLASS_SIZE / 2, rl.WHITE)
     let mask = rl.load_texture_from_image(circle)
-    defer rl.unload_texture(mask)
+    defer: rl.unload_texture(mask)
     rl.unload_image(circle)
 
     let magnified_world = rl.load_render_texture(GLASS_SIZE, GLASS_SIZE)
-    defer rl.unload_render_texture(magnified_world)
+    defer: rl.unload_render_texture(magnified_world)
 
     var camera = rl.Camera2D(
         offset = rl.Vector2(x = GLASS_RADIUS, y = GLASS_RADIUS),

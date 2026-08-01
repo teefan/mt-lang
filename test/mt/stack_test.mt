@@ -146,7 +146,7 @@ function test_stack_clear_empties() -> t.Check:
 @[test]
 function test_stack_shrink_to_fit() -> t.Check:
     var values = stack.Stack[int].create()
-    defer values.release()
+    defer: values.release()
     values.push(10)
     values.push(20)
     values.reserve(128)

@@ -15,7 +15,7 @@ import std.net.punch as punch
 
 function main() -> int:
     var probe = punch.build_punch_probe()
-    defer probe.release()
+    defer: probe.release()
     let data = probe.as_span()
 
     if data.len != 4:
@@ -53,7 +53,7 @@ function main() -> int:
     w.write_ubyte(0x50)
     w.write_ubyte(0x43)
     var valid = w.finish()
-    defer valid.release()
+    defer: valid.release()
     if not punch.is_punch_probe(valid.as_span()):
         return 1
 
@@ -63,7 +63,7 @@ function main() -> int:
     w2.write_ubyte(0x00)
     w2.write_ubyte(0x00)
     var invalid = w2.finish()
-    defer invalid.release()
+    defer: invalid.release()
     if punch.is_punch_probe(invalid.as_span()):
         return 2
     return 0
@@ -95,9 +95,9 @@ async function main() -> int:
                     return 2
                 Result.success as bp_b:
                     var addr_a = bp_a.value
-                    defer addr_a.release()
+                    defer: addr_a.release()
                     var addr_b = bp_b.value
-                    defer addr_b.release()
+                    defer: addr_b.release()
 
                     let bind_a = net.udp_bind(addr_a)
                     match bind_a:
@@ -105,7 +105,7 @@ async function main() -> int:
                             return 3
                         Result.success as sp_a:
                             var sa = sp_a.value
-                            defer sa.release()
+                            defer: sa.release()
 
                             let bind_b = net.udp_bind(addr_b)
                             match bind_b:
@@ -113,7 +113,7 @@ async function main() -> int:
                                     return 4
                                 Result.success as sp_b:
                                     var sb = sp_b.value
-                                    defer sb.release()
+                                    defer: sb.release()
 
                                     let la = sa.local_address()
                                     let lb = sb.local_address()
@@ -137,7 +137,7 @@ async function main() -> int:
                                                             ))
 
                                                             var probe = punch.build_punch_probe()
-                                                            defer probe.release()
+                                                            defer: probe.release()
                                                             let send_result = await sb.send_to(probe.as_span(), lap.value)
                                                             match send_result:
                                                                 Result.failure:

@@ -113,7 +113,7 @@ public function close_reader(reader: ref[Reader]) -> void:
 public function load_image(reader: pack.Reader, logical_path: str) -> Result[rl.Image, Error]:
     let file_type = detect_file_type(logical_path)?
     var data = map_pack_result(reader.read_bytes(logical_path))?
-    defer data.release()
+    defer: data.release()
 
     let image = rl.load_image_from_memory(file_type, data.as_span())
     if not rl.is_image_valid(image):
@@ -124,7 +124,7 @@ public function load_image(reader: pack.Reader, logical_path: str) -> Result[rl.
 
 public function load_texture(reader: pack.Reader, logical_path: str) -> Result[rl.Texture2D, Error]:
     let image = load_image(reader, logical_path)?
-    defer rl.unload_image(image)
+    defer: rl.unload_image(image)
 
     let texture = rl.load_texture_from_image(image)
     if not rl.is_texture_valid(texture):
@@ -136,7 +136,7 @@ public function load_texture(reader: pack.Reader, logical_path: str) -> Result[r
 public function load_wave(reader: pack.Reader, logical_path: str) -> Result[rl.Wave, Error]:
     let file_type = detect_file_type(logical_path)?
     var data = map_pack_result(reader.read_bytes(logical_path))?
-    defer data.release()
+    defer: data.release()
 
     let wave = rl.load_wave_from_memory(file_type, data.as_span())
     if not rl.is_wave_valid(wave):
@@ -147,7 +147,7 @@ public function load_wave(reader: pack.Reader, logical_path: str) -> Result[rl.W
 
 public function load_sound(reader: pack.Reader, logical_path: str) -> Result[rl.Sound, Error]:
     let wave = load_wave(reader, logical_path)?
-    defer rl.unload_wave(wave)
+    defer: rl.unload_wave(wave)
 
     let sound = rl.load_sound_from_wave(wave)
     if not rl.is_sound_valid(sound):
@@ -173,7 +173,7 @@ public function load_music(reader: pack.Reader, logical_path: str) -> Result[Pac
 
 function open_pack_relative_to_application(pack_name: str) -> Result[pack.Reader, Error]:
     var application_path = application_relative_path(pack_name)
-    defer application_path.release()
+    defer: application_path.release()
 
     let application_result = pack.open(application_path.as_str())
     match application_result:

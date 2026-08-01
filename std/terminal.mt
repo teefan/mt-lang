@@ -695,7 +695,7 @@ public function flush_stderr() -> Result[bool, Error]:
 
 public function clear_screen() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(8)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "2J")
     append_csi(ref_of(sequence), "H")
     return write_stdout_sequence(sequence, "terminal clear screen failed")
@@ -703,21 +703,21 @@ public function clear_screen() -> Result[bool, Error]:
 
 public function clear_line() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(5)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "2K")
     return write_stdout_sequence(sequence, "terminal clear line failed")
 
 
 public function cursor_home() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(4)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "H")
     return write_stdout_sequence(sequence, "terminal cursor home failed")
 
 
 public function move_cursor(row: int, column: int) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(24)
-    defer sequence.release()
+    defer: sequence.release()
     append_escape(ref_of(sequence))
     sequence.append_format(f"[#{clamp_cursor_position_1based(row)};#{clamp_cursor_position_1based(column)}H")
     return write_stdout_sequence(sequence, "terminal move cursor failed")
@@ -725,35 +725,35 @@ public function move_cursor(row: int, column: int) -> Result[bool, Error]:
 
 public function hide_cursor() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(8)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "?25l")
     return write_stdout_sequence(sequence, "terminal hide cursor failed")
 
 
 public function show_cursor() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(8)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "?25h")
     return write_stdout_sequence(sequence, "terminal show cursor failed")
 
 
 public function enter_alternate_screen() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(10)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "?1049h")
     return write_stdout_sequence(sequence, "terminal alternate screen failed")
 
 
 public function leave_alternate_screen() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(10)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "?1049l")
     return write_stdout_sequence(sequence, "terminal alternate screen failed")
 
 
 public function enable_mouse() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(24)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "?1000h")
     append_csi(ref_of(sequence), "?1002h")
     append_csi(ref_of(sequence), "?1006h")
@@ -762,7 +762,7 @@ public function enable_mouse() -> Result[bool, Error]:
 
 public function disable_mouse() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(24)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "?1006l")
     append_csi(ref_of(sequence), "?1002l")
     append_csi(ref_of(sequence), "?1000l")
@@ -771,7 +771,7 @@ public function disable_mouse() -> Result[bool, Error]:
 
 public function set_foreground(color: Color) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(10)
-    defer sequence.release()
+    defer: sequence.release()
     append_escape(ref_of(sequence))
     sequence.append("[")
     append_color_code(ref_of(sequence), color, false)
@@ -781,7 +781,7 @@ public function set_foreground(color: Color) -> Result[bool, Error]:
 
 public function set_background(color: Color) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(10)
-    defer sequence.release()
+    defer: sequence.release()
     append_escape(ref_of(sequence))
     sequence.append("[")
     append_color_code(ref_of(sequence), color, true)
@@ -791,7 +791,7 @@ public function set_background(color: Color) -> Result[bool, Error]:
 
 public function set_rgb_foreground(red: int, green: int, blue: int) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(24)
-    defer sequence.release()
+    defer: sequence.release()
     append_escape(ref_of(sequence))
     sequence.append_format(
         f"[38;2;#{clamp_color_channel(red)};#{clamp_color_channel(green)};#{clamp_color_channel(blue)}m"
@@ -801,7 +801,7 @@ public function set_rgb_foreground(red: int, green: int, blue: int) -> Result[bo
 
 public function set_rgb_background(red: int, green: int, blue: int) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(24)
-    defer sequence.release()
+    defer: sequence.release()
     append_escape(ref_of(sequence))
     sequence.append_format(
         f"[48;2;#{clamp_color_channel(red)};#{clamp_color_channel(green)};#{clamp_color_channel(blue)}m"
@@ -811,7 +811,7 @@ public function set_rgb_background(red: int, green: int, blue: int) -> Result[bo
 
 public function set_bold(enabled: bool) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(6)
-    defer sequence.release()
+    defer: sequence.release()
     if enabled:
         append_csi(ref_of(sequence), "1m")
     else:
@@ -821,7 +821,7 @@ public function set_bold(enabled: bool) -> Result[bool, Error]:
 
 public function set_underline(enabled: bool) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(6)
-    defer sequence.release()
+    defer: sequence.release()
     if enabled:
         append_csi(ref_of(sequence), "4m")
     else:
@@ -831,7 +831,7 @@ public function set_underline(enabled: bool) -> Result[bool, Error]:
 
 public function reset_style() -> Result[bool, Error]:
     var sequence = string.String.with_capacity(5)
-    defer sequence.release()
+    defer: sequence.release()
     append_csi(ref_of(sequence), "0m")
     return write_stdout_sequence(sequence, "terminal style reset failed")
 
@@ -958,7 +958,7 @@ extending Terminal:
             return Result[Option[Event], Error].success(value= Option[Event].some(value= ev.unwrap()))
 
         var bytes = read_stdin(timeout_ms)?
-        defer bytes.release()
+        defer: bytes.release()
         if not bytes.is_empty():
             this.input.append_span(bytes.as_span())
 

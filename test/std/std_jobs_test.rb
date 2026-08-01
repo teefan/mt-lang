@@ -32,11 +32,11 @@ function run_with_runtime(runtime: aio.Runtime) -> int:
     match pool_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var pool = payload.value
-            defer pool.release()
+            defer: pool.release()
 
             var first_job = SquareJob(value = 3, result = 0, completed = false)
             var second_job = SquareJob(value = 4, result = 0, completed = false)
@@ -44,7 +44,7 @@ function run_with_runtime(runtime: aio.Runtime) -> int:
             match pool.submit(jobs.WorkItem.create(run_square, complete_square, unsafe: ptr[void]<-ptr_of(first_job))):
                 Result.failure as submit_payload:
                     var error = submit_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as submit_payload:
                     if not submit_payload.value:
@@ -53,7 +53,7 @@ function run_with_runtime(runtime: aio.Runtime) -> int:
             match pool.submit(jobs.WorkItem.create(run_square, complete_square, unsafe: ptr[void]<-ptr_of(second_job))):
                 Result.failure as submit_payload:
                     var error = submit_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 4
                 Result.success as submit_payload:
                     if not submit_payload.value:
@@ -121,18 +121,18 @@ function run_with_runtime(runtime: aio.Runtime) -> int:
     match pool_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var pool = payload.value
-            defer pool.release()
+            defer: pool.release()
 
             var job = IncrementJob(value = 41, result = 0, completed = false)
 
             match pool.submit(jobs.WorkItem.create(run_increment, complete_increment, unsafe: ptr[void]<-ptr_of(job))):
                 Result.failure as submit_payload:
                     var error = submit_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as submit_payload:
                     if not submit_payload.value:

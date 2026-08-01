@@ -25,7 +25,7 @@ function dequeue_value(values: ref[priority_queue.PriorityQueue[Key]]) -> int:
 @[test]
 function test_priority_queue_operations() -> t.Check:
     var values = priority_queue.PriorityQueue[Key].with_capacity(2)
-    defer values.release()
+    defer: values.release()
 
     t.expect(values.capacity() >= 2, "capacity >= 2")?
     t.expect_true(values.is_empty())?

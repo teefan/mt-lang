@@ -150,7 +150,7 @@ public function parse_binding_response(
             let xaddr = read_uint_be(data, offset + 8z)
             let ip = xaddr ^ stun_magic_cookie
             var ip_str = format_ipv4(ip)
-            defer ip_str.release()
+            defer: ip_str.release()
             let addr_result = net.ipv4(ip_str.as_str(), int<-port)
             match addr_result:
                 Result.failure:
@@ -185,7 +185,7 @@ public async function resolve_public_address(
             let tid = transaction_id_from_bytes(rp.value)
             rp.value.release()
             var request = build_binding_request(tid)
-            defer request.release()
+            defer: request.release()
             let send_result = await socket.send_to(request.as_span(), stun_server)
             match send_result:
                 Result.failure:
@@ -233,7 +233,7 @@ public async function resolve_public_address_on(
             )
         Result.success as bp:
             var socket = bp.value
-            defer socket.release()
+            defer: socket.release()
             return await resolve_public_address(socket, stun_server)
 
 
@@ -248,5 +248,5 @@ public async function resolve(
             )
         Result.success as la:
             var local_addr = la.value
-            defer local_addr.release()
+            defer: local_addr.release()
             return await resolve_public_address_on(aio.current_runtime(), local_addr, stun_server)

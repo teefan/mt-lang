@@ -9,17 +9,17 @@ const MIN_FRAME_DELAY: int = 1
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - gif player")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     var anim_frames = 0
     let scarfy_anim_image = rl.load_image_anim("scarfy_run.gif", anim_frames)
-    defer rl.unload_image(scarfy_anim_image)
+    defer: rl.unload_image(scarfy_anim_image)
 
     let scarfy_anim_texture = rl.load_texture_from_image(scarfy_anim_image)
-    defer rl.unload_texture(scarfy_anim_texture)
+    defer: rl.unload_texture(scarfy_anim_texture)
 
     let frame_data = unsafe: ptr[ubyte]<-scarfy_anim_image.data
 

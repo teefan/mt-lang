@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - random values")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var rand_value = rl.get_random_value(-8, 5)
     var frames_counter = 0

@@ -23,9 +23,9 @@ function main() -> int:
     pw.write_ubyte(108)
     pw.write_ubyte(111)
     var payload = pw.finish()
-    defer payload.release()
+    defer: payload.release()
     var call = rpc.build_call(42, payload.as_span())
-    defer call.release()
+    defer: call.release()
 
     let data = call.as_span()
     let id_result = rpc.parse_request_id(data)
@@ -70,9 +70,9 @@ function main() -> int:
     pw.write_ubyte(108)
     pw.write_ubyte(116)
     var data = pw.finish()
-    defer data.release()
+    defer: data.release()
     var reply = rpc.build_reply(99, data.as_span())
-    defer reply.release()
+    defer: reply.release()
 
     let reply_data = reply.as_span()
     let id_result = rpc.parse_request_id(reply_data)
@@ -105,9 +105,9 @@ import std.net.rpc as rpc
 
 function main() -> int:
     var empty = bytes.Bytes.empty()
-    defer empty.release()
+    defer: empty.release()
     var call = rpc.build_call(1, empty.as_span())
-    defer call.release()
+    defer: call.release()
 
     let data = call.as_span()
     # 4-byte header + 0-byte payload = 4 bytes

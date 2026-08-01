@@ -193,14 +193,8 @@ module MilkTea
               line: statement.line,
             )
           when AST::DeferStmt
-            if statement.body
-              with_loop_barrier do
-                check_block(statement.body, scopes:, return_type:, allow_return: false)
-              end
-            else
-              validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: true)
-              validate_hoistable_foreign_expression!(statement.expression, scopes:, root_hoistable: false)
-              infer_expression(statement.expression, scopes:)
+            with_loop_barrier do
+              check_block(statement.body, scopes:, return_type:, allow_return: false)
             end
           when AST::ExpressionStmt
             validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: true)

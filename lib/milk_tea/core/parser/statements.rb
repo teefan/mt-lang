@@ -279,6 +279,18 @@ module MilkTea
         check(:colon) && @current + 1 < @tokens.length && @tokens[@current + 1].type != :newline
       end
 
+      def parse_inline_or_block_body(message)
+        if inline_block_body?
+          consume(:colon, "expected ':' #{message}")
+          @in_inline_block_body = true
+          result = [parse_statement]
+          @in_inline_block_body = false
+          result
+        else
+          parse_block
+        end
+      end
+
       def parse_match_stmt
         token = previous
         line = token.line
@@ -456,7 +468,7 @@ module MilkTea
         consume(:in, "expected 'in' in for loop")
         iterables = [parse_expression]
         iterables << parse_expression while match(:comma)
-        body = parse_block
+        body = parse_inline_or_block_body("after 'in' iterables")
         AST::ForStmt.new(bindings:, iterables:, body:, line:, column: bindings.first.column)
       rescue ParseError => e
         raise unless @recovery_errors
@@ -530,7 +542,7 @@ module MilkTea
         token = previous
         line = token.line
         condition = parse_expression
-        body = parse_block
+        body = parse_inline_or_block_body("after while condition")
         AST::WhileStmt.new(condition:, body:, line:, column: token.column, length: token.lexeme.length)
       rescue ParseError => e
         raise unless @recovery_errors
@@ -580,14 +592,8 @@ module MilkTea
       def parse_defer_stmt
         token = previous
         line = token.line
-        if check(:colon)
-          body = parse_block
-          AST::DeferStmt.new(expression: nil, body:, line:, column: token.column, length: token.lexeme.length)
-        else
-          expression = parse_expression
-          consume_end_of_statement unless block_expression?(expression)
-          AST::DeferStmt.new(expression:, body: nil, line:, column: token.column, length: token.lexeme.length)
-        end
+        body = parse_inline_or_block_body("after defer")
+        AST::DeferStmt.new(body:, line:, column: token.column, length: token.lexeme.length)
       end
 
       def parse_when_decl
@@ -690,7 +696,7 @@ module MilkTea
         consume(:in, "expected 'in' in for loop")
         iterables = [parse_expression]
         iterables << parse_expression while match(:comma)
-        body = parse_block
+        body = parse_inline_or_block_body("after 'in' iterables")
         AST::ForStmt.new(bindings:, iterables:, body:, inline: true, line:, column: bindings.first.column)
       rescue ParseError => e
         raise unless @recovery_errors
@@ -705,7 +711,7 @@ module MilkTea
       def parse_inline_while_stmt(inline_token)
         line = inline_token.line
         condition = parse_expression
-        body = parse_block
+        body = parse_inline_or_block_body("after inline while condition")
         AST::WhileStmt.new(condition:, body:, inline: true, line:, column: inline_token.column, length: inline_token.lexeme.length)
       rescue ParseError => e
         raise unless @recovery_errors

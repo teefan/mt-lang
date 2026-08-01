@@ -8,15 +8,15 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - texture outline")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let texture = rl.load_texture("fudesumi.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/outline.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     var outline_size: float = 2.0
     let outline_color = array[float, 4](1.0, 0.0, 0.0, 1.0)

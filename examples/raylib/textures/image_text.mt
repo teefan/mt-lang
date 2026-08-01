@@ -7,14 +7,14 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - image text")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     var parrots = rl.load_image("parrots.png")
     let font = rl.load_font_ex("KAISG.ttf", 64, null, 0)
-    defer rl.unload_font(font)
+    defer: rl.unload_font(font)
 
     rl.image_draw_text_ex(
         parrots,
@@ -27,7 +27,7 @@ function main() -> int:
     )
 
     let texture = rl.load_texture_from_image(parrots)
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.unload_image(parrots)
 
     let position = rl.Vector2(

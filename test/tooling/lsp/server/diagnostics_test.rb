@@ -1049,7 +1049,7 @@ class DiagnosticsTest < Minitest::Test
 
         function main() -> int:
             var temp = fs.temporary_directory()
-            defer temp.release()
+            defer: temp.release()
             return 0
       MT
 

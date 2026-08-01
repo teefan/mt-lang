@@ -239,7 +239,7 @@ function test_order_vec() -> int:
 function test_serialize_pod() -> int:
     var original = Vec3(x = 1.0, y = 2.0, z = 3.0)
     var packet = ser.pack[Vec3](ref_of(original))
-    defer packet.release()
+    defer: packet.release()
     let result = ser.unpack[Vec3](packet.as_span())
     match result:
         Result.failure:
@@ -255,7 +255,7 @@ function test_serialize_nested() -> int:
         priority = 7us
     )
     var packet = ser.pack[NestedContainer](ref_of(original))
-    defer packet.release()
+    defer: packet.release()
     let result = ser.unpack[NestedContainer](packet.as_span())
     match result:
         Result.failure:
@@ -269,7 +269,7 @@ function test_serialize_writer_reader() -> int:
     var w = bin.Writer.with_capacity(128)
     w.pack[CompactHeader](ref_of(original))
     var data = w.finish()
-    defer data.release()
+    defer: data.release()
     var r = bin.reader(data.as_span())
     let result = r.unpack[CompactHeader]()
     match result:
@@ -486,7 +486,7 @@ function test_bare_type_dispatch() -> int:
 # std.fmt.format_value[T] reflectively renders a struct as `{ field = value, ... }`.
 function test_format_value() -> int:
     var s = string.String.create()
-    defer s.release()
+    defer: s.release()
     let v = Vec3(x = 1.0, y = 2.0, z = 3.0)
     fmt.format_value[Vec3](ref_of(s), const_ptr_of(v))
     if s.len() == 0z:

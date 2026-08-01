@@ -94,7 +94,7 @@ function apply_attribute(cookie: ref[Cookie], attribute_text: str) -> void:
     match eq:
         Option.none:
             var normalized = ascii_lower(attribute_text)
-            defer normalized.release()
+            defer: normalized.release()
 
             if normalized.as_str().equal("secure"):
                 cookie.secure = true
@@ -106,7 +106,7 @@ function apply_attribute(cookie: ref[Cookie], attribute_text: str) -> void:
             let value_text = attribute_text.slice(e.value + 1, attribute_text.len - e.value - 1).trim_ascii_whitespace()
 
             var normalized_key = ascii_lower(key_text)
-            defer normalized_key.release()
+            defer: normalized_key.release()
 
             if normalized_key.as_str().equal("domain"):
                 cookie.domain = Option[string.String].some(value = string.String.from_str(value_text))

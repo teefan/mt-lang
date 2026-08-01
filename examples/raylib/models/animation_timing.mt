@@ -29,7 +29,7 @@ function joined_animation_names(animations: ptr[rl.ModelAnimation], count: int) 
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - animation timing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -43,13 +43,13 @@ function main() -> int:
     )
 
     let model = rl.load_model("models/gltf/robot.glb")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     var anim_count = 0
     let animations = rl.load_model_animations("models/gltf/robot.glb", ptr_of(anim_count)) else:
         fatal("could not load gltf animations")
-    defer rl.unload_model_animations(animations, anim_count)
+    defer: rl.unload_model_animations(animations, anim_count)
 
     if anim_count == 0:
         fatal("robot.glb contains no animations")

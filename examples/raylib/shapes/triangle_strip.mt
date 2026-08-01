@@ -11,7 +11,7 @@ const DEG_TO_RAD: float = rl.PI / 180.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - triangle strip")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var points: array[rl.Vector2, POINT_CAPACITY] = zero[array[rl.Vector2, POINT_CAPACITY]]
     let center = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0 - 125.0, y = float<-SCREEN_HEIGHT / 2.0)

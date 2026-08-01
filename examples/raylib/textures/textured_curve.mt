@@ -79,13 +79,13 @@ function draw_textured_curve(
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_VSYNC_HINT | rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - textured curve")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let road_texture = rl.load_texture("road.png")
-    defer rl.unload_texture(road_texture)
+    defer: rl.unload_texture(road_texture)
     rl.set_texture_filter(road_texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
     var show_curve = false

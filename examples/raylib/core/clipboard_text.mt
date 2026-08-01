@@ -14,7 +14,7 @@ function update_clipboard_buffer(buffer: ref[str_buffer[256]]) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - clipboard text")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let sample_texts = array[str, 5](
         "Hello from raylib!",

@@ -8,7 +8,7 @@ const GRID_SPACING: int = 40
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE | rl.ConfigFlags.FLAG_WINDOW_HIGHDPI)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - highdpi testbed")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.set_target_fps(60)
 

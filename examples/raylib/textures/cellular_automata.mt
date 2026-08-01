@@ -30,14 +30,14 @@ function compute_line(image: ref[rl.Image], line: int, rule: int) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - cellular automata")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var image = rl.gen_image_color(IMAGE_WIDTH, IMAGE_HEIGHT, rl.RAYWHITE)
-    defer rl.unload_image(image)
+    defer: rl.unload_image(image)
     rl.image_draw_pixel(image, IMAGE_WIDTH / 2, 0, rl.BLACK)
 
     let texture = rl.load_texture_from_image(image)
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     let preset_values = array[int, PRESETS_COUNT](18, 30, 60, 86, 102, 124, 126, 150, 182, 225)
 

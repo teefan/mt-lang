@@ -8,7 +8,7 @@ import std.str as str
 @[test]
 function test_binary_round_trips_unsigned_integers() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_ubyte(0xFF)
     w.write_ushort(0xABCD)
     w.write_uint(0xDEADBEEF)
@@ -42,7 +42,7 @@ function test_binary_round_trips_unsigned_integers() -> t.Check:
 @[test]
 function test_binary_round_trips_signed_integers() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_byte(byte<--1)
     w.write_short(short<--30000)
     w.write_int(-2000000000)
@@ -76,7 +76,7 @@ function test_binary_round_trips_signed_integers() -> t.Check:
 @[test]
 function test_binary_round_trips_floats() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_float(3.140000104904175)
     w.write_double(2.718281828459045)
 
@@ -98,7 +98,7 @@ function test_binary_round_trips_floats() -> t.Check:
 @[test]
 function test_binary_round_trips_bool() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_bool(true)
     w.write_bool(false)
     w.write_bool(true)
@@ -126,7 +126,7 @@ function test_binary_round_trips_bool() -> t.Check:
 @[test]
 function test_binary_round_trips_strings() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_str("hello")
     w.write_str("")
     w.write_str("world")
@@ -138,21 +138,21 @@ function test_binary_round_trips_strings() -> t.Check:
             return t.fail("read_str 1 failed")
         Result.success as payload:
             var s1 = payload.value
-            defer s1.release()
+            defer: s1.release()
             t.expect_true(s1.as_str().equal("hello"))?
     match reader.read_str():
         Result.failure:
             return t.fail("read_str 2 failed")
         Result.success as payload:
             var s2 = payload.value
-            defer s2.release()
+            defer: s2.release()
             t.expect(s2.len() == 0, "empty string len 0")?
     match reader.read_str():
         Result.failure:
             return t.fail("read_str 3 failed")
         Result.success as payload:
             var s3 = payload.value
-            defer s3.release()
+            defer: s3.release()
             t.expect_true(s3.as_str().equal("world"))?
     return t.ok()
 
@@ -160,7 +160,7 @@ function test_binary_round_trips_strings() -> t.Check:
 @[test]
 function test_binary_round_trips_bytes() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     let data = str.as_byte_span("abcde")
     w.write_bytes(data)
 
@@ -171,7 +171,7 @@ function test_binary_round_trips_bytes() -> t.Check:
             return t.fail("read_bytes failed")
         Result.success as payload:
             var chunk = payload.value
-            defer chunk.release()
+            defer: chunk.release()
             match chunk.as_str():
                 Option.none:
                     return t.fail("bytes not valid utf-8")
@@ -197,14 +197,14 @@ function test_binary_reset_and_finish() -> t.Check:
             t.expect(payload.value == 99, "reset discarded first value")?
 
     var result = w.finish()
-    defer result.release()
+    defer: result.release()
     return t.expect(result.len == 4z, "finished buffer len 4")
 
 
 @[test]
 function test_binary_write_uint_at_positional_patch() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_uint(0)
     w.write_ubyte(1)
     w.write_ubyte(2)
@@ -229,7 +229,7 @@ function test_binary_write_uint_at_positional_patch() -> t.Check:
 @[test]
 function test_binary_reader_reports_end_of_buffer() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_ubyte(1)
 
     var reader = bin.reader(w.as_span())
@@ -252,7 +252,7 @@ function test_binary_reader_reports_end_of_buffer() -> t.Check:
 @[test]
 function test_binary_reader_reports_invalid_bool() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_ubyte(42)
     var reader = bin.reader(w.as_span())
 
@@ -266,7 +266,7 @@ function test_binary_reader_reports_invalid_bool() -> t.Check:
 @[test]
 function test_binary_writer_with_capacity_preallocates() -> t.Check:
     var w = bin.Writer.with_capacity(256)
-    defer w.release()
+    defer: w.release()
     t.expect(w.buffer.capacity() >= 256, "capacity >= 256")?
     t.expect(w.len() == 0, "len == 0 initially")?
     w.write_uint(1)
@@ -277,7 +277,7 @@ function test_binary_writer_with_capacity_preallocates() -> t.Check:
 @[test]
 function test_binary_reader_remaining_and_has_more() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_uint(100)
     w.write_ushort(200)
 
@@ -305,7 +305,7 @@ function test_binary_reader_remaining_and_has_more() -> t.Check:
 @[test]
 function test_binary_reader_skip_advances_position() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_uint(100)
     w.write_ubyte(42)
     w.write_ushort(200)
@@ -333,7 +333,7 @@ function test_binary_reader_skip_advances_position() -> t.Check:
 @[test]
 function test_binary_round_trips_mixed_types() -> t.Check:
     var w = bin.Writer.create()
-    defer w.release()
+    defer: w.release()
     w.write_bool(true)
     w.write_uint(1234567890)
     w.write_float(1.5)
@@ -362,7 +362,7 @@ function test_binary_round_trips_mixed_types() -> t.Check:
             return t.fail("read_str failed")
         Result.success as p:
             var s = p.value
-            defer s.release()
+            defer: s.release()
             t.expect_true(s.as_str().equal("mixed"))?
     match reader.read_ushort():
         Result.failure:

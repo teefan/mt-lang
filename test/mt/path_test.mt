@@ -15,15 +15,15 @@ function test_path_predicates() -> t.Check:
 @[test]
 function test_path_join_and_normalize() -> t.Check:
     var joined = path.join("tmp", "milk/program.mt")
-    defer joined.release()
+    defer: joined.release()
     t.expect_true(joined.as_str().equal("tmp/milk/program.mt"))?
 
     var absolute_join = path.join("tmp", "/etc/passwd")
-    defer absolute_join.release()
+    defer: absolute_join.release()
     t.expect_true(absolute_join.as_str().equal("/etc/passwd"))?
 
     var normalized = path.normalize_separators("C:\\milk\\tea\\main.mt")
-    defer normalized.release()
+    defer: normalized.release()
     return t.expect_true(normalized.as_str().equal("C:/milk/tea/main.mt"))
 
 
@@ -62,7 +62,7 @@ function test_path_relative_path() -> t.Check:
     match path.relative_path("/tmp/project/src/main.mt", "/tmp/project"):
         Option.some as payload:
             var relative = payload.value
-            defer relative.release()
+            defer: relative.release()
             t.expect_true(relative.as_str().equal("src/main.mt"))?
         Option.none:
             return t.fail("relative_path within tree none")
@@ -70,7 +70,7 @@ function test_path_relative_path() -> t.Check:
     match path.relative_path("/tmp/project", "/tmp/project"):
         Option.some as payload:
             var relative = payload.value
-            defer relative.release()
+            defer: relative.release()
             t.expect_true(relative.as_str().equal("."))?
         Option.none:
             return t.fail("relative_path identity none")
@@ -78,7 +78,7 @@ function test_path_relative_path() -> t.Check:
     match path.relative_path("src/lib/../main.mt", "src/docs"):
         Option.some as payload:
             var relative = payload.value
-            defer relative.release()
+            defer: relative.release()
             t.expect_true(relative.as_str().equal("../main.mt"))?
         Option.none:
             return t.fail("relative_path sibling none")
@@ -86,7 +86,7 @@ function test_path_relative_path() -> t.Check:
     match path.relative_path("c:/milk/tea/main.mt", "C:/milk"):
         Option.some as payload:
             var relative = payload.value
-            defer relative.release()
+            defer: relative.release()
             t.expect_true(relative.as_str().equal("tea/main.mt"))?
         Option.none:
             return t.fail("relative_path windows none")

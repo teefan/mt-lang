@@ -53,7 +53,7 @@ public async function detect(
             )
         Result.success as pr:
             var public_1 = pr.value
-            defer public_1.release()
+            defer: public_1.release()
 
             let local_result = socket.local_address()
             match local_result:
@@ -78,7 +78,7 @@ public async function detect(
                             )
                         Result.success as ar:
                             var public_2 = ar.value
-                            defer public_2.release()
+                            defer: public_2.release()
 
                             if not public_1.public_address.equal(public_2.public_address):
                                 return Result[NatResult, Error].success(
@@ -107,7 +107,7 @@ public async function detect_default(
             )
         Result.success as pp:
             var primary = pp.value
-            defer primary.release()
+            defer: primary.release()
 
             let alt_result = net.ipv4(google_alternate, google_port)
             match alt_result:
@@ -117,6 +117,6 @@ public async function detect_default(
                     )
                 Result.success as ap:
                     var alternate = ap.value
-                    defer alternate.release()
+                    defer: alternate.release()
 
                     return await detect(socket, primary, alternate)

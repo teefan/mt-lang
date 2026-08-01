@@ -40,7 +40,7 @@ function read_int(value: ptr[int]?) -> int:
 @[test]
 function test_map_basic_operations() -> t.Check:
     var values = map.Map[Key, int].with_capacity(4)
-    defer values.release()
+    defer: values.release()
 
     let first_key = Key(value = 1)
     let second_key = Key(value = 2)
@@ -88,7 +88,7 @@ function test_map_basic_operations() -> t.Check:
 @[test]
 function test_map_growth_and_collisions() -> t.Check:
     var values = map.Map[CollisionKey, int].create()
-    defer values.release()
+    defer: values.release()
 
     var index: int = 0
     while index < 12:
@@ -119,7 +119,7 @@ function test_map_growth_and_collisions() -> t.Check:
 @[test]
 function test_map_iterators_and_get_or_insert() -> t.Check:
     var values = map.Map[Key, int].create()
-    defer values.release()
+    defer: values.release()
 
     let inserted = values.get_or_insert(Key(value = 3), 30)
     var inserted_value = 0

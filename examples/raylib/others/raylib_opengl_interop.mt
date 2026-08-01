@@ -38,7 +38,7 @@ function matrix_from_rlgl(matrix: rlgl.Matrix) -> rl.Matrix:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [others] example - OpenGL interoperatibility")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     gl.use_raylib_loader()
 
@@ -49,7 +49,7 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/point_particle.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/point_particle.fs", GLSL_VERSION),
     )
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let current_time_location = rl.get_shader_location(shader, "currentTime")
     let color_location = rl.get_shader_location(shader, "color")

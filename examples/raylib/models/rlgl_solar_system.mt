@@ -69,7 +69,7 @@ function draw_sphere_basic(color: rl.Color) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - rlgl solar system")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let camera = rl.Camera3D(
         position = rl.Vector3(x = 16.0, y = 16.0, z = 16.0),

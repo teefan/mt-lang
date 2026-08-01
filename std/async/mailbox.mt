@@ -138,7 +138,7 @@ extending Mailbox[T]:
 
         var mutex = unsafe: read(state).mutex
         mutex.lock()
-        defer mutex.unlock()
+        defer: mutex.unlock()
 
         let handle = unsafe: read(state).handle else:
             return Result[bool, Error].failure(error = mailbox_error("mailbox is closed"))
@@ -161,7 +161,7 @@ extending Mailbox[T]:
 
         var mutex = unsafe: read(state).mutex
         mutex.lock()
-        defer mutex.unlock()
+        defer: mutex.unlock()
         return unsafe: read(state).queue.pop_front()
 
 
@@ -171,7 +171,7 @@ extending Mailbox[T]:
 
         var mutex = unsafe: read(state).mutex
         mutex.lock()
-        defer mutex.unlock()
+        defer: mutex.unlock()
 
         var drained = vec.Vec[T].with_capacity(unsafe: read(state).queue.len())
         while true:
@@ -187,5 +187,5 @@ extending Mailbox[T]:
 
         var mutex = unsafe: read(state).mutex
         mutex.lock()
-        defer mutex.unlock()
+        defer: mutex.unlock()
         return unsafe: read(state).queue.is_empty()

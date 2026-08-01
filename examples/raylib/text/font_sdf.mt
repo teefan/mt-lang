@@ -8,7 +8,7 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - font sdf")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -18,7 +18,7 @@ function main() -> int:
     var file_size = 0
     let file_data = rl.load_file_data("anonymous_pro_bold.ttf", file_size) else:
         fatal("could not load anonymous_pro_bold.ttf")
-    defer rl.unload_file_data(file_data)
+    defer: rl.unload_file_data(file_data)
 
     var font_default = zero[rl.Font]
     font_default.baseSize = 16
@@ -44,12 +44,12 @@ function main() -> int:
     font_sdf.texture = rl.load_texture_from_image(atlas)
     rl.unload_image(atlas)
 
-    defer rl.unload_font(font_default)
-    defer rl.unload_font(font_sdf)
+    defer: rl.unload_font(font_default)
+    defer: rl.unload_font(font_sdf)
 
     let shader_path = rl.text_format("shaders/glsl%i/sdf.fs", GLSL_VERSION)
     let shader = rl.load_shader(null, shader_path)
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
     rl.set_texture_filter(font_sdf.texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
     var font_position = rl.Vector2(x = 40.0, y = float<-SCREEN_HEIGHT / 2.0 - 50.0)

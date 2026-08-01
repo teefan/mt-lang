@@ -817,7 +817,7 @@ class TypeCheckingTest < Minitest::Test
 
       function main(count: ubyte, delta: short, ticks: ulong) -> int:
           var text = fmt.format(f"count=\#{count} delta=\#{delta} ticks=\#{ticks} ok=\#{true}")
-          defer text.release()
+          defer: text.release()
           return int<-text.len()
     MT
 
@@ -835,7 +835,7 @@ class TypeCheckingTest < Minitest::Test
 
       function main(value: uint, ratio: double, raw: cstr) -> int:
           var output = string.String.create()
-          defer output.release()
+          defer: output.release()
           fmt.append_format(ref_of(output), f"hex=\#{value:x} raw=\#{raw}")
           fmt.assign_format(ref_of(output), f"ratio=\#{ratio:.2}")
           output.append_format(f" ok=\#{true}")
@@ -1897,7 +1897,7 @@ class TypeCheckingTest < Minitest::Test
       function main() -> void:
           let window = win.create()
           if window != null:
-              defer win.destroy(window)
+              defer: win.destroy(window)
     MT
 
     imported_sources = {
@@ -2155,7 +2155,7 @@ class TypeCheckingTest < Minitest::Test
 
       function main() -> int:
           var scratch = arena.create(64)
-          defer scratch.release()
+          defer: scratch.release()
 
           let text: str = "hello world"
           let part = text.slice(6, 5)
@@ -2232,7 +2232,7 @@ class TypeCheckingTest < Minitest::Test
       function main() -> int:
           var total = 0
           for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
-              defer add(ptr_of(total), 1)
+              defer: add(ptr_of(total), 1)
               match step:
                   Step.skip:
                       continue
@@ -3368,7 +3368,7 @@ class TypeCheckingTest < Minitest::Test
           let point = Point(x = 2, y = 3)
           let text = f"point=\#{point}"
           var output = string.String.create()
-          defer output.release()
+          defer: output.release()
           output.append_format(f"[\#{point}]")
           var buffer: str_buffer[64]
           buffer.assign_format(f"<\#{point}>")

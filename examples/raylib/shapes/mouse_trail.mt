@@ -7,7 +7,7 @@ const MAX_TRAIL_LENGTH: int = 30
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - mouse trail")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var trail_positions: array[rl.Vector2, MAX_TRAIL_LENGTH] = zero[array[rl.Vector2, MAX_TRAIL_LENGTH]]
 

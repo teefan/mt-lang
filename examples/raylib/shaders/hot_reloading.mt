@@ -12,7 +12,7 @@ const TIMESTAMP_BUFFER_SIZE: int = 64
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - hot reloading")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -21,7 +21,7 @@ function main() -> int:
     var frag_shader_file_mod_time = rl.get_file_mod_time(frag_shader_file_name)
 
     var shader = rl.load_shader(null, frag_shader_file_name)
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     var resolution_location = rl.get_shader_location(shader, "resolution")
     var mouse_location = rl.get_shader_location(shader, "mouse")

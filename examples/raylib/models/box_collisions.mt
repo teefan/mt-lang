@@ -21,7 +21,7 @@ function player_box(position: rl.Vector3, size: rl.Vector3) -> rl.BoundingBox:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - box collisions")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let camera = rl.Camera3D(
         position = rl.Vector3(x = 0.0, y = 10.0, z = 10.0),

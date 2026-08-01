@@ -418,7 +418,7 @@ async function process_stored_peer_id_events(manager: ref[NetworkManager]) -> vo
                 let player_id = join_event.player_id
                 join_event.release()
                 var assign_data = build_assign_id(player_id)
-                defer assign_data.release()
+                defer: assign_data.release()
                 let _ = await manager.mux_session.mux_send(
                     player_id,
                     channel_system,

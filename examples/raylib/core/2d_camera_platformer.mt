@@ -206,7 +206,7 @@ function update_camera_player_bounds_push(camera: ref[rl.Camera2D], player: Play
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - 2d camera platformer")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var player = Player(position = rl.Vector2(x = 400.0, y = 280.0), speed = 0.0, can_jump = false)
     let env_items = array[EnvItem, 5](

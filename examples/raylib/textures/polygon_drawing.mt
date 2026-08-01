@@ -44,7 +44,7 @@ function draw_texture_poly(
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - polygon drawing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -85,7 +85,7 @@ function main() -> int:
     )
 
     let texture = rl.load_texture("cat.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     var angle = 0.0
 

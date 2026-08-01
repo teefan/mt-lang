@@ -42,7 +42,7 @@ function color_vector(color: rl.Color) -> array[float, 4]:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - rounded rectangle")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -51,7 +51,7 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/base.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/rounded_rectangle.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let rounded_rectangle = create_rounded_rectangle(shader)
 

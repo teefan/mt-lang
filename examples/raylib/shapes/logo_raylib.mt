@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - logo raylib")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.set_target_fps(60)
 

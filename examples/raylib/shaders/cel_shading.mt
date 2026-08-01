@@ -74,7 +74,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - cel shading")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -88,13 +88,13 @@ function main() -> int:
     )
 
     var model = rl.load_model("models/old_car_new.glb")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
 
     let cel_shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/cel.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/cel.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(cel_shader)
+    defer: rl.unload_shader(cel_shader)
     let view_pos_location = rl.get_shader_location(cel_shader, "viewPos")
 
     let default_shader = unsafe: model.materials[0].shader
@@ -108,7 +108,7 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/outline_hull.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/outline_hull.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(outline_shader)
+    defer: rl.unload_shader(outline_shader)
     let outline_thickness_location = rl.get_shader_location(outline_shader, "outlineThickness")
 
     var lights: array[Light, MAX_LIGHTS] = zero[array[Light, MAX_LIGHTS]]

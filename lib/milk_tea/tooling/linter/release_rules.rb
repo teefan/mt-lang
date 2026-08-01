@@ -169,9 +169,6 @@ module MilkTea
         when AST::UnsafeStmt
           _collect_own_released_names(stmt.body, result)
         when AST::DeferStmt
-          if stmt.expression
-            _collect_heap_release_names(stmt.expression, result)
-          end
           _collect_own_released_names(stmt.body, result) if stmt.body.is_a?(Array)
         end
       end
@@ -476,7 +473,6 @@ module MilkTea
         when AST::UnsafeStmt
           _collect_released_names(stmt.body, result)
         when AST::DeferStmt
-          _collect_released_names_in_expr(stmt.expression, result) if stmt.expression
           _collect_released_names(stmt.body, result) if stmt.body.is_a?(Array)
         end
       end
@@ -611,9 +607,8 @@ module MilkTea
       def release_call_in_stmt?(stmt, name)
         return false unless stmt
 
-        # DeferStmt: inline form `defer x.release()` or block form `defer: …`
+        # DeferStmt: block form `defer: …` (inline defers are a single-statement body)
         if stmt.is_a?(AST::DeferStmt)
-          return true if stmt.expression && _expr_has_release?(stmt.expression, name)
           return stmt.body.is_a?(Array) && stmt.body.any? { |s| release_call_in_stmt?(s, name) }
         end
 

@@ -7,18 +7,18 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [audio] example - sound loading")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let fx_wav = rl.load_sound("sound.wav")
-    defer rl.unload_sound(fx_wav)
+    defer: rl.unload_sound(fx_wav)
     let fx_ogg = rl.load_sound("target.ogg")
-    defer rl.unload_sound(fx_ogg)
+    defer: rl.unload_sound(fx_ogg)
 
     rl.set_target_fps(60)
 

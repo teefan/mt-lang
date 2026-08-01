@@ -57,14 +57,14 @@ function update_star(star: Star) -> Star:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - spotlight rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
     rl.hide_cursor()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let tex_ray = rl.load_texture("raysan.png")
-    defer rl.unload_texture(tex_ray)
+    defer: rl.unload_texture(tex_ray)
 
     var stars: array[Star, MAX_STARS] = zero[array[Star, MAX_STARS]]
     var index = 0
@@ -82,7 +82,7 @@ function main() -> int:
 
     var frame_counter = 0
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/spotlight.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     var spots: array[Spot, MAX_SPOTS] = zero[array[Spot, MAX_SPOTS]]
     index = 0

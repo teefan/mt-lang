@@ -7,7 +7,7 @@ import std.bitset as bitset
 @[test]
 function test_bitset_set_and_test() -> t.Check:
     var b = bitset.with_capacity(64)
-    defer b.release()
+    defer: b.release()
 
     t.expect_false(b.test(0))?
     t.expect_false(b.test(42))?
@@ -24,7 +24,7 @@ function test_bitset_set_and_test() -> t.Check:
 @[test]
 function test_bitset_clear_and_toggle() -> t.Check:
     var b = bitset.with_capacity(64)
-    defer b.release()
+    defer: b.release()
 
     b.set(10)
     t.expect_true(b.test(10))?
@@ -40,7 +40,7 @@ function test_bitset_clear_and_toggle() -> t.Check:
 @[test]
 function test_bitset_all_and_none() -> t.Check:
     var b = bitset.with_capacity(64)
-    defer b.release()
+    defer: b.release()
 
     t.expect_true(b.none())?
     t.expect_false(b.any())?
@@ -53,7 +53,7 @@ function test_bitset_all_and_none() -> t.Check:
 @[test]
 function test_bitset_count_after_ops() -> t.Check:
     var b = bitset.with_capacity(128)
-    defer b.release()
+    defer: b.release()
 
     t.expect_equal_int(int<-(b.count()), 0)?
     t.expect_true(b.none())?
@@ -71,7 +71,7 @@ function test_bitset_count_after_ops() -> t.Check:
 @[test]
 function test_bitset_clear_all_resets_bits() -> t.Check:
     var b = bitset.with_capacity(64)
-    defer b.release()
+    defer: b.release()
 
     b.set(1)
     b.set(2)
@@ -87,7 +87,7 @@ function test_bitset_clear_all_resets_bits() -> t.Check:
 @[test]
 function test_bitset_find_first() -> t.Check:
     var b = bitset.with_capacity(128)
-    defer b.release()
+    defer: b.release()
 
     b.set(7)
     b.set(10)

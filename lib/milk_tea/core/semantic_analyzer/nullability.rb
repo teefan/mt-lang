@@ -154,8 +154,7 @@ module MilkTea
             statement.iterables.each { |iterable| preassign_local_binding_ids_in_expression(iterable) }
             preassign_local_binding_ids_in_statements(statement.body || [])
           when AST::DeferStmt
-            preassign_local_binding_ids_in_expression(statement.expression) if statement.expression
-            preassign_local_binding_ids_in_statements(statement.body || []) if statement.body
+            preassign_local_binding_ids_in_statements(statement.body)
           when AST::ReturnStmt
             preassign_local_binding_ids_in_expression(statement.value) if statement.value
           when AST::StaticAssert
@@ -319,8 +318,7 @@ module MilkTea
             end
             walk_statements_for_precheck_resolution(statement.body || [], for_scopes, declaration_ids, identifier_ids)
           when AST::DeferStmt
-            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids, declaration_ids) if statement.expression
-            walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids) if statement.body
+            walk_statements_for_precheck_resolution(statement.body, block_scopes, declaration_ids, identifier_ids)
           when AST::ExpressionStmt
             walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids, declaration_ids)
           when AST::ReturnStmt

@@ -19,7 +19,7 @@ function main() -> int:
     match terminal.enter_alternate_screen():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as _:
             pass
@@ -27,7 +27,7 @@ function main() -> int:
     match terminal.hide_cursor():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 2
         Result.success as _:
             pass
@@ -35,7 +35,7 @@ function main() -> int:
     match terminal.move_cursor(3, 5):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 3
         Result.success as _:
             pass
@@ -43,7 +43,7 @@ function main() -> int:
     match terminal.set_foreground(terminal.Color.bright_green):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 4
         Result.success as _:
             pass
@@ -51,7 +51,7 @@ function main() -> int:
     match terminal.write_stdout("OK"):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 5
         Result.success as _:
             pass
@@ -59,7 +59,7 @@ function main() -> int:
     match terminal.reset_style():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 6
         Result.success as _:
             pass
@@ -67,7 +67,7 @@ function main() -> int:
     match terminal.show_cursor():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 7
         Result.success as _:
             pass
@@ -75,7 +75,7 @@ function main() -> int:
     match terminal.leave_alternate_screen():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 8
         Result.success as _:
             pass
@@ -83,7 +83,7 @@ function main() -> int:
     match terminal.flush_stdout():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 9
         Result.success as _:
             return 0
@@ -112,12 +112,12 @@ function main() -> int:
         return 2
 
     var tty = terminal.Terminal.create()
-    defer tty.release()
+    defer: tty.release()
 
     match tty.refresh_size():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 3
         Result.success as _:
             pass
@@ -125,7 +125,7 @@ function main() -> int:
     match tty.enter_alternate_screen():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 4
         Result.success as _:
             pass
@@ -133,7 +133,7 @@ function main() -> int:
     match tty.hide_cursor():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 5
         Result.success as _:
             pass
@@ -141,7 +141,7 @@ function main() -> int:
     match tty.enable_mouse():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 6
         Result.success as _:
             pass
@@ -149,7 +149,7 @@ function main() -> int:
     match tty.enter_raw_mode():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 7
         Result.success as _:
             pass
@@ -157,7 +157,7 @@ function main() -> int:
     match tty.write("READY\\n"):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 8
         Result.success as _:
             pass
@@ -165,7 +165,7 @@ function main() -> int:
     match tty.flush():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 9
         Result.success as _:
             pass
@@ -173,7 +173,7 @@ function main() -> int:
     match tty.poll_event(1500):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 10
         Result.success as payload:
             match payload.value:

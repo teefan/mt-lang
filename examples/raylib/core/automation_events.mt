@@ -183,7 +183,7 @@ function main() -> int:
     while not rl.window_should_close():
         if rl.is_file_dropped():
             let dropped_files = rl.load_dropped_files()
-            defer rl.unload_dropped_files(dropped_files)
+            defer: rl.unload_dropped_files(dropped_files)
 
             if dropped_files.count > 0:
                 unsafe:

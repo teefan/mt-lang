@@ -71,15 +71,15 @@ function unload_render_texture_depth_tex(target: rl.RenderTexture2D) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - hybrid rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let raymarch_shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/hybrid_raymarch.fs", GLSL_VERSION))
-    defer rl.unload_shader(raymarch_shader)
+    defer: rl.unload_shader(raymarch_shader)
     let raster_shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/hybrid_raster.fs", GLSL_VERSION))
-    defer rl.unload_shader(raster_shader)
+    defer: rl.unload_shader(raster_shader)
 
     let ray_locations = RayLocations(
         cam_pos = rl.get_shader_location(raymarch_shader, "camPos"),
@@ -95,7 +95,7 @@ function main() -> int:
     )
 
     let target = load_render_texture_depth_tex(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer unload_render_texture_depth_tex(target)
+    defer: unload_render_texture_depth_tex(target)
 
     var camera = rl.Camera3D(
         position = rl.Vector3(x = 0.5, y = 1.0, z = 1.5),

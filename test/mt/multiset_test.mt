@@ -20,7 +20,7 @@ extending Key:
 @[test]
 function test_multiset_operations() -> t.Check:
     var values = multiset.MultiSet[Key].with_capacity(2)
-    defer values.release()
+    defer: values.release()
 
     t.expect(values.capacity() >= 2, "capacity >= 2")?
     t.expect_true(values.is_empty())?
@@ -93,14 +93,14 @@ function test_multiset_operations() -> t.Check:
     t.expect_false(values.remove_one(Key(value = 9)))?
 
     var other = multiset.MultiSet[Key].create()
-    defer other.release()
+    defer: other.release()
     other.add(Key(value = 3), 4)
     other.add(Key(value = 1), 1)
     other.add(Key(value = 2), 1)
     other.insert(Key(value = 5))
 
     var union_values = values.union_with(other)
-    defer union_values.release()
+    defer: union_values.release()
     var union_order_ok = true
     var union_step = 0
     for entry in union_values:
@@ -119,7 +119,7 @@ function test_multiset_operations() -> t.Check:
     t.expect_equal_int(union_step, 4)?
 
     var intersection_values = values.intersection(other)
-    defer intersection_values.release()
+    defer: intersection_values.release()
     var intersection_order_ok = true
     var intersection_step = 0
     for entry in intersection_values:
@@ -136,7 +136,7 @@ function test_multiset_operations() -> t.Check:
     t.expect_equal_int(intersection_step, 3)?
 
     var difference_values = values.difference(other)
-    defer difference_values.release()
+    defer: difference_values.release()
     var difference_order_ok = true
     var difference_step = 0
     for entry in difference_values:
@@ -149,12 +149,12 @@ function test_multiset_operations() -> t.Check:
     t.expect_equal_int(difference_step, 1)?
 
     var combined = other.union_with(values)
-    defer combined.release()
+    defer: combined.release()
     t.expect_true(values.is_subset(combined))?
     t.expect_false(other.is_subset(values))?
 
     var symmetric_values = values.symmetric_difference(other)
-    defer symmetric_values.release()
+    defer: symmetric_values.release()
     var symmetric_order_ok = true
     var symmetric_step = 0
     for entry in symmetric_values:

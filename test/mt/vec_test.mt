@@ -22,7 +22,7 @@ function sum(values: span[int]) -> int:
 @[test]
 function test_vec_storage_methods() -> t.Check:
     var values = vec.Vec[int].with_capacity(1)
-    defer values.release()
+    defer: values.release()
     t.expect(values.capacity() >= 1z, "capacity >= 1")?
     t.expect_true(values.is_empty())?
     t.expect(values.as_span().len == 0z, "empty span len 0")?
@@ -52,7 +52,7 @@ function test_vec_storage_methods() -> t.Check:
 @[test]
 function test_vec_plain_struct_elements() -> t.Check:
     var pairs = vec.Vec[Pair].create()
-    defer pairs.release()
+    defer: pairs.release()
     pairs.reserve(2)
     pairs.push(Pair(left = 3, right = 4))
     pairs.push(Pair(left = 5, right = 6))
@@ -81,7 +81,7 @@ function test_vec_plain_struct_elements() -> t.Check:
 @[test]
 function test_vec_append_span_and_self_append() -> t.Check:
     var values = vec.Vec[int].with_capacity(2)
-    defer values.release()
+    defer: values.release()
     var seed = array[int, 2](3, 4)
     values.append_span(span[int](data = ptr_of(seed[0]), len = 2))
     t.expect(values.len() == 2z, "len == 2 after append_span")?
@@ -101,7 +101,7 @@ function test_vec_append_span_and_self_append() -> t.Check:
 @[test]
 function test_vec_append_array_wrapper() -> t.Check:
     var values = vec.Vec[int].create()
-    defer values.release()
+    defer: values.release()
     values.append_array(array[int, 3](10, 20, 30))
     let view = values.as_span()
     t.expect(view.len == 3z, "len == 3")?
@@ -114,7 +114,7 @@ function test_vec_append_array_wrapper() -> t.Check:
 @[test]
 function test_vec_pointer_accessors() -> t.Check:
     var values = vec.Vec[int].create()
-    defer values.release()
+    defer: values.release()
     values.push(10)
     values.push(20)
     values.push(30)
@@ -150,7 +150,7 @@ function test_vec_pointer_accessors() -> t.Check:
 @[test]
 function test_vec_shrink_to_fit() -> t.Check:
     var values = vec.Vec[int].create()
-    defer values.release()
+    defer: values.release()
 
     values.push(10)
     values.push(20)
@@ -180,7 +180,7 @@ function test_vec_shrink_to_fit() -> t.Check:
 @[test]
 function test_vec_search_helpers() -> t.Check:
     var values = vec.Vec[int].create()
-    defer values.release()
+    defer: values.release()
     values.push(10)
     values.push(20)
     values.push(30)
@@ -226,7 +226,7 @@ function test_vec_search_helpers() -> t.Check:
 @[test]
 function test_vec_insert_and_remove() -> t.Check:
     var values = vec.Vec[int].create()
-    defer values.release()
+    defer: values.release()
 
     t.expect_false(values.insert(1, 50))?
     t.expect_true(values.insert(0, 10))?
@@ -270,7 +270,7 @@ function test_vec_insert_and_remove() -> t.Check:
 @[test]
 function test_vec_swap_remove() -> t.Check:
     var values = vec.Vec[int].create()
-    defer values.release()
+    defer: values.release()
     values.push(10)
     values.push(20)
     values.push(30)
@@ -296,7 +296,7 @@ function test_vec_swap_remove() -> t.Check:
 @[test]
 function test_vec_iter_surface() -> t.Check:
     var values = vec.Vec[int].create()
-    defer values.release()
+    defer: values.release()
     values.push(10)
     values.push(20)
     values.push(30)

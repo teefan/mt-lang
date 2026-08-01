@@ -74,7 +74,7 @@ function events_equal(left: ActorEvent, right: ActorEvent) -> bool:
 @[test]
 function test_table_driven_fsm() -> t.Check:
     var machine = fsm.StateMachine[ActorState, ActorEvent, Context].create(ActorState.idle, states_equal, events_equal)
-    defer machine.release()
+    defer: machine.release()
 
     machine.add_state_hooks(
         fsm.StateHooks[ActorState, Context].create(

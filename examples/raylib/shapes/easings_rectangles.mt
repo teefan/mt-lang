@@ -13,7 +13,7 @@ const PLAY_TIME_IN_FRAMES: float = 240.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - easings rectangles")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var recs: array[rl.Rectangle, TOTAL_RECS] = zero[array[rl.Rectangle, TOTAL_RECS]]
 

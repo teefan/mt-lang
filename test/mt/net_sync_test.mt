@@ -32,7 +32,7 @@ function test_sync_value_with_uint() -> t.Check:
 @[test]
 function test_sync_list_push_and_length() -> t.Check:
     var list = sync.SyncList[uint](items = vec.Vec[uint].create(), dirty = false)
-    defer list.items.release()
+    defer: list.items.release()
 
     t.expect_false(list.dirty)?
     t.expect(list.len() == 0, "len == 0")?
@@ -59,7 +59,7 @@ function test_sync_list_push_and_length() -> t.Check:
 @[test]
 function test_sync_list_multiple_items() -> t.Check:
     var events = sync.SyncList[uint](items = vec.Vec[uint].create(), dirty = false)
-    defer events.items.release()
+    defer: events.items.release()
 
     events.push(100)
     events.push(200)
@@ -153,7 +153,7 @@ function test_sync_tick_buffer_push_and_get() -> t.Check:
         entries = vec.Vec[uint].create(),
         base_tick = 0
     )
-    defer buf.entries.release()
+    defer: buf.entries.release()
 
     buf.push(0, 100)
     buf.push(1, 200)

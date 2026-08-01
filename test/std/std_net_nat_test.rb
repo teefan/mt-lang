@@ -52,7 +52,7 @@ function main() -> int:
             return 1
         Result.success as ap:
             var addr = ap.value
-            defer addr.release()
+            defer: addr.release()
             let copy_result = addr.copy()
             match copy_result:
                 Result.failure:
@@ -63,7 +63,7 @@ function main() -> int:
                         nat_type = nat.NatType.cone,
                         public_address = public_addr
                     )
-                    defer result.release()
+                    defer: result.release()
                     if ubyte<-result.nat_type != 2:
                         return 3
                     return 0

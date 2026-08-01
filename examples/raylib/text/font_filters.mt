@@ -8,7 +8,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - font filters")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -16,7 +16,7 @@ function main() -> int:
     let msg = "Loaded Font"
 
     var font = rl.load_font_ex("KAISG.ttf", 96, null, 0)
-    defer rl.unload_font(font)
+    defer: rl.unload_font(font)
     rl.gen_texture_mipmaps(font.texture)
 
     var font_size = float<-font.baseSize
@@ -50,7 +50,7 @@ function main() -> int:
 
         if rl.is_file_dropped():
             let dropped_files = rl.load_dropped_files()
-            defer rl.unload_dropped_files(dropped_files)
+            defer: rl.unload_dropped_files(dropped_files)
 
             if dropped_files.count > 0u:
                 let dropped_path = unsafe: text.chars_as_str(read(dropped_files.paths))

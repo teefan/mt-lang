@@ -28,7 +28,7 @@ function expect_connected(result: Result[bool, net.Error], failure_code: int) ->
     match result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return failure_code
         Result.success as payload:
             if not payload.value:
@@ -41,57 +41,57 @@ async function main() -> int:
     match net.ipv4("127.0.0.1", 0):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var left_bind_address = payload.value
-            defer left_bind_address.release()
+            defer: left_bind_address.release()
 
             match net.ipv4("127.0.0.1", 0):
                 Result.failure as right_payload:
                     var error = right_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as right_payload:
                     var right_bind_address = right_payload.value
-                    defer right_bind_address.release()
+                    defer: right_bind_address.release()
 
                     match net.udp_bind(right_bind_address):
                         Result.failure as bind_payload:
                             var error = bind_payload.error
-                            defer error.release()
+                            defer: error.release()
                             return 3
                         Result.success as bind_payload:
                             var right_socket = bind_payload.value
                             match right_socket.local_address():
                                 Result.failure as local_payload:
                                     var error = local_payload.error
-                                    defer error.release()
+                                    defer: error.release()
                                     right_socket.release()
                                     return 4
                                 Result.success as local_payload:
                                     var right_local = local_payload.value
-                                    defer right_local.release()
+                                    defer: right_local.release()
 
                                     match channel.connect(left_bind_address, right_local, config):
                                         Result.failure as left_payload:
                                             var error = left_payload.error
-                                            defer error.release()
+                                            defer: error.release()
                                             right_socket.release()
                                             return 5
                                         Result.success as left_payload:
                                             var left = left_payload.value
-                                            defer left.release()
+                                            defer: left.release()
 
                                             match left.local_address():
                                                 Result.failure as left_local_payload:
                                                     var error = left_local_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     right_socket.release()
                                                     return 6
                                                 Result.success as left_local_payload:
                                                     var left_local = left_local_payload.value
-                                                    defer left_local.release()
+                                                    defer: left_local.release()
 
                                                     let connect_status = expect_connected(right_socket.connect(left_local), 7)
                                                     if connect_status != 0:
@@ -99,13 +99,13 @@ async function main() -> int:
                                                         return connect_status
 
                                                     var right = channel.wrap_connected(right_socket, config)
-                                                    defer right.release()
+                                                    defer: right.release()
 
                                                     let send_result = await left.send(text.as_byte_span("ping"))
                                                     match send_result:
                                                         Result.failure as send_payload:
                                                             var error = send_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 9
                                                         Result.success as send_payload:
                                                             if send_payload.value != 0:
@@ -115,7 +115,7 @@ async function main() -> int:
                                                     match recv_result:
                                                         Result.failure as recv_payload:
                                                             var error = recv_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 11
                                                         Result.success as recv_payload:
                                                             match recv_payload.value:
@@ -123,7 +123,7 @@ async function main() -> int:
                                                                     return 12
                                                                 Option.some as message_payload:
                                                                     var message = message_payload.value
-                                                                    defer message.release()
+                                                                    defer: message.release()
                                                                     if message.reliable:
                                                                         return 13
                                                                     return expect_utf8_bytes(message.payload, "ping", 14)
@@ -162,7 +162,7 @@ function expect_connected(result: Result[bool, net.Error], failure_code: int) ->
     match result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return failure_code
         Result.success as payload:
             if not payload.value:
@@ -178,57 +178,57 @@ async function main() -> int:
     match net.ipv4("127.0.0.1", 0):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var left_bind_address = payload.value
-            defer left_bind_address.release()
+            defer: left_bind_address.release()
 
             match net.ipv4("127.0.0.1", 0):
                 Result.failure as right_payload:
                     var error = right_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as right_payload:
                     var right_bind_address = right_payload.value
-                    defer right_bind_address.release()
+                    defer: right_bind_address.release()
 
                     match net.udp_bind(right_bind_address):
                         Result.failure as bind_payload:
                             var error = bind_payload.error
-                            defer error.release()
+                            defer: error.release()
                             return 3
                         Result.success as bind_payload:
                             var right_socket = bind_payload.value
                             match right_socket.local_address():
                                 Result.failure as local_payload:
                                     var error = local_payload.error
-                                    defer error.release()
+                                    defer: error.release()
                                     right_socket.release()
                                     return 4
                                 Result.success as local_payload:
                                     var right_local = local_payload.value
-                                    defer right_local.release()
+                                    defer: right_local.release()
 
                                     match channel.connect(left_bind_address, right_local, config):
                                         Result.failure as left_payload:
                                             var error = left_payload.error
-                                            defer error.release()
+                                            defer: error.release()
                                             right_socket.release()
                                             return 5
                                         Result.success as left_payload:
                                             var left = left_payload.value
-                                            defer left.release()
+                                            defer: left.release()
 
                                             match left.local_address():
                                                 Result.failure as left_local_payload:
                                                     var error = left_local_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     right_socket.release()
                                                     return 6
                                                 Result.success as left_local_payload:
                                                     var left_local = left_local_payload.value
-                                                    defer left_local.release()
+                                                    defer: left_local.release()
 
                                                     let connect_status = expect_connected(right_socket.connect(left_local), 7)
                                                     if connect_status != 0:
@@ -236,13 +236,13 @@ async function main() -> int:
                                                         return connect_status
 
                                                     var right = channel.wrap_connected(right_socket, config)
-                                                    defer right.release()
+                                                    defer: right.release()
 
                                                     let send_result = await left.send_reliable(text.as_byte_span("reliable"), 0)
                                                     match send_result:
                                                         Result.failure as send_payload:
                                                             var error = send_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 9
                                                         Result.success as send_payload:
                                                             if send_payload.value != 0:
@@ -252,7 +252,7 @@ async function main() -> int:
                                                     match first_recv:
                                                         Result.failure as recv_payload:
                                                             var error = recv_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 11
                                                         Result.success as recv_payload:
                                                             match recv_payload.value:
@@ -260,7 +260,7 @@ async function main() -> int:
                                                                     return 12
                                                                 Option.some as message_payload:
                                                                     var message = message_payload.value
-                                                                    defer message.release()
+                                                                    defer: message.release()
                                                                     if not message.reliable:
                                                                         return 13
                                                                     let body_status = expect_utf8_bytes(message.payload, "reliable", 14)
@@ -271,7 +271,7 @@ async function main() -> int:
                                                     match tick_result:
                                                         Result.failure as tick_payload:
                                                             var error = tick_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 16
                                                         Result.success as tick_payload:
                                                             if tick_payload.value != 1:
@@ -281,7 +281,7 @@ async function main() -> int:
                                                     match duplicate_recv:
                                                         Result.failure as recv_payload:
                                                             var error = recv_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 18
                                                         Result.success as recv_payload:
                                                             match recv_payload.value:
@@ -289,14 +289,14 @@ async function main() -> int:
                                                                     let _ = 0
                                                                 Option.some as message_payload:
                                                                     var message = message_payload.value
-                                                                    defer message.release()
+                                                                    defer: message.release()
                                                                     return 19
 
                                                     let ack_recv = await left.recv()
                                                     match ack_recv:
                                                         Result.failure as ack_payload:
                                                             var error = ack_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 20
                                                         Result.success as ack_payload:
                                                             match ack_payload.value:
@@ -304,7 +304,7 @@ async function main() -> int:
                                                                     let _ = 0
                                                                 Option.some as message_payload:
                                                                     var message = message_payload.value
-                                                                    defer message.release()
+                                                                    defer: message.release()
                                                                     return 21
 
                                                     if left.pending_reliable_len() != 0:
@@ -314,7 +314,7 @@ async function main() -> int:
                                                     match second_tick:
                                                         Result.failure as tick_payload:
                                                             var error = tick_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 23
                                                         Result.success as tick_payload:
                                                             if tick_payload.value != 0:
@@ -358,71 +358,71 @@ async function main() -> int:
     match net.ipv4("127.0.0.1", 0):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var host_bind_address = payload.value
-            defer host_bind_address.release()
+            defer: host_bind_address.release()
 
             match channel.listen(host_bind_address, config):
                 Result.failure as host_payload:
                     var error = host_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as host_payload:
                     var host = host_payload.value
-                    defer host.release()
+                    defer: host.release()
 
                     match host.local_address():
                         Result.failure as host_local_payload:
                             var error = host_local_payload.error
-                            defer error.release()
+                            defer: error.release()
                             return 3
                         Result.success as host_local_payload:
                             var host_local = host_local_payload.value
-                            defer host_local.release()
+                            defer: host_local.release()
 
                             match net.ipv4("127.0.0.1", 0):
                                 Result.failure as left_bind_payload:
                                     var error = left_bind_payload.error
-                                    defer error.release()
+                                    defer: error.release()
                                     return 4
                                 Result.success as left_bind_payload:
                                     var left_bind_address = left_bind_payload.value
-                                    defer left_bind_address.release()
+                                    defer: left_bind_address.release()
 
                                     match net.ipv4("127.0.0.1", 0):
                                         Result.failure as right_bind_payload:
                                             var error = right_bind_payload.error
-                                            defer error.release()
+                                            defer: error.release()
                                             return 5
                                         Result.success as right_bind_payload:
                                             var right_bind_address = right_bind_payload.value
-                                            defer right_bind_address.release()
+                                            defer: right_bind_address.release()
 
                                             match channel.connect(left_bind_address, host_local, config):
                                                 Result.failure as left_payload:
                                                     var error = left_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     return 6
                                                 Result.success as left_payload:
                                                     var left = left_payload.value
-                                                    defer left.release()
+                                                    defer: left.release()
 
                                                     match channel.connect(right_bind_address, host_local, config):
                                                         Result.failure as right_payload:
                                                             var error = right_payload.error
-                                                            defer error.release()
+                                                            defer: error.release()
                                                             return 7
                                                         Result.success as right_payload:
                                                             var right = right_payload.value
-                                                            defer right.release()
+                                                            defer: right.release()
 
                                                             let left_send = await left.send(text.as_byte_span("left"))
                                                             match left_send:
                                                                 Result.failure as send_payload:
                                                                     var error = send_payload.error
-                                                                    defer error.release()
+                                                                    defer: error.release()
                                                                     return 8
                                                                 Result.success as send_payload:
                                                                     unsafe: send_payload.value
@@ -431,7 +431,7 @@ async function main() -> int:
                                                             match right_send:
                                                                 Result.failure as send_payload:
                                                                     var error = send_payload.error
-                                                                    defer error.release()
+                                                                    defer: error.release()
                                                                     return 9
                                                                 Result.success as send_payload:
                                                                     unsafe: send_payload.value
@@ -444,7 +444,7 @@ async function main() -> int:
                                                                 match recv_result:
                                                                     Result.failure as recv_payload:
                                                                         var error = recv_payload.error
-                                                                        defer error.release()
+                                                                        defer: error.release()
                                                                         return 10
                                                                     Result.success as recv_payload:
                                                                         match recv_payload.value:
@@ -452,7 +452,7 @@ async function main() -> int:
                                                                                 return 11
                                                                             Option.some as message_payload:
                                                                                 var message = message_payload.value
-                                                                                defer message.release()
+                                                                                defer: message.release()
 
                                                                                 let left_status = expect_utf8_bytes(message.payload, "left", 12)
                                                                                 if left_status == 0:
@@ -463,7 +463,7 @@ async function main() -> int:
                                                                                     match reply_result:
                                                                                         Result.failure as reply_payload:
                                                                                             var error = reply_payload.error
-                                                                                            defer error.release()
+                                                                                            defer: error.release()
                                                                                             return 15
                                                                                         Result.success as reply_payload:
                                                                                             unsafe: reply_payload.value
@@ -479,7 +479,7 @@ async function main() -> int:
                                                                                     match reply_result:
                                                                                         Result.failure as reply_payload:
                                                                                             var error = reply_payload.error
-                                                                                            defer error.release()
+                                                                                            defer: error.release()
                                                                                             return 23
                                                                                         Result.success as reply_payload:
                                                                                             unsafe: reply_payload.value
@@ -497,7 +497,7 @@ async function main() -> int:
                                                             match left_recv:
                                                                 Result.failure as recv_payload:
                                                                     var error = recv_payload.error
-                                                                    defer error.release()
+                                                                    defer: error.release()
                                                                     return 27
                                                                 Result.success as recv_payload:
                                                                     match recv_payload.value:
@@ -505,7 +505,7 @@ async function main() -> int:
                                                                             return 28
                                                                         Option.some as message_payload:
                                                                             var message = message_payload.value
-                                                                            defer message.release()
+                                                                            defer: message.release()
                                                                             if message.reliable:
                                                                                 return 29
                                                                             let ack_status = expect_utf8_bytes(message.payload, "left-ack", 30)
@@ -516,7 +516,7 @@ async function main() -> int:
                                                             match right_recv:
                                                                 Result.failure as recv_payload:
                                                                     var error = recv_payload.error
-                                                                    defer error.release()
+                                                                    defer: error.release()
                                                                     return 40
                                                                 Result.success as recv_payload:
                                                                     match recv_payload.value:
@@ -524,7 +524,7 @@ async function main() -> int:
                                                                             return 41
                                                                         Option.some as message_payload:
                                                                             var message = message_payload.value
-                                                                            defer message.release()
+                                                                            defer: message.release()
                                                                             if message.reliable:
                                                                                 return 42
                                                                             let ack_status = expect_utf8_bytes(message.payload, "right-ack", 43)

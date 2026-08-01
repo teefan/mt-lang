@@ -8,7 +8,7 @@ const LINE_COLOR_COUNT: int = 8
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - dashed line")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let line_start_position = rl.Vector2(x = 20.0, y = 50.0)
     var line_end_position = rl.Vector2(x = 780.0, y = 400.0)

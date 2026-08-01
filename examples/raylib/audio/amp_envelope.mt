@@ -79,15 +79,15 @@ function draw_adsr_graph(env: ref[Envelope], bounds: rl.Rectangle) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [audio] example - amp envelope")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     rl.set_audio_stream_buffer_size_default(BUFFER_SIZE)
     var buffer: array[float, BUFFER_SIZE] = zero[array[float, BUFFER_SIZE]]
     let stream = rl.load_audio_stream(uint<-SAMPLE_RATE, 32u, 1u)
-    defer rl.unload_audio_stream(stream)
+    defer: rl.unload_audio_stream(stream)
 
     var audio_time: float = 0.0
     var env = Envelope(

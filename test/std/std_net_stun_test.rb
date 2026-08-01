@@ -21,7 +21,7 @@ function main() -> int:
     tid[11] = 0xff
 
     var request = stun.build_binding_request(tid)
-    defer request.release()
+    defer: request.release()
 
     let data = request.as_span()
 
@@ -130,7 +130,7 @@ function main() -> int:
     w.write_ubyte(0x43)
 
     var packet = w.finish()
-    defer packet.release()
+    defer: packet.release()
 
     let parse_result = stun.parse_binding_response(packet, tid)
     match parse_result:
@@ -138,14 +138,14 @@ function main() -> int:
             return 1
         Result.success as rp:
             var result = rp.value
-            defer result.release()
+            defer: result.release()
             let host_result = result.public_address.host()
             match host_result:
                 Result.failure:
                     return 2
                 Result.success as hp:
                     var host = hp.value
-                    defer host.release()
+                    defer: host.release()
                     let addr_str = host.as_str()
                     if addr_str != "192.0.2.1":
                         return 3

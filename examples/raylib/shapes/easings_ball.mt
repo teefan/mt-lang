@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - easings ball")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var ball_position_x = -100
     var ball_radius = 20

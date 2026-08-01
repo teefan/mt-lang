@@ -276,7 +276,7 @@ function draw_display_segment(center: rl.Vector2, length: int, thick: int, verti
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - digital clock")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var clock_mode = CLOCK_DIGITAL
     var clock = Clock(

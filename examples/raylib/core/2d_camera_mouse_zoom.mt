@@ -9,7 +9,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - 2d camera mouse zoom")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var camera = rl.Camera2D(
         target = rl.Vector2(x = 0.0, y = 0.0),

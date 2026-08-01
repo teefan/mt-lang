@@ -8,18 +8,18 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - ascii rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let fudesumi = rl.load_texture("fudesumi.png")
-    defer rl.unload_texture(fudesumi)
+    defer: rl.unload_texture(fudesumi)
     let raysan = rl.load_texture("raysan.png")
-    defer rl.unload_texture(raysan)
+    defer: rl.unload_texture(raysan)
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/ascii.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let resolution_location = rl.get_shader_location(shader, "resolution")
     let font_size_location = rl.get_shader_location(shader, "fontSize")
@@ -31,7 +31,7 @@ function main() -> int:
     var circle_speed: float = 1.0
 
     let target = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
 
     rl.set_target_fps(60)
 

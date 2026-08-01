@@ -150,7 +150,7 @@ function draw_penrose_lsystem(ls: ref[PenroseLSystem]) -> void:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - penrose tile")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let draw_length = 460.0
     let min_generations = 0

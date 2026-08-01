@@ -39,7 +39,7 @@ function gamepad_false(_device: int, _button: int) -> bool:
 @[test]
 function test_input_action_ids() -> t.Check:
     var map = inp.InputMap.create()
-    defer map.release()
+    defer: map.release()
 
     let jump_id = map.add_action("jump")
     let fire_id = map.add_action("fire")
@@ -53,7 +53,7 @@ function test_input_action_ids() -> t.Check:
 @[test]
 function test_input_action_names() -> t.Check:
     var map = inp.InputMap.create()
-    defer map.release()
+    defer: map.release()
 
     let _j = map.add_action("jump")
     t.expect(map.action_name(0) == "jump", "action name lookup")?
@@ -64,7 +64,7 @@ function test_input_action_names() -> t.Check:
 @[test]
 function test_input_binding_count() -> t.Check:
     var map = build_map()
-    defer map.release()
+    defer: map.release()
 
     t.expect(map.binding_count(ACTION_JUMP) == 3, "jump has 3 bindings")?
     t.expect(map.binding_count(ACTION_FIRE) == 1, "fire has 1 binding")?
@@ -75,7 +75,7 @@ function test_input_binding_count() -> t.Check:
 @[test]
 function test_input_binding_at() -> t.Check:
     var map = build_map()
-    defer map.release()
+    defer: map.release()
 
     let b = map.binding_at(ACTION_JUMP, 0)
     match b:
@@ -91,7 +91,7 @@ function test_input_binding_at() -> t.Check:
 @[test]
 function test_input_check_digital_key() -> t.Check:
     var map = build_map()
-    defer map.release()
+    defer: map.release()
 
     let pressed = map.check_digital(ACTION_JUMP, always_true, always_false, gamepad_false)
     t.expect_true(pressed)?
@@ -102,7 +102,7 @@ function test_input_check_digital_key() -> t.Check:
 @[test]
 function test_input_check_digital_false() -> t.Check:
     var map = build_map()
-    defer map.release()
+    defer: map.release()
 
     let pressed = map.check_digital(ACTION_JUMP, always_false, always_false, gamepad_false)
     t.expect_false(pressed)?
@@ -113,7 +113,7 @@ function test_input_check_digital_false() -> t.Check:
 @[test]
 function test_input_check_digital_mouse() -> t.Check:
     var map = build_map()
-    defer map.release()
+    defer: map.release()
 
     let pressed = map.check_digital(ACTION_JUMP, always_false, always_true, gamepad_false)
     t.expect_true(pressed)?
@@ -124,7 +124,7 @@ function test_input_check_digital_mouse() -> t.Check:
 @[test]
 function test_input_check_digital_gamepad() -> t.Check:
     var map = build_map()
-    defer map.release()
+    defer: map.release()
 
     let pressed = map.check_digital(ACTION_JUMP, always_false, always_false, gamepad_true)
     t.expect_true(pressed)?
@@ -135,7 +135,7 @@ function test_input_check_digital_gamepad() -> t.Check:
 @[test]
 function test_input_check_digital_bad_id() -> t.Check:
     var map = build_map()
-    defer map.release()
+    defer: map.release()
 
     let pressed = map.check_digital(999, always_true, always_true, gamepad_true)
     t.expect_false(pressed)?
@@ -146,7 +146,7 @@ function test_input_check_digital_bad_id() -> t.Check:
 @[test]
 function test_input_binding_at_out_of_range() -> t.Check:
     var map = build_map()
-    defer map.release()
+    defer: map.release()
 
     let b = map.binding_at(ACTION_JUMP, 99)
     match b:

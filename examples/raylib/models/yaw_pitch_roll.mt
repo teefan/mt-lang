@@ -9,7 +9,7 @@ const DEG_TO_RAD: float = 0.0174532925
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - yaw pitch roll")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -23,9 +23,9 @@ function main() -> int:
     )
 
     var model = rl.load_model("models/obj/plane.obj")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     let texture = rl.load_texture("models/obj/plane_diffuse.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.set_texture_wrap(texture, int<-rl.TextureWrap.TEXTURE_WRAP_REPEAT)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 

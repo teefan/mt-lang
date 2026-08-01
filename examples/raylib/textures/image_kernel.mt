@@ -25,13 +25,13 @@ function kernel_span(kernel: ref[array[float, 9]]) -> span[float]:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - image kernel")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     var image = rl.load_image("cat.png")
-    defer rl.unload_image(image)
+    defer: rl.unload_image(image)
 
     var gaussian_kernel = array[float, 9](1.0, 2.0, 1.0, 2.0, 4.0, 2.0, 1.0, 2.0, 1.0)
     var sobel_kernel = array[float, 9](1.0, 0.0, -1.0, 2.0, 0.0, -2.0, 1.0, 0.0, -1.0)
@@ -42,15 +42,15 @@ function main() -> int:
     normalize_kernel(ref_of(sobel_kernel))
 
     var cat_sharpened = rl.image_copy(image)
-    defer rl.unload_image(cat_sharpened)
+    defer: rl.unload_image(cat_sharpened)
     rl.image_kernel_convolution(cat_sharpened, kernel_span(ref_of(sharpen_kernel)))
 
     var cat_sobel = rl.image_copy(image)
-    defer rl.unload_image(cat_sobel)
+    defer: rl.unload_image(cat_sobel)
     rl.image_kernel_convolution(cat_sobel, kernel_span(ref_of(sobel_kernel)))
 
     var cat_gaussian = rl.image_copy(image)
-    defer rl.unload_image(cat_gaussian)
+    defer: rl.unload_image(cat_gaussian)
 
     var index = 0
     while index < 6:
@@ -63,13 +63,13 @@ function main() -> int:
     rl.image_crop(cat_sharpened, rl.Rectangle(x = 0.0, y = 0.0, width = 200.0, height = 450.0))
 
     let texture = rl.load_texture_from_image(image)
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     let cat_sharpened_texture = rl.load_texture_from_image(cat_sharpened)
-    defer rl.unload_texture(cat_sharpened_texture)
+    defer: rl.unload_texture(cat_sharpened_texture)
     let cat_sobel_texture = rl.load_texture_from_image(cat_sobel)
-    defer rl.unload_texture(cat_sobel_texture)
+    defer: rl.unload_texture(cat_sobel_texture)
     let cat_gaussian_texture = rl.load_texture_from_image(cat_gaussian)
-    defer rl.unload_texture(cat_gaussian_texture)
+    defer: rl.unload_texture(cat_gaussian_texture)
 
     rl.set_target_fps(60)
 

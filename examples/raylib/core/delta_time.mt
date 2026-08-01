@@ -9,7 +9,7 @@ const CIRCLE_RADIUS: float = 32.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - delta time")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var current_fps = 60
     var delta_circle = rl.Vector2(x = 0.0, y = (float<-SCREEN_HEIGHT) / 3.0)

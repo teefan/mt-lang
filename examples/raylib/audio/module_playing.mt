@@ -17,10 +17,10 @@ struct CircleWave:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [audio] example - module playing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -60,7 +60,7 @@ function main() -> int:
         index -= 1
 
     var music = rl.load_music_stream("mini1111.xm")
-    defer rl.unload_music_stream(music)
+    defer: rl.unload_music_stream(music)
     music.looping = false
     var pitch: float = 1.0
     rl.play_music_stream(music)

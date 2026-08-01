@@ -9,7 +9,7 @@ const GLSL_VERSION: int = 330
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - raymarching rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -23,7 +23,7 @@ function main() -> int:
     )
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/raymarching.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let view_eye_location = rl.get_shader_location(shader, "viewEye")
     let view_center_location = rl.get_shader_location(shader, "viewCenter")

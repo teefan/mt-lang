@@ -24,7 +24,7 @@ async function main() -> int:
             return 1
         Result.success as bind_payload:
             var server_addr = bind_payload.value
-            defer server_addr.release()
+            defer: server_addr.release()
             let config = mux.MuxedConfig.default()
             var info = lobby.LobbyInfo(
                 name = string.String.from_str("TestLobby"),
@@ -38,25 +38,25 @@ async function main() -> int:
                     return 2
                 Result.success as host_payload:
                     var host = host_payload.value
-                    defer host.release()
+                    defer: host.release()
                     match host.local_address():
                         Result.failure:
                             return 3
                         Result.success as local_payload:
                             var resolved = local_payload.value
-                            defer resolved.release()
+                            defer: resolved.release()
                             match net.ipv4("127.0.0.1", 0):
                                 Result.failure:
                                     return 4
                                 Result.success as client_local:
                                     var cl = client_local.value
-                                    defer cl.release()
+                                    defer: cl.release()
                                     match await lobby.join_lobby(cl, resolved, "Player1", config):
                                         Result.failure:
                                             return 5
                                         Result.success as client_payload:
                                             var client = client_payload.value
-                                            defer client.release()
+                                            defer: client.release()
                                             var joined: bool = false
                                             var frame: uint = 0
                                             while frame < 120 and not joined:
@@ -69,7 +69,7 @@ async function main() -> int:
                                                     match event_opt:
                                                         Option.some as ev:
                                                             var e = ev.value
-                                                            defer e.release()
+                                                            defer: e.release()
                                                             if e.kind == lobby.LobbyEventKind.joined:
                                                                 joined = true
                                                         Option.none:
@@ -108,7 +108,7 @@ async function main() -> int:
             return 1
         Result.success as bind_payload:
             var server_addr = bind_payload.value
-            defer server_addr.release()
+            defer: server_addr.release()
             let config = mux.MuxedConfig.default()
             var info = lobby.LobbyInfo(
                 name = string.String.from_str("DiscLobby"),
@@ -122,25 +122,25 @@ async function main() -> int:
                     return 2
                 Result.success as host_payload:
                     var host = host_payload.value
-                    defer host.release()
+                    defer: host.release()
                     match host.local_address():
                         Result.failure:
                             return 3
                         Result.success as local_payload:
                             var resolved = local_payload.value
-                            defer resolved.release()
+                            defer: resolved.release()
                             match net.ipv4("127.0.0.1", 0):
                                 Result.failure:
                                     return 4
                                 Result.success as client_local:
                                     var cl = client_local.value
-                                    defer cl.release()
+                                    defer: cl.release()
                                     match await mux.mux_connect(cl, resolved, config):
                                         Result.failure:
                                             return 5
                                         Result.success as conn_payload:
                                             var conn = conn_payload.value
-                                            defer conn.release()
+                                            defer: conn.release()
 
                                             var frame: uint = 0
                                             var discovered: bool = false
@@ -158,7 +158,7 @@ async function main() -> int:
                                                     match msg_opt:
                                                         Option.some as mp:
                                                             var m = mp.value
-                                                            defer m.release()
+                                                            defer: m.release()
                                                             if m.channel_id == 0 and m.type_id == 0x0008:
                                                                 discovered = true
                                                         Option.none:
@@ -191,7 +191,7 @@ import std.vec as vec
 
 function main() -> int:
     var probe = lobby.build_beacon_probe()
-    defer probe.release()
+    defer: probe.release()
     let probe_data = probe.as_span()
 
     if probe_data.len != 8:
@@ -207,7 +207,7 @@ function main() -> int:
         game_data = bytes.Bytes.empty()
     )
     var response = lobby.build_beacon_response(ref_of(info))
-    defer response.release()
+    defer: response.release()
     info.release()
 
     let resp_data = response.as_span()
@@ -217,7 +217,7 @@ function main() -> int:
             return 3
         Result.success as pp:
             var info2 = pp.value
-            defer info2.release()
+            defer: info2.release()
             if info2.player_count != 2:
                 return 4
             if info2.max_players != 8:

@@ -212,8 +212,8 @@ module MilkTea
     ReturnStmt = Data.define(:value, :line, :column, :length) do
       def initialize(value:, line: nil, column: nil, length: nil) = super
     end
-    DeferStmt = Data.define(:expression, :body, :line, :column, :length) do
-      def initialize(expression:, body:, line: nil, column: nil, length: nil) = super
+    DeferStmt = Data.define(:body, :line, :column, :length) do
+      def initialize(body:, line: nil, column: nil, length: nil) = super
     end
     ErrorBlockStmt = Data.define(:body, :line, :column, :length, :message, :header_type, :header_expression, :header_bindings, :header_iterables) do
       def initialize(body:, line: nil, column: nil, length: nil, message: nil, header_type: nil, header_expression: nil, header_bindings: nil, header_iterables: nil) = super

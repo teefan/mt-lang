@@ -82,7 +82,7 @@ function wrap_file_text(content: str, font_size: int, wrap_width: int, output: r
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - text file loading")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -96,7 +96,7 @@ function main() -> int:
 
     let raw_text = rl.load_file_text(FILE_NAME) else:
         fatal("could not load examples/raylib/resources/text_file.txt")
-    defer rl.unload_file_text(raw_text)
+    defer: rl.unload_file_text(raw_text)
 
     let font_size = 20
     let text_top = 25 + font_size
@@ -104,7 +104,7 @@ function main() -> int:
     let file_text = text.chars_as_str(raw_text)
 
     var wrapped_lines = vec.Vec[string.String].create()
-    defer release_string_values(ref_of(wrapped_lines))
+    defer: release_string_values(ref_of(wrapped_lines))
     wrap_file_text(file_text, font_size, wrap_width, ref_of(wrapped_lines))
 
     var text_height = 0

@@ -20,7 +20,7 @@ extending Key:
 @[test]
 function test_linked_set_insertion_order_operations() -> t.Check:
     var values = linked_set.LinkedSet[Key].with_capacity(2)
-    defer values.release()
+    defer: values.release()
 
     t.expect(values.capacity() >= 2, "capacity >= 2")?
     t.expect_true(values.insert(Key(value = 3)))?
@@ -78,13 +78,13 @@ function test_linked_set_insertion_order_operations() -> t.Check:
     t.expect_equal_int(iter_step, 4)?
 
     var other = linked_set.LinkedSet[Key].create()
-    defer other.release()
+    defer: other.release()
     other.insert(Key(value = 2))
     other.insert(Key(value = 5))
     other.insert(Key(value = 1))
 
     var union_values = values.union_with(other)
-    defer union_values.release()
+    defer: union_values.release()
     var union_order_ok = true
     var union_step = 0
     for value in union_values:
@@ -105,7 +105,7 @@ function test_linked_set_insertion_order_operations() -> t.Check:
     t.expect_equal_int(union_step, 5)?
 
     var intersection_values = values.intersection(other)
-    defer intersection_values.release()
+    defer: intersection_values.release()
     var intersection_order_ok = true
     var intersection_step = 0
     for value in intersection_values:
@@ -120,7 +120,7 @@ function test_linked_set_insertion_order_operations() -> t.Check:
     t.expect_equal_int(intersection_step, 2)?
 
     var difference_values = values.difference(other)
-    defer difference_values.release()
+    defer: difference_values.release()
     var difference_order_ok = true
     var difference_step = 0
     for value in difference_values:
@@ -135,7 +135,7 @@ function test_linked_set_insertion_order_operations() -> t.Check:
     t.expect_equal_int(difference_step, 2)?
 
     var subset = linked_set.LinkedSet[Key].create()
-    defer subset.release()
+    defer: subset.release()
     subset.insert(Key(value = 3))
     subset.insert(Key(value = 1))
     t.expect_true(subset.is_subset(values))?

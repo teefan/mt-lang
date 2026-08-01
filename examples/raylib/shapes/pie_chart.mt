@@ -12,7 +12,7 @@ const DEG_TO_RAD: float = rl.PI / 180.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - pie chart")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var slice_count = 7
     var donut_inner_radius: float = 25.0

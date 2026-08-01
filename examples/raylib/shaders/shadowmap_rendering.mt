@@ -108,7 +108,7 @@ function draw_scene(cube: rl.Model, robot: rl.Model) -> void:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - shadowmap rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -125,7 +125,7 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/shadowmap.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/shadowmap.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(shadow_shader)
+    defer: rl.unload_shader(shadow_shader)
     unsafe: shadow_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.get_shader_location(
         shadow_shader,
         "viewPos"
@@ -163,11 +163,11 @@ function main() -> int:
     )
 
     var cube = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
-    defer rl.unload_model(cube)
+    defer: rl.unload_model(cube)
     unsafe: cube.materials[0].shader = shadow_shader
 
     var robot = rl.load_model("models/robot.glb")
-    defer rl.unload_model(robot)
+    defer: rl.unload_model(robot)
     var material_index = 0
     while material_index < robot.materialCount:
         unsafe: robot.materials[material_index].shader = shadow_shader
@@ -176,11 +176,11 @@ function main() -> int:
     var anim_count = 0
     let animations = rl.load_model_animations("models/robot.glb", ptr_of(anim_count)) else:
         fatal("could not load robot animations")
-    defer rl.unload_model_animations(animations, anim_count)
+    defer: rl.unload_model_animations(animations, anim_count)
     let animation = unsafe: animations[0]
 
     let shadow_map = load_shadowmap_render_texture(SHADOWMAP_RESOLUTION, SHADOWMAP_RESOLUTION)
-    defer unload_shadowmap_render_texture(shadow_map)
+    defer: unload_shadowmap_render_texture(shadow_map)
 
     var light_camera = rl.Camera3D(
         position = rm.vector3_scale(light_dir, -15.0),

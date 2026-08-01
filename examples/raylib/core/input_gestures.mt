@@ -32,7 +32,7 @@ function gesture_label(gesture: int) -> str:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input gestures")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var touch_position = rl.Vector2(x = 0.0, y = 0.0)
     let touch_area = rl.Rectangle(

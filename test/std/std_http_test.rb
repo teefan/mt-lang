@@ -26,11 +26,11 @@ async function main() -> int:
     match response_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var response = payload.value
-            defer response.release()
+            defer: response.release()
             if response.status_code != 200:
                 return 2
             match response.header(\"content-type\"):
@@ -96,11 +96,11 @@ async function main() -> int:
     match response_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var response = payload.value
-            defer response.release()
+            defer: response.release()
             if response.status_code != 201:
                 return 2
             match response.body.as_str():
@@ -161,11 +161,11 @@ async function main() -> int:
     match response_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var response = payload.value
-            defer response.release()
+            defer: response.release()
             if response.status_code != 200:
                 return 2
             match response.body.as_str():
@@ -215,11 +215,11 @@ async function main() -> int:
     match response_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var response = payload.value
-            defer response.release()
+            defer: response.release()
             if response.status_code != 200:
                 return 2
             match response.header(\"content-type\"):
@@ -299,11 +299,11 @@ async function main() -> int:
     match fast_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var response = payload.value
-            defer response.release()
+            defer: response.release()
             match response.body.as_str():
                 Option.none:
                     return 2
@@ -315,11 +315,11 @@ async function main() -> int:
     match slow_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 4
         Result.success as payload:
             var response = payload.value
-            defer response.release()
+            defer: response.release()
             match response.body.as_str():
                 Option.none:
                     return 5

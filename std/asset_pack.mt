@@ -187,7 +187,7 @@ function read_entry_metadata(file: stdio.File?) -> Result[EntryMetadata, Error]:
 
 function read_path_matches(file: stdio.File?, path_length: ptr_uint, logical_path: str) -> Result[bool, Error]:
     let path_buffer = heap.must_alloc[ubyte](path_length)
-    defer heap.release(path_buffer)
+    defer: heap.release(path_buffer)
 
     if not read_exact(file, path_buffer, path_length):
         return Result[bool, Error].failure(error= Error.malformed_index)

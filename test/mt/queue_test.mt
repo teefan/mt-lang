@@ -136,7 +136,7 @@ function test_queue_clear_resets() -> t.Check:
 @[test]
 function test_queue_shrink_to_fit() -> t.Check:
     var values = queue.Queue[int].create()
-    defer values.release()
+    defer: values.release()
     values.enqueue(10)
     values.enqueue(20)
     values.reserve(128)

@@ -10,7 +10,7 @@ const IDLE_RADIUS: float = 8.0
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - lines bezier")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var start_point = rl.Vector2(x = 30.0, y = 30.0)
     var end_point = rl.Vector2(x = float<-SCREEN_WIDTH - 30.0, y = float<-SCREEN_HEIGHT - 30.0)

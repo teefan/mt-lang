@@ -136,7 +136,7 @@ function draw_rectangle_rounded_gradient_h(
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - rectangle advanced")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.set_target_fps(60)
 

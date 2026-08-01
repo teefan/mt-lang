@@ -237,7 +237,7 @@ class MilkTeaLoweringTest < Minitest::Test
       # module demo.main
 
       function process() -> int:
-          defer do_something()
+          defer: do_something()
           return 42
 
       function do_something() -> void:
@@ -294,10 +294,10 @@ class MilkTeaLoweringTest < Minitest::Test
 
         function main() -> int:
             var value = lib.make()
-            defer value.release()
+            defer: value.release()
 
             var created = lib.Buffer.create()
-            defer created.release()
+            defer: created.release()
             return 0
       MT
       {

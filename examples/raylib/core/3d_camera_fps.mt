@@ -183,7 +183,7 @@ function draw_level() -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - 3d camera fps")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var camera = rl.Camera3D(
         position = rl.Vector3(

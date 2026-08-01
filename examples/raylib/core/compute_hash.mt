@@ -21,7 +21,7 @@ function assign_hex_text[N](buffer: ref[str_buffer[N]], data: ptr[uint]?, data_s
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - compute hash")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var text_input: str_buffer[96]
     text_input.assign("The quick brown fox jumps over the lazy dog.")

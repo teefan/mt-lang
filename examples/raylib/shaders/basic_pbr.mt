@@ -91,7 +91,7 @@ function update_light(shader: rl.Shader, light: Light) -> void:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - basic pbr")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -108,7 +108,7 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/pbr.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/pbr.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_ALBEDO] = rl.get_shader_location(shader, "albedoMap")
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_METALNESS] = rl.get_shader_location(shader, "mraMap")
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL] = rl.get_shader_location(shader, "normalMap")
@@ -148,7 +148,7 @@ function main() -> int:
     let texture_tiling_location = rl.get_shader_location(shader, "tiling")
 
     var car = rl.load_model("models/old_car_new.glb")
-    defer rl.unload_model(car)
+    defer: rl.unload_model(car)
     unsafe: car.materials[0].shader = shader
     unsafe:
         car.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = rl.WHITE
@@ -172,7 +172,7 @@ function main() -> int:
     rl.set_material_texture(car.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, car_emission)
 
     var floor = rl.load_model("models/plane.glb")
-    defer rl.unload_model(floor)
+    defer: rl.unload_model(floor)
     unsafe: floor.materials[0].shader = shader
     unsafe:
         floor.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO].color = rl.WHITE

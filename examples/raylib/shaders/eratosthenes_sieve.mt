@@ -8,15 +8,15 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - eratosthenes sieve")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let target = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/eratosthenes.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     rl.set_target_fps(60)
 

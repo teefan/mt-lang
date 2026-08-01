@@ -21,7 +21,7 @@ var balls: array[Ball, MAX_BALLS] = zero[array[Ball, MAX_BALLS]]
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - ball physics")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     balls[0] = Ball(
         position = rl.Vector2(x = float<-rl.get_screen_width() / 2.0, y = float<-rl.get_screen_height() / 2.0),

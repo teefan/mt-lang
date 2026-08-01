@@ -8,23 +8,23 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - multi sample2d")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let red_image = rl.gen_image_color(SCREEN_WIDTH, SCREEN_HEIGHT, rl.Color(r = 255, g = 0, b = 0, a = 255))
     let red_texture = rl.load_texture_from_image(red_image)
-    defer rl.unload_texture(red_texture)
+    defer: rl.unload_texture(red_texture)
     rl.unload_image(red_image)
 
     let blue_image = rl.gen_image_color(SCREEN_WIDTH, SCREEN_HEIGHT, rl.Color(r = 0, g = 0, b = 255, a = 255))
     let blue_texture = rl.load_texture_from_image(blue_image)
-    defer rl.unload_texture(blue_texture)
+    defer: rl.unload_texture(blue_texture)
     rl.unload_image(blue_image)
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/color_mix.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let blue_texture_location = rl.get_shader_location(shader, "texture1")
     let divider_location = rl.get_shader_location(shader, "divider")

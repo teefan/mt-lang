@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - monitor detector")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var current_monitor_index = rl.get_current_monitor()
 

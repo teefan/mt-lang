@@ -89,7 +89,7 @@ function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
 
 function path_kind(path: str) -> int:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
     return c.mt_fs_path_kind(storage.to_cstr(path))
 
 
@@ -170,7 +170,7 @@ public function is_directory(path: str) -> bool:
 
 public function read_text(path: str) -> Result[string.String, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_text = zero[c.mt_fs_string]
     var raw_error = zero[c.mt_fs_error]
@@ -187,7 +187,7 @@ public function read_lines(path: str) -> Result[Entries, Error]:
             return Result[Entries, Error].failure(error= payload.error)
         Result.success as payload:
             var content = payload.value
-            defer content.release()
+            defer: content.release()
 
             var values = vec.Vec[string.String].create()
             let content_text = content.as_str()
@@ -216,7 +216,7 @@ public function read_lines(path: str) -> Result[Entries, Error]:
 
 public function read_bytes(path: str) -> Result[bytes.Bytes, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_bytes = zero[c.mt_fs_string]
     var raw_error = zero[c.mt_fs_error]
@@ -229,7 +229,7 @@ public function read_bytes(path: str) -> Result[bytes.Bytes, Error]:
 
 public function metadata(path: str) -> Result[Metadata, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_metadata = zero[c.mt_fs_metadata]
     var raw_error = zero[c.mt_fs_error]
@@ -248,7 +248,7 @@ public function metadata(path: str) -> Result[Metadata, Error]:
 
 public function write_text(path: str, content: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_write_text(storage.to_cstr(path), content.data, content.len, raw_error)
@@ -260,7 +260,7 @@ public function write_text(path: str, content: str) -> Result[bool, Error]:
 
 public function write_bytes(path: str, content: span[ubyte]) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_write_bytes(storage.to_cstr(path), content.data, content.len, raw_error)
@@ -272,7 +272,7 @@ public function write_bytes(path: str, content: span[ubyte]) -> Result[bool, Err
 
 public function set_permissions(path: str, mode: int) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_set_permissions(storage.to_cstr(path), mode, raw_error)
@@ -284,7 +284,7 @@ public function set_permissions(path: str, mode: int) -> Result[bool, Error]:
 
 public function create_directories(path: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_create_directories(storage.to_cstr(path), raw_error)
@@ -307,7 +307,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
                 return Result[bool, Error].failure(error= payload.error)
             Result.success as payload:
                 var data = payload.value
-                defer data.release()
+                defer: data.release()
                 return write_bytes(target_path, data.as_span())
 
     if is_directory(source_path):
@@ -322,7 +322,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
                 return Result[bool, Error].failure(error= payload.error)
             Result.success as payload:
                 var entries = payload.value
-                defer entries.release()
+                defer: entries.release()
 
                 var index: ptr_uint = 0
                 while index < entries.len():
@@ -334,9 +334,9 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
                             ].failure(error= static_error("fs copy entry missing source entry"))
                         Option.some as entry_payload:
                             var child_source = path_ops.join(source_path, entry_payload.value)
-                            defer child_source.release()
+                            defer: child_source.release()
                             var child_target = path_ops.join(target_path, entry_payload.value)
-                            defer child_target.release()
+                            defer: child_target.release()
                             match copy_entry(child_source.as_str(), child_target.as_str()):
                                 Result.failure as child_payload:
                                     return Result[bool, Error].failure(error= child_payload.error)
@@ -357,7 +357,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
 
 public function remove(path: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_remove(storage.to_cstr(path), raw_error)
@@ -374,7 +374,7 @@ public function remove_tree(path: str) -> Result[bool, Error]:
                 return Result[bool, Error].failure(error= payload.error)
             Result.success as payload:
                 var entries = payload.value
-                defer entries.release()
+                defer: entries.release()
 
                 var index: ptr_uint = 0
                 while index < entries.len():
@@ -383,7 +383,7 @@ public function remove_tree(path: str) -> Result[bool, Error]:
                             return Result[bool, Error].failure(error= static_error("fs remove tree missing entry"))
                         Option.some as entry_payload:
                             var child_path = path_ops.join(path, entry_payload.value)
-                            defer child_path.release()
+                            defer: child_path.release()
                             match remove_tree(child_path.as_str()):
                                 Result.failure as child_payload:
                                     return Result[bool, Error].failure(error= child_payload.error)
@@ -401,9 +401,9 @@ public function remove_tree(path: str) -> Result[bool, Error]:
 
 public function rename(source_path: str, target_path: str) -> Result[bool, Error]:
     var source_storage = arena.create(source_path.len + 1)
-    defer source_storage.release()
+    defer: source_storage.release()
     var target_storage = arena.create(target_path.len + 1)
-    defer target_storage.release()
+    defer: target_storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_rename(
@@ -438,7 +438,7 @@ public function find_ancestor_containing(path: str, entry_name: str) -> Option[s
 
     while true:
         var candidate = path_ops.join(current.as_str(), entry_name)
-        defer candidate.release()
+        defer: candidate.release()
         let found = exists(candidate.as_str())
         if found:
             return Option[string.String].some(value= current)
@@ -486,7 +486,7 @@ public function temporary_directory() -> string.String:
 
 public function canonicalize(path: str) -> Result[string.String, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_text = zero[c.mt_fs_string]
     var raw_error = zero[c.mt_fs_error]
@@ -505,7 +505,7 @@ public function create_temporary_directory(parent_dir: str, prefix: str) -> Resu
         ].failure(error= static_error("fs.create_temporary_directory requires a non-empty prefix"))
 
     var storage = arena.create(parent_dir.len + prefix.len + 2)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_text = zero[c.mt_fs_string]
     var raw_error = zero[c.mt_fs_error]
@@ -529,7 +529,7 @@ public function create_temporary_directory(parent_dir: str, prefix: str) -> Resu
 
 public function create_temporary_directory_in_system_temp(prefix: str) -> Result[string.String, Error]:
     var root = temporary_directory()
-    defer root.release()
+    defer: root.release()
     return create_temporary_directory(root.as_str(), prefix)
 
 
@@ -541,7 +541,7 @@ public function create_temporary_file(parent_dir: str, prefix: str, suffix: str)
         ].failure(error= static_error("fs.create_temporary_file requires a non-empty prefix"))
 
     var storage = arena.create(parent_dir.len + prefix.len + suffix.len + 3)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_text = zero[c.mt_fs_string]
     var raw_error = zero[c.mt_fs_error]
@@ -563,13 +563,13 @@ public function create_temporary_file(parent_dir: str, prefix: str, suffix: str)
 
 public function create_temporary_file_in_system_temp(prefix: str, suffix: str) -> Result[string.String, Error]:
     var root = temporary_directory()
-    defer root.release()
+    defer: root.release()
     return create_temporary_file(root.as_str(), prefix, suffix)
 
 
 public function list_entries(path: str) -> Result[Entries, Error]:
     var storage = arena.create(path.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     var raw_entries = zero[c.mt_fs_entries]
     var raw_error = zero[c.mt_fs_error]
@@ -644,7 +644,7 @@ function collect_files_recursive(path: str, output: ref[vec.Vec[string.String]])
             return Result[bool, Error].failure(error= payload.error)
         Result.success as payload:
             var entries = payload.value
-            defer entries.release()
+            defer: entries.release()
 
             var index: ptr_uint = 0
             while index < entries.len():

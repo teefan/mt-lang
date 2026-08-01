@@ -130,17 +130,17 @@ public async function announce(
             return
         Result.success as addr_p:
             var announce_addr = addr_p.value
-            defer announce_addr.release()
+            defer: announce_addr.release()
 
             match net.udp_bind(announce_addr):
                 Result.failure:
                     return
                 Result.success as bp:
                     var socket = bp.value
-                    defer socket.release()
+                    defer: socket.release()
 
                     var response = build_response(game_port, ubyte<-0, max_players, game_name)
-                    defer response.release()
+                    defer: response.release()
 
                     while true:
                         let recv_task = socket.recv_from(1500)
@@ -177,7 +177,7 @@ public async function discover_on(
             )
         Result.success as la:
             var local_addr = la.value
-            defer local_addr.release()
+            defer: local_addr.release()
 
             match net.udp_bind_on(runtime, local_addr):
                 Result.failure:
@@ -186,7 +186,7 @@ public async function discover_on(
                     )
                 Result.success as bp:
                     var socket = bp.value
-                    defer socket.release()
+                    defer: socket.release()
 
                     match socket.set_broadcast(true):
                         0:
@@ -207,10 +207,10 @@ public async function discover_on(
                             )
                         Result.success as broad_addr:
                             var broadcast_addr = broad_addr.value
-                            defer broadcast_addr.release()
+                            defer: broadcast_addr.release()
 
                             var probe = build_probe()
-                            defer probe.release()
+                            defer: probe.release()
 
                             var results = vec.Vec[ServerInfo].create()
 

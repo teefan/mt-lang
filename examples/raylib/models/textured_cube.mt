@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - textured cube")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -21,9 +21,9 @@ function main() -> int:
     )
 
     let atlas_image = rl.load_image("cubicmap_atlas.png")
-    defer rl.unload_image(atlas_image)
+    defer: rl.unload_image(atlas_image)
     let atlas_texture = rl.load_texture_from_image(atlas_image)
-    defer rl.unload_texture(atlas_texture)
+    defer: rl.unload_texture(atlas_texture)
 
     let atlas_crop = rl.image_from_image(
         atlas_image,
@@ -34,14 +34,14 @@ function main() -> int:
             height = float<-atlas_image.height / 2.0
         )
     )
-    defer rl.unload_image(atlas_crop)
+    defer: rl.unload_image(atlas_crop)
     let crop_texture = rl.load_texture_from_image(atlas_crop)
-    defer rl.unload_texture(crop_texture)
+    defer: rl.unload_texture(crop_texture)
 
     let tall_cube = rl.load_model_from_mesh(rl.gen_mesh_cube(2.0, 4.0, 2.0))
-    defer rl.unload_model(tall_cube)
+    defer: rl.unload_model(tall_cube)
     let small_cube = rl.load_model_from_mesh(rl.gen_mesh_cube(2.0, 2.0, 2.0))
-    defer rl.unload_model(small_cube)
+    defer: rl.unload_model(small_cube)
 
     rl.set_material_texture(tall_cube.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, atlas_texture)
     rl.set_material_texture(small_cube.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, crop_texture)

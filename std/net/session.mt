@@ -312,7 +312,7 @@ extending Connection:
         if this.state == ConnectionState.connected:
             if frame >= this.last_heartbeat_sent + this.heartbeat_interval:
                 var hb = build_heartbeat(frame)
-                defer hb.release()
+                defer: hb.release()
                 let send_result = await this.channel.send(hb.as_span())
                 match send_result:
                     Result.failure:
@@ -395,7 +395,7 @@ extending Connection:
             ))
 
         var framed = build_user_data(data)
-        defer framed.release()
+        defer: framed.release()
         let send_result = await this.channel.send(framed.as_span())
         match send_result:
             Result.failure as payload:
@@ -415,7 +415,7 @@ extending Connection:
             ))
 
         var framed = build_user_data(data)
-        defer framed.release()
+        defer: framed.release()
         let send_result = await this.channel.send_reliable(framed.as_span(), frame)
         match send_result:
             Result.failure as payload:
@@ -444,7 +444,7 @@ extending Connection:
             Result.success as ksp:
                 key = ksp.value
         var req = build_connect_request(this.protocol_version, key)
-        defer req.release()
+        defer: req.release()
         let send_result = await this.channel.send_reliable(req.as_span(), this.last_heartbeat_sent)
         match send_result:
             Result.failure as send_payload:
@@ -463,7 +463,7 @@ extending Connection:
             ))
 
         var d = build_disconnect(disconnect_reason_local)
-        defer d.release()
+        defer: d.release()
         let send_result = await this.channel.send_reliable(d.as_span(), 0)
         this.state = ConnectionState.disconnected
         match send_result:
@@ -588,7 +588,7 @@ async function drain_outgoing_conn(conn: ref[Connection]) -> Result[bool, net.Er
                 return Result[bool, net.Error].success(value = true)
             Option.some as payload:
                 var outgoing = payload.value
-                defer outgoing.release()
+                defer: outgoing.release()
                 if outgoing.reliable:
                     let _ = await conn.channel.send_reliable(
                         outgoing.payload.as_span(),
@@ -648,13 +648,13 @@ extending Session:
             if unsafe: read(peer_ptr).channel_state == ConnectionState.connected:
                 if frame >= unsafe: read(peer_ptr).last_heartbeat_sent + this.config.heartbeat_interval:
                     var hb = build_heartbeat(frame)
-                    defer hb.release()
+                    defer: hb.release()
                     let peer_id = unsafe: read(peer_ptr).peer_id
                     let peer_address_result = find_peer_address(ref_of(this), peer_id)
                     match peer_address_result:
                         Result.success as addr_payload:
                             var addr = addr_payload.value
-                            defer addr.release()
+                            defer: addr.release()
                             let send_result = await this.host.send(addr, hb.as_span())
                             match send_result:
                                 Result.failure:
@@ -748,9 +748,9 @@ extending Session:
                 return Result[bool, net.Error].failure(error = payload.error)
             Result.success as payload:
                 var address = payload.value
-                defer address.release()
+                defer: address.release()
                 var framed = build_user_data(data)
-                defer framed.release()
+                defer: framed.release()
                 let send_result = await this.host.send(address, framed.as_span())
                 match send_result:
                     Result.failure as send_payload:
@@ -773,9 +773,9 @@ extending Session:
                 return Result[bool, net.Error].failure(error = payload.error)
             Result.success as payload:
                 var address = payload.value
-                defer address.release()
+                defer: address.release()
                 var framed = build_user_data(data)
-                defer framed.release()
+                defer: framed.release()
                 let send_result = await this.host.send_reliable(address, framed.as_span(), frame)
                 match send_result:
                     Result.failure as send_payload:
@@ -794,9 +794,9 @@ extending Session:
                 return Result[bool, net.Error].failure(error = payload.error)
             Result.success as payload:
                 var address = payload.value
-                defer address.release()
+                defer: address.release()
                 var d = build_disconnect(reason)
-                defer d.release()
+                defer: d.release()
                 let send_result = await this.host.send_reliable(address, d.as_span(), 0)
                 match send_result:
                     Result.failure:
@@ -1054,7 +1054,7 @@ async function drain_outgoing_session(session: ref[Session]) -> Result[bool, net
                 return Result[bool, net.Error].success(value = true)
             Option.some as payload:
                 var outgoing = payload.value
-                defer outgoing.release()
+                defer: outgoing.release()
                 if outgoing.reliable:
                     let send_result = await session.host.send_reliable(
                         outgoing.address,

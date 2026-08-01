@@ -23,7 +23,7 @@ function matching_coordinate_count(left: rl.Vector4, right: rl.Vector4) -> int:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - tesseract view")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let camera = rl.Camera3D(
         position = rl.Vector3(x = 4.0, y = 4.0, z = 4.0),

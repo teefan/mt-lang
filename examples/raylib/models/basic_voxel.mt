@@ -15,7 +15,7 @@ function voxel_bounds(x: int, y: int, z: int) -> rl.BoundingBox:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - basic voxel")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.disable_cursor()
 
@@ -28,7 +28,7 @@ function main() -> int:
     )
 
     let cube_model = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
-    defer rl.unload_model(cube_model)
+    defer: rl.unload_model(cube_model)
 
     var voxels: array[
         array[array[bool, WORLD_SIZE], WORLD_SIZE],

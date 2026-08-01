@@ -116,7 +116,7 @@ function test_random_from_seed_str_deterministic() -> t.Check:
 function test_random_shuffle_preserves_elements() -> t.Check:
     var r = rng.from_seed(55)
     var list = vec.Vec[uint].create()
-    defer list.release()
+    defer: list.release()
     var k: uint = 0
     while k < 10:
         list.push(k)
@@ -176,7 +176,7 @@ function test_random_chance_always_true_with_one() -> t.Check:
 function test_random_pick_returns_element() -> t.Check:
     var r = rng.from_seed(99)
     var list = vec.Vec[uint].create()
-    defer list.release()
+    defer: list.release()
     var k: uint = 0
     while k < 5:
         list.push(k + 10)

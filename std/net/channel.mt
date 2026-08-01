@@ -154,7 +154,7 @@ function build_packet(
     content: span[ubyte]
 ) -> bytes.Bytes:
     var buffer = vec.Vec[ubyte].with_capacity(header_bytes + content.len)
-    defer buffer.release()
+    defer: buffer.release()
 
     buffer.append_array(encode_uint(header_magic))
     buffer.append_array(encode_uint(sequence))
@@ -275,7 +275,7 @@ async function send_connected_packet(
         ack_bits = unsafe: read(protocol).received_mask
 
     var framed = build_packet(sequence, ack, ack_bits, packet_flags, content)
-    defer framed.release()
+    defer: framed.release()
 
     (await socket.send(framed.as_span()))?
     return Result[bool, net.Error].success(value = true)
@@ -297,7 +297,7 @@ async function send_packet_to(
         ack_bits = unsafe: read(protocol).received_mask
 
     var framed = build_packet(sequence, ack, ack_bits, packet_flags, content)
-    defer framed.release()
+    defer: framed.release()
 
     (await socket.send_to(framed.as_span(), destination))?
     return Result[bool, net.Error].success(value = true)
@@ -475,7 +475,7 @@ extending Channel:
 
     public async editable function recv() -> Result[Option[Message], net.Error]:
         var packet = (await this.socket.recv(this.config.max_payload_bytes + header_bytes))?
-        defer packet.release()
+        defer: packet.release()
 
         let header = decode_header(packet)?
         let protocol = unsafe: ptr_of(this.protocol)

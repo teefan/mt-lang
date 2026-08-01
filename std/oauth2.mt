@@ -78,7 +78,7 @@ public function generate_pkce() -> Result[PkcePair, Error]:
             random_data.release()
 
             var challenge = crypto.sha256(text.as_byte_span(verifier.as_str()))
-            defer challenge.release()
+            defer: challenge.release()
 
             let challenge_b64 = base64.encode_urlsafe(challenge.as_span())
 
@@ -141,9 +141,9 @@ function append_query_param(target: ref[string.String], key: str, value: str) ->
             target.push_byte(38)
 
     var encoded_key = url.percent_encode(key)
-    defer encoded_key.release()
+    defer: encoded_key.release()
     var encoded_value = url.percent_encode(value)
-    defer encoded_value.release()
+    defer: encoded_value.release()
 
     target.append(encoded_key.as_str())
     target.push_byte(61)
@@ -156,7 +156,7 @@ public async function exchange_code(
     pkce_verifier: Option[str]
 ) -> Result[Tokens, Error]:
     var body_params = vec.Vec[url.FormField].create()
-    defer release_form_fields(ref_of(body_params))
+    defer: release_form_fields(ref_of(body_params))
 
     body_params.push(url.FormField(key = "grant_type", value = "authorization_code"))
     body_params.push(url.FormField(key = "code", value = code))
@@ -170,10 +170,10 @@ public async function exchange_code(
             body_params.push(url.FormField(key = "code_verifier", value = payload.value))
 
     var form_body = url.encode_form(body_params.as_span())
-    defer form_body.release()
+    defer: form_body.release()
 
     var auth_header = build_basic_auth_header(config.client_id.as_str(), config.client_secret.as_str())
-    defer auth_header.release()
+    defer: auth_header.release()
 
     var headers = array[http.RequestHeader, 2](
         http.RequestHeader(name = "Content-Type", value = "application/x-www-form-urlencoded"),
@@ -194,7 +194,7 @@ public async function exchange_code(
             return Result[Tokens, Error].failure(error = http_error_to_oauth(payload.error))
         Result.success as payload:
             var response = payload.value
-            defer response.release()
+            defer: response.release()
 
             let body_str = response.body_as_str() else:
                 return Result[Tokens, Error].failure(error = oauth_error("token response body is not valid UTF-8"))
@@ -226,7 +226,7 @@ function parse_token_response(body_str: str, status_code: int) -> Result[Tokens,
             return Result[Tokens, Error].failure(error = oauth_error("token response is not valid JSON"))
         Result.success as json_payload:
             let json_value = json_payload.value
-            defer json.release_value(json_value)
+            defer: json.release_value(json_value)
 
             if status_code != 200:
                 let object_ptr = json_value.as_object() else:
@@ -306,17 +306,17 @@ public async function refresh_access_token(
     refresh_token: str
 ) -> Result[Tokens, Error]:
     var body_params = vec.Vec[url.FormField].create()
-    defer release_form_fields(ref_of(body_params))
+    defer: release_form_fields(ref_of(body_params))
 
     body_params.push(url.FormField(key = "grant_type", value = "refresh_token"))
     body_params.push(url.FormField(key = "refresh_token", value = refresh_token))
     body_params.push(url.FormField(key = "client_id", value = config.client_id.as_str()))
 
     var form_body = url.encode_form(body_params.as_span())
-    defer form_body.release()
+    defer: form_body.release()
 
     var auth_header = build_basic_auth_header(config.client_id.as_str(), config.client_secret.as_str())
-    defer auth_header.release()
+    defer: auth_header.release()
 
     var headers = array[http.RequestHeader, 2](
         http.RequestHeader(name = "Content-Type", value = "application/x-www-form-urlencoded"),
@@ -337,7 +337,7 @@ public async function refresh_access_token(
             return Result[Tokens, Error].failure(error = http_error_to_oauth(payload.error))
         Result.success as payload:
             var response = payload.value
-            defer response.release()
+            defer: response.release()
 
             let body_str = response.body_as_str() else:
                 return Result[Tokens, Error].failure(error = oauth_error("token response body is not valid UTF-8"))

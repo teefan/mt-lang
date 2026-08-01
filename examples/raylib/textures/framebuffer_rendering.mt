@@ -55,7 +55,7 @@ function draw_camera_prism(camera: rl.Camera3D, aspect: float, color: rl.Color) 
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - framebuffer rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var subject_camera = rl.Camera3D(
         position = rl.Vector3(x = 5.0, y = 5.0, z = 5.0),
@@ -73,7 +73,7 @@ function main() -> int:
     )
 
     let observer_target = rl.load_render_texture(SPLIT_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(observer_target)
+    defer: rl.unload_render_texture(observer_target)
     let observer_source = rl.Rectangle(
         x = 0.0,
         y = 0.0,
@@ -83,7 +83,7 @@ function main() -> int:
     let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = float<-SPLIT_WIDTH, height = float<-SCREEN_HEIGHT)
 
     let subject_target = rl.load_render_texture(SPLIT_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(subject_target)
+    defer: rl.unload_render_texture(subject_target)
     let subject_source = rl.Rectangle(
         x = 0.0,
         y = 0.0,

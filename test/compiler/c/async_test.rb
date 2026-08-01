@@ -329,7 +329,7 @@ class AsyncTest < Minitest::Test
 
       function main() -> int:
           rl.init_window(800, 450, "Demo")
-          defer rl.close_window()
+          defer: rl.close_window()
           return 0
     MT
 
@@ -458,7 +458,7 @@ class AsyncTest < Minitest::Test
           let window = win.create()
           if window == null:
               return 0
-          defer win.destroy(window)
+          defer: win.destroy(window)
           return 1
     MT
 

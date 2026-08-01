@@ -16,7 +16,7 @@ extending Key:
 @[test]
 function test_ordered_set_operations() -> t.Check:
     var values = ordered_set.OrderedSet[Key].create()
-    defer values.release()
+    defer: values.release()
 
     t.expect_true(values.is_empty())?
     t.expect(values.get(Key(value = 1)) == null, "missing get null")?

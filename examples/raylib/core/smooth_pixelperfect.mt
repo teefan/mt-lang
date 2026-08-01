@@ -18,7 +18,7 @@ function main() -> int:
     let virtual_ratio = (float<-SCREEN_WIDTH) / (float<-VIRTUAL_SCREEN_WIDTH)
 
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - smooth pixelperfect")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var world_space_camera = rl.Camera2D(
         offset = rl.Vector2(x = 0.0, y = 0.0),
@@ -34,7 +34,7 @@ function main() -> int:
     )
 
     let target = rl.load_render_texture(VIRTUAL_SCREEN_WIDTH, VIRTUAL_SCREEN_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
 
     let rec01 = rl.Rectangle(x = 70.0, y = 35.0, width = 20.0, height = 20.0)
     let rec02 = rl.Rectangle(x = 90.0, y = 55.0, width = 30.0, height = 10.0)

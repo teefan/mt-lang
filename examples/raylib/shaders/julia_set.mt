@@ -20,16 +20,16 @@ const POINTS_OF_INTEREST: array[array[float, 2], 6] = array[array[float, 2], 6](
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - julia set")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/julia_set.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let target = rl.load_render_texture(rl.get_screen_width(), rl.get_screen_height())
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
 
     var c = POINTS_OF_INTEREST[0]
     var offset = array[float, 2](0.0, 0.0)

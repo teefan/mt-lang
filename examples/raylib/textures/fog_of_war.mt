@@ -16,7 +16,7 @@ struct Map:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - fog of war")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var map: Map = zero[Map]
     var index = 0
@@ -29,7 +29,7 @@ function main() -> int:
     var player_tile_y = 0
 
     let fog_of_war = rl.load_render_texture(MAP_TILES_X, MAP_TILES_Y)
-    defer rl.unload_render_texture(fog_of_war)
+    defer: rl.unload_render_texture(fog_of_war)
     rl.set_texture_filter(fog_of_war.texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
     rl.set_texture_wrap(fog_of_war.texture, int<-rl.TextureWrap.TEXTURE_WRAP_CLAMP)
 

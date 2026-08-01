@@ -25,7 +25,7 @@ function joined_animation_names(animations: ptr[rl.ModelAnimation], count: int) 
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - animation blending")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -39,18 +39,18 @@ function main() -> int:
     )
 
     let model = rl.load_model("models/gltf/robot.glb")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     let skinning_vertex_shader = rl.text_format("shaders/glsl%i/skinning.vs", GLSL_VERSION)
     let skinning_fragment_shader = rl.text_format("shaders/glsl%i/skinning.fs", GLSL_VERSION)
     let skinning_shader = rl.load_shader(skinning_vertex_shader, skinning_fragment_shader)
-    defer rl.unload_shader(skinning_shader)
+    defer: rl.unload_shader(skinning_shader)
 
     var anim_count = 0
     let animations = rl.load_model_animations("models/gltf/robot.glb", ptr_of(anim_count)) else:
         fatal("could not load robot animations")
-    defer rl.unload_model_animations(animations, anim_count)
+    defer: rl.unload_model_animations(animations, anim_count)
 
     let animation_names = joined_animation_names(animations, anim_count)
 

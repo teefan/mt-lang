@@ -16,11 +16,7 @@ module MilkTea
       statements.each do |statement|
         case statement
         when AST::DeferStmt
-          local_defers << if statement.body
-            lower_defer_cleanup_body(statement.body, env: local_env, return_type:)
-          else
-            lower_defer_cleanup_expression(statement.expression, env: local_env)
-          end
+          local_defers << lower_defer_cleanup_body(statement.body, env: local_env, return_type:)
         when AST::UnsafeStmt
           lower_block_unsafe_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
         when AST::LocalDecl

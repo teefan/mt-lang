@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - geometric shapes")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let camera = rl.Camera3D(
         position = rl.Vector3(x = 0.0, y = 10.0, z = 10.0),

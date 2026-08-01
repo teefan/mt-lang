@@ -50,7 +50,7 @@ function write_stdout_text(value: str) -> int:
     match terminal.write_stdout(value):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success:
             return 0
@@ -60,7 +60,7 @@ function write_stderr_text(value: str) -> int:
     match terminal.write_stderr(value):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success:
             return 0
@@ -70,7 +70,7 @@ function terminal_bool_ok(result: Result[bool, terminal.Error]) -> bool:
     match result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return false
         Result.success:
             return true
@@ -80,7 +80,7 @@ function terminal_write_ok(app_terminal: ref[terminal.Terminal], value: str) -> 
     match app_terminal.write(value):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return false
         Result.success:
             return true
@@ -92,7 +92,7 @@ function trim_output(value: str) -> str:
 
 function capture_shell_output(script: str) -> string.String:
     var command = vec.Vec[str].create()
-    defer command.release()
+    defer: command.release()
     command.push("/bin/sh")
     command.push("-c")
     command.push(script)
@@ -100,11 +100,11 @@ function capture_shell_output(script: str) -> string.String:
     match process.capture(command.as_span()):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return fmt.format(f"<capture failed: #{error.message.as_str()}>")
         Result.success as payload:
             var result = payload.value
-            defer result.release()
+            defer: result.release()
 
             if result.status.success():
                 match result.stdout_text():
@@ -610,7 +610,7 @@ function render_panel_frame(
         return true
 
     var border = string.String.create()
-    defer border.release()
+    defer: border.release()
     border.push_byte(ascii_plus)
     append_repeated_byte(ref_of(border), ascii_dash, panel.width - 2)
     border.push_byte(ascii_plus)
@@ -741,14 +741,14 @@ function render_footer(
         return false
 
     var selected_label = selected_process_label(process_table, selected_index)
-    defer selected_label.release()
+    defer: selected_label.release()
     let mouse_status = mouse_label(config.mouse_enabled)
     let child_status = child_label(echo)
     let selected_text = selected_label.as_str()
     var status_line = fmt.format(
         f"  Mouse: #{mouse_status}  Child: #{child_status}  Selected: #{selected_text}  Last: #{last_event}"
     )
-    defer status_line.release()
+    defer: status_line.release()
 
     return render_plain_line(app_terminal, size, size.height, status_line.as_str())
 
@@ -804,7 +804,7 @@ function render_small_dashboard(
     let updates = updates_label(paused)
     let refresh = snapshot.refresh_count
     var status_line = fmt.format(f"  Updates: #{updates}  Refresh: #{refresh}  Last: #{last_event}")
-    defer status_line.release()
+    defer: status_line.release()
     if not render_plain_line(app_terminal, size, 5, status_line.as_str()):
         return false
 
@@ -877,7 +877,7 @@ function render_dashboard(
     var status_line = fmt.format(
         f"  View: #{view}  Screen: #{width}x#{height}  Refresh: #{refresh}  Updates: #{updates}"
     )
-    defer status_line.release()
+    defer: status_line.release()
     if not render_plain_line(app_terminal, size, 4, status_line.as_str()):
         return false
 
@@ -896,20 +896,20 @@ function render_dashboard(
         let process_panel = make_rect(1, body_top + top_height + gap, size.width, bottom_height)
 
         var system_body = string.String.create()
-        defer system_body.release()
+        defer: system_body.release()
         append_panel_line(ref_of(system_body), "Collected", snapshot.collected_at.as_str())
         append_panel_line(ref_of(system_body), "Kernel", snapshot.kernel.as_str())
         append_panel_line(ref_of(system_body), "Uptime", snapshot.uptime.as_str())
 
         var session_body = string.String.create()
-        defer session_body.release()
+        defer: session_body.release()
         append_panel_line(ref_of(session_body), "View", tab_name(active_tab))
         append_panel_line(ref_of(session_body), "Updates", updates_label(paused))
         append_panel_line(ref_of(session_body), "Mouse", mouse_label(config.mouse_enabled))
         append_panel_int(ref_of(session_body), "Refresh", snapshot.refresh_count)
         append_panel_line(ref_of(session_body), "Child", child_label(echo))
         var selected_label = selected_process_label(process_table, selected_process_index)
-        defer selected_label.release()
+        defer: selected_label.release()
         append_panel_line(ref_of(session_body), "Selected", selected_label.as_str())
         append_panel_line(ref_of(session_body), "Last event", last_event)
 
@@ -957,7 +957,7 @@ function render_dashboard(
         )
 
         var inspector_body = string.String.create()
-        defer inspector_body.release()
+        defer: inspector_body.release()
         append_panel_line(ref_of(inspector_body), "View", tab_name(active_tab))
         append_panel_line(ref_of(inspector_body), "Collected", snapshot.collected_at.as_str())
         append_panel_int(ref_of(inspector_body), "Refresh", snapshot.refresh_count)
@@ -965,7 +965,7 @@ function render_dashboard(
         append_panel_line(ref_of(inspector_body), "Mouse", mouse_label(config.mouse_enabled))
         let process_count = process_entry_count(process_table)
         var selected_label = selected_process_label(process_table, selected_process_index)
-        defer selected_label.release()
+        defer: selected_label.release()
         append_panel_line(ref_of(inspector_body), "Selected", selected_label.as_str())
         if process_count != 0:
             match selected_process_line(process_table, selected_process_index):
@@ -975,7 +975,7 @@ function render_dashboard(
                     append_panel_line(ref_of(inspector_body), "Entry", "unavailable")
 
         var activity_body = string.String.create()
-        defer activity_body.release()
+        defer: activity_body.release()
         append_panel_line(ref_of(activity_body), "Last event", last_event)
         append_panel_line(ref_of(activity_body), "Child", child_label(echo))
         append_panel_line(ref_of(activity_body), "Select", "Up/Down or mouse")
@@ -1022,7 +1022,7 @@ function render_dashboard(
         let help_panel = make_rect(transcript_width + gap + 1, body_top + top_height + gap, side_width, bottom_height)
 
         var pipe_body = string.String.create()
-        defer pipe_body.release()
+        defer: pipe_body.release()
         append_panel_line(ref_of(pipe_body), "Child", child_label(echo))
         append_panel_line(ref_of(pipe_body), "Status", echo.status.as_str())
         match byte_buffer_as_str(echo.input):
@@ -1032,7 +1032,7 @@ function render_dashboard(
                 append_panel_line(ref_of(pipe_body), "Input", "<invalid utf-8>")
 
         var help_body = string.String.create()
-        defer help_body.release()
+        defer: help_body.release()
         append_panel_line(ref_of(help_body), "Submit", "Enter")
         append_panel_line(ref_of(help_body), "Edit", "Backspace")
         append_panel_line(ref_of(help_body), "Restart", "Ctrl+N")
@@ -1112,13 +1112,13 @@ extending EchoSession:
         this.shutdown()
 
         var command = vec.Vec[str].create()
-        defer command.release()
+        defer: command.release()
         command.push("/bin/cat")
 
         match process.spawn(command.as_span()):
             Result.failure as payload:
                 var error = payload.error
-                defer error.release()
+                defer: error.release()
                 this.active = false
                 set_status_message(ref_of(this.status), "spawn failed: ", error.message.as_str())
             Result.success as payload:
@@ -1174,13 +1174,13 @@ extending EchoSession:
             match this.child.read_stdout(0):
                 Result.failure as payload:
                     var error = payload.error
-                    defer error.release()
+                    defer: error.release()
                     this.active = false
                     set_status_message(ref_of(this.status), "read failed: ", error.message.as_str())
                     break
                 Result.success as payload:
                     var chunk = payload.value
-                    defer chunk.release()
+                    defer: chunk.release()
 
                     if chunk.has_data():
                         match chunk.text():
@@ -1224,12 +1224,12 @@ extending EchoSession:
             return
 
         var outgoing = fmt.format(f"#{input_text}\n")
-        defer outgoing.release()
+        defer: outgoing.release()
 
         match this.child.write_stdin(outgoing.as_str()):
             Result.failure as payload:
                 var error = payload.error
-                defer error.release()
+                defer: error.release()
                 set_status_message(ref_of(this.status), "write failed: ", error.message.as_str())
             Result.success:
                 this.status.assign("sent line to child")
@@ -1246,9 +1246,9 @@ extending EchoSession:
 
 public function print_once() -> int:
     var snapshot = collect_snapshot(1)
-    defer snapshot.release()
+    defer: snapshot.release()
     var output = render_snapshot_text(snapshot)
-    defer output.release()
+    defer: output.release()
     return write_stdout_text(output.as_str())
 
 
@@ -1257,12 +1257,12 @@ public function run(config: Config) -> int:
         return write_stderr_text("mtop dashboard requires a TTY. Use `mtop once` for non-interactive output.\n")
 
     var app_terminal = terminal.Terminal.create()
-    defer app_terminal.release()
+    defer: app_terminal.release()
 
     match app_terminal.refresh_size():
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success:
             pass
@@ -1278,16 +1278,16 @@ public function run(config: Config) -> int:
 
     var current_size = app_terminal.current_size()
     var snapshot = collect_snapshot(1)
-    defer snapshot.release()
+    defer: snapshot.release()
     var echo = EchoSession.create()
-    defer echo.release()
+    defer: echo.release()
     var paused = false
     var running = true
     var refresh_count = 1
     var active_tab = DashboardTab.overview
     var selected_process_index = clamp_process_selection(snapshot.process_table.as_str(), 0)
     var last_event = string.String.from_str("startup")
-    defer last_event.release()
+    defer: last_event.release()
 
     while running:
         echo.pump()
@@ -1307,7 +1307,7 @@ public function run(config: Config) -> int:
         match app_terminal.poll_event(config.interval_ms):
             Result.failure as payload:
                 var error = payload.error
-                defer error.release()
+                defer: error.release()
                 return write_stderr_text(error.message.as_str())
             Result.success as payload:
                 match payload.value:

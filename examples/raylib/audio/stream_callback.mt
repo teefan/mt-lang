@@ -135,14 +135,14 @@ function wave_type_name(wave_type: WaveType) -> str:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [audio] example - stream callback")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     rl.set_audio_stream_buffer_size_default(BUFFER_SIZE)
     let stream = rl.load_audio_stream(uint<-SAMPLE_RATE, 32u, 1u)
-    defer rl.unload_audio_stream(stream)
+    defer: rl.unload_audio_stream(stream)
     rl.play_audio_stream(stream)
 
     var wave_type = WaveType.SINE

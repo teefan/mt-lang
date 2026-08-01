@@ -137,7 +137,7 @@ public async function measure_offset(
 ) -> Result[ClockSync, Error]:
     let t1 = libuv.hrtime()
     var request = build_request(t1)
-    defer request.release()
+    defer: request.release()
     (await socket.send_to(request.as_span(), peer)).map_error(proc(_: net.Error) -> Error:
         clock_error(err_send_failed, "failed to send sync request")
     )?
@@ -154,8 +154,8 @@ public async function measure_offset(
                     )
                 Result.success as dp:
                     var datagram = dp.value
-                    defer datagram.data.release()
-                    defer datagram.source.release()
+                    defer: datagram.data.release()
+                    defer: datagram.source.release()
                     if is_clock_packet(datagram.data.as_span()):
                         let parse_result = parse_response(datagram.data.as_span())
                         match parse_result:
@@ -182,15 +182,15 @@ public async function respond_to_sync(
             match recv_result:
                 Result.success as dp:
                     var datagram = dp.value
-                    defer datagram.data.release()
-                    defer datagram.source.release()
+                    defer: datagram.data.release()
+                    defer: datagram.source.release()
                     if is_clock_packet(datagram.data.as_span()):
                         let parse_result = parse_request(datagram.data.as_span())
                         match parse_result:
                             Result.success as tp:
                                 let t2 = libuv.hrtime()
                                 var resp = build_response(tp.value, t2)
-                                defer resp.release()
+                                defer: resp.release()
                                 let _ = await socket.send_to(resp.as_span(), datagram.source)
                             Result.failure:
                                 pass

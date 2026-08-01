@@ -16,7 +16,7 @@ function next_screen_requested() -> bool:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - basic screen manager")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var current_screen = GameScreen.LOGO
     var frames_counter = 0

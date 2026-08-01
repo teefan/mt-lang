@@ -7,13 +7,13 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - srcrec dstrec")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let scarfy = rl.load_texture("scarfy.png")
-    defer rl.unload_texture(scarfy)
+    defer: rl.unload_texture(scarfy)
 
     let frame_width = scarfy.width / 6
     let frame_height = scarfy.height

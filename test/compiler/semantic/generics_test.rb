@@ -557,7 +557,7 @@ function main() -> int:
 
     function main() -> int:
         var values = OrderedSet[int].create()
-        defer values.release()
+        defer: values.release()
         return 0
   MT
 

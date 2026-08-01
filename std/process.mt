@@ -437,7 +437,7 @@ function spawn_internal(
             return Result[ChildProcess, ProcessError].failure(error= payload.error)
         Result.success as payload:
             var prepared = payload.value
-            defer prepared.release()
+            defer: prepared.release()
 
             var raw_handle = zero[c.mt_process_spawn_handle]
             var raw_error = zero[c.mt_process_error]
@@ -478,7 +478,7 @@ function spawn_pty_internal(
             return Result[PtyProcess, ProcessError].failure(error= payload.error)
         Result.success as payload:
             var prepared = payload.value
-            defer prepared.release()
+            defer: prepared.release()
 
             var raw_handle = zero[c.mt_process_pty_handle]
             var raw_error = zero[c.mt_process_error]
@@ -512,7 +512,7 @@ function capture_internal(
             return Result[CaptureResult, ProcessError].failure(error= payload.error)
         Result.success as payload:
             var prepared = payload.value
-            defer prepared.release()
+            defer: prepared.release()
 
             var raw_result = zero[c.mt_process_capture_result]
             var raw_error = zero[c.mt_process_error]
@@ -547,7 +547,7 @@ function spawn_detached_internal(
             return Result[int, ProcessError].failure(error= payload.error)
         Result.success as payload:
             var prepared = payload.value
-            defer prepared.release()
+            defer: prepared.release()
 
             var pid: int = 0
             var raw_error = zero[c.mt_process_error]

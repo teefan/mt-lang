@@ -484,8 +484,7 @@ module MilkTea
         when AST::UnsafeStmt
           stmt.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
         when AST::DeferStmt
-          collect_indirect_import_uses_from_expr(stmt.expression, used, binding_resolution, import_module_names) if stmt.expression
-          stmt.body&.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+          stmt.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
         when AST::ReturnStmt
           collect_indirect_import_uses_from_expr(stmt.value, used, binding_resolution, import_module_names) if stmt.value
         when AST::ExpressionStmt
@@ -766,8 +765,7 @@ module MilkTea
         when AST::UnsafeStmt
           stmt.body.each { |s| collect_names_from_statement(s, used) }
         when AST::DeferStmt
-          collect_names_from_expr(stmt.expression, used) if stmt.expression
-          stmt.body&.each { |s| collect_names_from_statement(s, used) }
+          stmt.body.each { |s| collect_names_from_statement(s, used) }
         when AST::ReturnStmt
           collect_names_from_expr(stmt.value, used) if stmt.value
         when AST::ExpressionStmt

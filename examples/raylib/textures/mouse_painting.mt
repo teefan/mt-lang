@@ -7,7 +7,7 @@ const MAX_COLORS_COUNT: int = 23
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - mouse painting")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let colors = array[rl.Color, MAX_COLORS_COUNT](
         rl.RAYWHITE,
@@ -56,7 +56,7 @@ function main() -> int:
     var save_message_counter = 0
 
     let target = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
 
     rl.begin_texture_mode(target)
     rl.clear_background(colors[0])

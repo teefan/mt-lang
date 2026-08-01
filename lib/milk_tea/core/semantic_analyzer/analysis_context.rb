@@ -180,8 +180,7 @@ module MilkTea
         when AST::UnsafeStmt
           statement.body.each { |s| validate_async_statement!(s) }
         when AST::DeferStmt
-          validate_async_expression_support!(statement.expression, context: "defer cleanup") if statement.expression
-          statement.body&.each { |s| validate_async_statement!(s) }
+          statement.body.each { |s| validate_async_statement!(s) }
         when AST::WhenStmt
           statement.branches.each { |branch| branch.body.each { |s| validate_async_statement!(s) } }
           statement.else_body&.each { |s| validate_async_statement!(s) }
@@ -230,7 +229,7 @@ module MilkTea
         when AST::ReturnStmt
           statement.value && expression_contains_await?(statement.value)
         when AST::DeferStmt
-          (statement.expression && expression_contains_await?(statement.expression)) || (statement.body && statements_contain_await?(statement.body))
+          statements_contain_await?(statement.body)
         when AST::ExpressionStmt
           expression_contains_await?(statement.expression)
         else

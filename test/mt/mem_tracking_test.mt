@@ -6,7 +6,7 @@ import std.mem.heap as heap
 @[test]
 function test_tracker_create_empty() -> t.Check:
     var tracker = tracking.create()
-    defer tracker.release()
+    defer: tracker.release()
     t.expect_equal_int(int<-(tracker.count()), 0)?
     t.expect_true(tracker.is_empty())?
     t.expect_equal_int(int<-(tracker.total_bytes()), 0)?
@@ -16,7 +16,7 @@ function test_tracker_create_empty() -> t.Check:
 @[test]
 function test_tracker_allock_free_no_leak() -> t.Check:
     var tracker = tracking.create()
-    defer tracker.release()
+    defer: tracker.release()
     let p = tracking.alloc_bytes(ref_of(tracker), 16, "test_alloc") else:
         return t.fail("alloc failed")
     tracking.release_bytes(ref_of(tracker), p)
@@ -28,7 +28,7 @@ function test_tracker_allock_free_no_leak() -> t.Check:
 @[test]
 function test_tracker_leak_detected() -> t.Check:
     var tracker = tracking.create()
-    defer tracker.release()
+    defer: tracker.release()
     let p = tracking.alloc_bytes(ref_of(tracker), 32, "leak_test") else:
         return t.fail("alloc failed")
     t.expect_equal_int(int<-(tracker.count()), 1)?
@@ -41,7 +41,7 @@ function test_tracker_leak_detected() -> t.Check:
 @[test]
 function test_tracker_multiple_allock() -> t.Check:
     var tracker = tracking.create()
-    defer tracker.release()
+    defer: tracker.release()
     let a = tracking.alloc_bytes(ref_of(tracker), 8, "a") else:
         return t.fail("alloc a failed")
     let b = tracking.alloc_bytes(ref_of(tracker), 16, "b") else:
@@ -62,7 +62,7 @@ function test_tracker_multiple_allock() -> t.Check:
 @[test]
 function test_tracker_typed_allock() -> t.Check:
     var tracker = tracking.create()
-    defer tracker.release()
+    defer: tracker.release()
     let p = tracking.alloc[int](ref_of(tracker), 4, "ints") else:
         return t.fail("typed alloc failed")
     t.expect_equal_int(int<-(tracker.count()), 1)?
@@ -74,7 +74,7 @@ function test_tracker_typed_allock() -> t.Check:
 @[test]
 function test_tracker_must_allock() -> t.Check:
     var tracker = tracking.create()
-    defer tracker.release()
+    defer: tracker.release()
     let p = tracking.must_alloc[ubyte](ref_of(tracker), 8, "must")
     t.expect_equal_int(int<-(tracker.count()), 1)?
     t.expect_equal_int(int<-(tracker.total_bytes()), 8)?
@@ -106,7 +106,7 @@ function test_tracker_bad_free_fatals() -> t.Check:
 @[test]
 function test_tracker_null_release_noop() -> t.Check:
     var tracker = tracking.create()
-    defer tracker.release()
+    defer: tracker.release()
     tracking.release_bytes(ref_of(tracker), null)
     t.expect_equal_int(int<-(tracker.count()), 0)?
     return t.ok()

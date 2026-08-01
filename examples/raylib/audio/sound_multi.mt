@@ -10,16 +10,16 @@ var sound_array: array[rl.Sound, MAX_SOUNDS] = zero[array[rl.Sound, MAX_SOUNDS]]
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [audio] example - sound multi")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     sound_array[0] = rl.load_sound("sound.wav")
-    defer rl.unload_sound(sound_array[0])
+    defer: rl.unload_sound(sound_array[0])
 
     var index = 1
     while index < MAX_SOUNDS:

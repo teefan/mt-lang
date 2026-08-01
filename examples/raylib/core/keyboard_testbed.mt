@@ -22,7 +22,7 @@ function draw_keyboard_key(bounds: rl.Rectangle, key: int, label: str) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - keyboard testbed")
-    defer rl.close_window()
+    defer: rl.close_window()
     rl.set_exit_key(rl.KeyboardKey.KEY_NULL)
 
     let line01_key_widths = array[int, 15](45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 62, 45)

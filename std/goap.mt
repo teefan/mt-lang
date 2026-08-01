@@ -233,9 +233,9 @@ extending Planner[World, Goal, Context]:
 
     public editable function plan(context: ref[Context], initial_world: World, goal: Goal) -> PlanningResult[World]:
         var nodes = vec.Vec[SearchNode[World]].create()
-        defer nodes.release()
+        defer: nodes.release()
         var open_list = vec.Vec[ptr_uint].create()
-        defer open_list.release()
+        defer: open_list.release()
 
         nodes.push(
             SearchNode[World](

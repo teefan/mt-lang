@@ -9,7 +9,7 @@ import std.toml as toml
 @[test]
 function test_toml_parse_query_render_roundtrip() -> t.Check:
     var source = string.String.create()
-    defer source.release()
+    defer: source.release()
     source.append("schema_version = 2\n")
     source.append("root_package = \"snake_duel\"\n")
     source.append("active = true\n")
@@ -28,7 +28,7 @@ function test_toml_parse_query_render_roundtrip() -> t.Check:
             return t.fail("initial parse failed")
         Result.success as payload:
             var document = payload.value
-            defer document.release()
+            defer: document.release()
 
             match document.get_integer("schema_version"):
                 Option.some as int_payload:
@@ -83,7 +83,7 @@ function test_toml_parse_query_render_roundtrip() -> t.Check:
                         return t.fail("second dependency id missing")
 
             var rendered = toml.render(document)
-            defer rendered.release()
+            defer: rendered.release()
             match toml.parse(rendered.as_str()):
                 Result.failure as error_payload:
                     var error = error_payload.error
@@ -91,7 +91,7 @@ function test_toml_parse_query_render_roundtrip() -> t.Check:
                     return t.fail("reparse of rendered document failed")
                 Result.success as reparsed_payload:
                     var reparsed = reparsed_payload.value
-                    defer reparsed.release()
+                    defer: reparsed.release()
                     match reparsed.get_string("root_package"):
                         Option.some as root_payload:
                             t.expect_true(root_payload.value.equal("snake_duel"))?
@@ -105,7 +105,7 @@ function test_toml_parse_query_render_roundtrip() -> t.Check:
                     return t.fail("malformed toml should fail to parse")
                 Result.failure as broken_error_payload:
                     var broken_error = broken_error_payload.error
-                    defer broken_error.release()
+                    defer: broken_error.release()
                     t.expect(broken_error.line == 1z, "error line == 1")?
                     t.expect(broken_error.column != 0z, "error column != 0")?
 

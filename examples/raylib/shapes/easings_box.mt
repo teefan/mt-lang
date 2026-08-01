@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - easings box")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var rec = rl.Rectangle(x = float<-rl.get_screen_width() / 2.0, y = -100.0, width = 100.0, height = 100.0)
     var rotation: float = 0.0

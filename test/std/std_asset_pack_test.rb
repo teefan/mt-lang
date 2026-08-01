@@ -31,7 +31,7 @@ function read_text_length(result: Result[bytes.Bytes, asset_pack.Error]) -> int:
             return 100
         Result.success as payload:
             var owned = payload.value
-            defer owned.release()
+            defer: owned.release()
             let text_result = owned.as_str()
             match text_result:
                 Option.none:
@@ -48,7 +48,7 @@ function main() -> int:
             return 1
         Result.success as payload:
             var reader = payload.value
-            defer reader.close()
+            defer: reader.close()
             let first = read_text_length(reader.read_bytes(\"assets/audio/hit.txt\"))
             let second = read_text_length(reader.read_bytes(\"credits.txt\"))
             return first + second
@@ -88,7 +88,7 @@ function main() -> int:
             return 1
         Result.success as payload:
             var reader = payload.value
-            defer reader.close()
+            defer: reader.close()
             let read_result = reader.read_bytes(\"missing.txt\")
             match read_result:
                 Result.success as ignored_payload:

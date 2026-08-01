@@ -9,7 +9,7 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - simple mask")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -24,26 +24,26 @@ function main() -> int:
 
     let torus = rl.gen_mesh_torus(0.3, 1.0, 16, 32)
     var model1 = rl.load_model_from_mesh(torus)
-    defer rl.unload_model(model1)
+    defer: rl.unload_model(model1)
 
     let cube = rl.gen_mesh_cube(0.8, 0.8, 0.8)
     var model2 = rl.load_model_from_mesh(cube)
-    defer rl.unload_model(model2)
+    defer: rl.unload_model(model2)
 
     let sphere = rl.gen_mesh_sphere(1.0, 16, 16)
     let model3 = rl.load_model_from_mesh(sphere)
-    defer rl.unload_model(model3)
+    defer: rl.unload_model(model3)
 
     var shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/mask.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let diffuse = rl.load_texture("plasma.png")
-    defer rl.unload_texture(diffuse)
+    defer: rl.unload_texture(diffuse)
     rl.set_material_texture(model1.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, diffuse)
     rl.set_material_texture(model2.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, diffuse)
 
     let mask = rl.load_texture("mask.png")
-    defer rl.unload_texture(mask)
+    defer: rl.unload_texture(mask)
     rl.set_material_texture(model1.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, mask)
     rl.set_material_texture(model2.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_EMISSION, mask)
 

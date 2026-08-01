@@ -20,13 +20,13 @@ function unload_collection(collection: ref[array[TextureCollection, MAX_TEXTURE_
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - clipboard image")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var collection: array[
         TextureCollection,
         MAX_TEXTURE_COLLECTION
     ] = zero[array[TextureCollection, MAX_TEXTURE_COLLECTION]]
-    defer unload_collection(ref_of(collection))
+    defer: unload_collection(ref_of(collection))
 
     var current_collection_index = 0
 

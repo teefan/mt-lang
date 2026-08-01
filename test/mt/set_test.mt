@@ -33,7 +33,7 @@ extending CollisionKey:
 @[test]
 function test_set_basic_operations() -> t.Check:
     var values = set.Set[Key].with_capacity(4)
-    defer values.release()
+    defer: values.release()
 
     t.expect(values.capacity() >= 4z, "capacity >= 4")?
     t.expect_true(values.is_empty())?
@@ -66,7 +66,7 @@ function test_set_basic_operations() -> t.Check:
 @[test]
 function test_set_growth_and_iteration() -> t.Check:
     var values = set.Set[CollisionKey].create()
-    defer values.release()
+    defer: values.release()
 
     var index: int = 0
     while index < 12:
@@ -106,11 +106,11 @@ function test_set_growth_and_iteration() -> t.Check:
 @[test]
 function test_set_algebra_operations() -> t.Check:
     var left = set.Set[Key].create()
-    defer left.release()
+    defer: left.release()
     var right = set.Set[Key].create()
-    defer right.release()
+    defer: right.release()
     var subset = set.Set[Key].create()
-    defer subset.release()
+    defer: subset.release()
 
     left.insert(Key(value = 1))
     left.insert(Key(value = 2))
@@ -124,19 +124,19 @@ function test_set_algebra_operations() -> t.Check:
     t.expect_false(right.is_subset(left))?
 
     var union_values = left.union_with(right)
-    defer union_values.release()
+    defer: union_values.release()
     t.expect(union_values.len() == 4z, "union len == 4")?
     t.expect_true(union_values.contains(Key(value = 1)))?
     t.expect_true(union_values.contains(Key(value = 4)))?
 
     var intersection_values = left.intersection(right)
-    defer intersection_values.release()
+    defer: intersection_values.release()
     t.expect(intersection_values.len() == 1z, "intersection len == 1")?
     t.expect_true(intersection_values.contains(Key(value = 3)))?
     t.expect_true(intersection_values.is_subset(left))?
 
     var difference_values = left.difference(right)
-    defer difference_values.release()
+    defer: difference_values.release()
     t.expect(difference_values.len() == 2z, "difference len == 2")?
     t.expect_true(difference_values.contains(Key(value = 1)))?
     t.expect_false(difference_values.contains(Key(value = 3)))?

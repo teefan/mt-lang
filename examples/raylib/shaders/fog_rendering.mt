@@ -70,7 +70,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - fog rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -84,14 +84,14 @@ function main() -> int:
     )
 
     var model_a = rl.load_model_from_mesh(rl.gen_mesh_torus(0.4, 1.0, 16, 32))
-    defer rl.unload_model(model_a)
+    defer: rl.unload_model(model_a)
     var model_b = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
-    defer rl.unload_model(model_b)
+    defer: rl.unload_model(model_b)
     var model_c = rl.load_model_from_mesh(rl.gen_mesh_sphere(0.5, 32, 32))
-    defer rl.unload_model(model_c)
+    defer: rl.unload_model(model_c)
 
     let texture = rl.load_texture("texel_checker.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.set_material_texture(model_a.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
     rl.set_material_texture(model_b.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
     rl.set_material_texture(model_c.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
@@ -100,7 +100,7 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/lighting.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/fog.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_MODEL] = rl.get_shader_location(
         shader,
         "matModel"

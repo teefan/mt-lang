@@ -21,7 +21,7 @@ function parse_two_digits(value_text: str, offset: ptr_uint) -> int:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - clock of clocks")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let bg_color = rl.color_lerp(rl.DARKBLUE, rl.BLACK, 0.75)
     let hands_color = rl.color_lerp(rl.YELLOW, rl.RAYWHITE, 0.25)

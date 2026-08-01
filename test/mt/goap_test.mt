@@ -116,7 +116,7 @@ function expensive_cost(context: ptr[Context], world: World) -> float:
 @[test]
 function test_low_cost_goap_plan() -> t.Check:
     var planner = goap.Planner[World, Goal, Context].create(is_goal, heuristic, worlds_equal)
-    defer planner.release()
+    defer: planner.release()
 
     planner.add_action(goap.Action[World, Context].create("move_to_resource", can_move_to_resource, move_to_resource, move_cost))
     planner.add_action(goap.Action[World, Context].create("gather_resources", can_gather, gather_resources, gather_cost))
@@ -135,7 +135,7 @@ function test_low_cost_goap_plan() -> t.Check:
     )
 
     var result = planner.plan(context, initial_world, Goal.craft_item)
-    defer result.release()
+    defer: result.release()
 
     t.expect(result.status == goap.PlanningStatus.found, "plan found")?
     t.expect_true(result.has_plan())?
@@ -163,7 +163,7 @@ function test_low_cost_goap_plan() -> t.Check:
             t.expect_true(names_ok)?
 
     var limited_planner = goap.Planner[World, Goal, Context].create(is_goal, heuristic, worlds_equal)
-    defer limited_planner.release()
+    defer: limited_planner.release()
     limited_planner.set_max_iterations(1)
     limited_planner.add_action(goap.Action[World, Context].create("move_to_resource", can_move_to_resource, move_to_resource, move_cost))
     limited_planner.add_action(goap.Action[World, Context].create("gather_resources", can_gather, gather_resources, gather_cost))
@@ -171,6 +171,6 @@ function test_low_cost_goap_plan() -> t.Check:
     limited_planner.add_action(goap.Action[World, Context].create("craft", can_craft, craft, craft_cost))
 
     var limited_result = limited_planner.plan(context, initial_world, Goal.craft_item)
-    defer limited_result.release()
+    defer: limited_result.release()
     t.expect(limited_result.status == goap.PlanningStatus.iteration_limit, "iteration limit reached")?
     return t.expect_false(limited_result.has_plan())

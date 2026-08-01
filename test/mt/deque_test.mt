@@ -19,7 +19,7 @@ function read_int(value: ptr[int]?) -> int:
 @[test]
 function test_deque_storage_methods() -> t.Check:
     var values = deque.Deque[int].with_capacity(1)
-    defer values.release()
+    defer: values.release()
     t.expect(values.capacity() >= 1z, "capacity >= 1")?
     t.expect_true(values.is_empty())?
 
@@ -69,7 +69,7 @@ function test_deque_storage_methods() -> t.Check:
 @[test]
 function test_deque_wraparound_and_growth() -> t.Check:
     var values = deque.Deque[int].with_capacity(4)
-    defer values.release()
+    defer: values.release()
 
     values.push_back(10)
     values.push_back(20)
@@ -120,7 +120,7 @@ function test_deque_wraparound_and_growth() -> t.Check:
 @[test]
 function test_deque_shrink_to_fit() -> t.Check:
     var values = deque.Deque[int].create()
-    defer values.release()
+    defer: values.release()
 
     values.push_back(10)
     values.push_back(20)
@@ -159,7 +159,7 @@ function test_deque_shrink_to_fit() -> t.Check:
 @[test]
 function test_deque_plain_struct_elements() -> t.Check:
     var pairs = deque.Deque[Pair].create()
-    defer pairs.release()
+    defer: pairs.release()
     pairs.push_back(Pair(left = 3, right = 4))
     pairs.push_front(Pair(left = 1, right = 2))
     t.expect(pairs.len() == 2z, "len == 2")?
@@ -201,7 +201,7 @@ function test_deque_plain_struct_elements() -> t.Check:
 @[test]
 function test_deque_insert_and_remove() -> t.Check:
     var values = deque.Deque[int].with_capacity(6)
-    defer values.release()
+    defer: values.release()
 
     values.push_back(10)
     values.push_back(20)
@@ -254,7 +254,7 @@ function test_deque_insert_and_remove() -> t.Check:
 @[test]
 function test_deque_rotations() -> t.Check:
     var values = deque.Deque[int].with_capacity(5)
-    defer values.release()
+    defer: values.release()
 
     values.push_back(10)
     values.push_back(20)
@@ -293,7 +293,7 @@ function test_deque_rotations() -> t.Check:
 @[test]
 function test_deque_iter_surface() -> t.Check:
     var values = deque.Deque[int].create()
-    defer values.release()
+    defer: values.release()
     values.push_back(10)
     values.push_back(20)
     values.push_front(5)

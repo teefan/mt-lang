@@ -20,12 +20,12 @@ function random_bar_color() -> rl.Color:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - window letterbox")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.set_window_min_size(320, 240)
 
     let target = rl.load_render_texture(GAME_SCREEN_WIDTH, GAME_SCREEN_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
     rl.set_texture_filter(target.texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
     var colors: array[rl.Color, BAR_COUNT] = zero[array[rl.Color, BAR_COUNT]]

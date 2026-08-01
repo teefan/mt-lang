@@ -15,7 +15,7 @@ function clamp_float(value: float, minimum: float, maximum: float) -> float:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - rectangle bounds")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let body_text = "Text cannot escape\tthis container\t...word wrap also works when active so here's a long text for testing.\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Nec ullamcorper sit amet risus nullam eget felis eget."
 

@@ -12,16 +12,16 @@ const IMAGE_PIXEL_COUNT: int = IMAGE_WIDTH * IMAGE_HEIGHT
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - screen buffer")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var palette: array[rl.Color, MAX_COLORS] = zero[array[rl.Color, MAX_COLORS]]
     var index_buffer: array[ubyte, IMAGE_PIXEL_COUNT] = zero[array[ubyte, IMAGE_PIXEL_COUNT]]
     var flame_root_buffer: array[ubyte, FLAME_WIDTH] = zero[array[ubyte, FLAME_WIDTH]]
 
     var screen_image = rl.gen_image_color(IMAGE_WIDTH, IMAGE_HEIGHT, rl.BLACK)
-    defer rl.unload_image(screen_image)
+    defer: rl.unload_image(screen_image)
     let screen_texture = rl.load_texture_from_image(screen_image)
-    defer rl.unload_texture(screen_texture)
+    defer: rl.unload_texture(screen_texture)
 
     var index = 0
     while index < MAX_COLORS:

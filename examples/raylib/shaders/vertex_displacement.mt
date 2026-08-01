@@ -9,7 +9,7 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - vertex displacement")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -26,11 +26,11 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/vertex_displacement.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/vertex_displacement.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let perlin_noise_image = rl.gen_image_perlin_noise(512, 512, 0, 0, 1.0)
     let perlin_noise_map = rl.load_texture_from_image(perlin_noise_image)
-    defer rl.unload_texture(perlin_noise_map)
+    defer: rl.unload_texture(perlin_noise_map)
     rl.unload_image(perlin_noise_image)
 
     let perlin_noise_map_location = rl.get_shader_location(shader, "perlinNoiseMap")
@@ -41,7 +41,7 @@ function main() -> int:
 
     let plane_mesh = rl.gen_mesh_plane(50.0, 50.0, 50, 50)
     var plane_model = rl.load_model_from_mesh(plane_mesh)
-    defer rl.unload_model(plane_model)
+    defer: rl.unload_model(plane_model)
     unsafe: plane_model.materials[0].shader = shader
 
     let time_location = rl.get_shader_location(shader, "time")

@@ -19,7 +19,7 @@ function main() -> int:
     tid[11] = 0xFF
 
     var request = turn.build_allocate_request(tid)
-    defer request.release()
+    defer: request.release()
     let data = request.as_span()
 
     # Header: 20 bytes + 8 byte REQUESTED-TRANSPORT attribute
@@ -137,7 +137,7 @@ function main() -> int:
     w.write_ubyte(0x43)
 
     var packet = w.finish()
-    defer packet.release()
+    defer: packet.release()
 
     let parse_result = turn.parse_allocate_response(packet, tid)
     match parse_result:
@@ -145,14 +145,14 @@ function main() -> int:
             return 1
         Result.success as rp:
             var alloc = rp.value
-            defer alloc.release()
+            defer: alloc.release()
             let host_result = alloc.relay_address.host()
             match host_result:
                 Result.failure:
                     return 2
                 Result.success as hp:
                     var host = hp.value
-                    defer host.release()
+                    defer: host.release()
                     let addr_str = host.as_str()
                     if addr_str != "192.0.2.1":
                         return 3

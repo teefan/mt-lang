@@ -10,13 +10,13 @@ const STACK_COUNT: int = 122
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - sprite stacking")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let booth = rl.load_texture("booth.png")
-    defer rl.unload_texture(booth)
+    defer: rl.unload_texture(booth)
 
     let stack_scale = 3.0
     var stack_spacing = 2.0

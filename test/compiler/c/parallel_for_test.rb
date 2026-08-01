@@ -88,7 +88,7 @@ class ParallelForTest < Minitest::Test
 
       function main() -> int:
           parallel for i in 0..10:
-              defer helper()
+              defer: helper()
           return 0
     MT
 

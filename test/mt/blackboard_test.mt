@@ -8,7 +8,7 @@ import std.blackboard as bb
 @[test]
 function test_blackboard_set_get() -> t.Check:
     var board = bb.Blackboard[float].create()
-    defer board.release()
+    defer: board.release()
 
     board.set("health", 100.0)
     let v = board.get("health")
@@ -24,7 +24,7 @@ function test_blackboard_set_get() -> t.Check:
 @[test]
 function test_blackboard_get_missing() -> t.Check:
     var board = bb.Blackboard[float].create()
-    defer board.release()
+    defer: board.release()
 
     let v = board.get("nonexistent")
     match v:
@@ -39,7 +39,7 @@ function test_blackboard_get_missing() -> t.Check:
 @[test]
 function test_blackboard_has() -> t.Check:
     var board = bb.Blackboard[float].create()
-    defer board.release()
+    defer: board.release()
 
     t.expect_false(board.has("health"))?
     board.set("health", 50.0)
@@ -51,7 +51,7 @@ function test_blackboard_has() -> t.Check:
 @[test]
 function test_blackboard_overwrite() -> t.Check:
     var board = bb.Blackboard[float].create()
-    defer board.release()
+    defer: board.release()
 
     board.set("health", 100.0)
     board.set("health", 50.0)
@@ -68,7 +68,7 @@ function test_blackboard_overwrite() -> t.Check:
 @[test]
 function test_blackboard_remove() -> t.Check:
     var board = bb.Blackboard[float].create()
-    defer board.release()
+    defer: board.release()
 
     board.set("health", 100.0)
     t.expect_true(board.has("health"))?
@@ -81,7 +81,7 @@ function test_blackboard_remove() -> t.Check:
 @[test]
 function test_blackboard_count() -> t.Check:
     var board = bb.Blackboard[float].create()
-    defer board.release()
+    defer: board.release()
 
     t.expect(board.count() == 0, "empty count")?
     board.set("a", 1.0)
@@ -97,7 +97,7 @@ function test_blackboard_count() -> t.Check:
 @[test]
 function test_blackboard_clear() -> t.Check:
     var board = bb.Blackboard[float].create()
-    defer board.release()
+    defer: board.release()
 
     board.set("a", 1.0)
     board.set("b", 2.0)
@@ -111,7 +111,7 @@ function test_blackboard_clear() -> t.Check:
 @[test]
 function test_blackboard_int_type() -> t.Check:
     var board = bb.Blackboard[int].create()
-    defer board.release()
+    defer: board.release()
 
     board.set("score", 42)
     let v = board.get("score")
@@ -127,7 +127,7 @@ function test_blackboard_int_type() -> t.Check:
 @[test]
 function test_blackboard_bool_type() -> t.Check:
     var board = bb.Blackboard[bool].create()
-    defer board.release()
+    defer: board.release()
 
     board.set("ready", true)
     board.set("done", false)

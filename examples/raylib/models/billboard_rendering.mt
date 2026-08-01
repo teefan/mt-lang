@@ -8,7 +8,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - billboard rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -22,7 +22,7 @@ function main() -> int:
     )
 
     let bill = rl.load_texture("billboard.png")
-    defer rl.unload_texture(bill)
+    defer: rl.unload_texture(bill)
 
     let static_position = rl.Vector3(x = 0.0, y = 2.0, z = 0.0)
     let rotating_position = rl.Vector3(x = 1.0, y = 2.0, z = 1.0)

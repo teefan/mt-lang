@@ -9,7 +9,7 @@ const GLSL_VERSION: int = 330
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - custom uniform")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -23,17 +23,17 @@ function main() -> int:
     )
 
     let model = rl.load_model("models/barracks.obj")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     let texture = rl.load_texture("models/barracks_diffuse.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/swirl.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
     let swirl_center_location = rl.get_shader_location(shader, "center")
 
     let target = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
 
     rl.set_target_fps(60)
 

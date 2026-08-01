@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - basic shapes")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var rotation: float = 0.0
 

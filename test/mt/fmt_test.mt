@@ -30,9 +30,9 @@ function size(text: str) -> ptr_uint:
 @[test]
 function test_fmt_basic_formatting() -> t.Check:
     var scratch = arena.create(64)
-    defer scratch.release()
+    defer: scratch.release()
     var output = string.String.create()
-    defer output.release()
+    defer: output.release()
 
     fmt.append_str(ref_of(output), "n=")
     fmt.append_int(ref_of(output), -42)
@@ -54,12 +54,12 @@ function test_fmt_basic_formatting() -> t.Check:
 @[test]
 function test_fmt_format_literals() -> t.Check:
     var scratch = arena.create(64)
-    defer scratch.release()
+    defer: scratch.release()
     let delta: short = -42
     let small: ubyte = 7
     let ticks: ulong = 9
     var output = fmt.format(f"n=#{delta} ok=#{true} small=#{small} ticks=#{ticks} raw=#{scratch.to_cstr("wow")}")
-    defer output.release()
+    defer: output.release()
     return t.expect_equal_int(int<-output.len(), 37)
 
 
@@ -67,7 +67,7 @@ function test_fmt_format_literals() -> t.Check:
 function test_fmt_direct_string_sink_format_literals() -> t.Check:
     let value = 7
     var output = string.String.create()
-    defer output.release()
+    defer: output.release()
     output.assign(f"value=#{value}")
     output.append(f" ok=#{true}")
     return t.expect_equal_int(int<-output.len(), 15)
@@ -76,11 +76,11 @@ function test_fmt_direct_string_sink_format_literals() -> t.Check:
 @[test]
 function test_fmt_explicit_builder_format_sinks() -> t.Check:
     var scratch = arena.create(64)
-    defer scratch.release()
+    defer: scratch.release()
     let value: uint = 26
     let ratio: double = 3.5
     var output = string.String.from_str("seed")
-    defer output.release()
+    defer: output.release()
 
     fmt.append_format(ref_of(output), f" hex=#{value:x} oct=#{value:o}")
     t.expect(output.as_str() == "seed hex=1a oct=32", "hex/oct append")?
@@ -98,7 +98,7 @@ function test_fmt_explicit_builder_format_sinks() -> t.Check:
 @[test]
 function test_fmt_preserves_aliasing() -> t.Check:
     var output = string.String.from_str("abc")
-    defer output.release()
+    defer: output.release()
 
     output.assign_format(f"#{output.as_str()}x")
     t.expect(output.as_str() == "abcx", "aliased assign")?
@@ -134,7 +134,7 @@ function test_fmt_custom_format_hooks() -> t.Check:
     t.expect(text == "point=(2, 3)", "custom hook in f-string")?
 
     var output = string.String.create()
-    defer output.release()
+    defer: output.release()
     output.append_format(f"[#{point}]")
     t.expect(output.as_str() == "[(2, 3)]", "custom hook append")?
 
@@ -151,7 +151,7 @@ function test_fmt_float_format_literals() -> t.Check:
     let ratio: float = 2.5
     let scale: double = 0.125
     var output = fmt.format(f"ratio=#{ratio} scale=#{scale}")
-    defer output.release()
+    defer: output.release()
     return t.expect_equal_int(int<-output.len(), 21)
 
 

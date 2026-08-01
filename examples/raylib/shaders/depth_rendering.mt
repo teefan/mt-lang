@@ -65,7 +65,7 @@ function unload_render_texture_depth_tex(target: rl.RenderTexture2D) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - depth rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -79,18 +79,18 @@ function main() -> int:
     )
 
     let target = load_render_texture_depth_tex(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer unload_render_texture_depth_tex(target)
+    defer: unload_render_texture_depth_tex(target)
 
     let depth_shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/depth_render.fs", GLSL_VERSION))
-    defer rl.unload_shader(depth_shader)
+    defer: rl.unload_shader(depth_shader)
     let depth_location = rl.get_shader_location(depth_shader, "depthTexture")
     let flip_texture_location = rl.get_shader_location(depth_shader, "flipY")
     rl.set_shader_value(depth_shader, flip_texture_location, 1, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
     let cube = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
-    defer rl.unload_model(cube)
+    defer: rl.unload_model(cube)
     let floor = rl.load_model_from_mesh(rl.gen_mesh_plane(20.0, 20.0, 1, 1))
-    defer rl.unload_model(floor)
+    defer: rl.unload_model(floor)
 
     rl.disable_cursor()
     rl.set_target_fps(60)

@@ -7,13 +7,13 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - logo raylib")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let texture = rl.load_texture("raylib_logo.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     rl.set_target_fps(60)
 

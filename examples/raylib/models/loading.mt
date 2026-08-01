@@ -8,7 +8,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - loading")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -22,9 +22,9 @@ function main() -> int:
     )
 
     var model = rl.load_model("models/obj/castle.obj")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     var texture = rl.load_texture("models/obj/castle_diffuse.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
@@ -38,7 +38,7 @@ function main() -> int:
 
         if rl.is_file_dropped():
             let dropped_files = rl.load_dropped_files()
-            defer rl.unload_dropped_files(dropped_files)
+            defer: rl.unload_dropped_files(dropped_files)
 
             if dropped_files.count == 1u:
                 let dropped_path = unsafe: text.chars_as_str(read(dropped_files.paths))

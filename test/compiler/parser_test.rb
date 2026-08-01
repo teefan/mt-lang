@@ -654,10 +654,24 @@ class MilkTeaParserTest < Minitest::Test
     defer_stmt = main_fn.body.first
 
     assert_instance_of MilkTea::AST::DeferStmt, defer_stmt
-    assert_nil defer_stmt.expression
     assert_equal 2, defer_stmt.body.length
     assert_instance_of MilkTea::AST::ExpressionStmt, defer_stmt.body[0]
     assert_instance_of MilkTea::AST::ExpressionStmt, defer_stmt.body[1]
+  end
+
+  def test_parses_defer_inline_single_statement
+    source = <<~MT
+      function main() -> void:
+          defer: first_cleanup()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    defer_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::DeferStmt, defer_stmt
+    assert_equal 1, defer_stmt.body.length
+    assert_instance_of MilkTea::AST::ExpressionStmt, defer_stmt.body[0]
   end
 
   def test_parses_pass_statements_in_nested_blocks

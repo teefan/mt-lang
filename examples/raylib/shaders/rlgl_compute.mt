@@ -21,7 +21,7 @@ struct GolUpdateSSBO:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - rlgl compute")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -36,7 +36,7 @@ function main() -> int:
     rl.unload_file_text(gol_logic_code)
 
     let gol_render_shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/gol_render.glsl", 430))
-    defer rl.unload_shader(gol_render_shader)
+    defer: rl.unload_shader(gol_render_shader)
     let resolution_uniform_location = rl.get_shader_location(gol_render_shader, "resolution")
 
     let gol_transfer_code = rl.load_file_text("shaders/glsl430/gol_transfert.glsl") else:
@@ -46,23 +46,23 @@ function main() -> int:
     rl.unload_file_text(gol_transfer_code)
 
     var ssbo_a = rlgl.load_shader_buffer(uint<-(GOL_WIDTH * GOL_WIDTH * int<-size_of(uint)), null, rlgl.RL_DYNAMIC_COPY)
-    defer rlgl.unload_shader_buffer(ssbo_a)
+    defer: rlgl.unload_shader_buffer(ssbo_a)
     var ssbo_b = rlgl.load_shader_buffer(uint<-(GOL_WIDTH * GOL_WIDTH * int<-size_of(uint)), null, rlgl.RL_DYNAMIC_COPY)
-    defer rlgl.unload_shader_buffer(ssbo_b)
+    defer: rlgl.unload_shader_buffer(ssbo_b)
     let ssbo_transfer = rlgl.load_shader_buffer(uint<-size_of(GolUpdateSSBO), null, rlgl.RL_DYNAMIC_COPY)
-    defer rlgl.unload_shader_buffer(ssbo_transfer)
+    defer: rlgl.unload_shader_buffer(ssbo_transfer)
 
     var transfer_buffer: GolUpdateSSBO = zero[GolUpdateSSBO]
 
     let white_image = rl.gen_image_color(GOL_WIDTH, GOL_WIDTH, rl.WHITE)
-    defer rl.unload_image(white_image)
+    defer: rl.unload_image(white_image)
     let white_texture = rl.load_texture_from_image(white_image)
-    defer rl.unload_texture(white_texture)
+    defer: rl.unload_texture(white_texture)
 
-    defer rlgl.unload_shader(gol_logic_shader)
-    defer rlgl.unload_shader(gol_transfer_shader)
-    defer rlgl.unload_shader_program(gol_transfer_program)
-    defer rlgl.unload_shader_program(gol_logic_program)
+    defer: rlgl.unload_shader(gol_logic_shader)
+    defer: rlgl.unload_shader(gol_transfer_shader)
+    defer: rlgl.unload_shader_program(gol_transfer_program)
+    defer: rlgl.unload_shader_program(gol_logic_program)
 
     while not rl.window_should_close():
         brush_size += int<-rl.get_mouse_wheel_move()

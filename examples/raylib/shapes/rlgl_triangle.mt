@@ -8,7 +8,7 @@ const SCREEN_HEIGHT: int = 450
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - rlgl triangle")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let starting_positions = array[rl.Vector2, 3](
         rl.Vector2(x = 400.0, y = 150.0),

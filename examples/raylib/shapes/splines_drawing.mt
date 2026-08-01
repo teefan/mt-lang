@@ -20,7 +20,7 @@ struct ControlPoint:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - splines drawing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var points: array[rl.Vector2, MAX_SPLINE_POINTS] = array[rl.Vector2, MAX_SPLINE_POINTS](
         rl.Vector2(x = 50.0, y = 400.0),

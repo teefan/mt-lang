@@ -145,15 +145,9 @@ module MilkTea
         when AST::UnsafeStmt
           await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
         when AST::DeferStmt
-          if statement.body
-            cleanup_env = duplicate_env(env)
-            cleanup_env[:return_context] = cleanup_env[:return_context]&.merge(allow_return: false)
-            await_counter = analyze_async_statements!(statement.body, await_counter, cleanup_env, param_fields, local_fields, await_fields)
-          end
-          if statement.expression.is_a?(AST::AwaitExpr)
-            await_fields[statement.expression.object_id] = build_async_await_field_info(statement.expression, await_counter, env:, param_fields:, local_fields:)
-            await_counter += 1
-          end
+          cleanup_env = duplicate_env(env)
+          cleanup_env[:return_context] = cleanup_env[:return_context]&.merge(allow_return: false)
+          await_counter = analyze_async_statements!(statement.body, await_counter, cleanup_env, param_fields, local_fields, await_fields)
         else
           nil
         end

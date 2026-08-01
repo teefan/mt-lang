@@ -41,7 +41,7 @@ function codepoint_remove_duplicates(codepoints: ptr[int], codepoint_count: int,
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - codepoints loading")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -51,14 +51,14 @@ function main() -> int:
     var codepoint_count = 0
     let codepoints = rl.load_codepoints(source_text, codepoint_count) else:
         fatal("could not load codepoints")
-    defer rl.unload_codepoints(codepoints)
+    defer: rl.unload_codepoints(codepoints)
 
     var codepoints_no_dups_count = 0
     let codepoints_no_dups = codepoint_remove_duplicates(codepoints, codepoint_count, ref_of(codepoints_no_dups_count))
-    defer heap.release(codepoints_no_dups)
+    defer: heap.release(codepoints_no_dups)
 
     let font = rl.load_font_ex("DotGothic16-Regular.ttf", 36, codepoints_no_dups, codepoints_no_dups_count)
-    defer rl.unload_font(font)
+    defer: rl.unload_font(font)
 
     rl.set_texture_filter(font.texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
     rl.set_text_line_spacing(20)

@@ -21,28 +21,28 @@ function selected_texture(
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - image rotate")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     var image45 = rl.load_image("raylib_logo.png")
-    defer rl.unload_image(image45)
+    defer: rl.unload_image(image45)
     var image90 = rl.load_image("raylib_logo.png")
-    defer rl.unload_image(image90)
+    defer: rl.unload_image(image90)
     var image_neg90 = rl.load_image("raylib_logo.png")
-    defer rl.unload_image(image_neg90)
+    defer: rl.unload_image(image_neg90)
 
     rl.image_rotate(image45, 45)
     rl.image_rotate(image90, 90)
     rl.image_rotate(image_neg90, -90)
 
     let texture45 = rl.load_texture_from_image(image45)
-    defer rl.unload_texture(texture45)
+    defer: rl.unload_texture(texture45)
     let texture90 = rl.load_texture_from_image(image90)
-    defer rl.unload_texture(texture90)
+    defer: rl.unload_texture(texture90)
     let texture_neg90 = rl.load_texture_from_image(image_neg90)
-    defer rl.unload_texture(texture_neg90)
+    defer: rl.unload_texture(texture_neg90)
 
     var current_texture = 0
 

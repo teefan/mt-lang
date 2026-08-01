@@ -195,7 +195,7 @@ function measure_text_styled(font_arg: rl.Font, styled_text: str, font_size: flo
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - inline styling")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var text_size = rl.Vector2(x = 0.0, y = 0.0)
     var random_color = rl.RED

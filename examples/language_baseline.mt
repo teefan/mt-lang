@@ -665,7 +665,7 @@ function statements_demo() -> int:
             result += 0
 
     # --- defer single-statement inline form
-    defer on_ready_callback()
+    defer: on_ready_callback()
 
     defer:
         global_counter += result

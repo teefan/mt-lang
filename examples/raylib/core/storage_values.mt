@@ -16,7 +16,7 @@ function save_storage_value(position: int, value: int) -> bool:
     var data_size = 0
     let data = rl.load_file_data(STORAGE_DATA_FILE, data_size)
     if data != null:
-        defer rl.unload_file_data(data)
+        defer: rl.unload_file_data(data)
 
         let stored_values = data_size / int<-size_of(int)
         var index = 0
@@ -43,7 +43,7 @@ function load_storage_value(position: int) -> int:
     var data_size = 0
     let data = rl.load_file_data(STORAGE_DATA_FILE, data_size) else:
         return 0
-    defer rl.unload_file_data(data)
+    defer: rl.unload_file_data(data)
 
     if data_size < (position + 1) * int<-size_of(int):
         return 0
@@ -55,7 +55,7 @@ function load_storage_value(position: int) -> int:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - storage values")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var score = 0
     var hiscore = 0

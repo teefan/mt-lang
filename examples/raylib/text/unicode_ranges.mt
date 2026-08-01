@@ -11,7 +11,7 @@ function add_codepoint_range(font: ref[rl.Font], font_path: str, start: int, sto
     let current_range_size = read(font).glyphCount
     let updated_codepoint_count = current_range_size + range_size
     let updated_codepoints = heap.must_alloc_zeroed[int](ptr_uint<-updated_codepoint_count)
-    defer heap.release(updated_codepoints)
+    defer: heap.release(updated_codepoints)
 
     var index = 0
     while index < current_range_size:
@@ -31,13 +31,13 @@ function add_codepoint_range(font: ref[rl.Font], font_path: str, start: int, sto
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - unicode ranges")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     var font = rl.load_font("NotoSansTC-Regular.ttf")
-    defer rl.unload_font(font)
+    defer: rl.unload_font(font)
     rl.set_texture_filter(font.texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
     var unicode_range = 0

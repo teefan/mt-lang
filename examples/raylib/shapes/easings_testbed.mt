@@ -13,7 +13,7 @@ const D_MAX: float = 10000.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - easings testbed")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var ball_position = rl.Vector2(x = 100.0, y = 100.0)
     var t: float = 0.0

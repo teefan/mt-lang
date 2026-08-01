@@ -70,12 +70,12 @@ function model_name_x(index: int) -> int:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - mesh generation")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let checked = rl.gen_image_checked(2, 2, 1, 1, rl.RED, rl.GREEN)
-    defer rl.unload_image(checked)
+    defer: rl.unload_image(checked)
     let texture = rl.load_texture_from_image(checked)
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     var models: array[rl.Model, NUM_MODELS] = zero[array[rl.Model, NUM_MODELS]]
     models[0] = rl.load_model_from_mesh(rl.gen_mesh_plane(2.0, 2.0, 4, 3))

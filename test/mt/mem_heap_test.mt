@@ -76,7 +76,7 @@ function test_heap_must_alloc_zeroed_zero_count_aborts() -> t.Check:
 @[test] @[expect_fatal]
 function test_heap_must_resize_zero_count_aborts() -> t.Check:
     let bytes = heap.must_alloc[int](1)
-    defer heap.release(bytes)
+    defer: heap.release(bytes)
     let _ = heap.must_resize(bytes, 0)
     return t.ok()
 

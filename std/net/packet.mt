@@ -50,7 +50,7 @@ function decode_packet_length(header: bytes.Bytes) -> ptr_uint:
 
 function frame_bytes(content: span[ubyte]) -> bytes.Bytes:
     var framed = vec.Vec[ubyte].with_capacity(frame_header_bytes + content.len)
-    defer framed.release()
+    defer: framed.release()
 
     let header = encode_packet_length(content.len)
     framed.append_array(header)
@@ -157,7 +157,7 @@ extending Stream:
             return Result[ptr_uint, Error].failure(error = packet_error(-3, "packet exceeds 32-bit frame limit"))
 
         var framed = frame_bytes(content)
-        defer framed.release()
+        defer: framed.release()
 
         let write_result = await this.stream.write_bytes(framed.as_span())
         match write_result:
@@ -175,7 +175,7 @@ extending Stream:
                 return Result[bytes.Bytes, Error].failure(error = error_from_net(payload.error))
             Result.success as payload:
                 var header = payload.value
-                defer header.release()
+                defer: header.release()
                 let packet_length = decode_packet_length(header)
                 if packet_length > this.max_packet_bytes:
                     let discard_result = await discard_exactly(this.stream, packet_length)

@@ -240,8 +240,6 @@ module MilkTea
           expression_column(statement.expression)
         when AST::ReturnStmt
           expression_column(statement.value)
-        when AST::DeferStmt
-          expression_column(statement.expression)
         when AST::ExpressionStmt
           expression_column(statement.expression) || source_statement_span(statement.line)&.first
         else
@@ -267,8 +265,6 @@ module MilkTea
           expression_length(statement.expression)
         when AST::ReturnStmt
           expression_length(statement.value)
-        when AST::DeferStmt
-          expression_length(statement.expression)
         when AST::ExpressionStmt
           expression_length(statement.expression) || source_statement_span(statement.line)&.last
         else
@@ -326,8 +322,6 @@ module MilkTea
           walk_expression_tree(statement.expression, &block)
         when AST::ReturnStmt
           walk_expression_tree(statement.value, &block)
-        when AST::DeferStmt
-          walk_expression_tree(statement.expression, &block)
         when AST::ExpressionStmt
           walk_expression_tree(statement.expression, &block)
         when AST::StaticAssert

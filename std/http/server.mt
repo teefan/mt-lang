@@ -289,11 +289,11 @@ function ascii_case_equal(left: str, right: str) -> bool:
 
 public async function write_response(stream: net.TcpStream, response: ref[Response]) -> Result[ptr_uint, net.Error]:
     var header_text = string.String.with_capacity(256)
-    defer header_text.release()
+    defer: header_text.release()
 
     let reason_str = response.reason.as_str()
     var status_text = string.String.create()
-    defer status_text.release()
+    defer: status_text.release()
     append_ptr_uint(ref_of(status_text), ptr_uint<-response.status_code)
 
     header_text.append("HTTP/1.1 ")
@@ -303,7 +303,7 @@ public async function write_response(stream: net.TcpStream, response: ref[Respon
     header_text.append("\r\n")
 
     var body_len_text = string.String.create()
-    defer body_len_text.release()
+    defer: body_len_text.release()
     append_ptr_uint(ref_of(body_len_text), response.body.len)
 
     var has_content_type = false
@@ -521,10 +521,10 @@ function has_header_end(data: span[ubyte]) -> bool:
 
 async function send_error(stream: net.TcpStream, code: int, message: str) -> void:
     var code_str = fmt.to_string_int(code)
-    defer code_str.release()
+    defer: code_str.release()
     let body_text = f"<html><body><h1>#{code_str.as_str()} #{message}</h1></body></html>\r\n"
     var body_len_str = fmt.to_string_ptr_uint(body_text.len)
-    defer body_len_str.release()
+    defer: body_len_str.release()
     let header_text = f"HTTP/1.1 #{code_str.as_str()} #{message}\r\nContent-Type: text/html\r\nContent-Length: #{body_len_str.as_str()}\r\nConnection: close\r\n\r\n"
     await stream.write_bytes(text.as_byte_span(header_text))
     await stream.write_bytes(text.as_byte_span(body_text))
@@ -539,9 +539,9 @@ async function send_file_response(
     head_only: bool
 ) -> void:
     var code_str = fmt.to_string_int(code)
-    defer code_str.release()
+    defer: code_str.release()
     var body_len_str = fmt.to_string_ptr_uint(body.len)
-    defer body_len_str.release()
+    defer: body_len_str.release()
     let header_text = f"HTTP/1.1 #{code_str.as_str()} #{message}\r\nContent-Type: #{content_type}\r\nContent-Length: #{body_len_str.as_str()}\r\nConnection: close\r\n\r\n"
     await stream.write_bytes(text.as_byte_span(header_text))
     if not head_only:
@@ -620,13 +620,13 @@ async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_p
     var entries = fs.list_entries(dir_path) else:
         await send_error(stream, 500, "Internal Server Error")
         return
-    defer entries.release()
+    defer: entries.release()
 
     var names = vec.Vec[string.String].create()
-    defer release_string_vec(ref_of(names))
+    defer: release_string_vec(ref_of(names))
 
     var is_dir = vec.Vec[bool].create()
-    defer is_dir.release()
+    defer: is_dir.release()
 
     var index: ptr_uint = 0
     while index < entries.len():
@@ -635,16 +635,16 @@ async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_p
             let entry_name = entry_ptr.unwrap()
             let name_str = entry_name
             var child_path = path_ops.join(dir_path, name_str)
-            defer child_path.release()
+            defer: child_path.release()
             let dir_flag = fs.is_directory(child_path.as_str())
             sorted_insert(ref_of(names), ref_of(is_dir), string.String.from_str(name_str), dir_flag)
         index += 1
 
     var body = string.String.with_capacity(4096)
-    defer body.release()
+    defer: body.release()
 
     var escaped_path = html_escape(url_prefix)
-    defer escaped_path.release()
+    defer: escaped_path.release()
 
     body.append("<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"><title>Index of ")
     body.append(escaped_path.as_str())
@@ -667,10 +667,10 @@ async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_p
             let is_directory = read(dir_flag_ptr)
 
             var line = string.String.with_capacity(name_str.len + 64)
-            defer line.release()
+            defer: line.release()
 
             var escaped_name = html_escape(name_str)
-            defer escaped_name.release()
+            defer: escaped_name.release()
 
             if is_directory:
                 line.append("<a href=\"")
@@ -698,10 +698,10 @@ async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_p
 
 async function handle_connection(stream: net.TcpStream, serve_dir: str) -> void:
     var conn = stream
-    defer conn.release()
+    defer: conn.release()
 
     var buffer = vec.Vec[ubyte].with_capacity(READ_BUFFER_SIZE)
-    defer buffer.release()
+    defer: buffer.release()
 
     var headers_done = false
     while not headers_done:
@@ -750,13 +750,13 @@ async function handle_connection(stream: net.TcpStream, serve_dir: str) -> void:
             url_path = stripped
 
     var file_path = path_ops.join(serve_dir, url_path)
-    defer file_path.release()
+    defer: file_path.release()
 
     let content_result = fs.read_bytes(file_path.as_str())
     match content_result:
         Result.success as content_ok:
             var content = content_ok.value
-            defer content.release()
+            defer: content.release()
 
             let mime = guess_mime(file_path.as_str())
             await send_file_response(conn, 200, "OK", mime, content.as_span(), method.equal("HEAD"))
@@ -786,7 +786,7 @@ async function main(args: span[str]) -> void:
     let serve_dir = parse_serve_dir(args)
 
     var port_str = fmt.to_string_int(port)
-    defer port_str.release()
+    defer: port_str.release()
 
     stdio.print_format("Serving HTTP on http://0.0.0.0:%d (dir: %s)\n", port, serve_dir)
 
@@ -798,7 +798,7 @@ async function main(args: span[str]) -> void:
         stdio.print_format("failed to listen\n")
         return
 
-    defer listener.release()
+    defer: listener.release()
 
     while true:
         let accept_result = await listener.accept()

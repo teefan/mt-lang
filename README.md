@@ -477,7 +477,7 @@ Rules:
 - Conditions must be `bool`.
 - There is no truthy or falsy coercion from integers or pointers.
 - `pass` is an explicit no-op statement for intentionally empty block bodies.
-- `if` supports an inline single-statement form: `if cond: stmt else: stmt`. The body is a single statement on the same line instead of an indented block.
+- Every block-taking statement accepts a `:`-newline-indented block, or a single statement on the same line after `:`. This applies to `if`/`else` (e.g. `if cond: stmt else: stmt`), `while`, `for`, `defer` (e.g. `defer: cleanup()`), and `unsafe`. `match` arms are the exception: their inline form is a single value expression.
 
 `match` supports the following scrutinee types:
 
@@ -615,7 +615,7 @@ Rules:
 
 `defer`:
 
-- `defer expr`
+- `defer: expr` — single-statement inline form
 - `defer:` block form
 - `return` is not allowed inside defer blocks.
 

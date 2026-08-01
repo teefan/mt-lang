@@ -9,7 +9,7 @@ function write_stdout_text(value: str) -> int:
     match terminal.write_stdout(value):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success:
             return 0
@@ -19,7 +19,7 @@ function write_stderr_text(value: str) -> int:
     match terminal.write_stderr(value):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success:
             return 0
@@ -31,15 +31,15 @@ function print_help(app: cli.AppSpec, command_name: Option[str]) -> int:
             match cli.render_command_help(app, payload.value):
                 Result.failure as error_payload:
                     var error = error_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return write_stderr_text(error.message.as_str())
                 Result.success as help_payload:
                     var help = help_payload.value
-                    defer help.release()
+                    defer: help.release()
                     return write_stdout_text(help.as_str())
         Option.none:
             var help = cli.render_help(app)
-            defer help.release()
+            defer: help.release()
             return write_stdout_text(help.as_str())
 
 
@@ -107,11 +107,11 @@ function main(args: span[str]) -> int:
     match cli.parse(app, cli_args):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return write_stderr_text(error.message.as_str())
         Result.success as payload:
             var parsed = payload.value
-            defer parsed.release()
+            defer: parsed.release()
 
             if parsed.help_requested():
                 return print_help(app, parsed.command())

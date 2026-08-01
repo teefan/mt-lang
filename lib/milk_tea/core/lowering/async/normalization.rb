@@ -154,13 +154,8 @@ module MilkTea
       when AST::DeferStmt
         cleanup_env = duplicate_env(env)
         cleanup_env[:return_context] = cleanup_env[:return_context]&.merge(allow_return: false)
-        cleanup_body = if statement.body
-                         normalize_async_statements(statement.body, counter, cleanup_env, return_type:)
-                       else
-                         expression_setup, expression = normalize_async_expression(statement.expression, counter, env: cleanup_env)
-                         expression_setup + [AST::ExpressionStmt.new(expression:, line: statement.line)]
-                       end
-        [AST::DeferStmt.new(expression: nil, body: cleanup_body, line: statement.line, column: statement.column, length: statement.length)]
+        cleanup_body = normalize_async_statements(statement.body, counter, cleanup_env, return_type:)
+        [AST::DeferStmt.new(body: cleanup_body, line: statement.line, column: statement.column, length: statement.length)]
       when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert, AST::PassStmt
         [statement]
       else

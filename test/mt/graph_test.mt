@@ -67,13 +67,13 @@ function dist(n: ptr_uint) -> float:
 @[test]
 function test_dijkstra_source_dist_zero() -> t.Check:
     var g = build_triangle()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var paths = dg.dijkstra(0)
-    defer paths.release()
+    defer: paths.release()
 
     let d = paths.distance_to(0)
     t.expect(d >= -0.001 and d <= 0.001, "source distance is 0")?
@@ -84,13 +84,13 @@ function test_dijkstra_source_dist_zero() -> t.Check:
 @[test]
 function test_dijkstra_correct_distances() -> t.Check:
     var g = build_triangle()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var paths = dg.dijkstra(0)
-    defer paths.release()
+    defer: paths.release()
 
     let d1 = paths.distance_to(1)
     t.expect(d1 >= 1.999 and d1 <= 2.001, "A->B dist is 2")?
@@ -104,13 +104,13 @@ function test_dijkstra_correct_distances() -> t.Check:
 @[test]
 function test_dijkstra_has_path() -> t.Check:
     var g = build_triangle()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var paths = dg.dijkstra(0)
-    defer paths.release()
+    defer: paths.release()
 
     t.expect_true(paths.has_path_to(0))?
     t.expect_true(paths.has_path_to(2))?
@@ -122,16 +122,16 @@ function test_dijkstra_has_path() -> t.Check:
 @[test]
 function test_dijkstra_path_reconstruction() -> t.Check:
     var g = build_triangle()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var paths = dg.dijkstra(0)
-    defer paths.release()
+    defer: paths.release()
 
     var p = paths.path_to(2)
-    defer p.release()
+    defer: p.release()
 
     t.expect(p.len() == 3, "path 0->1->2 has 3 nodes")?
     return t.ok()
@@ -140,13 +140,13 @@ function test_dijkstra_path_reconstruction() -> t.Check:
 @[test]
 function test_dijkstra_empty_graph() -> t.Check:
     var g = gmod.Graph[str].create()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var paths = dg.dijkstra(0)
-    defer paths.release()
+    defer: paths.release()
 
     t.expect_false(paths.has_path_to(0))?
 
@@ -156,13 +156,13 @@ function test_dijkstra_empty_graph() -> t.Check:
 @[test]
 function test_dijkstra_source_oob() -> t.Check:
     var g = build_triangle()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var paths = dg.dijkstra(999)
-    defer paths.release()
+    defer: paths.release()
 
     t.expect_false(paths.has_path_to(0))?
 
@@ -174,13 +174,13 @@ function test_dijkstra_source_oob() -> t.Check:
 @[test]
 function test_astar_basic_path() -> t.Check:
     var g = build_grid()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var path = dg.astar(0, 8, dist)
-    defer path.release()
+    defer: path.release()
 
     t.expect(path.len() >= 4, "path from corner to corner >= 4 steps")?
 
@@ -190,13 +190,13 @@ function test_astar_basic_path() -> t.Check:
 @[test]
 function test_astar_source_equals_target() -> t.Check:
     var g = build_grid()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var path = dg.astar(4, 4, dist)
-    defer path.release()
+    defer: path.release()
 
     t.expect(path.len() == 1, "path from node to itself has 1 node")?
 
@@ -210,12 +210,12 @@ function test_astar_unreachable() -> t.Check:
     let _b = g.add_node("B")
     g.add_weighted_edge(0, 1, 1.0)
 
-    defer g.release()
+    defer: g.release()
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var path = dg.astar(1, 0, dist)
-    defer path.release()
+    defer: path.release()
 
     t.expect(path.len() == 0, "no path against directed edge")?
 
@@ -225,13 +225,13 @@ function test_astar_unreachable() -> t.Check:
 @[test]
 function test_astar_empty_graph() -> t.Check:
     var g = gmod.Graph[str].create()
-    defer g.release()
+    defer: g.release()
 
     var dg = g.compile()
-    defer dg.release()
+    defer: dg.release()
 
     var path = dg.astar(0, 0, dist)
-    defer path.release()
+    defer: path.release()
 
     t.expect(path.len() == 0, "empty graph returns empty path")?
 

@@ -20,20 +20,20 @@ function current_blend_mode_label(blend_mode: int) -> cstr:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - blend modes")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let bg_image = rl.load_image("cyberpunk_street_background.png")
-    defer rl.unload_image(bg_image)
+    defer: rl.unload_image(bg_image)
     let bg_texture = rl.load_texture_from_image(bg_image)
-    defer rl.unload_texture(bg_texture)
+    defer: rl.unload_texture(bg_texture)
 
     let fg_image = rl.load_image("cyberpunk_street_foreground.png")
-    defer rl.unload_image(fg_image)
+    defer: rl.unload_image(fg_image)
     let fg_texture = rl.load_texture_from_image(fg_image)
-    defer rl.unload_texture(fg_texture)
+    defer: rl.unload_texture(fg_texture)
 
     var blend_mode = int<-rl.BlendMode.BLEND_ALPHA
 

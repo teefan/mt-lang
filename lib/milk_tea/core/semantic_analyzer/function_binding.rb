@@ -375,9 +375,8 @@ module MilkTea
           body_names = names.dup
           stmt.body&.each { |s| check_stmt_names(s, scopes, binding, body_names) }
         when AST::DeferStmt
-          check_expr_names(stmt.expression, scopes, binding, names) if stmt.expression
           body_names = names.dup
-          stmt.body&.each { |s| check_stmt_names(s, scopes, binding, body_names) }
+          stmt.body.each { |s| check_stmt_names(s, scopes, binding, body_names) }
         when AST::WhenStmt
           check_expr_names(stmt.discriminant, scopes, binding, names)
           stmt.branches.each do |b|

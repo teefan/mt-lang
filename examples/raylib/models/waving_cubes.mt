@@ -8,7 +8,7 @@ const NUM_BLOCKS: int = 15
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - waving cubes")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var camera = rl.Camera3D(
         position = rl.Vector3(x = 30.0, y = 20.0, z = 30.0),

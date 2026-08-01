@@ -7,7 +7,7 @@ const FILE_URI_PREFIX: str = "file://"
 
 public function file_uri_from_path(path_text: str) -> string.String:
     var normalized = path.normalize_separators(path_text)
-    defer normalized.release()
+    defer: normalized.release()
 
     var result = string.String.from_str(FILE_URI_PREFIX)
     append_percent_encoded_path(ref_of(result), normalized.as_str())

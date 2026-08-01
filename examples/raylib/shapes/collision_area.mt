@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - collision area")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var box_a = rl.Rectangle(x = 10.0, y = float<-rl.get_screen_height() / 2.0 - 50.0, width = 200.0, height = 100.0)
     var box_a_speed_x = 4

@@ -20,12 +20,12 @@ function clamp_scroll(index: int, count: int, visible_rows: int) -> int:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - directory files")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var directory: str_buffer[1024]
     directory.assign(text.cstr_as_str(rl.get_working_directory()))
     var files = rl.load_directory_files_ex(directory.as_str(), FILTER, false)
-    defer rl.unload_directory_files(files)
+    defer: rl.unload_directory_files(files)
 
     var list_scroll_index = 0
     let visible_rows = (SCREEN_HEIGHT - 60) / ROW_HEIGHT

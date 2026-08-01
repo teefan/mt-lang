@@ -658,12 +658,12 @@ function main() -&gt; int:
 
     ## Collections: Vec and Map (import std.hash for primitive keys)
     var entities = vec.Vec[Entity].create()
-    defer entities.release()
+    defer: entities.release()
     entities.push(Entity.create(1, EntityKind.player, "Hero"))
     entities.push(Entity.create(2, EntityKind.enemy, "Goblin"))
 
     var name_counts = map.Map[str, int].create()
-    defer name_counts.release()
+    defer: name_counts.release()
     name_counts.set("player", 1)
     name_counts.set("enemy", 5)
 
@@ -742,7 +742,7 @@ function main() -&gt; int:
     io.print_line(f"Position: #{position.x:.2}, #{position.y:.2}")
     io.print_line(f"ID hex: #{player.entity.id:x}")
     var msg = fmt.format(f"Score: #{score}")
-    defer msg.release()
+    defer: msg.release()
 
     ## Heredoc string
     let help = &lt;&lt;-HELP
@@ -753,7 +753,7 @@ function main() -&gt; int:
 
     ## Defer: cleanup at scope exit (lowers to C cleanup labels)
     let data: own[int] = heap.must_alloc[int](1)
-    defer heap.release[int](data)
+    defer: heap.release[int](data)
 
     ## Proc / closure
     let scale = make_scaler(2.5)
@@ -1598,11 +1598,11 @@ match record:
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>function main() -> int:
     rl.init_window(800, 600, "Game")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     while not rl.window_should_close():
         rl.begin_drawing()
-        defer rl.end_drawing()
+        defer: rl.end_drawing()
         render_frame()
 
     return 0</code></pre>
@@ -2149,8 +2149,8 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
     let closed_sub = window.closed.subscribe(on_close)?
     let resized_sub = window.resized.subscribe(on_resize)?
 
-    defer window.closed.unsubscribe(closed_sub)
-    defer window.resized.unsubscribe(resized_sub)
+    defer: window.closed.unsubscribe(closed_sub)
+    defer: window.resized.unsubscribe(resized_sub)
 
     return Result[void, EventError].success()</code></pre>
 </div>

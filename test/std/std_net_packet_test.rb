@@ -28,53 +28,53 @@ async function main() -> int:
     match net.ipv4("127.0.0.1", 0):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var bind_address = payload.value
-            defer bind_address.release()
+            defer: bind_address.release()
             match packet.listen(bind_address, 16, 1024):
                 Result.failure as listen_payload:
                     var error = listen_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as listen_payload:
                     var listener = listen_payload.value
-                    defer listener.release()
+                    defer: listener.release()
                     match listener.local_address():
                         Result.failure as local_payload:
                             var error = local_payload.error
-                            defer error.release()
+                            defer: error.release()
                             return 3
                         Result.success as local_payload:
                             var local_address = local_payload.value
-                            defer local_address.release()
+                            defer: local_address.release()
                             let pending_accept = listener.accept()
                             let connect_result = await packet.connect(local_address, 1024)
                             match connect_result:
                                 Result.failure as connect_payload:
                                     var error = connect_payload.error
-                                    defer error.release()
+                                    defer: error.release()
                                     return 4
                                 Result.success as connect_payload:
                                     var client = connect_payload.value
-                                    defer client.release()
+                                    defer: client.release()
                                     let accept_result = await pending_accept
                                     match accept_result:
                                         Result.failure as accept_payload:
                                             var error = accept_payload.error
-                                            defer error.release()
+                                            defer: error.release()
                                             return 5
                                         Result.success as accept_payload:
                                             var server = accept_payload.value
-                                            defer server.release()
+                                            defer: server.release()
 
                                             let pending_server_read = server.read_packet()
                                             let client_write_result = await client.write_packet(text.as_byte_span("ping"))
                                             match client_write_result:
                                                 Result.failure as write_payload:
                                                     var error = write_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     return 6
                                                 Result.success as write_payload:
                                                     if write_payload.value != 4:
@@ -84,11 +84,11 @@ async function main() -> int:
                                             match server_read_result:
                                                 Result.failure as read_payload:
                                                     var error = read_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     return 8
                                                 Result.success as read_payload:
                                                     var request = read_payload.value
-                                                    defer request.release()
+                                                    defer: request.release()
                                                     let request_status = expect_utf8_bytes(request, "ping", 9)
                                                     if request_status != 0:
                                                         return request_status
@@ -98,7 +98,7 @@ async function main() -> int:
                                             match server_write_result:
                                                 Result.failure as write_payload:
                                                     var error = write_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     return 11
                                                 Result.success as write_payload:
                                                     if write_payload.value != 4:
@@ -108,11 +108,11 @@ async function main() -> int:
                                             match client_read_result:
                                                 Result.failure as read_payload:
                                                     var error = read_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     return 13
                                                 Result.success as read_payload:
                                                     var response = read_payload.value
-                                                    defer response.release()
+                                                    defer: response.release()
                                                     return expect_utf8_bytes(response, "pong", 14)
 
     MT
@@ -149,52 +149,52 @@ async function main() -> int:
     match net.ipv4("127.0.0.1", 0):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var bind_address = payload.value
-            defer bind_address.release()
+            defer: bind_address.release()
             match packet.listen(bind_address, 16, 4):
                 Result.failure as listen_payload:
                     var error = listen_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as listen_payload:
                     var listener = listen_payload.value
-                    defer listener.release()
+                    defer: listener.release()
                     match listener.local_address():
                         Result.failure as local_payload:
                             var error = local_payload.error
-                            defer error.release()
+                            defer: error.release()
                             return 3
                         Result.success as local_payload:
                             var local_address = local_payload.value
-                            defer local_address.release()
+                            defer: local_address.release()
                             let pending_accept = listener.accept()
                             let connect_result = await packet.connect(local_address, 1024)
                             match connect_result:
                                 Result.failure as connect_payload:
                                     var error = connect_payload.error
-                                    defer error.release()
+                                    defer: error.release()
                                     return 4
                                 Result.success as connect_payload:
                                     var client = connect_payload.value
-                                    defer client.release()
+                                    defer: client.release()
                                     let accept_result = await pending_accept
                                     match accept_result:
                                         Result.failure as accept_payload:
                                             var error = accept_payload.error
-                                            defer error.release()
+                                            defer: error.release()
                                             return 5
                                         Result.success as accept_payload:
                                             var server = accept_payload.value
-                                            defer server.release()
+                                            defer: server.release()
 
                                             let write_result = await client.write_packet(text.as_byte_span("hello"))
                                             match write_result:
                                                 Result.failure as write_payload:
                                                     var error = write_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     return 6
                                                 Result.success as write_payload:
                                                     if write_payload.value != 5:
@@ -204,19 +204,19 @@ async function main() -> int:
                                             match read_result:
                                                 Result.failure as read_payload:
                                                     var error = read_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     if error.code != -2:
                                                         return 8
                                                 Result.success as read_payload:
                                                     var packet_bytes = read_payload.value
-                                                    defer packet_bytes.release()
+                                                    defer: packet_bytes.release()
                                                     return 9
 
                                             let second_write_result = await client.write_packet(text.as_byte_span("ok"))
                                             match second_write_result:
                                                 Result.failure as write_payload:
                                                     var error = write_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     return 10
                                                 Result.success as write_payload:
                                                     if write_payload.value != 2:
@@ -226,11 +226,11 @@ async function main() -> int:
                                             match second_read_result:
                                                 Result.failure as read_payload:
                                                     var error = read_payload.error
-                                                    defer error.release()
+                                                    defer: error.release()
                                                     return 12
                                                 Result.success as read_payload:
                                                     var packet_bytes = read_payload.value
-                                                    defer packet_bytes.release()
+                                                    defer: packet_bytes.release()
                                                     return expect_utf8_bytes(packet_bytes, "ok", 13)
 
     MT

@@ -51,21 +51,21 @@ function process_audio(buffer: ptr[void], frames: uint) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [audio] example - mixed processor")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     rl.attach_audio_mixed_processor(process_audio)
-    defer rl.detach_audio_mixed_processor(process_audio)
+    defer: rl.detach_audio_mixed_processor(process_audio)
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let music = rl.load_music_stream("country.mp3")
-    defer rl.unload_music_stream(music)
+    defer: rl.unload_music_stream(music)
     let sound = rl.load_sound("coin.wav")
-    defer rl.unload_sound(sound)
+    defer: rl.unload_sound(sound)
 
     rl.play_music_stream(music)
     rl.set_target_fps(60)

@@ -13,7 +13,7 @@ const DEG_TO_RAD: float = rl.PI / 180.0
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - math sine cosine")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var sine_points: array[rl.Vector2, WAVE_POINTS] = zero[array[rl.Vector2, WAVE_POINTS]]
     var cos_points: array[rl.Vector2, WAVE_POINTS] = zero[array[rl.Vector2, WAVE_POINTS]]

@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - font spritefont")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -17,11 +17,11 @@ function main() -> int:
     let msg3 = "...and a THIRD one! GREAT! :D"
 
     let font1 = rl.load_font("custom_mecha.png")
-    defer rl.unload_font(font1)
+    defer: rl.unload_font(font1)
     let font2 = rl.load_font("custom_alagard.png")
-    defer rl.unload_font(font2)
+    defer: rl.unload_font(font2)
     let font3 = rl.load_font("custom_jupiter_crash.png")
-    defer rl.unload_font(font3)
+    defer: rl.unload_font(font3)
 
     let font_position1 = rl.Vector2(
         x = float<-SCREEN_WIDTH / 2.0 - rl.measure_text_ex(font1, msg1, float<-font1.baseSize, -3.0).x / 2.0,

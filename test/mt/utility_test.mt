@@ -81,7 +81,7 @@ function idle_score(_ctx: ptr[TestCtx]) -> float:
 function test_utility_select_attack() -> t.Check:
     var ctx = TestCtx(health = 1.0, ammo = 0.8, enemies = 2, distance = 5.0)
     var selector = build_selector()
-    defer selector.release()
+    defer: selector.release()
 
     let chosen = selector.select(ptr_of(ctx))
     t.expect(chosen.selected, "an action was selected")?
@@ -94,7 +94,7 @@ function test_utility_select_attack() -> t.Check:
 function test_utility_select_flee() -> t.Check:
     var ctx = TestCtx(health = 0.01, ammo = 0.9, enemies = 2, distance = 5.0)
     var selector = build_selector()
-    defer selector.release()
+    defer: selector.release()
 
     let chosen = selector.select(ptr_of(ctx))
     t.expect(chosen.selected, "an action was selected")?
@@ -107,7 +107,7 @@ function test_utility_select_flee() -> t.Check:
 function test_utility_select_idle() -> t.Check:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 100.0)
     var selector = build_selector()
-    defer selector.release()
+    defer: selector.release()
 
     let chosen = selector.select(ptr_of(ctx))
     t.expect(chosen.selected, "an action was selected")?
@@ -120,7 +120,7 @@ function test_utility_select_idle() -> t.Check:
 function test_utility_empty_selector() -> t.Check:
     var ctx = TestCtx(health = 1.0, ammo = 0.5, enemies = 1, distance = 20.0)
     var selector = util.Selector[TestCtx].create()
-    defer selector.release()
+    defer: selector.release()
 
     let chosen = selector.select(ptr_of(ctx))
     t.expect_false(chosen.selected)?
@@ -132,7 +132,7 @@ function test_utility_empty_selector() -> t.Check:
 function test_utility_combine_average() -> t.Check:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
-    defer selector.release()
+    defer: selector.release()
 
     var a = util.Action[TestCtx].create("test", util.CombineMode.average)
     a.add_consideration(util.Consideration[TestCtx].create("half", half_score))
@@ -154,7 +154,7 @@ function half_score(_ctx: ptr[TestCtx]) -> float:
 function test_utility_combine_minimum() -> t.Check:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
-    defer selector.release()
+    defer: selector.release()
 
     var a = util.Action[TestCtx].create("test", util.CombineMode.minimum)
     a.add_consideration(util.Consideration[TestCtx].create("hi", score_high))
@@ -179,7 +179,7 @@ function score_low(_ctx: ptr[TestCtx]) -> float:
 function test_utility_combine_maximum() -> t.Check:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
-    defer selector.release()
+    defer: selector.release()
 
     var a = util.Action[TestCtx].create("test", util.CombineMode.maximum)
     a.add_consideration(util.Consideration[TestCtx].create("hi", score_high))
@@ -196,7 +196,7 @@ function test_utility_combine_maximum() -> t.Check:
 function test_utility_weight() -> t.Check:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
-    defer selector.release()
+    defer: selector.release()
 
     var normal = util.Action[TestCtx].create("normal", util.CombineMode.geometric)
     normal.add_consideration(util.Consideration[TestCtx].create("a", half_score))
@@ -218,7 +218,7 @@ function test_utility_weight() -> t.Check:
 function test_utility_veto_by_zero() -> t.Check:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
-    defer selector.release()
+    defer: selector.release()
 
     var a = util.Action[TestCtx].create("vetoed", util.CombineMode.geometric)
     a.add_consideration(util.Consideration[TestCtx].create("a", half_score))

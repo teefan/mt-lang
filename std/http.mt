@@ -399,7 +399,7 @@ function build_request(
 
     if not content_length_seen:
         var content_length = fmt.to_string_ptr_uint(body_length)
-        defer content_length.release()
+        defer: content_length.release()
         append_request_header_line(ref_of(request), "Content-Length", content_length.as_str())
 
     index = 0
@@ -654,7 +654,7 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
 
 function decode_buffered_chunked_body(encoded: span[ubyte]) -> Result[bytes.Bytes, Error]:
     var body = vec.Vec[ubyte].with_capacity(encoded.len)
-    defer body.release()
+    defer: body.release()
 
     var cursor: ptr_uint = 0
     while true:
@@ -775,10 +775,10 @@ function parse_buffered_response(raw_response: span[ubyte]) -> Result[Response, 
 
 async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> Result[bytes.Bytes, Error]:
     var body = vec.Vec[ubyte].with_capacity(prefix.len)
-    defer body.release()
+    defer: body.release()
 
     var buffer = vec.Vec[ubyte].with_capacity(prefix.len + 64)
-    defer buffer.release()
+    defer: buffer.release()
     buffer.append_span(prefix)
 
     var cursor: ptr_uint = 0
@@ -906,7 +906,7 @@ async function read_body(
                 return Result[bytes.Bytes, Error].failure(error = response_error("body exceeded Content-Length"))
 
             var body = vec.Vec[ubyte].with_capacity(total_length)
-            defer body.release()
+            defer: body.release()
 
             body.append_span(prefix)
 
@@ -924,7 +924,7 @@ async function read_body(
             return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body.as_span()))
         Option.none:
             var body = vec.Vec[ubyte].with_capacity(prefix.len)
-            defer body.release()
+            defer: body.release()
 
             body.append_span(prefix)
 
@@ -947,7 +947,7 @@ async function read_body(
 
 async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
     var received = vec.Vec[ubyte].create()
-    defer received.release()
+    defer: received.release()
 
     var header_length: ptr_uint = 0
     var headers_ready = false
@@ -1008,7 +1008,7 @@ async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
 
 async function request_http(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Result[Response, Error]:
     var service = fmt.to_string_int(parsed.port)
-    defer service.release()
+    defer: service.release()
 
     let address_result = await net.resolve_first(parsed.host.as_str(), service.as_str())
     match address_result:
@@ -1016,7 +1016,7 @@ async function request_http(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Re
             return Result[Response, Error].failure(error = status_net_error(address_error_payload.error))
         Result.success as address_payload:
             var address = address_payload.value
-            defer address.release()
+            defer: address.release()
 
             let connect_result = await net.connect(address)
             match connect_result:
@@ -1024,7 +1024,7 @@ async function request_http(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Re
                     return Result[Response, Error].failure(error = status_net_error(connect_error_payload.error))
                 Result.success as connect_payload:
                     var stream = connect_payload.value
-                    defer stream.release()
+                    defer: stream.release()
 
                     let write_result = await stream.write_bytes(request_bytes)
                     match write_result:
@@ -1042,7 +1042,7 @@ async function request_http(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Re
 
 async function read_buffered_tls_response(stream: tls.Stream) -> Result[Response, Error]:
     var received = vec.Vec[ubyte].create()
-    defer received.release()
+    defer: received.release()
 
     while true:
         let chunk_result = await stream.read_once(4096)
@@ -1068,7 +1068,7 @@ async function request_https(parsed: ParsedUrl, request_bytes: span[ubyte]) -> R
             return Result[Response, Error].failure(error = status_tls_error(payload.error))
         Result.success as payload:
             var stream = payload.value
-            defer stream.release()
+            defer: stream.release()
 
             let write_result = await stream.write_bytes(request_bytes)
             match write_result:
@@ -1214,7 +1214,7 @@ public async function request(
             return Result[Response, Error].failure(error = payload.error)
         Result.success as payload:
             var parsed = payload.value
-            defer parsed.release()
+            defer: parsed.release()
 
             let request_result = build_request(parsed, method, headers, body)
             match request_result:
@@ -1222,6 +1222,6 @@ public async function request(
                     return Result[Response, Error].failure(error = request_error_payload.error)
                 Result.success as request_payload:
                     var request_bytes = request_payload.value
-                    defer request_bytes.release()
+                    defer: request_bytes.release()
 
                     return await request_with_transport(parsed, request_bytes.as_span())

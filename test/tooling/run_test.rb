@@ -1248,7 +1248,7 @@ function add(target: ptr[int], amount: int) -> void:
 function main() -> int:
     var total = 0
     for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
-        defer add(ptr_of(total), 1)
+        defer: add(ptr_of(total), 1)
         match step:
             Step.skip:
                 continue
@@ -1437,7 +1437,7 @@ import std.c.libc as libc
 
 function main() -> int:
     var scratch = arena.create(64)
-    defer scratch.release()
+    defer: scratch.release()
     let text = \"12345!\"
     let part = text.slice(0, 5)
     let copied = part.to_cstr(ref_of(scratch))
@@ -1508,7 +1508,7 @@ function append_digit(target: ptr[int], digit: int) -> void:
         read(target) = read(target) * 10 + digit
 
 function run(target: ptr[int]) -> void:
-    defer append_digit(target, 3)
+    defer: append_digit(target, 3)
     defer:
         append_digit(target, 1)
         append_digit(target, 2)

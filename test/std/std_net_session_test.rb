@@ -22,7 +22,7 @@ async function main() -> int:
             return 1
         Result.success as bind_payload:
             var server_addr = bind_payload.value
-            defer server_addr.release()
+            defer: server_addr.release()
             let config = sess.Config.default(1024)
             let listen_result = sess.listen(server_addr, config)
             match listen_result:
@@ -30,26 +30,26 @@ async function main() -> int:
                     return 2
                 Result.success as listen_payload:
                     var server = listen_payload.value
-                    defer server.release()
+                    defer: server.release()
                     match server.local_address():
                         Result.failure:
                             return 3
                         Result.success as local_payload:
                             var resolved = local_payload.value
-                            defer resolved.release()
+                            defer: resolved.release()
                             match net.ipv4("127.0.0.1", 0):
                                 Result.failure:
                                     return 4
                                 Result.success as client_local:
                                     var cl = client_local.value
-                                    defer cl.release()
+                                    defer: cl.release()
                                     let conn_result = await sess.connect(cl, resolved, config)
                                     match conn_result:
                                         Result.failure:
                                             return 5
                                         Result.success as conn_payload:
                                             var client = conn_payload.value
-                                            defer client.release()
+                                            defer: client.release()
 
                                             var frame: uint = 0
                                             while frame < 60:

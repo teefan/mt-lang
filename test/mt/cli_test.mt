@@ -36,7 +36,7 @@ function test_cli_parsing_and_help() -> t.Check:
             return t.fail("parse with args failed")
         Result.success as payload:
             var parsed = payload.value
-            defer parsed.release()
+            defer: parsed.release()
             t.expect_false(parsed.help_requested())?
             match parsed.command():
                 Option.some as command_payload:
@@ -61,7 +61,7 @@ function test_cli_parsing_and_help() -> t.Check:
             return t.fail("parse defaults failed")
         Result.success as payload:
             var parsed = payload.value
-            defer parsed.release()
+            defer: parsed.release()
             t.expect_false(parsed.flag("verbose"))?
             expect_value(parsed, "config", "mtop.toml")?
             expect_value(parsed, "interval", "500")?
@@ -74,11 +74,11 @@ function test_cli_parsing_and_help() -> t.Check:
             return t.fail("parse help failed")
         Result.success as payload:
             var parsed = payload.value
-            defer parsed.release()
+            defer: parsed.release()
             t.expect_true(parsed.help_requested())?
 
     var app_help = cli.render_help(app)
-    defer app_help.release()
+    defer: app_help.release()
     t.expect_true(app_help.as_str().equal("mtop - Monitor system state\nUsage: mtop [options] <command>\n\nMonitor system state\n\nCommands:\n  inspect - Inspect metrics\n\nOptions:\n  -h, --help - Show this help\n  -v, --verbose - Verbose output\n  -c, --config FILE - Config file (default: mtop.toml)\n"))?
 
     match cli.render_command_help(app, "inspect"):
@@ -88,14 +88,14 @@ function test_cli_parsing_and_help() -> t.Check:
             return t.fail("render_command_help failed")
         Result.success as payload:
             var help_text = payload.value
-            defer help_text.release()
+            defer: help_text.release()
             t.expect_true(help_text.as_str().equal("mtop inspect - Inspect host metrics\nUsage: mtop inspect [options] VIEW...\n\nInspect host metrics\n\nOptions:\n  -h, --help - Show this help\n  -v, --verbose - Verbose output\n  -c, --config FILE - Config file (default: mtop.toml)\n  -i, --interval MS - Refresh interval (default: 500)\n"))?
 
     var bad_args = array[str, 1]("--wat")
     match cli.parse(app, bad_args):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             t.expect_true(error.message.as_str().equal("unknown option --wat"))?
         Result.success as payload:
             var parsed = payload.value

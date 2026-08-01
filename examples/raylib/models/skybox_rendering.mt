@@ -127,7 +127,7 @@ function gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: in
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - skybox rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -141,14 +141,14 @@ function main() -> int:
     )
 
     var skybox = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
-    defer rl.unload_model(skybox)
+    defer: rl.unload_model(skybox)
 
     let use_hdr = false
 
     let skybox_vertex_shader = rl.text_format("shaders/glsl%i/skybox.vs", GLSL_VERSION)
     let skybox_fragment_shader = rl.text_format("shaders/glsl%i/skybox.fs", GLSL_VERSION)
     unsafe: skybox.materials[0].shader = rl.load_shader(skybox_vertex_shader, skybox_fragment_shader)
-    defer rl.unload_shader(unsafe: skybox.materials[0].shader)
+    defer: rl.unload_shader(unsafe: skybox.materials[0].shader)
 
     let environment_map_loc = rl.get_shader_location(unsafe: skybox.materials[0].shader, "environmentMap")
     let do_gamma_loc = rl.get_shader_location(unsafe: skybox.materials[0].shader, "doGamma")
@@ -177,7 +177,7 @@ function main() -> int:
     let cubemap_vertex_shader = rl.text_format("shaders/glsl%i/cubemap.vs", GLSL_VERSION)
     let cubemap_fragment_shader = rl.text_format("shaders/glsl%i/cubemap.fs", GLSL_VERSION)
     let cubemap_shader = rl.load_shader(cubemap_vertex_shader, cubemap_fragment_shader)
-    defer rl.unload_shader(cubemap_shader)
+    defer: rl.unload_shader(cubemap_shader)
     let equirectangular_map_loc = rl.get_shader_location(cubemap_shader, "equirectangularMap")
     rl.set_shader_value(cubemap_shader, equirectangular_map_loc, 0, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
 
@@ -185,7 +185,7 @@ function main() -> int:
     if use_hdr:
         skybox_file_name = "dresden_square_2k.hdr"
         let panorama = rl.load_texture(skybox_file_name)
-        defer rl.unload_texture(panorama)
+        defer: rl.unload_texture(panorama)
         unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = gen_texture_cubemap(
             cubemap_shader,
             panorama,
@@ -194,13 +194,13 @@ function main() -> int:
         )
     else:
         let image = rl.load_image(skybox_file_name)
-        defer rl.unload_image(image)
+        defer: rl.unload_image(image)
         unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = rl.load_texture_cubemap(
             image,
             int<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT
         )
 
-    defer rl.unload_texture(unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture)
+    defer: rl.unload_texture(unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture)
 
     rl.disable_cursor()
     rl.set_target_fps(60)
@@ -210,7 +210,7 @@ function main() -> int:
 
         if rl.is_file_dropped():
             let dropped_files = rl.load_dropped_files()
-            defer rl.unload_dropped_files(dropped_files)
+            defer: rl.unload_dropped_files(dropped_files)
 
             if dropped_files.count == 1u:
                 let dropped_path = unsafe: text.chars_as_str(read(dropped_files.paths))
@@ -219,7 +219,7 @@ function main() -> int:
 
                     if use_hdr:
                         let panorama = rl.load_texture(dropped_path)
-                        defer rl.unload_texture(panorama)
+                        defer: rl.unload_texture(panorama)
                         unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = gen_texture_cubemap(
                             cubemap_shader,
                             panorama,
@@ -228,7 +228,7 @@ function main() -> int:
                         )
                     else:
                         let image = rl.load_image(dropped_path)
-                        defer rl.unload_image(image)
+                        defer: rl.unload_image(image)
                         unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = rl.load_texture_cubemap(
                             image,
                             int<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT

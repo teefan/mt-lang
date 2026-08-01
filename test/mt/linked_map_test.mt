@@ -27,7 +27,7 @@ function read_int(value: ptr[int]?) -> int:
 @[test]
 function test_linked_map_insertion_order_operations() -> t.Check:
     var values = linked_map.LinkedMap[Key, int].with_capacity(2)
-    defer values.release()
+    defer: values.release()
 
     t.expect(values.capacity() >= 2, "capacity >= 2")?
     t.expect_true(values.is_empty())?

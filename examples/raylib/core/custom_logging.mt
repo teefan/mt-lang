@@ -22,7 +22,7 @@ function log_message(level: str, message: str) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - custom logging")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     log_message("INFO", "Initialized window")
     log_message("INFO", "This port formats app-side logs because SetTraceLogCallback is not exposed in std.raylib")

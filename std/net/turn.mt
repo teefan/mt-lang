@@ -188,7 +188,7 @@ public function parse_allocate_response(
                 let xaddr = read_uint_be(data, offset + 8z)
                 let ip = xaddr ^ stun_magic_cookie
                 var ip_str = format_ipv4(ip)
-                defer ip_str.release()
+                defer: ip_str.release()
                 let addr_result = net.ipv4(ip_str.as_str(), int<-port)
                 match addr_result:
                     Result.success as ap:
@@ -220,7 +220,7 @@ public async function allocate(
             let tid = transaction_id_from_bytes(rp.value)
             rp.value.release()
             var request = build_allocate_request(tid)
-            defer request.release()
+            defer: request.release()
             let send_result = await socket.send_to(request.as_span(), turn_server)
             match send_result:
                 Result.failure:
@@ -363,7 +363,7 @@ public function parse_data_indication(
                 let xaddr = read_uint_be(data, offset + 8z)
                 let ip = xaddr ^ stun_magic_cookie
                 var ip_str = format_ipv4(ip)
-                defer ip_str.release()
+                defer: ip_str.release()
                 let addr_result = net.ipv4(ip_str.as_str(), int<-port)
                 match addr_result:
                     Result.success as ap:
@@ -417,7 +417,7 @@ public async function send_data(
                     return Result[ptr_uint, Error].failure(error = bp.error)
                 Result.success as bp:
                     var packet = bp.value
-                    defer packet.release()
+                    defer: packet.release()
                     let send_result = await socket.send_to(packet.as_span(), turn_server)
                     match send_result:
                         Result.failure as sp:

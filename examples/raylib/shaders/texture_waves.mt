@@ -8,16 +8,16 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - texture waves")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let texture = rl.load_texture("space.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/wave.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let seconds_location = rl.get_shader_location(shader, "seconds")
     let freq_x_location = rl.get_shader_location(shader, "freqX")

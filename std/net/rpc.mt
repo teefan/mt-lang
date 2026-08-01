@@ -63,7 +63,7 @@ public async function call_and_wait(
     payload: span[ubyte]
 ) -> Result[bytes.Bytes, Error]:
     var call_packet = build_call(request_id, payload)
-    defer call_packet.release()
+    defer: call_packet.release()
 
     let send_result = await conn.mux_send(channel_id, call_type_id, call_packet.as_span(), mux.flag_reliable)
     match send_result:
@@ -78,7 +78,7 @@ public async function call_and_wait(
         match msg_opt:
             Option.some as mp:
                 var msg = mp.value
-                defer msg.release()
+                defer: msg.release()
                 if msg.type_id == response_type_id and msg.channel_id == channel_id:
                     let id_result = parse_request_id(msg.payload.as_span())
                     match id_result:
@@ -110,7 +110,7 @@ public async function send_reply(
     payload: span[ubyte]
 ) -> Result[bool, Error]:
     var reply_packet = build_reply(request_id, payload)
-    defer reply_packet.release()
+    defer: reply_packet.release()
     let send_result = await conn.mux_send(channel_id, response_type_id, reply_packet.as_span(), mux.flag_reliable)
     match send_result:
         Result.failure:

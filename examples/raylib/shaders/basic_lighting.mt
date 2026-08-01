@@ -70,7 +70,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - basic lighting")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -87,7 +87,7 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/lighting.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/lighting.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let view_pos_location = rl.get_shader_location(shader, "viewPos")
     let ambient_location = rl.get_shader_location(shader, "ambient")

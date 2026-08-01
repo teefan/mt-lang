@@ -37,7 +37,7 @@ function test_cmd_invoke_revert() -> t.Check:
 function test_history_execute_undo() -> t.Check:
     var ctr = Counter(value = 0)
     var hist = cmd.History[Counter].create()
-    defer hist.release()
+    defer: hist.release()
 
     hist.execute(cmd.Cmd[Counter].create(ptr_of(ctr), inc, dec))
     t.expect(ctr.value == 1, "execute increments")?
@@ -54,7 +54,7 @@ function test_history_execute_undo() -> t.Check:
 function test_history_redo() -> t.Check:
     var ctr = Counter(value = 0)
     var hist = cmd.History[Counter].create()
-    defer hist.release()
+    defer: hist.release()
 
     hist.execute(cmd.Cmd[Counter].create(ptr_of(ctr), inc, dec))
     hist.undo()
@@ -71,7 +71,7 @@ function test_history_redo() -> t.Check:
 function test_history_redo_clears_redo_stack() -> t.Check:
     var ctr = Counter(value = 0)
     var hist = cmd.History[Counter].create()
-    defer hist.release()
+    defer: hist.release()
 
     hist.execute(cmd.Cmd[Counter].create(ptr_of(ctr), inc, dec))
     hist.undo()
@@ -87,7 +87,7 @@ function test_history_redo_clears_redo_stack() -> t.Check:
 function test_history_clear() -> t.Check:
     var ctr = Counter(value = 0)
     var hist = cmd.History[Counter].create()
-    defer hist.release()
+    defer: hist.release()
 
     hist.execute(cmd.Cmd[Counter].create(ptr_of(ctr), inc, dec))
     hist.undo()
@@ -101,7 +101,7 @@ function test_history_clear() -> t.Check:
 @[test]
 function test_history_empty_undo() -> t.Check:
     var hist = cmd.History[Counter].create()
-    defer hist.release()
+    defer: hist.release()
 
     t.expect(not hist.can_undo(), "no undo available")?
     t.expect(not hist.undo(), "undo returns false")?
@@ -113,7 +113,7 @@ function test_history_empty_undo() -> t.Check:
 function test_recording() -> t.Check:
     var ctr = Counter(value = 0)
     var rec = cmd.Recording[Counter].create()
-    defer rec.release()
+    defer: rec.release()
 
     rec.record(cmd.Cmd[Counter].create(ptr_of(ctr), inc, dec))
     rec.record(cmd.Cmd[Counter].create(ptr_of(ctr), inc, dec))
@@ -122,7 +122,7 @@ function test_recording() -> t.Check:
 
     # Replay through history
     var hist = cmd.History[Counter].create()
-    defer hist.release()
+    defer: hist.release()
     rec.replay(ref_of(hist))
     t.expect(ctr.value == 3, "all three replayed")?
 
@@ -133,7 +133,7 @@ function test_recording() -> t.Check:
 function test_history_counts() -> t.Check:
     var ctr = Counter(value = 0)
     var hist = cmd.History[Counter].create()
-    defer hist.release()
+    defer: hist.release()
 
     t.expect(hist.undo_count() == 0, "undo count 0")?
     hist.execute(cmd.Cmd[Counter].create(ptr_of(ctr), inc, dec))

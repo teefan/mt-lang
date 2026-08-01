@@ -760,32 +760,6 @@ module MilkTea
       end
     end
 
-    def lower_defer_cleanup_expression(expression, env:)
-      prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
-        expression,
-        env:,
-        expected_type: infer_expression_type(expression, env:),
-        allow_root_statement_foreign: true,
-      )
-
-      lowered = []
-      lowered.concat(prepared_setup)
-      if (foreign_call = foreign_call_info(prepared_expression, env))
-        setup, = lower_foreign_call_statement(
-          foreign_call,
-          env:,
-          expected_type: foreign_call[:binding].type.return_type,
-          statement_position: true,
-          discard_result: true,
-        )
-        lowered.concat(setup)
-      else
-        lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:))
-      end
-      lowered.concat(prepared_cleanups.flat_map(&:itself))
-      lowered
-    end
-
     def lower_defer_cleanup_body(statements, env:, return_type:)
       lower_block(statements, env:, active_defers: [], return_type:, loop_flow: nil, allow_return: false)
     end

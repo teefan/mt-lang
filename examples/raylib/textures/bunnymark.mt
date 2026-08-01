@@ -23,13 +23,13 @@ function random_bunny_color() -> rl.Color:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - bunnymark")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let bunny_texture = rl.load_texture("raybunny.png")
-    defer rl.unload_texture(bunny_texture)
+    defer: rl.unload_texture(bunny_texture)
 
     var bunnies: array[Bunny, MAX_BUNNIES] = zero[array[Bunny, MAX_BUNNIES]]
     var bunny_count = 0

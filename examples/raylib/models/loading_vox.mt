@@ -72,7 +72,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - loading vox")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -127,7 +127,7 @@ function main() -> int:
     let voxel_vertex_shader = rl.text_format("shaders/glsl%i/voxel_lighting.vs", GLSL_VERSION)
     let voxel_fragment_shader = rl.text_format("shaders/glsl%i/voxel_lighting.fs", GLSL_VERSION)
     var shader = rl.load_shader(voxel_vertex_shader, voxel_fragment_shader)
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.get_shader_location(shader, "viewPos")
 

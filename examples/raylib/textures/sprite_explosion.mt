@@ -9,18 +9,18 @@ const NUM_LINES: int = 5
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - sprite explosion")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let fx_boom = rl.load_sound("boom.wav")
-    defer rl.unload_sound(fx_boom)
+    defer: rl.unload_sound(fx_boom)
     let explosion = rl.load_texture("explosion.png")
-    defer rl.unload_texture(explosion)
+    defer: rl.unload_texture(explosion)
 
     let frame_width = float<-explosion.width / float<-NUM_FRAMES_PER_LINE
     let frame_height = float<-explosion.height / float<-NUM_LINES

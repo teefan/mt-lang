@@ -36,7 +36,7 @@ function check_collision_ellipses(
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - collision ellipses")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var ellipse_a_center = rl.Vector2(x = float<-SCREEN_WIDTH / 4.0, y = float<-SCREEN_HEIGHT / 2.0)
     let ellipse_a_rx = 120.0

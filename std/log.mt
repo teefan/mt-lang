@@ -34,7 +34,7 @@ public function log(level: Level, message: str) -> void:
     if int<-level < int<-global_level:
         return
     var output = string.String.create()
-    defer output.release()
+    defer: output.release()
     output.append("[")
     output.append(level_label(level))
     output.append("] ")

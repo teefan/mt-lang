@@ -8,15 +8,15 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - shapes textures")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let fudesumi = rl.load_texture("fudesumi.png")
-    defer rl.unload_texture(fudesumi)
+    defer: rl.unload_texture(fudesumi)
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/grayscale.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     rl.set_target_fps(60)
 

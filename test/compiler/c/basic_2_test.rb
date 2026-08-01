@@ -346,7 +346,7 @@ import std.mem.arena as arena
 
 function main() -> int:
     var scratch = arena.create(64)
-    defer scratch.release()
+    defer: scratch.release()
     let text = \"hello world\"
     let part = text.slice(6, 5)
     let copied = part.to_cstr(ref_of(scratch))
@@ -1239,7 +1239,7 @@ function main() -> int:
     let point = Point(x = 2, y = 3)
     let text = f"point=\#{point}"
     var output = string.String.create()
-    defer output.release()
+    defer: output.release()
     output.append_format(f"[\#{point}]")
     var buffer: str_buffer[64]
     buffer.assign_format(f"<\#{point}>")

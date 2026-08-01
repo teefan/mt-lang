@@ -14,7 +14,7 @@ function animation_name(animations: ptr[rl.ModelAnimation], index: int) -> str:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - animation gpu skinning")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -28,19 +28,19 @@ function main() -> int:
     )
 
     var model = rl.load_model("models/gltf/greenman.glb")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
     let skinning_vertex_shader = rl.text_format("shaders/glsl%i/skinning.vs", GLSL_VERSION)
     let skinning_fragment_shader = rl.text_format("shaders/glsl%i/skinning.fs", GLSL_VERSION)
     let skinning_shader = rl.load_shader(skinning_vertex_shader, skinning_fragment_shader)
-    defer rl.unload_shader(skinning_shader)
+    defer: rl.unload_shader(skinning_shader)
     unsafe: model.materials[1].shader = skinning_shader
 
     var anim_count = 0
     let animations = rl.load_model_animations("models/gltf/greenman.glb", ptr_of(anim_count)) else:
         fatal("could not load greenman animations")
-    defer rl.unload_model_animations(animations, anim_count)
+    defer: rl.unload_model_animations(animations, anim_count)
 
     var anim_index = 0
     var anim_current_frame = 0

@@ -325,7 +325,7 @@ function generate_random_color(saturation: float, value: float) -> rl.Color:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT | rl.ConfigFlags.FLAG_VSYNC_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - 3d drawing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -368,7 +368,7 @@ function main() -> int:
 
     let alpha_discard_path = rl.text_format("shaders/glsl%i/alpha_discard.fs", GLSL_VERSION)
     let alpha_discard = rl.load_shader(null, alpha_discard_path)
-    defer rl.unload_shader(alpha_discard)
+    defer: rl.unload_shader(alpha_discard)
 
     var multi: array[rl.Color, TEXT_MAX_LAYERS] = zero[array[rl.Color, TEXT_MAX_LAYERS]]
 
@@ -380,7 +380,7 @@ function main() -> int:
 
         if rl.is_file_dropped():
             let dropped_files = rl.load_dropped_files()
-            defer rl.unload_dropped_files(dropped_files)
+            defer: rl.unload_dropped_files(dropped_files)
             if dropped_files.count > 0u:
                 let dropped_path = unsafe: text.chars_as_str(read(dropped_files.paths))
                 if rl.is_file_extension(dropped_path, ".ttf"):

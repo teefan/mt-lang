@@ -293,7 +293,7 @@ function guard_stress() -> int:
     return total
 
 # ---------------------------------------------------------------------------
-# Section K: Control flow — break, continue, range-for, parallel-for, defer expr
+# Section K: Control flow — break, continue, range-for, parallel-for, defer:
 # ---------------------------------------------------------------------------
 
 function control_flow_stress() -> int:

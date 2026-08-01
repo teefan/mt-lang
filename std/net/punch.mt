@@ -104,8 +104,8 @@ function poll_recv(
             return Option[PunchResult].none()
         Result.success as dp:
             var dg = dp.value
-            defer dg.data.release()
-            defer dg.source.release()
+            defer: dg.data.release()
+            defer: dg.source.release()
             return result_from_datagram(dg, remote_candidates)
 
 
@@ -114,7 +114,7 @@ public async function punch(
     remote_candidates: vec.Vec[Candidate]
 ) -> Result[PunchResult, Error]:
     var probe = build_punch_probe()
-    defer probe.release()
+    defer: probe.release()
     var recv_task = socket.recv_from(512)
 
     var c: uint = 0

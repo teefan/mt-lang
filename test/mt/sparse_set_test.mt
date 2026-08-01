@@ -7,7 +7,7 @@ import std.sparse_set as sset
 @[test]
 function test_sparse_set_insert_and_get() -> t.Check:
     var s = sset.SparseSet[int].create()
-    defer s.release()
+    defer: s.release()
 
     t.expect_true(s.is_empty())?
     t.expect(s.len() == 0z, "len == 0")?
@@ -31,7 +31,7 @@ function test_sparse_set_insert_and_get() -> t.Check:
 @[test]
 function test_sparse_set_remove_swaps_last() -> t.Check:
     var s = sset.SparseSet[int].create()
-    defer s.release()
+    defer: s.release()
 
     s.insert(10, 1)
     s.insert(20, 2)
@@ -54,7 +54,7 @@ function test_sparse_set_remove_swaps_last() -> t.Check:
 @[test]
 function test_sparse_set_remove_nonexistent_returns_false() -> t.Check:
     var s = sset.SparseSet[int].create()
-    defer s.release()
+    defer: s.release()
 
     s.insert(5, 99)
     t.expect_false(s.remove(999))?
@@ -64,7 +64,7 @@ function test_sparse_set_remove_nonexistent_returns_false() -> t.Check:
 @[test]
 function test_sparse_set_key_outside_range() -> t.Check:
     var s = sset.SparseSet[int].create()
-    defer s.release()
+    defer: s.release()
 
     t.expect_false(s.contains(0))?
     t.expect(s.get(0) == null, "get(0) null")?
@@ -74,7 +74,7 @@ function test_sparse_set_key_outside_range() -> t.Check:
 @[test]
 function test_sparse_set_clear_and_reinsert() -> t.Check:
     var s = sset.SparseSet[int].create()
-    defer s.release()
+    defer: s.release()
 
     s.insert(1, 10)
     s.insert(2, 20)
@@ -90,7 +90,7 @@ function test_sparse_set_clear_and_reinsert() -> t.Check:
 @[test]
 function test_sparse_set_shrink_to_fit() -> t.Check:
     var s = sset.SparseSet[int].create()
-    defer s.release()
+    defer: s.release()
 
     s.insert(10, 1)
     s.insert(20, 2)

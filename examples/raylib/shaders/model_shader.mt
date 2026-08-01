@@ -9,7 +9,7 @@ const GLSL_VERSION: int = 330
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - model shader")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -23,13 +23,13 @@ function main() -> int:
     )
 
     var model = rl.load_model("models/watermill.obj")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     let texture = rl.load_texture("models/watermill_diffuse.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     let shader_path = rl.text_format("shaders/glsl%i/grayscale.fs", GLSL_VERSION)
     let shader = rl.load_shader(null, shader_path)
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     unsafe: model.materials[0].shader = shader
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)

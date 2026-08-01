@@ -25,7 +25,7 @@ function pop_value(values: ref[binary_heap.BinaryHeap[Key]]) -> int:
 @[test]
 function test_binary_heap_ordered_operations() -> t.Check:
     var values = binary_heap.BinaryHeap[Key].with_capacity(2)
-    defer values.release()
+    defer: values.release()
 
     t.expect(values.capacity() >= 2, "capacity >= 2")?
     t.expect_true(values.is_empty())?

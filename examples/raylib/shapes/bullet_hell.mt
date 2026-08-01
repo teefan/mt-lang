@@ -18,7 +18,7 @@ var bullets: array[Bullet, MAX_BULLETS] = zero[array[Bullet, MAX_BULLETS]]
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - bullet hell")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var bullet_count = 0
     var bullet_disabled_count = 0
@@ -33,7 +33,7 @@ function main() -> int:
     var spawn_cooldown_timer: float = spawn_cooldown
     var magic_circle_rotation: float = 0.0
     let bullet_texture = rl.load_render_texture(24, 24)
-    defer rl.unload_render_texture(bullet_texture)
+    defer: rl.unload_render_texture(bullet_texture)
 
     rl.begin_texture_mode(bullet_texture)
     rl.draw_circle(12, 12, float<-bullet_radius, rl.WHITE)

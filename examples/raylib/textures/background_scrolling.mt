@@ -7,17 +7,17 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - background scrolling")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let background = rl.load_texture("cyberpunk_street_background.png")
-    defer rl.unload_texture(background)
+    defer: rl.unload_texture(background)
     let midground = rl.load_texture("cyberpunk_street_midground.png")
-    defer rl.unload_texture(midground)
+    defer: rl.unload_texture(midground)
     let foreground = rl.load_texture("cyberpunk_street_foreground.png")
-    defer rl.unload_texture(foreground)
+    defer: rl.unload_texture(foreground)
 
     var scrolling_back = 0.0
     var scrolling_mid = 0.0

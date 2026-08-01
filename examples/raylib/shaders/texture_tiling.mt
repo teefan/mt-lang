@@ -8,7 +8,7 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - texture tiling")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -23,15 +23,15 @@ function main() -> int:
 
     let cube = rl.gen_mesh_cube(1.0, 1.0, 1.0)
     var model = rl.load_model_from_mesh(cube)
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
 
     let texture = rl.load_texture("cubicmap_atlas.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let tiling = rl.Vector2(x = 3.0, y = 3.0)
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/tiling.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
     rl.set_texture_wrap(texture, int<-rl.TextureWrap.TEXTURE_WRAP_REPEAT)
     rl.set_shader_value(
         shader,

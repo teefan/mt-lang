@@ -25,17 +25,17 @@ function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - drop files")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var file_paths = vec.Vec[string.String].create()
-    defer release_string_values(ref_of(file_paths))
+    defer: release_string_values(ref_of(file_paths))
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
         if rl.is_file_dropped():
             let dropped_files = rl.load_dropped_files()
-            defer rl.unload_dropped_files(dropped_files)
+            defer: rl.unload_dropped_files(dropped_files)
 
             var index = 0
             while index < int<-dropped_files.count and file_paths.len() < ptr_uint<-(MAX_FILEPATH_RECORDED - 1):

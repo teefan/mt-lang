@@ -119,7 +119,7 @@ extending Player:
 
 function main() -> int:
 	rl.init_window(screen_width, screen_height, "Milk Tea")
-	defer rl.close_window()
+	defer: rl.close_window()
 
 	var player = Player(
 		position = rl.Vector2(x = 400.0, y = 300.0),
@@ -132,7 +132,7 @@ function main() -> int:
 		player.update(dt)
 
 		rl.begin_drawing()
-		defer rl.end_drawing()
+		defer: rl.end_drawing()
 
 		rl.clear_background(rl.BLACK)
 		rl.draw_circle_v(player.position, player.radius, rl.GOLD)
@@ -423,16 +423,12 @@ Milk Tea should include a small number of control-flow features that materially 
 
 #### `defer`
 
-`defer` registers cleanup code at scope exit and lowers to obvious cleanup labels in C.
+`defer` registers cleanup code at scope exit and lowers to obvious cleanup labels in C. Both forms use the block-header `:`:
 
 ```mt
-
-
 function load_texture(path: str) -> Result[Texture, LoadError]:
 	let texture = rl.load_texture(path)
-
-	if texture.id == 0:
-		return Result[Texture, LoadError].failure(error= LoadError.file_not_found)
+	defer: rl.unload_texture(texture)
 
 	return Result[Texture, LoadError].success(value= texture)
 ```

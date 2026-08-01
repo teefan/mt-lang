@@ -85,7 +85,7 @@ function draw_undo_buffer(
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - undo redo")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var current_undo_index = 0
     var first_undo_index = 0

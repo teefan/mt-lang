@@ -7,7 +7,7 @@ import std.ring_buffer as ring_buf
 @[test]
 function test_ring_buffer_push_and_pop() -> t.Check:
     var b = ring_buf.RingBuffer[int].with_capacity(4)
-    defer b.release()
+    defer: b.release()
 
     t.expect_true(b.is_empty())?
     t.expect_false(b.is_full())?
@@ -39,7 +39,7 @@ function test_ring_buffer_push_and_pop() -> t.Check:
 @[test]
 function test_ring_buffer_overwrite_on_full() -> t.Check:
     var b = ring_buf.RingBuffer[int].with_capacity(3)
-    defer b.release()
+    defer: b.release()
 
     b.push(1)
     b.push(2)
@@ -61,7 +61,7 @@ function test_ring_buffer_overwrite_on_full() -> t.Check:
 @[test]
 function test_ring_buffer_peek_does_not_remove() -> t.Check:
     var b = ring_buf.RingBuffer[int].with_capacity(4)
-    defer b.release()
+    defer: b.release()
 
     b.push(42)
     match b.at(0):
@@ -75,7 +75,7 @@ function test_ring_buffer_peek_does_not_remove() -> t.Check:
 @[test]
 function test_ring_buffer_get_and_at_access() -> t.Check:
     var b = ring_buf.RingBuffer[int].with_capacity(4)
-    defer b.release()
+    defer: b.release()
 
     b.push(10)
     b.push(20)
@@ -99,7 +99,7 @@ function test_ring_buffer_get_and_at_access() -> t.Check:
 @[test]
 function test_ring_buffer_pop_empty_returns_none() -> t.Check:
     var b = ring_buf.RingBuffer[int].with_capacity(4)
-    defer b.release()
+    defer: b.release()
 
     t.expect(b.peek() == null, "peek null when empty")?
     return t.expect_none[int](b.pop())
@@ -108,7 +108,7 @@ function test_ring_buffer_pop_empty_returns_none() -> t.Check:
 @[test]
 function test_ring_buffer_clear_resets_state() -> t.Check:
     var b = ring_buf.RingBuffer[int].with_capacity(4)
-    defer b.release()
+    defer: b.release()
 
     b.push(1)
     b.push(2)
@@ -120,7 +120,7 @@ function test_ring_buffer_clear_resets_state() -> t.Check:
 @[test]
 function test_ring_buffer_wraps_around_head() -> t.Check:
     var b = ring_buf.RingBuffer[int].with_capacity(4)
-    defer b.release()
+    defer: b.release()
 
     b.push(1)
     b.push(2)

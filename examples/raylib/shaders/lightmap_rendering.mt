@@ -15,7 +15,7 @@ const LIGHTMAP_ATTRIBUTE_LOCATION: uint = 5
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - lightmap rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -29,7 +29,7 @@ function main() -> int:
     )
 
     var mesh = rl.gen_mesh_plane(float<-MAP_SIZE, float<-MAP_SIZE, 1, 1)
-    defer rl.unload_mesh(mesh)
+    defer: rl.unload_mesh(mesh)
 
     let raw_texcoords2 = c.MemAlloc(uint<-(mesh.vertexCount * 2 * int<-size_of(float))) else:
         fatal("could not allocate texcoords2 for lightmap mesh")
@@ -60,18 +60,18 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/lightmap.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/lightmap.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     var texture = rl.load_texture("cubicmap_atlas.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     let light = rl.load_texture("spark_flame.png")
-    defer rl.unload_texture(light)
+    defer: rl.unload_texture(light)
 
     rl.gen_texture_mipmaps(texture)
     rl.set_texture_filter(texture, int<-rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
 
     let lightmap = rl.load_render_texture(MAP_SIZE, MAP_SIZE)
-    defer rl.unload_render_texture(lightmap)
+    defer: rl.unload_render_texture(lightmap)
     var lightmap_texture = lightmap.texture
 
     var material = rl.load_material_default()

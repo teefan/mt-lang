@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input mouse")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var ball_position = rl.Vector2(x = -100.0, y = -100.0)
     var ball_color = rl.DARKBLUE

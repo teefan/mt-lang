@@ -9,7 +9,7 @@ const FLOAT_MAX: float = 340282346638528859811704183484516925440.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - mesh picking")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -25,9 +25,9 @@ function main() -> int:
     var ray = zero[rl.Ray]
 
     let tower = rl.load_model("models/obj/turret.obj")
-    defer rl.unload_model(tower)
+    defer: rl.unload_model(tower)
     let texture = rl.load_texture("models/obj/turret_diffuse.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.set_material_texture(tower.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let tower_pos = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)

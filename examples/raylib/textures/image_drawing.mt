@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - image drawing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -18,7 +18,7 @@ function main() -> int:
     rl.image_resize(cat, 150, 200)
 
     var parrots = rl.load_image("parrots.png")
-    defer rl.unload_image(parrots)
+    defer: rl.unload_image(parrots)
 
     rl.image_draw(
         parrots,
@@ -38,7 +38,7 @@ function main() -> int:
     rl.unload_image(cat)
 
     let font = rl.load_font("custom_jupiter_crash.png")
-    defer rl.unload_font(font)
+    defer: rl.unload_font(font)
     rl.image_draw_text_ex(
         parrots,
         font,
@@ -50,7 +50,7 @@ function main() -> int:
     )
 
     let texture = rl.load_texture_from_image(parrots)
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     rl.set_target_fps(60)
 

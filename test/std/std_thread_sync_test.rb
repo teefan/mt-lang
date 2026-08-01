@@ -22,16 +22,16 @@ function main() -> int:
     match spawn_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var handle = payload.value
-            defer handle.release()
+            defer: handle.release()
             let join_result = handle.join()
             match join_result:
                 Result.failure as join_payload:
                     var error = join_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as join_payload:
                     if not join_payload.value:
@@ -77,12 +77,12 @@ function main() -> int:
     match semaphore_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             gate = payload.value
 
-    defer gate.release()
+    defer: gate.release()
 
     var worker_state = WorkerState(gate = unsafe: ptr_of(gate), ready = unsafe: ptr_of(worker_ready))
 
@@ -90,17 +90,17 @@ function main() -> int:
     match spawn_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 2
         Result.success as payload:
             var handle = payload.value
-            defer handle.release()
+            defer: handle.release()
             gate.post()
             let join_result = handle.join()
             match join_result:
                 Result.failure as join_payload:
                     var error = join_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 3
                 Result.success as join_payload:
                     if not join_payload.value:
@@ -142,7 +142,7 @@ function worker(state_raw: ptr[void]) -> void:
         match first_send_result:
             Result.failure as payload:
                 var error = payload.error
-                defer error.release()
+                defer: error.release()
                 return
             Result.success as payload:
                 if not payload.value:
@@ -152,7 +152,7 @@ function worker(state_raw: ptr[void]) -> void:
         match send_result:
             Result.failure as payload:
                 var error = payload.error
-                defer error.release()
+                defer: error.release()
                 return
             Result.success as payload:
                 if not payload.value:
@@ -165,12 +165,12 @@ function run_with_runtime(runtime: aio.Runtime) -> int:
     match mailbox_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             shared_mailbox = payload.value
 
-    defer shared_mailbox.release()
+    defer: shared_mailbox.release()
 
     var worker_state = WorkerState(mailbox = unsafe: ptr_of(shared_mailbox))
 
@@ -178,11 +178,11 @@ function run_with_runtime(runtime: aio.Runtime) -> int:
     match spawn_result:
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 2
         Result.success as payload:
             var handle = payload.value
-            defer handle.release()
+            defer: handle.release()
 
             var spins = 0
             while spins < 100000:
@@ -219,7 +219,7 @@ function run_with_runtime(runtime: aio.Runtime) -> int:
                 match join_result:
                     Result.failure as join_payload:
                         var error = join_payload.error
-                        defer error.release()
+                        defer: error.release()
                         return 8
                     Result.success as join_payload:
                         if not join_payload.value:

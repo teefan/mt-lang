@@ -10,7 +10,7 @@ const GLSL_VERSION: int = 330
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - normalmap rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -27,7 +27,7 @@ function main() -> int:
         rl.text_format("shaders/glsl%i/normalmap.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/normalmap.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL] = rl.get_shader_location(shader, "normalMap")
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.get_shader_location(shader, "viewPos")
 
@@ -35,13 +35,13 @@ function main() -> int:
     let light_position_location = rl.get_shader_location(shader, "lightPos")
 
     var plane = rl.load_model("models/plane.glb")
-    defer rl.unload_model(plane)
+    defer: rl.unload_model(plane)
     unsafe: plane.materials[0].shader = shader
 
     var diffuse_texture = rl.load_texture("tiles_diffuse.png")
-    defer rl.unload_texture(diffuse_texture)
+    defer: rl.unload_texture(diffuse_texture)
     var normal_texture = rl.load_texture("tiles_normal.png")
-    defer rl.unload_texture(normal_texture)
+    defer: rl.unload_texture(normal_texture)
 
     rl.gen_texture_mipmaps(diffuse_texture)
     rl.gen_texture_mipmaps(normal_texture)

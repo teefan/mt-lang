@@ -8,19 +8,19 @@ const GLSL_VERSION: int = 330
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - texture rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let blank = rl.gen_image_color(1024, 1024, rl.BLANK)
     let texture = rl.load_texture_from_image(blank)
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.unload_image(blank)
 
     let shader_path = rl.text_format("shaders/glsl%i/cubes_panning.fs", GLSL_VERSION)
     let shader = rl.load_shader(null, shader_path)
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let time_location = rl.get_shader_location(shader, "uTime")
     var time: float = 0.0

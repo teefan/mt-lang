@@ -13,7 +13,7 @@ function update_draw_frame() -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - window web")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.set_target_fps(60)
 

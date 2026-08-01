@@ -375,12 +375,12 @@ function build_raw_value(value: Value) -> Result[ptr[cjson.JSON], Error]:
 
 function render_with_mode(value: Value, pretty: bool) -> Result[string.String, Error]:
     let raw_value = build_raw_value(value)?
-    defer cjson.delete(raw_value)
+    defer: cjson.delete(raw_value)
 
     if pretty:
         let rendered_ptr = cjson.print(raw_value) else:
             return Result[string.String, Error].failure(error = error_message("json print failed"))
-        defer raw.cJSON_free(unsafe: rendered_ptr)
+        defer: raw.cJSON_free(unsafe: rendered_ptr)
         return Result[
             string.String,
             Error
@@ -388,13 +388,13 @@ function render_with_mode(value: Value, pretty: bool) -> Result[string.String, E
 
     let rendered_ptr = cjson.print_unformatted(raw_value) else:
         return Result[string.String, Error].failure(error = error_message("json print failed"))
-    defer raw.cJSON_free(unsafe: rendered_ptr)
+    defer: raw.cJSON_free(unsafe: rendered_ptr)
     return Result[string.String, Error].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
 
 
 public function parse(text_value: str) -> Result[Value, Error]:
     var storage = arena.create(text_value.len + 1)
-    defer storage.release()
+    defer: storage.release()
 
     let c_text = storage.to_cstr(text_value)
     let raw_value = raw.cJSON_Parse(c_text) else:
@@ -406,7 +406,7 @@ public function parse(text_value: str) -> Result[Value, Error]:
             return Result[Value, Error].failure(error = error_message("json parse failed"))
         return Result[Value, Error].failure(error = Error(message = string.String.from_str(error_text)))
 
-    defer raw.cJSON_Delete(raw_value)
+    defer: raw.cJSON_Delete(raw_value)
     return convert_raw_value(unsafe: ptr[cjson.JSON]?<-raw_value)
 
 

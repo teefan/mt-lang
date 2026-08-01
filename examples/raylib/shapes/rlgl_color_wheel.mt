@@ -25,7 +25,7 @@ function wheel_handle_position(center: rl.Vector2, point_scale: float, angle: fl
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - rlgl color wheel")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var triangle_count = 64
     var point_scale: float = 150.0

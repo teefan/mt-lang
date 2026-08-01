@@ -13,7 +13,7 @@ struct TestItem:
 @[test]
 function test_pool_acquire_all() -> t.Check:
     var p = pool.Pool[TestItem].create(4)
-    defer p.release()
+    defer: p.release()
 
     let a0 = p.acquire() else:
         return t.fail("expected acquire 0")
@@ -38,7 +38,7 @@ function test_pool_acquire_all() -> t.Check:
 @[test]
 function test_pool_exhausted() -> t.Check:
     var p = pool.Pool[TestItem].create(2)
-    defer p.release()
+    defer: p.release()
 
     let _a = p.acquire()
     let _b = p.acquire()
@@ -56,7 +56,7 @@ function test_pool_exhausted() -> t.Check:
 @[test]
 function test_pool_release_and_reacquire() -> t.Check:
     var p = pool.Pool[TestItem].create(3)
-    defer p.release()
+    defer: p.release()
 
     let _a = p.acquire()
     let b = p.acquire() else:
@@ -75,7 +75,7 @@ function test_pool_release_and_reacquire() -> t.Check:
 @[test]
 function test_pool_get_set() -> t.Check:
     var p = pool.Pool[TestItem].create(4)
-    defer p.release()
+    defer: p.release()
 
     let id = p.acquire() else:
         return t.fail("expected acquire")
@@ -94,7 +94,7 @@ function test_pool_get_set() -> t.Check:
 @[test]
 function test_pool_get_oob() -> t.Check:
     var p = pool.Pool[TestItem].create(2)
-    defer p.release()
+    defer: p.release()
 
     let item = p.get(99)
     t.expect(item == null, "out-of-bounds returns null")?
@@ -105,7 +105,7 @@ function test_pool_get_oob() -> t.Check:
 @[test]
 function test_pool_clear() -> t.Check:
     var p = pool.Pool[TestItem].create(3)
-    defer p.release()
+    defer: p.release()
 
     let _a = p.acquire()
     let _b = p.acquire()
@@ -120,7 +120,7 @@ function test_pool_clear() -> t.Check:
 @[test]
 function test_pool_count() -> t.Check:
     var p = pool.Pool[TestItem].create(5)
-    defer p.release()
+    defer: p.release()
 
     t.expect(p.count() == 0, "count starts at 0")?
     let _a = p.acquire()

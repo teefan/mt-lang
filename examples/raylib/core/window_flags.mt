@@ -29,7 +29,7 @@ function draw_static_flag_line(flag_label: str, flag: rl.ConfigFlags, y: int) ->
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - window flags")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var ball_position = rl.Vector2(x = (float<-rl.get_screen_width()) / 2.0, y = (float<-rl.get_screen_height()) / 2.0)
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)

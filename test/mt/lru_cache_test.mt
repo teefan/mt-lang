@@ -8,7 +8,7 @@ import std.str
 @[test]
 function test_lru_cache_basic_set_and_get() -> t.Check:
     var c = lru.LruCache[str, int].with_capacity(3)
-    defer c.release()
+    defer: c.release()
 
     t.expect_true(c.is_empty())?
     t.expect(c.len() == 0z, "len == 0")?
@@ -29,7 +29,7 @@ function test_lru_cache_basic_set_and_get() -> t.Check:
 @[test]
 function test_lru_cache_evicts_when_at_capacity() -> t.Check:
     var c = lru.LruCache[str, int].with_capacity(2)
-    defer c.release()
+    defer: c.release()
 
     c.set("a", 1)
     c.set("b", 2)
@@ -43,7 +43,7 @@ function test_lru_cache_evicts_when_at_capacity() -> t.Check:
 @[test]
 function test_lru_cache_get_promotes_to_most_recent() -> t.Check:
     var c = lru.LruCache[str, int].with_capacity(2)
-    defer c.release()
+    defer: c.release()
 
     c.set("a", 1)
     c.set("b", 2)
@@ -57,7 +57,7 @@ function test_lru_cache_get_promotes_to_most_recent() -> t.Check:
 @[test]
 function test_lru_cache_set_overwrites_and_promotes() -> t.Check:
     var c = lru.LruCache[str, int].with_capacity(2)
-    defer c.release()
+    defer: c.release()
 
     c.set("a", 1)
     c.set("b", 2)
@@ -76,7 +76,7 @@ function test_lru_cache_set_overwrites_and_promotes() -> t.Check:
 @[test]
 function test_lru_cache_remove_and_contains() -> t.Check:
     var c = lru.LruCache[str, int].with_capacity(3)
-    defer c.release()
+    defer: c.release()
 
     c.set("x", 42)
     t.expect_true(c.contains("x"))?
@@ -90,7 +90,7 @@ function test_lru_cache_remove_and_contains() -> t.Check:
 @[test]
 function test_lru_cache_clear() -> t.Check:
     var c = lru.LruCache[str, int].with_capacity(3)
-    defer c.release()
+    defer: c.release()
 
     c.set("a", 1)
     c.set("b", 2)

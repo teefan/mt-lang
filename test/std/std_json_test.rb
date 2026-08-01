@@ -17,11 +17,11 @@ function main() -> int:
     match json.parse(\"{\\\"name\\\":\\\"mt\\\",\\\"active\\\":true,\\\"score\\\":2.5,\\\"items\\\":[1,null,{\\\"nested\\\":\\\"ok\\\"}]}\"):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var parsed = payload.value
-            defer json.release_value(parsed)
+            defer: json.release_value(parsed)
 
             let root = parsed.as_object()
             if root == null:
@@ -77,45 +77,45 @@ function main() -> int:
             match json.render(parsed):
                 Result.failure as render_payload:
                     var render_error = render_payload.error
-                    defer render_error.release()
+                    defer: render_error.release()
                     return 18
                 Result.success as render_payload:
                     var compact = render_payload.value
-                    defer compact.release()
+                    defer: compact.release()
                     if not compact.as_str().equal(\"{\\\"name\\\":\\\"mt\\\",\\\"active\\\":true,\\\"score\\\":2.5,\\\"items\\\":[1,null,{\\\"nested\\\":\\\"ok\\\"}]}\"):
                         return 19
 
                     match json.render_pretty(parsed):
                         Result.failure as pretty_payload:
                             var pretty_error = pretty_payload.error
-                            defer pretty_error.release()
+                            defer: pretty_error.release()
                             return 20
                         Result.success as pretty_payload:
                             var pretty = pretty_payload.value
-                            defer pretty.release()
+                            defer: pretty.release()
                             if pretty.as_str().equal(compact.as_str()):
                                 return 21
                             match json.parse(pretty.as_str()):
                                 Result.failure as reparsed_payload:
                                     var reparsed_error = reparsed_payload.error
-                                    defer reparsed_error.release()
+                                    defer: reparsed_error.release()
                                     return 22
                                 Result.success as reparsed_payload:
                                     var reparsed = reparsed_payload.value
-                                    defer json.release_value(reparsed)
+                                    defer: json.release_value(reparsed)
                                     match json.render(reparsed):
                                         Result.failure as rerender_payload:
                                             var rerender_error = rerender_payload.error
-                                            defer rerender_error.release()
+                                            defer: rerender_error.release()
                                             return 23
                                         Result.success as rerender_payload:
                                             var rerendered = rerender_payload.value
-                                            defer rerendered.release()
+                                            defer: rerendered.release()
                                             if not rerendered.as_str().equal(compact.as_str()):
                                                 return 24
 
             var built = json.create_object_value()
-            defer json.release_value(built)
+            defer: json.release_value(built)
             let built_object = built.as_object()
             if built_object == null:
                 return 25
@@ -141,22 +141,22 @@ function main() -> int:
             match json.render(built):
                 Result.failure as built_payload:
                     var built_error = built_payload.error
-                    defer built_error.release()
+                    defer: built_error.release()
                     return 28
                 Result.success as built_payload:
                     var built_text = built_payload.value
-                    defer built_text.release()
+                    defer: built_text.release()
                     if not built_text.as_str().equal(\"{\\\"name\\\":\\\"builder\\\",\\\"items\\\":[1,null,{\\\"ok\\\":true}]}\"):
                         return 29
 
             match json.parse(\"{\"):
                 Result.success as broken_payload:
                     var broken = broken_payload.value
-                    defer json.release_value(broken)
+                    defer: json.release_value(broken)
                     return 30
                 Result.failure as broken_payload:
                     var broken_error = broken_payload.error
-                    defer broken_error.release()
+                    defer: broken_error.release()
                     if broken_error.message.as_str().len == 0:
                         return 31
 

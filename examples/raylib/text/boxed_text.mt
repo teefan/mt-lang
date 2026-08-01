@@ -133,7 +133,7 @@ public function draw_text_boxed(
 ) -> void:
     var line_count = 0
     let raw_lines = rl.load_text_lines(body_text, ptr_of(line_count))
-    defer rl.unload_text_lines(raw_lines, line_count)
+    defer: rl.unload_text_lines(raw_lines, line_count)
 
     var offset_y = 0.0
     var line_index = 0

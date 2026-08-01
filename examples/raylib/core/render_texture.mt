@@ -9,10 +9,10 @@ const BALL_RADIUS: float = 20.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - render texture")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let target = rl.load_render_texture(RENDER_TEXTURE_WIDTH, RENDER_TEXTURE_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
 
     var ball_position = rl.Vector2(
         x = (float<-RENDER_TEXTURE_WIDTH) / 2.0,

@@ -55,7 +55,7 @@ function succeed_on_third_try(context: ptr[Context]) -> bt.Status:
 @[test]
 function test_behavior_tree_nodes() -> t.Check:
     var tree = bt.Tree[Context].create()
-    defer tree.release()
+    defer: tree.release()
 
     let root = tree.add_node(bt.Node[Context].selector())
     let chase = tree.add_node(bt.Node[Context].sequence())
@@ -100,7 +100,7 @@ function test_behavior_tree_nodes() -> t.Check:
     tree.reset()
 
     var inverter_tree = bt.Tree[Context].create()
-    defer inverter_tree.release()
+    defer: inverter_tree.release()
     let inverter_root = inverter_tree.add_node(bt.Node[Context].inverter())
     let false_check = inverter_tree.add_node(bt.Node[Context].condition(always_false))
     t.expect_true(inverter_tree.set_root(inverter_root))?
@@ -109,7 +109,7 @@ function test_behavior_tree_nodes() -> t.Check:
     t.expect_equal_int(context.failed_checks, 1)?
 
     var retry_tree = bt.Tree[Context].create()
-    defer retry_tree.release()
+    defer: retry_tree.release()
     let until_root = retry_tree.add_node(bt.Node[Context].until_success())
     let retry_leaf = retry_tree.add_node(bt.Node[Context].action(succeed_on_third_try))
     t.expect_true(retry_tree.set_root(until_root))?

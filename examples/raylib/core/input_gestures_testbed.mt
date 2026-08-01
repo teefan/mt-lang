@@ -58,7 +58,7 @@ function gesture_color(gesture: int) -> rl.Color:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input gestures testbed")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let message_position = rl.Vector2(x = 160.0, y = 7.0)
     var last_gesture = 0

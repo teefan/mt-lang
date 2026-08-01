@@ -15,7 +15,7 @@ const FRAME_TIME_60: float = 1.0 / 60.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - screen recording")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var recording = false
     var capture_frame_counter: uint = 0

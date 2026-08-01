@@ -30,7 +30,7 @@ function calculate_double_pendulum_end_point(
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_HIGHDPI)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - double pendulum")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let length1 = 15.0
     let mass1 = 0.2
@@ -54,7 +54,7 @@ function main() -> int:
     let trail_fade_alpha = 0.01
 
     let target = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
     rl.set_texture_filter(target.texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
     rl.set_target_fps(60)

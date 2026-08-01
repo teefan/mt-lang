@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - logo raylib anim")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let logo_position_x = SCREEN_WIDTH / 2 - 128
     let logo_position_y = SCREEN_HEIGHT / 2 - 128

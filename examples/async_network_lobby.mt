@@ -35,7 +35,7 @@ async function main() -> int:
                             return -3
                         Result.success as servers_p:
                             var servers = servers_p.value
-                            defer servers.release()
+                            defer: servers.release()
 
                             if servers.len() == 0z:
                                 stdio.print_format("FAIL: no servers\n")

@@ -23,7 +23,7 @@ function read_int(value: ptr[int]?) -> int:
 @[test]
 function test_ordered_map_operations() -> t.Check:
     var values = ordered_map.OrderedMap[Key, int].create()
-    defer values.release()
+    defer: values.release()
 
     t.expect_true(values.is_empty())?
     t.expect(values.get(Key(value = 1)) == null, "missing get null")?

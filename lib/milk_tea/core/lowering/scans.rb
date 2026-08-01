@@ -144,8 +144,10 @@ module MilkTea
         (expression && expression_uses_pattern?(expression, &predicate)) || block_uses_expression_pattern?(statement.body, &predicate)
       when AST::ReturnStmt
         statement.value && expression_uses_pattern?(statement.value, &predicate)
-      when AST::DeferStmt, AST::ExpressionStmt
+      when AST::ExpressionStmt
         expression_uses_pattern?(statement.expression, &predicate)
+      when AST::DeferStmt
+        block_uses_expression_pattern?(statement.body, &predicate)
       else
         false
       end

@@ -181,17 +181,17 @@ function setup_boxes() -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - top down lights")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     setup_boxes()
 
     let img = rl.gen_image_checked(64, 64, 32, 32, rl.DARKBROWN, rl.DARKGRAY)
     let background_texture = rl.load_texture_from_image(img)
-    defer rl.unload_texture(background_texture)
+    defer: rl.unload_texture(background_texture)
     rl.unload_image(img)
 
     let light_mask = rl.load_render_texture(rl.get_screen_width(), rl.get_screen_height())
-    defer rl.unload_render_texture(light_mask)
+    defer: rl.unload_render_texture(light_mask)
 
     setup_light(0, 600.0, 400.0, 300.0)
     var next_light = 1

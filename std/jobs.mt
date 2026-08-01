@@ -53,7 +53,7 @@ function noop_completion(arg: ptr[void]) -> void:
 function stop_pool_state(state: ptr[PoolState]) -> void:
     let mutex = unsafe: read(state).mutex
     mutex.lock()
-    defer mutex.unlock()
+    defer: mutex.unlock()
     unsafe: read(state).stopping = true
     let condition = unsafe: read(state).condition
     condition.broadcast()
@@ -229,7 +229,7 @@ extending Pool:
 
         let mutex = unsafe: read(state).mutex
         mutex.lock()
-        defer mutex.unlock()
+        defer: mutex.unlock()
 
         if unsafe: read(state).stopping:
             return Result[bool, Error].failure(error = jobs_error(-1, "jobs pool is stopping"))
@@ -270,7 +270,7 @@ extending Pool:
 
         let mutex = unsafe: read(state).mutex
         mutex.lock()
-        defer mutex.unlock()
+        defer: mutex.unlock()
         return unsafe: read(state).queued_jobs
 
 
@@ -280,7 +280,7 @@ extending Pool:
 
         let mutex = unsafe: read(state).mutex
         mutex.lock()
-        defer mutex.unlock()
+        defer: mutex.unlock()
         return unsafe: read(state).queued_jobs + read(state).running_jobs
 
 

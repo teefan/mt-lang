@@ -358,7 +358,7 @@ function append_file_entry(source_path: str, archive_path: str, output: ref[vec.
             return Result[bool, Error].failure(error = take_fs_error(payload.error))
         Result.success as payload:
             var data = payload.value
-            defer data.release()
+            defer: data.release()
             output.append_span(data.as_span())
             append_padding(output, data.len)
             return Result[bool, Error].success(value = true)
@@ -387,14 +387,14 @@ function append_directory_tree(
             return Result[bool, Error].failure(error = take_fs_error(payload.error))
         Result.success as payload:
             var entries = payload.value
-            defer entries.release()
+            defer: entries.release()
 
             match copy_sorted_entry_names(entries, include_hidden):
                 Result.failure as names_payload:
                     return Result[bool, Error].failure(error = names_payload.error)
                 Result.success as names_payload:
                     var names = names_payload.value
-                    defer release_string_values(ref_of(names))
+                    defer: release_string_values(ref_of(names))
 
                     var index: ptr_uint = 0
                     while index < names.len():
@@ -520,10 +520,10 @@ function read_text_field(input: span[ubyte], offset: ptr_uint, field_len: ptr_ui
 
 function parse_entry(input: span[ubyte], offset: ptr_uint) -> Result[ParsedEntry, Error]:
     var name = read_text_field(input, offset + 0, 100)?
-    defer name.release()
+    defer: name.release()
 
     var prefix = read_text_field(input, offset + 345, 155)?
-    defer prefix.release()
+    defer: prefix.release()
 
     let name_text = name.as_str()
     if name_text.len == 0:
@@ -590,7 +590,7 @@ function checked_destination_path(destination_root: str, relative_path: str) -> 
             ].failure(error = error_message("tar extract path escapes destination root"))
         Option.some as payload:
             var normalized = payload.value
-            defer normalized.release()
+            defer: normalized.release()
             let normalized_path = normalized.as_str()
             let escapes_parent = normalized_path.len == 2 and normalized_path.byte_at(0) == 46 and normalized_path.byte_at(1) == 46
             if escapes_parent or normalized_path.starts_with("../"):
@@ -648,7 +648,7 @@ public function archive_directory_gzip(
             return Result[bytes.Bytes, Error].failure(error = payload.error)
         Result.success as payload:
             var archive = payload.value
-            defer archive.release()
+            defer: archive.release()
             match gzip.compress_bytes(archive.as_span()):
                 Result.failure as gzip_payload:
                     return Result[bytes.Bytes, Error].failure(error = take_gzip_error(gzip_payload.error))
@@ -668,10 +668,10 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
             return Result[bool, Error].success(value = true)
 
         var entry = parse_entry(archive, offset)?
-        defer entry.release()
+        defer: entry.release()
 
         var destination_path = checked_destination_path(destination_root, entry.path.as_str())?
-        defer destination_path.release()
+        defer: destination_path.release()
 
         if entry.kind == EntryKind.directory:
             fs.create_directories(destination_path.as_str()).map_error(take_fs_error)?
@@ -700,5 +700,5 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
 
 public function extract_gzip(archive: span[ubyte], destination_root: str) -> Result[bool, Error]:
     var decoded = gzip.decompress_bytes(archive).map_error(take_gzip_error)?
-    defer decoded.release()
+    defer: decoded.release()
     return extract(decoded.as_span(), destination_root)

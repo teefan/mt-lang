@@ -192,7 +192,7 @@ function glue_text_particles(
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - strings management")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var text_particles: array[TextParticle, MAX_TEXT_PARTICLES] = zero[array[TextParticle, MAX_TEXT_PARTICLES]]
     var particle_count = 0

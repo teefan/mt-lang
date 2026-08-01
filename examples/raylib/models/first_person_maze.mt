@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - first person maze")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -21,19 +21,19 @@ function main() -> int:
     )
 
     let map_image = rl.load_image("cubicmap.png")
-    defer rl.unload_image(map_image)
+    defer: rl.unload_image(map_image)
     let cubicmap = rl.load_texture_from_image(map_image)
-    defer rl.unload_texture(cubicmap)
+    defer: rl.unload_texture(cubicmap)
 
     let model = rl.load_model_from_mesh(rl.gen_mesh_cubicmap(map_image, rl.Vector3(x = 1.0, y = 1.0, z = 1.0)))
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     let texture = rl.load_texture("cubicmap_atlas.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     let map_pixels = rl.load_image_colors(map_image) else:
         fatal("could not load image colors")
-    defer rl.unload_image_colors(map_pixels)
+    defer: rl.unload_image_colors(map_pixels)
 
     let map_position = rl.Vector3(x = -16.0, y = 0.0, z = -8.0)
 

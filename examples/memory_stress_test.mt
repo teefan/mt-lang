@@ -263,7 +263,7 @@ function own_basic_alloc() -> own[int]:
 
 function own_nullable_flow() -> int:
     let p: own[int]? = heap.alloc[int](1)
-    defer heap.release(unsafe: ptr[int]<-p)
+    defer: heap.release(unsafe: ptr[int]<-p)
     if p != null:
         return 0
     return -1
@@ -274,12 +274,12 @@ function own_nullable_flow() -> int:
 
 function own_to_span_coercion() -> span[ubyte]:
     let raw = heap.must_alloc[ubyte](64)
-    defer heap.release(raw)
+    defer: heap.release(raw)
     return span[ubyte](data = raw, len = 64)
 
 function own_to_ptr_param(dest: ptr[int]) -> void:
     let owned = heap.must_alloc[int](1)
-    defer heap.release(owned)
+    defer: heap.release(owned)
     unsafe:
         read(dest) = read(owned)
 
@@ -344,12 +344,12 @@ function safe_double_release_prevention() -> int:
 
 function zero_length_span() -> span[int]:
     let backing = heap.must_alloc[int](1)
-    defer heap.release(backing)
+    defer: heap.release(backing)
     return span[int](data = backing, len = 0)
 
 function heap_backed_span() -> span[int]:
     let owned = heap.must_alloc[int](3)
-    defer heap.release(owned)
+    defer: heap.release(owned)
     unsafe:
         read(owned) = 10
         read(owned + 1) = 20
@@ -437,7 +437,7 @@ function get_on_in_bounds() -> int:
 
 function own_to_raw_alias() -> int:
     let owned = heap.must_alloc[int](1)
-    defer heap.release(owned)
+    defer: heap.release(owned)
     let raw = owned
     unsafe:
         read(raw) = 99

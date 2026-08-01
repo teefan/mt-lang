@@ -17,7 +17,7 @@ struct Branch:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - recursive tree")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let start = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0 - 125.0, y = float<-SCREEN_HEIGHT)
     var angle: float = 40.0

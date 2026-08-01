@@ -63,7 +63,7 @@ function compute_hilbert_step(order: int, index: int) -> rl.Vector2:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - hilbert curve")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var order = 2
     var size: float = float<-rl.get_screen_height()

@@ -116,7 +116,7 @@ class NullabilityUnsafeTest < Minitest::Test
 
       function read_values() -> int:
           var values = vec.Vec[int].create()
-          defer values.release()
+          defer: values.release()
           values.push(7)
 
           let value_ptr = values.get(0)
@@ -139,7 +139,7 @@ class NullabilityUnsafeTest < Minitest::Test
 
       function read_values() -> int:
           var values = vec.Vec[int].create()
-          defer values.release()
+          defer: values.release()
           values.push(7)
 
           let value_ptr = values.get(0)

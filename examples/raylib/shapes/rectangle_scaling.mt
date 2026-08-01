@@ -7,7 +7,7 @@ const MOUSE_SCALE_MARK_SIZE: int = 12
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - rectangle scaling")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var rec = rl.Rectangle(x = 100.0, y = 100.0, width = 200.0, height = 80.0)
     var mouse_position = rl.Vector2(x = 0.0, y = 0.0)

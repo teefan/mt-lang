@@ -7,7 +7,7 @@ const MAX_COLORS_COUNT: int = 21
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - colors palette")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let colors = array[rl.Color, MAX_COLORS_COUNT](
         rl.DARKGRAY, rl.MAROON, rl.ORANGE, rl.DARKGREEN, rl.DARKBLUE, rl.DARKPURPLE, rl.DARKBROWN,

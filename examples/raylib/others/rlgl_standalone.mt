@@ -174,7 +174,7 @@ function draw_cube_wires(position: rl.Vector3, width: float, height: float, leng
 function main() -> int:
     if not glfw.init():
         return 1
-    defer glfw.terminate()
+    defer: glfw.terminate()
 
     glfw.window_hint(glfw.SAMPLES, 4)
     glfw.window_hint(glfw.DEPTH_BITS, 16)
@@ -190,7 +190,7 @@ function main() -> int:
         null
     ) else:
         return 2
-    defer glfw.destroy_window(window)
+    defer: glfw.destroy_window(window)
 
     glfw.set_window_pos(window, 200, 200)
     glfw.make_context_current(window)
@@ -198,7 +198,7 @@ function main() -> int:
 
     rlgl_loader.rlLoadExtensions(load_gl_proc)
     rlgl.gl_init(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rlgl.gl_close()
+    defer: rlgl.gl_close()
 
     rlgl.viewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
     rlgl.matrix_mode(rlgl.RL_PROJECTION)

@@ -7,7 +7,7 @@ const SCROLL_SPEED: int = 4
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input mouse wheel")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var box_position_y = (SCREEN_HEIGHT / 2) - 40
 

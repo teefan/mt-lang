@@ -52,13 +52,13 @@ const PALETTE_TEXT: array[str, MAX_PALETTES] = array[str, MAX_PALETTES](
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - palette switch")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/palette_switch.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let palette_location = rl.get_shader_location(shader, "palette")
     var current_palette = 0

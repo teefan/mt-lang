@@ -21,23 +21,23 @@ import std.vec as vec
 
 function main() -> int:
     var command = vec.Vec[str].create()
-    defer command.release()
+    defer: command.release()
     command.push(\"/bin/sh\")
     command.push(\"-c\")
     command.push(\"printf '%s\\n' \\\"$PWD\\\"; printf '%s' \\\"$MILK_TEA_PROCESS_TEST\\\" >&2; exit 7\")
 
     var environment = vec.Vec[process.EnvironmentEntry].create()
-    defer environment.release()
+    defer: environment.release()
     environment.push(process.EnvironmentEntry(name = \"MILK_TEA_PROCESS_TEST\", value = \"from-env\"))
 
     match process.capture_with_env(command.as_span(), Option[str].some(value= \"#{dir}\"), environment.as_span()):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var result = payload.value
-            defer result.release()
+            defer: result.release()
             if result.status.normalized_code() != 7:
                 return 2
             match result.stdout_text():
@@ -80,7 +80,7 @@ import std.vec as vec
 
 function main() -> int:
     var command = vec.Vec[str].create()
-    defer command.release()
+    defer: command.release()
     command.push(\"/bin/sh\")
     command.push(\"-c\")
     command.push(\"printf detached > detached.out\")
@@ -88,7 +88,7 @@ function main() -> int:
     match process.spawn_detached_in(command.as_span(), \"#{dir}\"):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             if payload.value <= 0:
@@ -128,7 +128,7 @@ import std.vec as vec
 
 function main() -> int:
     var command = vec.Vec[str].create()
-    defer command.release()
+    defer: command.release()
     command.push("/bin/sh")
     command.push("-c")
     command.push("cat; printf 'err:done' >&2")
@@ -136,16 +136,16 @@ function main() -> int:
     match process.spawn(command.as_span()):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var child = payload.value
-            defer child.release()
+            defer: child.release()
 
             match child.write_stdin("milk-tea\\n"):
                 Result.failure as write_payload:
                     var error = write_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as _:
                     pass
@@ -153,7 +153,7 @@ function main() -> int:
             match child.close_stdin():
                 Result.failure as close_payload:
                     var error = close_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 3
                 Result.success as _:
                     pass
@@ -161,7 +161,7 @@ function main() -> int:
             match child.wait():
                 Result.failure as wait_payload:
                     var error = wait_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 4
                 Result.success as wait_payload:
                     if not wait_payload.value.success():
@@ -170,11 +170,11 @@ function main() -> int:
             match child.read_stdout(1000):
                 Result.failure as stdout_payload:
                     var error = stdout_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 6
                 Result.success as stdout_payload:
                     var stdout_chunk = stdout_payload.value
-                    defer stdout_chunk.release()
+                    defer: stdout_chunk.release()
                     if not stdout_chunk.ready:
                         return 7
                     match stdout_chunk.text():
@@ -187,11 +187,11 @@ function main() -> int:
             match child.read_stderr(1000):
                 Result.failure as stderr_payload:
                     var error = stderr_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 10
                 Result.success as stderr_payload:
                     var stderr_chunk = stderr_payload.value
-                    defer stderr_chunk.release()
+                    defer: stderr_chunk.release()
                     if not stderr_chunk.ready:
                         return 11
                     match stderr_chunk.text():
@@ -228,7 +228,7 @@ import std.vec as vec
 
 function main() -> int:
     var command = vec.Vec[str].create()
-    defer command.release()
+    defer: command.release()
     command.push("/bin/sh")
     command.push("-c")
     command.push("read ignored; stty size; printf 'pty:ready\\n'")
@@ -236,16 +236,16 @@ function main() -> int:
     match process.spawn_pty(command.as_span(), 80, 24):
         Result.failure as payload:
             var error = payload.error
-            defer error.release()
+            defer: error.release()
             return 1
         Result.success as payload:
             var child = payload.value
-            defer child.release()
+            defer: child.release()
 
             match child.resize(100, 40):
                 Result.failure as resize_payload:
                     var error = resize_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 2
                 Result.success as _:
                     pass
@@ -253,7 +253,7 @@ function main() -> int:
             match child.write("milk-tea\\n"):
                 Result.failure as write_payload:
                     var error = write_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 3
                 Result.success as _:
                     pass
@@ -261,25 +261,25 @@ function main() -> int:
             match child.wait():
                 Result.failure as wait_payload:
                     var error = wait_payload.error
-                    defer error.release()
+                    defer: error.release()
                     return 4
                 Result.success as wait_payload:
                     if not wait_payload.value.success():
                         return 5
 
             var output = string.String.create()
-            defer output.release()
+            defer: output.release()
 
             var attempts = 0
             while attempts < 6:
                 match child.read(1000):
                     Result.failure as read_payload:
                         var error = read_payload.error
-                        defer error.release()
+                        defer: error.release()
                         return 6
                     Result.success as read_payload:
                         var chunk = read_payload.value
-                        defer chunk.release()
+                        defer: chunk.release()
                         match chunk.text():
                             Option.some as text_payload:
                                 output.append(text_payload.value)

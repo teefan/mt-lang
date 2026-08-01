@@ -71,7 +71,7 @@ function draw_model_points(model: rl.Model, position: rl.Vector3, scale: float, 
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - point rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var camera = rl.Camera3D(
         position = rl.Vector3(x = 3.0, y = 3.0, z = 3.0),
@@ -88,7 +88,7 @@ function main() -> int:
 
     var mesh = gen_mesh_points(num_points)
     var model = rl.load_model_from_mesh(mesh)
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
 
     rl.set_target_fps(60)
 

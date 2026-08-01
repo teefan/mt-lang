@@ -9,7 +9,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - directional billboard")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -23,7 +23,7 @@ function main() -> int:
     )
 
     let skillbot = rl.load_texture("skillbot.png")
-    defer rl.unload_texture(skillbot)
+    defer: rl.unload_texture(skillbot)
 
     var anim_timer = 0.0
     var anim = 0

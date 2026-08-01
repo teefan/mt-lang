@@ -710,7 +710,7 @@ function main() -> int:
 
       function main(value: int) -> int:
           var output = string.String.create()
-          defer output.release()
+          defer: output.release()
           output.assign(f"value=\#{value}")
           output.append(f" ok=\#{true}")
           return int<-output.len()
@@ -733,7 +733,7 @@ function main() -> int:
 
       function main(value: uint, ratio: double, raw: cstr) -> int:
           var output = string.String.create()
-          defer output.release()
+          defer: output.release()
           fmt.append_format(ref_of(output), f"hex=\#{value:x} raw=\#{raw}")
           output.assign_format(f"ratio=\#{ratio:.2} ok=\#{true}")
           return int<-output.len()
@@ -2725,7 +2725,7 @@ function add(target: ptr[int], amount: int) -> void:
 function main() -> int:
     var total = 0
     for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
-        defer add(ptr_of(total), 1)
+        defer: add(ptr_of(total), 1)
         match step:
             Step.skip:
                 continue

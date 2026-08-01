@@ -8,7 +8,7 @@ const MAX_INPUT_CHARS: int = 9
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - input box")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var name: array[char, 10] = zero[array[char, 10]]
     var letter_count = 0

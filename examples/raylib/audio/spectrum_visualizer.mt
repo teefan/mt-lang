@@ -163,21 +163,21 @@ function render_frame(fft_image: ref[rl.Image]) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [audio] example - spectrum visualizer")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     var fft_image = rl.gen_image_color(BUFFER_SIZE, TEXTURE_HEIGHT, rl.WHITE)
-    defer rl.unload_image(fft_image)
+    defer: rl.unload_image(fft_image)
     let fft_texture = rl.load_texture_from_image(fft_image)
-    defer rl.unload_texture(fft_texture)
+    defer: rl.unload_texture(fft_texture)
     let buffer_a = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(buffer_a)
+    defer: rl.unload_render_texture(buffer_a)
     let i_resolution = rl.Vector2(x = float<-SCREEN_WIDTH, y = float<-SCREEN_HEIGHT)
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/fft.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     let i_resolution_location = rl.get_shader_location(shader, "iResolution")
     let i_channel0_location = rl.get_shader_location(shader, "iChannel0")
@@ -185,15 +185,15 @@ function main() -> int:
     rl.set_shader_value_texture(shader, i_channel0_location, fft_texture)
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
     rl.set_audio_stream_buffer_size_default(AUDIO_STREAM_RING_BUFFER_SIZE)
 
     var wav = rl.load_wave("country.mp3")
-    defer rl.unload_wave(wav)
+    defer: rl.unload_wave(wav)
     rl.wave_format(ptr_of(wav), SAMPLE_RATE, PER_SAMPLE_BIT_DEPTH, MONO)
 
     let audio_stream = rl.load_audio_stream(uint<-SAMPLE_RATE, uint<-PER_SAMPLE_BIT_DEPTH, uint<-MONO)
-    defer rl.unload_audio_stream(audio_stream)
+    defer: rl.unload_audio_stream(audio_stream)
     rl.play_audio_stream(audio_stream)
 
     var wav_cursor: uint = 0

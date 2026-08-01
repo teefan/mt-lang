@@ -61,7 +61,7 @@ function draw_pad_button(
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input virtual controls")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let pad_position = rl.Vector2(x = 100.0, y = 350.0)
     let button_radius = 30.0

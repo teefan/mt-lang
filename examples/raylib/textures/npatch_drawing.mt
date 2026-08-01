@@ -15,13 +15,13 @@ function clamp_size(value: float, min: float, max: float) -> float:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - npatch drawing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let n_patch_texture = rl.load_texture("ninepatch_button.png")
-    defer rl.unload_texture(n_patch_texture)
+    defer: rl.unload_texture(n_patch_texture)
 
     let origin = rl.Vector2(x = 0.0, y = 0.0)
 

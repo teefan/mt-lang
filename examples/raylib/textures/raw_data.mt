@@ -10,7 +10,7 @@ const CHECKED_PIXEL_COUNT: int = CHECKED_WIDTH * CHECKED_HEIGHT
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - raw data")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -23,7 +23,7 @@ function main() -> int:
         0
     )
     let fudesumi = rl.load_texture_from_image(fudesumi_raw)
-    defer rl.unload_texture(fudesumi)
+    defer: rl.unload_texture(fudesumi)
     rl.unload_image(fudesumi_raw)
 
     var checked_pixels: array[rl.Color, CHECKED_PIXEL_COUNT] = zero[array[rl.Color, CHECKED_PIXEL_COUNT]]
@@ -49,7 +49,7 @@ function main() -> int:
     )
 
     let checked = rl.load_texture_from_image(checked_image)
-    defer rl.unload_texture(checked)
+    defer: rl.unload_texture(checked)
 
     rl.set_target_fps(60)
 

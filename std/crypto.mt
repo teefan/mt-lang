@@ -23,7 +23,7 @@ public function sha256(data: span[ubyte]) -> bytes.Bytes:
 
 public function sha256_to_str(data: span[ubyte]) -> string.String:
     var digest = sha256(data)
-    defer digest.release()
+    defer: digest.release()
 
     var result = string.String.with_capacity(raw.SHA256_DIGEST_LENGTH * 2)
     var index: ptr_uint = 0

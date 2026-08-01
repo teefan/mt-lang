@@ -335,7 +335,7 @@ function end_stream_operation(state: ptr[StreamState]) -> void:
 
 async function handshake_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?) -> Result[bool, Error]:
     let state = begin_stream_operation(state_raw)?
-    defer end_stream_operation(state)
+    defer: end_stream_operation(state)
 
     while true:
         let client = unsafe: read(state).client else:
@@ -366,7 +366,7 @@ async function write_on(
         return Result[ptr_uint, Error].success(value = 0)
 
     let state = begin_stream_operation(state_raw)?
-    defer end_stream_operation(state)
+    defer: end_stream_operation(state)
 
     var offset: ptr_uint = 0
     while offset < content.len:
@@ -411,7 +411,7 @@ async function read_once_on(
         return Result[bytes.Bytes, Error].failure(error = tls_error("tls read requires max_bytes > 0"))
 
     let state = begin_stream_operation(state_raw)?
-    defer end_stream_operation(state)
+    defer: end_stream_operation(state)
 
     let buffer = heap.must_alloc[ubyte](max_bytes)
     while true:
@@ -449,7 +449,7 @@ async function read_once_on(
 
 async function shutdown_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?) -> Result[bool, Error]:
     let state = begin_stream_operation(state_raw)?
-    defer end_stream_operation(state)
+    defer: end_stream_operation(state)
 
     while true:
         let client = unsafe: read(state).client else:
@@ -470,7 +470,7 @@ async function shutdown_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?) -
 
 public async function connect_on(runtime: aio.Runtime, host: str, port: int) -> Result[Stream, Error]:
     var service = fmt.to_string_int(port)
-    defer service.release()
+    defer: service.release()
 
     let addresses_result = await net.resolve_all_on(runtime, host, service.as_str())
     match addresses_result:
@@ -478,7 +478,7 @@ public async function connect_on(runtime: aio.Runtime, host: str, port: int) -> 
             return Result[Stream, Error].failure(error = take_net_error(payload.error))
         Result.success as payload:
             var addresses = payload.value
-            defer release_socket_addresses(ref_of(addresses))
+            defer: release_socket_addresses(ref_of(addresses))
 
             var last_error = tls_error("tls connect failed")
             var last_error_owned = true
@@ -523,7 +523,7 @@ public async function client_on(runtime: aio.Runtime, host: str, transport: net.
         Result.success as payload:
             var raw_client: ptr[c.mt_tls_client]? = null
             var host_storage = arena.create(host.len + 1)
-            defer host_storage.release()
+            defer: host_storage.release()
 
             var raw_error = zero[c.mt_tls_error]
             let create_status = c.mt_tls_client_create(host_storage.to_cstr(host), payload.value, raw_client, raw_error)
@@ -598,7 +598,7 @@ extending Stream:
 
 public function exchange(host: str, port: int, request: span[ubyte]) -> Result[bytes.Bytes, Error]:
     var host_storage = arena.create(host.len + 1)
-    defer host_storage.release()
+    defer: host_storage.release()
 
     var raw_response = zero[c.mt_tls_bytes]
     var raw_error = zero[c.mt_tls_error]

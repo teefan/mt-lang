@@ -56,20 +56,20 @@ function apply_process(process: int, image: ref[rl.Image]) -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - image processing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     var image_origin = rl.load_image("parrots.png")
-    defer rl.unload_image(image_origin)
+    defer: rl.unload_image(image_origin)
     rl.image_format(image_origin, int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8)
 
     let texture = rl.load_texture_from_image(image_origin)
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     var image_copy = rl.image_copy(image_origin)
-    defer rl.unload_image(image_copy)
+    defer: rl.unload_image(image_copy)
 
     var current_process = PROCESS_NONE
     var texture_reload = false

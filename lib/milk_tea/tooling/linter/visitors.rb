@@ -225,8 +225,7 @@ module MilkTea
           visit_expression(statement.value) if statement.value
           flag_redundant_widening_cast(statement.value) if statement.value
         when AST::DeferStmt
-          visit_expression(statement.expression) if statement.expression
-          with_scope { visit_statement_list(statement.body) } if statement.body
+          with_scope { visit_statement_list(statement.body) }
         when AST::ExpressionStmt
           visit_expression(statement.expression)
           check_useless_expression(statement)
@@ -1252,8 +1251,7 @@ module MilkTea
         when AST::UnsafeStmt
           stmt.body.each { |s| collect_borrows_from_stmt(s, names) }
         when AST::DeferStmt
-          collect_borrows_from_expr(stmt.expression, names) if stmt.expression
-          stmt.body&.each { |s| collect_borrows_from_stmt(s, names) }
+          stmt.body.each { |s| collect_borrows_from_stmt(s, names) }
         when AST::WhenStmt
           collect_borrows_from_expr(stmt.discriminant, names)
           stmt.branches.each { |b| b.body.each { |s| collect_borrows_from_stmt(s, names) } }
@@ -1319,7 +1317,7 @@ module MilkTea
         when AST::UnsafeStmt
           stmt.body.each { |s| collect_writes_from_stmt(s, names) }
         when AST::DeferStmt
-          stmt.body&.each { |s| collect_writes_from_stmt(s, names) }
+          stmt.body.each { |s| collect_writes_from_stmt(s, names) }
         end
       end
 
@@ -1376,9 +1374,7 @@ module MilkTea
           stmt.body.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
           nil
         when AST::DeferStmt
-          location = find_borrow_location_in_expr(stmt.expression, name) if stmt.expression
-          return location if location
-          stmt.body&.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
+          stmt.body.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
           nil
         when AST::WhenStmt
           location = find_borrow_location_in_expr(stmt.discriminant, name)

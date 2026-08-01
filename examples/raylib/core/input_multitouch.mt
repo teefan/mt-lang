@@ -7,7 +7,7 @@ const MAX_TOUCH_POINTS: int = 10
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input multitouch")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var touch_positions: array[rl.Vector2, MAX_TOUCH_POINTS] = zero[array[rl.Vector2, MAX_TOUCH_POINTS]]
 

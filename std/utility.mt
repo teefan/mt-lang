@@ -152,7 +152,7 @@ extending Action[Context]:
             return 0.0
 
         var scores = vec.Vec[float].with_capacity(n)
-        defer scores.release()
+        defer: scores.release()
 
         for entry in this.considerations:
             unsafe:

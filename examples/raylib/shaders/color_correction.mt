@@ -11,7 +11,7 @@ const MAX_TEXTURES: int = 4
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - color correction")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -29,7 +29,7 @@ function main() -> int:
             index += 1
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/color_correction.fs", GLSL_VERSION))
-    defer rl.unload_shader(shader)
+    defer: rl.unload_shader(shader)
 
     var image_index = 0
     var reset_button_clicked = false

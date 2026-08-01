@@ -86,7 +86,7 @@ function gbuffer_texture(texture_id: uint) -> rl.Texture2D:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - deferred rendering")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -100,21 +100,21 @@ function main() -> int:
     )
 
     var model = rl.load_model_from_mesh(rl.gen_mesh_plane(10.0, 10.0, 3, 3))
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     var cube = rl.load_model_from_mesh(rl.gen_mesh_cube(2.0, 2.0, 2.0))
-    defer rl.unload_model(cube)
+    defer: rl.unload_model(cube)
 
     let gbuffer_shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/gbuffer.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/gbuffer.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(gbuffer_shader)
+    defer: rl.unload_shader(gbuffer_shader)
 
     var deferred_shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/deferred_shading.vs", GLSL_VERSION),
         rl.text_format("shaders/glsl%i/deferred_shading.fs", GLSL_VERSION)
     )
-    defer rl.unload_shader(deferred_shader)
+    defer: rl.unload_shader(deferred_shader)
     unsafe: deferred_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.get_shader_location(
         deferred_shader,
         "viewPosition"

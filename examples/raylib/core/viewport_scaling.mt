@@ -208,7 +208,7 @@ function unload_render_texture_if_loaded(target: ref[rl.RenderTexture2D]) -> voi
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_WINDOW_RESIZABLE)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - viewport scaling")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let resolution_list = array[rl.Vector2, 4](
         rl.Vector2(x = 64.0, y = 64.0),
@@ -221,7 +221,7 @@ function main() -> int:
     var game_width = 64
     var game_height = 64
     var target = zero[rl.RenderTexture2D]
-    defer unload_render_texture_if_loaded(ref_of(target))
+    defer: unload_render_texture_if_loaded(ref_of(target))
     var viewport_type = 0
     var layout = resize_render_size(viewport_type, game_width, game_height, ref_of(target))
 

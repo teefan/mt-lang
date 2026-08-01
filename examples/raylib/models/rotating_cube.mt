@@ -7,7 +7,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - rotating cube")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -21,10 +21,10 @@ function main() -> int:
     )
 
     let model = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
 
     let image = rl.load_image("cubicmap_atlas.png")
-    defer rl.unload_image(image)
+    defer: rl.unload_image(image)
     let crop = rl.image_from_image(
         image,
         rl.Rectangle(
@@ -34,9 +34,9 @@ function main() -> int:
             height = float<-image.height / 2.0
         )
     )
-    defer rl.unload_image(crop)
+    defer: rl.unload_image(crop)
     let texture = rl.load_texture_from_image(crop)
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
 
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 

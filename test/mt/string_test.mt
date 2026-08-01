@@ -34,7 +34,7 @@ function test_string_equal_compares_contents() -> t.Check:
 @[test]
 function test_string_shrink_to_fit() -> t.Check:
     var s = string.String.with_capacity(128)
-    defer s.release()
+    defer: s.release()
     s.append("hello")
     s.append(" world")
     t.expect(s.capacity() >= 128z, "capacity inflated")?

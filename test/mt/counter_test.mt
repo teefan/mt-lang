@@ -20,7 +20,7 @@ extending Key:
 @[test]
 function test_counter_operations() -> t.Check:
     var values = counter.Counter[Key].with_capacity(2)
-    defer values.release()
+    defer: values.release()
 
     t.expect(values.capacity() >= 2, "capacity >= 2")?
     t.expect_true(values.is_empty())?

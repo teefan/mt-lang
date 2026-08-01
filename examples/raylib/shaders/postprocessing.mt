@@ -37,7 +37,7 @@ const POSTPRO_SHADER_TEXT: array[str, MAX_POSTPRO_SHADERS] = array[str, MAX_POST
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shaders] example - postprocessing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -51,9 +51,9 @@ function main() -> int:
     )
 
     let model = rl.load_model("models/church.obj")
-    defer rl.unload_model(model)
+    defer: rl.unload_model(model)
     let texture = rl.load_texture("models/church_diffuse.png")
-    defer rl.unload_texture(texture)
+    defer: rl.unload_texture(texture)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 
     var shaders = zero[array[rl.Shader, MAX_POSTPRO_SHADERS]]
@@ -79,7 +79,7 @@ function main() -> int:
             shader_index += 1
 
     let target = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(target)
+    defer: rl.unload_render_texture(target)
 
     var current_shader = FX_GRAYSCALE
     rl.set_target_fps(60)

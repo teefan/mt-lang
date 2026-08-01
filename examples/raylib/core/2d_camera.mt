@@ -9,7 +9,7 @@ const MAX_BUILDINGS: int = 100
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - 2d camera")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var player = rl.Rectangle(x = 400.0, y = 280.0, width = 40.0, height = 40.0)
     var buildings: array[rl.Rectangle, MAX_BUILDINGS] = zero[array[rl.Rectangle, MAX_BUILDINGS]]

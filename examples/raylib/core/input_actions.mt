@@ -77,7 +77,7 @@ function set_actions_cursor() -> void:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input actions")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var action_set = 0
     set_actions_default()

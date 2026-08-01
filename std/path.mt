@@ -54,9 +54,9 @@ public function join(left: str, right: str) -> string.String:
 
 public function relative_path(path: str, base: str) -> Option[string.String]:
     var normalized_path = normalize_separators(path)
-    defer normalized_path.release()
+    defer: normalized_path.release()
     var normalized_base = normalize_separators(base)
-    defer normalized_base.release()
+    defer: normalized_base.release()
 
     let path_text = normalized_path.as_str()
     let base_text = normalized_base.as_str()
@@ -66,11 +66,11 @@ public function relative_path(path: str, base: str) -> Option[string.String]:
         return Option[string.String].none
 
     var path_segments = vec.Vec[Segment].create()
-    defer path_segments.release()
+    defer: path_segments.release()
     collect_normalized_segments(path_text, path_root, ref_of(path_segments))
 
     var base_segments = vec.Vec[Segment].create()
-    defer base_segments.release()
+    defer: base_segments.release()
     collect_normalized_segments(base_text, base_root, ref_of(base_segments))
 
     var common: ptr_uint = 0
@@ -111,9 +111,9 @@ public function relative_path(path: str, base: str) -> Option[string.String]:
 
 public function is_within_root(path: str, root: str) -> bool:
     var normalized_path = normalize_separators(path)
-    defer normalized_path.release()
+    defer: normalized_path.release()
     var normalized_root = normalize_separators(root)
-    defer normalized_root.release()
+    defer: normalized_root.release()
 
     let path_text = normalized_path.as_str()
     let root_text = normalized_root.as_str()
@@ -123,11 +123,11 @@ public function is_within_root(path: str, root: str) -> bool:
         return false
 
     var path_segments = vec.Vec[Segment].create()
-    defer path_segments.release()
+    defer: path_segments.release()
     collect_normalized_segments(path_text, path_root, ref_of(path_segments))
 
     var root_segments = vec.Vec[Segment].create()
-    defer root_segments.release()
+    defer: root_segments.release()
     collect_normalized_segments(root_text, root_root, ref_of(root_segments))
 
     if path_segments.len() < root_segments.len():

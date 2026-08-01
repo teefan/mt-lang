@@ -256,7 +256,7 @@ public async function discover_lobbies_on(
             return Result[vec.Vec[LobbyInfo], net.Error].failure(error = p.error)
         Result.success as p:
             var conn = p.value
-            defer conn.release()
+            defer: conn.release()
             match await conn.connect_to_peer():
                 Result.failure as pe:
                     return Result[vec.Vec[LobbyInfo], net.Error].failure(error = pe.error)
@@ -389,7 +389,7 @@ async function drain_lobby_client(client: ref[LobbyClient]) -> void:
         if conn_state == sess.ConnectionState.connected:
             client.pending_join = false
             var encoded = encode_string(client.pending_name.as_str())
-            defer encoded.release()
+            defer: encoded.release()
             let _ = await client.mux.mux_send(lobby_channel, type_join_request, encoded.as_span(), mux.flag_reliable)
 
     while true:
@@ -455,7 +455,7 @@ async function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessa
             return
         Result.success as name_payload:
             var player_name = name_payload.value
-            defer player_name.release()
+            defer: player_name.release()
 
             var first_free: int = -1
             var slot_index: ubyte = 0
@@ -469,7 +469,7 @@ async function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessa
 
             if first_free < 0:
                 var reject_data = encode_join_reject(reject_reason_full)
-                defer reject_data.release()
+                defer: reject_data.release()
                 let _ = await host.mux.mux_send(
                     msg.peer_id,
                     lobby_channel,
@@ -489,7 +489,7 @@ async function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessa
             unsafe: read(slot_ptr).occupied = true
 
             var accept_data = encode_join_accept(msg.peer_id, slot)
-            defer accept_data.release()
+            defer: accept_data.release()
             let _ = await host.mux.mux_send(
                 msg.peer_id,
                 lobby_channel,
@@ -516,7 +516,7 @@ async function handle_discover_request(host: ref[LobbyHost], msg: ref[mux.MuxedM
     var w = bin.Writer.with_capacity(256)
     encode_lobby_info_payload(ref_of(w), host.info)
     var payload = w.finish()
-    defer payload.release()
+    defer: payload.release()
     let _ = await host.mux.mux_send(
         msg.peer_id,
         lobby_channel,
@@ -650,7 +650,7 @@ async function broadcast_player_joined(
     w.write_uint(uint<-new_player_name.len)
     w.write_bytes(text.as_byte_span(new_player_name))
     var payload = w.finish()
-    defer payload.release()
+    defer: payload.release()
 
     var peer_index: ptr_uint = 0
     let peer_count = host.mux.peer_count()
@@ -801,11 +801,11 @@ public async function respond_to_beacon(
             match recv_result:
                 Result.success as dp:
                     var datagram = dp.value
-                    defer datagram.data.release()
-                    defer datagram.source.release()
+                    defer: datagram.data.release()
+                    defer: datagram.source.release()
                     if is_beacon_probe(datagram.data.as_span()):
                         var response = build_beacon_response(info)
-                        defer response.release()
+                        defer: response.release()
                         let _ = await socket.send_to(response.as_span(), datagram.source)
                 Result.failure:
                     pass

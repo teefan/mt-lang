@@ -58,15 +58,15 @@ function trigger_value(value: float, deadzone: float) -> float:
 function main() -> int:
     rl.set_config_flags(rl.ConfigFlags.FLAG_MSAA_4X_HINT)
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - input gamepad")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let tex_ps3_pad = rl.load_texture("ps3.png")
-    defer rl.unload_texture(tex_ps3_pad)
+    defer: rl.unload_texture(tex_ps3_pad)
     let tex_xbox_pad = rl.load_texture("xbox.png")
-    defer rl.unload_texture(tex_xbox_pad)
+    defer: rl.unload_texture(tex_xbox_pad)
 
     var gamepad = 0
     var vibrate_button = rl.Rectangle(x = 0.0, y = 0.0, width = 0.0, height = 0.0)

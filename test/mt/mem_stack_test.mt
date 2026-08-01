@@ -16,7 +16,7 @@ struct Mat4:
 @[test]
 function test_mem_stack_temporary_flow() -> t.Check:
     var temp = stack.create(24)
-    defer temp.release()
+    defer: temp.release()
 
     let start = temp.mark()
     let first = temp.alloc_bytes(8)
@@ -37,7 +37,7 @@ function test_mem_stack_temporary_flow() -> t.Check:
 @[test]
 function test_mem_stack_typed_allocation() -> t.Check:
     var temp = stack.create_for[Pair](1)
-    defer temp.release()
+    defer: temp.release()
 
     let pair = temp.alloc[Pair](1)
     t.expect(pair != null, "pair alloc non-null")?
@@ -57,7 +57,7 @@ function test_mem_stack_typed_allocation() -> t.Check:
 @[test]
 function test_mem_stack_aligned_allocation() -> t.Check:
     var temp = stack.create_for[Mat4](1)
-    defer temp.release()
+    defer: temp.release()
 
     let matrix = temp.alloc[Mat4](1)
     t.expect(matrix != null, "matrix alloc non-null")?

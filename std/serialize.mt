@@ -52,7 +52,7 @@ extending bin.Reader:
                 return Result[T, bin.Error].failure(error = p.error)
             Result.success as bp:
                 var raw_bytes = bp.value
-                defer raw_bytes.release()
+                defer: raw_bytes.release()
 
                 let src_ptr = raw_bytes.data else:
                     return Result[T, bin.Error].failure(

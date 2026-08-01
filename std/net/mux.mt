@@ -382,7 +382,7 @@ async function send_single_conn(
     send_flags: ubyte
 ) -> Result[bool, net.Error]:
     var frame = encode_frame(channel_id, type_id, send_flags, data)
-    defer frame.release()
+    defer: frame.release()
     if (send_flags & flag_reliable) != 0:
         let result = await mux.conn.send_reliable(frame.as_span(), 0)
         return result
@@ -399,7 +399,7 @@ async function send_single_session(
     send_flags: ubyte
 ) -> Result[bool, net.Error]:
     var frame = encode_frame(channel_id, type_id, send_flags, data)
-    defer frame.release()
+    defer: frame.release()
     if (send_flags & flag_reliable) != 0:
         let result = await mux.session.send_reliable(peer_id, frame.as_span(), 0)
         return result
@@ -436,7 +436,7 @@ async function send_fragmented_conn(
             break
         let chunk = unsafe: span[ubyte](data = data.data + offset, len = chunk_len)
         var frame = encode_fragment_frame(channel_id, type_id, frag_flags, group_id, frag_index, total, chunk)
-        defer frame.release()
+        defer: frame.release()
         if (send_flags & flag_reliable) != 0:
             let _ = await mux.conn.send_reliable(frame.as_span(), 0)
         else:
@@ -477,7 +477,7 @@ async function send_fragmented_session(
             break
         let chunk = unsafe: span[ubyte](data = data.data + offset, len = chunk_len)
         var frame = encode_fragment_frame(channel_id, type_id, frag_flags, group_id, frag_index, total, chunk)
-        defer frame.release()
+        defer: frame.release()
         if (send_flags & flag_reliable) != 0:
             let _ = await mux.session.send_reliable(peer_id, frame.as_span(), 0)
         else:

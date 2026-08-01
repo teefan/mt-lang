@@ -15,7 +15,7 @@ import std.net.clock as clock
 function main() -> int:
     let t1 = clock.monotonic_ns()
     var request = clock.build_request(t1)
-    defer request.release()
+    defer: request.release()
 
     let data = request.as_span()
     let parsed = clock.parse_request(data)
@@ -45,7 +45,7 @@ function main() -> int:
     let t1 = clock.monotonic_ns()
     let t2 = t1 + 1000000
     var response = clock.build_response(t1, t2)
-    defer response.release()
+    defer: response.release()
 
     let data = response.as_span()
     let parsed = clock.parse_response(data)

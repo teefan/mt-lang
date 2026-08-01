@@ -16,7 +16,7 @@ function alignment_amount(kind: int) -> float:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [text] example - words alignment")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     let text_container_rect = rl.Rectangle(
         x = float<-SCREEN_WIDTH / 2.0 - float<-SCREEN_WIDTH / 4.0,

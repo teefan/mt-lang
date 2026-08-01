@@ -69,21 +69,21 @@ public function get_bytes(url: str) -> Result[bytes.Bytes, curl.Code]:
         return Result[bytes.Bytes, curl.Code].failure(error= curl.Code<-CURLE_URL_MALFORMAT_CODE)
 
     var scratch = arena.create(url.len + 1)
-    defer scratch.release()
+    defer: scratch.release()
 
     let url_cstr = scratch.to_cstr(url)
 
     let global_status = curl.global_init(curl.CURL_GLOBAL_NOTHING)
     if int<-global_status != CURLE_OK_CODE:
         return Result[bytes.Bytes, curl.Code].failure(error= global_status)
-    defer curl.global_cleanup()
+    defer: curl.global_cleanup()
 
     let handle = curl.easy_init() else:
         return Result[bytes.Bytes, curl.Code].failure(error= curl.Code<-CURLE_FAILED_INIT_CODE)
-    defer curl.easy_cleanup(handle)
+    defer: curl.easy_cleanup(handle)
 
     var body = vec.Vec[ubyte].create()
-    defer body.release()
+    defer: body.release()
 
     let write_function_status = easy_setopt_writefunction(handle, write_response_chunk)
     if int<-write_function_status != CURLE_OK_CODE:
@@ -199,7 +199,7 @@ function do_request(
     let global_status = curl.global_init(curl.CURL_GLOBAL_NOTHING)
     if int<-global_status != CURLE_OK_CODE:
         return Result[HttpResponse, HttpError].failure(error = http_error(global_status))
-    defer curl.global_cleanup()
+    defer: curl.global_cleanup()
 
     let handle = curl.easy_init() else:
         return Result[HttpResponse, HttpError].failure(
@@ -208,10 +208,10 @@ function do_request(
                 message = string.String.from_str("curl_easy_init failed")
             )
         )
-    defer curl.easy_cleanup(handle)
+    defer: curl.easy_cleanup(handle)
 
     var buffer = vec.Vec[ubyte].create()
-    defer buffer.release()
+    defer: buffer.release()
 
     let _wfn = easy_setopt_writefunction(handle, write_response_chunk)
     let _wdata = easy_setopt_writedata(handle, unsafe: ptr[void]<-ptr_of(buffer))
@@ -225,7 +225,7 @@ function do_request(
         )
 
     var scratch = arena.create(url.len + 1)
-    defer scratch.release()
+    defer: scratch.release()
 
     let url_cstr = scratch.to_cstr(url)
     let _url = easy_setopt_url(handle, url_cstr)
@@ -237,12 +237,12 @@ function do_request(
     if body.is_some():
         let body_content = body.unwrap()
         var body_scratch = arena.create(body_content.len + 1)
-        defer body_scratch.release()
+        defer: body_scratch.release()
         let _pf = easy_setopt_postfields(handle, body_scratch.to_cstr(body_content))
 
     if method.len > 0 and not method.starts_with("GET"):
         var method_scratch = arena.create(method.len + 1)
-        defer method_scratch.release()
+        defer: method_scratch.release()
         let _method = easy_setopt_customrequest(handle, method_scratch.to_cstr(method))
 
     if method.starts_with("HEAD"):

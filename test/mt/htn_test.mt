@@ -70,12 +70,12 @@ function build_collect_domain() -> htn.HtnPlanner[World, Context]:
 @[test]
 function test_htn_primitive_success() -> t.Check:
     var planner = build_collect_domain()
-    defer planner.release()
+    defer: planner.release()
 
     var ctx = Context(dummy = 0)
     var world = World(at = "home", has_key = false, door_open = false, has_treasure = false)
     var r = planner.plan(ptr_of(ctx), world, "move_to_door")
-    defer r.release()
+    defer: r.release()
 
     t.expect(r.status == htn.HtnStatus.success, "primitive task succeeds")?
     t.expect_true(r.has_plan())?
@@ -86,12 +86,12 @@ function test_htn_primitive_success() -> t.Check:
 @[test]
 function test_htn_primitive_fails_precondition() -> t.Check:
     var planner = build_collect_domain()
-    defer planner.release()
+    defer: planner.release()
 
     var ctx = Context(dummy = 0)
     var world = World(at = "home", has_key = false, door_open = false, has_treasure = false)
     var r = planner.plan(ptr_of(ctx), world, "take_treasure")
-    defer r.release()
+    defer: r.release()
 
     t.expect(r.status == htn.HtnStatus.failure, "primitive fails precondition")?
     t.expect_false(r.has_plan())?
@@ -102,12 +102,12 @@ function test_htn_primitive_fails_precondition() -> t.Check:
 @[test]
 function test_htn_compound_decomposition() -> t.Check:
     var planner = build_collect_domain()
-    defer planner.release()
+    defer: planner.release()
 
     var ctx = Context(dummy = 0)
     var world = World(at = "home", has_key = false, door_open = false, has_treasure = false)
     var r = planner.plan(ptr_of(ctx), world, "collect_treasure")
-    defer r.release()
+    defer: r.release()
 
     t.expect(r.status == htn.HtnStatus.success, "compound task succeeds")?
     t.expect_true(r.has_plan())?
@@ -126,12 +126,12 @@ function test_htn_compound_decomposition() -> t.Check:
 @[test]
 function test_htn_unknown_task() -> t.Check:
     var planner = build_collect_domain()
-    defer planner.release()
+    defer: planner.release()
 
     var ctx = Context(dummy = 0)
     var world = World(at = "home", has_key = false, door_open = false, has_treasure = false)
     var r = planner.plan(ptr_of(ctx), world, "nonexistent_task")
-    defer r.release()
+    defer: r.release()
 
     t.expect(r.status == htn.HtnStatus.failure, "unknown task fails")?
     t.expect_false(r.has_plan())?
@@ -142,13 +142,13 @@ function test_htn_unknown_task() -> t.Check:
 @[test]
 function test_htn_max_depth_exceeded() -> t.Check:
     var planner = build_collect_domain()
-    defer planner.release()
+    defer: planner.release()
     planner.set_max_depth(1)
 
     var ctx = Context(dummy = 0)
     var world = World(at = "home", has_key = false, door_open = false, has_treasure = false)
     var r = planner.plan(ptr_of(ctx), world, "collect_treasure")
-    defer r.release()
+    defer: r.release()
 
     t.expect(r.status == htn.HtnStatus.max_depth, "depth limit exceeded")?
     t.expect_false(r.has_plan())?

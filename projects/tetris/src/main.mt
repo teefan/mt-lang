@@ -82,7 +82,7 @@ function run_screen_frame[T implements ScreenState](screen: ref[T], texture: rl.
     screen.update(effect)
 
     rl.begin_drawing()
-    defer rl.end_drawing()
+    defer: rl.end_drawing()
     screen.draw(texture)
 
 
@@ -112,7 +112,7 @@ function load_runtime_assets() -> Result[RuntimeAssets, RuntimeAssetsError]:
             return load_directory_runtime_assets()
         Option.some as reader_payload:
             var reader = reader_payload.value
-            defer rl_assets.close_reader(ref_of(reader))
+            defer: rl_assets.close_reader(ref_of(reader))
             return load_packed_runtime_assets(reader)
 
 
@@ -574,16 +574,16 @@ extending Game:
 
 function main() -> int:
     rl.init_window(window_width, window_height, "Milk Tea Tetris")
-    defer rl.close_window()
+    defer: rl.close_window()
     rl.set_exit_key(rl.KeyboardKey.KEY_NULL)
     rl.set_target_fps(60)
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     var assets = load_runtime_assets() else as error:
         return runtime_assets_exit_code(error)
-    defer assets.release()
+    defer: assets.release()
 
     var title = default[TitleScreen]
     var paused: PausedScreen

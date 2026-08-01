@@ -6,7 +6,7 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - scissor test")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var scissor_area = rl.Rectangle(x = 0.0, y = 0.0, width = 300.0, height = 300.0)
     var scissor_mode = true

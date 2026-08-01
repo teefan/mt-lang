@@ -14,7 +14,7 @@ const DEG_TO_RAD: float = rl.PI / 180.0
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [models] example - bone socket")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -28,7 +28,7 @@ function main() -> int:
     )
 
     var character_model = rl.load_model("models/gltf/greenman.glb")
-    defer rl.unload_model(character_model)
+    defer: rl.unload_model(character_model)
 
     var equip_models: array[rl.Model, BONE_SOCKETS] = zero[array[rl.Model, BONE_SOCKETS]]
     equip_models[BONE_SOCKET_HAT] = rl.load_model("models/gltf/greenman_hat.glb")
@@ -46,7 +46,7 @@ function main() -> int:
     var anim_count = 0
     let animations = rl.load_model_animations("models/gltf/greenman.glb", ptr_of(anim_count)) else:
         fatal("could not load greenman animations")
-    defer rl.unload_model_animations(animations, anim_count)
+    defer: rl.unload_model_animations(animations, anim_count)
 
     var anim_index = 0
     var anim_current_frame = 0

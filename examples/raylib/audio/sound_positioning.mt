@@ -30,16 +30,16 @@ function set_sound_position(listener: rl.Camera, sound: rl.Sound, position: rl.V
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [audio] example - sound positioning")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     rl.init_audio_device()
-    defer rl.close_audio_device()
+    defer: rl.close_audio_device()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
     let sound = rl.load_sound("coin.wav")
-    defer rl.unload_sound(sound)
+    defer: rl.unload_sound(sound)
 
     var camera = rl.Camera(
         position = rl.Vector3(x = 0.0, y = 5.0, z = 5.0),

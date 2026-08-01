@@ -180,11 +180,7 @@ module MilkTea
       when AST::ReturnStmt
         collect_proc_captures_from_expression(statement.value, env, local_scopes, captures) if statement.value
       when AST::DeferStmt
-        if statement.body
-          collect_proc_captures_from_statements(statement.body, env, local_scopes + [{}], captures)
-        else
-          collect_proc_captures_from_expression(statement.expression, env, local_scopes, captures)
-        end
+        collect_proc_captures_from_statements(statement.body, env, local_scopes + [{}], captures)
       when AST::ExpressionStmt
         collect_proc_captures_from_expression(statement.expression, env, local_scopes, captures)
       when AST::BreakStmt, AST::ContinueStmt, AST::PassStmt

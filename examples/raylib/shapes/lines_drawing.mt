@@ -7,12 +7,12 @@ const SCREEN_HEIGHT: int = 450
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - lines drawing")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     var start_text = true
     var mouse_position_previous = rl.get_mouse_position()
     let canvas = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)
-    defer rl.unload_render_texture(canvas)
+    defer: rl.unload_render_texture(canvas)
     var line_thickness: float = 8.0
     var line_hue: float = 0.0
 

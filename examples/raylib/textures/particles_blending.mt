@@ -16,7 +16,7 @@ struct Particle:
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - particles blending")
-    defer rl.close_window()
+    defer: rl.close_window()
 
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
@@ -41,7 +41,7 @@ function main() -> int:
     let gravity = 3.0
 
     let smoke = rl.load_texture("spark_flame.png")
-    defer rl.unload_texture(smoke)
+    defer: rl.unload_texture(smoke)
 
     var blending = int<-rl.BlendMode.BLEND_ALPHA
 
