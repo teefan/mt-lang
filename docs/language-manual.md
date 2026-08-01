@@ -1508,7 +1508,7 @@ The compiler intentionally rejects the following patterns. These are design cons
 ### 13.6 Type system restrictions
 
 - conditions must be `bool`; integers and pointers have no implicit truthy or falsy coercion
-- mixed signed and unsigned integer arithmetic requires an explicit cast
+- mixed signed and unsigned integer arithmetic promotes to the narrowest signed type that holds both ranges (`ubyte + int` is `int`, `int + uint` is `long`, `byte + ubyte` is `short`); mixing with a 64-bit unsigned type (`ulong`, `ptr_uint`) still requires an explicit cast
 - enum and flags values do not implicitly coerce to their backing integer types outside external-call boundaries
 - `enum` backing types must be integer primitives; flags members must be compile-time integer constants
 - variant arm payloads cannot use `ref[T]` in v1

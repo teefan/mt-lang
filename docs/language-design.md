@@ -794,7 +794,7 @@ unsafe:
 Binary arithmetic and numeric comparison operators may promote primitive operands to a common type locally.
 This is limited to `+ - * / % == != < <= > >=` and does not change assignment, return, or aggregate-field typing rules.
 Non-external call boundaries remain strict, but external calls may pass enum or flags values to same-width fixed-width integer parameters without an explicit cast for C ABI interop.
-Mixed signed and unsigned integers still require an explicit cast.
+Mixed signed and unsigned integer operands use the same lossless rule as assignment: they promote to the narrowest signed type that holds both full ranges — a strictly-wider signed type covers an unsigned operand (`ubyte + int` is `int`, `uint + long` is `long`), and equal-width or narrower signed operands widen to the next signed width (`int + uint` is `long`, `byte + ubyte` is `short`). Mixing with a 64-bit unsigned type (`ulong`, `ptr_uint`) has no safe signed common type and still requires an explicit cast.
 
 `char` stays outside the general numeric-promotion rules. If code wants arithmetic on a character value, cast it to an integer type first. If code wants to write bytes back into a `char` buffer, either use `char<-...` explicitly or rely on the expected `char` boundary where a known `char` target is being initialized or assigned.
 

@@ -187,9 +187,36 @@ module MilkTea
         return unless left_type.integer? && right_type.integer?
         return left_type if left_type == right_type
         return unless left_type.fixed_width_integer? && right_type.fixed_width_integer?
-        return unless left_type.signed_integer? == right_type.signed_integer?
 
-        left_type.integer_width >= right_type.integer_width ? left_type : right_type
+        # Same signedness: the wider type wins (both operands are losslessly
+        # assignable to it).
+        if left_type.signed_integer? == right_type.signed_integer?
+          return left_type.integer_width >= right_type.integer_width ? left_type : right_type
+        end
+
+        # Mixed signed/unsigned: promote to the narrowest signed type that holds
+        # both operands' full ranges, mirroring the lossless assignment rule. A
+        # strictly-wider signed type covers an unsigned operand; equal-width or
+        # wider unsigned operands widen to the next signed width. Mixing with a
+        # 64-bit unsigned type has no safe signed common type, so callers fall
+        # back to requiring an explicit cast.
+        signed_type, unsigned_type = if left_type.signed_integer?
+          [left_type, right_type]
+        else
+          [right_type, left_type]
+        end
+
+        return signed_type if signed_type.integer_width > unsigned_type.integer_width
+
+        signed_type_above_width(unsigned_type.integer_width)
+      end
+
+      def signed_type_above_width(width)
+        case width
+        when 8 then @ctx.types.fetch("short")
+        when 16 then @ctx.types.fetch("int")
+        when 32 then @ctx.types.fetch("long")
+        end
       end
 
       def wider_float_type(left_type, right_type)

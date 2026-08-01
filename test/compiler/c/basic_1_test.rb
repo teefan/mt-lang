@@ -2156,6 +2156,38 @@ function main() -> int:
     assert_match(/if \(\(float\) 3 < 3\.5f && sum > 3\.0f\)/, generated)
   end
 
+  def test_generate_c_for_mixed_signed_unsigned_integer_promotion_casts
+    source = <<~MT
+
+# module demo.mixed_int_promotion_codegen
+
+function main(a: ubyte, b: int) -> int:
+    let sum = a + b
+    return sum
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t sum = \(int32_t\) a \+ b;/, generated)
+  end
+
+  def test_generate_c_for_equal_width_mixed_signed_unsigned_integer_promotion_casts
+    source = <<~MT
+
+# module demo.mixed_int_promotion_codegen
+
+function main(a: int, b: uint) -> long:
+    let sum = a + b
+    return sum
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int64_t sum = \(int64_t\) a \+ \(int64_t\) b;/, generated)
+  end
+
   def test_generate_c_for_prefix_cast_syntax
     source = <<~MT
 

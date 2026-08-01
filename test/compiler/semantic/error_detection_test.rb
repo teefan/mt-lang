@@ -829,7 +829,7 @@ class ErrorDetectionTest < Minitest::Test
 
       function main() -> int:
           let left: int = 1
-          let right: uint = 2
+          let right: ulong = 2
           let sum = left + right
           return sum
     MT

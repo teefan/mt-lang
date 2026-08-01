@@ -1990,6 +1990,35 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_mixed_signed_unsigned_integer_operators_promote_safely
+    source = <<~MT
+      # module demo.mixed_int_promotion
+
+      function add_ubyte(left: ubyte, right: int) -> int:
+          return left + right
+
+      function add_mixed_widths(left: int, right: uint) -> long:
+          return left + right
+
+      function compare(left: int, right: uint) -> bool:
+          return left < right
+
+      function mod_ubyte(value: int, amount: ubyte) -> int:
+          return value % amount
+
+      function main() -> int:
+          return int<-(add_ubyte(1, 2) + int<-compare(1, 2) + mod_ubyte(10, 3) + int<-(add_mixed_widths(3, 4) & 0xff))
+    MT
+
+    result = check_source(source)
+
+    assert_equal "int", result.functions.fetch("add_ubyte").type.return_type.to_s
+    assert_equal "long", result.functions.fetch("add_mixed_widths").type.return_type.to_s
+    assert_equal "bool", result.functions.fetch("compare").type.return_type.to_s
+    assert_equal "int", result.functions.fetch("mod_ubyte").type.return_type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_left_biased_float_literals_against_float_operands
     source = <<~MT
       # module demo.float_literal_alignment

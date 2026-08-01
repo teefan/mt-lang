@@ -955,7 +955,7 @@ Heredoc notes:
 - Conditions must be `bool`.
 - No truthy or falsy coercion.
 - Outside external-call boundaries, enum and flags values do not implicitly coerce to their backing integer types.
-- Mixed signed and unsigned integer arithmetic requires an explicit cast.
+- Mixed signed and unsigned integer arithmetic promotes to the narrowest signed type that holds both ranges (e.g. `ubyte + int` is `int`, `int + uint` is `long`); mixing with a 64-bit unsigned type such as `ulong` or `ptr_uint` requires an explicit cast.
 - Non-widening integer conversions (narrowing, signed → unsigned) require an explicit cast. Lossless widening conversions (same signedness to wider or equal width, unsigned → wider signed) are implicit.
 - `%` requires integer-compatible operands.
 - Bitwise operators require matching integer or flags types.
