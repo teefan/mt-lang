@@ -1518,12 +1518,19 @@ module MilkTea
     def resolve_type_argument_ref(type_ref, type_params:)
       return resolve_type_ref(type_ref, type_params:) unless literal_type_argument_name_candidate?(type_ref)
 
-      resolve_type_ref(type_ref, type_params:)
-    rescue LoweringError => error
+      result = try_resolve_type_ref(type_ref, type_params:)
+      return result if result
+
       literal_type_argument = resolve_named_literal_type_argument(type_ref)
       return literal_type_argument if literal_type_argument
 
-      raise error
+      resolve_type_ref(type_ref, type_params:)
+    end
+
+    def try_resolve_type_ref(type_ref, type_params:)
+      resolve_type_ref(type_ref, type_params:)
+    rescue LoweringError
+      nil
     end
 
     def literal_type_argument_name_candidate?(type_ref)

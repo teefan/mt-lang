@@ -3,24 +3,14 @@
 module MilkTea
   module LowererScans
     def collect_structs
-      @ctx.ast.declarations.each do |decl|
-        case decl
-        when AST::WhenStmt
-          body = lower_when_chosen_body(decl)
-          body&.each { |nested| collect_struct_from_decl(nested) }
-        when AST::OpaqueDecl
-          @ctx.opaque_types[decl.name] = @ctx.types.fetch(decl.name)
-        when AST::StructDecl
-          @ctx.struct_types[decl.name] = @ctx.types.fetch(decl.name)
-          collect_nested_structs(decl)
-        when AST::UnionDecl
-          @ctx.union_types[decl.name] = @ctx.types.fetch(decl.name)
-        end
-      end
+      @ctx.ast.declarations.each { |decl| collect_one_struct_decl(decl) }
     end
 
-    def collect_struct_from_decl(decl)
+    def collect_one_struct_decl(decl)
       case decl
+      when AST::WhenStmt
+        body = lower_when_chosen_body(decl)
+        body&.each { |nested| collect_one_struct_decl(nested) }
       when AST::OpaqueDecl
         @ctx.opaque_types[decl.name] = @ctx.types.fetch(decl.name)
       when AST::StructDecl
@@ -28,10 +18,11 @@ module MilkTea
         collect_nested_structs(decl)
       when AST::UnionDecl
         @ctx.union_types[decl.name] = @ctx.types.fetch(decl.name)
-      when AST::WhenStmt
-        body = lower_when_chosen_body(decl)
-        body&.each { |nested| collect_struct_from_decl(nested) }
       end
+    end
+
+    def collect_struct_from_decl(decl)
+      collect_one_struct_decl(decl)
     end
 
     def lower_when_chosen_body(decl)

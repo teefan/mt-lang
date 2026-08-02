@@ -78,7 +78,7 @@ module MilkTea
         end
         IR::AggregateLiteral.new(type:, fields:)
       else
-        IR::IntegerLiteral.new(value: 0, type:)
+        raise LoweringError.new("unsupported const value type #{const_value.class}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
     end
 
