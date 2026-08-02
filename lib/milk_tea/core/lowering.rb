@@ -90,6 +90,22 @@ module MilkTea
     attr_accessor :bypass_sema_type_cache
     attr_reader :recorded_expr_types
 
+    include LowererScans
+    include LowererDeclarations
+    include LowererEvents
+    include LowererFunctions
+    include LowererAsync
+    include LowererBlock
+    include LowererProc
+    include LowererLoops
+    include LowererExpressions
+    include LowererCalls
+    include LowererForeignCstr
+    include LowererStrBuffer
+    include LowererResolve
+    include LowererDyn
+    include LowererUtils
+
     def initialize(program)
       @program = program
       @ctx = ModuleContext.new
@@ -358,21 +374,5 @@ module MilkTea
       ordered.concat(modules.values - ordered)
       ordered
     end
-
-    include LowererScans
-    include LowererDeclarations
-    include LowererEvents
-    include LowererFunctions
-    include LowererAsync
-    include LowererBlock
-    include LowererProc
-    include LowererLoops
-    include LowererExpressions
-    include LowererCalls
-    include LowererForeignCstr
-    include LowererStrBuffer
-    include LowererResolve
-    include LowererDyn
-    include LowererUtils
   end
 end
