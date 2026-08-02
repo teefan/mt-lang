@@ -106,6 +106,16 @@ module MilkTea
     BIN_DIGIT_BYTE = Array.new(256) { |b| b.chr.match?(/[01_]/) }.freeze
     SPACE_BYTE = " ".ord
 
+    include CharacterClasses
+    include Trivia
+    include Indentation
+    include Numbers
+    include Strings
+    include Heredocs
+    include FormatStrings
+    include Symbols
+    include Recovery
+
     def self.lex(source, path: nil, mode: :syntax_only, recovery_errors: nil)
       result = new(source, path: path, mode:, recovery_errors:).lex
       mode == :with_trivia ? result.tokens : result
@@ -169,16 +179,6 @@ module MilkTea
 
       @tokens
     end
-
-    include CharacterClasses
-    include Trivia
-    include Indentation
-    include Numbers
-    include Strings
-    include Heredocs
-    include FormatStrings
-    include Symbols
-    include Recovery
 
     def lex_line(lines, line_index, line, line_number, line_offset, has_newline:)
       tab_index = line.index("\t")
@@ -371,8 +371,6 @@ module MilkTea
       1
     end
 
-    # ── newline emission ────────────────────────────────────────────
-
     def emit_line_newline(line, line_number, line_offset, has_newline)
       newline_start = line_offset + line.bytesize
       newline_end = has_newline ? (newline_start + 1) : newline_start
@@ -392,8 +390,6 @@ module MilkTea
         )
       end
     end
-
-    # ── token construction ──────────────────────────────────────────
 
     def token(type, lexeme, literal, line, column, start_offset:, end_offset:)
       Token.new(

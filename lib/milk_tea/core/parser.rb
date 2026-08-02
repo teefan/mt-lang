@@ -155,6 +155,23 @@ module MilkTea
       next_token.nil? || %i[newline eof].include?(next_token.type)
     end
 
+    def advance
+      @current += 1 unless eof?
+      previous
+    end
+
+    def eof?
+      peek.type == :eof
+    end
+
+    def peek
+      @tokens[@current]
+    end
+
+    def previous
+      @tokens[@current - 1]
+    end
+
     def match(*types)
       return false unless types.any? { |type| check(type) }
 
@@ -217,23 +234,6 @@ module MilkTea
 
       advance
       true
-    end
-
-    def advance
-      @current += 1 unless eof?
-      previous
-    end
-
-    def eof?
-      peek.type == :eof
-    end
-
-    def peek
-      @tokens[@current]
-    end
-
-    def previous
-      @tokens[@current - 1]
     end
 
     def error(token, message)
