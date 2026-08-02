@@ -61,12 +61,6 @@ module MilkTea
         lines
       end
 
-      def variant_self_reference?(type, outer_c)
-        return false unless type.is_a?(Types::Variant) || type.is_a?(Types::VariantInstance)
-
-        named_type_c_name(type) == outer_c
-      end
-
       def emit_variant(variant_decl)
         lines = []
         outer_c = variant_decl.linkage_name

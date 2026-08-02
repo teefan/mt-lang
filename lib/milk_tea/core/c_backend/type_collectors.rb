@@ -241,21 +241,15 @@ module MilkTea
       end
 
       def collect_soa_from_statements(statements, soa_types, visited)
-        statements.each do |stmt|
-          case stmt
-          when IR::LocalDecl
-            collect_soa_type(stmt.type, soa_types, visited)
-          when IR::BlockStmt
-            collect_soa_from_statements(stmt.body, soa_types, visited)
-          when IR::IfStmt
-            collect_soa_from_statements(stmt.then_body || [], soa_types, visited)
-            collect_soa_from_statements(stmt.else_body || [], soa_types, visited)
-          when IR::WhileStmt
-            collect_soa_from_statements(stmt.body || [], soa_types, visited)
-          when IR::ForStmt
-            collect_soa_from_statements(stmt.body || [], soa_types, visited)
-          end
-        end
+        each_ir_statement_for_type_collection(statements,
+          type_collector_method: :collect_soa_type,
+          expression_walker_method: :collect_soa_type_in_expression,
+          accumulator: soa_types, visited:)
+      end
+
+      def collect_soa_type_in_expression(expression, soa_types, visited)
+        return unless expression.respond_to?(:type)
+        collect_soa_type(expression.type, soa_types, visited)
       end
 
       def collect_soa_type(type, soa_types, visited)
@@ -290,21 +284,15 @@ module MilkTea
       end
 
       def collect_simd_from_statements(statements, simd_types, visited)
-        statements.each do |stmt|
-          case stmt
-          when IR::LocalDecl
-            collect_simd_type(stmt.type, simd_types, visited)
-          when IR::BlockStmt
-            collect_simd_from_statements(stmt.body, simd_types, visited)
-          when IR::IfStmt
-            collect_simd_from_statements(stmt.then_body || [], simd_types, visited)
-            collect_simd_from_statements(stmt.else_body || [], simd_types, visited)
-          when IR::WhileStmt
-            collect_simd_from_statements(stmt.body || [], simd_types, visited)
-          when IR::ForStmt
-            collect_simd_from_statements(stmt.body || [], simd_types, visited)
-          end
-        end
+        each_ir_statement_for_type_collection(statements,
+          type_collector_method: :collect_simd_type,
+          expression_walker_method: :collect_simd_type_in_expression,
+          accumulator: simd_types, visited:)
+      end
+
+      def collect_simd_type_in_expression(expression, simd_types, visited)
+        return unless expression.respond_to?(:type)
+        collect_simd_type(expression.type, simd_types, visited)
       end
 
       def collect_simd_type(type, simd_types, visited)

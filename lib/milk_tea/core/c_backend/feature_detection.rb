@@ -342,66 +342,46 @@ module MilkTea
         function.body.any? { |statement| statement_uses_str_equality?(statement) }
       end
 
-      def statement_uses_named_call?(statement, callees)
+      def any_ir_statement?(statement, expression_pred:, **kwargs)
         case statement
         when IR::LocalDecl
-          expression_uses_named_call?(statement.value, callees)
+          statement.value && expression_pred.call(statement.value, **kwargs)
         when IR::Assignment
-          expression_uses_named_call?(statement.target, callees) || expression_uses_named_call?(statement.value, callees)
+          expression_pred.call(statement.target, **kwargs) || expression_pred.call(statement.value, **kwargs)
         when IR::BlockStmt
-          statement.body.any? { |inner| statement_uses_named_call?(inner, callees) }
+          statement.body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) }
         when IR::WhileStmt
-          expression_uses_named_call?(statement.condition, callees) || statement.body.any? { |inner| statement_uses_named_call?(inner, callees) }
+          expression_pred.call(statement.condition, **kwargs) ||
+            statement.body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) }
         when IR::ForStmt
-          statement_uses_named_call?(statement.init, callees) ||
-            expression_uses_named_call?(statement.condition, callees) ||
-            statement.body.any? { |inner| statement_uses_named_call?(inner, callees) } ||
-            statement_uses_named_call?(statement.post, callees)
+          any_ir_statement?(statement.init, expression_pred:, **kwargs) ||
+            expression_pred.call(statement.condition, **kwargs) ||
+            statement.body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) } ||
+            any_ir_statement?(statement.post, expression_pred:, **kwargs)
         when IR::IfStmt
-          expression_uses_named_call?(statement.condition, callees) ||
-            statement.then_body.any? { |inner| statement_uses_named_call?(inner, callees) } ||
-            (statement.else_body && statement.else_body.any? { |inner| statement_uses_named_call?(inner, callees) })
+          expression_pred.call(statement.condition, **kwargs) ||
+            statement.then_body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) } ||
+            (statement.else_body && statement.else_body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) })
         when IR::SwitchStmt
-          expression_uses_named_call?(statement.expression, callees) || statement.cases.any? { |switch_case| switch_case.body.any? { |inner| statement_uses_named_call?(inner, callees) } }
+          expression_pred.call(statement.expression, **kwargs) ||
+            statement.cases.any? { |switch_case| switch_case.body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) } }
         when IR::StaticAssert
-          expression_uses_named_call?(statement.condition, callees) || expression_uses_named_call?(statement.message, callees)
+          expression_pred.call(statement.condition, **kwargs) || expression_pred.call(statement.message, **kwargs)
         when IR::ReturnStmt
-          statement.value && expression_uses_named_call?(statement.value, callees)
+          statement.value && expression_pred.call(statement.value, **kwargs)
         when IR::ExpressionStmt
-          expression_uses_named_call?(statement.expression, callees)
-        end
-      end
-
-      def statement_uses_str_equality?(statement)
-        case statement
-        when IR::LocalDecl
-          expression_uses_str_equality?(statement.value)
-        when IR::Assignment
-          expression_uses_str_equality?(statement.target) || expression_uses_str_equality?(statement.value)
-        when IR::BlockStmt
-          statement.body.any? { |inner| statement_uses_str_equality?(inner) }
-        when IR::WhileStmt
-          expression_uses_str_equality?(statement.condition) || statement.body.any? { |inner| statement_uses_str_equality?(inner) }
-        when IR::ForStmt
-          statement_uses_str_equality?(statement.init) ||
-            expression_uses_str_equality?(statement.condition) ||
-            statement.body.any? { |inner| statement_uses_str_equality?(inner) } ||
-            statement_uses_str_equality?(statement.post)
-        when IR::IfStmt
-          expression_uses_str_equality?(statement.condition) ||
-            statement.then_body.any? { |inner| statement_uses_str_equality?(inner) } ||
-            (statement.else_body && statement.else_body.any? { |inner| statement_uses_str_equality?(inner) })
-        when IR::SwitchStmt
-          expression_uses_str_equality?(statement.expression) || statement.cases.any? { |switch_case| switch_case.body.any? { |inner| statement_uses_str_equality?(inner) } }
-        when IR::StaticAssert
-          expression_uses_str_equality?(statement.condition) || expression_uses_str_equality?(statement.message)
-        when IR::ReturnStmt
-          statement.value && expression_uses_str_equality?(statement.value)
-        when IR::ExpressionStmt
-          expression_uses_str_equality?(statement.expression)
+          expression_pred.call(statement.expression, **kwargs)
         else
           false
         end
+      end
+
+      def statement_uses_named_call?(statement, callees)
+        any_ir_statement?(statement, expression_pred: ->(e) { expression_uses_named_call?(e, callees) })
+      end
+
+      def statement_uses_str_equality?(statement)
+        any_ir_statement?(statement, expression_pred: ->(e) { expression_uses_str_equality?(e) })
       end
 
       def expression_uses_named_call?(expression, callees)

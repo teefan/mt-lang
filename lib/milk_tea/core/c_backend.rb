@@ -75,11 +75,27 @@ module MilkTea
 
     def emit
       lines = []
+      @cyclic_aggregate_pairs = build_cyclic_aggregate_pairs(
+        emitted_aggregate_structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_dyn_decls + collect_str_buffer_decls + collect_nullable_opt_decls +
+        emitted_aggregate_unions +
+        emitted_aggregate_variants + collect_generic_variant_decls
+      )
+
       constants = emitted_constants
-      all_struct_decls = emitted_aggregate_structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_dyn_decls + collect_str_buffer_decls + collect_nullable_opt_decls
-      all_variant_decls = emitted_aggregate_variants + collect_generic_variant_decls
-      all_decls_for_cycle = all_struct_decls + emitted_aggregate_unions + all_variant_decls
-      @cyclic_aggregate_pairs = build_cyclic_aggregate_pairs(all_decls_for_cycle)
+
+      emit_preamble(lines)
+      emit_conditional_helpers(lines)
+      emit_type_declarations(lines)
+      emit_function_forward_declarations(lines)
+      emit_globals_and_constants(lines, constants)
+      emit_per_type_helpers(lines)
+      emit_string_literal_constants_section(lines)
+      emit_function_definitions(lines)
+
+      lines.join("\n").rstrip + "\n"
+    end
+
+    def emit_preamble(lines)
       headers = @program.includes.map(&:header)
       if headers.include?("\"fs_support.h\"") || headers.include?("\"tls_support.h\"") || uses_parallel_for_helper? || uses_spawn_all_helper? || uses_detach_helper?
         lines << "#ifndef _GNU_SOURCE"
@@ -103,70 +119,61 @@ module MilkTea
         lines << "#include #{header}"
       end
       lines << ""
+    end
 
+    def emit_conditional_helpers(lines)
       if uses_string_view?
         lines.concat(emit_string_type)
         lines << ""
       end
-
       if uses_vector_math_types?
         lines.concat(emit_vector_math_types)
         lines << ""
       end
-
       if uses_fatal_helper?
         lines.concat(emit_fatal_helper)
         lines << ""
       end
-
       if uses_format_helpers?
         lines.concat(emit_format_helpers)
         lines << ""
       end
-
       if uses_fmt_builder?
         lines.concat(emit_fmt_builder_helpers)
         lines << ""
       end
-
       if uses_str_equality_helper?
         lines.concat(emit_str_equality_helper)
         lines << ""
       end
-
       if uses_text_buffer_helpers?
         lines.concat(emit_text_buffer_helpers)
         lines << ""
       end
-
       if uses_async_memory_helpers?
         lines.concat(emit_async_memory_helpers)
         lines << ""
       end
-
       if uses_parallel_for_helper?
         lines.concat(emit_parallel_for_helper)
         lines << ""
       end
-
       if uses_spawn_all_helper?
         lines.concat(emit_spawn_all_helper)
         lines << ""
       end
-
       if uses_detach_helper?
         lines.concat(emit_detach_helpers)
         lines << ""
       end
+    end
 
-      opaque_decls = @program.opaques
-      aggregate_decls = sort_aggregate_decls(
-        all_struct_decls,
-        emitted_aggregate_unions,
-        all_variant_decls,
-      )
+    def emit_type_declarations(lines)
+      all_struct_decls = emitted_aggregate_structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_dyn_decls + collect_str_buffer_decls + collect_nullable_opt_decls
+      all_variant_decls = emitted_aggregate_variants + collect_generic_variant_decls
+      aggregate_decls = sort_aggregate_decls(all_struct_decls, emitted_aggregate_unions, all_variant_decls)
 
-      forward_declarations = emit_forward_declarations(opaque_decls, aggregate_decls)
+      forward_declarations = emit_forward_declarations(@program.opaques, aggregate_decls)
       unless forward_declarations.empty?
         lines.concat(forward_declarations)
         lines << ""
@@ -236,13 +243,17 @@ module MilkTea
         lines.concat(emit_variant_equality_helpers)
         lines << ""
       end
+    end
 
+    def emit_function_forward_declarations(lines)
       function_declarations = emit_function_declarations(emitted_functions)
       unless function_declarations.empty?
         lines.concat(function_declarations)
         lines << ""
       end
+    end
 
+    def emit_globals_and_constants(lines, constants)
       constants.each do |constant|
         @current_line = constant.line if constant.line
         @source_path ||= constant.path if constant.path
@@ -262,51 +273,50 @@ module MilkTea
         lines << emit_static_assert(statement)
       end
       lines << "" unless @program.static_asserts.empty?
+    end
 
-      reinterpret_helpers = collect_reinterpret_helpers
-      reinterpret_helpers.each do |helper|
+    def emit_per_type_helpers(lines)
+      collect_reinterpret_helpers.each do |helper|
         lines.concat(emit_reinterpret_helper(helper))
         lines << ""
       end
 
-      checked_array_index_types = collect_checked_array_index_types
-      checked_array_index_types.each do |type|
+      collect_checked_array_index_types.each do |type|
         lines.concat(emit_checked_array_index_helper(type))
         lines << ""
       end
 
-      checked_span_index_types = collect_checked_span_index_types
-      checked_span_index_types.each do |type|
+      collect_checked_span_index_types.each do |type|
         lines.concat(emit_checked_span_index_helper(type))
         lines << ""
       end
 
-      nullable_array_index_types = collect_checked_array_index_types(nullable_only: true)
-      nullable_array_index_types.each do |type|
+      collect_checked_array_index_types(nullable_only: true).each do |type|
         lines.concat(emit_nullable_array_index_helper(type))
         lines << ""
       end
 
-      nullable_span_index_types = collect_checked_span_index_types(nullable_only: true)
-      nullable_span_index_types.each do |type|
+      collect_checked_span_index_types(nullable_only: true).each do |type|
         lines.concat(emit_nullable_span_index_helper(type))
         lines << ""
       end
+    end
 
+    def emit_string_literal_constants_section(lines)
       str_literals = collect_str_literals
-      unless str_literals.empty?
-        @str_literal_map = {}
-        str_literals.each_with_index { |value, i| @str_literal_map[value] = str_literal_name(i) }
-        lines.concat(emit_str_literal_constants(str_literals))
-        lines << ""
-      end
+      return if str_literals.empty?
 
+      @str_literal_map = {}
+      str_literals.each_with_index { |value, i| @str_literal_map[value] = str_literal_name(i) }
+      lines.concat(emit_str_literal_constants(str_literals))
+      lines << ""
+    end
+
+    def emit_function_definitions(lines)
       emitted_functions.each do |function|
         lines.concat(emit_function(function))
         lines << ""
       end
-
-      lines.join("\n").rstrip + "\n"
     end
   end
 end

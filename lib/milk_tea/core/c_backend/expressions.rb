@@ -331,11 +331,10 @@ module MilkTea
       end
 
       def emit_cast_operand(expression)
-        case expression
-        when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::ZeroInit, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex, IR::Call, IR::AggregateLiteral, IR::ArrayLiteral, IR::ReinterpretExpr, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr, IR::AddressOf, IR::Cast, IR::Unary
-          emit_expression(expression)
-        else
+        if expression.is_a?(IR::Binary) || expression.is_a?(IR::Conditional)
           "(#{emit_expression(expression)})"
+        else
+          emit_expression(expression)
         end
       end
 
@@ -425,33 +424,45 @@ module MilkTea
 
       def emit_variant_field_initializer(type, arm_name, field)
         field_type = type.arm(arm_name).fetch(field.name)
+        outer_c = named_type_c_name(type)
+
         if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !c_backend_pointer_like_type?(field_type.base)
           emit_nullable_some_initializer(field_type, field.value)
         elsif field.value.is_a?(IR::AddressOf) && !field_type.is_a?(Types::Nullable)
-          c_type_name = named_type_c_name(field_type)
-          inner = field.value.expression
-          "((#{c_type_name}*)memcpy(malloc(sizeof(#{c_type_name})), &(#{emit_expression(inner)}), sizeof(#{c_type_name})))"
-        elsif aggregate_field_creates_cycle?(field_type, named_type_c_name(type)) &&
-              array_type?(field_type)
-          elem_c_name = c_type(array_element_type(field_type))
-          elem_count = array_length(field_type)
-          elements = field.value.is_a?(IR::ArrayLiteral) ? field.value.elements.map { |e| emit_initializer(e) }.join(", ") : ""
-          "((#{elem_c_name}*)memcpy(malloc(#{elem_count} * sizeof(#{elem_c_name})), &(#{elem_c_name}[#{elem_count}]){ #{elements} }, #{elem_count} * sizeof(#{elem_c_name})))"
-        elsif aggregate_field_creates_cycle?(field_type, named_type_c_name(type)) &&
-              !field_type.is_a?(Types::GenericInstance)
-          field_c_name = named_type_c_name(field_type)
-          init = emit_initializer(field.value)
-          source_expr = if init.start_with?("{")
-            "&(#{c_type(field_type)})#{init}"
-          else
-            "&(#{init})"
-          end
-          "((#{field_c_name}*)memcpy(malloc(sizeof(#{field_c_name})), #{source_expr}, sizeof(#{field_c_name})))"
+          emit_addressof_field_initializer(field_type, field.value)
+        elsif aggregate_field_creates_cycle?(field_type, outer_c) && array_type?(field_type)
+          emit_cyclic_array_initializer(field_type, field.value)
+        elsif aggregate_field_creates_cycle?(field_type, outer_c) && !field_type.is_a?(Types::GenericInstance)
+          emit_cyclic_struct_initializer(field_type, field.value)
         elsif void_storage_field?(field_type)
           emit_void_field_initializer(field.value)
         else
           emit_initializer(field.value)
         end
+      end
+
+      def emit_addressof_field_initializer(field_type, value)
+        c_type_name = named_type_c_name(field_type)
+        inner = value.expression
+        "((#{c_type_name}*)memcpy(malloc(sizeof(#{c_type_name})), &(#{emit_expression(inner)}), sizeof(#{c_type_name})))"
+      end
+
+      def emit_cyclic_array_initializer(field_type, value)
+        elem_c_name = c_type(array_element_type(field_type))
+        elem_count = array_length(field_type)
+        elements = value.is_a?(IR::ArrayLiteral) ? value.elements.map { |e| emit_initializer(e) }.join(", ") : ""
+        "((#{elem_c_name}*)memcpy(malloc(#{elem_count} * sizeof(#{elem_c_name})), &(#{elem_c_name}[#{elem_count}]){ #{elements} }, #{elem_count} * sizeof(#{elem_c_name})))"
+      end
+
+      def emit_cyclic_struct_initializer(field_type, value)
+        field_c_name = named_type_c_name(field_type)
+        init = emit_initializer(value)
+        source_expr = if init.start_with?("{")
+          "&(#{c_type(field_type)})#{init}"
+        else
+          "&(#{init})"
+        end
+        "((#{field_c_name}*)memcpy(malloc(sizeof(#{field_c_name})), #{source_expr}, sizeof(#{field_c_name})))"
       end
 
       def emit_void_field_initializer(expression)
