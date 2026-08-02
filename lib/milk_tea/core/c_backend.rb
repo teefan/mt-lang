@@ -38,6 +38,20 @@ module MilkTea
     # scanning a 600 KB source file) never trigger a false positive, yet low
     # enough that a genuinely infinite loop fires a clear fatal within ~1 s.
     LOOP_GUARD_MAX_ITERATIONS = 50_000_000
+    EQUALITY_OPERATORS = ["==", "!="].freeze
+
+    include AggregateUtils
+    include TypeSystem
+    include Reachability
+    include FeatureDetection
+    include TypeCollectors
+    include Statements
+    include ControlFlowEmission
+    include RuntimeHelpers
+    include FormatHelpers
+    include TypeDeclaration
+    include Expressions
+    include Reinterpret
 
     def self.emit(program, emit_line_directives: true, debug_guards: false)
       new(program, emit_line_directives:, debug_guards:).emit
@@ -294,20 +308,5 @@ module MilkTea
 
       lines.join("\n").rstrip + "\n"
     end
-
-    EQUALITY_OPERATORS = ["==", "!="].freeze
-
-    include AggregateUtils
-    include TypeSystem
-    include Reachability
-    include FeatureDetection
-    include TypeCollectors
-    include Statements
-    include ControlFlowEmission
-    include RuntimeHelpers
-    include FormatHelpers
-    include TypeDeclaration
-    include Expressions
-    include Reinterpret
   end
 end
