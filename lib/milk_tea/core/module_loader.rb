@@ -317,21 +317,49 @@ module MilkTea
     end
 
     def imported_modules_for_ast(ast, importer_path: nil)
+      resolve_imports_for_ast(ast, importer_path:, collecting: false)
+    end
+
+    def imported_modules_for_ast_collecting_errors(ast, importer_path: nil)
+      resolve_imports_for_ast(ast, importer_path:, collecting: true)
+    end
+
+    def resolve_imports_for_ast(ast, importer_path:, collecting: false)
       modules = {}
+      errors = []
 
       ast.imports.each do |import|
-        import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
+        begin
+          import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
 
-        if @forward_bindings.key?(import_path)
-          modules[import.path.to_s] = @forward_bindings[import_path]
-        else
-          import_analysis = check_path(import_path)
-          modules[import.path.to_s] = @binder.module_binding(import_analysis)
+          if @forward_bindings.key?(import_path)
+            modules[import.path.to_s] = @forward_bindings[import_path]
+          else
+            import_analysis = collecting ? check_path_collecting_errors(import_path) : check_path(import_path)
+            modules[import.path.to_s] = @binder.module_binding(import_analysis)
+          end
+        rescue ModuleLoadError, PackageLockError, SemanticError => e
+          raise unless collecting
+          errors << ImportResolutionError.new(import:, error: e)
         end
       end
 
-      @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: false)
-      @prelude_installer.install_prelude_modules!(ast, modules, importer_path:, collecting_errors: false)
+      begin
+        @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: collecting)
+      rescue ModuleLoadError, PackageLockError => e
+        raise unless collecting
+        errors << ImportResolutionError.new(import: nil, error: e)
+      end
+
+      begin
+        @prelude_installer.install_prelude_modules!(ast, modules, importer_path:, collecting_errors: collecting)
+      rescue ModuleLoadError, PackageLockError => e
+        raise unless collecting
+        errors << ImportResolutionError.new(import: nil, error: e)
+      end
+
+      return ImportResolution.new(modules: modules.freeze, errors: errors.freeze) if collecting
+
       modules.freeze
     end
 
@@ -356,40 +384,6 @@ module MilkTea
       end
 
       index
-    end
-
-    def imported_modules_for_ast_collecting_errors(ast, importer_path: nil)
-      modules = {}
-      errors = []
-
-      ast.imports.each do |import|
-        begin
-          import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
-
-          if @forward_bindings.key?(import_path)
-            modules[import.path.to_s] = @forward_bindings[import_path]
-          else
-            import_analysis = check_path_collecting_errors(import_path)
-            modules[import.path.to_s] = @binder.module_binding(import_analysis)
-          end
-        rescue ModuleLoadError, PackageLockError, SemanticError => e
-          errors << ImportResolutionError.new(import:, error: e)
-        end
-      end
-
-      begin
-        @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: true)
-      rescue ModuleLoadError, PackageLockError => e
-        errors << ImportResolutionError.new(import: nil, error: e)
-      end
-
-      begin
-        @prelude_installer.install_prelude_modules!(ast, modules, importer_path:, collecting_errors: true)
-      rescue ModuleLoadError, PackageLockError => e
-        errors << ImportResolutionError.new(import: nil, error: e)
-      end
-
-      ImportResolution.new(modules: modules.freeze, errors: errors.freeze)
     end
 
     # Errors collected per analyzed import path during collecting-mode checks.
@@ -543,6 +537,8 @@ module MilkTea
           types[decl.name] = Types::Flags.new(decl.name, module_name:)
         when AST::OpaqueDecl
           types[decl.name] = Types::Opaque.new(decl.name, module_name:, external: false)
+        when AST::UnionDecl
+          types[decl.name] = Types::Union.new(decl.name, module_name:)
         end
       end
 

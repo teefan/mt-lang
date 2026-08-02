@@ -252,75 +252,7 @@ module MilkTea
             resolve_member_access: ->(ma_expr) {
               @checker.evaluate_compile_time_const_value(ma_expr, scopes:)
             },
-            resolve_call: ->(call_expr) {
-              if call_expr.callee.is_a?(AST::Identifier)
-                func = @checker.top_level_function(call_expr.callee.name)
-                if func&.ast&.respond_to?(:const) && func.ast.const
-                  begin
-                    initial_vars = {}
-                    func.ast.params.each_with_index do |param, idx|
-                      return nil if idx >= call_expr.arguments.length
-
-                      arg_expr = call_expr.arguments[idx].value
-                      arg_value = case arg_expr
-                      when AST::Identifier
-                        @variables[arg_expr.name] || @checker.evaluate_compile_time_const_value(arg_expr, scopes:)
-                      else
-                        CompileTime.evaluate(
-                          arg_expr,
-                          resolve_identifier: ->(id) { @variables[id.name] || @checker.evaluate_compile_time_const_value(id, scopes:) },
-                          resolve_member_access: ->(ma) { @checker.evaluate_compile_time_const_value(ma, scopes:) },
-                          resolve_type_ref: nil,
-                          resolve_call: nil,
-                        )
-                      end
-                      return nil unless arg_value
-
-                      initial_vars[param.name] = arg_value
-                    end
-                    ctx = CompileTime::BlockContext.new(@checker, initial_variables: initial_vars)
-                    next ctx.evaluate_block(func.ast.body, scopes:)
-                  rescue CompileTime::ReturnValue => e
-                    next e.value
-                  end
-                end
-              end
-
-              types = if @checker.respond_to?(:types)
-                @checker.types
-              else
-                @checker.instance_variable_get(:@ctx).types
-              end
-              callee_name = if call_expr.callee.is_a?(AST::Specialization) && call_expr.callee.callee.respond_to?(:name)
-                call_expr.callee.callee.name
-              elsif call_expr.callee.respond_to?(:name)
-                call_expr.callee.name
-              end
-              if callee_name && (type = types[callee_name]) && type.is_a?(Types::Struct)
-                fields = {}
-                call_expr.arguments.each do |argument|
-                  val = evaluate_expression(argument.value, scopes:)
-                  return nil unless val
-                  fields[argument.name] = val
-                end
-                next fields
-              end
-
-              if call_expr.callee.is_a?(AST::Specialization) && @checker.respond_to?(:resolve_type_expression)
-                resolved = @checker.resolve_type_expression(call_expr.callee)
-                if resolved && @checker.respond_to?(:array_type?) && @checker.array_type?(resolved)
-                  values = []
-                  call_expr.arguments.each do |argument|
-                    val = evaluate_expression(argument.value, scopes:)
-                    return nil unless val
-                    values << val
-                  end
-                  next values
-                end
-              end
-
-              @checker.evaluate_compile_time_const_value(call_expr, scopes:)
-            },
+            resolve_call: ->(call_expr) { resolve_compile_time_call(call_expr, scopes:) },
           )
         end
       end
@@ -435,13 +367,108 @@ module MilkTea
 
         nil
       end
+
+      def resolve_compile_time_call(call_expr, scopes:)
+        result = try_const_function_call(call_expr, scopes:)
+        return result if result
+
+        result = try_struct_constructor_call(call_expr, scopes:)
+        return result if result
+
+        result = try_array_constructor_call(call_expr, scopes:)
+        return result if result
+
+        @checker.evaluate_compile_time_const_value(call_expr, scopes:)
+      end
+
+      def try_const_function_call(call_expr, scopes:)
+        return unless call_expr.callee.is_a?(AST::Identifier)
+
+        func = @checker.top_level_function(call_expr.callee.name)
+        return unless func&.ast&.respond_to?(:const) && func.ast.const
+
+        begin
+          initial_vars = {}
+          func.ast.params.each_with_index do |param, idx|
+            return nil if idx >= call_expr.arguments.length
+
+            arg_expr = call_expr.arguments[idx].value
+            arg_value = case arg_expr
+            when AST::Identifier
+              @variables[arg_expr.name] || @checker.evaluate_compile_time_const_value(arg_expr, scopes:)
+            else
+              CompileTime.evaluate(
+                arg_expr,
+                resolve_identifier: ->(id) { @variables[id.name] || @checker.evaluate_compile_time_const_value(id, scopes:) },
+                resolve_member_access: ->(ma) { @checker.evaluate_compile_time_const_value(ma, scopes:) },
+                resolve_type_ref: nil,
+                resolve_call: nil,
+              )
+            end
+            return nil unless arg_value
+
+            initial_vars[param.name] = arg_value
+          end
+          ctx = BlockContext.new(@checker, initial_variables: initial_vars)
+          ctx.evaluate_block(func.ast.body, scopes:)
+        rescue ReturnValue => e
+          e.value
+        end
+      end
+
+      def try_struct_constructor_call(call_expr, scopes:)
+        types = if @checker.respond_to?(:types)
+          @checker.types
+        else
+          @checker.instance_variable_get(:@ctx).types
+        end
+        callee_name = if call_expr.callee.is_a?(AST::Specialization) && call_expr.callee.callee.respond_to?(:name)
+          call_expr.callee.callee.name
+        elsif call_expr.callee.respond_to?(:name)
+          call_expr.callee.name
+        end
+        return unless callee_name
+
+        type = types[callee_name]
+        return unless type.is_a?(Types::Struct)
+
+        fields = {}
+        call_expr.arguments.each do |argument|
+          val = evaluate_expression(argument.value, scopes:)
+          return nil unless val
+          fields[argument.name] = val
+        end
+        fields
+      end
+
+      def try_array_constructor_call(call_expr, scopes:)
+        return unless call_expr.callee.is_a?(AST::Specialization)
+        return unless @checker.respond_to?(:resolve_type_expression)
+
+        resolved = @checker.resolve_type_expression(call_expr.callee)
+        return unless resolved && @checker.respond_to?(:array_type?) && @checker.array_type?(resolved)
+
+        values = []
+        call_expr.arguments.each do |argument|
+          val = evaluate_expression(argument.value, scopes:)
+          return nil unless val
+          values << val
+        end
+        values
+      end
     end
 
     class Evaluator < ConstEval::Evaluator
 
       def resolve_layout_type(type_ref)
-        super
-      rescue SemanticError
+        result = begin
+          super
+        rescue SemanticError
+          nil
+        end
+        return result if result
+        return result if result
+
         return unless type_ref.respond_to?(:name) && type_ref.name.parts.length >= 1
 
         expression = ::MilkTea::AST.build_chain_from_parts(type_ref.name.parts)
@@ -454,7 +481,6 @@ module MilkTea
 
         nil
       end
-
 
     end
 

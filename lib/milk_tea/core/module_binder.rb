@@ -136,17 +136,16 @@ module MilkTea
       imported_interface_binding?(interface, analysis.imports)
     end
 
+    BUILTIN_EXPORTABLE_RECEIVER_TYPES = %w[
+      StringView Primitive Vector Matrix Quaternion SoA Simd Span Task Dyn
+    ].map { |n| "Types::#{n}" }.freeze
+
+    def builtin_exportable_receiver?(receiver_type)
+      BUILTIN_EXPORTABLE_RECEIVER_TYPES.any? { |name| receiver_type.class.to_s.end_with?(name.split("::").last) }
+    end
+
     def exported_method_receiver?(receiver_type, analysis, exported_types)
-      return true if receiver_type.is_a?(Types::StringView)
-      return true if receiver_type.is_a?(Types::Primitive)
-      return true if receiver_type.is_a?(Types::Vector)
-      return true if receiver_type.is_a?(Types::Matrix)
-      return true if receiver_type.is_a?(Types::Quaternion)
-      return true if receiver_type.is_a?(Types::SoA)
-      return true if receiver_type.is_a?(Types::Simd)
-      return true if receiver_type.is_a?(Types::Span)
-      return true if receiver_type.is_a?(Types::Task)
-      return true if receiver_type.is_a?(Types::Dyn)
+      return true if builtin_exportable_receiver?(receiver_type)
       return true if exported_types.value?(receiver_type)
       return true if imported_receiver_type?(receiver_type, analysis.imports)
       return exported_method_receiver?(receiver_type.base, analysis, exported_types) if receiver_type.is_a?(Types::Nullable)
