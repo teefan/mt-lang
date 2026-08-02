@@ -185,28 +185,45 @@ module MilkTea
       end
 
       def check
-        install_builtin_types
-        install_builtin_attributes
-        install_imports
-        install_prelude_types
-        declare_named_types
-        resolve_generic_type_param_constraints
-        resolve_type_aliases
-        declare_attributes
-        resolve_aggregate_fields
-        resolve_enum_members
-        resolve_variant_arms
-        collect_emit_declarations
-        declare_top_level_values
-        check_attribute_applications
-        declare_functions
-        check_interface_conformances
-        check_top_level_values
-        finalize_top_level_const_values
-        check_top_level_static_asserts
-        check_functions
+        @completed_phases = Set.new
+
+        run_phase(:install_builtin_types)
+        run_phase(:install_builtin_attributes)
+        run_phase(:install_imports)
+        run_phase(:install_prelude_types, requires: [:install_imports])
+        run_phase(:declare_named_types, requires: [:install_builtin_types, :install_imports, :install_prelude_types])
+        run_phase(:resolve_generic_type_param_constraints, requires: [:declare_named_types])
+        run_phase(:resolve_type_aliases, requires: [:declare_named_types])
+        run_phase(:declare_attributes)
+        run_phase(:resolve_aggregate_fields, requires: [:resolve_type_aliases, :declare_named_types])
+        run_phase(:resolve_enum_members, requires: [:declare_named_types])
+        run_phase(:resolve_variant_arms, requires: [:declare_named_types])
+        run_phase(:collect_emit_declarations)
+        run_phase(:declare_top_level_values, requires: [:resolve_aggregate_fields, :resolve_type_aliases])
+        run_phase(:check_attribute_applications, requires: [:declare_attributes])
+        run_phase(:declare_functions, requires: [:resolve_aggregate_fields, :resolve_enum_members, :resolve_variant_arms])
+        run_phase(:check_interface_conformances, requires: [:declare_functions, :resolve_aggregate_fields])
+        run_phase(:check_top_level_values, requires: [:declare_top_level_values])
+        run_phase(:finalize_top_level_const_values, requires: [:check_top_level_values])
+        run_phase(:check_top_level_static_asserts, requires: [:finalize_top_level_const_values])
+        run_phase(:check_functions, requires: [:declare_functions, :resolve_aggregate_fields, :check_interface_conformances])
 
         build_analysis
+      end
+
+      def run_phase(name, requires: [])
+        requires.each do |required|
+          unless @completed_phases&.include?(required)
+            raise "BUG: phase #{required} must run before #{name} — check phase ordering"
+          end
+        end
+        send(name)
+      ensure
+        @completed_phases << name if @completed_phases
+      end
+
+      def run_collecting_phase(name, requires: [])
+        catch_structural { run_phase(name, requires:) }
       end
 
       def collect_emit_declarations
@@ -274,23 +291,24 @@ module MilkTea
       def check_collecting_errors
         @collecting_errors = true
         @structural_errors = []
+        @completed_phases = Set.new
 
-        catch_structural { install_builtin_types }
-        catch_structural { install_builtin_attributes }
-        catch_structural { install_imports }
-        catch_structural { install_prelude_types }
-        catch_structural { declare_named_types }
-        catch_structural { resolve_generic_type_param_constraints }
-        catch_structural { resolve_type_aliases }
-        catch_structural { declare_attributes }
-        catch_structural { resolve_aggregate_fields }
-        catch_structural { resolve_enum_members }
-        catch_structural { resolve_variant_arms }
-        catch_structural { collect_emit_declarations }
-        catch_structural { declare_top_level_values }
-        catch_structural { check_attribute_applications }
-        catch_structural { declare_functions }
-        catch_structural { check_interface_conformances }
+        run_collecting_phase(:install_builtin_types)
+        run_collecting_phase(:install_builtin_attributes)
+        run_collecting_phase(:install_imports)
+        run_collecting_phase(:install_prelude_types, requires: [:install_imports])
+        run_collecting_phase(:declare_named_types, requires: [:install_builtin_types, :install_imports, :install_prelude_types])
+        run_collecting_phase(:resolve_generic_type_param_constraints, requires: [:declare_named_types])
+        run_collecting_phase(:resolve_type_aliases, requires: [:declare_named_types])
+        run_collecting_phase(:declare_attributes)
+        run_collecting_phase(:resolve_aggregate_fields, requires: [:resolve_type_aliases, :declare_named_types])
+        run_collecting_phase(:resolve_enum_members, requires: [:declare_named_types])
+        run_collecting_phase(:resolve_variant_arms, requires: [:declare_named_types])
+        run_collecting_phase(:collect_emit_declarations)
+        run_collecting_phase(:declare_top_level_values, requires: [:resolve_aggregate_fields, :resolve_type_aliases])
+        run_collecting_phase(:check_attribute_applications, requires: [:declare_attributes])
+        run_collecting_phase(:declare_functions, requires: [:resolve_aggregate_fields, :resolve_enum_members, :resolve_variant_arms])
+        run_collecting_phase(:check_interface_conformances, requires: [:declare_functions, :resolve_aggregate_fields])
 
         errors = @structural_errors.dup
 

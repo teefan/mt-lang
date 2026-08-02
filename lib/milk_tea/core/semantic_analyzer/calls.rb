@@ -645,22 +645,13 @@ module MilkTea
         )
       end
 
-      def event_method_kind(receiver_type, name)
-        return unless event_type?(receiver_type)
+      def specialized_receiver_method_kind(receiver_type, name)
+        SPECIALIZED_RECEIVERS.each_value do |spec|
+          next unless send(spec[:predicate], receiver_type)
 
-        EVENT_METHOD_KINDS[name]
-      end
-
-      def atomic_method_kind(receiver_type, name)
-        return unless atomic_type?(receiver_type)
-
-        ATOMIC_METHOD_KINDS[name]
-      end
-
-      def simd_method_kind(receiver_type, name)
-        return unless simd_type?(receiver_type)
-
-        SIMD_METHOD_KINDS[name]
+          return spec[:kinds][name]
+        end
+        nil
       end
 
       def check_atomic_method_call(kind, receiver_type, receiver, arguments, scopes:)
@@ -770,12 +761,6 @@ module MilkTea
         return unless char_array_text_type?(receiver_type)
 
         name == "as_str" || name == "as_cstr"
-      end
-
-      def str_buffer_method_kind(receiver_type, name)
-        return unless str_buffer_type?(receiver_type)
-
-        STR_BUFFER_METHOD_KINDS[name]
       end
 
       def str_buffer_method_name(kind)
@@ -1032,40 +1017,48 @@ module MilkTea
           end
         end
 
-        fill_parameter_defaults!(by_position, params, binding, context_name)
+        fill_parameter_defaults!(by_position, params, binding)
 
         by_position.reject(&:nil?)
       end
 
-      def fill_parameter_defaults!(by_position, params, binding, context_name)
+      def fill_parameter_defaults!(by_position, params, binding)
         return unless binding
 
         ast_params = binding.ast.params
-        return unless ast_params.any? { |p| p.respond_to?(:default_value) && p.default_value }
+        return unless ast_params.any? { |p| param_has_default?(p) }
 
         params.each_with_index do |param, idx|
           next unless by_position[idx].nil?
           next unless idx < ast_params.length
 
           ast_param = ast_params[idx]
-          next unless ast_param.respond_to?(:default_value) && ast_param.default_value
+          next unless param_has_default?(ast_param)
 
-          by_position[idx] = AST::Argument.new(name: nil, value: ast_param.default_value)
+          by_position[idx] = default_arg_for(ast_param)
         end
       end
 
       def fill_positional_defaults!(arguments, binding)
-        return unless binding.ast.params.any? { |p| p.respond_to?(:default_value) && p.default_value }
+        return unless binding.ast.params.any? { |p| param_has_default?(p) }
 
         ast_params = binding.ast.params
         while arguments.length < ast_params.length
           ast_param = ast_params[arguments.length]
-          if ast_param.respond_to?(:default_value) && ast_param.default_value
-            arguments << AST::Argument.new(name: nil, value: ast_param.default_value)
+          if param_has_default?(ast_param)
+            arguments << default_arg_for(ast_param)
           else
             break
           end
         end
+      end
+
+      def param_has_default?(ast_param)
+        ast_param.respond_to?(:default_value) && ast_param.default_value
+      end
+
+      def default_arg_for(ast_param)
+        AST::Argument.new(name: nil, value: ast_param.default_value)
       end
 
       def count_required_params(binding)

@@ -211,88 +211,25 @@ module MilkTea
 
       def resolve_non_nullable_type(type_ref, type_params: {}, type_param_constraints: {}, nested_types: nil)
         if type_ref.is_a?(AST::FunctionType)
-          params = type_ref.params.map do |param|
-            Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
-          end
-          return Types::Registry.function(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
+          return resolve_function_type_ref(type_ref, type_params:, type_param_constraints:)
         end
 
         if type_ref.is_a?(AST::ProcType)
-          params = type_ref.params.map do |param|
-            Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
-          end
-          return Types::Registry.proc(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
+          return resolve_proc_type_ref(type_ref, type_params:, type_param_constraints:)
         end
 
         if type_ref.is_a?(AST::DynType)
-          interface = resolve_interface_ref(type_ref.interface)
-          raise_sema_error("generic interface #{interface.name} requires type arguments") if interface.is_a?(GenericInterfaceBinding)
-          type_arguments = interface.type_arguments || []
-          type = Types::Dyn.new(interface, type_arguments)
-          type = Types::Registry.nullable(type) if type_ref.nullable
-          return type
+          return resolve_dyn_type_ref(type_ref)
         end
 
         if type_ref.is_a?(AST::TupleType)
-          names = []
-          element_types = []
-          type_ref.element_types.each do |et|
-            if et.is_a?(AST::Argument)
-              names << et.name
-              element_types << resolve_type_ref(et.value, type_params:, type_param_constraints:)
-            else
-              names << nil
-              element_types << resolve_type_ref(et, type_params:, type_param_constraints:)
-            end
-          end
-          has_named = names.any?
-          return Types::Registry.tuple(element_types, field_names: has_named ? names : nil)
+          return resolve_tuple_type_ref(type_ref, type_params:, type_param_constraints:)
         end
 
         parts = type_ref.name.parts
 
         if type_ref.arguments.any?
-          name = parts.join(".")
-          arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:, type_param_constraints:) }
-
-          if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
-            raise_sema_error("ref types cannot be nested inside #{name}", type_ref)
-          end
-
-          if name == "Task"
-            validate_generic_type!(name, arguments)
-            return Types::Registry.task(arguments[0])
-          end
-
-          if (generic_type = resolve_named_generic_type(parts))
-            begin
-              validate_generic_type_param_constraints!(generic_type, arguments, context: "type #{generic_type}", available_type_param_constraints: type_param_constraints)
-              return generic_type.instantiate(arguments)
-            rescue ArgumentError => error
-              raise_sema_error(error.message)
-            end
-          end
-
-          # Handle types with lifetime params only (no type params)
-          if arguments.all? { |a| a.is_a?(Types::LifetimeRef) }
-            type = @ctx.types[name]
-            if type.is_a?(Types::Struct) && type.lifetime_params&.any?
-              lifetime_args = arguments.select { |a| a.is_a?(Types::LifetimeRef) }.map(&:name)
-              if lifetime_args.to_set == type.lifetime_params.to_set
-                return type
-              end
-            end
-          end
-
-          validate_generic_type!(name, arguments)
-          return Types::Registry.span(arguments.first) if name == "span"
-
-          return Types::Registry.soa(arguments[0], count: arguments[1].value) if name == "SoA"
-
-          return Types::Registry.simd(arguments[0], lane_count: arguments[1].value) if name == "simd"
-
-          arguments = [type_ref.lifetime] + arguments if name == "ref" && type_ref.lifetime
-          return Types::Registry.generic_instance(name, arguments)
+          return resolve_generic_instance_type_ref(type_ref, parts, type_params:, type_param_constraints:)
         end
 
         if parts.length == 1 && type_ref.lifetime
@@ -300,34 +237,122 @@ module MilkTea
         end
 
         if parts.length == 1
-          return type_params.fetch(parts.first) if type_params.key?(parts.first)
+          return resolve_single_part_type_ref(type_ref, parts.first, nested_types:, type_params:)
+        end
 
-          if nested_types && (type = nested_types[parts.first])
-            return type
+        resolve_multi_part_type_ref(type_ref, parts)
+      end
+
+      def resolve_function_type_ref(type_ref, type_params:, type_param_constraints:)
+        params = type_ref.params.map do |param|
+          Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
+        end
+        Types::Registry.function(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
+      end
+
+      def resolve_proc_type_ref(type_ref, type_params:, type_param_constraints:)
+        params = type_ref.params.map do |param|
+          Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
+        end
+        Types::Registry.proc(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
+      end
+
+      def resolve_dyn_type_ref(type_ref)
+        interface = resolve_interface_ref(type_ref.interface)
+        raise_sema_error("generic interface #{interface.name} requires type arguments") if interface.is_a?(GenericInterfaceBinding)
+        type_arguments = interface.type_arguments || []
+        type = Types::Dyn.new(interface, type_arguments)
+        type = Types::Registry.nullable(type) if type_ref.nullable
+        type
+      end
+
+      def resolve_tuple_type_ref(type_ref, type_params:, type_param_constraints:)
+        names = []
+        element_types = []
+        type_ref.element_types.each do |et|
+          if et.is_a?(AST::Argument)
+            names << et.name
+            element_types << resolve_type_ref(et.value, type_params:, type_param_constraints:)
+          else
+            names << nil
+            element_types << resolve_type_ref(et, type_params:, type_param_constraints:)
           end
+        end
+        has_named = names.any?
+        Types::Registry.tuple(element_types, field_names: has_named ? names : nil)
+      end
 
-          if parts.first.start_with?("@")
-            raise_sema_error("unknown lifetime #{parts.first}", type_ref)
+      def resolve_generic_instance_type_ref(type_ref, parts, type_params:, type_param_constraints:)
+        name = parts.join(".")
+        arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:, type_param_constraints:) }
+
+        if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
+          raise_sema_error("ref types cannot be nested inside #{name}", type_ref)
+        end
+
+        if name == "Task"
+          validate_generic_type!(name, arguments)
+          return Types::Registry.task(arguments[0])
+        end
+
+        if (generic_type = resolve_named_generic_type(parts))
+          begin
+            validate_generic_type_param_constraints!(generic_type, arguments, context: "type #{generic_type}", available_type_param_constraints: type_param_constraints)
+            return generic_type.instantiate(arguments)
+          rescue ArgumentError => error
+            raise_sema_error(error.message)
           end
+        end
 
-          type = @ctx.types[parts.first]
-          unless type
-            type_names = @ctx.types.keys
-            suggestion = suggest_name(parts.first, type_names)
-            unless suggestion
-              suggestion = import_suggestion_for_type(parts.first)
+        if arguments.all? { |a| a.is_a?(Types::LifetimeRef) }
+          type = @ctx.types[name]
+          if type.is_a?(Types::Struct) && type.lifetime_params&.any?
+            lifetime_args = arguments.select { |a| a.is_a?(Types::LifetimeRef) }.map(&:name)
+            if lifetime_args.to_set == type.lifetime_params.to_set
+              return type
             end
-            raise_sema_error("unknown type #{parts.first}", type_ref, suggestion: suggestion ? "did you mean '#{suggestion}'?" : nil)
           end
-          raise_sema_error("generic type #{parts.first} requires type arguments", type_ref) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+        end
 
+        validate_generic_type!(name, arguments)
+        return Types::Registry.span(arguments.first) if name == "span"
+
+        return Types::Registry.soa(arguments[0], count: arguments[1].value) if name == "SoA"
+
+        return Types::Registry.simd(arguments[0], lane_count: arguments[1].value) if name == "simd"
+
+        arguments = [type_ref.lifetime] + arguments if name == "ref" && type_ref.lifetime
+        Types::Registry.generic_instance(name, arguments)
+      end
+
+      def resolve_single_part_type_ref(type_ref, name, nested_types:, type_params:)
+        return type_params.fetch(name) if type_params.key?(name)
+
+        if nested_types && (type = nested_types[name])
           return type
         end
 
-        if parts.length >= 2
-          type = resolve_nested_type_ref(parts)
-          return type if type
+        if name.start_with?("@")
+          raise_sema_error("unknown lifetime #{name}", type_ref)
         end
+
+        type = @ctx.types[name]
+        unless type
+          type_names = @ctx.types.keys
+          suggestion = suggest_name(name, type_names)
+          unless suggestion
+            suggestion = import_suggestion_for_type(name)
+          end
+          raise_sema_error("unknown type #{name}", type_ref, suggestion: suggestion ? "did you mean '#{suggestion}'?" : nil)
+        end
+        raise_sema_error("generic type #{name} requires type arguments", type_ref) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+
+        type
+      end
+
+      def resolve_multi_part_type_ref(type_ref, parts)
+        type = resolve_nested_type_ref(parts)
+        return type if type
 
         if parts.length == 2 && @ctx.imports.key?(parts.first)
           imported_module = @ctx.imports.fetch(parts.first)
@@ -386,12 +411,19 @@ module MilkTea
       def resolve_type_argument_ref(type_ref, type_params:, type_param_constraints:)
         return resolve_type_ref(type_ref, type_params:, type_param_constraints:) unless literal_type_argument_name_candidate?(type_ref)
 
-        resolve_type_ref(type_ref, type_params:, type_param_constraints:)
-      rescue SemanticError => error
+        result = try_resolve_type_ref(type_ref, type_params:, type_param_constraints:)
+        return result if result
+
         literal_type_argument = resolve_named_literal_type_argument(type_ref)
         return literal_type_argument if literal_type_argument
 
-        raise error
+        resolve_type_ref(type_ref, type_params:, type_param_constraints:)
+      end
+
+      def try_resolve_type_ref(type_ref, type_params:, type_param_constraints:)
+        resolve_type_ref(type_ref, type_params:, type_param_constraints:)
+      rescue SemanticError
+        nil
       end
 
       def literal_type_argument_name_candidate?(type_ref)

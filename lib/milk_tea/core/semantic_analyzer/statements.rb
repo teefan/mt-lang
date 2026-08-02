@@ -555,30 +555,32 @@ module MilkTea
         end
       end
 
+      MATCH_STMT_DISPATCH = [
+        [Types::Enum,       :each_enum_match_arm,    true],
+        [Types::Variant,    :each_variant_match_arm, true],
+        [:integer,          :each_integer_match_arm, false],
+        [Types::StringView, :each_string_match_arm,  false],
+        [Types::Tuple,      :each_tuple_match_arm,   false],
+      ].freeze
+
       def check_match_stmt(statement, scopes:, return_type:, allow_return:)
         validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
         scrutinee_type = infer_expression(statement.expression, scopes:)
-        if error_type?(scrutinee_type)
-          check_recovered_match_stmt(statement, scopes:, return_type:, allow_return:)
-        elsif scrutinee_type.is_a?(Types::Enum)
-          check_enum_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        elsif scrutinee_type.is_a?(Types::Variant)
-          check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        elsif integer_type?(scrutinee_type)
-          check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        elsif scrutinee_type.is_a?(Types::StringView)
-          check_string_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        elsif scrutinee_type.is_a?(Types::Tuple)
-          check_tuple_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        else
-          raise_sema_error("match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}")
-        end
-      end
 
-      def check_enum_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        each_enum_match_arm(statement, scrutinee_type, scopes:) do |arm, arm_scopes|
-          check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
+        if error_type?(scrutinee_type)
+          return check_recovered_match_stmt(statement, scopes:, return_type:, allow_return:)
         end
+
+        MATCH_STMT_DISPATCH.each do |type_class, arm_method, per_arm_scopes|
+          next unless type_class == :integer ? integer_type?(scrutinee_type) : scrutinee_type.is_a?(type_class)
+
+          send(arm_method, statement, scrutinee_type, scopes:) do |arm, arm_scopes|
+            check_block(arm.body, scopes: per_arm_scopes ? arm_scopes : scopes, return_type:, allow_return:)
+          end
+          return
+        end
+
+        raise_sema_error("match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}")
       end
 
       def each_enum_match_arm(statement, scrutinee_type, scopes:)
@@ -746,24 +748,6 @@ module MilkTea
         end
       end
 
-      def check_integer_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        each_integer_match_arm(statement, scrutinee_type, scopes:) do |arm|
-          check_block(arm.body, scopes:, return_type:, allow_return:)
-        end
-      end
-
-      def check_string_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        each_string_match_arm(statement, scrutinee_type, scopes:) do |arm|
-          check_block(arm.body, scopes:, return_type:, allow_return:)
-        end
-      end
-
-      def check_tuple_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        each_tuple_match_arm(statement, scrutinee_type, scopes:) do |arm|
-          check_block(arm.body, scopes:, return_type:, allow_return:)
-        end
-      end
-
       def wildcard_pattern?(expression)
         expression.is_a?(AST::Identifier) && expression.name == "_"
       end
@@ -808,12 +792,6 @@ module MilkTea
         failure_fields = type.arm("failure")
         success_fields && success_fields.length == 1 && success_fields.key?("value") &&
           failure_fields && failure_fields.length == 1 && failure_fields.key?("error")
-      end
-
-      def check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
-        each_variant_match_arm(statement, scrutinee_type, scopes:) do |arm, arm_scopes|
-          check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
-        end
       end
 
       def each_variant_match_arm(statement, scrutinee_type, scopes:)

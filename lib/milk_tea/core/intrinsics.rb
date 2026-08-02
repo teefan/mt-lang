@@ -45,6 +45,13 @@ module MilkTea
       "with" => :simd_lane_with,
     }.freeze
 
+    SPECIALIZED_RECEIVERS = {
+      "str_buffer" => { predicate: :str_buffer_type?, kinds: STR_BUFFER_METHOD_KINDS },
+      "event"      => { predicate: :event_type?,      kinds: EVENT_METHOD_KINDS },
+      "atomic"     => { predicate: :atomic_type?,     kinds: ATOMIC_METHOD_KINDS },
+      "simd"       => { predicate: :simd_type?,       kinds: SIMD_METHOD_KINDS },
+    }.freeze
+
     def type_ref_from_specialization(expression)
       case expression.callee
       when AST::Identifier

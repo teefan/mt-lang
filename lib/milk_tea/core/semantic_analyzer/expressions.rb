@@ -397,10 +397,7 @@ module MilkTea
         if char_array_removed_text_method?(method_receiver_type, expression.member)
           raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")
         end
-        if str_buffer_type?(method_receiver_type) && str_buffer_method_kind(method_receiver_type, expression.member)
-          raise_sema_error("method #{method_receiver_type}.#{expression.member} must be called")
-        end
-        if event_type?(method_receiver_type) && event_method_kind(method_receiver_type, expression.member)
+        if specialized_receiver_method_kind(method_receiver_type, expression.member)
           raise_sema_error("method #{method_receiver_type}.#{expression.member} must be called")
         end
 
@@ -1343,20 +1340,8 @@ module MilkTea
             raise_sema_error("#{method_receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")
           end
 
-          if (str_buffer_method = str_buffer_method_kind(method_receiver_type, callee.member))
-            return [str_buffer_method, method_receiver_type, callee.receiver]
-          end
-
-          if (event_method = event_method_kind(method_receiver_type, callee.member))
-            return [event_method, method_receiver_type, callee.receiver]
-          end
-
-          if (atomic_method = atomic_method_kind(method_receiver_type, callee.member))
-            return [atomic_method, method_receiver_type, callee.receiver]
-          end
-
-          if (simd_method = simd_method_kind(method_receiver_type, callee.member))
-            return [simd_method, method_receiver_type, callee.receiver]
+          if (kind = specialized_receiver_method_kind(method_receiver_type, callee.member))
+            return [kind, method_receiver_type, callee.receiver]
           end
 
           field_receiver_type = infer_field_receiver_type(callee.receiver, scopes:)
