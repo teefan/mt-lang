@@ -1,14 +1,19 @@
 # frozen_string_literal: true
 
+require_relative "resolve"
+require_relative "utils"
+require_relative "block"
+require_relative "async/normalization"
+require_relative "async/lowering"
+
 module MilkTea
   module LowererFunctions
     def lower_functions
       lowered = []
+      cursor = 0
+      declarations = @ctx.ast.declarations
 
-      changed = true
-      while changed
-        changed = false
-
+      while cursor < declarations.length
         expanded_declarations.each do |decl|
           case decl
           when AST::FunctionDef
@@ -21,7 +26,6 @@ module MilkTea
 
                 lowered << lower_function_decl(instance)
                 @artifacts.lowered_function_linkage_names[linkage_name] = true
-                changed = true
               end
             else
               linkage_name = function_binding_c_name(binding, module_name: @ctx.module_name)
@@ -37,7 +41,6 @@ module MilkTea
                   @artifacts.lowered_function_linkage_names[entrypoint.linkage_name] = true
                 end
               end
-              changed = true
             end
           when AST::ExtendingBlock
             receiver_type = resolve_extending_receiver_type(@ctx.analysis, decl.type_name)
@@ -56,7 +59,6 @@ module MilkTea
 
                   lowered << lower_function_decl(instance, receiver_type:)
                   @artifacts.lowered_function_linkage_names[linkage_name] = true
-                  changed = true
                 end
               else
                 linkage_name = function_binding_c_name(binding, module_name: @ctx.module_name, receiver_type:)
@@ -64,11 +66,12 @@ module MilkTea
 
                 lowered << lower_function_decl(binding, receiver_type:)
                 @artifacts.lowered_function_linkage_names[linkage_name] = true
-                changed = true
               end
             end
           end
         end
+
+        cursor = declarations.length
       end
 
       lowered

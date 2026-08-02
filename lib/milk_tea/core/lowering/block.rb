@@ -1,5 +1,14 @@
 # frozen_string_literal: true
 
+require_relative "expressions"
+require_relative "loops"
+require_relative "proc"
+require_relative "resolve"
+require_relative "utils"
+require_relative "foreign_cstr"
+require_relative "declarations"
+require_relative "calls"
+
 module MilkTea
   module LowererBlock
     def lower_block(statements, env:, active_defers:, return_type:, loop_flow:, allow_return: true)

@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require_relative "functions"
+require_relative "resolve"
+require_relative "utils"
+
 module MilkTea
   module LowererScans
     def collect_structs

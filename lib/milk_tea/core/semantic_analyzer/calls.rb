@@ -741,8 +741,8 @@ module MilkTea
 
         case expression
         when AST::Call
-          callable_kind, callable, _receiver = resolve_callable(expression.callee, scopes:)
-          callable_kind == :struct && callable == target_type
+          resolution = resolve_callable(expression.callee, scopes:)
+          resolution.kind == :struct && resolution.value == target_type
         when AST::Specialization
           return false unless expression.callee.is_a?(AST::Identifier)
           return false unless %w[zero default].include?(expression.callee.name)

@@ -199,8 +199,8 @@ module MilkTea
           when AST::Specialization
             if expression.callee.is_a?(AST::Identifier)
               if expression.callee.name == "zero"
-                callable_kind, callable, = resolve_callable(expression, scopes:)
-                return check_zero_call(callable, [], expected_type:) if callable_kind == :zero
+                resolution = resolve_callable(expression, scopes:)
+                return check_zero_call(resolution.value, [], expected_type:) if resolution.kind == :zero
               end
 
               if expression.callee.name == "default"
@@ -920,7 +920,10 @@ module MilkTea
       end
 
       def infer_call(expression, scopes:, expected_type: nil)
-        callable_kind, callable, receiver = resolve_callable(expression.callee, scopes:)
+        resolution = resolve_callable(expression.callee, scopes:)
+        callable_kind = resolution.kind
+        callable = resolution.value
+        receiver = resolution.receiver
         @resolved_call_kinds[@ctx.ast.node_ids[expression.callee.object_id]] = callable_kind
 
         case callable_kind
@@ -1149,7 +1152,9 @@ module MilkTea
         call = expression
         return unless call.is_a?(AST::Call)
 
-        callable_kind, callable, _receiver = resolve_callable(call.callee, scopes:)
+        resolution = resolve_callable(call.callee, scopes:)
+        callable_kind = resolution.kind
+        callable = resolution.value
         return unless callable_kind == :function
 
         callable = specialize_function_binding(
@@ -1242,6 +1247,11 @@ module MilkTea
       end
 
       def resolve_callable(callee, scopes:)
+        kind, value, receiver = resolve_callable_raw(callee, scopes:)
+        CallableResolution.new(kind:, value:, receiver:)
+      end
+
+      def resolve_callable_raw(callee, scopes:)
         case callee
         when AST::Identifier
           if (binding = lookup_value(callee.name, scopes))
@@ -1559,7 +1569,9 @@ module MilkTea
       end
 
       def resolve_callable_handle_argument(expression, scopes:)
-        callable_kind, callable, _receiver = resolve_callable(expression, scopes:)
+        resolution = resolve_callable(expression, scopes:)
+        callable_kind = resolution.kind
+        callable = resolution.value
         raise_sema_error("callable_of expects a callable declaration name") unless callable_kind == :function
 
         Types::CallableHandle.new(describe_expression(expression), callable.ast)

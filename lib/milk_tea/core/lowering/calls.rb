@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "dyn"
+
 module MilkTea
   module LowererCalls
     def lower_call(expression, env:, type:)

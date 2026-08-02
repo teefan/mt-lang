@@ -94,6 +94,7 @@ module MilkTea
     end
     ResolvedAttributeApplication = Data.define(:binding, :argument_values)
     AttributePresenceKey = Data.define(:target, :attribute_module_name, :attribute_name)
+    CallableResolution = Data.define(:kind, :value, :receiver)
     TypeParamConstraintBinding = Data.define(:interfaces) do
       def initialize(interfaces: []) = super
     end
