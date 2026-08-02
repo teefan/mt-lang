@@ -147,7 +147,7 @@ module MilkTea
 
             else_body = parse_block
           else
-            consume_end_of_statement unless block_expression?(value)
+            finish_expression_statement(value)
           end
         else
           raise error(name_token, "local declaration without initializer requires a type") unless var_type
@@ -366,7 +366,7 @@ module MilkTea
         if match_arm_expr_form?
           consume(:colon, "expected ':' after match expression arm pattern")
           value = parse_expression
-          consume_end_of_statement unless block_expression?(value)
+          finish_expression_statement(value)
           patterns.map do |pattern|
             AST::MatchExprArm.new(
               pattern:,
@@ -585,7 +585,7 @@ module MilkTea
         token = previous
         line = token.line
         value = check(:newline) ? nil : parse_expression
-        consume_end_of_statement unless block_expression?(value)
+        finish_expression_statement(value)
         AST::ReturnStmt.new(value:, line:, column: token.column, length: token.lexeme.length)
       end
 
@@ -768,10 +768,10 @@ module MilkTea
           operator = previous.lexeme
           column = previous.column
           value = parse_expression
-          consume_end_of_statement unless block_expression?(value)
+          finish_expression_statement(value)
           AST::Assignment.new(target: expression, operator:, value:, line:, column:)
         else
-          consume_end_of_statement unless block_expression?(expression)
+          finish_expression_statement(expression)
           AST::ExpressionStmt.new(expression:, line:)
         end
       end

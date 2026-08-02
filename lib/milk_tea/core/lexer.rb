@@ -279,42 +279,16 @@ module MilkTea
           break
         end
 
-        if char == "c" && heredoc_start?(line, index, cstring: true)
-          return lex_heredoc(lines, line_index, index, line_number, line_offset, cstring: true)
-        end
-
-        if char == "c" && line[index + 1] == "<" && line[index + 2] == "-" && identifier_start?(line[index + 3])
-          error = LexError.new("expected '<<-' for heredoc string; did you mean 'c<<-#{identifier_start_token(line, index + 3)}'?", line: line_number, column: index + 1, path: @path)
-          if @recovery_errors
-            @recovery_errors << error
-          else
-            raise error
+        if (char == "c" || char == "f")
+          result = dispatch_cf_prefix(char, line, index, line_number, line_offset, lines:, line_index:)
+          if result
+            if result[0] == :return
+              return result[1]
+            else
+              index = result[1]
+              next
+            end
           end
-        end
-        if char == "c" && line[index + 1] == '"'
-          result = lex_string(lines, line_index, line, index, line_number, line_offset:, cstring: true)
-          return result.consumed_lines if result.consumed_lines > 1
-
-          index = result.next_index
-          next
-        end
-
-        if char == "f" && heredoc_start?(line, index, format: true)
-          return lex_heredoc(lines, line_index, index, line_number, line_offset, cstring: false, format: true)
-        end
-
-        if char == "f" && line[index + 1] == "<" && line[index + 2] == "-" && identifier_start?(line[index + 3])
-          error = LexError.new("expected '<<-' for heredoc string; did you mean 'f<<-#{identifier_start_token(line, index + 3)}'?", line: line_number, column: index + 1, path: @path)
-          if @recovery_errors
-            @recovery_errors << error
-          else
-            raise error
-          end
-        end
-
-        if char == "f" && line[index + 1] == '"'
-          index = lex_format_string(line, index, line_number, line_offset:)
-          next
         end
 
         if char == "<" && heredoc_start?(line, index)
@@ -389,6 +363,43 @@ module MilkTea
           ),
         )
       end
+    end
+
+    def dispatch_cf_prefix(char, line, index, line_number, line_offset, lines:, line_index:)
+      return nil unless char == "c" || char == "f"
+
+      is_c = char == "c"
+      is_f = char == "f"
+
+      if heredoc_start?(line, index, cstring: is_c, format: is_f)
+        n = lex_heredoc(lines, line_index, index, line_number, line_offset, cstring: is_c, format: is_f)
+        return [:return, n]
+      end
+
+      if line[index + 1] == "<" && line[index + 2] == "-" && identifier_start?(line[index + 3])
+        error = LexError.new("expected '<<-' for heredoc string; did you mean '#{char}<<-#{identifier_start_token(line, index + 3)}'?", line: line_number, column: index + 1, path: @path)
+        if @recovery_errors
+          @recovery_errors << error
+        else
+          raise error
+        end
+        return nil
+      end
+
+      if line[index + 1] == '"'
+        if is_c
+          string_result = lex_string(lines, line_index, line, index, line_number, line_offset:, cstring: true)
+          if string_result.consumed_lines > 1
+            return [:return, string_result.consumed_lines]
+          end
+          return [:next, string_result.next_index]
+        end
+
+        new_index = lex_format_string(line, index, line_number, line_offset:)
+        return [:next, new_index]
+      end
+
+      nil
     end
 
     def token(type, lexeme, literal, line, column, start_offset:, end_offset:)

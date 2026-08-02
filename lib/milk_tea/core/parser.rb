@@ -38,6 +38,8 @@ module MilkTea
       def initialize(ast:, errors: []) = super
     end
 
+    ParseContext = Data.define(:known_type_names, :known_import_aliases, :known_generic_callable_names, :current_type_param_names)
+
     include Parse::Blocks
     include Parse::Recovery
     include Parse::Types
@@ -250,6 +252,10 @@ module MilkTea
       consume(:newline, "expected end of statement")
     end
 
+    def finish_expression_statement(value)
+      consume_end_of_statement unless block_expression?(value)
+    end
+
     def block_expression?(expression)
       expression.is_a?(AST::ProcExpr) || expression.is_a?(AST::MatchExpr) || expression.is_a?(AST::IfExpr)
     end
@@ -302,6 +308,26 @@ module MilkTea
       yield
     ensure
       @current_type_param_names = saved_names
+    end
+
+    # Returns a ParseContext snapshot of the parser state that must propagate
+    # to nested parsers (e.g. format string interpolations).  When adding
+    # parser state that must be cloned, update both this method,
+    # apply_parser_context, and the ParseContext Data class.
+    def parser_context
+      ParseContext.new(
+        known_type_names: @known_type_names.dup,
+        known_import_aliases: @known_import_aliases.dup,
+        known_generic_callable_names: @known_generic_callable_names.dup,
+        current_type_param_names: @current_type_param_names.dup,
+      )
+    end
+
+    def apply_parser_context(context)
+      @known_type_names = context.known_type_names
+      @known_import_aliases = context.known_import_aliases
+      @known_generic_callable_names = context.known_generic_callable_names
+      @current_type_param_names = context.current_type_param_names
     end
 
     def seed_known_names

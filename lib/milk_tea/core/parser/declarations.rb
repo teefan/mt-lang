@@ -18,6 +18,39 @@ module MilkTea
         AST::Import.new(path:, alias_name:, line:, column: local_column, length: local_name.length)
       end
 
+      DECL_KIND = {
+        var:        { method: :parse_var_decl,        reject_attrs: "var" },
+        type:       { method: :parse_type_alias_decl, reject_attrs: "type" },
+        union:      { method: :parse_union_decl },
+        enum:       { method: :parse_enum_decl,       enum_class: AST::EnumDecl },
+        flags:      { method: :parse_enum_decl,       enum_class: AST::FlagsDecl },
+        opaque:     { method: :parse_opaque_decl,     reject_attrs: "opaque" },
+        interface:  { method: :parse_interface_decl,  reject_attrs: "interface" },
+        event:      { method: :parse_event_decl },
+        attribute:  { method: :parse_attribute_decl,  reject_attrs: "attribute" },
+      }.freeze
+
+      def dispatch_decl_kind(kind, visibility:, attributes:)
+        info = DECL_KIND.fetch(kind)
+        reject_attributes!(attributes, info[:reject_attrs]) if info[:reject_attrs]
+
+        if info[:enum_class]
+          send(info[:method], info[:enum_class], visibility:, attributes:)
+        elsif info[:reject_attrs]
+          send(info[:method], visibility:)
+        else
+          send(info[:method], visibility:, attributes:)
+        end
+      end
+
+      def parse_const_or_function_decl(visibility:, attributes:)
+        if match(:function)
+          parse_function_def(visibility:, const: true, attributes:)
+        else
+          parse_const_decl(visibility:, attributes:)
+        end
+      end
+
       def parse_declaration
         attributes = parse_attribute_applications
         visibility, visibility_token = parse_visibility
@@ -25,38 +58,29 @@ module MilkTea
         if builtin_attribute_identifier?(peek)
           raise error(peek, "layout modifiers must use attributes like @[packed] or @[align(...)]")
         elsif match(:attribute)
-          reject_attributes!(attributes, "attribute")
-          parse_attribute_decl(visibility:)
+          dispatch_decl_kind(:attribute, visibility:, attributes:)
         elsif match(:const)
-          if match(:function)
-            parse_function_def(visibility:, const: true, attributes:)
-          else
-            parse_const_decl(visibility:, attributes:)
-          end
+          parse_const_or_function_decl(visibility:, attributes:)
         elsif match(:var)
-          reject_attributes!(attributes, "var")
-          parse_var_decl(visibility:)
+          dispatch_decl_kind(:var, visibility:, attributes:)
         elsif match(:event)
-          parse_event_decl(visibility:, attributes:)
+          dispatch_decl_kind(:event, visibility:, attributes:)
         elsif match(:type)
-          reject_attributes!(attributes, "type")
-          parse_type_alias_decl(visibility:)
+          dispatch_decl_kind(:type, visibility:, attributes:)
         elsif match(:struct)
           parse_struct_decl(visibility:, attributes:)
         elsif match(:union)
-          parse_union_decl(visibility:, attributes:)
+          dispatch_decl_kind(:union, visibility:, attributes:)
         elsif match(:enum)
-          parse_enum_decl(AST::EnumDecl, visibility:, attributes:)
+          dispatch_decl_kind(:enum, visibility:, attributes:)
         elsif match(:flags)
-          parse_enum_decl(AST::FlagsDecl, visibility:, attributes:)
+          dispatch_decl_kind(:flags, visibility:, attributes:)
         elsif match(:variant)
           parse_variant_decl(visibility:, attributes:)
         elsif match(:interface)
-          reject_attributes!(attributes, "interface")
-          parse_interface_decl(visibility:)
+          dispatch_decl_kind(:interface, visibility:, attributes:)
         elsif match(:opaque)
-          reject_attributes!(attributes, "opaque")
-          parse_opaque_decl(visibility:)
+          dispatch_decl_kind(:opaque, visibility:, attributes:)
         elsif match(:extending)
           reject_attributes!(attributes, "extending")
           raise error(visibility_token, "public is not allowed on extending blocks") if visibility == :public

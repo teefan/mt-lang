@@ -35,14 +35,14 @@ module MilkTea
           consume(:newline, "expected newline after 'if condition:' in if expression")
           consume(:indent, "expected indented body in if expression")
           then_expression = parse_expression
-          consume_end_of_statement unless block_expression?(then_expression)
+          finish_expression_statement(then_expression)
           consume(:dedent, "expected end of if expression body")
           consume(:else, "expected 'else' in if expression")
           consume(:colon, "expected ':' after 'else' in if expression")
           consume(:newline, "expected newline after 'else:' in if expression")
           consume(:indent, "expected indented else body in if expression")
           else_expression = parse_expression
-          consume_end_of_statement unless block_expression?(else_expression)
+          finish_expression_statement(else_expression)
           consume(:dedent, "expected end of else expression body")
         end
 
@@ -97,7 +97,7 @@ module MilkTea
                        end
         consume(:colon, "expected ':' after match expression arm pattern")
         value = parse_expression
-        consume_end_of_statement unless block_expression?(value)
+        finish_expression_statement(value)
         patterns.map do |pattern|
           AST::MatchExprArm.new(
             pattern:,
@@ -549,10 +549,7 @@ module MilkTea
         end
 
         parser = self.class.new(tokens, path: @path)
-        parser.instance_variable_set(:@known_type_names, @known_type_names.dup)
-        parser.instance_variable_set(:@known_import_aliases, @known_import_aliases.dup)
-        parser.instance_variable_set(:@known_generic_callable_names, @known_generic_callable_names.dup)
-        parser.instance_variable_set(:@current_type_param_names, @current_type_param_names.dup)
+        parser.apply_parser_context(parser_context)
 
         expression = parser.parse_expression
         parser.skip_newlines
