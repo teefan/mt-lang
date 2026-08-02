@@ -16,7 +16,7 @@ class DAPLLDBDAPTest < Minitest::Test
   end
 
   def test_running_reflects_wait_thread_state
-    backend = MilkTea::DAP::Backends::LLDBDAP.new(adapter_command: ["lldb-dap"])
+    backend = MilkTea::DAP::LLDBDAPBackend.new(adapter_command: ["lldb-dap"])
 
     refute backend.running?
 
@@ -31,7 +31,7 @@ class DAPLLDBDAPTest < Minitest::Test
   end
 
   def test_request_times_out_and_cleans_pending_entry
-    backend = MilkTea::DAP::Backends::LLDBDAP.new(adapter_command: ["lldb-dap"])
+    backend = MilkTea::DAP::LLDBDAPBackend.new(adapter_command: ["lldb-dap"])
     backend.instance_variable_set(:@protocol, FakeProtocol.new(messages: [], written: []))
 
     blocker = Queue.new
@@ -52,7 +52,7 @@ class DAPLLDBDAPTest < Minitest::Test
   def test_read_loop_routes_response_event_and_reverse_request
     events = []
     reverse_requests = []
-    backend = MilkTea::DAP::Backends::LLDBDAP.new(
+    backend = MilkTea::DAP::LLDBDAPBackend.new(
       adapter_command: ["lldb-dap"],
       on_event: ->(message) { events << message },
       on_request: lambda { |message|
@@ -93,7 +93,7 @@ class DAPLLDBDAPTest < Minitest::Test
   end
 
   def test_handle_adapter_request_builds_default_error_response
-    backend = MilkTea::DAP::Backends::LLDBDAP.new(adapter_command: ["lldb-dap"])
+    backend = MilkTea::DAP::LLDBDAPBackend.new(adapter_command: ["lldb-dap"])
     protocol = FakeProtocol.new(messages: [], written: [])
     backend.instance_variable_set(:@protocol, protocol)
 
@@ -107,7 +107,7 @@ class DAPLLDBDAPTest < Minitest::Test
   end
 
   def test_drain_stderr_ignores_stream_errors
-    backend = MilkTea::DAP::Backends::LLDBDAP.new(adapter_command: ["lldb-dap"])
+    backend = MilkTea::DAP::LLDBDAPBackend.new(adapter_command: ["lldb-dap"])
     stderr = Object.new
     stderr.define_singleton_method(:each_line) { raise IOError, "stderr unavailable" }
     backend.instance_variable_set(:@stderr, stderr)
