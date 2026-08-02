@@ -101,6 +101,15 @@ module MilkTea
       MilkTea.host_platform
     end
 
+    def self.raise_platform_conflict!(path, pinned_platform, active_platform, error_class: nil)
+      if error_class == ModuleLoadError
+        raise ModuleLoadError.new("source file targets platform #{pinned_platform}; active platform is #{active_platform}", path:)
+      end
+
+      message = "source file #{path} targets platform #{pinned_platform}; active platform is #{active_platform}"
+      raise(error_class || ArgumentError, message)
+    end
+
     def initialize(module_roots: [MilkTea.root], package_graph: nil, shared_cache: nil, source_overrides: nil, platform: nil)
       @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
       @ast_cache = {}
@@ -389,15 +398,6 @@ module MilkTea
     # reported when that module is checked directly).
     def collecting_path_errors
       @collecting_path_errors
-    end
-
-    def self.raise_platform_conflict!(path, pinned_platform, active_platform, error_class: nil)
-      if error_class == ModuleLoadError
-        raise ModuleLoadError.new("source file targets platform #{pinned_platform}; active platform is #{active_platform}", path:)
-      end
-
-      message = "source file #{path} targets platform #{pinned_platform}; active platform is #{active_platform}"
-      raise(error_class || ArgumentError, message)
     end
 
     def check_path(path)
