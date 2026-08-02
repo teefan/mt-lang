@@ -129,7 +129,7 @@ module MilkTea
     end
 
     class Checker
-      include CompatibilityHelpers
+      include Intrinsics
 
       attr_reader :ctx
 

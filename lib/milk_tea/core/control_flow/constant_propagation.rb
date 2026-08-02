@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../compile_time/const_eval"
+require_relative "../compile_time"
 
 module MilkTea
   module ControlFlow

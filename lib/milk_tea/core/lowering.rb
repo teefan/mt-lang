@@ -31,7 +31,7 @@ require_relative "lowering/functions"
 require_relative "lowering/async/analysis"
 require_relative "lowering/async/normalization"
 require_relative "lowering/async/lowering"
-require_relative "lowering/async"
+require_relative "lowering/async/frame_builder"
 require_relative "lowering/block"
 require_relative "lowering/proc"
 require_relative "lowering/loops"
@@ -85,7 +85,7 @@ module MilkTea
   OrderResolution = Data.define(:target_type, :binding, :callee_name)
 
   class Lowerer
-    include CompatibilityHelpers
+    include Intrinsics
 
     attr_accessor :bypass_sema_type_cache
     attr_reader :recorded_expr_types

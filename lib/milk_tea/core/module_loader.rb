@@ -1,13 +1,24 @@
 # frozen_string_literal: true
 
-require_relative "module_loader/errors"
-require_relative "module_path_resolver"
-require_relative "module_binder"
-require_relative "async_runtime_installer"
-require_relative "prelude_installer"
-
 module MilkTea
+  class ModuleLoadError < StandardError
+    attr_reader :path, :line, :column
+
+    def initialize(message, path:, line: nil, column: nil)
+      @path = path
+      @line = line
+      @column = column
+      super("#{message}: #{path}")
+    end
+
+    def code
+      "module/error"
+    end
+  end
+
   class ModuleLoader
+    ImportResolution = Data.define(:modules, :errors)
+    ImportResolutionError = Data.define(:import, :error)
     Program = Data.define(:root_path, :root_analysis, :analyses_by_path, :analyses_by_module_name)
     PLATFORM_SUFFIXES = {
       "linux" => :linux,
