@@ -556,9 +556,15 @@ module MilkTea
           next_tok&.type == :colon
         end
 
+        # Keywords whose standalone syntax is "keyword:" — they form blocks or
+        # expressions directly with a colon and no intervening token, so they are
+        # not field declarations when followed by ":".
+        STANDS_ALONE_WITH_COLON = %i[unsafe else defer parallel].to_set.freeze
+
         def keyword_field_declaration_token?(tokens, index)
           return false if match_arm_binding_token?(tokens, index)
           return false if destructure_let_binding?(tokens, index)
+          return false if STANDS_ALONE_WITH_COLON.include?(tokens[index].type)
 
           next_tok = next_non_trivia_token(tokens, index + 1)
           next_tok&.type == :colon
