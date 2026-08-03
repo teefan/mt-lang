@@ -54,11 +54,22 @@ module MilkTea
           if imported_method.nil? && dispatch_receiver_type != receiver_type
             imported_method = module_binding.methods.fetch(dispatch_receiver_type, {})[name]
           end
-          if imported_method.nil?
-            imported_method = find_method_by_receiver_name(module_binding, dispatch_receiver_type, name)
-          end
 
           imported_candidates << [module_binding, imported_method] if imported_method
+        end
+
+        if imported_candidates.empty?
+          # Identity-based lookup failed. Try a name-based fallback across
+          # all imports, but only take the first match — not all candidates —
+          # to avoid false "ambiguous method" errors when two modules both
+          # extend the same receiver type with the same method name.
+          @ctx.imports.each_value do |module_binding|
+            method = find_method_by_receiver_name(module_binding, dispatch_receiver_type, name)
+            if method
+              imported_candidates << [module_binding, method]
+              break
+            end
+          end
         end
 
         if imported_candidates.empty?
@@ -92,12 +103,12 @@ module MilkTea
       end
 
     def reachable_module_binding_for_type(receiver_type)
-        module_name = receiver_type_module_name(receiver_type)
-        return nil unless module_name
-        return nil if module_name == @ctx.module_name
+      module_name = receiver_type_module_name(receiver_type)
+      return nil unless module_name
+      return nil if module_name == @ctx.module_name
 
-        find_reachable_imported_module(module_name)
-      end
+      find_reachable_imported_module(module_name)
+    end
 
       def receiver_type_module_name(receiver_type)
         return receiver_type_module_name(receiver_type.base) if receiver_type.is_a?(Types::Nullable)

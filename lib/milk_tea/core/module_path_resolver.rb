@@ -119,7 +119,7 @@ module MilkTea
       return @package_manifest_cache[manifest_path] if @package_manifest_cache.key?(manifest_path)
 
       @package_manifest_cache[manifest_path] = PackageManifest.load(path)
-      end
+    end
 
     def package_namespace_match?(module_name, package_name)
       module_name == package_name || module_name.start_with?("#{package_name}.")
