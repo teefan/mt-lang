@@ -20,19 +20,24 @@ module MilkTea
         when AST::StructDecl, AST::UnionDecl, AST::VariantDecl, AST::EnumDecl, AST::FlagsDecl, AST::OpaqueDecl, AST::TypeAliasDecl
           type_declarations[declaration.name] = declaration
           target = exported_declaration?(analysis, declaration) ? types : private_types
-          target[declaration.name] = analysis.types.fetch(declaration.name)
+          resolved_type = analysis.types[declaration.name]
+          target[declaration.name] = resolved_type if resolved_type
         when AST::InterfaceDecl
           target = exported_declaration?(analysis, declaration) ? interfaces : private_interfaces
-          target[declaration.name] = analysis.interfaces.fetch(declaration.name)
+          resolved_iface = analysis.interfaces[declaration.name]
+          target[declaration.name] = resolved_iface if resolved_iface
         when AST::AttributeDecl
           target = exported_declaration?(analysis, declaration) ? attributes : private_attributes
-          target[declaration.name] = analysis.attributes.fetch(declaration.name)
+          resolved_attr = analysis.attributes[declaration.name]
+          target[declaration.name] = resolved_attr if resolved_attr
         when AST::ConstDecl, AST::VarDecl, AST::EventDecl
           target = exported_declaration?(analysis, declaration) ? values : private_values
-          target[declaration.name] = analysis.values.fetch(declaration.name)
+          resolved_val = analysis.values[declaration.name]
+          target[declaration.name] = resolved_val if resolved_val
         when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl
           target = exported_declaration?(analysis, declaration) ? functions : private_functions
-          target[declaration.name] = analysis.functions.fetch(declaration.name)
+          resolved_func = analysis.functions[declaration.name]
+          target[declaration.name] = resolved_func if resolved_func
         end
       end
 

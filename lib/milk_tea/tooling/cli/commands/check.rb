@@ -76,20 +76,11 @@ module MilkTea
       def check_single_reporting_all(path, locked: false)
         loader = make_module_loader(path, locked:, platform: ModuleLoader.default_host_platform)
         resolved_path = File.expand_path(path)
-        ast = loader.load_file(resolved_path)
-        module_name = ast.module_name.to_s
 
-        import_result = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path)
-        errors = import_result.errors.dup
-
-        analysis = nil
-        begin
-          result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules: import_result.modules, path: resolved_path)
-          errors.concat(result[:errors])
-          analysis = result[:analysis]
-        rescue SemanticError => e
-          errors << e
-        end
+        result = loader.check_program_collecting(path)
+        errors = result[:errors]
+        analysis = result[:root_analysis]
+        module_name = result[:module_name]
 
         if analysis && errors.empty?
           source = read_source_file(path)
@@ -97,9 +88,8 @@ module MilkTea
           errors.concat(warnings)
         end
 
-        closure_errors = loader.collecting_path_errors.values.flatten.compact
-        [errors, module_name, closure_errors]
-      rescue ModuleLoadError, PackageLockError, SemanticError => e
+        [errors, module_name, []]
+      rescue ModuleLoadError, PackageLockError => e
         [[e], nil, []]
       end
 

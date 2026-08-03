@@ -179,6 +179,19 @@ module MilkTea
           platform: effective_platform,
         )
         module_name = loader.send(:inferred_module_name_for_path, path) rescue nil
+
+        # Run the full two-pass program check first so that @analysis_cache
+        # has fully-checked analyses for all transitive modules. When the
+        # import resolution below encounters a cycle member, it finds the
+        # cached analysis and resolves correctly. If the program check fails
+        # (e.g. missing module), fall through to the standard resolution
+        # path so that prelude modules and regular errors are still reported.
+        begin
+          loader.check_program_collecting(path)
+        rescue ModuleLoadError, PackageLockError
+          # best-effort — standard path below handles diagnostics
+        end
+
         resolution_result = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
         unresolved_import_paths = []
 

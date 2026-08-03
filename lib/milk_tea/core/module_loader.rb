@@ -154,15 +154,37 @@ module MilkTea
       check_program(path).root_analysis
     end
 
-    def check_program(path)
+    def with_check_context(path, &block)
       Types::Registry.reset!
       requested_path = File.expand_path(path)
       previous_platform = @platform
       @platform ||= self.class.platform_suffix_for_path(requested_path)
       root_path = self.class.resolve_source_path(requested_path, platform: @platform, error_class: ModuleLoadError)
+      block.call(root_path)
+    ensure
+      @platform = previous_platform
+    end
 
-      check_program_parallel(root_path)
+    def check_program(path)
+      with_check_context(path) do |root_path|
+        check_program_parallel(root_path)
+        build_program(root_path)
+      end
+    end
 
+    # Variant of #check_program that collects errors instead of raising so
+    # diagnostic paths (check, debug, LSP) can report all issues at once.
+    # Returns { root_analysis: Analysis|nil, errors: [SemanticError], module_name: String|nil }.
+    def check_program_collecting(path)
+      with_check_context(path) do |root_path|
+        errors = []
+        check_program_parallel(root_path, collecting_errors: errors)
+        root_analysis = @analysis_cache[root_path]
+        { root_analysis: root_analysis, errors: errors, module_name: root_analysis&.module_name }
+      end
+    end
+
+    def build_program(root_path)
       root_analysis = @analysis_cache.fetch(root_path)
       analyses_by_module_name = @analysis_cache.each_value.each_with_object({}) do |analysis, modules|
         next unless analysis.module_name
@@ -176,11 +198,9 @@ module MilkTea
         analyses_by_path: @analysis_cache.dup.freeze,
         analyses_by_module_name: analyses_by_module_name.freeze,
       )
-    ensure
-      @platform = previous_platform
     end
 
-    def check_program_parallel(root_path)
+    def check_program_parallel(root_path, collecting_errors: nil)
       # Phase 1: Parse all transitive modules (sequential)
       parse_all(root_path)
 
@@ -209,10 +229,14 @@ module MilkTea
       # Pass 1: Check with forward bindings — registers type declarations.
       # SemanticError is expected (forward types lack fields/constructors)
       # but ModuleLoadError indicates a broken dependency graph.
+      # Do NOT collect Pass 1 errors — they are temporary failures caused
+      # by incomplete forward bindings that Pass 2 resolves.
       cycle_members.each do |resolved_path|
         check_path(resolved_path)
       rescue SemanticError
-        # Forward types can't satisfy constructors. Pass 2 will retry.
+        # Forward types can't satisfy constructors / functions / methods.
+        # Re-check in collecting mode to capture the analysis for population.
+        capture_analysis_for_cycle_member(resolved_path)
       end
 
       # Update forward type objects in-place with field/arm info from the
@@ -236,16 +260,30 @@ module MilkTea
           if real_type.respond_to?(:arms) && fw_type.respond_to?(:define_arms)
             fw_type.define_arms(real_type.arms) unless real_type.arms.empty?
           end
+          if real_type.respond_to?(:members) && fw_type.respond_to?(:define_members)
+            member_names = real_type.members
+            unless member_names.empty?
+              fw_type.define_members(real_type.backing_type, member_names)
+              values = member_names.each_with_object({}) { |n, h| h[n] = real_type.member_value(n) }
+              fw_type.define_member_values(values)
+            end
+          end
         end
       end
 
-      # Pass 2: Re-check with populated types — now cycle members see
-      # complete type information for each other.
+      # Replace forward bindings with fully populated bindings so that
+      # Pass 2 import resolution sees functions, methods, values, and
+      # interfaces — not just type skeletons.
+      populate_full_forward_bindings(cycle_members)
+
+      # Pass 2: Re-check with populated bindings — now cycle members see
+      # complete module information for each other.
       cycle_members.each do |resolved_path|
         previous = @analysis_cache.delete(resolved_path)
         check_path(resolved_path)
-      rescue SemanticError
+      rescue SemanticError => e
         @analysis_cache[resolved_path] = previous if previous
+        collecting_errors << e if collecting_errors
       end
       @forward_bindings.clear
 
@@ -256,6 +294,9 @@ module MilkTea
         else
           check_level_parallel(level_paths)
         end
+      rescue SemanticError => e
+        raise unless collecting_errors
+        collecting_errors << e
       end
     end
 
@@ -340,7 +381,8 @@ module MilkTea
           end
         rescue ModuleLoadError, PackageLockError, SemanticError => e
           raise unless collecting
-          errors << ImportResolutionError.new(import:, error: e)
+
+          handle_circular_import_in_collecting_mode(import, import_path, modules, errors, e)
         end
       end
 
@@ -519,6 +561,74 @@ module MilkTea
       normalized_path = File.expand_path(path)
       normalized_root = File.expand_path(root)
       normalized_path == normalized_root || normalized_path.start_with?(normalized_root + File::SEPARATOR)
+    end
+
+    def handle_circular_import_in_collecting_mode(import, import_path, modules, errors, error)
+      # When a circular import is detected in collecting mode, create a
+      # forward binding for the target module so the importing module can
+      # at minimum resolve type references. Without this the import is
+      # entirely absent, which causes downstream crashes in module_binding.
+      if import_path && error.is_a?(ModuleLoadError) && error.message.start_with?("circular import")
+        circular_ast = @parse_cache[import_path] || load_file(import_path)
+        if circular_ast
+          @forward_bindings[import_path] ||= create_forward_binding(circular_ast)
+          modules[import.path.to_s] = @forward_bindings[import_path]
+        end
+      end
+
+      errors << ImportResolutionError.new(import:, error:)
+    end
+
+    def capture_analysis_for_cycle_member(resolved_path)
+      return if @analysis_cache[resolved_path]
+
+      ast = @parse_cache[resolved_path]
+      return unless ast
+
+      @checking_paths << resolved_path
+      import_result = resolve_imports_for_ast(ast, importer_path: resolved_path, collecting: true)
+      result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules: import_result.modules, path: resolved_path)
+      @analysis_cache[resolved_path] = result[:analysis] if result[:analysis]
+    rescue StandardError
+      # Analysis capture is best-effort.
+    ensure
+      @checking_paths.pop
+    end
+
+    def populate_full_forward_bindings(cycle_members)
+      cycle_members.each do |resolved_path|
+        analysis = @analysis_cache[resolved_path]
+        next unless analysis
+
+        fw_binding = @forward_bindings[resolved_path]
+        next unless fw_binding
+
+        full_binding = @binder.module_binding(analysis)
+        merged_types = fw_binding.types.merge(
+          full_binding.types.reject { |name, _| fw_binding.types.key?(name) }
+        )
+
+        @forward_bindings[resolved_path] = ModuleBinding.new(
+          name: full_binding.name,
+          types: merged_types,
+          type_declarations: full_binding.type_declarations,
+          interfaces: full_binding.interfaces,
+          attributes: full_binding.attributes,
+          attribute_applications: full_binding.attribute_applications,
+          values: full_binding.values,
+          functions: full_binding.functions,
+          methods: full_binding.methods,
+          implemented_interfaces: full_binding.implemented_interfaces,
+          imports: full_binding.imports,
+          private_types: full_binding.private_types,
+          private_interfaces: full_binding.private_interfaces,
+          private_attributes: full_binding.private_attributes,
+          private_values: full_binding.private_values,
+          private_functions: full_binding.private_functions,
+          private_methods: full_binding.private_methods,
+          private_implemented_interfaces: full_binding.private_implemented_interfaces,
+        )
+      end
     end
 
     def create_forward_binding(ast)
