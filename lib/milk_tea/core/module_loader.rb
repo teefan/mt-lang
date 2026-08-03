@@ -401,6 +401,15 @@ module MilkTea
       modules = {}
       errors = []
 
+      if @import_resolve_depth
+        @import_resolve_depth += 1
+        if @import_resolve_depth > 80
+          raise SemanticError.new("import resolution depth exceeded")
+        end
+      else
+        @import_resolve_depth = 1
+      end
+
       ast.imports.each do |import|
         begin
           import_path = @path_resolver.resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
@@ -435,6 +444,8 @@ module MilkTea
       return ImportResolution.new(modules: modules.freeze, errors: errors.freeze) if collecting
 
       modules.freeze
+    ensure
+      @import_resolve_depth -= 1 if @import_resolve_depth
     end
 
     def build_global_import_index(ast)

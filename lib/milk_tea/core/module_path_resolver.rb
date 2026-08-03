@@ -16,19 +16,23 @@ module MilkTea
 
       relative_path = File.join(*module_name.split(".")) + ".mt"
       blocked = false
-      candidate = @module_roots.lazy.map { |root| ModuleLoader.resolve_source_path(File.join(root, relative_path), platform: @platform) }.find do |path|
-        next false unless source_path_available?(path)
+      candidate = nil
+      @module_roots.each do |root|
+        path = ModuleLoader.resolve_source_path(File.join(root, relative_path), platform: @platform)
+        next unless source_path_available?(path)
 
         allowed = import_allowed?(module_name, importer_path, path)
         blocked ||= !allowed
-        allowed
+        if allowed
+          candidate = path
+          break
+        end
       end
       raise ModuleLoadError.new("package dependency not declared", path: module_name) if blocked
       unless candidate
         message = namespace_hint_for_missing_module(module_name, importer_path:, importer_module_name:) || "module not found"
         raise ModuleLoadError.new(message, path: module_name)
       end
-
       File.expand_path(candidate)
     end
 
