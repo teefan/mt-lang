@@ -413,7 +413,8 @@ module MilkTea
           read_identifiers(expression.expression, names, reads_info)
           expression.arms.each do |arm|
             read_identifiers(arm.pattern, names, reads_info)
-            read_identifiers(arm.value, names, reads_info)
+            arm_value = arm.is_a?(AST::MatchExprArm) ? arm.value : arm.body
+            read_identifiers(arm_value, names, reads_info)
           end
         when AST::MatchStmt
           read_identifiers(expression.expression, names, reads_info)
