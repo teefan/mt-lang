@@ -77,7 +77,11 @@ module MilkTea
       buf << " lexeme "
       emit_string(token.lexeme, buf)
       buf << " literal "
-      emit_value(token.literal, buf)
+      if token.type == :float
+        buf << token.lexeme
+      else
+        emit_value(token.literal, buf)
+      end
       buf << " line " << token.line.to_s
       buf << " column " << token.column.to_s
       buf << " start_offset " << token.start_offset.to_s
@@ -334,7 +338,7 @@ module MilkTea
     end
 
     def format_float(value)
-      s = sprintf("%.17g", value)
+      s = sprintf("%g", value)
       s.include?(".") || s.include?("e") ? s : s + ".0"
     end
   end
