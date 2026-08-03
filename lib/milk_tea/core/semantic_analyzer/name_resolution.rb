@@ -77,19 +77,19 @@ module MilkTea
         imported_candidates.first.last
       end
 
-    def module_binding_method(module_binding, receiver_type, dispatch_receiver_type, name)
-      method = module_binding.methods.fetch(receiver_type, {})[name]
-      method ||= module_binding.methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
-      method ||= find_method_by_receiver_name(module_binding, dispatch_receiver_type, name)
-      method
-    end
+      def module_binding_method(module_binding, receiver_type, dispatch_receiver_type, name)
+        method = module_binding.methods.fetch(receiver_type, {})[name]
+        method ||= module_binding.methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
+        method ||= find_method_by_receiver_name(module_binding, dispatch_receiver_type, name)
+        method
+      end
 
       def find_method_by_receiver_name(module_binding, receiver_type, name)
-      module_binding.methods.each do |key, methods|
-        return methods[name] if key.is_a?(receiver_type.class) && key.name == receiver_type.name && methods.key?(name)
+        module_binding.methods.each do |key, methods|
+          return methods[name] if key.is_a?(receiver_type.class) && key.name == receiver_type.name && methods.key?(name)
+        end
+        nil
       end
-      nil
-    end
 
     def reachable_module_binding_for_type(receiver_type)
         module_name = receiver_type_module_name(receiver_type)

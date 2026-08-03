@@ -201,8 +201,6 @@ module MilkTea
     end
 
     def node_in_cycle?(node, graph)
-      visited = {}
-      stack = [node]
       # Start from each immediate successor to avoid the trivial self-path
       successors = graph[node] || []
       successors.each do |next_node|

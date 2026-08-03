@@ -824,14 +824,14 @@ module MilkTea
 
       def eql?(other)
         other.is_a?(GenericStructDefinition) && other.name == name &&
-          other.type_params == type_params && other.external == external &&
-          other.packed == packed && other.alignment == alignment
+          other.type_params == type_params && other.module_name == module_name &&
+          other.external == external && other.packed == packed && other.alignment == alignment
       end
 
       alias == eql?
 
       def hash
-        [self.class, name, type_params, external, packed, alignment].hash
+        [self.class, name, type_params, module_name, external, packed, alignment].hash
       end
 
       def set_layout(packed:, alignment:)
