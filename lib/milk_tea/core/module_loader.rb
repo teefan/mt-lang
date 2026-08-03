@@ -200,6 +200,26 @@ module MilkTea
       )
     end
 
+    def node_in_cycle?(node, graph)
+      visited = {}
+      stack = [node]
+      # Start from each immediate successor to avoid the trivial self-path
+      successors = graph[node] || []
+      successors.each do |next_node|
+        next unless graph.key?(next_node)
+        return true if dfs_reachable_from(next_node, node, graph, {})
+      end
+      false
+    end
+
+    def dfs_reachable_from(current, target, graph, visited)
+      return false if visited[current]
+      return true if current == target
+
+      visited[current] = true
+      (graph[current] || []).any? { |neighbor| dfs_reachable_from(neighbor, target, graph, visited) }
+    end
+
     def check_program_parallel(root_path, collecting_errors: nil)
       # Phase 1: Parse all transitive modules (sequential)
       parse_all(root_path)
@@ -214,12 +234,24 @@ module MilkTea
         graph[resolved_path] = deps
       end
 
-      # Phase 3: Topological sort into independent levels
+      # Phase 3: Topological sort into independent levels.
+      # Nodes that cannot be sorted are candidates for cycle membership,
+      # but not all of them are actually part of a cycle — some are just
+      # dependencies downstream from the cycle. We separate true cycle
+      # members (nodes reachable from themselves) from tail nodes.
       levels = topo_sort_levels(graph)
 
-      # Pre-register forward bindings for cycle members
       all_checked = levels.flatten.to_set
-      cycle_members = graph.keys.reject { |p| all_checked.include?(p) }
+      unsorted = graph.keys.reject { |p| all_checked.include?(p) }
+
+      # Among unsorted nodes, identify true cycle members: nodes that can
+      # reach themselves through the graph (belong to a strongly connected
+      # component of size > 1). Tail nodes that only depend on cycle members
+      # but have no path back to themselves are NOT cycle members.
+      cycle_members = unsorted.select { |node| node_in_cycle?(node, graph) }
+      tail_members = unsorted - cycle_members
+
+      # Pre-register forward bindings only for true cycle members
       cycle_members.each do |resolved_path|
         ast = @parse_cache[resolved_path]
         @forward_bindings[resolved_path] = create_forward_binding(ast)
@@ -287,11 +319,13 @@ module MilkTea
       end
       @forward_bindings.clear
 
-      # Phase 5: Check acyclic modules (they see fully-checked analyses for all imports)
-      levels.each do |level_paths|
+      # Phase 5: Check acyclic modules (they see fully-checked analyses for all imports).
+      # Also check tail members — nodes that were in the unsorted set but
+      # are not themselves part of a cycle; they just depended on cycle members.
+      (levels + [tail_members]).each do |level_paths|
         if level_paths.length == 1
           check_path(level_paths.first)
-        else
+        elsif level_paths.any?
           check_level_parallel(level_paths)
         end
       rescue SemanticError => e
