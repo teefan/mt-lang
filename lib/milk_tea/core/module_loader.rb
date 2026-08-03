@@ -638,9 +638,13 @@ module MilkTea
       ast.declarations.each do |decl|
         case decl
         when AST::StructDecl
-          types[decl.name] = Types::Struct.new(decl.name, module_name:)
+          types[decl.name] = decl.type_params.empty? ?
+            Types::Struct.new(decl.name, module_name:) :
+            Types::GenericStructDefinition.new(decl.name, decl.type_params.map(&:name))
         when AST::VariantDecl
-          types[decl.name] = Types::Variant.new(decl.name, module_name:)
+          types[decl.name] = decl.type_params.empty? ?
+            Types::Variant.new(decl.name, module_name:) :
+            Types::GenericVariantDefinition.new(decl.name, decl.type_params.map(&:name))
         when AST::EnumDecl
           types[decl.name] = Types::Enum.new(decl.name, module_name:)
         when AST::FlagsDecl
