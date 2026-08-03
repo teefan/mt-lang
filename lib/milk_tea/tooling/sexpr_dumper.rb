@@ -31,13 +31,13 @@ module MilkTea
       when ::Data then emit_data(value, buf)
       when Array  then emit_array(value, buf)
       when *TYPES_CLASSES then emit_types_object(value, buf)
-      when nil    then buf << "nil"
+      when nil    then buf << "null"
       when true   then buf << "true"
       when false  then buf << "false"
       when Integer then buf << value.to_s
       when Float   then buf << format_float(value)
       when String  then emit_string(value, buf)
-      when Symbol  then buf << ":" << value.to_s.tr("_", "-")
+      when Symbol  then emit_string(value.to_s.tr("_", "-"), buf)
       when Hash, Set then nil
       else buf << escape_string(value.to_s)
       end
@@ -52,7 +52,7 @@ module MilkTea
       members.each do |field|
         val = node.public_send(field)
         next if val.is_a?(Hash) || val.is_a?(Set)
-        buf << " :" << field.to_s << " "
+        buf << " " << field.to_s << " "
         emit_value(val, buf)
       end
       buf << ")"
@@ -72,20 +72,17 @@ module MilkTea
     # ── Token serialisation ───────────────────────────────────────────
 
     def emit_token(token, buf)
-      buf << "(token :type " << emit_token_type(token.type)
-      buf << " :lexeme "
+      buf << "(token type "
+      emit_string(token.type.to_s.tr("_", "-"), buf)
+      buf << " lexeme "
       emit_string(token.lexeme, buf)
-      buf << " :literal "
+      buf << " literal "
       emit_value(token.literal, buf)
-      buf << " :line " << token.line.to_s
-      buf << " :column " << token.column.to_s
-      buf << " :start_offset " << token.start_offset.to_s
-      buf << " :end_offset " << token.end_offset.to_s
+      buf << " line " << token.line.to_s
+      buf << " column " << token.column.to_s
+      buf << " start_offset " << token.start_offset.to_s
+      buf << " end_offset " << token.end_offset.to_s
       buf << ")"
-    end
-
-    def emit_token_type(sym)
-      ":" + sym.to_s.tr("_", "-")
     end
 
     # ── Types serialisation ───────────────────────────────────────────
@@ -142,151 +139,151 @@ module MilkTea
     def emit_types_fields(type, buf)
       case type
       when Types::Primitive
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
       when Types::Null
-        buf << " :target_type "
+        buf << " target_type "
         emit_value(type.target_type, buf)
       when Types::Nullable
-        buf << " :base "
+        buf << " base "
         emit_value(type.base, buf)
       when Types::GenericInstance
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :arguments "
+        buf << " arguments "
         emit_array(type.arguments, buf)
       when Types::Span
-        buf << " :element_type "
+        buf << " element_type "
         emit_value(type.element_type, buf)
       when Types::Task
-        buf << " :result_type "
+        buf << " result_type "
         emit_value(type.result_type, buf)
       when Types::Function
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :params "
+        buf << " params "
         emit_array(type.params, buf)
-        buf << " :return_type "
+        buf << " return_type "
         emit_value(type.return_type, buf)
-        buf << " :receiver_type "
+        buf << " receiver_type "
         emit_value(type.receiver_type, buf)
-        buf << " :receiver_editable "
+        buf << " receiver_editable "
         emit_value(type.receiver_editable, buf)
-        buf << " :variadic "
+        buf << " variadic "
         emit_value(type.variadic, buf)
-        buf << " :external "
+        buf << " external "
         emit_value(type.external, buf)
       when Types::Proc
-        buf << " :params "
+        buf << " params "
         emit_array(type.params, buf)
-        buf << " :return_type "
+        buf << " return_type "
         emit_value(type.return_type, buf)
       when Types::Tuple
-        buf << " :element_types "
+        buf << " element_types "
         emit_array(type.element_types, buf)
-        buf << " :field_names "
+        buf << " field_names "
         emit_value(type.field_names, buf)
       when Types::Vector
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
       when Types::Matrix
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
       when Types::Quaternion
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
       when Types::SoA
-        buf << " :element_type "
+        buf << " element_type "
         emit_value(type.element_type, buf)
-        buf << " :count "
+        buf << " count "
         emit_value(type.count, buf)
       when Types::Simd
-        buf << " :element_type "
+        buf << " element_type "
         emit_value(type.element_type, buf)
-        buf << " :lane_count "
+        buf << " lane_count "
         emit_value(type.lane_count, buf)
       when Types::Struct
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :module_name "
+        buf << " module_name "
         emit_value(type.module_name, buf)
       when Types::StructInstance
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :module_name "
+        buf << " module_name "
         emit_value(type.module_name, buf)
-        buf << " :arguments "
+        buf << " arguments "
         emit_array(type.arguments, buf)
       when Types::Union
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :module_name "
+        buf << " module_name "
         emit_value(type.module_name, buf)
       when Types::Variant
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :module_name "
+        buf << " module_name "
         emit_value(type.module_name, buf)
       when Types::VariantInstance
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :module_name "
+        buf << " module_name "
         emit_value(type.module_name, buf)
-        buf << " :arguments "
+        buf << " arguments "
         emit_array(type.arguments, buf)
       when Types::VariantArmPayload
-        buf << " :variant_name "
+        buf << " variant_name "
         emit_string(type.variant_type.name, buf)
-        buf << " :arm_name "
+        buf << " arm_name "
         emit_string(type.arm_name, buf)
       when Types::Enum
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :module_name "
+        buf << " module_name "
         emit_value(type.module_name, buf)
       when Types::Flags
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :module_name "
+        buf << " module_name "
         emit_value(type.module_name, buf)
       when Types::Opaque
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :module_name "
+        buf << " module_name "
         emit_value(type.module_name, buf)
       when Types::StringView
         # no fields
       when Types::Dyn
-        buf << " :interface_name "
+        buf << " interface_name "
         emit_string(type.interface_binding.name, buf)
-        buf << " :type_arguments "
+        buf << " type_arguments "
         emit_array(type.type_arguments, buf)
       when Types::Parameter
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :type "
+        buf << " type "
         emit_value(type.type, buf)
-        buf << " :mutable "
+        buf << " mutable "
         emit_value(type.mutable, buf)
-        buf << " :passing_mode "
+        buf << " passing_mode "
         emit_value(type.passing_mode, buf)
-        buf << " :boundary_type "
+        buf << " boundary_type "
         emit_value(type.boundary_type, buf)
       when Types::LiteralTypeArg
-        buf << " :value "
+        buf << " value "
         emit_value(type.value, buf)
       when Types::TypeVar
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
       when Types::LifetimeRef
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
       when Types::Event
-        buf << " :name "
+        buf << " name "
         emit_string(type.name, buf)
-        buf << " :capacity "
+        buf << " capacity "
         emit_value(type.capacity, buf)
-        buf << " :payload_type "
+        buf << " payload_type "
         emit_value(type.payload_type, buf)
       when Types::Subscription
         # no fields (singleton)
@@ -303,7 +300,7 @@ module MilkTea
         name = ivar.to_s.sub(/\A@/, "")
         val = type.instance_variable_get(ivar)
         next if val.is_a?(Hash) || val.is_a?(Set) || val.is_a?(Proc)
-        buf << " :" << name << " "
+        buf << " " << name << " "
         emit_value(val, buf)
       end
     end
