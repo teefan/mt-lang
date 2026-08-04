@@ -1002,6 +1002,148 @@ class TypeCheckingTest < Minitest::Test
     assert_match(/import std\.string/, error.suggestion)
   end
 
+  def test_rejects_vector_width_mismatch_in_binary_ops
+    source = <<~MT
+      # module demo.vec_width_mismatch
+
+      function main() -> int:
+          let a = vec2(x = 1.0, y = 2.0)
+          let b = vec4(x = 1.0, y = 2.0, z = 3.0, w = 4.0)
+          let c = a + b
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/requires compatible numeric types, got vec2 and vec4/, error.message)
+  end
+
+  def test_rejects_bitwise_ops_on_float_simd
+    source = <<~MT
+      # module demo.float_simd_bitwise
+
+      function main() -> int:
+          let f4 = simd[float, 4](1.0, 2.0, 3.0, 4.0)
+          let g = f4 & f4
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/operator & requires matching integer or flags types/, error.message)
+  end
+
+  def test_rejects_matrix_vector_multiplication
+    source = <<~MT
+      # module demo.mat_vec_mul
+
+      import std.linear_algebra
+
+      function main() -> int:
+          let m = mat4.identity()
+          let v = vec4(x = 1.0, y = 2.0, z = 3.0, w = 4.0)
+          let mv = m * v
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/requires compatible numeric types, got mat4 and vec4/, error.message)
+  end
+
+  def test_rejects_vector_matrix_multiplication
+    source = <<~MT
+      # module demo.vec_mat_mul
+
+      import std.linear_algebra
+
+      function main() -> int:
+          let m = mat4.identity()
+          let v = vec4(x = 1.0, y = 2.0, z = 3.0, w = 4.0)
+          let vm = v * m
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/requires compatible numeric types, got vec4 and mat4/, error.message)
+  end
+
+  def test_rejects_quaternion_vector_multiplication
+    source = <<~MT
+      # module demo.quat_vec_mul
+
+      function main() -> int:
+          let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
+          let v = vec3(x = 1.0, y = 2.0, z = 3.0)
+          let qv = q * v
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/requires compatible numeric types, got quat and vec3/, error.message)
+  end
+
+  def test_rejects_integer_constant_into_double_beyond_2_53
+    source = <<~MT
+      # module demo.double_precision_loss
+
+      const BIG: double = 9007199254740993
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/double/, error.message)
+  end
+
+  def test_type_checks_integer_constant_into_double_at_2_53
+    source = <<~MT
+      # module demo.double_boundary
+
+      const OK: double = 9007199254740992
+      function main() -> int:
+          return 0
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_size_of_native_math_types
+    source = <<~MT
+      # module demo.math_layout
+
+      const S_VEC2: ptr_uint = size_of(vec2)
+      const S_VEC3: ptr_uint = size_of(vec3)
+      const S_MAT4: ptr_uint = size_of(mat4)
+      const S_QUAT: ptr_uint = size_of(quat)
+      const S_SIMD: ptr_uint = size_of(simd[float, 4])
+      const A_VEC3: ptr_uint = align_of(vec3)
+      const A_SIMD: ptr_uint = align_of(simd[float, 4])
+
+      function main() -> int:
+          return int<-(S_VEC2 + S_VEC3 + S_MAT4 + S_QUAT + S_SIMD + A_VEC3 + A_SIMD)
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_ffi_declaration_surface
     source = <<~MT
       # module demo.ffi

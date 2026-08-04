@@ -100,9 +100,14 @@ module MilkTea
           return value.abs <= (1 << 24) if value.is_a?(Integer)
 
           exactly_representable_float32?(value.to_f)
-        else
-          return true if expected_type.name == "double"
+        elsif expected_type.name == "double"
+          # Every integer with magnitude <= 2^53 is exactly representable in
+          # double precision; larger integer constants would lose precision, so
+          # they require an explicit cast instead.
+          return value.abs <= (1 << 53) if value.is_a?(Integer)
 
+          true
+        else
           false
         end
       end

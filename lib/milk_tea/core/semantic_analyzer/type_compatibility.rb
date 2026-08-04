@@ -266,6 +266,7 @@ module MilkTea
 
       def simd_bitwise_result(left_type, right_type)
         return nil unless simd_type?(left_type) && simd_type?(right_type) && left_type == right_type
+        return nil unless left_type.element_type.integer?
 
         left_type
       end
@@ -286,15 +287,16 @@ module MilkTea
 
       def vector_op_result(operator, left_type, right_type)
         if vector_type?(left_type) && vector_type?(right_type) && left_type.element_type == right_type.element_type
+          return nil unless left_type.width == right_type.width
           return left_type if operator == "+" || operator == "-"
           return left_type if operator == "*"
         end
 
-        if vector_type?(left_type) && right_type.numeric?
+        if vector_type?(left_type) && primitive_numeric_type?(right_type)
           return left_type if operator == "*" || operator == "/"
         end
 
-        if left_type.numeric? && vector_type?(right_type) && operator == "*"
+        if primitive_numeric_type?(left_type) && vector_type?(right_type) && operator == "*"
           return right_type
         end
 
@@ -307,11 +309,7 @@ module MilkTea
           return left_type if operator == "*"
         end
 
-        if matrix_type?(left_type) && vector_type?(right_type) && left_type.dim == right_type.width && right_type.element_type == Types::BUILTIN_VECTOR_ELEMENT
-          return Types::Vector.new(right_type.name, element_type: right_type.element_type, width: right_type.width) if operator == "*"
-        end
-
-        if matrix_type?(left_type) && right_type.numeric?
+        if matrix_type?(left_type) && primitive_numeric_type?(right_type)
           return left_type if operator == "*" || operator == "/"
         end
 
@@ -324,11 +322,11 @@ module MilkTea
           return left_type if operator == "*"
         end
 
-        if quaternion_type?(left_type) && vector_type?(right_type) && right_type.width == 3 && right_type.element_type == Types::BUILTIN_VECTOR_ELEMENT
-          return right_type if operator == "*"
-        end
-
         nil
+      end
+
+      def primitive_numeric_type?(type)
+        type.is_a?(Types::Primitive) && type.numeric?
       end
 
       def pointer_cast?(source_type, target_type)

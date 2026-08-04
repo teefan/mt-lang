@@ -76,6 +76,21 @@ module MilkTea
         total = element_layout.first * type.lane_count
         alignment = total > 16 ? 32 : 16
         [total, alignment]
+      when Types::Vector
+        element_layout = size_and_alignment(type.element_type, stack)
+        return unless element_layout
+
+        [element_layout.first * type.width, element_layout.last]
+      when Types::Matrix
+        element_layout = size_and_alignment(Types::BUILTIN_VECTOR_ELEMENT, stack)
+        return unless element_layout
+
+        [element_layout.first * type.dim * type.dim, element_layout.last]
+      when Types::Quaternion
+        element_layout = size_and_alignment(Types::BUILTIN_VECTOR_ELEMENT, stack)
+        return unless element_layout
+
+        [element_layout.first * 4, element_layout.last]
       else
         nil
       end

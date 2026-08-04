@@ -641,6 +641,7 @@ module MilkTea
       def infer_layout_query_type(type_ref, context:)
         type = resolve_type_ref(type_ref)
         return type if sized_layout_type?(type)
+        return type if vector_type?(type) || matrix_type?(type) || quaternion_type?(type) || simd_type?(type)
 
         raise_sema_error("#{context} requires a concrete sized type, got #{type_ref}")
       end
