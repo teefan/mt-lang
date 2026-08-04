@@ -948,6 +948,60 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_rejects_interpolating_string_value_with_targeted_diagnostic
+    source = <<~MT
+      # module demo.fmt_string_interp
+
+      import std.string as string
+
+      function main() -> int:
+          var s = string.String.from_str("hello")
+          let text = f"value=\#{s}"
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/formatted string interpolation does not support std\.string\.String/, error.message)
+    assert_match(/\.as_str\(\)/, error.message)
+  end
+
+  def test_rejects_unimported_bare_string_with_import_hint
+    source = <<~MT
+      # module demo.bare_string
+
+      function main() -> int:
+          var s = String.from_str("hello")
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown name String/, error.message)
+    assert_match(/import std\.string/, error.message)
+  end
+
+  def test_rejects_unimported_bare_string_type_with_import_hint
+    source = <<~MT
+      # module demo.bare_string_type
+
+      function main() -> int:
+          var s: String = zero[String]
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown type String/, error.message)
+    assert_match(/import std\.string/, error.suggestion)
+  end
+
   def test_type_checks_ffi_declaration_surface
     source = <<~MT
       # module demo.ffi

@@ -365,6 +365,9 @@ module MilkTea
           unless suggestion
             suggestion = import_suggestion_for_type(name)
           end
+          unless suggestion
+            suggestion = import_hint_for_known_std_name(name)
+          end
           raise_sema_error("unknown type #{name}", type_ref, suggestion: suggestion ? "did you mean '#{suggestion}'?" : nil)
         end
         raise_sema_error("generic type #{name} requires type arguments", type_ref) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)

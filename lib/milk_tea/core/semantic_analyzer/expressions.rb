@@ -336,6 +336,9 @@ module MilkTea
           scoped_names = scopes.flat_map { |s| s.is_a?(Hash) ? s.keys : [] }.map(&:to_s)
           suggestion = suggest_name(expression.name, func_names + type_names + scoped_names)
         end
+        if (import_hint = import_hint_for_known_std_name(expression.name))
+          raise_sema_error("unknown name #{expression.name}; #{import_hint}")
+        end
         raise_sema_error("unknown name #{expression.name}", expression, suggestion: suggestion ? "did you mean '#{suggestion}'?" : nil)
       end
 
@@ -1505,6 +1508,9 @@ module MilkTea
               raise_sema_error("unsupported format spec #{part.format_spec.inspect}")
             end
           else
+            if string_builder_type?(value_type)
+              raise_sema_error("formatted string interpolation does not support #{value_type}; interpolate #{describe_expression(part.expression)}.as_str() instead, or append into it with .append_format(f\"...\")")
+            end
             next if format_string_interpolation_supported?(value_type, context: "formatted string interpolation of #{value_type}")
             raise_sema_error("formatted string interpolation supports str, cstr, bool, numeric primitives, integer-backed enums/flags, and types implementing format_len()/append_format(output: ref[std.string.String]), got #{value_type}")
           end

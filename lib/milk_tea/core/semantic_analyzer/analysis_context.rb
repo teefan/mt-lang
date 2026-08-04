@@ -289,6 +289,31 @@ module MilkTea
         closest_dist <= max_distance ? closest : nil
       end
 
+      # Common std-library types that are usually used bare. When one of these
+      # names is unresolved, the compiler points at the module that exports it
+      # instead of leaving a generic "unknown name" diagnostic.
+      STD_TYPE_IMPORT_HINTS = {
+        "String" => "std.string",
+        "Vec" => "std.vec",
+        "Deque" => "std.deque",
+        "Map" => "std.map",
+        "Set" => "std.set",
+        "LinkedMap" => "std.linked_map",
+        "LinkedSet" => "std.linked_set",
+        "OrderedMap" => "std.ordered_map",
+        "OrderedSet" => "std.ordered_set",
+        "BinaryHeap" => "std.binary_heap",
+        "PriorityQueue" => "std.priority_queue",
+        "Counter" => "std.counter",
+      }.freeze
+
+      def import_hint_for_known_std_name(name)
+        module_path = STD_TYPE_IMPORT_HINTS[name.to_s]
+        return nil unless module_path
+
+        "type '#{name}' is available via 'import #{module_path}'"
+      end
+
       def levenshtein(s, t)
         m = s.length
         n = t.length
