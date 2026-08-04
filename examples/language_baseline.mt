@@ -1755,6 +1755,46 @@ function underscore_repeat_demo() -> int:
     let (_, _, third) = triple
     return third
 
+# --- tuple types in generic arguments ---
+
+function tuple_generic_demo() -> int:
+    var total: int = 0
+
+    # Option[(str, str)]
+    let named_opt = Option[(str, str)].some(value= ("hello", "world"))
+    match named_opt:
+        Option.some as p:
+            let (a, b) = p.value
+            if a == "hello" and b == "world":
+                total += 1
+        Option.none:
+            total += 0
+
+    # Option[(int, int)]
+    let pair_opt = Option[(int, int)].some(value= (3, 7))
+    total += pair_opt.unwrap()._0
+
+    # Result[(str, int), str]
+    let res = Result[(str, int), str].success(value= ("ok", 42))
+    match res:
+        Result.success as s:
+            let (label, code) = s.value
+            if label == "ok":
+                total += code
+        Result.failure:
+            total += 0
+
+    # Result with tuple error type
+    let err_res = Result[int, (str, int)].failure(error= ("fail", 404))
+    match err_res:
+        Result.success:
+            total += 0
+        Result.failure as f:
+            let (msg, code) = f.error
+            total += code
+
+    return total
+
 function get_coords() -> (int, int):
     return (50, 60)
 
@@ -1870,6 +1910,7 @@ function main() -> int:
     total += tuple_demo()
     total += tuple_match_demo()
     total += underscore_repeat_demo()
+    total += tuple_generic_demo()
     total += int<-nested_struct_demo()
     total += traced_demo()
     total += atomic_demo()

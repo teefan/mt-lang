@@ -1506,7 +1506,7 @@ module MilkTea
       case argument
       when AST::TypeRef
         resolve_type_argument_ref(argument, type_params:)
-      when AST::FunctionType, AST::ProcType
+      when AST::FunctionType, AST::ProcType, AST::TupleType
         resolve_type_ref(argument, type_params:)
       when AST::IntegerLiteral, AST::FloatLiteral
         Types::LiteralTypeArg.new(argument.value)

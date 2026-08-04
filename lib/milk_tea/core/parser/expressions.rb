@@ -640,7 +640,7 @@ module MilkTea
 
       def definite_type_argument?(value)
         case value
-        when AST::FunctionType
+        when AST::FunctionType, AST::TupleType
           true
         when AST::TypeRef
           known_type_like_name?(value.name.parts.first)
