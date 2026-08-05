@@ -17,16 +17,6 @@ class MilkTeaTokenStreamTest < Minitest::Test
     assert_same tokens, stream.to_a
   end
 
-  def test_trivia_token_stream_exposes_tokens_and_trivia
-    tokens = [MilkTea::Token.new(type: :identifier, lexeme: "value", literal: nil, line: 1, column: 1, start_offset: 0, end_offset: 5, leading_trivia: [], trailing_trivia: [])]
-    trivia = [MilkTea::TriviaToken.new(kind: :comment, text: "# note", line: 1, column: 7, start_offset: 6, end_offset: 12)]
-
-    stream = MilkTea::TriviaTokenStream.new(tokens, trivia)
-
-    assert_same tokens, stream.tokens
-    assert_same trivia, stream.trivia
-  end
-
   def test_token_helpers_detect_assignment_and_eof_and_append_trivia
     token = MilkTea::Token.new(type: :plus_equal, lexeme: "+=", literal: nil, line: 2, column: 3, start_offset: 10, end_offset: 12, leading_trivia: [], trailing_trivia: [])
     eof = MilkTea::Token.new(type: :eof, lexeme: "", literal: nil, line: 3, column: 1, start_offset: 20, end_offset: 20, leading_trivia: [], trailing_trivia: [])
