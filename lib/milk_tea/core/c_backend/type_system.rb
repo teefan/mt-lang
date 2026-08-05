@@ -224,6 +224,7 @@ module MilkTea
       end
 
       def named_type_c_name(type)
+        return nullable_opt_type_name(type) if type.is_a?(Types::Nullable)
         return task_type_name(type) if type.is_a?(Types::Task)
         if type.is_a?(Types::VariantArmPayload)
           return "#{named_type_c_name(type.variant_type)}_#{type.arm_name}"
