@@ -19,7 +19,7 @@ module MilkTea
           methods: snapshot_methods,
           implemented_interfaces: snapshot_implemented_interfaces,
           local_completion_frames: @local_completion_frames.dup.freeze,
-          binding_resolution: binding_resolution_snapshot,
+          binding_resolution: build_binding_resolution_snapshot,
           callable_value_identifier_sites: @callable_value_identifier_sites.dup.freeze,
           callable_value_member_access_sites: @callable_value_member_access_sites.dup.freeze,
           required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
@@ -163,8 +163,8 @@ module MilkTea
 
           module_binding = @ctx.imported_modules[module_path]
           unless module_binding
-            install_fallback_builtin_type(module_path)
-            @ctx.imports[module_path] = empty_module_binding(module_path) unless @ctx.imports.key?(module_path)
+            install_fallback_prelude_types(module_path)
+            @ctx.imports[module_path] = create_empty_module_binding(module_path) unless @ctx.imports.key?(module_path)
             next
           end
 
@@ -177,7 +177,7 @@ module MilkTea
         end
       end
 
-      def empty_module_binding(module_path)
+      def create_empty_module_binding(module_path)
         ModuleBinding.new(
           name: module_path,
           types: {}, type_declarations: {}, interfaces: {},
@@ -190,7 +190,7 @@ module MilkTea
         )
       end
 
-      def install_fallback_builtin_type(module_path)
+      def install_fallback_prelude_types(module_path)
         case module_path
         when "std.option"
           @ctx.types["Option"] = Types::BUILTIN_OPTION_TYPE unless @ctx.types.key?("Option")
@@ -490,7 +490,7 @@ module MilkTea
             nested_scope = decl.is_a?(AST::StructDecl) ? resolve_nested_type_bindings(decl) : {}
             if decl.is_a?(AST::StructDecl) && struct_type.respond_to?(:define_nested_types)
               struct_type.define_nested_types(nested_scope)
-              define_nested_type_bindings_recursive(decl, parent_name: decl.name)
+              define_nested_type_bindings(decl, parent_name: decl.name)
             end
 
             decl.fields.each do |field|
@@ -804,14 +804,14 @@ module MilkTea
       end
 
 
-      def define_nested_type_bindings_recursive(parent_decl, parent_name: parent_decl.name)
+      def define_nested_type_bindings(parent_decl, parent_name: parent_decl.name)
         parent_decl.nested_types.each do |nested|
           qualified_name = "#{parent_name}.#{nested.name}"
           nested_type = @ctx.types[qualified_name]
           next unless nested_type.is_a?(Types::Struct)
           nested_scope = resolve_nested_type_bindings(nested, parent_name: qualified_name)
           nested_type.define_nested_types(nested_scope)
-          define_nested_type_bindings_recursive(nested, parent_name: qualified_name)
+          define_nested_type_bindings(nested, parent_name: qualified_name)
         end
       end
 

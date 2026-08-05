@@ -192,13 +192,13 @@ module MilkTea
       end
 
       def validate_async_expression_support!(expression, context:)
-        unsupported_context = unsupported_async_await_context(expression)
+        unsupported_context = unsupported_await_position(expression)
         return unless unsupported_context
 
         raise_sema_error("await in async functions is not supported inside #{unsupported_context} yet")
       end
 
-      def unsupported_async_await_context(expression)
+      def unsupported_await_position(expression)
         nil
       end
 

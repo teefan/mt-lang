@@ -310,7 +310,7 @@ module MilkTea
                   else
                     storage_type
                   end
-          unless let_else_discard_binding_syntax?(statement)
+          unless let_else_discards_binding?(statement)
             current_actual_scope(simulated_env[:scopes])[statement.name] = local_binding(
               type:,
               storage_type:,

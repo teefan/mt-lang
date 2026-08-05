@@ -266,7 +266,7 @@ module MilkTea
       # would silently swallow body errors into @structural_errors.  We
       # temporarily disable collect mode on the owner so the caller receives
       # the SemanticError directly.
-      def validate_specialized_function_body(binding)
+      def validate_specialized_function_body!(binding)
         owner = binding.owner
         prev_collecting = owner.instance_variable_get(:@collecting_errors)
         owner.instance_variable_set(:@collecting_errors, false)
@@ -597,7 +597,7 @@ module MilkTea
       # Scans generic method bodies for assignments to this through a
       # non-editable receiver.  Full body checking is deferred to call-site
       # specialization, but immutable-this violations are type-independent.
-      def check_generic_method_immutable_this(binding, scopes)
+      def check_generic_method_this_mutability(binding, scopes)
         this_binding = scopes.first&.values&.find { |v| v.name == "this" }
         return unless this_binding
         return if this_binding.mutable
@@ -629,7 +629,7 @@ module MilkTea
             start_local_completion_frame(binding, scopes)
             if binding.type_params.any?
               if binding.ast.respond_to?(:body)
-                check_generic_method_immutable_this(binding, scopes)
+                check_generic_method_this_mutability(binding, scopes)
                 check_generic_method_names(binding, scopes)
               end
               return

@@ -126,7 +126,7 @@ module MilkTea
         # only partially analysed, and functions whose last statement does not
         # record a snapshot).
         if binding.ast.respond_to?(:body) && binding.ast.body
-          body_end = last_ast_line(binding.ast.body)
+          body_end = statement_block_last_line(binding.ast.body)
           end_line = body_end if body_end && body_end > end_line
         end
 
@@ -190,11 +190,11 @@ module MilkTea
         when AST::ErrorBlockStmt
           lines.concat(statement_list_lines(statement.body))
         when AST::LocalDecl
-          lines << expression_end_line(statement.value) if statement.value
+          lines << expression_last_line(statement.value) if statement.value
           lines.concat(statement_list_lines(statement.else_body)) if statement.else_body
         when AST::IfStmt
           statement.branches.each do |branch|
-            lines << expression_end_line(branch.condition)
+            lines << expression_last_line(branch.condition)
             lines.concat(statement_list_lines(branch.body))
           end
           lines.concat(statement_list_lines(statement.else_body)) if statement.else_body
@@ -205,19 +205,19 @@ module MilkTea
             if arm.respond_to?(:body)
               lines.concat(statement_list_lines(arm.body))
             else
-              lines << expression_end_line(arm.value)
+              lines << expression_last_line(arm.value)
             end
           end
         when AST::DeferStmt
           lines.concat(statement_list_lines(statement.body))
         when AST::Assignment
-          lines << expression_end_line(statement.value)
+          lines << expression_last_line(statement.value)
         when AST::ReturnStmt
-          lines << expression_end_line(statement.value)
+          lines << expression_last_line(statement.value)
         when AST::ExpressionStmt
-          lines << expression_end_line(statement.expression)
+          lines << expression_last_line(statement.expression)
         when AST::StaticAssert
-          lines << expression_end_line(statement.condition)
+          lines << expression_last_line(statement.condition)
         end
 
         lines.compact.max
@@ -232,51 +232,51 @@ module MilkTea
         end
       end
 
-      def expression_end_line(node)
+      def expression_last_line(node)
         return nil unless node
 
         lines = [node.line]
 
         case node
         when AST::MemberAccess
-          lines << expression_end_line(node.receiver)
+          lines << expression_last_line(node.receiver)
         when AST::IndexAccess
-          lines << expression_end_line(node.receiver)
-          lines << expression_end_line(node.index)
+          lines << expression_last_line(node.receiver)
+          lines << expression_last_line(node.index)
         when AST::Specialization
-          lines << expression_end_line(node.callee)
+          lines << expression_last_line(node.callee)
         when AST::Call
-          lines << expression_end_line(node.callee)
-          node.arguments.each { |argument| lines << expression_end_line(argument.value) }
+          lines << expression_last_line(node.callee)
+          node.arguments.each { |argument| lines << expression_last_line(argument.value) }
         when AST::Argument
-          lines << expression_end_line(node.value)
+          lines << expression_last_line(node.value)
         when AST::UnaryOp
-          lines << expression_end_line(node.operand)
+          lines << expression_last_line(node.operand)
         when AST::BinaryOp
-          lines << expression_end_line(node.left)
-          lines << expression_end_line(node.right)
+          lines << expression_last_line(node.left)
+          lines << expression_last_line(node.right)
         when AST::IfExpr
-          lines << expression_end_line(node.condition)
-          lines << expression_end_line(node.then_expression)
-          lines << expression_end_line(node.else_expression)
+          lines << expression_last_line(node.condition)
+          lines << expression_last_line(node.then_expression)
+          lines << expression_last_line(node.else_expression)
         when AST::MatchExpr
-          lines << expression_end_line(node.expression)
+          lines << expression_last_line(node.expression)
           node.arms.each do |arm|
-            lines << expression_end_line(arm.pattern)
-            lines << expression_end_line(arm.value)
+            lines << expression_last_line(arm.pattern)
+            lines << expression_last_line(arm.value)
           end
         when AST::AwaitExpr
-          lines << expression_end_line(node.expression)
+          lines << expression_last_line(node.expression)
         when AST::FormatExprPart
-          lines << expression_end_line(node.expression)
+          lines << expression_last_line(node.expression)
         when AST::PrefixCast
-          lines << expression_end_line(node.expression)
+          lines << expression_last_line(node.expression)
         end
 
         lines.compact.max
       end
 
-      def recovered_for_statement(statement)
+      def rebuild_for_statement(statement)
         AST::ForStmt.new(
           bindings: Array(statement.header_bindings),
           iterables: Array(statement.header_iterables),
@@ -364,31 +364,31 @@ module MilkTea
 
       # Returns the highest line number across a list of AST statement nodes,
       # recursing into nested bodies (if/else/match/while/for/defer/unsafe).
-      def last_ast_line(statements)
+      def statement_block_last_line(statements)
         return nil if statements.nil? || statements.empty?
 
         statements.filter_map do |stmt|
           case stmt
           when AST::IfStmt
-            branch_lines = stmt.branches.filter_map { |b| last_ast_line(b.body) }
-            else_lines = last_ast_line(stmt.else_body)
+            branch_lines = stmt.branches.filter_map { |b| statement_block_last_line(b.body) }
+            else_lines = statement_block_last_line(stmt.else_body)
             [stmt.line, *branch_lines, else_lines].compact.max
           when AST::WhileStmt, AST::ForStmt, AST::UnsafeStmt, AST::ErrorBlockStmt
-            [stmt.line, last_ast_line(stmt.body)].compact.max
+            [stmt.line, statement_block_last_line(stmt.body)].compact.max
           when AST::MatchStmt
             arm_lines = stmt.arms.filter_map do |arm|
               if arm.respond_to?(:body)
-                last_ast_line(arm.body)
+                statement_block_last_line(arm.body)
               elsif arm.respond_to?(:value)
                 arm.value.line
               end
             end
             [stmt.line, *arm_lines].compact.max
           when AST::DeferStmt
-            [stmt.line, last_ast_line(stmt.body)].compact.max
+            [stmt.line, statement_block_last_line(stmt.body)].compact.max
           when AST::WhenStmt
-            branch_lines = stmt.branches.filter_map { |b| last_ast_line(b.body) }
-            else_lines = last_ast_line(stmt.else_body)
+            branch_lines = stmt.branches.filter_map { |b| statement_block_last_line(b.body) }
+            else_lines = statement_block_last_line(stmt.else_body)
             [stmt.line, *branch_lines, else_lines].compact.max
           else
             stmt.line

@@ -86,7 +86,7 @@ module MilkTea
               end
             elsif statement.header_type == :for
               if statement.header_bindings && statement.header_iterables
-                check_for_stmt(recovered_for_statement(statement), scopes:, return_type:, allow_return:)
+                check_for_stmt(rebuild_for_statement(statement), scopes:, return_type:, allow_return:)
               else
                 with_loop do
                   check_block(statement.body, scopes:, return_type:, allow_return:)
@@ -221,7 +221,7 @@ module MilkTea
         end
 
         current_scope = current_actual_scope(scopes)
-        discard_binding = statement.name == "_" || let_else_discard_binding_syntax?(statement)
+        discard_binding = statement.name == "_" || let_else_discards_binding?(statement)
         raise_sema_error("duplicate local #{statement.name}") if !discard_binding && current_scope.key?(statement.name)
         ensure_non_reserved_primitive_name!(statement.name, kind_label: "local", line: statement.line, column: statement.column) unless discard_binding
 
@@ -752,7 +752,7 @@ module MilkTea
         expression.is_a?(AST::Identifier) && expression.name == "_"
       end
 
-      def let_else_discard_binding_syntax?(statement)
+      def let_else_discards_binding?(statement)
         statement.is_a?(AST::LocalDecl) && (statement.else_body || statement.recovered_else) && statement.name == "_"
       end
 

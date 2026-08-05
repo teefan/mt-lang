@@ -6,7 +6,7 @@ module MilkTea
       def check_definite_assignment(binding)
         return unless binding.ast.respond_to?(:body)
 
-        resolution = binding_resolution_snapshot
+        resolution = build_binding_resolution_snapshot
         graph = ControlFlow::Builder.new(
           binding_resolution: ControlFlow::BindingResolution.new(
             identifier_binding_ids: resolution.identifier_binding_ids,
@@ -57,7 +57,7 @@ module MilkTea
         return unless binding.ast.respond_to?(:body)
 
         @nullability_flow_result = nil
-        resolution = precheck_binding_resolution(binding.ast.body, scopes)
+        resolution = lexical_binding_resolution(binding.ast.body, scopes)
         graph = ControlFlow::Builder.new(
           binding_resolution: ControlFlow::BindingResolution.new(
             identifier_binding_ids: resolution.identifier_binding_ids,
@@ -214,7 +214,7 @@ module MilkTea
         end
       end
 
-      def precheck_binding_resolution(statements, scopes)
+      def lexical_binding_resolution(statements, scopes)
         declaration_binding_ids = {}
         identifier_binding_ids = {}
 
@@ -225,7 +225,7 @@ module MilkTea
           end
         end
 
-        walk_statements_for_precheck_resolution(
+        visit_statements_lexical(
           statements || [],
           [initial_scope],
           declaration_binding_ids,
@@ -242,14 +242,14 @@ module MilkTea
         )
       end
 
-      def walk_statements_for_precheck_resolution(statements, scopes, declaration_ids, identifier_ids)
+      def visit_statements_lexical(statements, scopes, declaration_ids, identifier_ids)
         block_scopes = scopes + [{}]
         statements.each do |statement|
           case statement
           when AST::ErrorBlockStmt
             if statement.header_type == :for
               Array(statement.header_iterables).each do |iterable|
-                walk_expression_for_precheck_resolution(iterable, block_scopes, identifier_ids, declaration_ids)
+                visit_expression_lexical(iterable, block_scopes, identifier_ids, declaration_ids)
               end
               for_scopes = block_scopes + [{}]
               Array(statement.header_bindings).each do |binding|
@@ -257,43 +257,43 @@ module MilkTea
                 for_scopes.last[binding.name] = binding_id
                 declaration_ids[binding.object_id] = binding_id
               end
-              walk_statements_for_precheck_resolution(statement.body || [], for_scopes, declaration_ids, identifier_ids)
+              visit_statements_lexical(statement.body || [], for_scopes, declaration_ids, identifier_ids)
             else
-              walk_expression_for_precheck_resolution(statement.header_expression, block_scopes, identifier_ids, declaration_ids) if statement.header_expression
-              walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids)
+              visit_expression_lexical(statement.header_expression, block_scopes, identifier_ids, declaration_ids) if statement.header_expression
+              visit_statements_lexical(statement.body || [], block_scopes, declaration_ids, identifier_ids)
             end
           when AST::LocalDecl
-            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids, declaration_ids) if statement.value
+            visit_expression_lexical(statement.value, block_scopes, identifier_ids, declaration_ids) if statement.value
             if statement.else_binding && (statement.else_body || statement.recovered_else)
               else_scopes = block_scopes + [{}]
               binding_id = @preassigned_local_binding_ids.fetch(statement.else_binding.object_id)
               else_scopes.last[statement.else_binding.name] = binding_id
               declaration_ids[statement.else_binding.object_id] = binding_id
-              walk_statements_for_precheck_resolution(statement.else_body || [], else_scopes, declaration_ids, identifier_ids)
+              visit_statements_lexical(statement.else_body || [], else_scopes, declaration_ids, identifier_ids)
             else
-              walk_statements_for_precheck_resolution(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
+              visit_statements_lexical(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
             end
             binding_id = @preassigned_local_binding_ids.fetch(statement.object_id)
-            unless let_else_discard_binding_syntax?(statement)
+            unless let_else_discards_binding?(statement)
               block_scopes.last[statement.name] = binding_id
               declaration_ids[statement.object_id] = binding_id
             end
           when AST::Assignment
-            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids, declaration_ids)
-            walk_assignment_target_reads_for_precheck_resolution(statement.target, statement.operator, block_scopes, identifier_ids, declaration_ids)
+            visit_expression_lexical(statement.value, block_scopes, identifier_ids, declaration_ids)
+            visit_assignment_reads_lexical(statement.target, statement.operator, block_scopes, identifier_ids, declaration_ids)
             if statement.target.is_a?(AST::Identifier)
-              if (binding_id = resolve_name_in_precheck_scopes(statement.target.name, block_scopes))
+              if (binding_id = resolve_name_in_lexical_scopes(statement.target.name, block_scopes))
                 identifier_ids[statement.target.object_id] = binding_id
               end
             end
           when AST::IfStmt
             statement.branches.each do |branch|
-              walk_expression_for_precheck_resolution(branch.condition, block_scopes, identifier_ids, declaration_ids)
-              walk_statements_for_precheck_resolution(branch.body || [], block_scopes, declaration_ids, identifier_ids)
+              visit_expression_lexical(branch.condition, block_scopes, identifier_ids, declaration_ids)
+              visit_statements_lexical(branch.body || [], block_scopes, declaration_ids, identifier_ids)
             end
-            walk_statements_for_precheck_resolution(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
+            visit_statements_lexical(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
           when AST::MatchStmt
-            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids, declaration_ids)
+            visit_expression_lexical(statement.expression, block_scopes, identifier_ids, declaration_ids)
             statement.arms.each do |arm|
               arm_scopes = block_scopes + [{}]
               if arm.binding_name
@@ -301,14 +301,14 @@ module MilkTea
                 arm_scopes.last[arm.binding_name] = binding_id
                 declaration_ids[arm.object_id] = binding_id
               end
-              walk_statements_for_precheck_resolution(if arm.respond_to?(:body) then (arm.body || []) else [arm.value].compact end, arm_scopes, declaration_ids, identifier_ids)
+              visit_statements_lexical(if arm.respond_to?(:body) then (arm.body || []) else [arm.value].compact end, arm_scopes, declaration_ids, identifier_ids)
             end
           when AST::UnsafeStmt, AST::WhileStmt
-            walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids, declaration_ids) if statement.is_a?(AST::WhileStmt)
-            walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids)
+            visit_expression_lexical(statement.condition, block_scopes, identifier_ids, declaration_ids) if statement.is_a?(AST::WhileStmt)
+            visit_statements_lexical(statement.body || [], block_scopes, declaration_ids, identifier_ids)
           when AST::ForStmt
             statement.iterables.each do |iterable|
-              walk_expression_for_precheck_resolution(iterable, block_scopes, identifier_ids, declaration_ids)
+              visit_expression_lexical(iterable, block_scopes, identifier_ids, declaration_ids)
             end
             for_scopes = block_scopes + [{}]
             statement.bindings.each do |binding|
@@ -316,77 +316,77 @@ module MilkTea
               for_scopes.last[binding.name] = binding_id
               declaration_ids[binding.object_id] = binding_id
             end
-            walk_statements_for_precheck_resolution(statement.body || [], for_scopes, declaration_ids, identifier_ids)
+            visit_statements_lexical(statement.body || [], for_scopes, declaration_ids, identifier_ids)
           when AST::DeferStmt
-            walk_statements_for_precheck_resolution(statement.body, block_scopes, declaration_ids, identifier_ids)
+            visit_statements_lexical(statement.body, block_scopes, declaration_ids, identifier_ids)
           when AST::ExpressionStmt
-            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids, declaration_ids)
+            visit_expression_lexical(statement.expression, block_scopes, identifier_ids, declaration_ids)
           when AST::ReturnStmt
-            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids, declaration_ids) if statement.value
+            visit_expression_lexical(statement.value, block_scopes, identifier_ids, declaration_ids) if statement.value
           when AST::StaticAssert
-            walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids, declaration_ids)
+            visit_expression_lexical(statement.condition, block_scopes, identifier_ids, declaration_ids)
           end
         end
       end
 
-      def walk_expression_for_precheck_resolution(expression, scopes, identifier_ids, declaration_ids = nil)
+      def visit_expression_lexical(expression, scopes, identifier_ids, declaration_ids = nil)
         case expression
         when nil
           nil
         when AST::Identifier
-          if (binding_id = resolve_name_in_precheck_scopes(expression.name, scopes))
+          if (binding_id = resolve_name_in_lexical_scopes(expression.name, scopes))
             identifier_ids[expression.object_id] = binding_id
           end
         when AST::MemberAccess
-          walk_expression_for_precheck_resolution(expression.receiver, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.receiver, scopes, identifier_ids, declaration_ids)
         when AST::IndexAccess
-          walk_expression_for_precheck_resolution(expression.receiver, scopes, identifier_ids, declaration_ids)
-          walk_expression_for_precheck_resolution(expression.index, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.receiver, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.index, scopes, identifier_ids, declaration_ids)
         when AST::Specialization
-          walk_expression_for_precheck_resolution(expression.callee, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.callee, scopes, identifier_ids, declaration_ids)
         when AST::Call
-          walk_expression_for_precheck_resolution(expression.callee, scopes, identifier_ids, declaration_ids)
-          expression.arguments.each { |argument| walk_expression_for_precheck_resolution(argument.value, scopes, identifier_ids, declaration_ids) }
+          visit_expression_lexical(expression.callee, scopes, identifier_ids, declaration_ids)
+          expression.arguments.each { |argument| visit_expression_lexical(argument.value, scopes, identifier_ids, declaration_ids) }
         when AST::UnaryOp
-          walk_expression_for_precheck_resolution(expression.operand, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.operand, scopes, identifier_ids, declaration_ids)
         when AST::BinaryOp
-          walk_expression_for_precheck_resolution(expression.left, scopes, identifier_ids, declaration_ids)
-          walk_expression_for_precheck_resolution(expression.right, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.left, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.right, scopes, identifier_ids, declaration_ids)
         when AST::RangeExpr
-          walk_expression_for_precheck_resolution(expression.start_expr, scopes, identifier_ids, declaration_ids)
-          walk_expression_for_precheck_resolution(expression.end_expr, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.start_expr, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.end_expr, scopes, identifier_ids, declaration_ids)
         when AST::IfExpr
-          walk_expression_for_precheck_resolution(expression.condition, scopes, identifier_ids, declaration_ids)
-          walk_expression_for_precheck_resolution(expression.then_expression, scopes, identifier_ids, declaration_ids)
-          walk_expression_for_precheck_resolution(expression.else_expression, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.condition, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.then_expression, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.else_expression, scopes, identifier_ids, declaration_ids)
         when AST::MatchExpr
-          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.expression, scopes, identifier_ids, declaration_ids)
           expression.arms.each do |arm|
-            walk_expression_for_precheck_resolution(arm.pattern, scopes, identifier_ids, declaration_ids)
+            visit_expression_lexical(arm.pattern, scopes, identifier_ids, declaration_ids)
             arm_scopes = scopes
             if arm.binding_name
               binding_id = @preassigned_local_binding_ids.fetch(arm.object_id)
               arm_scopes = scopes + [{ arm.binding_name => binding_id }]
               declaration_ids[arm.object_id] = binding_id if declaration_ids
             end
-            walk_expression_for_precheck_resolution(if arm.respond_to?(:value) then arm.value else arm.body end, arm_scopes, identifier_ids, declaration_ids)
+            visit_expression_lexical(if arm.respond_to?(:value) then arm.value else arm.body end, arm_scopes, identifier_ids, declaration_ids)
           end
         when AST::UnsafeExpr
-          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.expression, scopes, identifier_ids, declaration_ids)
         when AST::AwaitExpr
-          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(expression.expression, scopes, identifier_ids, declaration_ids)
         when AST::FormatString
           expression.parts.each do |part|
             next unless part.is_a?(AST::FormatExprPart)
 
-            walk_expression_for_precheck_resolution(part.expression, scopes, identifier_ids, declaration_ids)
+            visit_expression_lexical(part.expression, scopes, identifier_ids, declaration_ids)
           end
         end
       end
 
-      def walk_assignment_target_reads_for_precheck_resolution(target, operator, scopes, identifier_ids, declaration_ids = nil)
+      def visit_assignment_reads_lexical(target, operator, scopes, identifier_ids, declaration_ids = nil)
         if operator != "=" && target.is_a?(AST::Identifier)
-          if (binding_id = resolve_name_in_precheck_scopes(target.name, scopes))
+          if (binding_id = resolve_name_in_lexical_scopes(target.name, scopes))
             identifier_ids[target.object_id] = binding_id
           end
         end
@@ -395,16 +395,16 @@ module MilkTea
         when AST::Identifier
           nil
         when AST::MemberAccess
-          walk_expression_for_precheck_resolution(target.receiver, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(target.receiver, scopes, identifier_ids, declaration_ids)
         when AST::IndexAccess
-          walk_expression_for_precheck_resolution(target.receiver, scopes, identifier_ids, declaration_ids)
-          walk_expression_for_precheck_resolution(target.index, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(target.receiver, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(target.index, scopes, identifier_ids, declaration_ids)
         else
-          walk_expression_for_precheck_resolution(target, scopes, identifier_ids, declaration_ids)
+          visit_expression_lexical(target, scopes, identifier_ids, declaration_ids)
         end
       end
 
-      def resolve_name_in_precheck_scopes(name, scopes)
+      def resolve_name_in_lexical_scopes(name, scopes)
         scopes.reverse_each do |scope|
           return scope[name] if scope.key?(name)
         end

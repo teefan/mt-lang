@@ -1424,7 +1424,7 @@ module MilkTea
         ValueBinding.new(id:, name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value:)
       end
 
-      def binding_resolution_snapshot
+      def build_binding_resolution_snapshot
         BindingResolution.new(
           identifier_binding_ids: @identifier_binding_ids.dup.freeze,
           declaration_binding_ids: @declaration_binding_ids.dup.freeze,

@@ -81,7 +81,7 @@ module MilkTea
       end
 
       def foreign_mapping_expression(decl)
-        return decl.mapping unless foreign_mapping_auto_call_shorthand?(decl.mapping)
+        return decl.mapping unless foreign_mapping_implicit_call?(decl.mapping)
 
         AST::Call.new(
           callee: decl.mapping,
@@ -89,14 +89,14 @@ module MilkTea
         )
       end
 
-      def foreign_mapping_auto_call_shorthand?(expression)
+      def foreign_mapping_implicit_call?(expression)
         case expression
         when AST::Identifier
           true
         when AST::MemberAccess
-          foreign_mapping_auto_call_shorthand?(expression.receiver)
+          foreign_mapping_implicit_call?(expression.receiver)
         when AST::Specialization
-          foreign_mapping_auto_call_shorthand?(expression.callee)
+          foreign_mapping_implicit_call?(expression.callee)
         else
           false
         end

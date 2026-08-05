@@ -784,16 +784,16 @@ module MilkTea
       duplicated
     end
 
-    def let_else_discard_binding_syntax?(statement)
+    def let_else_discards_binding?(statement)
       statement.is_a?(AST::LocalDecl) && statement.else_body && statement.name == "_"
     end
 
     def bind_let_else_local?(statement)
-      !let_else_discard_binding_syntax?(statement)
+      !let_else_discards_binding?(statement)
     end
 
     def let_else_storage_c_name(statement, env)
-      return fresh_c_temp_name(env, "let_else_discard") if let_else_discard_binding_syntax?(statement)
+      return fresh_c_temp_name(env, "let_else_discard") if let_else_discards_binding?(statement)
 
       return fresh_c_temp_name(env, "_") if statement.name == "_"
 

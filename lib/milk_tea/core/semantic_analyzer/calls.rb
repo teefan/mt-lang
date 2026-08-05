@@ -757,7 +757,7 @@ module MilkTea
         false
       end
 
-      def char_array_removed_text_method?(receiver_type, name)
+      def char_array_text_method_unavailable?(receiver_type, name)
         return unless char_array_text_type?(receiver_type)
 
         name == "as_str" || name == "as_cstr"

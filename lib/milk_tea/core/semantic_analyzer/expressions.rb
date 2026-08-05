@@ -397,7 +397,7 @@ module MilkTea
           element_type = array_element_type(field_receiver_type)
           return Types::Registry.span(element_type)
         end
-        if char_array_removed_text_method?(method_receiver_type, expression.member)
+        if char_array_text_method_unavailable?(method_receiver_type, expression.member)
           raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")
         end
         if specialized_receiver_method_kind(method_receiver_type, expression.member)
@@ -939,7 +939,7 @@ module MilkTea
           )
 
           check_function_call(callable, expression.arguments, scopes:)
-          validate_specialized_function_body(callable) unless callable.type_arguments.empty?
+          validate_specialized_function_body!(callable) unless callable.type_arguments.empty?
           callable.type.return_type
         when :method
           callable = specialize_function_binding(
@@ -952,7 +952,7 @@ module MilkTea
           raise_sema_error("cannot call editable method #{callable.name} on an immutable receiver") if callable.type.receiver_editable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
-          validate_specialized_function_body(callable) unless callable.type_arguments.empty?
+          validate_specialized_function_body!(callable) unless callable.type_arguments.empty?
           callable.type.return_type
         when :callable_value
           check_callable_value_call(callable, expression.arguments, scopes:, callee_expression: expression.callee)
@@ -1349,7 +1349,7 @@ module MilkTea
             return [:struct_with, method_receiver_type, callee.receiver]
           end
 
-          if char_array_removed_text_method?(method_receiver_type, callee.member)
+          if char_array_text_method_unavailable?(method_receiver_type, callee.member)
             raise_sema_error("#{method_receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")
           end
 
