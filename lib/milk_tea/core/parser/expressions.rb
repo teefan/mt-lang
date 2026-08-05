@@ -231,7 +231,7 @@ module MilkTea
 
       def try_parse_prefix_cast_expression
         saved_current = @current
-        return nil unless check_name && known_type_like_name?(peek.lexeme)
+        return nil unless check_name && known_type_context_name?(peek.lexeme)
 
         start_token = peek
         expression = nil
@@ -253,7 +253,7 @@ module MilkTea
         expression = parse_unary
         AST::PrefixCast.new(target_type:, expression:, line: start_token.line, column: start_token.column)
       rescue ParseError => e
-        raise e if parse_diagnostic_hint?(e)
+        raise e if diagnostic_hint_error?(e)
 
         nil
       ensure
@@ -324,7 +324,7 @@ module MilkTea
 
         AST::Specialization.new(callee: expression, arguments:)
       rescue ParseError => e
-        raise e if parse_diagnostic_hint?(e)
+        raise e if diagnostic_hint_error?(e)
 
         @current = saved_current
         nil
@@ -344,7 +344,7 @@ module MilkTea
       end
 
       def parse_call_argument
-        if (check_name || keyword_token?(peek)) && check_next(:equal)
+        if (check_name || keyword?(peek)) && check_next(:equal)
           name = advance.lexeme
           consume(:equal, "expected '=' after named argument name")
           AST::Argument.new(name:, value: parse_expression)
@@ -355,15 +355,15 @@ module MilkTea
 
       def parse_primary
         if match(:size_of)
-          parse_sizeof_expr
+          parse_sizeof_expression
         elsif match(:align_of)
-          parse_alignof_expr
+          parse_alignof_expression
         elsif match(:offset_of)
-          parse_offsetof_expr
+          parse_offsetof_expression
         elsif match(:members_of) || match(:attributes_of) || match(:field_of) || match(:callable_of) || match(:attribute_of) || match(:has_attribute) || match(:attribute_arg) || match(:fields_of)
           AST::Identifier.new(name: previous.lexeme, line: previous.line, column: previous.column)
         elsif match(:proc)
-          parse_proc_expr
+          parse_proc_expression
         elsif match_name
           AST::Identifier.new(name: previous.lexeme, line: previous.line, column: previous.column)
         elsif match(:integer)
@@ -394,7 +394,7 @@ module MilkTea
         elsif match(:lparen)
           line = previous.line
           column = previous.column
-          first = if (check_name || keyword_token?(peek)) && check_next(:equal)
+          first = if (check_name || keyword?(peek)) && check_next(:equal)
                     name_token = advance
                     consume(:equal, "expected '=' after named tuple field")
                     AST::Argument.new(name: name_token.lexeme, value: parse_expression)
@@ -404,7 +404,7 @@ module MilkTea
           if match(:comma)
             elements = [first]
             loop do
-              if (check_name || keyword_token?(peek)) && check_next(:equal)
+              if (check_name || keyword?(peek)) && check_next(:equal)
                 name_token = advance
                 consume(:equal, "expected '=' after named tuple field")
                 value = parse_expression
@@ -421,7 +421,7 @@ module MilkTea
             consume(:rparen, "expected ')' after expression")
             first
           end
-        elsif keyword_token?(peek)
+        elsif keyword?(peek)
           advance
           AST::Identifier.new(name: previous.lexeme, line: previous.line, column: previous.column)
         else
@@ -444,9 +444,9 @@ module MilkTea
         AST::StringLiteral.new(lexeme:, value:, cstring: all_cstring)
       end
 
-      def parse_proc_expr
+      def parse_proc_expression
         consume(:lparen, "expected '(' after proc")
-        params = parse_comma_separated_until(:rparen) { parse_function_type_param }
+        params = parse_comma_separated_until(:rparen) { parse_callable_type_param }
 
         consume(:rparen, "expected ')' after proc parameters")
         consume(:arrow, "expected '->' after proc parameters")
@@ -463,21 +463,21 @@ module MilkTea
         AST::ProcExpr.new(params:, return_type:, body:)
       end
 
-      def parse_sizeof_expr
+      def parse_sizeof_expression
         consume(:lparen, "expected '(' after size_of")
         type = parse_type_ref
         consume(:rparen, "expected ')' after size_of type")
         AST::SizeofExpr.new(type:)
       end
 
-      def parse_alignof_expr
+      def parse_alignof_expression
         consume(:lparen, "expected '(' after align_of")
         type = parse_type_ref
         consume(:rparen, "expected ')' after align_of type")
         AST::AlignofExpr.new(type:)
       end
 
-      def parse_offsetof_expr
+      def parse_offsetof_expression
         consume(:lparen, "expected '(' after offset_of")
         type = parse_type_ref
         consume(:comma, "expected ',' after offset_of type")
@@ -581,7 +581,7 @@ module MilkTea
         expression.is_a?(AST::Identifier) && %w[array reinterpret span zero ptr const_ptr own ref adapt equal hash order simd SoA].include?(expression.name)
       end
 
-      def parse_diagnostic_hint?(error)
+      def diagnostic_hint_error?(error)
         error.message.include?("did you mean T<-expr?")
       end
 
@@ -598,7 +598,7 @@ module MilkTea
 
       def specialization_call_target?(expression, arguments, call_arguments)
         if expression.is_a?(AST::Identifier) && %w[default zero].include?(expression.name) &&
-            !known_type_like_name?(expression.name) && !generic_callable_specialization_target?(expression)
+            !known_type_context_name?(expression.name) && !generic_callable_specialization_target?(expression)
           return false
         end
 
@@ -643,7 +643,7 @@ module MilkTea
         when AST::FunctionType, AST::TupleType
           true
         when AST::TypeRef
-          known_type_like_name?(value.name.parts.first)
+          known_type_context_name?(value.name.parts.first)
         else
           false
         end

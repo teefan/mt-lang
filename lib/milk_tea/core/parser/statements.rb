@@ -363,7 +363,7 @@ module MilkTea
                          binding_token.lexeme
                        end
 
-        if match_arm_expr_form?
+        if match_arm_expression_form?
           consume(:colon, "expected ':' after match expression arm pattern")
           value = parse_expression
           finish_expression_statement(value)
@@ -410,7 +410,7 @@ module MilkTea
         raise
       end
 
-      def match_arm_expr_form?
+      def match_arm_expression_form?
         check(:colon) && @current + 1 < @tokens.length && @tokens[@current + 1].type != :newline
       end
 

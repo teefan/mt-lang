@@ -63,7 +63,7 @@ module MilkTea
       end
 
       def parse_foreign_param
-        mode = if foreign_param_qualifier_mode?
+        mode = if foreign_param_mode_start?
                  advance.type
                else
                  :plain
@@ -158,7 +158,7 @@ module MilkTea
 
       def parse_callable_type_ref(keyword:, param_context:)
         consume(:lparen, "expected '(' after #{keyword}")
-        params = parse_comma_separated_until(:rparen) { parse_function_type_param }
+        params = parse_comma_separated_until(:rparen) { parse_callable_type_param }
 
         consume(:rparen, "expected ')' after #{param_context}")
         consume(:arrow, "expected '->' after #{param_context}")
@@ -166,7 +166,7 @@ module MilkTea
         yield params, return_type
       end
 
-      def parse_function_type_param
+      def parse_callable_type_param
         name_token = consume_name_allowing_keywords("expected function type parameter name")
         name = name_token.lexeme
         consume(:colon, "expected ':' after function type parameter name")

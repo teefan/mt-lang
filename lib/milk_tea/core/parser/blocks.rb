@@ -51,7 +51,7 @@ module MilkTea
         statements
       end
 
-      def parse_named_block(&block)
+      def parse_recoverable_block(&block)
         consume(:colon, "expected ':' before block")
         consume(:newline, "expected newline before block")
         consume(:indent, "expected indented block")

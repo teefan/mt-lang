@@ -375,9 +375,9 @@ module MilkTea
         name = name_token.lexeme
         lifetime_params, type_params = parse_struct_decl_params
         implements = parse_implements_clause
-        c_name = parse_optional_explicit_c_name
+        c_name = parse_optional_c_name
         packed, alignment = parse_struct_layout_attributes(attributes) if attributes.any?
-        members = parse_named_block do
+        members = parse_recoverable_block do
           parse_struct_member
         end
         fields = members.filter_map { |kind, member| member if kind == :field }
@@ -462,8 +462,8 @@ module MilkTea
         line = previous.line
         name_token = consume_name("expected union name")
         name = name_token.lexeme
-        c_name = parse_optional_explicit_c_name
-        fields = parse_named_block do
+        c_name = parse_optional_c_name
+        fields = parse_recoverable_block do
                        field_name = consume_name_allowing_keywords("expected field name").lexeme
           consume(:colon, "expected ':' after field name")
           field_type = parse_type_ref
@@ -473,7 +473,7 @@ module MilkTea
         AST::UnionDecl.new(name:, c_name:, fields:, visibility:, attributes:, line:, column: name_token.column)
       end
 
-      def parse_optional_explicit_c_name
+      def parse_optional_c_name
         return nil unless match(:equal)
 
         consume(:cstring, "expected C string literal after '='").literal
@@ -516,7 +516,7 @@ module MilkTea
         name_token = consume_name("expected variant name")
         name = name_token.lexeme
         type_params = parse_declaration_type_params
-        arms = parse_named_block do
+        arms = parse_recoverable_block do
           arm_name = consume_name_allowing_keywords("expected variant arm name").lexeme
           fields = if match(:lparen)
                      parsed = parse_comma_separated_until(:rparen) do
@@ -554,7 +554,7 @@ module MilkTea
         name_token = consume_name("expected interface name")
         name = name_token.lexeme
         type_params = parse_declaration_type_params
-        methods = parse_named_block do
+        methods = parse_recoverable_block do
           method_attributes = parse_attribute_applications
           parse_interface_method_decl(attributes: method_attributes)
         end
@@ -566,7 +566,7 @@ module MilkTea
         type_name = parse_type_ref
         receiver_type_param_names = extending_target_type_param_names(type_name)
         methods = with_type_param_names(receiver_type_param_names) do
-          parse_named_block do
+          parse_recoverable_block do
             method_attributes = parse_attribute_applications
             parse_method_def(attributes: method_attributes)
           end
@@ -588,7 +588,7 @@ module MilkTea
           end
           if value.name.parts.length == 1 && value.arguments.empty? && !value.nullable
             name = value.name.parts.first
-            nested_names << name unless known_type_like_name?(name)
+            nested_names << name unless known_type_context_name?(name)
           end
           nested_names
         when AST::FunctionType, AST::ProcType
@@ -613,7 +613,7 @@ module MilkTea
       end
 
       def parse_method_def(attributes: [])
-        visibility, _visibility_token, async, kind, line, name_token = parse_method_like_decl_head
+        visibility, _visibility_token, async, kind, line, name_token = parse_method_head
         name = name_token.lexeme
         type_params, params, return_type, body = parse_callable_signature
         AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, attributes:, line:, column: name_token.column)
@@ -628,7 +628,7 @@ module MilkTea
       end
 
       def parse_interface_method_decl(attributes: [])
-        visibility, visibility_token, async, kind, line, name_token = parse_method_like_decl_head
+        visibility, visibility_token, async, kind, line, name_token = parse_method_head
         raise error(visibility_token, "public is not allowed on interface methods") if visibility == :public
 
         name = name_token.lexeme
@@ -641,7 +641,7 @@ module MilkTea
         AST::InterfaceMethodDecl.new(name:, params:, return_type:, kind:, async:, attributes:, line:, column: name_token.column)
       end
 
-      def parse_method_like_decl_head
+      def parse_method_head
         visibility, visibility_token = parse_visibility
         async = match(:async)
         kind = parse_method_kind
@@ -679,7 +679,7 @@ module MilkTea
           params = parse_params
           return_type = match(:arrow) ? parse_type_ref : nil
           if allow_body
-            body = parse_block_body_safe
+            body = parse_block_body_with_recovery
           else
             consume_end_of_statement
           end
@@ -688,7 +688,7 @@ module MilkTea
         [type_params, params, return_type, body]
       end
 
-      def parse_block_body_safe
+      def parse_block_body_with_recovery
         parse_block
       rescue ParseError => e
         raise unless @recovery_errors

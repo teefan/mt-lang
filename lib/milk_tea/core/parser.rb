@@ -124,7 +124,7 @@ module MilkTea
       directives = []
       declarations = []
 
-      if external_file_header?
+      if at_external_file?
         advance
         module_line = previous.line
         module_kind = :raw_module
@@ -168,7 +168,7 @@ module MilkTea
       AST.assign_node_ids(AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line))
     end
 
-    def external_file_header?
+    def at_external_file?
       return false unless check(:external)
 
       next_token = @tokens[@current + 1]
@@ -206,7 +206,7 @@ module MilkTea
     end
 
     def consume_name(message)
-      if keyword_token?(peek)
+      if keyword?(peek)
         name_role = message.sub(/\A(?:expected|required)\s+/, "")
         clearer_message = if name_role == message
                             message
@@ -222,14 +222,14 @@ module MilkTea
     def consume_name_allowing_keywords(message)
       if check(:identifier)
         advance
-      elsif keyword_token?(peek)
+      elsif keyword?(peek)
         advance
       else
         raise error(peek, message)
       end
     end
 
-    def keyword_token?(token)
+    def keyword?(token)
       token && Token::KEYWORDS.key?(token.lexeme)
     end
 
@@ -306,7 +306,7 @@ module MilkTea
       items
     end
 
-    def foreign_param_qualifier_mode?
+    def foreign_param_mode_start?
       return false unless %i[out in inout consuming].include?(peek.type)
 
       @tokens[@current + 1]&.type == :identifier
@@ -316,7 +316,7 @@ module MilkTea
       token&.type == :identifier && BUILTIN_ATTRIBUTE_NAME_LEXEMES.include?(token.lexeme)
     end
 
-    def known_type_like_name?(name)
+    def known_type_context_name?(name)
       @known_type_names.key?(name) || @known_import_aliases.key?(name) || @current_type_param_names.include?(name)
     end
 
@@ -366,7 +366,7 @@ module MilkTea
           if depth.zero?
             name_token = @tokens[index + 1]
             type_param_token = @tokens[index + 2]
-            if type_name_token?(name_token) && type_param_token&.type == :lbracket
+            if identifier_token?(name_token) && type_param_token&.type == :lbracket
               @known_generic_callable_names[name_token.lexeme] = true
             end
           end
@@ -374,7 +374,7 @@ module MilkTea
           if depth.zero? && @tokens[index + 1]&.type == :function
             name_token = @tokens[index + 2]
             type_param_token = @tokens[index + 3]
-            if type_name_token?(name_token) && type_param_token&.type == :lbracket
+            if identifier_token?(name_token) && type_param_token&.type == :lbracket
               @known_generic_callable_names[name_token.lexeme] = true
             end
           end
@@ -382,14 +382,14 @@ module MilkTea
           if depth.zero? && @tokens[index + 1]&.type == :function
             name_token = @tokens[index + 2]
             type_param_token = @tokens[index + 3]
-            if type_name_token?(name_token) && type_param_token&.type == :lbracket
+            if identifier_token?(name_token) && type_param_token&.type == :lbracket
               @known_generic_callable_names[name_token.lexeme] = true
             end
           end
         when :struct, :union, :enum, :flags, :opaque, :type, :variant
           if depth.zero?
             name_token = @tokens[index + 1]
-            @known_type_names[name_token.lexeme] = true if type_name_token?(name_token)
+            @known_type_names[name_token.lexeme] = true if identifier_token?(name_token)
           end
         end
 
@@ -405,11 +405,11 @@ module MilkTea
         token = @tokens[cursor]
         if token.type == :as
           alias_token = @tokens[cursor + 1]
-          @known_import_aliases[alias_token.lexeme] = true if type_name_token?(alias_token)
+          @known_import_aliases[alias_token.lexeme] = true if identifier_token?(alias_token)
           return cursor
         end
 
-        last_part = token.lexeme if type_name_token?(token)
+        last_part = token.lexeme if identifier_token?(token)
         cursor += 1
       end
 
@@ -417,7 +417,7 @@ module MilkTea
       cursor
     end
 
-    def type_name_token?(token)
+    def identifier_token?(token)
       token&.type == :identifier
     end
 
