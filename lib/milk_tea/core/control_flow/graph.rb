@@ -80,7 +80,7 @@ module MilkTea
         order
       end
 
-      def read_bindings
+      def all_read_binding_keys
         keys = Set.new
         each_node { |node| keys.merge(node.reads) }
         keys

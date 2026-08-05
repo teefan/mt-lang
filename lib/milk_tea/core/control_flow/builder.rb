@@ -118,7 +118,7 @@ module MilkTea
             )
             @graph.add_edge(cond_id, then_entry, label: :true_branch)
             @graph.add_edge(cond_id, fallback_entry, label: :false_branch)
-            emit_null_test_refinements(cond_id, then_entry, fallback_entry, branch.condition)
+            add_null_test_refinements(cond_id, then_entry, fallback_entry, branch.condition)
             fallback_entry = cond_id
           end
           fallback_entry
@@ -177,7 +177,7 @@ module MilkTea
           body_entry = build_block(stmt.body, cond_id, break_target: next_id, continue_target: cond_id)
           @graph.add_edge(cond_id, body_entry, label: :true_branch)
           @graph.add_edge(cond_id, next_id, label: :false_branch)
-          emit_null_test_refinements(cond_id, body_entry, next_id, stmt.condition)
+          add_null_test_refinements(cond_id, body_entry, next_id, stmt.condition)
           cond_id
         when AST::ForStmt
           writes = Set.new
@@ -582,7 +582,7 @@ module MilkTea
         name
       end
 
-      def emit_null_test_refinements(cond_id, true_succ, false_succ, condition)
+      def add_null_test_refinements(cond_id, true_succ, false_succ, condition)
         pairs = null_check_pairs(condition, positive: true)
         return if pairs.empty?
 

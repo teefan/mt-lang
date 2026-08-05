@@ -168,8 +168,8 @@ module MilkTea
             statement.body.each { |nested| emit_statement(nested) }
           end
         when IR::ForStmt
-          init = render_for_clause_statement(statement.init)
-          post = render_for_clause_statement(statement.post)
+          init = render_for_loop_clause(statement.init)
+          post = render_for_loop_clause(statement.post)
           line("for #{init}; #{render_expression(statement.condition)}; #{post}:")
           with_indent do
             statement.body.each { |nested| emit_statement(nested) }
@@ -265,7 +265,7 @@ module MilkTea
         end
       end
 
-      def render_for_clause_statement(statement)
+      def render_for_loop_clause(statement)
         case statement
         when IR::LocalDecl
           "#{statement.linkage_name}: #{statement.type} = #{render_expression(statement.value)}"
@@ -279,12 +279,12 @@ module MilkTea
       end
 
       def render_postfix(expression)
-        return render_expression(expression, POSTFIX_PRECEDENCE) if postfix_expression?(expression)
+        return render_expression(expression, POSTFIX_PRECEDENCE) if atomic_expression?(expression)
 
         "(#{render_expression(expression)})"
       end
 
-      def postfix_expression?(expression)
+      def atomic_expression?(expression)
         expression.is_a?(IR::Name) || expression.is_a?(IR::Member) || expression.is_a?(IR::Index) || expression.is_a?(IR::Call)
       end
 

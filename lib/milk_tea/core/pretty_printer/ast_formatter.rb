@@ -619,7 +619,7 @@ module MilkTea
 
         inline = render_inline_statement(nested)
         return nil unless inline
-        return nil if unsafe_inline_trivia_conflict?(statement, nested)
+        return nil if unsafe_inline_comment_conflict?(statement, nested)
 
         "unsafe: #{inline}"
       end
@@ -652,7 +652,7 @@ module MilkTea
         end
       end
 
-      def unsafe_inline_trivia_conflict?(unsafe_stmt, nested)
+      def unsafe_inline_comment_conflict?(unsafe_stmt, nested)
         unsafe_line = unsafe_stmt.line
         nested_line = nested&.line
         return false unless unsafe_line && nested_line && nested_line > unsafe_line
@@ -774,7 +774,7 @@ module MilkTea
           else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
           wrap("if #{condition}: #{then_expression} else: #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
         when AST::MatchExpr
-          sugared = render_is_expression(expression, parent_precedence)
+          sugared = try_resugar_is_expression(expression, parent_precedence)
           return sugared if sugared
 
           rendered_expression = render_expression(expression.expression, IF_EXPRESSION_PRECEDENCE)
@@ -868,7 +868,7 @@ module MilkTea
       # `expr is Arm` desugars at parse time to `match expr: Arm: true; _: false`;
       # re-sugar that exact shape back to `is` so the formatter round-trips (and a
       # multi-line match does not break when used as a statement condition).
-      def render_is_expression(expression, parent_precedence)
+      def try_resugar_is_expression(expression, parent_precedence)
         arms = expression.arms
         return nil unless arms.length == 2
 
@@ -892,12 +892,12 @@ module MilkTea
       end
 
       def render_postfix(expression)
-        return render_expression(expression, POSTFIX_PRECEDENCE) if postfix_expression?(expression)
+        return render_expression(expression, POSTFIX_PRECEDENCE) if atomic_expression?(expression)
 
         "(#{render_expression(expression)})"
       end
 
-      def postfix_expression?(expression)
+      def atomic_expression?(expression)
         expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::IndexAccess) ||
           expression.is_a?(AST::Specialization) || expression.is_a?(AST::Call) ||
           (expression.is_a?(AST::UnaryOp) && expression.operator == "?")

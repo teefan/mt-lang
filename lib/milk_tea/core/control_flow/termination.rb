@@ -11,7 +11,7 @@ module MilkTea
         !reachability.reachable_ids.include?(graph.exit_id)
       end
 
-      def self.loop_body_always_exits?(statements, **builder_options)
+      def self.loop_body_always_terminates?(statements, **builder_options)
         return false if statements.nil? || statements.empty?
 
         graph = Builder.new(**builder_options).build_loop_body(statements)

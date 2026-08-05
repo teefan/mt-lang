@@ -137,7 +137,7 @@ module MilkTea
           DeadAssignmentAnalysis.new(
             graph:,
             liveness:,
-            readable_bindings: graph.read_bindings,
+            readable_bindings: graph.all_read_binding_keys,
             locally_declared:,
           )
         end
@@ -332,7 +332,7 @@ module MilkTea
           case stmt
           when AST::WhileStmt
             body = stmt.body || []
-            if !body.empty? && ControlFlow::Termination.loop_body_always_exits?(body)
+            if !body.empty? && ControlFlow::Termination.loop_body_always_terminates?(body)
               @warnings << Warning.new(
                 path: @path,
                 line: stmt.line,
@@ -346,7 +346,7 @@ module MilkTea
             walk_stmts_for_loop_check(body)
           when AST::ForStmt
             body = stmt.body || []
-            if !body.empty? && ControlFlow::Termination.loop_body_always_exits?(body)
+            if !body.empty? && ControlFlow::Termination.loop_body_always_terminates?(body)
               @warnings << Warning.new(
                 path: @path,
                 line: stmt.line,

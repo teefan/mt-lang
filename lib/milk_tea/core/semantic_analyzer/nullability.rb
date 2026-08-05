@@ -32,7 +32,7 @@ module MilkTea
         end
         # Any binding read but never defined in this function body is treated as
         # preassigned (for example module-level const/var bindings).
-        initially_assigned.merge(graph.read_bindings - local_declared_ids)
+        initially_assigned.merge(graph.all_read_binding_keys - local_declared_ids)
 
         result = ControlFlow::DefiniteAssignment.solve(graph, initially_assigned:)
         first_issue = result.read_before_assignment.min_by do |issue|
