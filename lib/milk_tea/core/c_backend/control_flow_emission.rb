@@ -52,26 +52,26 @@ module MilkTea
         end
       end
 
-      def statements_need_explicit_break_label_after_emission?(statements, label_name, loop_break_label_active:)
+      def block_requires_break_label?(statements, label_name, loop_break_label_active:)
         statements.any? do |statement|
-          statement_needs_explicit_break_label_after_emission?(statement, label_name, loop_break_label_active:)
+          statement_requires_break_label?(statement, label_name, loop_break_label_active:)
         end
       end
 
-      def statement_needs_explicit_break_label_after_emission?(statement, label_name, loop_break_label_active:)
+      def statement_requires_break_label?(statement, label_name, loop_break_label_active:)
         case statement
         when IR::BlockStmt, IR::IfStmt
           then_body = statement.is_a?(IR::IfStmt) ? statement.then_body : statement.body
           else_body = statement.is_a?(IR::IfStmt) ? statement.else_body : nil
-          statements_need_explicit_break_label_after_emission?(then_body, label_name, loop_break_label_active:) ||
-            (else_body && statements_need_explicit_break_label_after_emission?(else_body, label_name, loop_break_label_active:))
+          block_requires_break_label?(then_body, label_name, loop_break_label_active:) ||
+            (else_body && block_requires_break_label?(else_body, label_name, loop_break_label_active:))
         when IR::WhileStmt, IR::ForStmt
-          statements_need_explicit_break_label_after_emission?(statement.body, label_name, loop_break_label_active: false)
+          block_requires_break_label?(statement.body, label_name, loop_break_label_active: false)
         when IR::SwitchStmt
           return false unless statement_references_label?(statement, label_name)
 
-          active = loop_break_label_active && switch_emittable_as_if?(statement, loop_break_label: label_name)
-          statements_need_explicit_break_label_after_emission?(
+          active = loop_break_label_active && can_emit_switch_as_if?(statement, loop_break_label: label_name)
+          block_requires_break_label?(
             statement.cases.flat_map(&:body),
             label_name,
             loop_break_label_active: active,
@@ -83,7 +83,7 @@ module MilkTea
         end
       end
 
-      def switch_emittable_as_if?(statement, loop_break_label: nil)
+      def can_emit_switch_as_if?(statement, loop_break_label: nil)
         return false unless loop_break_label
         return false unless statement.exhaustive
         return false unless statement.cases.length == 2
@@ -183,7 +183,7 @@ module MilkTea
         lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
         lines.concat(emit_statement_sequence(statement.then_body, level + 1, function:, used_labels:, loop_continue_label:, loop_break_label:))
 
-        nested_else_if = nested_else_if_statement(statement.else_body)
+        nested_else_if = extract_nested_else_if(statement.else_body)
         if nested_else_if
           nested_lines = emit_if_statement(nested_else_if, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
           lines << "#{indent}} else #{nested_lines.first.sub(/^#{Regexp.escape(indent)}/, "") }"
@@ -199,7 +199,7 @@ module MilkTea
         lines
       end
 
-      def nested_else_if_statement(else_body)
+      def extract_nested_else_if(else_body)
         return unless else_body && else_body.length == 1
 
         nested = else_body.first

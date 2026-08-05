@@ -127,7 +127,7 @@ module MilkTea
         lines << ""
       end
       if uses_vector_math_types?
-        lines.concat(emit_vector_math_types)
+        lines.concat(emit_vector_math_typedefs)
         lines << ""
       end
       if uses_fatal_helper?
@@ -146,8 +146,8 @@ module MilkTea
         lines.concat(emit_str_equality_helper)
         lines << ""
       end
-      if uses_text_buffer_helpers?
-        lines.concat(emit_text_buffer_helpers)
+      if uses_str_buffer_helpers?
+        lines.concat(emit_utf8_validation_helpers)
         lines << ""
       end
       if uses_async_memory_helpers?

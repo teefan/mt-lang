@@ -72,7 +72,7 @@ module MilkTea
           collect_reinterpret_helpers_from_expression(expression.then_expression, helpers, seen)
           collect_reinterpret_helpers_from_expression(expression.else_expression, helpers, seen)
         when IR::ReinterpretExpr
-          return if no_op_reinterpret?(expression.target_type, expression.source_type)
+          return if identity_reinterpret?(expression.target_type, expression.source_type)
 
           key = [expression.target_type, expression.source_type]
           unless seen[key]
@@ -112,7 +112,7 @@ module MilkTea
         "mt_reinterpret_#{sanitize_identifier(target_type.to_s)}_from_#{sanitize_identifier(source_type.to_s)}"
       end
 
-      def no_op_cast?(expression)
+      def identity_cast?(expression)
         return false if expression.expression.type.is_a?(Types::Null)
 
         c_type(expression.target_type) == c_type(expression.expression.type)
@@ -120,37 +120,37 @@ module MilkTea
         false
       end
 
-      def no_op_reinterpret?(target_type, source_type)
+      def identity_reinterpret?(target_type, source_type)
         c_type(target_type) == c_type(source_type)
       rescue StandardError
         false
       end
 
       def checked_array_index_helper_name(type)
-        return "mt_checked_index_array_#{sanitize_identifier(c_declaration(array_element_type(type), 'value'))}_#{array_length(type)}" if array_type?(type) && callable_container_element_type?(array_element_type(type))
+        return "mt_checked_index_array_#{sanitize_identifier(c_declaration(array_element_type(type), 'value'))}_#{array_length(type)}" if array_type?(type) && function_or_proc_element_type?(array_element_type(type))
 
         "mt_checked_index_#{sanitize_identifier(type.to_s)}"
       end
 
       def checked_span_index_helper_name(type)
-        return "mt_checked_span_index_#{sanitize_identifier(c_declaration(type.element_type, 'value'))}" if callable_container_element_type?(type.element_type)
+        return "mt_checked_span_index_#{sanitize_identifier(c_declaration(type.element_type, 'value'))}" if function_or_proc_element_type?(type.element_type)
 
         "mt_checked_span_index_#{sanitize_identifier(type.to_s)}"
       end
 
       def nullable_array_index_helper_name(type)
-        return "mt_nullable_index_array_#{sanitize_identifier(c_declaration(array_element_type(type), 'value'))}_#{array_length(type)}" if array_type?(type) && callable_container_element_type?(array_element_type(type))
+        return "mt_nullable_index_array_#{sanitize_identifier(c_declaration(array_element_type(type), 'value'))}_#{array_length(type)}" if array_type?(type) && function_or_proc_element_type?(array_element_type(type))
 
         "mt_nullable_index_#{sanitize_identifier(type.to_s)}"
       end
 
       def nullable_span_index_helper_name(type)
-        return "mt_nullable_span_index_#{sanitize_identifier(c_declaration(type.element_type, 'value'))}" if callable_container_element_type?(type.element_type)
+        return "mt_nullable_span_index_#{sanitize_identifier(c_declaration(type.element_type, 'value'))}" if function_or_proc_element_type?(type.element_type)
 
         "mt_nullable_span_index_#{sanitize_identifier(type.to_s)}"
       end
 
-      def callable_container_element_type?(type)
+      def function_or_proc_element_type?(type)
         type.is_a?(Types::Function) || type.is_a?(Types::Proc)
       end
 
@@ -184,7 +184,7 @@ module MilkTea
         end
 
         (expression.is_a?(IR::Name) && expression.pointer) ||
-          (expression.respond_to?(:type) && (raw_pointer_type?(expression.type) || ref_type?(expression.type) || nullable_pointer_like_ir_type?(expression.type)))
+          (expression.respond_to?(:type) && (raw_pointer_type?(expression.type) || ref_type?(expression.type) || nullable_pointer_like_type?(expression.type)))
       end
 
       def variant_arm_payload_field_type(member_expr)
@@ -196,7 +196,7 @@ module MilkTea
         variant_type.arm(arm_name)&.fetch(member_expr.member)
       end
 
-      def nullable_pointer_like_ir_type?(type)
+      def nullable_pointer_like_type?(type)
         return false unless type.is_a?(Types::Nullable)
 
         c_backend_pointer_like_type?(type.base)

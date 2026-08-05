@@ -152,10 +152,6 @@ module MilkTea
         emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_entry_argv_to_span_str mt_free_entry_argv_strs]) }
       end
 
-      def uses_text_buffer_helpers?
-        uses_str_buffer_helpers?
-      end
-
       def uses_str_buffer_helpers?
         emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_buffer_len mt_str_buffer_as_cstr mt_str_buffer_clear mt_str_buffer_assign mt_str_buffer_append mt_str_buffer_prepare_write]) }
       end
@@ -229,8 +225,8 @@ module MilkTea
         ]
       end
 
-      def used_format_helpers
-        @used_format_helpers ||= begin
+      def required_format_helper_callees
+        @required_format_helper_callees ||= begin
           helpers = {}
 
           emitted_functions.each do |function|
@@ -286,7 +282,7 @@ module MilkTea
       }.freeze
 
       def uses_format_helpers?
-        !used_format_helpers.empty?
+        !required_format_helper_callees.empty?
       end
 
       def uses_str_equality_helper?
@@ -342,29 +338,29 @@ module MilkTea
         function.body.any? { |statement| statement_uses_str_equality?(statement) }
       end
 
-      def any_ir_statement?(statement, expression_pred:, **kwargs)
+      def statement_matches_expression_predicate?(statement, expression_pred:, **kwargs)
         case statement
         when IR::LocalDecl
           statement.value && expression_pred.call(statement.value, **kwargs)
         when IR::Assignment
           expression_pred.call(statement.target, **kwargs) || expression_pred.call(statement.value, **kwargs)
         when IR::BlockStmt
-          statement.body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) }
+          statement.body.any? { |inner| statement_matches_expression_predicate?(inner, expression_pred:, **kwargs) }
         when IR::WhileStmt
           expression_pred.call(statement.condition, **kwargs) ||
-            statement.body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) }
+            statement.body.any? { |inner| statement_matches_expression_predicate?(inner, expression_pred:, **kwargs) }
         when IR::ForStmt
-          any_ir_statement?(statement.init, expression_pred:, **kwargs) ||
+          statement_matches_expression_predicate?(statement.init, expression_pred:, **kwargs) ||
             expression_pred.call(statement.condition, **kwargs) ||
-            statement.body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) } ||
-            any_ir_statement?(statement.post, expression_pred:, **kwargs)
+            statement.body.any? { |inner| statement_matches_expression_predicate?(inner, expression_pred:, **kwargs) } ||
+            statement_matches_expression_predicate?(statement.post, expression_pred:, **kwargs)
         when IR::IfStmt
           expression_pred.call(statement.condition, **kwargs) ||
-            statement.then_body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) } ||
-            (statement.else_body && statement.else_body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) })
+            statement.then_body.any? { |inner| statement_matches_expression_predicate?(inner, expression_pred:, **kwargs) } ||
+            (statement.else_body && statement.else_body.any? { |inner| statement_matches_expression_predicate?(inner, expression_pred:, **kwargs) })
         when IR::SwitchStmt
           expression_pred.call(statement.expression, **kwargs) ||
-            statement.cases.any? { |switch_case| switch_case.body.any? { |inner| any_ir_statement?(inner, expression_pred:, **kwargs) } }
+            statement.cases.any? { |switch_case| switch_case.body.any? { |inner| statement_matches_expression_predicate?(inner, expression_pred:, **kwargs) } }
         when IR::StaticAssert
           expression_pred.call(statement.condition, **kwargs) || expression_pred.call(statement.message, **kwargs)
         when IR::ReturnStmt
@@ -377,11 +373,11 @@ module MilkTea
       end
 
       def statement_uses_named_call?(statement, callees)
-        any_ir_statement?(statement, expression_pred: ->(e) { expression_uses_named_call?(e, callees) })
+        statement_matches_expression_predicate?(statement, expression_pred: ->(e) { expression_uses_named_call?(e, callees) })
       end
 
       def statement_uses_str_equality?(statement)
-        any_ir_statement?(statement, expression_pred: ->(e) { expression_uses_str_equality?(e) })
+        statement_matches_expression_predicate?(statement, expression_pred: ->(e) { expression_uses_str_equality?(e) })
       end
 
       def expression_uses_named_call?(expression, callees)
@@ -416,7 +412,7 @@ module MilkTea
       def expression_uses_str_equality?(expression)
         case expression
         when IR::Binary
-          str_equality_expression?(expression) || expression_uses_str_equality?(expression.left) || expression_uses_str_equality?(expression.right)
+          string_equality_expression?(expression) || expression_uses_str_equality?(expression.left) || expression_uses_str_equality?(expression.right)
         when IR::Call
           (!expression.callee.is_a?(String) && expression_uses_str_equality?(expression.callee)) || expression.arguments.any? { |argument| expression_uses_str_equality?(argument) }
         when IR::Member

@@ -45,7 +45,7 @@ module MilkTea
             "#{expression.operator}#{wrap_expression(expression.operand)}"
           end
         when IR::Binary
-          return emit_str_equality_expression(expression) if str_equality_expression?(expression)
+          return emit_string_equality_expression(expression) if string_equality_expression?(expression)
           return emit_variant_equality_expression(expression) if variant_equality_expression?(expression)
           return emit_nullable_null_comparison(expression) if nullable_null_comparison?(expression)
 
@@ -53,7 +53,7 @@ module MilkTea
         when IR::Conditional
           emit_conditional_expression(expression)
         when IR::ReinterpretExpr
-          if no_op_reinterpret?(expression.target_type, expression.source_type)
+          if identity_reinterpret?(expression.target_type, expression.source_type)
             emit_expression(expression.expression)
           else
             "#{reinterpret_helper_name(expression.target_type, expression.source_type)}(#{emit_expression(expression.expression)})"
@@ -88,7 +88,7 @@ module MilkTea
             emit_address_of_operand(expression.expression)
           end
         when IR::Cast
-          if no_op_cast?(expression)
+          if identity_cast?(expression)
             emit_expression(expression.expression)
           else
             "(#{c_type(expression.target_type)}) #{emit_cast_operand(expression.expression)}"
@@ -106,7 +106,7 @@ module MilkTea
         end
       end
 
-      def str_equality_expression?(expression)
+      def string_equality_expression?(expression)
         EQUALITY_OPERATORS.include?(expression.operator) && expression.left.type.is_a?(Types::StringView) && expression.right.type.is_a?(Types::StringView)
       end
 
@@ -164,7 +164,7 @@ module MilkTea
         end
       end
 
-      def emit_str_equality_expression(expression)
+      def emit_string_equality_expression(expression)
         call = "mt_str_equal(#{emit_expression(expression.left)}, #{emit_expression(expression.right)})"
         expression.operator == "!=" ? "!#{call}" : call
       end
@@ -278,7 +278,7 @@ module MilkTea
         return call unless omit_receiver && expression.arguments.any?
         return call if side_effect_free_expression?(expression.arguments.first)
 
-        "(#{discarded_expression(expression.arguments.first)}, #{call})"
+        "(#{emit_void_expression(expression.arguments.first)}, #{call})"
       end
 
       def emit_array_call_statement(expression, out_argument, indent)
@@ -300,7 +300,7 @@ module MilkTea
         ]
       end
 
-      def emitted_function_params(function)
+      def call_emission_params(function)
         omitted_method_receiver_function?(function) ? function.params.drop(1) : function.params
       end
 
@@ -320,7 +320,7 @@ module MilkTea
           name_reference_count_in_statements(function.body, function.params.first.linkage_name).zero?
       end
 
-      def discarded_expression(expression)
+      def emit_void_expression(expression)
         "(void)#{wrap_expression(expression)}"
       end
 
@@ -411,7 +411,7 @@ module MilkTea
         field_type = aggregate_field_type(type, field.name)
         if field_type.is_a?(Types::Nullable) && !field.value.type.is_a?(Types::Nullable) && !c_backend_pointer_like_type?(field_type.base)
           emit_nullable_some_initializer(field_type, field.value)
-        elsif void_storage_field?(field_type)
+        elsif void_typed_field?(field_type)
           emit_void_field_initializer(field.value)
         else
           emit_initializer(field.value)
@@ -434,7 +434,7 @@ module MilkTea
           emit_cyclic_array_initializer(field_type, field.value)
         elsif aggregate_field_creates_cycle?(field_type, outer_c) && !field_type.is_a?(Types::GenericInstance)
           emit_cyclic_struct_initializer(field_type, field.value)
-        elsif void_storage_field?(field_type)
+        elsif void_typed_field?(field_type)
           emit_void_field_initializer(field.value)
         else
           emit_initializer(field.value)
@@ -469,7 +469,7 @@ module MilkTea
         "(#{emit_expression(expression)}, 0)"
       end
 
-      def void_storage_field?(type)
+      def void_typed_field?(type)
         type.is_a?(Types::Primitive) && type.void?
       end
 

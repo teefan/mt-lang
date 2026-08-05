@@ -33,7 +33,7 @@ module MilkTea
       end
 
       def c_field_declaration(type, name)
-        return "uint8_t #{name}" if void_storage_field?(type)
+        return "uint8_t #{name}" if void_typed_field?(type)
 
         c_declaration(type, name)
       end

@@ -137,7 +137,7 @@ module MilkTea
       def function_params(function)
         params = []
         params << array_out_param_declaration(function.return_type, ARRAY_OUT_PARAM_NAME) if array_type?(function.return_type)
-        params.concat(emitted_function_params(function).map { |param| c_declaration(param.pointer ? pointer_to(param.type) : param.type, param.linkage_name) })
+        params.concat(call_emission_params(function).map { |param| c_declaration(param.pointer ? pointer_to(param.type) : param.type, param.linkage_name) })
 
         if params.empty?
           "void"
@@ -150,7 +150,7 @@ module MilkTea
         @checked_index_alias_stack.clear
         @checked_index_alias_id = 0
         @suppressed_labels = []
-        body = compact_generated_statement_sequence(function.body)
+        body = fold_redundant_statement_temps(function.body)
         lines = ["#{function_signature(function)} {"]
         used_labels = collect_used_labels(body)
         if body.empty?
@@ -207,7 +207,7 @@ module MilkTea
         " __attribute__((#{attributes.join(', ')}))"
       end
 
-      def emit_vector_math_types
+      def emit_vector_math_typedefs
         lines = []
         lines << "typedef struct mt_vec2 { float x; float y; } mt_vec2;"
         lines << "typedef struct mt_vec3 { float x; float y; float z; } mt_vec3;"

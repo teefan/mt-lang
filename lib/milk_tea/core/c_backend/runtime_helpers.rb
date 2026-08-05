@@ -340,7 +340,7 @@ module MilkTea
         lines
       end
 
-      def emit_text_buffer_helpers
+      def emit_utf8_validation_helpers
         [
           "static bool mt_is_utf8_continuation_byte(unsigned char byte) {",
           "#{INDENT}return (byte & 0xC0u) == 0x80u;",

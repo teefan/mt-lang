@@ -19,7 +19,7 @@ module MilkTea
 
       def emit_statement(statement, level, function:, used_labels:, loop_continue_label: nil, loop_break_label: nil, remaining_statements: [])
         indent = INDENT * level
-        aliases = checked_index_aliases_for_statement(statement)
+        aliases = collect_checked_index_aliases_for_statement(statement)
         alias_lines = emit_checked_index_alias_declarations(aliases, indent)
         if statement.respond_to?(:line) && statement.line
           @current_line = statement.line
@@ -56,7 +56,7 @@ module MilkTea
               ["#{indent}#{emit_expression(statement.target)} #{statement.operator} #{emit_expression(statement.value)};"]
             end
           when IR::BlockStmt
-            if block_requires_scope?(statement.body)
+            if statements_require_scope?(statement.body)
               lines = ["#{indent}{"]
               lines.concat(emit_statement_sequence(statement.body, level + 1, function:, used_labels:, loop_continue_label:, loop_break_label:))
               lines << "#{indent}}"
@@ -89,7 +89,7 @@ module MilkTea
             body_continue_label = loop_continue_label_name(statement.body)
             body = body_continue_label ? statement.body[0...-1] : statement.body
             body_break_label = loop_break_label_name(body, remaining_statements)
-            @suppressed_labels << body_break_label if body_break_label && !statements_need_explicit_break_label_after_emission?(body, body_break_label, loop_break_label_active: true)
+            @suppressed_labels << body_break_label if body_break_label && !block_requires_break_label?(body, body_break_label, loop_break_label_active: true)
             if @debug_guards
               @loop_guard_id += 1
               guard_name = "__mt_loop_#{@loop_guard_id}"
@@ -111,12 +111,12 @@ module MilkTea
             body_continue_label = loop_continue_label_name(statement.body)
             body = body_continue_label ? statement.body[0...-1] : statement.body
             body_break_label = loop_break_label_name(body, remaining_statements)
-            @suppressed_labels << body_break_label if body_break_label && !statements_need_explicit_break_label_after_emission?(body, body_break_label, loop_break_label_active: true)
+            @suppressed_labels << body_break_label if body_break_label && !block_requires_break_label?(body, body_break_label, loop_break_label_active: true)
             if @debug_guards
               @loop_guard_id += 1
               guard_name = "__mt_loop_#{@loop_guard_id}"
               lines = ["#{indent}{ uintptr_t #{guard_name} = 0;"]
-              lines << "#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"
+              lines << "#{indent}for (#{emit_for_loop_clause(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_loop_clause(statement.post)}) {"
               guard = "#{INDENT * (level + 1)}if (++#{guard_name} > #{LOOP_GUARD_MAX_ITERATIONS}) mt_fatal(\"loop iteration limit exceeded in #{function.linkage_name}\");"
               lines << guard
               lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
@@ -124,7 +124,7 @@ module MilkTea
               lines << "#{indent}}"
               lines
             else
-              lines = ["#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"]
+              lines = ["#{indent}for (#{emit_for_loop_clause(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_loop_clause(statement.post)}) {"]
               lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
               lines << "#{indent}}"
               lines
@@ -149,7 +149,7 @@ module MilkTea
           when IR::IfStmt
             emit_if_statement(statement, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
           when IR::SwitchStmt
-            if switch_emittable_as_if?(statement, loop_break_label:)
+            if can_emit_switch_as_if?(statement, loop_break_label:)
               emit_switch_as_if_statement(statement, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
             else
             lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
@@ -183,8 +183,8 @@ module MilkTea
         alias_lines + line_directive + statement_lines
       end
 
-      def compact_generated_statement_sequence(statements)
-        transformed = statements.map { |statement| transform_compactable_nested_bodies(statement) }
+      def fold_redundant_statement_temps(statements)
+        transformed = statements.map { |statement| fold_nested_redundant_statement_temps(statement) }
         compacted = []
         index = 0
         reachable = true
@@ -226,26 +226,26 @@ module MilkTea
         compacted
       end
 
-      def transform_compactable_nested_bodies(statement)
+      def fold_nested_redundant_statement_temps(statement)
         case statement
         when IR::BlockStmt
-          IR::BlockStmt.new(body: compact_generated_statement_sequence(statement.body))
+          IR::BlockStmt.new(body: fold_redundant_statement_temps(statement.body))
         when IR::WhileStmt
           canonicalize_top_guarded_while(
-            IR::WhileStmt.new(condition: statement.condition, body: compact_generated_statement_sequence(statement.body))
+            IR::WhileStmt.new(condition: statement.condition, body: fold_redundant_statement_temps(statement.body))
           )
         when IR::ForStmt
           IR::ForStmt.new(
             init: statement.init,
             condition: statement.condition,
             post: statement.post,
-            body: compact_generated_statement_sequence(statement.body),
+            body: fold_redundant_statement_temps(statement.body),
           )
         when IR::IfStmt
           IR::IfStmt.new(
             condition: statement.condition,
-            then_body: compact_generated_statement_sequence(statement.then_body),
-            else_body: statement.else_body ? compact_generated_statement_sequence(statement.else_body) : nil,
+            then_body: fold_redundant_statement_temps(statement.then_body),
+            else_body: statement.else_body ? fold_redundant_statement_temps(statement.else_body) : nil,
           )
         when IR::SwitchStmt
           IR::SwitchStmt.new(
@@ -253,9 +253,9 @@ module MilkTea
             exhaustive: statement.exhaustive,
             cases: statement.cases.map do |switch_case|
               if switch_case.is_a?(IR::SwitchDefaultCase)
-                IR::SwitchDefaultCase.new(body: compact_generated_statement_sequence(switch_case.body))
+                IR::SwitchDefaultCase.new(body: fold_redundant_statement_temps(switch_case.body))
               else
-                IR::SwitchCase.new(value: switch_case.value, body: compact_generated_statement_sequence(switch_case.body))
+                IR::SwitchCase.new(value: switch_case.value, body: fold_redundant_statement_temps(switch_case.body))
               end
             end,
           )
@@ -384,7 +384,7 @@ module MilkTea
         type.is_a?(Types::Primitive) && type.name == "bool"
       end
 
-      def checked_index_aliases_for_statement(statement)
+      def collect_checked_index_aliases_for_statement(statement)
         expressions = case statement
         when IR::LocalDecl
           [statement.value]
@@ -524,11 +524,11 @@ module MilkTea
         nil
       end
 
-      def block_requires_scope?(statements)
+      def statements_require_scope?(statements)
         statements.any? { |statement| statement.is_a?(IR::LocalDecl) }
       end
 
-      def emit_for_clause_statement(statement)
+      def emit_for_loop_clause(statement)
         case statement
         when IR::LocalDecl
           raise CBackendError.new("array for-loop init declarations are unsupported", line: 0, column: 0, path: @path) if array_type?(statement.type)

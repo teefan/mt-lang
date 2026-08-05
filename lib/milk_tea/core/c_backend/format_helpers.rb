@@ -4,7 +4,7 @@ module MilkTea
   class CBackend
     module FormatHelpers
       def emit_format_helpers
-        helpers = used_format_helpers
+        helpers = required_format_helper_callees
         lines = []
 
         if helpers['mt_format_str_make']
