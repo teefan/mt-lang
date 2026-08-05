@@ -3,7 +3,19 @@
 require_relative "types/layout"
 
 module MilkTea
-  module ConstEval
+  module CompileTime
+    Layout = ::MilkTea::Types::Layout
+
+    class ReturnValue < StandardError
+      attr_reader :value
+
+      def initialize(value)
+        @value = value
+        super("return #{value.inspect}")
+      end
+    end
+
+    class Error < StandardError; end
 
     def self.evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
       Evaluator.new(
@@ -78,7 +90,7 @@ module MilkTea
           evaluate_binary(expression)
         when AST::IfExpr
           condition = evaluate(expression.condition)
-          return unless ConstEval.boolean_value?(condition)
+          return unless CompileTime.boolean_value?(condition)
 
           evaluate(condition ? expression.then_expression : expression.else_expression)
         else
@@ -87,9 +99,24 @@ module MilkTea
       end
 
       def resolve_layout_type(type_ref)
-        return unless @resolve_type_ref
+        result = begin
+          @resolve_type_ref&.call(type_ref)
+        rescue SemanticError
+          nil
+        end
+        return result if result
 
-        @resolve_type_ref.call(type_ref)
+        return unless type_ref.respond_to?(:name) && type_ref.name.parts.length >= 1
+
+        expression = ::MilkTea::AST.build_chain_from_parts(type_ref.name.parts)
+        return unless expression
+
+        value = evaluate(expression)
+        return value if value.is_a?(Types::Struct) || value.is_a?(Types::Primitive) ||
+          value.is_a?(Types::Union) || value.is_a?(Types::Nullable) ||
+          value.is_a?(Types::StructInstance)
+
+        nil
       end
 
       def evaluate_unary(expression)
@@ -103,7 +130,7 @@ module MilkTea
         when "~"
           operand.is_a?(Integer) ? ~operand : nil
         when "not"
-          ConstEval.boolean_value?(operand) ? !operand : nil
+          CompileTime.boolean_value?(operand) ? !operand : nil
         end
       end
 
@@ -112,19 +139,19 @@ module MilkTea
 
         case expression.operator
         when "and"
-          return unless ConstEval.boolean_value?(left)
+          return unless CompileTime.boolean_value?(left)
           return false if left == false
 
           right = evaluate(expression.right)
-          return right if ConstEval.boolean_value?(right)
+          return right if CompileTime.boolean_value?(right)
 
           return nil
         when "or"
-          return unless ConstEval.boolean_value?(left)
+          return unless CompileTime.boolean_value?(left)
           return true if left == true
 
           right = evaluate(expression.right)
-          return right if ConstEval.boolean_value?(right)
+          return right if CompileTime.boolean_value?(right)
 
           return nil
         end
@@ -133,9 +160,9 @@ module MilkTea
 
         case expression.operator
         when "=="
-          ConstEval.equality_result(left, right)
+          CompileTime.equality_result(left, right)
         when "!="
-          result = ConstEval.equality_result(left, right)
+          result = CompileTime.equality_result(left, right)
           result.nil? ? nil : !result
         when "+"
           left.is_a?(Numeric) && right.is_a?(Numeric) ? left + right : nil
@@ -145,12 +172,12 @@ module MilkTea
           left.is_a?(Numeric) && right.is_a?(Numeric) ? left * right : nil
         when "/"
           return unless left.is_a?(Numeric) && right.is_a?(Numeric)
-          raise CompileTime::Error, "division by zero" if zero_numeric?(right)
+          raise Error, "division by zero" if zero_numeric?(right)
 
           left / right
         when "%"
           return unless left.is_a?(Integer) && right.is_a?(Integer)
-          raise CompileTime::Error, "modulo by zero" if right.zero?
+          raise Error, "modulo by zero" if right.zero?
 
           left % right
         when "<<"
@@ -178,23 +205,6 @@ module MilkTea
         (value.is_a?(Integer) && value.zero?) || (value.is_a?(Float) && value.zero?)
       end
     end
-  end
-end
-
-module MilkTea
-  module CompileTime
-    Layout = ::MilkTea::Layout
-
-    class ReturnValue < StandardError
-      attr_reader :value
-
-      def initialize(value)
-        @value = value
-        super("return #{value.inspect}")
-      end
-    end
-
-    class Error < StandardError; end
 
     class BlockContext
       attr_reader :checker
@@ -456,45 +466,6 @@ module MilkTea
         end
         values
       end
-    end
-
-    class Evaluator < ConstEval::Evaluator
-
-      def resolve_layout_type(type_ref)
-        result = begin
-          super
-        rescue SemanticError
-          nil
-        end
-        return result if result
-        return result if result
-
-        return unless type_ref.respond_to?(:name) && type_ref.name.parts.length >= 1
-
-        expression = ::MilkTea::AST.build_chain_from_parts(type_ref.name.parts)
-        return unless expression
-
-        value = evaluate(expression)
-        return value if value.is_a?(Types::Struct) || value.is_a?(Types::Primitive) ||
-          value.is_a?(Types::Union) || value.is_a?(Types::Nullable) ||
-          value.is_a?(Types::StructInstance)
-
-        nil
-      end
-
-    end
-
-    def self.evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
-      Evaluator.new(
-        resolve_identifier:,
-        resolve_member_access:,
-        resolve_type_ref:,
-        resolve_call:,
-      ).evaluate(expression)
-    end
-
-    def self.boolean_value?(value)
-      ConstEval.boolean_value?(value)
     end
 
     module Reflection

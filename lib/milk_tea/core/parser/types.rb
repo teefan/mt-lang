@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module Parse
+  class Parser
     module Types
       def parse_params(allow_variadic: false)
         parse_parameter_list(allow_variadic:) { parse_param }

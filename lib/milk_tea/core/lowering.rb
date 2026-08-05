@@ -10,11 +10,11 @@
 #   .imports                imported module bindings
 #   .types                  Hash[name → Types::Base]
 #   .interfaces             Hash[name → InterfaceBinding|GenericInterfaceBinding]
-#   .attributes             Hash[name → AttributeBinding]
+#   .attributes             Hash[name → Bindings::AttributeBinding]
 #   .attribute_applications Hash[...]
-#   .values                 Hash[name → ValueBinding]
-#   .functions              Hash[name → FunctionBinding]
-#   .methods                Hash[type → Hash[name → FunctionBinding]]
+#   .values                 Hash[name → Bindings::ValueBinding]
+#   .functions              Hash[name → Bindings::FunctionBinding]
+#   .methods                Hash[type → Hash[name → Bindings::FunctionBinding]]
 #   .implemented_interfaces Hash[type → Set[InterfaceBinding]]
 #   .resolved_expr_types   Hash[expression.object_id → Types::Base]
 #   .uses_parallel_for      bool
@@ -30,7 +30,7 @@ require_relative "lowering/events"
 require_relative "lowering/functions"
 require_relative "lowering/async/analysis"
 require_relative "lowering/async/normalization"
-require_relative "lowering/async/lowering"
+require_relative "lowering/async/async_lowering"
 require_relative "lowering/async/frame_builder"
 require_relative "lowering/block"
 require_relative "lowering/proc"
@@ -61,7 +61,7 @@ module MilkTea
     end
   end
 
-  class Lowering
+  module Lowering
     def self.lower(program)
       lowerer = Lowerer.new(program)
       ir_program, _modules, _synths = lowerer.lower_and_assemble
@@ -90,25 +90,25 @@ module MilkTea
     attr_accessor :bypass_sema_type_cache
     attr_reader :recorded_expr_types
 
-    include LowererScans
-    include LowererDeclarations
-    include LowererEvents
-    include LowererFunctions
-    include LowererAsync
-    include LowererBlock
-    include LowererProc
-    include LowererLoops
-    include LowererExpressions
-    include LowererCalls
-    include LowererForeignCstr
-    include LowererStrBuffer
-    include LowererResolve
-    include LowererDyn
-    include LowererUtils
+    include Lowering::Scans
+    include Lowering::Declarations
+    include Lowering::Events
+    include Lowering::Functions
+    include Lowering::Async
+    include Lowering::Block
+    include Lowering::Proc
+    include Lowering::Loops
+    include Lowering::Expressions
+    include Lowering::Calls
+    include Lowering::ForeignCstr
+    include Lowering::StrBuffer
+    include Lowering::Resolve
+    include Lowering::Dyn
+    include Lowering::Utils
 
     def initialize(program)
       @program = program
-      @ctx = ModuleContext.new
+      @ctx = LoweringContext.new
       @artifacts = Artifacts.new
       @synthetic_proc_counter = 0
       @parallel_for_counter = 0

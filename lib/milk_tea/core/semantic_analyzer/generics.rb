@@ -223,7 +223,7 @@ module MilkTea
         body_params = binding.body_params.map { |param| substitute_value_binding(param, substitutions) }
         validate_specialized_function_binding!(binding.name, type, body_params)
 
-        instance = FunctionBinding.new(
+        instance = Bindings::FunctionBinding.new(
           name: binding.name,
           type:,
           body_params:,
@@ -374,7 +374,7 @@ module MilkTea
       end
 
       def substitute_value_binding(binding, substitutions)
-        ValueBinding.new(
+        Bindings::ValueBinding.new(
           id: binding.id,
           name: binding.name,
           storage_type: substitute_type(binding.storage_type, substitutions),
@@ -399,7 +399,7 @@ module MilkTea
       end
 
       def validate_specialized_function_type!(type, function_name:, context:)
-        ValidateSpecializedTypeVisitor.new(
+        Types::ValidateSpecializedTypeVisitor.new(
           function_name:,
           context:,
           on_error: ->(msg) { raise_sema_error(msg) },
@@ -408,7 +408,7 @@ module MilkTea
       end
 
       def substitute_type(type, substitutions)
-        SubstituteTypeVisitor.new(substitutions).apply(type)
+        Types::SubstituteTypeVisitor.new(substitutions).apply(type)
       end
 
       def bitwise_type?(type)

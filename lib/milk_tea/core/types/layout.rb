@@ -4,7 +4,8 @@ require "fiddle"
 require_relative "../types"
 
 module MilkTea
-  module Layout
+  module Types
+    module Layout
 
     POINTER_SIZE = Fiddle::SIZEOF_VOIDP
 
@@ -259,6 +260,7 @@ module MilkTea
       yield
     ensure
       stack.delete(type)
+    end
     end
   end
 end

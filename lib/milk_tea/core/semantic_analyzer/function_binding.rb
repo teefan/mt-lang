@@ -186,7 +186,7 @@ module MilkTea
           external:,
         )
 
-        FunctionBinding.new(
+        Bindings::FunctionBinding.new(
           name: decl.name,
           type: function_type,
           body_params:,

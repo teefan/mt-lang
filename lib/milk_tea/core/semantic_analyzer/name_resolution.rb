@@ -1162,7 +1162,7 @@ module MilkTea
       def freeze_scope_bindings(scope)
         frozen_scope = scope.is_a?(FlowScope) ? FlowScope.new : {}
         scope.each do |name, binding|
-          frozen_scope[name] = ValueBinding.new(
+          frozen_scope[name] = Bindings::ValueBinding.new(
             id: binding.id,
             name: binding.name,
             storage_type: binding.storage_type,
@@ -1191,26 +1191,26 @@ module MilkTea
       end
 
       def stored_ref_supported_type?(type, visited = {}, allow_lifetimes: [])
-        visitor = StoredRefSupportedVisitor.new(allow_lifetimes:)
+        visitor = Types::StoredRefSupportedVisitor.new(allow_lifetimes:)
         visitor.visit(type)
         visitor.result?
       end
 
       def contains_callable_ref_type?(type, visited = {})
-        visitor = ContainsCallableRefTypeVisitor.new
+        visitor = Types::ContainsCallableRefTypeVisitor.new
         visitor.visit(type)
         visitor.found?
       end
 
       def contains_proc_type?(type, visited = {})
-        visitor = ContainsProcTypeVisitor.new
+        visitor = Types::ContainsProcTypeVisitor.new
         visitor.visit(type)
         visitor.found?
       end
 
       def proc_storage_supported_type?(type, visited = {})
         return true unless contains_proc_type?(type)
-        visitor = ProcStorageSupportedVisitor.new
+        visitor = Types::ProcStorageSupportedVisitor.new
         visitor.visit(type)
         visitor.result?
       end
@@ -1421,7 +1421,7 @@ module MilkTea
         id ||= allocate_binding_id
         @binding_name_by_id[id] = name
         @binding_type_by_id[id] = flow_type == type ? type : (flow_type || type)
-        ValueBinding.new(id:, name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value:)
+        Bindings::ValueBinding.new(id:, name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value:)
       end
 
       def build_binding_resolution_snapshot

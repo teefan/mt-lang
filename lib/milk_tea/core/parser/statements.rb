@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module Parse
+  class Parser
     module Statements
       def check_inline_stmt_start?
         return false unless check(:inline)

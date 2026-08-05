@@ -108,8 +108,8 @@ module MilkTea
       end
 
       def install_builtin_attributes
-        BUILTIN_ATTRIBUTE_NAMES.each do |name|
-          @ctx.attributes[name] = MilkTea.builtin_attribute_binding(name, @ctx.types)
+        Bindings::BUILTIN_ATTRIBUTE_NAMES.each do |name|
+          @ctx.attributes[name] = Bindings.builtin_attribute_binding(name, @ctx.types)
         end
       end
 
@@ -178,7 +178,7 @@ module MilkTea
       end
 
       def create_empty_module_binding(module_path)
-        ModuleBinding.new(
+        Bindings::ModuleBinding.new(
           name: module_path,
           types: {}, type_declarations: {}, interfaces: {},
           attributes: {}, attribute_applications: {},
@@ -330,7 +330,7 @@ module MilkTea
               params << Types::Registry.parameter(param.name, resolve_type_ref(param.type))
             end
 
-            @ctx.attributes[decl.name] = AttributeBinding.new(
+            @ctx.attributes[decl.name] = Bindings::AttributeBinding.new(
               name: decl.name,
               targets: decl.targets.freeze,
               params: params.freeze,

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module Parse
+  class Parser
     module Blocks
       def parse_block
         consume(:colon, "expected ':' before block")

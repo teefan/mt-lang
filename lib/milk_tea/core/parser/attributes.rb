@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module Parse
+  class Parser
     module Attributes
       def parse_attribute_applications
         attributes = []

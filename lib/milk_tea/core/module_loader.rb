@@ -651,7 +651,7 @@ module MilkTea
           full_binding.types.reject { |name, _| fw_binding.types.key?(name) }
         )
 
-        @forward_bindings[resolved_path] = ModuleBinding.new(
+        @forward_bindings[resolved_path] = Bindings::ModuleBinding.new(
           name: full_binding.name,
           types: merged_types,
           type_declarations: full_binding.type_declarations,
@@ -699,7 +699,7 @@ module MilkTea
         end
       end
 
-      ModuleBinding.new(
+      Bindings::ModuleBinding.new(
         name: module_name, types:, type_declarations: {},
         interfaces: {}, attributes: {}, attribute_applications: {},
         values: {}, functions: {}, methods: {},

@@ -2,7 +2,7 @@
 
 module MilkTea
   class Lowerer
-    class ModuleContext
+    class LoweringContext
       attr_accessor :analysis, :current_analysis_path
       attr_accessor :ast, :module_name, :module_prefix, :module_kind, :directives
       attr_accessor :imports, :types, :values, :functions, :interfaces

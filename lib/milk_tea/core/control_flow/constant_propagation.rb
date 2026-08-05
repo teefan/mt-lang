@@ -105,7 +105,7 @@ module MilkTea
       def self.eval_expr_const(expr, state, binding_resolution:, strict_binding_ids:)
         return NAC if expr.nil?
 
-        value = ConstEval.evaluate(
+        value = CompileTime.evaluate(
           expr,
           resolve_identifier: lambda do |identifier_expression|
             key = identifier_key(identifier_expression, binding_resolution:, strict_binding_ids:)

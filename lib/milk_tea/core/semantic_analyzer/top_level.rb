@@ -238,7 +238,7 @@ module MilkTea
 
       def set_const_value(name, value)
         binding = @ctx.top_level_values.fetch(name)
-        @ctx.top_level_values[name] = ValueBinding.new(
+        @ctx.top_level_values[name] = Bindings::ValueBinding.new(
           id: binding.id,
           name: binding.name,
           storage_type: binding.storage_type,

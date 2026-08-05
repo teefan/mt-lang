@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module Parse
+  class Parser
     module Declarations
       def parse_import
         line = previous.line

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module Parse
+  class Parser
     module Expressions
       def parse_expression
         return parse_if_expression if match(:if)

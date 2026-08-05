@@ -58,13 +58,13 @@ module MilkTea
 
     ParseContext = Data.define(:known_type_names, :known_import_aliases, :known_generic_callable_names, :current_type_param_names)
 
-    include Parse::Blocks
-    include Parse::Recovery
-    include Parse::Types
-    include Parse::Attributes
-    include Parse::Expressions
-    include Parse::Declarations
-    include Parse::Statements
+    include Blocks
+    include Recovery
+    include Types
+    include Attributes
+    include Expressions
+    include Declarations
+    include Statements
 
     def self.parse(source = nil, path: nil, tokens: nil)
       token_stream = tokens || Lexer.lex(source, path: path)

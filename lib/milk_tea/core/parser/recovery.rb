@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MilkTea
-  module Parse
+  class Parser
     module Recovery
       TOP_LEVEL_RECOVERY_START_TYPES = %i[
         module import at public attribute const var type struct union enum flags variant interface

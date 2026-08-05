@@ -194,7 +194,7 @@ module MilkTea
       def emit_simd_type(type)
         name = simd_type_name(type)
         elem_c = primitive_c_type(type.element_type.name)
-        width = type.lane_count * Layout.primitive_layout(type.element_type).first
+        width = type.lane_count * Types::Layout.primitive_layout(type.element_type).first
         ["typedef #{elem_c} #{name} __attribute__((__vector_size__(#{width})));"]
       end
 
