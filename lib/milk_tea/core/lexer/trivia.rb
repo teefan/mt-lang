@@ -9,7 +9,7 @@ module MilkTea
         @mode == :with_trivia
       end
 
-      def register_detached_line_trivia(kind, line, line_number, line_offset, has_newline:)
+      def record_line_trivia(kind, line, line_number, line_offset, has_newline:)
         return unless with_trivia?
 
         text = has_newline ? (line + "\n") : line
@@ -21,17 +21,17 @@ module MilkTea
           start_offset: line_offset,
           end_offset: line_offset + text.bytesize,
         )
-        push_pending_leading_trivia(trivia)
+        push_leading_trivia(trivia)
       end
 
-      def push_pending_leading_trivia(trivia)
+      def push_leading_trivia(trivia)
         return unless with_trivia?
 
         @trivia << trivia
         @pending_leading_trivia << trivia
       end
 
-      def append_trailing_or_pending(trivia)
+      def attach_trivia(trivia)
         return unless with_trivia?
 
         @trivia << trivia

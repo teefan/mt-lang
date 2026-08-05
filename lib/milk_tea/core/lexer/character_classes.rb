@@ -21,7 +21,7 @@ module MilkTea
           else nil
         end
 
-        @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
+        @tokens << build_token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
         index
       end
 
@@ -41,7 +41,7 @@ module MilkTea
         byte ? IDENT_PART_BYTE[byte] : false
       end
 
-      def identifier_start_token(line, start_index)
+      def extract_identifier_at(line, start_index)
         return "" unless start_index < line.length && identifier_start?(line[start_index])
 
         finish = start_index + 1

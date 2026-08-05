@@ -58,7 +58,7 @@ module MilkTea
           normalized = lexeme.delete("_").delete_suffix("f").delete_suffix("d")
           literal = normalized.to_f
         end
-        @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
+        @tokens << build_token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
         index
       end
 

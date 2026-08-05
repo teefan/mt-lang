@@ -5,7 +5,7 @@ module MilkTea
     # Format string lexing (`f"...#{expr}..."`) and the interpolation
     # scanning / format-spec splitting shared with format heredocs.
     module FormatStrings
-      def parse_format_heredoc_parts(content, start_line:, start_column:)
+      def split_format_heredoc_parts(content, start_line:, start_column:)
         parts = []
         text = +""
         index = 0
@@ -66,7 +66,7 @@ module MilkTea
           if char == '"'
             parts << { kind: :text, value: text } unless text.empty?
             lexeme = line[start..index]
-            @tokens << token(:fstring, lexeme, parts, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 1)
+            @tokens << build_token(:fstring, lexeme, parts, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 1)
             return index + 1
           end
 
@@ -103,7 +103,7 @@ module MilkTea
           @recovery_errors << LexError.new("unterminated format string literal", line: line_number, column: start + 1, path: @path)
           parts << { kind: :text, value: text } unless text.empty?
           lexeme = line[start..]
-          @tokens << token(:fstring, lexeme, parts, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + line.length)
+          @tokens << build_token(:fstring, lexeme, parts, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + line.length)
           return line.length
         end
 
@@ -117,7 +117,7 @@ module MilkTea
           char = line[index]
 
           if char == '"'
-            index = skip_string_contents(line, index, line_number)
+            index = skip_nested_string_literal(line, index, line_number)
             next
           end
 
@@ -146,7 +146,7 @@ module MilkTea
         raise LexError.new("unterminated format interpolation", line: line_number, column:, path: @path)
       end
 
-      def skip_string_contents(line, index, line_number)
+      def skip_nested_string_literal(line, index, line_number)
         index += 1
 
         while index < line.length

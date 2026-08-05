@@ -89,7 +89,7 @@ module MilkTea
             content_margin = heredoc_content_margin(content_lines)
 
             literal = if format
-              parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
+              split_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
             else
               value
             end
@@ -102,8 +102,8 @@ module MilkTea
               :string
             end
 
-            @tokens << token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
-            emit_line_newline(last_line, last_line_number, last_line_offset, last_line_has_newline)
+            @tokens << build_token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
+            emit_newline(last_line, last_line_number, last_line_offset, last_line_has_newline)
             return resync_line_number ? (resync_line_number - line_number) : (scan_line_index - line_index)
           end
 
@@ -117,7 +117,7 @@ module MilkTea
         content_margin = heredoc_content_margin(content_lines)
 
         literal = if format
-          parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
+          split_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
         else
           value
         end
@@ -130,8 +130,8 @@ module MilkTea
           :string
         end
 
-        @tokens << token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
-        emit_line_newline(terminator_line, terminator_line_number, terminator_line_offset, terminator_has_newline)
+        @tokens << build_token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
+        emit_newline(terminator_line, terminator_line_number, terminator_line_offset, terminator_has_newline)
 
         (scan_line_index - line_index) + 1
       end

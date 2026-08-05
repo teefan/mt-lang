@@ -58,14 +58,14 @@ module MilkTea
         start_offset = line_offset + index
         if consumed_lines == 1
           lexeme = line[index...segment.next_index]
-          @tokens << token(cstring ? :cstring : :string, lexeme, value, line_number, index + 1, start_offset:, end_offset: line_offset + segment.next_index)
+          @tokens << build_token(cstring ? :cstring : :string, lexeme, value, line_number, index + 1, start_offset:, end_offset: line_offset + segment.next_index)
           return StringLexResult.new(consumed_lines:, next_index: segment.next_index)
         end
 
         end_offset = last_line_offset + last_segment_end
         lexeme = @source.byteslice(start_offset, end_offset - start_offset)
-        @tokens << token(cstring ? :cstring : :string, lexeme, value, line_number, index + 1, start_offset:, end_offset:)
-        emit_line_newline(last_line, last_line_number, last_line_offset, last_line_has_newline)
+        @tokens << build_token(cstring ? :cstring : :string, lexeme, value, line_number, index + 1, start_offset:, end_offset:)
+        emit_newline(last_line, last_line_number, last_line_offset, last_line_has_newline)
         StringLexResult.new(consumed_lines:, next_index: last_segment_end)
       end
 
@@ -144,7 +144,7 @@ module MilkTea
         index += 1
 
         lexeme = line[start...index]
-        @tokens << token(:char_literal, lexeme, value, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
+        @tokens << build_token(:char_literal, lexeme, value, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
         index
       end
 

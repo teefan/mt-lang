@@ -20,13 +20,13 @@ module MilkTea
           end
 
           @indent_stack << indent
-          @tokens << token(:indent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
+          @tokens << build_token(:indent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
           return
         end
 
         while @indent_stack.last > indent
           @indent_stack.pop
-          @tokens << token(:dedent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
+          @tokens << build_token(:dedent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
         end
 
         return if @indent_stack.last == indent
@@ -44,13 +44,13 @@ module MilkTea
 
         if recovered_indent > current_indent
           @indent_stack << recovered_indent
-          @tokens << token(:indent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
+          @tokens << build_token(:indent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
           return
         end
 
         while @indent_stack.last > recovered_indent
           @indent_stack.pop
-          @tokens << token(:dedent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
+          @tokens << build_token(:dedent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
         end
 
         return if @indent_stack.last == recovered_indent

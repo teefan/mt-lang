@@ -9,14 +9,14 @@ module MilkTea
         lexeme = line[index, 3]
         if lexeme && THREE_CHAR_TOKENS.key?(lexeme)
           type = THREE_CHAR_TOKENS.fetch(lexeme)
-          @tokens << token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 3)
+          @tokens << build_token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 3)
           return index + 3
         end
 
         lexeme = line[index, 2]
         if lexeme && TWO_CHAR_TOKENS.key?(lexeme)
           type = TWO_CHAR_TOKENS.fetch(lexeme)
-          @tokens << token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 2)
+          @tokens << build_token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 2)
           adjust_grouping_depth(type, line_number, start + 1)
           return index + 2
         end
@@ -37,7 +37,7 @@ module MilkTea
           raise LexError.new("unexpected character #{lexeme.inspect}", line: line_number, column: start + 1, path: @path)
         end
 
-        @tokens << token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 1)
+        @tokens << build_token(type, lexeme, nil, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index + 1)
         adjust_grouping_depth(type, line_number, start + 1)
         index + 1
       end

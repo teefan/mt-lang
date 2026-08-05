@@ -171,10 +171,10 @@ module MilkTea
 
       while @indent_stack.length > 1
         @indent_stack.pop
-        @tokens << token(:dedent, "", nil, @line_count, 1, start_offset: @source.bytesize, end_offset: @source.bytesize)
+        @tokens << build_token(:dedent, "", nil, @line_count, 1, start_offset: @source.bytesize, end_offset: @source.bytesize)
       end
 
-      @tokens << token(:eof, "", nil, @line_count + 1, 1, start_offset: @source.bytesize, end_offset: @source.bytesize)
+      @tokens << build_token(:eof, "", nil, @line_count + 1, 1, start_offset: @source.bytesize, end_offset: @source.bytesize)
       return LexResult.new(tokens: @tokens, trivia: @trivia) if with_trivia?
 
       @tokens
@@ -193,12 +193,12 @@ module MilkTea
       end
 
       if line.strip.empty?
-        register_detached_line_trivia(:blank_line, line, line_number, line_offset, has_newline:)
+        record_line_trivia(:blank_line, line, line_number, line_offset, has_newline:)
         return 1
       end
 
       if line.lstrip.start_with?("#")
-        register_detached_line_trivia(:comment, line, line_number, line_offset, has_newline:)
+        record_line_trivia(:comment, line, line_number, line_offset, has_newline:)
         return 1
       end
 
@@ -206,11 +206,11 @@ module MilkTea
       if @recovery_errors && @grouping_depth.positive? && index.zero? && top_level_resync_line?(line)
         @recovery_errors << LexError.new("unclosed grouping delimiter", line: @grouping_start_line, column: @grouping_start_column, path: @path)
         @grouping_depth = 0
-        @tokens << token(:newline, "\n", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
+        @tokens << build_token(:newline, "\n", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
       end
 
       if with_trivia? && index.positive?
-        push_pending_leading_trivia(
+        push_leading_trivia(
           TriviaToken.new(
             kind: :space,
             text: line[0...index],
@@ -244,7 +244,7 @@ module MilkTea
           if with_trivia?
             span_start = index
             index += 1 while index < line.length && line[index] == " "
-            push_pending_leading_trivia(
+            push_leading_trivia(
               TriviaToken.new(
                 kind: :space,
                 text: line[span_start...index],
@@ -265,7 +265,7 @@ module MilkTea
           if with_trivia?
             comment_end = line.length
             comment_text = line[index...comment_end]
-            append_trailing_or_pending(
+            attach_trivia(
               TriviaToken.new(
                 kind: :comment,
                 text: comment_text,
@@ -280,7 +280,7 @@ module MilkTea
         end
 
         if (char == "c" || char == "f")
-          result = dispatch_cf_prefix(char, line, index, line_number, line_offset, lines:, line_index:)
+          result = dispatch_prefixed_literal(char, line, index, line_number, line_offset, lines:, line_index:)
           if result
             if result[0] == :return
               return result[1]
@@ -327,10 +327,10 @@ module MilkTea
         if Token::LINE_CONTINUATION_OPERATORS.include?(@tokens.last&.type)
           @continuation_pending = true
         else
-          @tokens << token(:newline, "\n", nil, line_number, line.length + 1, start_offset: newline_start, end_offset: newline_end)
+          @tokens << build_token(:newline, "\n", nil, line_number, line.length + 1, start_offset: newline_start, end_offset: newline_end)
         end
       elsif with_trivia? && has_newline
-        append_trailing_or_pending(
+        attach_trivia(
           TriviaToken.new(
             kind: :newline,
             text: "\n",
@@ -345,14 +345,14 @@ module MilkTea
       1
     end
 
-    def emit_line_newline(line, line_number, line_offset, has_newline)
+    def emit_newline(line, line_number, line_offset, has_newline)
       newline_start = line_offset + line.bytesize
       newline_end = has_newline ? (newline_start + 1) : newline_start
 
       if @grouping_depth.zero?
-        @tokens << token(:newline, "\n", nil, line_number, line.bytesize + 1, start_offset: newline_start, end_offset: newline_end)
+        @tokens << build_token(:newline, "\n", nil, line_number, line.bytesize + 1, start_offset: newline_start, end_offset: newline_end)
       elsif with_trivia? && has_newline
-        append_trailing_or_pending(
+        attach_trivia(
           TriviaToken.new(
             kind: :newline,
             text: "\n",
@@ -365,7 +365,7 @@ module MilkTea
       end
     end
 
-    def dispatch_cf_prefix(char, line, index, line_number, line_offset, lines:, line_index:)
+    def dispatch_prefixed_literal(char, line, index, line_number, line_offset, lines:, line_index:)
       return nil unless char == "c" || char == "f"
 
       is_c = char == "c"
@@ -377,7 +377,7 @@ module MilkTea
       end
 
       if line[index + 1] == "<" && line[index + 2] == "-" && identifier_start?(line[index + 3])
-        error = LexError.new("expected '<<-' for heredoc string; did you mean '#{char}<<-#{identifier_start_token(line, index + 3)}'?", line: line_number, column: index + 1, path: @path)
+        error = LexError.new("expected '<<-' for heredoc string; did you mean '#{char}<<-#{extract_identifier_at(line, index + 3)}'?", line: line_number, column: index + 1, path: @path)
         if @recovery_errors
           @recovery_errors << error
         else
@@ -402,7 +402,7 @@ module MilkTea
       nil
     end
 
-    def token(type, lexeme, literal, line, column, start_offset:, end_offset:)
+    def build_token(type, lexeme, literal, line, column, start_offset:, end_offset:)
       Token.new(
         type:,
         lexeme:,
