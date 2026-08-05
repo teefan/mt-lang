@@ -1099,10 +1099,9 @@ module MilkTea
 
       def c_local_name(name)
         return "value" unless name
-        identifier = sanitize_identifier(name)
-        return "#{identifier}_" if c_reserved_identifier?(identifier)
+        return "#{name}_" if c_reserved_identifier?(name)
 
-        identifier
+        name
       end
 
       def c_reserved_identifier?(identifier)
