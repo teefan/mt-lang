@@ -50,7 +50,7 @@ module MilkTea
       end
     end
 
-    def lower_direct_function_to_proc_expression(source_expression, source_function, env:, expected_type:)
+    def lower_fn_to_proc_expression(source_expression, source_function, env:, expected_type:)
       raise LoweringError.new("function-to-proc coercion requires a direct function name", line: 0, column: 0, path: @ctx.current_analysis_path) unless source_function.is_a?(IR::Name)
 
       proc_id = fresh_proc_symbol

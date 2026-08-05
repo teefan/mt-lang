@@ -27,15 +27,15 @@ module MilkTea
         when AST::DeferStmt
           local_defers << lower_defer_cleanup_body(statement.body, env: local_env, return_type:)
         when AST::UnsafeStmt
-          lower_block_unsafe_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+          lower_unsafe_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
         when AST::LocalDecl
-          lower_block_local_decl_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+          lower_local_decl_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
         when AST::Assignment
-          lower_block_assignment_stmt(statement, lowered:, local_defers:, local_env:)
+          lower_assignment_stmt(statement, lowered:, local_defers:, local_env:)
         when AST::IfStmt
-          lower_block_if_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+          lower_if_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
         when AST::MatchStmt
-          lower_block_match_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+          lower_match_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
         when AST::StaticAssert
           lowered << lower_static_assert(statement, env: local_env)
         when AST::ForStmt
@@ -67,13 +67,13 @@ module MilkTea
 
           lowered.concat(lower_loop_exit(loop_flow[:continue_target], local_defers, loop_flow[:continue_defers]))
         when AST::ReturnStmt
-          lower_block_return_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, allow_return:)
+          lower_return_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, allow_return:)
         when AST::ExpressionStmt
-          lower_block_expression_stmt(statement, lowered:, local_defers:, local_env:)
+          lower_expression_stmt(statement, lowered:, local_defers:, local_env:)
         when AST::EmitStmt
           lowered.concat(lower_emit_stmt(statement, env: local_env))
         when AST::WhenStmt
-          lower_block_when_stmt(statement, lowered:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+          lower_when_stmt(statement, lowered:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
         else
           raise LoweringError.new("unsupported statement #{statement.class.name}",
             line: statement.line, column: statement.column, path: @ctx.current_analysis_path)
@@ -380,7 +380,7 @@ module MilkTea
       end
     end
 
-    def lower_block_unsafe_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_unsafe_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       body = lower_block(
         statement.body,
         env: local_env,
@@ -392,7 +392,7 @@ module MilkTea
       lowered << IR::BlockStmt.new(body:)
     end
 
-    def lower_block_when_stmt(statement, lowered:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_when_stmt(statement, lowered:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       discriminant = compile_time_const_value(statement.discriminant)
       chosen_branch = statement.branches.find do |branch|
         discriminant == compile_time_const_value(branch.pattern)
@@ -419,7 +419,7 @@ module MilkTea
       end
     end
 
-    def lower_block_expression_stmt(statement, lowered:, local_defers:, local_env:)
+    def lower_expression_stmt(statement, lowered:, local_defers:, local_env:)
       if (format_sink_statements = lower_explicit_format_sink_expression_statement(statement.expression, env: local_env, line: statement.line))
         lowered.concat(format_sink_statements)
         return
@@ -457,7 +457,7 @@ module MilkTea
       end
     end
 
-    def lower_block_return_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, allow_return:)
+    def lower_return_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, allow_return:)
       raise LoweringError.new("return is not allowed inside defer blocks",
         line: statement.line, column: statement.column, path: @ctx.current_analysis_path) unless allow_return
 
@@ -506,7 +506,7 @@ module MilkTea
       lowered << IR::ReturnStmt.new(value:, line: statement.line, path: @ctx.current_analysis_path)
     end
 
-    def lower_block_assignment_stmt(statement, lowered:, local_defers:, local_env:)
+    def lower_assignment_stmt(statement, lowered:, local_defers:, local_env:)
       if statement.operator == "=" &&
          statement.target.is_a?(AST::IndexAccess) &&
          statement.target.index.is_a?(AST::RangeExpr) &&
@@ -540,7 +540,7 @@ module MilkTea
         lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
         lowered.concat(cleanup_statements)
         update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
-        local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
+        local_defers.concat(reject_format_releases_for_assignment(prepared_cleanups, target.type))
         return
       else
         value = if statement.operator == "="
@@ -566,12 +566,12 @@ module MilkTea
         value = nullable_some_literal(target.type, value)
       end
       update_cstr_metadata_for_assignment!(statement, prepared_value, local_env)
-      local_defers.concat(suppress_format_releases_for_assignment(prepared_cleanups, target.type))
+      local_defers.concat(reject_format_releases_for_assignment(prepared_cleanups, target.type))
       operator = statement.operator
       if ["+=", "-=", "*=", "/="].include?(operator) &&
          (target.type.is_a?(Types::Vector) || target.type.is_a?(Types::Matrix) || target.type.is_a?(Types::Quaternion))
         binary_op = operator[0...-1]
-        expanded = lower_vector_binary_op(binary_op, target, target.type, value, value.type, target.type)
+        expanded = lower_vector_binary_operation(binary_op, target, target.type, value, value.type, target.type)
         value = expanded || IR::Binary.new(operator: binary_op, left: target, right: value, type: target.type)
         operator = "="
       end
@@ -580,14 +580,14 @@ module MilkTea
         lowered << IR::LocalDecl.new(name: rhs_name, linkage_name: rhs_name, type: target.type, value:)
         rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
         lowered.concat(lower_proc_selective_retain_statements(rhs, statement.value, target.type))
-        lowered.concat(lower_proc_contained_guarded_release_statements(target, target.type))
+        lowered.concat(lower_proc_nullable_release_statements(target, target.type))
         lowered << IR::Assignment.new(target:, operator: "=", value: rhs)
       else
         lowered << IR::Assignment.new(target:, operator:, value:)
       end
     end
 
-    def lower_block_if_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_if_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       if statement.inline
         lowered.concat(lower_inline_if_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
         return
@@ -681,7 +681,7 @@ module MilkTea
       end
     end
 
-    def lower_block_local_decl_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_local_decl_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       if statement.destructure_bindings
         lower_destructure_decl(statement, env: local_env, lowered:, local_defers:, active_defers:, return_type:, loop_flow:, allow_return:)
         return
@@ -795,14 +795,14 @@ module MilkTea
       local_defers.concat(prepared_cleanups)
       if contains_proc_storage_type?(storage_type)
         local_value = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
-        local_defers << lower_proc_contained_guarded_release_statements(local_value, storage_type)
+        local_defers << lower_proc_nullable_release_statements(local_value, storage_type)
         if statement.value && !expression_contains_proc_expr?(statement.value)
           lowered.concat(lower_proc_contained_retain_statements(local_value, storage_type))
         end
       end
     end
 
-    def lower_block_match_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_match_stmt(statement, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       if statement.inline
         lowered.concat(lower_inline_match_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
         return
@@ -826,7 +826,7 @@ module MilkTea
 
       if scrutinee_type.is_a?(Types::Variant)
         if statement.arms.any? { |arm| arm.pattern.is_a?(AST::Call) }
-          lower_block_variant_struct_pattern_match(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+          lower_variant_struct_pattern_match(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
         else
           kind_type = @ctx.types.fetch("int")
           kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
@@ -864,14 +864,14 @@ module MilkTea
           lowered << IR::SwitchStmt.new(expression: kind_expr, cases:, exhaustive: true)
         end
       elsif scrutinee_type.is_a?(Types::StringView)
-        lower_block_string_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+        lower_string_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       elsif scrutinee_type.is_a?(Types::Tuple)
-        lower_block_tuple_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+        lower_tuple_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       else
         has_range_arms = statement.arms.any? { |arm| arm.pattern.is_a?(AST::RangeExpr) }
 
         if has_range_arms
-          lower_block_range_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+          lower_range_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
         else
           arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
           cases = statement.arms.map do |arm|
@@ -896,7 +896,7 @@ module MilkTea
       lowered.concat(expression_cleanups.flat_map(&:itself))
     end
 
-    def lower_block_variant_struct_pattern_match(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_variant_struct_pattern_match(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       kind_type = @ctx.types.fetch("int")
       arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
       @match_label_counter ||= 0
@@ -1051,7 +1051,7 @@ module MilkTea
       lowered << IR::LabelStmt.new(name: match_end_label)
     end
 
-    def lower_block_string_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_string_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
       bool_type = @ctx.types.fetch("bool")
       non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
@@ -1084,7 +1084,7 @@ module MilkTea
       lowered.concat(else_body)
     end
 
-    def lower_block_tuple_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_tuple_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
       bool_type = @ctx.types.fetch("bool")
       non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }
@@ -1116,7 +1116,7 @@ module MilkTea
       lowered.concat(else_body)
     end
 
-    def lower_block_range_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
+    def lower_range_match_stmt(statement, scrutinee_type:, expression:, lowered:, local_defers:, local_env:, active_defers:, return_type:, loop_flow:, allow_return:)
       arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
       bool_type = @ctx.types.fetch("bool")
       non_wildcard = statement.arms.reject { |arm| wildcard_arm_pattern?(arm.pattern) }

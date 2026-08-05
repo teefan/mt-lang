@@ -3,7 +3,7 @@
 module MilkTea
   module LowererForeignCstr
     def lower_foreign_cstr_list_argument_value(parameter, argument_value, env:, lowered:, cleanup:)
-      if (direct_value = lower_direct_foreign_cstr_list_argument_value(parameter, argument_value, env:, lowered:))
+      if (direct_value = lower_direct_cstr_list_argument(parameter, argument_value, env:, lowered:))
         return direct_value
       end
 
@@ -73,7 +73,7 @@ module MilkTea
       )
     end
 
-    def lower_direct_foreign_cstr_list_argument_value(parameter, argument_value, env:, lowered:)
+    def lower_direct_cstr_list_argument(parameter, argument_value, env:, lowered:)
       actual_type = infer_expression_type(argument_value, env:)
       return unless array_type?(actual_type)
       return unless cstr_list_backed_expression?(argument_value, env)
@@ -183,7 +183,7 @@ module MilkTea
         return materialized
       end
       return lowered if lowered.type == expected_type
-      return lower_direct_function_to_proc_expression(expression, lowered, env:, expected_type:) if direct_function_to_proc_contextual_compatibility?(expression, lowered.type, env:, expected_type:)
+      return lower_fn_to_proc_expression(expression, lowered, env:, expected_type:) if direct_function_to_proc_contextual_compatibility?(expression, lowered.type, env:, expected_type:)
       return lower_str_buffer_to_span_expression(lowered, expected_type) if str_buffer_to_span_compatible?(lowered.type, expected_type)
       return lower_array_to_span_expression(lowered, expected_type) if array_to_span_compatible?(lowered.type, expected_type)
       return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, env:, external_numeric:, contextual_int_to_float:)

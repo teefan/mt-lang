@@ -275,12 +275,12 @@ module MilkTea
 
     # Null-guarded release: safe when value may be zero-initialized (var locals, async frame fields).
     # Wraps each proc release in `if (proc.invoke) { proc.release(proc.env); }`.
-    def lower_proc_contained_guarded_release_statements(value_expression, type)
+    def lower_proc_nullable_release_statements(value_expression, type)
       lower_proc_contained_lifecycle_statements(value_expression, type, :release, guarded: true)
     end
 
     # Alias used for async frame fields (always guarded).
-    def lower_async_frame_proc_release_statements(value_expression, type)
+    def lower_async_frame_proc_nullable_release_statements(value_expression, type)
       lower_proc_contained_lifecycle_statements(value_expression, type, :release, guarded: true)
     end
 

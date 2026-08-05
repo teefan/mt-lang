@@ -25,10 +25,6 @@ module MilkTea
       end
     end
 
-    def collect_struct_from_decl(decl)
-      collect_one_struct_decl(decl)
-    end
-
     def lower_when_chosen_body(decl)
       val = compile_time_const_value(decl.discriminant)
       return nil if val.nil?
@@ -194,10 +190,6 @@ module MilkTea
       @ctx.install(analysis)
       @ctx.current_analysis_path = path
       @ctx.module_prefix = module_c_prefix(@ctx.module_name)
-    end
-
-    def sanitize_type_name_for_tuple(type)
-      type.to_s.gsub(/[^a-zA-Z0-9]/, "_").gsub(/_+/, "_").gsub(/^_|_$/, "")
     end
 
     def build_method_definitions

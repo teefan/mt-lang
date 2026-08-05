@@ -1029,7 +1029,7 @@ module MilkTea
       if ["+=", "-=", "*=", "/="].include?(operator) &&
           (target.type.is_a?(Types::Vector) || target.type.is_a?(Types::Matrix) || target.type.is_a?(Types::Quaternion))
         binary_op = operator[0...-1]
-        expanded = lower_vector_binary_op(binary_op, target, target.type, value, value.type, target.type)
+        expanded = lower_vector_binary_operation(binary_op, target, target.type, value, value.type, target.type)
         value = expanded || IR::Binary.new(operator: binary_op, left: target, right: value, type: target.type)
         operator = "="
       end
@@ -1038,7 +1038,7 @@ module MilkTea
         lowered << IR::LocalDecl.new(name: rhs_name, linkage_name: rhs_name, type: target.type, value:)
         rhs = IR::Name.new(name: rhs_name, type: target.type, pointer: false)
         lowered.concat(lower_proc_selective_retain_statements(rhs, statement.value, target.type))
-        lowered.concat(lower_proc_contained_guarded_release_statements(target, target.type))
+        lowered.concat(lower_proc_nullable_release_statements(target, target.type))
         lowered << IR::Assignment.new(target:, operator: "=", value: rhs)
       else
         lowered << IR::Assignment.new(target:, operator:, value:)

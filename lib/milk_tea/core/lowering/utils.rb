@@ -65,7 +65,7 @@ module MilkTea
       type.fields.any? { |_name, field_type| cstr_trackable_type?(field_type) || struct_contains_string_field?(field_type) }
     end
 
-    def suppress_format_releases_for_assignment(cleanups, target_type)
+    def reject_format_releases_for_assignment(cleanups, target_type)
       return cleanups unless cstr_trackable_type?(target_type) || struct_contains_string_field?(target_type)
 
       cleanups.reject do |items|

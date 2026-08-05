@@ -455,7 +455,7 @@ module MilkTea
         next unless contains_proc_storage_type?(field_info[:type])
 
         field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
-        body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:type]))
+        body.concat(lower_async_frame_proc_nullable_release_statements(field_expr, field_info[:type]))
       end
 
       # Release proc-containing locals (may not be initialized if function returned early via branch,
@@ -464,7 +464,7 @@ module MilkTea
         next unless contains_proc_storage_type?(field_info[:storage_type])
 
         field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
-        body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:storage_type]))
+        body.concat(lower_async_frame_proc_nullable_release_statements(field_expr, field_info[:storage_type]))
       end
 
       (async_info[:format_str_fields] || {}).each_key do |field_name|
@@ -551,14 +551,14 @@ module MilkTea
         next unless contains_proc_storage_type?(field_info[:type])
 
         field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
-        body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:type]))
+        body.concat(lower_async_frame_proc_nullable_release_statements(field_expr, field_info[:type]))
       end
 
       async_info[:local_fields].each_value do |field_info|
         next unless contains_proc_storage_type?(field_info[:storage_type])
 
         field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
-        body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:storage_type]))
+        body.concat(lower_async_frame_proc_nullable_release_statements(field_expr, field_info[:storage_type]))
       end
 
       (async_info[:format_str_fields] || {}).each_key do |field_name|

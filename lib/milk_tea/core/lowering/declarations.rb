@@ -141,12 +141,12 @@ module MilkTea
         next unless decl.type_params.empty?
 
         results = []
-        lower_one_struct(decl, decl.name, results)
+        lower_struct_decl(decl, decl.name, results)
         results
       end.flatten
     end
 
-    def lower_one_struct(decl, qualified_name, results)
+    def lower_struct_decl(decl, qualified_name, results)
       struct_type = @ctx.struct_types.fetch(qualified_name)
       fields = decl.fields.map do |field|
         IR::Field.new(name: field.name, type: struct_type.field(field.name))
@@ -160,7 +160,7 @@ module MilkTea
       results << IR::StructDecl.new(name: decl.name, linkage_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment, source_module: @ctx.module_name)
 
       decl.nested_types.each do |nested|
-        lower_one_struct(nested, "#{qualified_name}.#{nested.name}", results)
+        lower_struct_decl(nested, "#{qualified_name}.#{nested.name}", results)
       end
     end
 

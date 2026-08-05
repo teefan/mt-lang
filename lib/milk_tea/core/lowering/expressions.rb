@@ -702,7 +702,7 @@ module MilkTea
       when "append_cstr"
         IR::Call.new(callee: "mt_format_cstr_len", arguments: [parameter], type: @ctx.types.fetch("ptr_uint"))
       else
-        IR::Call.new(callee: mt_format_length_c_name(part[:append_function_name]), arguments: [parameter], type: @ctx.types.fetch("ptr_uint"))
+        IR::Call.new(callee: format_length_linkage_name(part[:append_function_name]), arguments: [parameter], type: @ctx.types.fetch("ptr_uint"))
       end
     end
 
@@ -821,7 +821,7 @@ module MilkTea
       end
 
       IR::Call.new(
-        callee: mt_format_append_c_name(part[:append_function_name]),
+        callee: format_append_linkage_name(part[:append_function_name]),
         arguments: [result_value, offset_value, parameter],
         type: @ctx.types.fetch("ptr_uint"),
       )
@@ -945,7 +945,7 @@ module MilkTea
       raise LoweringError.new("format spec ':b' and ':B' require integer interpolation, got #{type}", line: 0, column: 0, path: @ctx.current_analysis_path)
     end
 
-    def mt_format_length_c_name(name)
+    def format_length_linkage_name(name)
       {
         "append_bool" => "mt_format_bool_len",
         "append_float" => "mt_format_float_len",
@@ -966,7 +966,7 @@ module MilkTea
       }.fetch(name)
     end
 
-    def mt_format_append_c_name(name)
+    def format_append_linkage_name(name)
       {
         "append" => "mt_format_append_str",
         "append_cstr" => "mt_format_append_cstr",
@@ -1373,7 +1373,7 @@ module MilkTea
         raise LoweringError.new("propagation expressions must be prepared before direct lowering", line: 0, column: 0, path: @ctx.current_analysis_path) if expression.operator == "?"
 
         operand = lower_expression(expression.operand, env:, expected_type: type)
-        expanded = lower_vector_unary_op(expression.operator, operand, type)
+        expanded = lower_vector_unary_operation(expression.operator, operand, type)
         return expanded if expanded
 
         IR::Unary.new(operator: expression.operator, operand:, type:)
@@ -1386,7 +1386,7 @@ module MilkTea
         left = cast_expression(left, operand_type) if operand_type
         right = cast_expression(right, operand_type) if operand_type
 
-        expanded = lower_vector_binary_op(expression.operator, left, left_type, right, right_type, type)
+        expanded = lower_vector_binary_operation(expression.operator, left, left_type, right, right_type, type)
         return expanded if expanded
 
         IR::Binary.new(operator: expression.operator, left:, right:, type:)
@@ -1573,16 +1573,16 @@ module MilkTea
       end
     end
 
-    def lower_vector_binary_op(operator, left, left_type, right, right_type, result_type)
+    def lower_vector_binary_operation(operator, left, left_type, right, right_type, result_type)
       return nil unless result_type.is_a?(Types::Vector) || result_type.is_a?(Types::Matrix) || result_type.is_a?(Types::Quaternion)
 
       if result_type.is_a?(Types::Vector)
-        return lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
+        return lower_vector_binary_operation_on_vectors(operator, left, left_type, right, right_type, result_type)
       end
 
-      return lower_aggregate_binary_op(operator, left, right, result_type) if operator == "+" || operator == "-"
+      return lower_aggregate_binary_operation(operator, left, right, result_type) if operator == "+" || operator == "-"
 
-      return lower_aggregate_binary_op(operator, left, right, result_type) if result_type.is_a?(Types::Quaternion)
+      return lower_aggregate_binary_operation(operator, left, right, result_type) if result_type.is_a?(Types::Quaternion)
 
       scalar_is_left = !left_type.is_a?(Types::Matrix)
       aggregate_expr = scalar_is_left ? right : left
@@ -1593,28 +1593,28 @@ module MilkTea
         field_expr = IR::Member.new(receiver: aggregate_expr, member: fname, type: ftype)
         left_expr = scalar_is_left ? scalar_expr : field_expr
         right_expr = scalar_is_left ? field_expr : scalar_expr
-        value = lower_vector_binary_op(operator, left_expr, ftype, right_expr, scalar_type, ftype) ||
+        value = lower_vector_binary_operation(operator, left_expr, ftype, right_expr, scalar_type, ftype) ||
                 IR::Binary.new(operator:, left: left_expr, right: right_expr, type: ftype)
         IR::AggregateField.new(name: fname, value:)
       end
       IR::AggregateLiteral.new(fields:, type: result_type)
     end
 
-    def lower_vector_unary_op(operator, operand, result_type)
+    def lower_vector_unary_operation(operator, operand, result_type)
       return nil unless result_type.is_a?(Types::Vector) || result_type.is_a?(Types::Matrix) || result_type.is_a?(Types::Quaternion)
       return nil unless operator == "+" || operator == "-"
 
       fields = result_type.fields.map do |fname, ftype|
         field_expr = IR::Member.new(receiver: operand, member: fname, type: ftype)
-        value = lower_vector_unary_op(operator, field_expr, ftype) || IR::Unary.new(operator:, operand: field_expr, type: ftype)
+        value = lower_vector_unary_operation(operator, field_expr, ftype) || IR::Unary.new(operator:, operand: field_expr, type: ftype)
         IR::AggregateField.new(name: fname, value:)
       end
       IR::AggregateLiteral.new(fields:, type: result_type)
     end
 
-    def lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
+    def lower_vector_binary_operation_on_vectors(operator, left, left_type, right, right_type, result_type)
       if left_type.is_a?(Types::Vector) && right_type.is_a?(Types::Vector)
-        return lower_aggregate_binary_op(operator, left, right, result_type)
+        return lower_aggregate_binary_operation(operator, left, right, result_type)
       end
 
       return nil unless operator == "*" || operator == "/"
@@ -1633,11 +1633,11 @@ module MilkTea
       IR::AggregateLiteral.new(fields:, type: result_type)
     end
 
-    def lower_aggregate_binary_op(operator, left, right, result_type)
+    def lower_aggregate_binary_operation(operator, left, right, result_type)
       fields = result_type.fields.map do |fname, ftype|
         left_field = IR::Member.new(receiver: left, member: fname, type: ftype)
         right_field = IR::Member.new(receiver: right, member: fname, type: ftype)
-        value = lower_vector_binary_op(operator, left_field, ftype, right_field, ftype, ftype) || IR::Binary.new(
+        value = lower_vector_binary_operation(operator, left_field, ftype, right_field, ftype, ftype) || IR::Binary.new(
           operator:,
           left: left_field,
           right: right_field,

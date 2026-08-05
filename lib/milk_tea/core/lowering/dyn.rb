@@ -74,8 +74,8 @@ module MilkTea
       @dyn_generated_vtables ||= {}
 
       ensure_dyn_vtable_struct(interface)
-      wrappers = gen_dyn_vtable_wrappers(concrete_type, interface)
-      gen_dyn_vtable_constant(concrete_type, interface, vtable_c_name, wrappers)
+      wrappers = generate_dyn_vtable_wrappers(concrete_type, interface)
+      generate_dyn_vtable_constant(concrete_type, interface, vtable_c_name, wrappers)
       @dyn_generated_vtables[vtable_c_name] = true
       vtable_c_name
     end
@@ -100,7 +100,7 @@ module MilkTea
       )
     end
 
-    def gen_dyn_vtable_wrappers(concrete_type, interface)
+    def generate_dyn_vtable_wrappers(concrete_type, interface)
       void_ptr = Types::Registry.generic_instance("ptr", [Types::Registry.primitive("void")])
       wrappers = {}
       concrete_type_name = sanitize_identifier(concrete_type.to_s)
@@ -187,7 +187,7 @@ module MilkTea
       wrappers
     end
 
-    def gen_dyn_vtable_constant(concrete_type, interface, vtable_c_name, wrappers)
+    def generate_dyn_vtable_constant(concrete_type, interface, vtable_c_name, wrappers)
       vtable_full = dyn_vtable_struct_type(interface)
       fields = interface.methods.map do |method_name, _|
         wrapper_c_name = wrappers[method_name]
