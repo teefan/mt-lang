@@ -12,7 +12,7 @@ module MilkTea
 
         resolution = extract_resolution_flags!
         input_paths = @argv.dup
-        return 1 unless ensure_known_source_operands!("debug", input_paths)
+        return 1 unless validate_source_operands("debug", input_paths)
 
         path = expand_source_paths(input_paths).first
         unless path
@@ -37,7 +37,7 @@ module MilkTea
 
         if ast && parse_errors.empty?
           begin
-            loader = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform)
+            loader = create_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform)
             loader_ast = loader.load_file(resolved_path)
 
             import_result = loader.send(:imported_modules_for_ast_collecting_errors, loader_ast, importer_path: resolved_path)
@@ -69,7 +69,7 @@ module MilkTea
         @out.puts(text)
         0
       rescue MilkTea::LexError => e
-        @err.puts(ErrorFormatter.format(e, color: error_color?(@err)))
+        @err.puts(ErrorFormatter.format(e, color: use_color?(@err)))
         1
       end
     end

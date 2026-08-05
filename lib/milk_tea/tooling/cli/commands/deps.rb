@@ -8,7 +8,7 @@ module MilkTea
           @argv,
           out: @out,
           err: @err,
-          help_printer: method(:print_deps_help),
+          help_printer: ->(io) { print_subcommand_help("deps", io) },
           services: package_services,
         )
       end

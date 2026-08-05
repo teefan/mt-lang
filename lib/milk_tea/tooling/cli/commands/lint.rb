@@ -91,7 +91,7 @@ module MilkTea
         if fix
           lint_profiles = []
           paths.each do |p|
-            announce_file_action(p, "lint-fix")
+            log_action(p, "lint-fix")
             source = read_source_file(p)
             if ignore_generated && generated_source?(source)
               @out.puts("ignored generated #{p}")
@@ -124,7 +124,7 @@ module MilkTea
 
         lint_profiles = []
         all_warnings = paths.flat_map do |p|
-          announce_file_action(p, "lint")
+          log_action(p, "lint")
           source = read_source_file(p)
           next [] if ignore_generated && generated_source?(source)
 
@@ -238,7 +238,7 @@ module MilkTea
 
       def lint_sema_facts_for(source, path, locked: false)
         ast = Parser.parse(source, path: path)
-        imported_modules = make_module_loader(path, locked:, platform: ModuleLoader.default_host_platform).imported_modules_for_ast(ast, importer_path: path)
+        imported_modules = create_module_loader(path, locked:, platform: ModuleLoader.default_host_platform).imported_modules_for_ast(ast, importer_path: path)
         SemanticAnalyzer.tooling_snapshot(ast, imported_modules: imported_modules, path: path).facts
       rescue MilkTea::LexError, MilkTea::ParseError, SemanticError, ModuleLoadError
         nil

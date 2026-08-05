@@ -19,10 +19,10 @@ module MilkTea
 
         resolution = extract_resolution_flags!
         input_paths = @argv.dup
-        return 1 unless ensure_known_source_operands!("check", input_paths)
+        return 1 unless validate_source_operands("check", input_paths)
 
         paths = expand_source_paths(input_paths)
-        return 0 if print_no_source_files_if_empty(paths, input_paths)
+        return 0 if warn_if_no_source_files(paths, input_paths)
 
         ensure_current_lockfiles!(paths) if resolution[:frozen]
 
@@ -38,12 +38,12 @@ module MilkTea
             diagnostics.each do |d|
               same_file = !d.respond_to?(:path) || d.path.nil? || File.expand_path(d.path) == main_abs
               source = same_file ? main_source : nil
-              @err.puts(ErrorFormatter.format(d, source:, color: error_color?(@err)))
+              @err.puts(ErrorFormatter.format(d, source:, color: use_color?(@err)))
             end
             closure_errors.each do |d|
               same_file = !d.respond_to?(:path) || d.path.nil? || File.expand_path(d.path) == main_abs
               source = same_file ? main_source : nil
-              @err.puts(ErrorFormatter.format(d, source:, color: error_color?(@err)))
+              @err.puts(ErrorFormatter.format(d, source:, color: use_color?(@err)))
             end
             all_diagnostics.concat(diagnostics)
             all_diagnostics.concat(closure_errors)
@@ -74,7 +74,7 @@ module MilkTea
       end
 
       def check_single_reporting_all(path, locked: false)
-        loader = make_module_loader(path, locked:, platform: ModuleLoader.default_host_platform)
+        loader = create_module_loader(path, locked:, platform: ModuleLoader.default_host_platform)
         resolved_path = File.expand_path(path)
 
         result = loader.check_program_collecting(path)

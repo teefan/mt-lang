@@ -140,9 +140,9 @@ module MilkTea
         1
       end
     rescue StandardError => e
-      raise unless handled_cli_error?(e)
+      raise unless known_cli_error?(e)
 
-      @err.puts(ErrorFormatter.format(e, color: error_color?(@err)))
+      @err.puts(ErrorFormatter.format(e, color: use_color?(@err)))
       1
     end
 
@@ -231,13 +231,13 @@ module MilkTea
           i += 1
         when "--color"
           value = @argv[i + 1]
-          return invalid_color(value) unless valid_color?(value)
+          return reject_invalid_color(value) unless valid_color?(value)
 
           @color = value.to_sym
           i += 2
         when /\A--color=(.*)\z/
           value = ::Regexp.last_match(1)
-          return invalid_color(value) unless valid_color?(value)
+          return reject_invalid_color(value) unless valid_color?(value)
 
           @color = value.to_sym
           i += 1
@@ -254,12 +254,12 @@ module MilkTea
       %w[auto always never].include?(value)
     end
 
-    def invalid_color(value)
+    def reject_invalid_color(value)
       @err.puts("--color must be auto, always, or never#{value ? " (got #{value})" : ''}")
       false
     end
 
-    def error_color?(io)
+    def use_color?(io)
       case @color
       when :always then true
       when :never then false
@@ -296,27 +296,27 @@ module MilkTea
         case option
         when "-o", "--output"
           value = @argv.shift
-          return missing_option_value(option) unless value
+          return reject_missing_option_value(option) unless value
 
           options[:output_path] = value
         when "--cc"
           value = @argv.shift
-          return missing_option_value(option) unless value
+          return reject_missing_option_value(option) unless value
 
           options[:cc] = value
         when "--keep-c"
           value = @argv.shift
-          return missing_option_value(option) unless value
+          return reject_missing_option_value(option) unless value
 
           options[:keep_c_path] = value
         when "--profile"
           value = @argv.shift
-          return missing_option_value(option) unless value
+          return reject_missing_option_value(option) unless value
 
           options[:profile] = value
         when "--platform"
           value = @argv.shift
-          return missing_option_value(option) unless value
+          return reject_missing_option_value(option) unless value
 
           options[:platform] = value
         when "--bundle"
@@ -339,7 +339,7 @@ module MilkTea
           options[:timings] = true
         when "--kind"
           value = @argv.shift
-          return missing_option_value(option) unless value
+          return reject_missing_option_value(option) unless value
 
           options[:kind] = case value
                            when "executable", "exe", "bin" then :executable
@@ -375,7 +375,7 @@ module MilkTea
       options
     end
 
-    def ensure_known_source_operands!(command, operands)
+    def validate_source_operands(command, operands)
       return true unless operands.any? { |arg| arg.start_with?("-") }
 
       @err.puts("unexpected argument(s) for #{command}: #{operands.join(' ')}")
@@ -393,7 +393,7 @@ module MilkTea
       end.uniq
     end
 
-    def print_no_source_files_if_empty(paths, input_paths)
+    def warn_if_no_source_files(paths, input_paths)
       return false unless paths.empty?
 
       label = input_paths.length == 1 ? input_paths.first : input_paths.join(", ")
@@ -401,17 +401,17 @@ module MilkTea
       true
     end
 
-    def missing_option_value(option)
+    def reject_missing_option_value(option)
       @err.puts("missing value for #{option}")
       print_usage(@err)
       nil
     end
 
-    def handled_cli_error?(error)
-      handled_error_classes.any? { |klass| error.is_a?(klass) }
+    def known_cli_error?(error)
+      known_error_classes.any? { |klass| error.is_a?(klass) }
     end
 
-    def handled_error_classes
+    def known_error_classes
       classes = [LexError, ParseError, ModuleLoadError, SemanticError, LoweringError, CBackendError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError, ProjectScaffoldError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
@@ -438,13 +438,13 @@ module MilkTea
       "lint-fix" => "fixing",
     }.freeze
 
-    def announce_file_action(path, action)
+    def log_action(path, action)
       return unless @verbose
 
       @out.puts("#{ACTION_LABELS.fetch(action, action)} #{path}")
     end
 
-    def make_module_loader(path = nil, locked: false, platform: nil)
+    def create_module_loader(path = nil, locked: false, platform: nil)
       ModuleLoader.new(module_roots: module_roots_for(path, locked:), package_graph: package_graph_for(path, locked:), source_overrides: @source_overrides, platform:)
     end
 
@@ -858,20 +858,8 @@ module MilkTea
       end
     end
 
-    def print_toolchain_help(io)
-      print_command_help("toolchain", io)
-    end
-
-    def print_deps_help(io)
-      print_command_help("deps", io)
-    end
-
-    def print_bindgen_help(io)
-      print_command_help("bindgen", io)
-    end
-
-    def print_cache_help(io)
-      print_command_help("cache", io)
+    def print_subcommand_help(subcommand, io)
+      print_command_help(subcommand, io)
     end
 
     def print_usage(io)

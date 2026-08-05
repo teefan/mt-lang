@@ -19,7 +19,7 @@ module MilkTea
 
         resolution = extract_resolution_flags!
         input_paths = @argv.dup
-        return 1 unless ensure_known_source_operands!("emit-c", input_paths)
+        return 1 unless validate_source_operands("emit-c", input_paths)
 
         program_paths = input_paths.map { |p| resolve_program_path(p) }
         return 1 if program_paths.include?(nil)
@@ -28,7 +28,7 @@ module MilkTea
 
         multiple = program_paths.length > 1
         program_paths.each_with_index do |path, index|
-          program = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).check_program(path)
+          program = create_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).check_program(path)
           if multiple
             @out.puts("/* --- #{path} --- */")
           end

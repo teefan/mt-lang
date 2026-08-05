@@ -17,7 +17,7 @@ module MilkTea
         end
 
         paths = expand_source_paths(input_paths)
-        return 0 if print_no_source_files_if_empty(paths, input_paths)
+        return 0 if warn_if_no_source_files(paths, input_paths)
 
         multiple_sources = input_paths.length > 1 || input_paths.any? { |path| File.directory?(path) }
         if multiple_sources
@@ -39,7 +39,7 @@ module MilkTea
         elapsed_ms = start_time ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000.0).round(1) : nil
 
         rc = if options[:check]
-          announce_file_action(path, "format-check")
+          log_action(path, "format-check")
           if result.changed
             info("needs formatting #{path}")
             1
@@ -48,7 +48,7 @@ module MilkTea
             0
           end
         elsif options[:write]
-          announce_file_action(path, "format-write")
+          log_action(path, "format-write")
           if result.changed
             File.write(path, result.formatted_source)
             info("formatted #{path}")
@@ -70,7 +70,7 @@ module MilkTea
         if options[:check]
           needs_fmt = []
           paths.each do |p|
-            announce_file_action(p, "format-check")
+            log_action(p, "format-check")
             format_profile = options[:profile] ? Linter::Profile.new : nil
             start_time = options[:profile] ? Process.clock_gettime(Process::CLOCK_MONOTONIC) : nil
             result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length], profile: format_profile)
@@ -91,7 +91,7 @@ module MilkTea
         # --write
         changed = 0
         paths.each do |p|
-          announce_file_action(p, "format-write")
+          log_action(p, "format-write")
           format_profile = options[:profile] ? Linter::Profile.new : nil
           start_time = options[:profile] ? Process.clock_gettime(Process::CLOCK_MONOTONIC) : nil
           result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length], profile: format_profile)
@@ -136,7 +136,7 @@ module MilkTea
               options[:mode] = :tidy
             when "--max-line-length"
               value = @argv.shift
-              return missing_option_value(option) unless value
+              return reject_missing_option_value(option) unless value
 
               line_length = Integer(value, exception: false)
               unless line_length && line_length.positive?

@@ -263,7 +263,7 @@ module MilkTea
           .select { |diagnostic| !diagnostic.respond_to?(:severity) || diagnostic.severity == :error }
           .map { |diagnostic| ErrorFormatter.format(diagnostic, color: false) }
       rescue StandardError => e
-        raise unless handled_cli_error?(e)
+        raise unless known_cli_error?(e)
 
         [ErrorFormatter.format(e, color: false)]
       end
@@ -271,10 +271,10 @@ module MilkTea
       def run_test_file_guarded(file, options:, locked:)
         run_test_file(file, options:, locked:)
       rescue StandardError => e
-        raise unless handled_cli_error?(e)
+        raise unless known_cli_error?(e)
 
         @err.puts("FAILED - #{file} (build error)")
-        @err.puts(ErrorFormatter.format(e, color: error_color?(@err)))
+        @err.puts(ErrorFormatter.format(e, color: use_color?(@err)))
         1
       end
 
