@@ -164,7 +164,10 @@ module MilkTea
             end
           end
           check_redundant_type_annotation(statement)
-          flag_redundant_widening_cast(statement.value) if statement.type && statement.value
+          if statement.type && statement.value
+            flag_redundant_widening_cast(statement.value)
+            flag_redundant_literal_cast(statement.value)
+          end
           record_ptr_candidate(statement)
         when AST::Assignment
           visit_expression(statement.value)          # visit RHS first — reads in RHS count against dead-assignment
@@ -173,7 +176,10 @@ module MilkTea
           mark_mutated(statement.target)
           check_self_assignment(statement)
           check_noop_compound_assignment(statement)
-          flag_redundant_widening_cast(statement.value) if statement.operator == "="
+          if statement.operator == "="
+            flag_redundant_widening_cast(statement.value)
+            flag_redundant_literal_cast(statement.value)
+          end
         when AST::IfStmt
           statement.branches.each do |branch|
             visit_expression(branch.condition)
@@ -223,7 +229,10 @@ module MilkTea
           @loop_depth -= 1
         when AST::ReturnStmt
           visit_expression(statement.value) if statement.value
-          flag_redundant_widening_cast(statement.value) if statement.value
+          if statement.value
+            flag_redundant_widening_cast(statement.value)
+            flag_redundant_literal_cast(statement.value)
+          end
         when AST::DeferStmt
           with_scope { visit_statement_list(statement.body) }
         when AST::ExpressionStmt
@@ -278,6 +287,8 @@ module MilkTea
           visit_expression(expression.right)
           check_self_comparison(expression)
           check_redundant_bool_compare(expression)
+          check_redundant_binary_operand_cast(expression)
+          check_redundant_literal_operand_cast(expression)
         when AST::RangeExpr
           visit_expression(expression.start_expr)
           visit_expression(expression.end_expr)
@@ -1141,6 +1152,140 @@ module MilkTea
         emit_redundant_cast(value, target_name, "implicit widening makes this cast redundant")
       end
 
+      INTEGER_TYPE_RANGES = {
+        "byte"   => (-128..127),
+        "short"  => (-32_768..32_767),
+        "int"    => (-(2**31)..2**31 - 1),
+        "long"   => (-(2**63)..2**63 - 1),
+        "ubyte"  => (0..255),
+        "ushort" => (0..65_535),
+        "uint"   => (0..2**32 - 1),
+        "ulong"  => (0..2**64 - 1),
+        "char"   => (0..255),
+      }.freeze
+
+      # Reports an integer-literal cast at a coercion slot as redundant when the
+      # literal would implicitly coerce to the cast target: the compiler accepts
+      # a fitting integer literal for any integer slot (`buf[0] = 1` for a
+      # `ubyte` element), so `ubyte<-1` adds nothing. Out-of-range literals are
+      # left alone because removing the cast would then be a type error.
+      # Widening literal casts are already reported by flag_redundant_widening_cast.
+      def flag_redundant_literal_cast(value)
+        return unless value.is_a?(AST::PrefixCast)
+        return unless @sema_facts
+
+        target_name = type_ref_name(value.target_type)
+        return unless target_name
+        range = INTEGER_TYPE_RANGES[target_name]
+        return unless range
+
+        inner = value.expression
+        return unless inner.is_a?(AST::IntegerLiteral)
+        literal = inner.value
+        return unless literal.is_a?(Integer)
+        return unless range.cover?(literal)
+
+        inner_type = resolve_expr_type(inner)
+        return unless inner_type.is_a?(Types::Primitive)
+        return if inner_type.name == target_name # same-type handled elsewhere
+        return if implicit_cast_allowed?(inner_type, target_name) # widening handled elsewhere
+
+        emit_redundant_cast(value, target_name, "integer literal coercion makes this cast redundant")
+      end
+
+      BINARY_CAST_SAFE_OPS = %w[+ - * / % == != < <= > >=].freeze
+
+      # Reports a widening cast used directly as an operand of an arithmetic or
+      # comparison operator when removing it provably leaves the operation's
+      # result unchanged. An integer->float cast inside a float-family
+      # expression promotes to the sibling's float type either way, so the cast
+      # is redundant. Excluded:
+      #   * shifts (`<<`/`>>`) — the shifted operand's width is load-bearing;
+      #   * `double` in a `float` context — `float_y + double<-i` is `double`
+      #     with the cast but `float` without it;
+      #   * cast-chains such as `float<-x + float<-y` — each removal is only
+      #     safe if the sibling cast stays, so neither is independently
+      #     redundant.
+      def check_redundant_binary_operand_cast(binary)
+        return unless @sema_facts
+        return unless BINARY_CAST_SAFE_OPS.include?(binary.operator)
+
+        check_binary_operand_cast(binary.left, binary.right)
+        check_binary_operand_cast(binary.right, binary.left)
+      end
+
+      def check_binary_operand_cast(operand, sibling)
+        return unless operand.is_a?(AST::PrefixCast)
+        return if sibling.is_a?(AST::PrefixCast)
+
+        target_type = resolve_expr_type(operand)
+        return unless target_type.is_a?(Types::Primitive) && target_type.float?
+
+        inner_type = resolve_expr_type(operand.expression)
+        return unless inner_type.is_a?(Types::Primitive) && inner_type.fixed_width_integer?
+
+        sibling_type = resolve_expr_type(sibling)
+        return unless sibling_type.is_a?(Types::Primitive) && sibling_type.float?
+        return if target_type.name == "double" && sibling_type.name == "float"
+
+        target_name = type_ref_name(operand.target_type)
+        return unless target_name
+
+        emit_redundant_cast(operand, target_name, "implicit float widening makes this cast redundant")
+      end
+
+      COMPARISON_CAST_OPS = %w[== != < <= > >=].freeze
+
+      # Reports an integer-literal cast used directly as a comparison operand
+      # (e.g. `State.idle == ubyte<-0`). The literal coerces to the sibling's
+      # type either way, so `D<-lit` adds nothing when the literal fits `D` and
+      # the sibling is a float-family value, an integer the literal fits in, or
+      # an enum (which compares against any integer literal). Out-of-range
+      # literals are left alone: `ubyte<-300` wraps in `D`, which is not the
+      # same value as the bare literal.
+      def check_redundant_literal_operand_cast(binary)
+        return unless @sema_facts
+        return unless COMPARISON_CAST_OPS.include?(binary.operator)
+
+        check_comparison_literal_operand(binary.left, binary.right)
+        check_comparison_literal_operand(binary.right, binary.left)
+      end
+
+      def check_comparison_literal_operand(operand, sibling)
+        return unless operand.is_a?(AST::PrefixCast)
+
+        target_name = type_ref_name(operand.target_type)
+        return unless target_name
+        target_range = INTEGER_TYPE_RANGES[target_name]
+        return unless target_range
+
+        inner = operand.expression
+        return unless inner.is_a?(AST::IntegerLiteral)
+        literal = inner.value
+        return unless literal.is_a?(Integer)
+        return unless target_range.cover?(literal)
+
+        # Same-type casts are reported by check_redundant_cast.
+        inner_type = resolve_expr_type(inner)
+        return if inner_type.is_a?(Types::Primitive) && inner_type.name == target_name
+
+        sibling_type = resolve_expr_type(sibling)
+        case sibling_type
+        when Types::Primitive
+          return unless sibling_type.float? || sibling_type.integer?
+          if sibling_type.integer?
+            sibling_range = INTEGER_TYPE_RANGES[sibling_type.name]
+            return unless sibling_range && sibling_range.cover?(literal)
+          end
+        when Types::EnumBase
+          nil
+        else
+          return
+        end
+
+        emit_redundant_cast(operand, target_name, "integer literal coercion makes this cast redundant")
+      end
+
       def same_resolved_type?(left, right)
         return true if left.equal?(right)
 
@@ -1177,6 +1322,14 @@ module MilkTea
         target = find_primitive_type(target_name)
         return false unless target
         return false unless target.is_a?(Types::Primitive)
+
+        # Fixed-width integers widen implicitly to float/double (matching the
+        # compiler's promotion, e.g. `float + int` or `return int` from a
+        # `-> float` function). `char`/`bool` are not fixed-width integers and
+        # have no implicit conversion to the float family; float->double is not
+        # implicit either.
+        return true if target.float? && inner_type.fixed_width_integer?
+
         return false unless inner_type.fixed_width_integer? && target.fixed_width_integer?
 
         if inner_type.signed_integer? == target.signed_integer?

@@ -271,6 +271,113 @@ class MilkTeaLinterTest < Minitest::Test
     assert_empty warnings
   end
 
+  def test_integer_to_float_widening_cast_reported_at_coercion_slots
+    # int -> float/double is an implicit conversion, so a widening cast at a
+    # typed slot, return slot, or plain assignment is redundant.
+    source = <<~MT
+      function widen(i: int, u: uint) -> double:
+          let a: float = float<-i
+          let b: double = double<-u
+          var acc: double = 0.0
+          acc = float<-i
+          return double<-i
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_equal 4, warnings.size
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-cast"])
+    assert_includes fixed, "let a: float = i\n"
+    assert_includes fixed, "let b: double = u\n"
+    assert_includes fixed, "acc = i\n"
+    assert_includes fixed, "return i\n"
+    refute_includes fixed, "float<-"
+    refute_includes fixed, "double<-"
+  end
+
+  def test_float_widening_cast_not_reported_when_load_bearing
+    # `double<-i` in a float context makes the expression double instead of
+    # float, so removing it changes the result type — not reported. Neither is
+    # a cast whose sibling is an integer (it keeps the expression float) or a
+    # cast chain where each removal depends on the other.
+    source = <<~MT
+      function widen(i: int, a: float, b: double) -> double:
+          let r1 = a + double<-i
+          let r2 = i + float<-i
+          let r3 = float<-i + float<-i
+          return r1 + r2 + r3
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_empty warnings
+  end
+
+  def test_float_widening_cast_reported_in_float_binary_expression
+    # `float_y + float<-i` promotes to float either way, so the cast is
+    # redundant and fixable.
+    source = <<~MT
+      function widen(i: int, a: float) -> float:
+          return a + float<-i
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_equal 1, warnings.size
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-cast"])
+    assert_includes fixed, "return a + i\n"
+  end
+
+  def test_integer_literal_coercion_cast_reported_in_comparisons
+    # `State.idle == ubyte<-0` coerces to the backing value either way, so the
+    # cast is redundant and fixable. Out-of-range literals (`ubyte<-300`) are
+    # not reported because removing them changes the value.
+    source = <<~MT
+      enum State: ubyte
+          idle = 0
+          running = 1
+
+      function compare() -> bool:
+          let a = State.idle == ubyte<-0
+          let b = State.running > ubyte<-1
+          let c = State.idle == ubyte<-300
+          return a and b and c
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_equal 2, warnings.size
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-cast"])
+    assert_includes fixed, "State.idle == 0\n"
+    assert_includes fixed, "State.running > 1\n"
+    assert_includes fixed, "ubyte<-300"
+  end
+
+  def test_integer_literal_coercion_cast_reported_at_coercion_slots
+    # A fitting integer literal coerces implicitly into a narrower integer
+    # slot, so `ubyte<-1` / `char<-10` are redundant — but an out-of-range
+    # literal (`ubyte<-300`) is not, since removing the cast would be a type
+    # error.
+    source = <<~MT
+      function literals() -> ubyte:
+          let b: ubyte = ubyte<-1
+          let c: char = char<-10
+          var buf: array[ubyte, 2]
+          buf[0] = ubyte<-2
+          let wide: ubyte = ubyte<-300
+          return ubyte<-7
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-cast" }
+    assert_equal 4, warnings.size
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-cast"])
+    assert_includes fixed, "let b: ubyte = 1\n"
+    assert_includes fixed, "let c: char = 10\n"
+    assert_includes fixed, "buf[0] = 2\n"
+    assert_includes fixed, "return 7\n"
+    assert_includes fixed, "ubyte<-300"
+  end
+
   def test_prefer_is_variant_on_bool_match_over_variant
     source = <<~MT
       variant Token:

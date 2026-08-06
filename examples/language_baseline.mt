@@ -16,6 +16,7 @@ import std.hash
 import std.linear_algebra
 import std.mem.endian as endian
 import std.mem.heap as heap
+import std.mem.ptr
 
 # =============================================================================
 # 2  Literals
@@ -421,7 +422,7 @@ function statements_demo() -> int:
     y += 1
     var result: int
 
-    let nl: char = char<-10
+    let nl: char = 10
     let _nl = nl
 
     if x + y > 30:
@@ -697,7 +698,7 @@ function guard_demo() -> Result[int, GuardError]:
     let guarded_arr: array[int, 3] = array[int, 3](10, 20, 30)
     let third = get(guarded_arr, 2) else:
         return Result[int, GuardError].failure(error = GuardError.missing)
-    let _third = unsafe: read(third)
+    let _third = third.load()
 
     # --- var ... else: over Option
     var bound = Option[int].some(value = 3) else:
@@ -710,7 +711,7 @@ function guard_demo() -> Result[int, GuardError]:
     # --- ? propagation on Result
     let parsed = Result[int, GuardError].success(value = 5)?
     let v = parsed
-    return Result[int, GuardError].success(value = v + unsafe: safe[0])
+    return Result[int, GuardError].success(value = v + safe.load_at(0))
 
 # =============================================================================
 # 8c  Option/Result extending methods
@@ -863,7 +864,7 @@ function expressions_demo(x: int, y: int) -> int:
     let flags_xor = mask_a ^ mask_b
     let flags_not = ~mask_a
 
-    let enum_backing: bool = State.idle == ubyte<-0
+    let enum_backing: bool = State.idle == 0
 
     return expr_result + enum_op + int<-flags_eq + int<-flags_ne + int<-flags_or + int<-flags_and + int<-flags_xor + int<-flags_not + int<-enum_backing
 
@@ -882,7 +883,7 @@ function builtins_demo() -> int:
     let raw_p   = ptr_of(handle)
 
     let val_ref = read(handle)
-    let val_ptr = unsafe: read(raw_p)
+    let val_ptr = raw_p.load()
 
     let as_long = long<-counter
     let as_int  = int<-as_long
@@ -896,8 +897,7 @@ function builtins_demo() -> int:
 
     let elem_ptr = get(arr, 1) else:
         fatal(c"get: array index out of bounds")
-    unsafe:
-        read(elem_ptr) = 99
+    elem_ptr.store(99)
 
     let bits = unsafe: reinterpret[uint](counter)
     let _bits_val = bits
@@ -1423,10 +1423,10 @@ function vector_demo() -> float:
     let _vp = v3_partial
 
     return (
-        v2.x + v3.x + v4.x + float<-iv2.x
+        v2.x + v3.x + v4.x + iv2.x
         + vsum.x + vdiff.x + vmul.x + vneg.x
         + vscaled.x + sscaled.x + vdiv.x
-        + float<-isum.x + float<-iscaled.x + float<-ineg.x
+        + isum.x + iscaled.x + ineg.x
         + squared + dot_val + len_val + cross_val.x
     )
 
@@ -1512,7 +1512,7 @@ function vector_compound_demo() -> float:
     let _m4 = m4
     let _m3 = m3
     let _q = q
-    return a.x + float<-c.x + m4.col0.x + m3.col0.x + q.x
+    return a.x + c.x + m4.col0.x + m3.col0.x + q.x
 
 # =============================================================================
 # 25  SoA (Structure-of-Arrays)
@@ -1842,8 +1842,8 @@ function endian_demo() -> uint:
 
 function move_bytes_demo() -> void:
     var buf: array[ubyte, 16]
-    buf[0] = ubyte<-1
-    buf[1] = ubyte<-2
+    buf[0] = 1
+    buf[1] = 2
     heap.move_bytes(ptr_of(buf[2]), ptr_of(buf[0]), 2)
 
 function bytes_of_demo() -> span[ubyte]:
@@ -1851,7 +1851,26 @@ function bytes_of_demo() -> span[ubyte]:
     return heap.bytes_of[Vec2](ref_of(p))
 
 # =============================================================================
-# 36  Entrypoint
+# 36  std.mem.ptr — safe pointer load/store
+# =============================================================================
+
+function ptr_load_store_demo() -> int:
+    var buf: array[int, 4] = array[int, 4](0, 0, 0, 0)
+    let p = ptr_of(buf[0])
+
+    p.store(42)
+    let value = p.load()
+
+    p.store_at(2, 7)
+    let at_offset = p.load_at(2)
+
+    let as_byte_ptr: ptr[ubyte] = p.cast[ubyte]()
+    let first_byte = as_byte_ptr.load()
+
+    return value + at_offset + first_byte
+
+# =============================================================================
+# 37  Entrypoint
 # =============================================================================
 
 function main() -> int:
@@ -1930,6 +1949,7 @@ function main() -> int:
     var dblr = Doubler(value = 0)
     total += apply_converter[Doubler](ref_of(dblr), 3)
     total += module_when_func()
+    total += ptr_load_store_demo()
 
     let _total = total
     return 0
