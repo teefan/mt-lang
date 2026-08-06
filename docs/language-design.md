@@ -38,7 +38,7 @@ If code allocates, takes an address, dereferences a raw pointer, performs an FFI
 
 FFI visibility belongs at the declaration site. Raw `external` files expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
 
-The same rule applies to text construction. Plain string literals and format string literals are borrowed `str` values. Any surface that builds owned text must say so explicitly, for example `std.fmt.format(f"...")` when ownership must escape.
+The same rule applies to text construction. Plain string literals and format string literals are borrowed `str` values. The `+` operator on `str` allocates a new heap-backed `str` — the one everyday convenience that does allocate. For loops or amortized building, `string.String` and `str_buffer[N]` remain the explicit surfaces with visible cost. Any other surface that builds owned text must say so explicitly, for example `std.fmt.format(f"...")` when ownership must escape.
 
 ### 2. C is the ABI ground truth
 
@@ -755,7 +755,7 @@ Explicit specialization arguments may be type references like `bytes_for[int](4)
 
 Built-in operators should match familiar C behavior where possible:
 
-- arithmetic: `+ - * / %`
+- arithmetic: `+ - * / %` (the `+` operator on `str` concatenates, allocating a new heap-backed string)
 - comparison: `== != < <= > >=`
 - boolean: `and or not`
 - bitwise: `& | ^ ~ << >>`

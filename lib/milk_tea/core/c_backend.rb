@@ -146,6 +146,10 @@ module MilkTea
         lines.concat(emit_str_equality_helper)
         lines << ""
       end
+      if uses_str_concat_helper?
+        lines.concat(emit_str_concat_helper)
+        lines << ""
+      end
       if uses_str_buffer_helpers?
         lines.concat(emit_utf8_validation_helpers)
         lines << ""

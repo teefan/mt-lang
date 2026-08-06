@@ -42,6 +42,18 @@ module MilkTea
         ]
       end
 
+      def emit_str_concat_helper
+        [
+          "static mt_str mt_str_concat(mt_str a, mt_str b) {",
+          "#{INDENT}uintptr_t total = a.len + b.len;",
+          "#{INDENT}char* buf = (char*)malloc(total);",
+          "#{INDENT}if (a.len > 0) memcpy(buf, a.data, a.len);",
+          "#{INDENT}if (b.len > 0) memcpy(buf + a.len, b.data, b.len);",
+          "#{INDENT}return (mt_str){ .data = buf, .len = total };",
+          "}",
+        ]
+      end
+
       def emit_variant_equality_helpers
         emitted_aggregate_variants.flat_map { |variant_decl| emit_variant_equality_helper(variant_decl) }
       end

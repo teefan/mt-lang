@@ -612,8 +612,8 @@ module MilkTea
 
           left_type
         when "+", "-", "*", "/"
-          if expression.operator == "+" && (string_like_type?(left_type) || string_like_type?(right_type))
-            raise_sema_error("operator + does not support str/cstr concatenation; use continued string literals for static text or string.String/str_buffer for dynamic text")
+          if expression.operator == "+" && left_type == @ctx.types.fetch("str") && right_type == @ctx.types.fetch("str")
+            return left_type
           end
 
           pointer_result = pointer_arithmetic_result(expression.operator, left_type, right_type)

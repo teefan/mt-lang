@@ -1141,6 +1141,15 @@ function format_demo() -> str:
 
     return text
 
+# str + str concatenation
+
+function str_concat_demo() -> str:
+    let hello = "hello" + " " + "world"
+    let prefix = "item_" + "42"
+    let _h = hello
+    let _p = prefix
+    return hello
+
 # =============================================================================
 # 15  Generics — struct & variant
 # =============================================================================
@@ -1916,6 +1925,7 @@ function main() -> int:
     schedule_ready_callback()
     fire_updated()
     format_demo()
+    str_concat_demo()
     heredoc_fmt_demo()
     str_buffer_demo()
     lifetime_demo()

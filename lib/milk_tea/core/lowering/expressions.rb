@@ -1387,6 +1387,10 @@ module MilkTea
           left = cast_expression(left, operand_type) if operand_type
           right = cast_expression(right, operand_type) if operand_type
 
+          if expression.operator == "+" && left_type == @ctx.types.fetch("str") && right_type == @ctx.types.fetch("str")
+            return IR::Call.new(callee: "mt_str_concat", arguments: [left, right], type:)
+          end
+
           expanded = lower_vector_binary_operation(expression.operator, left, left_type, right, right_type, type)
           return expanded if expanded
 

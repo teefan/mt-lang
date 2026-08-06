@@ -961,7 +961,7 @@ let total = (
       <tr><td>Delimiters</td><td><code>( ) [ ]</code></td></tr>
       <tr><td>Separators / Access</td><td><code>: , .</code></td></tr>
       <tr><td>Type markers</td><td><code>-&gt;</code> <code>?</code></td></tr>
-      <tr><td>Arithmetic</td><td><code>+ - * / %</code></td></tr>
+      <tr><td>Arithmetic</td><td><code>+ - * / %</code> (the <code>+</code> operator on <code>str</code> concatenates, allocating a new heap-backed string)</td></tr>
       <tr><td>Bitwise</td><td><code>~ &amp; | ^ &lt;&lt; &gt;&gt;</code></td></tr>
       <tr><td>Comparison</td><td><code>== != &lt; &lt;= &gt; &gt;=</code></td></tr>
       <tr><td>Assignment</td><td><code>= += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;=</code></td></tr>
@@ -1243,7 +1243,7 @@ let d: dyn[Drawable] = adapt[Drawable](ref_of(entity))</code></pre>
       <tr><td><code>ptr_int</code> <code>ptr_uint</code></td><td>Pointer-sized integers</td></tr>
       <tr><td><code>float</code> <code>double</code></td><td>Floating-point</td></tr>
       <tr><td><code>void</code></td><td>No value</td></tr>
-      <tr><td><code>str</code></td><td>UTF-8 string view (borrowed)</td></tr>
+      <tr><td><code>str</code></td><td>UTF-8 string view (borrowed). The <code>+</code> operator concatenates two <code>str</code> values, allocating a new heap-backed string.</td></tr>
       <tr><td><code>cstr</code></td><td>NUL-terminated C string</td></tr>
       <tr><td><code>vec2</code> <code>vec3</code> <code>vec4</code></td><td>Float vectors with <code>.x .y .z .w</code></td></tr>
       <tr><td><code>ivec2</code> <code>ivec3</code> <code>ivec4</code></td><td>Integer vectors</td></tr>

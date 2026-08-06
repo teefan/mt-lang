@@ -289,6 +289,14 @@ module MilkTea
         emitted_functions.any? { |function| function_uses_str_equality?(function) }
       end
 
+      def uses_str_concat_helper?
+        return @uses_str_concat if defined?(@uses_str_concat)
+
+        @uses_str_concat = emitted_functions.any? do |function|
+          function_uses_named_call?(function, %w[mt_str_concat])
+        end
+      end
+
       def uses_variant_equality_helper?
         emitted_functions.any? { |function| function_uses_variant_equality?(function) }
       end

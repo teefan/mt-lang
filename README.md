@@ -94,7 +94,7 @@ Supported literals:
 - floats: `3.14`, `1.2e-3`, `1.0f` (float suffix), `1.0d` (double suffix)
 - character: `'a'`, `'\n'`, `'\t'`, `'\\'`, `'\''`, `'\0'`, `'\x41'`. Type is `ubyte`. Escape sequences: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\0` (null byte), `\xNN` (hex byte).
 - booleans: `true`, `false`
-- string: `"hello"` -> `str`
+- string: `"hello"` -> `str`. The `+` operator concatenates `str` values: `"hello" + " " + "world"` produces `"hello world"`. For loops or repeated concatenation, prefer `string.String`.
 - cstring: `c"hello"` -> `cstr`
 - heredoc string: `<<-TAG ... TAG`
 - heredoc cstring: `c<<-TAG ... TAG`
@@ -106,7 +106,7 @@ Common punctuation and operators:
 - delimiters: `(` `)` `[` `]`
 - access and separators: `:` `,` `.`
 - type markers: `->` `?`
-- arithmetic: `+ - * / %`
+- arithmetic: `+ - * / %` (additionally, `+` on `str` concatenates)
 - bitwise: `~ & | ^ << >>`
 - comparison: `== != < <= > >=`
 - assignment: `= += -= *= /= %= &= |= ^= <<= >>=`
@@ -937,7 +937,7 @@ See module source for full method surface. Iterator forms:
 
 Text categories:
 
-- `str` -> string view
+- `str` -> string view. The `+` operator concatenates two `str` values, allocating a new heap-backed string. For loops or repeated concatenation, prefer `string.String` for amortized performance.
 - `cstr` -> C ABI string
 - `str_buffer[N]` -> fixed-capacity mutable UTF-8 text buffer
 
