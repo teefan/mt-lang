@@ -44,11 +44,20 @@ module MilkTea
 
       def emit_str_concat_helper
         [
+          "#define MT_STR_CONCAT_BUF_SIZE 65536",
+          "",
+          "static _Thread_local char mt_str_concat_buf[MT_STR_CONCAT_BUF_SIZE];",
+          "static _Thread_local uintptr_t mt_str_concat_offset = 0;",
+          "",
           "static mt_str mt_str_concat(mt_str a, mt_str b) {",
           "#{INDENT}uintptr_t total = a.len + b.len;",
-          "#{INDENT}char* buf = (char*)malloc(total);",
+          "#{INDENT}if (mt_str_concat_offset + total > MT_STR_CONCAT_BUF_SIZE) {",
+          "#{INDENT * 2}mt_str_concat_offset = 0;",
+          "#{INDENT}}",
+          "#{INDENT}char* buf = mt_str_concat_buf + mt_str_concat_offset;",
           "#{INDENT}if (a.len > 0) memcpy(buf, a.data, a.len);",
           "#{INDENT}if (b.len > 0) memcpy(buf + a.len, b.data, b.len);",
+          "#{INDENT}mt_str_concat_offset += total;",
           "#{INDENT}return (mt_str){ .data = buf, .len = total };",
           "}",
         ]
