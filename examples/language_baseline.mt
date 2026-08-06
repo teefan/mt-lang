@@ -85,6 +85,9 @@ struct Vec2:
     x: float
     y: float
 
+    function length_sq() -> float:
+        return this.x * this.x + this.y * this.y
+
 @[packed]
 struct Header:
     tag: ubyte

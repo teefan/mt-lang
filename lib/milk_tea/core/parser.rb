@@ -154,13 +154,23 @@ module MilkTea
       until eof?
         if errors
           begin
-            declarations << parse_declaration
+            result = parse_declaration
+            if result.is_a?(Array)
+              declarations.concat(result)
+            else
+              declarations << result
+            end
           rescue ParseError => e
             errors << e
             synchronize_to_top_level_boundary
           end
         else
-          declarations << parse_declaration
+          result = parse_declaration
+          if result.is_a?(Array)
+            declarations.concat(result)
+          else
+            declarations << result
+          end
         end
         skip_newlines
       end

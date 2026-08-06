@@ -249,6 +249,10 @@ struct Vec2:
     x: float
     y: float
 
+    # Methods may also be defined directly inside the struct body:
+    function length_sq() -> float:
+        return this.x * this.x + this.y * this.y
+
 @[packed]
 struct Header:
     tag: ubyte
@@ -310,6 +314,7 @@ variant Token:
 Rules:
 
 - `struct` and `opaque` may declare nominal interface conformance with `implements`.
+- `struct` bodies may contain `function`, `editable function`, and `static function` declarations directly — they desugar to `extending` blocks targeting the enclosing struct. This is pure syntactic sugar; the compiler emits identical code as a separate `extending` block.
 - `attribute[target, ...]` declares reusable declaration attributes for `struct`, `field`, `callable`, `const`, `event`, `enum`, `flags`, `union`, and `variant` targets.
 - Attributes are applied with one or more leading `@[name(...)]` blocks. Built-in `packed`, `align(bytes)`, and `deprecated(message)` are predefined attributes.
 - `variant` arms may carry named payload fields.
@@ -358,11 +363,31 @@ Method kinds:
 - `editable function` -> editable receiver
 - `static function` -> no receiver
 
+Methods may appear inside a struct body (desugared to an `extending` block) or in a separate
+`extending` declaration:
+
+```mt
+struct Counter:
+    value: int
+
+    function read() -> int:
+        return this.value
+
+    editable function bump() -> void:
+        this.value += 1
+
+    static function zero() -> Counter:
+        return Counter(value = 0)
+```
+
+Both inline and `extending` forms lower to identical C code.
+
 Method notes:
 
 - Async methods are supported.
 - Generic methods are supported.
 - There is no constructor keyword. Names like `init` and `default` are ordinary static methods.
+- Methods may be defined inside struct bodies directly (as syntactic sugar for `extending`) or in separate `extending` blocks. Both forms lower to the same C code; the inline form is preferred when the struct and its core methods appear in the same file.
 
 ## 7. Functions, Externals, And Foreign Functions
 

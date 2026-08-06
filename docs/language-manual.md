@@ -300,7 +300,25 @@ Callable and `ref[...]` rules:
 struct Vec2:
     x: float
     y: float
+```
 
+`struct` bodies may also contain `function`, `editable function`, and `static function` declarations directly — they desugar to `extending` blocks targeting the enclosing struct. This is pure syntactic sugar and produces identical C code. See §3.6 for the method kind rules.
+
+```mt
+struct Counter:
+    value: int
+
+    function read() -> int:
+        return this.value
+
+    editable function bump() -> void:
+        this.value += 1
+
+    static function zero() -> Counter:
+        return Counter(value = 0)
+```
+
+```mt
 union Number:
     i: int
     f: float
@@ -417,7 +435,25 @@ Rules:
 
 ### 3.6 Methods
 
+Methods may appear directly inside a struct body (desugared to an `extending` block) or in a separate `extending` declaration. Both forms lower to identical C code.
+
 ```mt
+# Inline form (sugar)
+struct Counter:
+    value: int
+
+    function read() -> int:
+        return this.value
+
+    editable function bump() -> void:
+        this.value += 1
+
+    static function zero() -> Counter:
+        return Counter(value = 0)
+```
+
+```mt
+# Equivalent extending form
 extending Counter:
     function read() -> int:
         return this.value
