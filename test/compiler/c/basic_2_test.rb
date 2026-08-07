@@ -426,7 +426,7 @@ function main() -> int:
     assert_match(/str construction requires unsafe/, error.message)
   end
 
-  def test_rejects_codegen_for_str_addition
+  def test_generate_c_for_str_addition
     source = <<~MT
       # module demo.bad_str_addition
 
@@ -436,11 +436,27 @@ function main() -> int:
           return left + right
     MT
 
+    generated = generate_c_from_source(source)
+
+    assert_match(/static mt_str mt_str_concat\(mt_str a, mt_str b\)/, generated)
+    assert_match(/return mt_str_concat\(left, right\);/, generated)
+  end
+
+  def test_rejects_codegen_for_cstr_addition
+    source = <<~MT
+      # module demo.bad_cstr_addition
+
+      function main() -> cstr:
+          let left: cstr = "left"
+          let right: cstr = "right"
+          return left + right
+    MT
+
     error = assert_raises(MilkTea::SemanticError) do
       generate_c_from_source(source)
     end
 
-    assert_match(/operator \+ does not support str\/cstr concatenation/, error.message)
+    assert_match(/operator \+ requires compatible numeric types, got cstr and cstr/, error.message)
   end
 
   def test_generate_c_for_packed_and_aligned_structs
