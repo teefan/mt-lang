@@ -872,6 +872,99 @@ function expressions_demo(x: int, y: int) -> int:
     return expr_result + enum_op + int<-flags_eq + int<-flags_ne + int<-flags_or + int<-flags_and + int<-flags_xor + int<-flags_not + int<-enum_backing
 
 # =============================================================================
+# 9b  Struct and variant == / != comparison
+# =============================================================================
+
+# Struct and variant values support == / !=. Structs compare field by field
+# when every field is itself equality-comparable (nested structs, arrays,
+# nullable values, str, enum/flags, pointers, ...). Variants compare their
+# active arm and payload fields. Recursive variants compare cyclic fields by
+# pointer identity. Untagged unions and non-comparable fields (proc, span,
+# simd, SoA, Task, dyn) are rejected at compile time.
+
+struct NamedVec:
+    name: str
+    pos: Vec2
+
+struct PackedVals:
+    values: array[int, 3]
+    count: int
+
+struct MaybeVec:
+    point: Vec2?
+    tag: ubyte
+
+variant Primitive:
+    circle(radius: float)
+    box(width: float, height: float)
+
+struct LabeledShape:
+    shape: Primitive
+    label: str
+
+# == / != on struct and variant consts constant-folds at compile time
+
+const CONST_A: NamedVec = NamedVec(name = "a", pos = Vec2(x = 1.0, y = 2.0))
+const CONST_B: NamedVec = NamedVec(name = "a", pos = Vec2(x = 1.0, y = 2.0))
+const CONST_C: NamedVec = NamedVec(name = "a", pos = Vec2(x = 1.0, y = 3.0))
+const STRUCT_EQ_FOLDED: bool = CONST_A == CONST_B
+const STRUCT_NE_FOLDED: bool = CONST_A != CONST_C
+
+function struct_equality_demo() -> int:
+    # --- plain struct: field-wise comparison
+    let a = Vec2(x = 1.0, y = 2.0)
+    let b = Vec2(x = 1.0, y = 2.0)
+    let c = Vec2(x = 1.0, y = 3.0)
+    if a == b:
+        pass
+    else:
+        return 1
+    if a != c:
+        pass
+    else:
+        return 2
+
+    # --- nested struct with str field
+    let la = NamedVec(name = "x", pos = a)
+    let lb = NamedVec(name = "x", pos = b)
+    if la == lb:
+        pass
+    else:
+        return 3
+
+    # --- array field (element-wise comparison)
+    let pa = PackedVals(values = array[int, 3](1, 2, 3), count = 3)
+    let pb = PackedVals(values = array[int, 3](1, 2, 3), count = 3)
+    if pa == pb:
+        pass
+    else:
+        return 4
+
+    # --- nullable value field (presence flag + value)
+    let ma = MaybeVec(point = a, tag = 7)
+    let mb = MaybeVec(point = null, tag = 7)
+    if ma != mb:
+        pass
+    else:
+        return 5
+
+    # --- variant-typed field (discriminant + payload)
+    let ha = LabeledShape(shape = Primitive.circle(radius = 2.0), label = "x")
+    let hb = LabeledShape(shape = Primitive.circle(radius = 2.0), label = "x")
+    if ha == hb:
+        pass
+    else:
+        return 6
+
+    # --- constant-folded struct comparison
+    if STRUCT_EQ_FOLDED and STRUCT_NE_FOLDED:
+        pass
+    else:
+        return 7
+
+    return 0
+
+# =============================================================================
 # 10  Built-in callable surface
 # =============================================================================
 
@@ -1952,6 +2045,7 @@ function main() -> int:
     total += dyn_generic_demo()
     total += type_label_demo()
     total += member_value_demo()
+    total += struct_equality_demo()
 
     total += event_payload_demo()
     total += aio.wait(async_child())
