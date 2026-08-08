@@ -755,12 +755,14 @@ Explicit specialization arguments may be type references like `bytes_for[int](4)
 
 Built-in operators should match familiar C behavior where possible:
 
-- arithmetic: `+ - * / %` (the `+` operator on `str` concatenates, allocating a new heap-backed string)
+- arithmetic: `+ - * / %`
 - comparison: `== != < <= > >=`
 - boolean: `and or not`
 - bitwise: `& | ^ ~ << >>`
 
 No user-defined operator overloading.
+
+The `+` operator also concatenates two `str` values, allocating a new heap-backed string; `cstr` values are not concatenable. This is the one operator exception to the arithmetic rules, and it is described in the text-construction rule under Design rules §1.
 
 Built-in vector, matrix, and quaternion types support component-wise arithmetic with the standard operators:
 

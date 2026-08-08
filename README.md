@@ -94,7 +94,7 @@ Supported literals:
 - floats: `3.14`, `1.2e-3`, `1.0f` (float suffix), `1.0d` (double suffix)
 - character: `'a'`, `'\n'`, `'\t'`, `'\\'`, `'\''`, `'\0'`, `'\x41'`. Type is `ubyte`. Escape sequences: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\0` (null byte), `\xNN` (hex byte).
 - booleans: `true`, `false`
-- string: `"hello"` -> `str`. The `+` operator concatenates `str` values: `"hello" + " " + "world"` produces `"hello world"`. For loops or repeated concatenation, prefer `string.String`.
+- string: `"hello"` -> `str`. The `+` operator concatenates `str` values (see §12).
 - cstring: `c"hello"` -> `cstr`
 - heredoc string: `<<-TAG ... TAG`
 - heredoc cstring: `c<<-TAG ... TAG`
@@ -106,7 +106,7 @@ Common punctuation and operators:
 - delimiters: `(` `)` `[` `]`
 - access and separators: `:` `,` `.`
 - type markers: `->` `?`
-- arithmetic: `+ - * / %` (additionally, `+` on `str` concatenates)
+- arithmetic: `+ - * / %`
 - bitwise: `~ & | ^ << >>`
 - comparison: `== != < <= > >=`
 - assignment: `= += -= *= /= %= &= |= ^= <<= >>=`
@@ -331,6 +331,8 @@ Rules:
 - Keywords and reserved words are accepted as variant arm names, struct/union field names, enum/flags member names, lifetime parameters (`@return`), type parameters (`Box[return]`), named constructor arguments (`Meta(return = 1)`), and named tuple fields (`(return = 1, let = 2)`). Primitive type names (`int`, `str`, `ref`, etc.) remain reserved and cannot be used in these positions.
 
 Enum and flags values support the full set of comparison operators (`==`, `!=`, `<`, `<=`, `>`, `>=`) against values of the same enum type and against their backing integer type. Comparisons use the underlying integer backing values. Flags also support bitwise operators (`|`, `&`, `^`, `~`).
+
+Struct and variant values support `==` and `!=`: structs compare field by field when all fields are comparable, variants compare the active arm and its payload. Recursive variants compare cyclic fields by pointer identity. Untagged `union` fields and non-comparable types (`proc`, `span`, `simd`, `SoA`, `Task`, `dyn`) are rejected — use `equal[T]` there.
 
 Generic variants and structs are supported, for example `Option[int]`.
 
@@ -808,7 +810,7 @@ Type constructors:
 
 - `ptr[T]`
 - `const_ptr[T]`
-- `own[T]` — owning heap pointer: auto-dereferences like `ref` but storable, returnable, and nullable. Created via `heap.must_alloc[T](count)`. Compiles to `T*`.
+- `own[T]` — owning heap pointer with auto-deref; storable, returnable, nullable (compiles to `T*`)
 - `ref[T]`
 - `span[T]`
 - `array[T, N]`
@@ -819,9 +821,9 @@ Type constructors:
 - `fn(params...) -> R`
 - `proc(params...) -> R`
 - `SoA[T, N]` — Structure-of-Arrays: each struct field becomes a separate array of length `N`; access `soa[i].field` reads from column `field` at row `i`
-- `simd[T, N]` — SIMD vector: `N` numeric lanes (128 or 256 bits). Component-wise `+` `-` `*` `/` `%` `&` `|` `^` `~` `<<` `>>`. Lane access via `[i]` (compile-time index). Lowers to GCC/Clang vector extensions for portable x86/ARM vector code.
+- `simd[T, N]` — SIMD vector of `N` numeric lanes (128 or 256 bits); component-wise `+` `-` `*` `/` `%` `&` `|` `^` `~` `<<` `>>`; lane access via `[i]`. Lowers to GCC/Clang vector extensions.
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: `{ void* data, void* vtable }`). Constructed via `adapt[Interface](value: ref[T])`. @see §6.
-- `atomic[T]` — atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load() -> T`, `store(value: T)`, `add(value: T) -> T`, `sub(value: T) -> T`, `exchange(value: T) -> T`. All operations use sequential consistency. Lowers to C11 `_Atomic T` with `__atomic_*` builtins.
+- `atomic[T]` — lock-free atomic value (`T` = primitive integer or `bool`) with `load`/`store`/`add`/`sub`/`exchange`; sequential consistency. Lowers to C11 `_Atomic T`.
 - `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.
 
 When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. For explicit conversion, `array.as_span()` returns `span[T]` without requiring a boundary context.
@@ -1141,8 +1143,8 @@ Current compiler rejects:
 
 ### Operator and expression restrictions
 
-- `+` does not support `str`/`cstr` concatenation; use format strings or `std.str` helpers
-- `==` and `!=` are not supported on struct types; use `equal[T]`.  Variant types support `==`/`!=` (generates per-variant comparison helper).
+- `+` concatenates `str`; `cstr` and mixed `str`/`cstr` concatenation are not supported
+- `==`/`!=` on structs and variants requires all fields equality-comparable; use `equal[T]` otherwise
 - range expressions are restricted to `for`-loop iterables and range-index assignment targets
 - functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
 - `read(...)` of a raw pointer requires `unsafe`

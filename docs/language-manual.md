@@ -124,7 +124,7 @@ Supported literals:
 - integer: `42`, `0xff`, `0b1010`, with `_` separators. Integer type suffixes: `42u` (`uint`), `0xFFub` (`ubyte`), `100z` (`ptr_uint`), `7i` (`int`), `-1l` (`long`), etc.
 - float: `3.14`, `1.2e-3`, `1.1920929E-7`, `1.0f` (float suffix), `1.0d` (double suffix)
 - character: `'a'`, `'\n'`, `'\t'`, `'\\'`, `'\''`, `'\0'`, `'\x41'`. Type is `ubyte`. Escape sequences: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\0` (null), `\xNN` (hex byte).
-- string: `"hello"` (`str`). Supported string escapes are `\n`, `\r`, `\t`, `\0` (null), `\"`, `\'`, and `\\`; any other `\x` sequence is taken literally. Hex byte escapes (`\xNN`) are character-literal only, not string-literal. The `+` operator concatenates `str` values: `"hello" + " " + "world"` produces `"hello world"`. Each `+` allocates a new heap-backed `str`; for loops or repeated concatenation, prefer `string.String` for amortized performance.
+- string: `"hello"` (`str`). String escapes: `\n`, `\r`, `\t`, `\0`, `\"`, `\'`, `\\`; any other `\x` sequence is taken literally, and hex byte escapes (`\xNN`) are character-literal only. `str + str` concatenates (§5.3); see §12 for text-building details.
 - cstring: `c"hello"` (`cstr`)
 - heredoc string: `<<-TAG ... TAG` (`str`)
 - heredoc cstring: `c<<-TAG ... TAG` (`cstr`)
@@ -411,6 +411,60 @@ const IS_AFTER:   bool = State.running > State.idle
 ```
 
 Flags values also support bitwise operators (`|`, `&`, `^`, `~`) where both operands share the same flags type.
+
+### 3.4b Struct and variant equality
+
+Struct and variant values support `==` and `!=`. The compiler generates a
+field-wise comparison helper per compared aggregate type.
+
+Rules for structs:
+
+- Two struct values compare equal when every field compares equal, in field
+  order. Comparison is field-by-field, never a raw byte compare.
+- A struct is equality-comparable when every field is itself
+  equality-comparable: primitives, enums, flags, `str`, pointers, `ref[T]`,
+  `fn(...)`, opaque, other comparable structs, comparable variants, arrays of
+  comparable elements, and value nullables of comparable bases.
+- Untagged `union` fields and non-comparable field types (`proc`, `span`,
+  `simd`, `SoA`, `Task`, `dyn`) are rejected with a field-level error. Use
+  `equal[T](...)` for those.
+
+Rules for variants:
+
+- Two variant values compare equal when the same arm is active and every
+  payload field of that arm compares equal. No-payload arms compare by
+  discriminant only.
+- Recursive (cyclic) variants are supported: the C backend embeds cyclic
+  fields as pointers, and those fields compare by pointer identity. A
+  separately-constructed recursive value therefore compares unequal to
+  another value of identical shape.
+- Variant arm payload bindings (`match v: Token.ident as p:`) compare as
+  payload structs.
+
+General rules:
+
+- `==`/`!=` on struct and variant constants folds at compile time.
+- Comparison operands must have the same aggregate type.
+- The canonical `equal[T](...)` hook remains available for types without
+  `==` support and for custom equality semantics.
+
+Example:
+
+```mt
+struct Vec2:
+    x: float
+    y: float
+
+variant Shape:
+    circle(radius: float)
+    square(side: float)
+
+function same_point(a: Vec2, b: Vec2) -> bool:
+    return a == b
+
+function same_shape(a: Shape, b: Shape) -> bool:
+    return a == b
+```
 
 ### 3.5 Interfaces
 
@@ -1015,8 +1069,10 @@ Rules:
 8. `==`, `!=`
 9. `<`, `<=`, `>`, `>=`
 10. `<<`, `>>`
-11. `+`, `-` (additionally, `+` on `str` concatenates; each `+` allocates a new heap-backed `str`)
+11. `+`, `-`
 12. `*`, `/`, `%`
+
+The `+` operator also concatenates two `str` operands, producing a new heap-backed `str` (§2.3). It does not concatenate `cstr` or mixed `str`/`cstr` operands.
 
 ### 5.4 Assignment operators
 
@@ -1322,7 +1378,7 @@ Custom formatting hook notes:
 - `read(...)` of raw pointer requires `unsafe`
 - pointer casts require `unsafe`
 - `reinterpret[...]` requires `unsafe`, non-array concrete sized types, and equal-size source and target types.
-- variant types support `==` and `!=` (generates per-variant comparison helper)
+- struct and variant types support `==` and `!=` (generates a per-type comparison helper; see §3.4b)
 
 ## 10. Async Semantics
 
@@ -1564,8 +1620,8 @@ The compiler intentionally rejects the following patterns. These are design cons
 
 ### 13.7 Operator and expression restrictions
 
-- `+` does not support `str`/`cstr` concatenation
-- `==` and `!=` are not supported on struct types; use `equal[T]`
+- `+` concatenates `str`; `cstr` and mixed `str`/`cstr` are not concatenable
+- `==`/`!=` on structs and variants requires all fields equality-comparable; use `equal[T]` otherwise (§3.4b)
 - range expressions are restricted to `for`-loop iterables and range-index assignment targets
 - functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
 - `read(...)` of a raw pointer requires `unsafe`

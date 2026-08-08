@@ -961,7 +961,7 @@ let total = (
       <tr><td>Delimiters</td><td><code>( ) [ ]</code></td></tr>
       <tr><td>Separators / Access</td><td><code>: , .</code></td></tr>
       <tr><td>Type markers</td><td><code>-&gt;</code> <code>?</code></td></tr>
-      <tr><td>Arithmetic</td><td><code>+ - * / %</code> (the <code>+</code> operator on <code>str</code> concatenates, allocating a new heap-backed string)</td></tr>
+      <tr><td>Arithmetic</td><td><code>+ - * / %</code></td></tr>
       <tr><td>Bitwise</td><td><code>~ &amp; | ^ &lt;&lt; &gt;&gt;</code></td></tr>
       <tr><td>Comparison</td><td><code>== != &lt; &lt;= &gt; &gt;=</code></td></tr>
       <tr><td>Assignment</td><td><code>= += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;=</code></td></tr>
@@ -1148,6 +1148,25 @@ variant Result[T, E]:
   <div class="callout tip">
     <strong>Prelude types.</strong> <code>Option[T]</code> and <code>Result[T, E]</code> are auto-imported — no <code>import</code> statement is needed. They are available in every Milk Tea source file. Their extending methods (<code>is_some</code>, <code>unwrap</code>, <code>is_success</code>, <code>map_error</code>, etc.) are always accessible.
   </div>
+
+  <h3>Struct &amp; Variant Equality</h3>
+  <p>Structs and variants support <code>==</code> and <code>!=</code> with field-wise comparison. A struct compares equal when every field compares equal; a variant compares equal when the same arm is active and its payload fields are equal. Every field must be equality-comparable (nested structs, arrays, nullable values, <code>str</code>, enums, flags, pointers, ...). Recursive variants embed cyclic fields as pointers and compare those by pointer identity. Untagged <code>union</code> fields and non-comparable types (<code>proc</code>, <code>span</code>, <code>simd</code>, <code>SoA</code>, <code>Task</code>, <code>dyn</code>) are rejected; use <code>equal[T](...)</code> there.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>struct Vec2:
+    x: float
+    y: float
+
+variant Shape:
+    circle(radius: float)
+    square(side: float)
+
+function same_point(a: Vec2, b: Vec2) -&gt; bool:
+    return a == b
+
+function same_shape(a: Shape, b: Shape) -&gt; bool:
+    return a == b</code></pre>
+</div>
 
   <h3>Opaque</h3>
   <p>For C handles whose layout is unknown. Opaque types may implement interfaces, enabling constrained generics and <code>dyn</code> dispatch over C handles.</p>
@@ -1966,8 +1985,8 @@ MSG</code></pre>
       <tr><td><code>%</code> requires integer operands</td><td></td></tr>
       <tr><td>Bitwise ops require matching types</td><td>Integer or flags types</td></tr>
       <tr><td>Shift ops require integer operands</td><td></td></tr>
-      <tr><td>No implicit struct equality</td><td>Structs cannot be compared with <code>==</code>/<code>!=</code>. Use <code>equal[T](a, b)</code>. Variants <em>do</em> support <code>==</code> and <code>!=</code> with generated per-type comparison.</td></tr>
-      <tr><td>No <code>str</code>/<code>cstr</code> concatenation</td><td>Use format strings or <code>std.str</code> helpers</td></tr>
+      <tr><td>Aggregate equality requires comparable fields</td><td>Structs and variants support <code>==</code>/<code>!=</code> when every field is equality-comparable. Untagged <code>union</code> fields and non-comparable types (<code>proc</code>, <code>span</code>, <code>simd</code>, <code>SoA</code>, <code>Task</code>, <code>dyn</code>) are rejected — use <code>equal[T](a, b)</code> there. Recursive variants compare cyclic fields by pointer identity.</td></tr>
+      <tr><td>No <code>cstr</code> concatenation</td><td><code>+</code> concatenates <code>str</code>; <code>cstr</code> and mixed <code>str</code>/<code>cstr</code> are rejected</td></tr>
       <tr><td>Compile-time constant fit</td><td>Exact compile-time numeric constants (literals, <code>const</code> values) fit an explicit numeric target without a manual cast when representable exactly</td></tr>
       <tr><td>Integer-to-float at typed boundaries</td><td>A primitive integer expression may flow into an expected float type for explicit typed locals, assignments, returns, function arguments, or field initializers. Integer arithmetic stays integer arithmetic until that final boundary cast.</td></tr>
     </table>
@@ -2408,8 +2427,8 @@ import std.math  # intentionally available for downstream</code></pre>
     <li>Conditions must be <code>bool</code>; no truthy/falsy coercion</li>
     <li>Mixed signed/unsigned arithmetic requires explicit cast; non-widening integer conversions (narrowing, signed → unsigned) need explicit <code>T&lt;-value</code></li>
     <li>Enum and flags values do not implicitly coerce to backing integers</li>
-    <li><code>+</code> does not support <code>str</code>/<code>cstr</code> concatenation</li>
-    <li><code>==</code> and <code>!=</code> not supported on struct types; use <code>equal[T]</code></li>
+    <li><code>+</code> concatenates <code>str</code>; <code>cstr</code> and mixed <code>str</code>/<code>cstr</code> are not concatenable</li>
+    <li><code>==</code>/<code>!=</code> on structs and variants requires all fields equality-comparable; use <code>equal[T]</code> for non-comparable types</li>
     <li>A statement cannot begin with a binary operator (including <code>+</code>, <code>-</code>, <code>and</code>, <code>or</code>, <code>is</code>, <code>..</code>); continuation requires ending the previous line with the operator or wrapping in <code>()</code></li>
     <li>Bare function and method names are not usable as values (cannot be assigned or passed without calling). Use <code>fn(...)</code> function pointer types or <code>proc(...)</code> closures for callable values.</li>
   </ul>
