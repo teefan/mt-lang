@@ -63,4 +63,38 @@ class IntegerLiteralTest < Minitest::Test
 
     check_source(source)
   end
+
+  def test_bare_float_within_float32_range_stays_float
+    source = <<~MT
+      function main() -> int:
+          let x = 3.14
+          return 0
+    MT
+
+    check_source(source)
+  end
+
+  def test_bare_float_past_float32_range_promotes_to_double
+    source = <<~MT
+      function main() -> int:
+          let x = 1e40
+          if x == 1e40d:
+              return 0
+          return 1
+    MT
+
+    check_source(source)
+  end
+
+  def test_explicit_double_to_float_is_rejected
+    source = <<~MT
+      const A: float = 1e40d
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot assign double to constant A/, error.message)
+  end
 end

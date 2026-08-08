@@ -309,9 +309,21 @@ module MilkTea
           @ctx.types.fetch("double")
         elsif expected_type.is_a?(Types::Primitive) && expected_type.float?
           expected_type
-        else
+        elsif float_literal_fits_in_float?(expression.value)
           @ctx.types.fetch("float")
+        else
+          # A bare float literal beyond float32 range would silently overflow
+          # to infinity in C (`float x = 1e40`); promote to double instead.
+          @ctx.types.fetch("double")
         end
+      end
+
+      FLOAT32_MAX_MAGNITUDE = 3.4028234663852886e+38
+
+      def float_literal_fits_in_float?(value)
+        return false unless value.is_a?(Numeric) && value.finite?
+
+        value.abs <= FLOAT32_MAX_MAGNITUDE
       end
 
       def infer_identifier(expression, scopes:, expected_type: nil)
