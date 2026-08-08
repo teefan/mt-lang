@@ -29,7 +29,7 @@ struct curl_header = c"struct curl_header":
 
 struct curl_ws_frame = c"struct curl_ws_frame":
     age: int
-    flags_: int
+    flags: int
     offset: ptr_int
     bytesleft: ptr_int
     len: ptr_uint
@@ -69,7 +69,7 @@ struct curl_httppost = c"struct curl_httppost":
     contenttype: ptr[char]
     contentheader: ptr[curl_slist]
     more: ptr[curl_httppost]
-    flags_: ptr_int
+    flags: ptr_int
     showfilename: ptr[char]
     userp: ptr[void]
     contentlen: ptr_int
@@ -100,7 +100,7 @@ struct curl_fileinfo = c"struct curl_fileinfo":
     size: ptr_int
     hardlinks: ptr_int
     strings: curl_fileinfo_strings
-    flags_: uint
+    flags: uint
     b_data: ptr[char]
     b_size: ptr_uint
     b_used: ptr_uint
@@ -1069,8 +1069,8 @@ external function curl_url_strerror(error: int) -> cstr
 struct curl_easyoption = c"struct curl_easyoption":
     name: cstr
     id: CURLoption
-    type_: int
-    flags_: uint
+    type: int
+    flags: uint
 
 external function curl_easy_option_by_name(name: cstr) -> const_ptr[curl_easyoption]
 external function curl_easy_option_by_id(id: CURLoption) -> const_ptr[curl_easyoption]

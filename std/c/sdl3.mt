@@ -249,7 +249,7 @@ struct SDL_AssertData:
     condition: cstr
     filename: cstr
     linenum: int
-    function_: cstr
+    function: cstr
     next: const_ptr[SDL_AssertData]
 
 external function SDL_ReportAssertion(data: ptr[SDL_AssertData], func: cstr, file: cstr, line: int) -> SDL_AssertState
@@ -275,7 +275,7 @@ flags SDL_AsyncIOResult: int
 
 struct SDL_AsyncIOOutcome:
     asyncio: ptr[SDL_AsyncIO]
-    type_: SDL_AsyncIOTaskType
+    type: SDL_AsyncIOTaskType
     result: SDL_AsyncIOResult
     buffer: ptr[void]
     offset: ptr_uint
@@ -945,7 +945,7 @@ enum SDL_FlipMode: int
     SDL_FLIP_HORIZONTAL_AND_VERTICAL = 3
 
 struct SDL_Surface:
-    flags_: uint
+    flags: uint
     format: SDL_PixelFormat
     w: int
     h: int
@@ -1420,12 +1420,12 @@ struct SDL_VirtualJoystickTouchpadDesc:
     padding: array[Uint16, 3]
 
 struct SDL_VirtualJoystickSensorDesc:
-    type_: SDL_SensorType
+    type: SDL_SensorType
     rate: float
 
 struct SDL_VirtualJoystickDesc:
     version: uint
-    type_: ushort
+    type: ushort
     padding: ushort
     vendor_id: ushort
     product_id: ushort
@@ -2178,12 +2178,12 @@ enum SDL_EventType: int
     SDL_EVENT_ENUM_PADDING = 2147483647
 
 struct SDL_CommonEvent:
-    type_: uint
+    type: uint
     reserved: uint
     timestamp: ptr_uint
 
 struct SDL_DisplayEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     displayID: uint
@@ -2191,7 +2191,7 @@ struct SDL_DisplayEvent:
     data2: int
 
 struct SDL_WindowEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2199,13 +2199,13 @@ struct SDL_WindowEvent:
     data2: int
 
 struct SDL_KeyboardDeviceEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
 
 struct SDL_KeyboardEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2218,7 +2218,7 @@ struct SDL_KeyboardEvent:
     repeat: bool
 
 struct SDL_TextEditingEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2227,7 +2227,7 @@ struct SDL_TextEditingEvent:
     length: int
 
 struct SDL_TextEditingCandidatesEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2240,20 +2240,20 @@ struct SDL_TextEditingCandidatesEvent:
     padding3: ubyte
 
 struct SDL_TextInputEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
     text: cstr
 
 struct SDL_MouseDeviceEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
 
 struct SDL_MouseMotionEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2265,7 +2265,7 @@ struct SDL_MouseMotionEvent:
     yrel: float
 
 struct SDL_MouseButtonEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2278,7 +2278,7 @@ struct SDL_MouseButtonEvent:
     y: float
 
 struct SDL_MouseWheelEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2292,7 +2292,7 @@ struct SDL_MouseWheelEvent:
     integer_y: int
 
 struct SDL_JoyAxisEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2304,7 +2304,7 @@ struct SDL_JoyAxisEvent:
     padding4: ushort
 
 struct SDL_JoyBallEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2316,7 +2316,7 @@ struct SDL_JoyBallEvent:
     yrel: short
 
 struct SDL_JoyHatEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2326,7 +2326,7 @@ struct SDL_JoyHatEvent:
     padding2: ubyte
 
 struct SDL_JoyButtonEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2336,13 +2336,13 @@ struct SDL_JoyButtonEvent:
     padding2: ubyte
 
 struct SDL_JoyDeviceEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
 
 struct SDL_JoyBatteryEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2350,7 +2350,7 @@ struct SDL_JoyBatteryEvent:
     percent: int
 
 struct SDL_GamepadAxisEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2362,7 +2362,7 @@ struct SDL_GamepadAxisEvent:
     padding4: ushort
 
 struct SDL_GamepadButtonEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2372,13 +2372,13 @@ struct SDL_GamepadButtonEvent:
     padding2: ubyte
 
 struct SDL_GamepadDeviceEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
 
 struct SDL_GamepadTouchpadEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2389,7 +2389,7 @@ struct SDL_GamepadTouchpadEvent:
     pressure: float
 
 struct SDL_GamepadSensorEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2398,7 +2398,7 @@ struct SDL_GamepadSensorEvent:
     sensor_timestamp: ptr_uint
 
 struct SDL_AudioDeviceEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2408,19 +2408,19 @@ struct SDL_AudioDeviceEvent:
     padding3: ubyte
 
 struct SDL_CameraDeviceEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
 
 struct SDL_RenderEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
 
 struct SDL_TouchFingerEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     touchID: ptr_uint
@@ -2433,21 +2433,21 @@ struct SDL_TouchFingerEvent:
     windowID: uint
 
 struct SDL_PinchFingerEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     scale: float
     windowID: uint
 
 struct SDL_PenProximityEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
     which: uint
 
 struct SDL_PenMotionEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2457,7 +2457,7 @@ struct SDL_PenMotionEvent:
     y: float
 
 struct SDL_PenTouchEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2469,7 +2469,7 @@ struct SDL_PenTouchEvent:
     down: bool
 
 struct SDL_PenButtonEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2481,7 +2481,7 @@ struct SDL_PenButtonEvent:
     down: bool
 
 struct SDL_PenAxisEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2493,7 +2493,7 @@ struct SDL_PenAxisEvent:
     value: float
 
 struct SDL_DropEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2503,7 +2503,7 @@ struct SDL_DropEvent:
     data: cstr
 
 struct SDL_ClipboardEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     owner: bool
@@ -2511,7 +2511,7 @@ struct SDL_ClipboardEvent:
     mime_types: ptr[cstr]
 
 struct SDL_SensorEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
@@ -2519,12 +2519,12 @@ struct SDL_SensorEvent:
     sensor_timestamp: ptr_uint
 
 struct SDL_QuitEvent:
-    type_: SDL_EventType
+    type: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
 
 struct SDL_UserEvent:
-    type_: uint
+    type: uint
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
@@ -2533,7 +2533,7 @@ struct SDL_UserEvent:
     data2: ptr[void]
 
 union SDL_Event:
-    type_: uint
+    type: uint
     common: SDL_CommonEvent
     display: SDL_DisplayEvent
     window: SDL_WindowEvent
@@ -2629,7 +2629,7 @@ enum SDL_PathType: int
     SDL_PATHTYPE_OTHER = 3
 
 struct SDL_PathInfo:
-    type_: SDL_PathType
+    type: SDL_PathType
     size: ptr_uint
     create_time: ptr_int
     modify_time: ptr_int
@@ -3088,7 +3088,7 @@ struct SDL_GPUShaderCreateInfo:
     props: uint
 
 struct SDL_GPUTextureCreateInfo:
-    type_: SDL_GPUTextureType
+    type: SDL_GPUTextureType
     format: SDL_GPUTextureFormat
     usage: uint
     width: uint
@@ -3357,11 +3357,11 @@ type SDL_HapticDirectionType = ubyte
 type SDL_HapticEffectID = int
 
 struct SDL_HapticDirection:
-    type_: ubyte
+    type: ubyte
     dir: array[Sint32, 3]
 
 struct SDL_HapticConstant:
-    type_: ushort
+    type: ushort
     direction: SDL_HapticDirection
     length: uint
     delay: ushort
@@ -3374,7 +3374,7 @@ struct SDL_HapticConstant:
     fade_level: ushort
 
 struct SDL_HapticPeriodic:
-    type_: ushort
+    type: ushort
     direction: SDL_HapticDirection
     length: uint
     delay: ushort
@@ -3390,7 +3390,7 @@ struct SDL_HapticPeriodic:
     fade_level: ushort
 
 struct SDL_HapticCondition:
-    type_: ushort
+    type: ushort
     direction: SDL_HapticDirection
     length: uint
     delay: ushort
@@ -3404,7 +3404,7 @@ struct SDL_HapticCondition:
     center: array[Sint16, 3]
 
 struct SDL_HapticRamp:
-    type_: ushort
+    type: ushort
     direction: SDL_HapticDirection
     length: uint
     delay: ushort
@@ -3418,13 +3418,13 @@ struct SDL_HapticRamp:
     fade_level: ushort
 
 struct SDL_HapticLeftRight:
-    type_: ushort
+    type: ushort
     length: uint
     large_magnitude: ushort
     small_magnitude: ushort
 
 struct SDL_HapticCustom:
-    type_: ushort
+    type: ushort
     direction: SDL_HapticDirection
     length: uint
     delay: ushort
@@ -3440,7 +3440,7 @@ struct SDL_HapticCustom:
     fade_level: ushort
 
 union SDL_HapticEffect:
-    type_: ushort
+    type: ushort
     constant: SDL_HapticConstant
     periodic: SDL_HapticPeriodic
     condition: SDL_HapticCondition
@@ -3646,7 +3646,7 @@ type SDL_MessageBoxFlags = uint
 type SDL_MessageBoxButtonFlags = uint
 
 struct SDL_MessageBoxButtonData:
-    flags_: uint
+    flags: uint
     buttonID: int
     text: cstr
 
@@ -3667,7 +3667,7 @@ struct SDL_MessageBoxColorScheme:
     colors: array[SDL_MessageBoxColor, 5]
 
 struct SDL_MessageBoxData:
-    flags_: uint
+    flags: uint
     window: ptr[SDL_Window]
     title: cstr
     message: cstr

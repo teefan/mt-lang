@@ -8,7 +8,7 @@ struct cJSON:
     next: ptr[cJSON]
     prev: ptr[cJSON]
     child: ptr[cJSON]
-    type_: int
+    type: int
     valuestring: ptr[char]
     valueint: int
     valuedouble: double

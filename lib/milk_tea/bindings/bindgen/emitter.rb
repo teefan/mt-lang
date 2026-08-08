@@ -76,17 +76,10 @@ module MilkTea
           fields = Array(node["inner"]).select { |child| child["kind"] == "FieldDecl" }
           fields.each do |field|
             field_type = aggregate_field_type(field, owner_name: name, aggregate_node: node)
-            mt_name, = bindgen_field_name(emitted_name(aggregate_field_name(field, aggregate_node: node)))
+            mt_name = emitted_name(aggregate_field_name(field, aggregate_node: node))
             lines << "    #{mt_name}: #{field_type}"
           end
           lines
-        end
-
-        def bindgen_field_name(name)
-          name = emitted_name(name)
-          return [name, nil] unless Token::KEYWORDS.key?(name)
-
-          ["#{name}_", nil]
         end
 
         def bindgen_param_name(name)

@@ -128,7 +128,7 @@ struct stbtt_vertex:
     cy: short
     cx1: short
     cy1: short
-    type_: ubyte
+    type: ubyte
     padding: ubyte
 
 external function stbtt_IsGlyphEmpty(info: const_ptr[stbtt_fontinfo], glyph_index: int) -> int

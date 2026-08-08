@@ -44,7 +44,7 @@ struct cgltf_file_options:
     user_data: ptr[void]
 
 struct cgltf_options:
-    type_: cgltf_file_type
+    type: cgltf_file_type
     json_token_count: ptr_uint
     memory: cgltf_memory_options
     file: cgltf_file_options
@@ -186,7 +186,7 @@ struct cgltf_buffer_view:
     offset: ptr_uint
     size: ptr_uint
     stride: ptr_uint
-    type_: cgltf_buffer_view_type
+    type: cgltf_buffer_view_type
     data: ptr[void]
     has_meshopt_compression: int
     meshopt_compression: cgltf_meshopt_compression
@@ -206,7 +206,7 @@ struct cgltf_accessor:
     name: ptr[char]
     component_type: cgltf_component_type
     normalized: int
-    type_: cgltf_type
+    type: cgltf_type
     offset: ptr_uint
     count: ptr_uint
     stride: ptr_uint
@@ -223,7 +223,7 @@ struct cgltf_accessor:
 
 struct cgltf_attribute:
     name: ptr[char]
-    type_: cgltf_attribute_type
+    type: cgltf_attribute_type
     index: int
     data: ptr[cgltf_accessor]
 
@@ -398,7 +398,7 @@ struct cgltf_material:
     extensions: ptr[cgltf_extension]
 
 struct cgltf_material_mapping:
-    variant_: ptr_uint
+    variant: ptr_uint
     material: ptr[cgltf_material]
     extras: cgltf_extras
 
@@ -416,7 +416,7 @@ struct cgltf_mesh_gpu_instancing:
     attributes_count: ptr_uint
 
 struct cgltf_primitive:
-    type_: cgltf_primitive_type
+    type: cgltf_primitive_type
     indices: ptr[cgltf_accessor]
     material: ptr[cgltf_material]
     attributes: ptr[cgltf_attribute]
@@ -471,7 +471,7 @@ struct cgltf_camera_orthographic:
 
 struct cgltf_camera:
     name: ptr[char]
-    type_: cgltf_camera_type
+    type: cgltf_camera_type
     data: cgltf_camera_data
     extras: cgltf_extras
     extensions_count: ptr_uint
@@ -481,7 +481,7 @@ struct cgltf_light:
     name: ptr[char]
     color: array[cgltf_float, 3]
     intensity: float
-    type_: cgltf_light_type
+    type: cgltf_light_type
     range: float
     spot_inner_cone_angle: float
     spot_outer_cone_angle: float

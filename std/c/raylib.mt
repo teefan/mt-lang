@@ -249,7 +249,7 @@ struct FilePathList:
 
 struct AutomationEvent:
     frame: uint
-    type_: uint
+    type: uint
     params: array[int, 4]
 
 struct AutomationEventList:

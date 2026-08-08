@@ -5,7 +5,7 @@ include "rpng.h"
 
 struct rpng_chunk:
     length: int
-    type_: array[char, 4]
+    type: array[char, 4]
     data: ptr[char]
     crc: uint
 

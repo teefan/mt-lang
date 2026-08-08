@@ -192,7 +192,7 @@ struct ma_device_info_nativeDataFormats:
     format: ma_format
     channels: uint
     sampleRate: uint
-    flags_: uint
+    flags: uint
 
 union ma_context_command__wasapi_data:
     quit: ma_context_command__wasapi_data_quit
@@ -446,7 +446,7 @@ struct ma_job_toc_breakup:
     refcount: uint
 
 struct ma_job_data_custom:
-    proc_: fn(arg0: ptr[ma_job]) -> ma_result
+    proc: fn(arg0: ptr[ma_job]) -> ma_result
     data0: ulong
     data1: ulong
 
@@ -532,7 +532,7 @@ struct ma_job_data_resourceManager_loadDataBufferNode:
     pDataBufferNode: ptr[void]
     pFilePath: ptr[char]
     pFilePathW: ptr[int]
-    flags_: uint
+    flags: uint
     pInitNotification: ptr[ma_async_notification]
     pDoneNotification: ptr[ma_async_notification]
     pInitFence: ptr[ma_fence]
@@ -1640,7 +1640,7 @@ struct ma_data_source_vtable:
     onGetCursor: fn(arg0: ptr[ma_data_source], arg1: ptr[ma_uint64]) -> ma_result
     onGetLength: fn(arg0: ptr[ma_data_source], arg1: ptr[ma_uint64]) -> ma_result
     onSetLooping: fn(arg0: ptr[ma_data_source], arg1: ma_bool32) -> ma_result
-    flags_: uint
+    flags: uint
 
 type ma_data_source_get_next_proc = fn(arg0: ptr[ma_data_source]) -> ptr[ma_data_source]
 
@@ -1952,13 +1952,13 @@ flags ma_job_queue_flags: int
     MA_JOB_QUEUE_FLAG_NON_BLOCKING = 1
 
 struct ma_job_queue_config:
-    flags_: uint
+    flags: uint
     capacity: uint
 
 external function ma_job_queue_config_init(flags_: uint, capacity: uint) -> ma_job_queue_config
 
 struct ma_job_queue:
-    flags_: uint
+    flags: uint
     capacity: uint
     head: ulong
     tail: ulong
@@ -2030,7 +2030,7 @@ enum ma_device_notification_type: int
 
 struct ma_device_notification:
     pDevice: ptr[ma_device]
-    type_: ma_device_notification_type
+    type: ma_device_notification_type
     data: ma_device_notification_data
 
 type ma_device_notification_proc = fn(arg0: const_ptr[ma_device_notification]) -> void
@@ -2250,7 +2250,7 @@ struct ma_context:
 
 struct ma_device:
     pContext: ptr[ma_context]
-    type_: ma_device_type
+    type: ma_device_type
     sampleRate: uint
     state: ma_atomic_device_state
     onData: fn(arg0: ptr[ma_device], arg1: ptr[void], arg2: const_ptr[void], arg3: ma_uint32) -> void
@@ -2520,7 +2520,7 @@ struct ma_waveform_config:
     format: ma_format
     channels: uint
     sampleRate: uint
-    type_: ma_waveform_type
+    type: ma_waveform_type
     amplitude: double
     frequency: double
 
@@ -2572,7 +2572,7 @@ flags ma_noise_type: int
 struct ma_noise_config:
     format: ma_format
     channels: uint
-    type_: ma_noise_type
+    type: ma_noise_type
     seed: int
     amplitude: double
     duplicateChannels: uint
@@ -2627,7 +2627,7 @@ struct ma_resource_manager_data_source_config:
     rangeEndInPCMFrames: ulong
     loopPointBegInPCMFrames: ulong
     loopPointEndInPCMFrames: ulong
-    flags_: uint
+    flags: uint
     isLooping: uint
 
 external function ma_resource_manager_data_source_config_init() -> ma_resource_manager_data_source_config
@@ -2639,7 +2639,7 @@ enum ma_resource_manager_data_supply_type: int
     ma_resource_manager_data_supply_type_decoded_paged = 3
 
 struct ma_resource_manager_data_supply:
-    type_: ma_resource_manager_data_supply_type
+    type: ma_resource_manager_data_supply_type
     backend: ma_resource_manager_data_supply_backend
 
 struct ma_resource_manager_data_buffer_node:
@@ -2658,7 +2658,7 @@ struct ma_resource_manager_data_buffer:
     ds: ma_data_source_base
     pResourceManager: ptr[ma_resource_manager]
     pNode: ptr[ma_resource_manager_data_buffer_node]
-    flags_: uint
+    flags: uint
     executionCounter: uint
     executionPointer: uint
     seekTargetInPCMFrames: ulong
@@ -2671,7 +2671,7 @@ struct ma_resource_manager_data_buffer:
 struct ma_resource_manager_data_stream:
     ds: ma_data_source_base
     pResourceManager: ptr[ma_resource_manager]
-    flags_: uint
+    flags: uint
     decoder: ma_decoder
     isDecoderInitialized: uint
     totalLengthInPCMFrames: ulong
@@ -2690,7 +2690,7 @@ struct ma_resource_manager_data_stream:
 
 struct ma_resource_manager_data_source:
     backend: ma_resource_manager_data_source_backend
-    flags_: uint
+    flags: uint
     executionCounter: uint
     executionPointer: uint
 
@@ -2703,7 +2703,7 @@ struct ma_resource_manager_config:
     jobThreadCount: uint
     jobThreadStackSize: ptr_uint
     jobQueueCapacity: uint
-    flags_: uint
+    flags: uint
     pVFS: ptr[ma_vfs]
     ppCustomDecodingBackendVTables: ptr[ptr[ma_decoding_backend_vtable]]
     customDecodingBackendCount: uint
@@ -2803,7 +2803,7 @@ struct ma_node_vtable:
     onGetRequiredInputFrameCount: fn(arg0: ptr[ma_node], arg1: ma_uint32, arg2: ptr[ma_uint32]) -> ma_result
     inputBusCount: ubyte
     outputBusCount: ubyte
-    flags_: uint
+    flags: uint
 
 struct ma_node_config:
     vtable: const_ptr[ma_node_vtable]
@@ -2820,7 +2820,7 @@ struct ma_node_output_bus:
     outputBusIndex: ubyte
     channels: ubyte
     inputNodeInputBusIndex: ubyte
-    flags_: uint
+    flags: uint
     refCount: uint
     isAttached: uint
     lock: uint
@@ -3078,7 +3078,7 @@ flags ma_engine_node_type: int
 
 struct ma_engine_node_config:
     pEngine: ptr[ma_engine]
-    type_: ma_engine_node_type
+    type: ma_engine_node_type
     channelsIn: uint
     channelsOut: uint
     sampleRate: uint
@@ -3129,7 +3129,7 @@ struct ma_sound_config:
     channelsIn: uint
     channelsOut: uint
     monoExpansionMode: ma_mono_expansion_mode
-    flags_: uint
+    flags: uint
     volumeSmoothTimeInPCMFrames: uint
     initialSeekPointInPCMFrames: ulong
     rangeBegInPCMFrames: ulong

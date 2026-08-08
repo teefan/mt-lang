@@ -466,14 +466,14 @@ external function uv_err_name_r(err: int, buf: ptr[char], buflen: ptr_uint) -> p
 
 struct uv_req_s = c"uv_req_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
 
 external function uv_shutdown(req: ptr[uv_shutdown_t], handle: ptr[uv_stream_t], cb: fn(arg0: ptr[uv_shutdown_t], arg1: int) -> void) -> int
 
 struct uv_shutdown_s = c"uv_shutdown_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     handle: ptr[uv_stream_t]
     cb: fn(arg0: ptr[uv_shutdown_t], arg1: int) -> void
@@ -481,12 +481,12 @@ struct uv_shutdown_s = c"uv_shutdown_t":
 struct uv_handle_s = c"uv_handle_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_handle_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
 
 external function uv_handle_size(type_: uv_handle_type) -> ptr_uint
 external function uv_handle_get_type(handle: const_ptr[uv_handle_t]) -> uv_handle_type
@@ -512,12 +512,12 @@ external function uv_socketpair(type_: int, protocol: int, socket_vector: ptr[uv
 struct uv_stream_s = c"uv_stream_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_stream_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     write_queue_size: ptr_uint
     alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
     read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void
@@ -543,7 +543,7 @@ external function uv_try_write2(handle: ptr[uv_stream_t], bufs: const_ptr[uv_buf
 
 struct uv_write_s = c"uv_write_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     cb: fn(arg0: ptr[uv_write_t], arg1: int) -> void
     send_handle: ptr[uv_stream_t]
@@ -563,12 +563,12 @@ external function uv_is_closing(handle: const_ptr[uv_handle_t]) -> int
 struct uv_tcp_s = c"uv_tcp_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_tcp_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     write_queue_size: ptr_uint
     alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
     read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void
@@ -602,7 +602,7 @@ external function uv_tcp_connect(req: ptr[uv_connect_t], handle: ptr[uv_tcp_t], 
 
 struct uv_connect_s = c"uv_connect_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     cb: fn(arg0: ptr[uv_connect_t], arg1: int) -> void
     handle: ptr[uv_stream_t]
@@ -624,12 +624,12 @@ type uv_udp_recv_cb = fn(arg0: ptr[uv_udp_t], arg1: ptr_int, arg2: const_ptr[uv_
 struct uv_udp_s = c"uv_udp_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_udp_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     send_queue_size: ptr_uint
     send_queue_count: ptr_uint
     alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
@@ -640,7 +640,7 @@ struct uv_udp_s = c"uv_udp_t":
 
 struct uv_udp_send_s = c"uv_udp_send_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     handle: ptr[uv_udp_t]
     cb: fn(arg0: ptr[uv_udp_send_t], arg1: int) -> void
@@ -679,12 +679,12 @@ external function uv_udp_get_send_queue_count(handle: const_ptr[uv_udp_t]) -> pt
 struct uv_tty_s = c"uv_tty_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_tty_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     write_queue_size: ptr_uint
     alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
     read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void
@@ -721,12 +721,12 @@ external function uv_guess_handle(file: int) -> uv_handle_type
 struct uv_pipe_s = c"uv_pipe_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_pipe_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     write_queue_size: ptr_uint
     alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void
     read_cb: fn(arg0: ptr[uv_stream_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t]) -> void
@@ -758,12 +758,12 @@ external function uv_pipe_chmod(handle: ptr[uv_pipe_t], flags_: int) -> int
 struct uv_poll_s = c"uv_poll_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_poll_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     poll_cb: fn(arg0: ptr[uv_poll_t], arg1: int, arg2: int) -> void
     io_watcher: uv__io_s
 
@@ -781,12 +781,12 @@ external function uv_poll_stop(handle: ptr[uv_poll_t]) -> int
 struct uv_prepare_s = c"uv_prepare_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_prepare_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     prepare_cb: fn(arg0: ptr[uv_prepare_t]) -> void
     queue: uv__queue
 
@@ -797,12 +797,12 @@ external function uv_prepare_stop(prepare: ptr[uv_prepare_t]) -> int
 struct uv_check_s = c"uv_check_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_check_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     check_cb: fn(arg0: ptr[uv_check_t]) -> void
     queue: uv__queue
 
@@ -813,12 +813,12 @@ external function uv_check_stop(check: ptr[uv_check_t]) -> int
 struct uv_idle_s = c"uv_idle_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_idle_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     idle_cb: fn(arg0: ptr[uv_idle_t]) -> void
     queue: uv__queue
 
@@ -829,12 +829,12 @@ external function uv_idle_stop(idle: ptr[uv_idle_t]) -> int
 struct uv_async_s = c"uv_async_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_async_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     async_cb: fn(arg0: ptr[uv_async_t]) -> void
     queue: uv__queue
     pending: int
@@ -845,12 +845,12 @@ external function uv_async_send(async_: ptr[uv_async_t]) -> int
 struct uv_timer_s = c"uv_timer_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_timer_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     timer_cb: fn(arg0: ptr[uv_timer_t]) -> void
     node: uv_timer_s_node
     timeout: ptr_uint
@@ -867,7 +867,7 @@ external function uv_timer_get_due_in(handle: const_ptr[uv_timer_t]) -> ulong
 
 struct uv_getaddrinfo_s = c"uv_getaddrinfo_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     loop: ptr[uv_loop_t]
     work_req: uv__work
@@ -883,13 +883,13 @@ external function uv_freeaddrinfo(ai: ptr[addrinfo]?) -> void
 
 struct uv_getnameinfo_s = c"uv_getnameinfo_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     loop: ptr[uv_loop_t]
     work_req: uv__work
     getnameinfo_cb: fn(arg0: ptr[uv_getnameinfo_t], arg1: int, arg2: cstr, arg3: cstr) -> void
     storage: sockaddr_storage
-    flags_: int
+    flags: int
     host: array[char, 1025]
     service: array[char, 32]
     retcode: int
@@ -907,7 +907,7 @@ flags uv_stdio_flags: int
     UV_OVERLAPPED_PIPE = 64
 
 struct uv_stdio_container_t:
-    flags_: uv_stdio_flags
+    flags: uv_stdio_flags
     data: uv_stdio_container_t_data
 
 struct uv_process_options_t:
@@ -916,7 +916,7 @@ struct uv_process_options_t:
     args: ptr[ptr[char]]
     env: ptr[ptr[char]]
     cwd: cstr
-    flags_: uint
+    flags: uint
     stdio_count: int
     stdio: ptr[uv_stdio_container_t]
     uid: uint
@@ -935,12 +935,12 @@ flags uv_process_flags: int
 struct uv_process_s = c"uv_process_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_process_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     exit_cb: fn(arg0: ptr[uv_process_t], arg1: long, arg2: int) -> void
     pid: int
     queue: uv__queue
@@ -953,7 +953,7 @@ external function uv_process_get_pid(arg0: const_ptr[uv_process_t]) -> uv_pid_t
 
 struct uv_work_s = c"uv_work_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     loop: ptr[uv_loop_t]
     work_cb: fn(arg0: ptr[uv_work_t]) -> void
@@ -1023,7 +1023,7 @@ enum uv_dirent_type_t: int
 
 struct uv_dirent_s = c"uv_dirent_t":
     name: cstr
-    type_: uv_dirent_type_t
+    type: uv_dirent_type_t
 
 external function uv_setup_args(argc: int, argv: ptr[ptr[char]]) -> ptr[ptr[char]]
 external function uv_get_process_title(buffer: ptr[char], size: ptr_uint) -> int
@@ -1142,7 +1142,7 @@ struct uv_dir_s = c"uv_dir_t":
 
 struct uv_fs_s = c"uv_fs_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     fs_type: uv_fs_type
     loop: ptr[uv_loop_t]?
@@ -1153,7 +1153,7 @@ struct uv_fs_s = c"uv_fs_t":
     statbuf: uv_stat_t
     new_path: cstr
     file: int
-    flags_: int
+    flags: int
     mode: uint
     nbufs: uint
     bufs: ptr[uv_buf_t]
@@ -1217,12 +1217,12 @@ flags uv_fs_event: int
 struct uv_fs_event_s = c"uv_fs_event_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_fs_event_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     path: ptr[char]
     cb: fn(arg0: ptr[uv_fs_event_t], arg1: cstr, arg2: int, arg3: int) -> void
     watchers: uv__queue
@@ -1231,12 +1231,12 @@ struct uv_fs_event_s = c"uv_fs_event_t":
 struct uv_fs_poll_s = c"uv_fs_poll_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_fs_poll_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     poll_ctx: ptr[void]
 
 external function uv_fs_poll_init(loop: ptr[uv_loop_t], handle: ptr[uv_fs_poll_t]) -> int
@@ -1247,12 +1247,12 @@ external function uv_fs_poll_getpath(handle: ptr[uv_fs_poll_t], buffer: ptr[char
 struct uv_signal_s = c"uv_signal_t":
     data: ptr[void]
     loop: ptr[uv_loop_t]
-    type_: uv_handle_type
+    type: uv_handle_type
     close_cb: fn(arg0: ptr[uv_handle_t]) -> void
     handle_queue: uv__queue
     u: uv_signal_s_u
     next_closing: ptr[uv_handle_t]
-    flags_: uint
+    flags: uint
     signal_cb: fn(arg0: ptr[uv_signal_t], arg1: int) -> void
     signum: int
     tree_entry: uv_signal_s_tree_entry
@@ -1284,7 +1284,7 @@ external function uv_inet_pton(af: int, src: cstr, dst: ptr[void]) -> int
 
 struct uv_random_s = c"uv_random_t":
     data: ptr[void]
-    type_: uv_req_type
+    type: uv_req_type
     reserved: array[ptr[void], 6]
     loop: ptr[uv_loop_t]
     status: int
@@ -1356,7 +1356,7 @@ flags uv_thread_create_flags: int
     UV_THREAD_HAS_STACK_SIZE = 1
 
 struct uv_thread_options_t:
-    flags_: uint
+    flags: uint
     stack_size: ptr_uint
 
 external function uv_thread_create_ex(tid: ptr[uv_thread_t], params: const_ptr[uv_thread_options_t], entry: fn(arg0: ptr[void]) -> void, arg: ptr[void]) -> int
@@ -1370,7 +1370,7 @@ external function uv_thread_setname(name: cstr) -> int
 external function uv_thread_getname(tid: ptr[uv_thread_t], name: ptr[char], size: ptr_uint) -> int
 
 union uv_any_handle = c"union uv_any_handle":
-    async_: uv_async_s
+    async: uv_async_s
     check: uv_check_s
     fs_event: uv_fs_event_s
     fs_poll: uv_fs_poll_s
@@ -1406,7 +1406,7 @@ struct uv_loop_s = c"uv_loop_t":
     active_reqs: uv_loop_s_active_reqs
     internal_fields: ptr[void]
     stop_flag: uint
-    flags_: ptr_uint
+    flags: ptr_uint
     backend_fd: int
     pending_queue: uv__queue
     watcher_queue: uv__queue

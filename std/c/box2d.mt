@@ -424,7 +424,7 @@ enum b2BodyType: int
     b2_bodyTypeCount = 3
 
 struct b2BodyDef:
-    type_: b2BodyType
+    type: b2BodyType
     position: b2Vec2
     rotation: b2Rot
     linearVelocity: b2Vec2

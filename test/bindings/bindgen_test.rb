@@ -658,7 +658,7 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
-  def test_generate_renames_keyword_struct_fields
+  def test_generate_preserves_keyword_struct_fields
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)
 
@@ -680,7 +680,7 @@ class MilkTeaBindgenTest < Minitest::Test
         clang:,
       )
 
-      assert_match(/struct KeywordFields:\n    function_: int\n    external_: int\n    public_: int/, generated)
+      assert_match(/struct KeywordFields:\n    function: int\n    external: int\n    public: int/, generated)
 
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)

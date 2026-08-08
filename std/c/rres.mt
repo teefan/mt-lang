@@ -11,11 +11,11 @@ struct rresFileHeader:
     reserved: uint
 
 struct rresResourceChunkInfo:
-    type_: array[ubyte, 4]
+    type: array[ubyte, 4]
     id: uint
     compType: ubyte
     cipherType: ubyte
-    flags_: ushort
+    flags: ushort
     packedSize: uint
     baseSize: uint
     nextOffset: uint

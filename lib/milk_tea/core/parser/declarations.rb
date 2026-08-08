@@ -454,7 +454,7 @@ module MilkTea
         match(:async)
         match(:editable) if check(:editable)
         match(:static) if check(:static)
-        result = check(:function)
+        result = check(:function) && !check_next(:colon)
         @current = saved
         result
       end
@@ -468,11 +468,13 @@ module MilkTea
 
         visibility, visibility_token = parse_visibility
 
-        if match(:event)
+        if check(:event) && !check_next(:colon)
+          advance
           return [:event, parse_event_decl(visibility:, attributes: field_attributes)]
         end
 
-        if match(:struct)
+        if check(:struct) && !check_next(:colon)
+          advance
           return [:nested_type, parse_struct_decl(visibility:, attributes: field_attributes, inline_methods: false)]
         end
 
@@ -741,7 +743,10 @@ module MilkTea
       end
 
       def parse_visibility
-        return [:public, previous] if match(:public)
+        if check(:public) && !check_next(:colon)
+          advance
+          return [:public, previous]
+        end
 
         [:private, nil]
       end

@@ -324,7 +324,7 @@ module MilkTea
       newline_start = line_offset + line.length
       newline_end = has_newline ? (newline_start + 1) : newline_start
       if @grouping_depth.zero?
-        if Token::LINE_CONTINUATION_OPERATORS.include?(@tokens.last&.type)
+        if Token::LINE_CONTINUATION_OPERATORS.include?(@tokens.last&.type) && !trailing_is_member_access?
           @continuation_pending = true
         else
           @tokens << build_token(:newline, "\n", nil, line_number, line.length + 1, start_offset: newline_start, end_offset: newline_end)
@@ -343,6 +343,10 @@ module MilkTea
       end
 
       1
+    end
+
+    def trailing_is_member_access?
+      @tokens.last&.type == :is && @tokens[-2]&.type == :dot
     end
 
     def emit_newline(line, line_number, line_offset, has_newline)

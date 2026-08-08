@@ -213,7 +213,7 @@ type ENetPacketFreeCallback = fn(arg0: ptr[ENetPacket]) -> void
 
 struct ENetPacket:
     referenceCount: ptr_uint
-    flags_: uint
+    flags: uint
     data: ptr[enet_uint8]
     dataLength: ptr_uint
     freeCallback: fn(arg0: ptr[ENetPacket]) -> void
@@ -327,7 +327,7 @@ struct ENetPeer:
     outgoingSendReliableCommands: ENetList
     outgoingCommands: ENetList
     dispatchedCommands: ENetList
-    flags_: ushort
+    flags: ushort
     reserved: ushort
     incomingUnsequencedGroup: ushort
     outgoingUnsequencedGroup: ushort
@@ -389,7 +389,7 @@ enum ENetEventType: int
     ENET_EVENT_TYPE_RECEIVE = 3
 
 struct ENetEvent:
-    type_: ENetEventType
+    type: ENetEventType
     peer: ptr[ENetPeer]
     channelID: ubyte
     data: uint
