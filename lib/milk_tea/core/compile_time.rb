@@ -31,8 +31,33 @@ module MilkTea
       return left == right if left.is_a?(String) && right.is_a?(String)
       return left == right if boolean_value?(left) && boolean_value?(right)
       return left == right if left.is_a?(Types::Base) && right.is_a?(Types::Base)
+      return struct_equality_result(left, right) if left.is_a?(Hash) && right.is_a?(Hash)
+      return variant_equality_result(left, right) if left.is_a?(VariantValue) && right.is_a?(VariantValue)
 
       nil
+    end
+
+    # Const-time struct values are represented as {field_name => value} hashes;
+    # compare them field by field, mirroring the runtime struct == semantics.
+    def self.struct_equality_result(left, right)
+      return nil unless left.is_a?(Hash) && right.is_a?(Hash)
+      return nil unless left.keys.sort == right.keys.sort
+
+      left.each do |name, value|
+        field_result = equality_result(value, right[name])
+        return nil if field_result.nil?
+        return false if field_result == false
+      end
+      true
+    end
+
+    # Const-time variant values; fields mirror the runtime arm payload layout.
+    VariantValue = Data.define(:arm, :fields)
+
+    def self.variant_equality_result(left, right)
+      return false unless left.arm == right.arm
+
+      struct_equality_result(left.fields, right.fields)
     end
 
     def self.boolean_value?(value)

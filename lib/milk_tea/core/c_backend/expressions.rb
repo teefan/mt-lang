@@ -47,6 +47,7 @@ module MilkTea
         when IR::Binary
           return emit_string_equality_expression(expression) if string_equality_expression?(expression)
           return emit_variant_equality_expression(expression) if variant_equality_expression?(expression)
+          return emit_struct_equality_expression(expression) if struct_equality_expression?(expression)
           return emit_nullable_null_comparison(expression) if nullable_null_comparison?(expression)
 
           emit_binary_expression(expression)
@@ -181,8 +182,27 @@ module MilkTea
       end
 
       def variant_equality_helper_name(type)
-        variant = type.is_a?(Types::VariantArmPayload) ? type.variant_type : type
-        "mt_variant_eq_#{named_type_c_name(variant)}"
+        return "mt_struct_eq_#{named_type_c_name(type)}" if type.is_a?(Types::VariantArmPayload)
+
+        "mt_variant_eq_#{named_type_c_name(type)}"
+      end
+
+      def struct_equality_expression?(expression)
+        EQUALITY_OPERATORS.include?(expression.operator) && struct_equality_type?(expression.left.type)
+      end
+
+      def struct_equality_type?(type)
+        type.is_a?(Types::Struct) && !type.is_a?(Types::Union) && !type.is_a?(Types::VariantArmPayload)
+      end
+
+      def emit_struct_equality_expression(expression)
+        helper_name = struct_equality_helper_name(expression.left.type)
+        call = "#{helper_name}(#{emit_expression(expression.left)}, #{emit_expression(expression.right)})"
+        expression.operator == "!=" ? "!#{call}" : call
+      end
+
+      def struct_equality_helper_name(type)
+        "mt_struct_eq_#{named_type_c_name(type)}"
       end
 
       def nullable_value_type?(type)

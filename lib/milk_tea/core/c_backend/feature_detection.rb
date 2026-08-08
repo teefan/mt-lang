@@ -298,41 +298,131 @@ module MilkTea
       end
 
       def uses_variant_equality_helper?
-        emitted_functions.any? { |function| function_uses_variant_equality?(function) }
+        !variant_equality_types.empty?
       end
 
-      def function_uses_variant_equality?(function)
-        function.body.any? { |statement| statement_uses_variant_equality?(statement) }
+      def uses_struct_equality_helper?
+        !struct_equality_types.empty?
       end
 
-      def statement_uses_variant_equality?(statement)
-        case statement
-        when IR::LocalDecl
-          expression_uses_variant_equality?(statement.value)
-        when IR::ExpressionStmt
-          expression_uses_variant_equality?(statement.expression)
-        when IR::ReturnStmt
-          statement.value && expression_uses_variant_equality?(statement.value)
-        when IR::Assignment
-          expression_uses_variant_equality?(statement.value)
-        when IR::IfStmt
-          expression_uses_variant_equality?(statement.condition)
-        when IR::WhileStmt
-          expression_uses_variant_equality?(statement.condition)
-        else
-          false
+      # Aggregate types (structs and variants) compared with ==/!= anywhere in
+      # the program, transitively closed over value-typed fields so nested
+      # aggregates used inside a comparison also get an equality helper.
+      def aggregate_equality_types
+        @aggregate_equality_types ||= begin
+          types = Set.new
+          emitted_functions.each do |function|
+            function.body.each do |statement|
+              statement_matches_expression_predicate?(
+                statement,
+                expression_pred: ->(expression) { collect_aggregate_equality_from_expression(expression, types) },
+              )
+            end
+          end
+          types
         end
       end
 
-      def expression_uses_variant_equality?(expression)
-        return false unless expression
+      def struct_equality_types
+        @struct_equality_types ||= aggregate_equality_types.select { |type| struct_equality_type?(type) || type.is_a?(Types::VariantArmPayload) }
+      end
 
+      def variant_equality_types
+        @variant_equality_types ||= aggregate_equality_types.select { |type| type.is_a?(Types::Variant) }
+      end
+
+      def aggregate_equality_type?(type)
+        struct_equality_type?(type) || type.is_a?(Types::Variant) || type.is_a?(Types::VariantArmPayload)
+      end
+
+      def collect_aggregate_equality_from_expression(expression, types)
         case expression
         when IR::Binary
-          EQUALITY_OPERATORS.include?(expression.operator) &&
-            (expression.left.type.is_a?(Types::Variant) || expression.left.type.is_a?(Types::VariantArmPayload))
+          collect_aggregate_equality_from_expression(expression.left, types)
+          collect_aggregate_equality_from_expression(expression.right, types)
+          if EQUALITY_OPERATORS.include?(expression.operator) && aggregate_equality_type?(expression.left.type)
+            collect_aggregate_equality_dependencies(expression.left.type, types)
+          end
         when IR::Call
-          expression.arguments.any? { |arg| expression_uses_variant_equality?(arg) }
+          collect_aggregate_equality_from_expression(expression.callee, types) unless expression.callee.is_a?(String)
+          expression.arguments.each { |argument| collect_aggregate_equality_from_expression(argument, types) }
+        when IR::Member
+          collect_aggregate_equality_from_expression(expression.receiver, types)
+        when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
+          collect_aggregate_equality_from_expression(expression.receiver, types)
+          collect_aggregate_equality_from_expression(expression.index, types)
+        when IR::Unary
+          collect_aggregate_equality_from_expression(expression.operand, types)
+        when IR::Conditional
+          collect_aggregate_equality_from_expression(expression.condition, types)
+          collect_aggregate_equality_from_expression(expression.then_expression, types)
+          collect_aggregate_equality_from_expression(expression.else_expression, types)
+        when IR::ReinterpretExpr, IR::Cast, IR::AddressOf
+          collect_aggregate_equality_from_expression(expression.expression, types)
+        when IR::AggregateLiteral
+          expression.fields.each { |field| collect_aggregate_equality_from_expression(field.value, types) }
+        when IR::ArrayLiteral
+          expression.elements.each { |element| collect_aggregate_equality_from_expression(element, types) }
+        when IR::VariantLiteral
+          expression.fields.each { |field| collect_aggregate_equality_from_expression(field.value, types) }
+        end
+        false
+      end
+
+      def collect_aggregate_equality_dependencies(type, types)
+        return if types.include?(type)
+
+        case type
+        when Types::Variant
+          types << type
+          type.arm_names.each do |arm_name|
+            (type.arm(arm_name) || {}).each_value { |field_type| collect_value_field_equality_dependencies(field_type, types) }
+          end
+        when Types::VariantArmPayload
+          types << type
+          arm_fields = type.variant_type.arm(type.arm_name) || {}
+          arm_fields.each_value { |field_type| collect_value_field_equality_dependencies(field_type, types) }
+        when Types::Struct
+          return unless struct_equality_type?(type)
+
+          types << type
+          type.fields.each_value { |field_type| collect_value_field_equality_dependencies(field_type, types) }
+        end
+      end
+
+      def collect_value_field_equality_dependencies(type, types)
+        case type
+        when Types::Nullable
+          collect_value_field_equality_dependencies(type.base, types)
+        when Types::Struct, Types::Variant
+          collect_aggregate_equality_dependencies(type, types)
+        when Types::VariantArmPayload
+          collect_aggregate_equality_dependencies(type, types)
+        when Types::GenericInstance
+          collect_value_field_equality_dependencies(array_element_type(type), types) if array_type?(type)
+        end
+      end
+
+      def aggregate_equality_needs_string_view?
+        aggregate_equality_types.any? { |type| aggregate_contains_string_view?(type) }
+      end
+
+      def aggregate_contains_string_view?(type, visiting = nil)
+        return false unless type
+        return false if visiting&.key?(type)
+
+        visiting = (visiting || {}).merge(type => true)
+        case type
+        when Types::StringView
+          true
+        when Types::Struct
+          type.fields.any? { |_name, field_type| aggregate_contains_string_view?(field_type, visiting) }
+        when Types::Variant
+          type.arm_names.any? { |arm_name| (type.arm(arm_name) || {}).any? { |_field_name, field_type| aggregate_contains_string_view?(field_type, visiting) } }
+        when Types::Nullable
+          aggregate_contains_string_view?(type.base, visiting)
+        when Types::GenericInstance
+          type.arguments.any? { |argument| aggregate_contains_string_view?(argument, visiting) }
         else
           false
         end

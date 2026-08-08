@@ -223,8 +223,10 @@ class VariantCodegenTest < Minitest::Test
                 "must NOT emit raw struct != for nullable non-pointer fields")
     assert_match(/\.flag\.has_value != .*\.flag\.has_value/, generated,
                 "must compare has_value flags first")
-    assert_match(/\.flag\.has_value && .*\.flag\.value != .*\.flag\.value/, generated,
-                "must compare value fields only when both are present")
+    assert_match(/if \(.*\.flag\.has_value\) \{/, generated,
+                "must guard the value comparison behind has_value")
+    assert_match(/\.flag\.value != .*\.flag\.value/, generated,
+                "must compare value fields only inside the has_value guard")
   end
 
   def test_c_keyword_arm_name_case_default

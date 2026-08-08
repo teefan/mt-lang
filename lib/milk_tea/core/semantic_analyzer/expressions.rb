@@ -662,8 +662,16 @@ module MilkTea
         when "==", "!="
           unless c_natively_equality_comparable_type?(left_type) && c_natively_equality_comparable_type?(right_type)
             bad_type = c_natively_equality_comparable_type?(right_type) ? left_type : right_type
-            if struct_instance_type?(bad_type)
-              raise_sema_error("operator #{expression.operator} is not supported for struct type #{bad_type}; use equal[#{bad_type}](...) instead")
+            if bad_type.is_a?(Types::Union)
+              raise_sema_error("operator #{expression.operator} is not supported for union type #{bad_type}; use equal[#{bad_type}](...) instead")
+            elsif bad_type.is_a?(Types::Variant)
+              field = first_non_equality_comparable_variant_field(bad_type)
+              field_hint = field ? " (arm '#{field[0]}' field '#{field[1]}' of type #{field[2]} is not equality-comparable)" : ""
+              raise_sema_error("operator #{expression.operator} is not supported for variant type #{bad_type}#{field_hint}; use equal[#{bad_type}](...) instead")
+            elsif struct_instance_type?(bad_type) && !bad_type.is_a?(Types::Variant)
+              field = first_non_equality_comparable_field(bad_type)
+              field_hint = field ? " (field '#{field.first}' of type #{field.last} is not equality-comparable)" : ""
+              raise_sema_error("operator #{expression.operator} is not supported for struct type #{bad_type}#{field_hint}; use equal[#{bad_type}](...) instead")
             else
               raise_sema_error("operator #{expression.operator} is not supported for type #{bad_type}")
             end

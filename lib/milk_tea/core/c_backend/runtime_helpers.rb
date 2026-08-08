@@ -64,7 +64,10 @@ module MilkTea
       end
 
       def emit_variant_equality_helpers
-        emitted_aggregate_variants.flat_map { |variant_decl| emit_variant_equality_helper(variant_decl) }
+        variant_decls_by_linkage = (emitted_aggregate_variants + collect_generic_variant_decls).each_with_object({}) { |decl, map| map[decl.linkage_name] = decl }
+        variant_equality_types
+          .filter_map { |type| variant_decls_by_linkage[named_type_c_name(type)] }
+          .flat_map { |variant_decl| emit_variant_equality_helper(variant_decl) }
       end
 
       def emit_variant_equality_helper(variant_decl)
@@ -79,25 +82,14 @@ module MilkTea
             lines << "#{INDENT * 3}return true;"
           else
             arm.fields.each do |field|
-              field_type = field.type
-              left_expr = "left.data.#{sanitize_c_identifier(arm.name)}.#{sanitize_c_identifier(field.name)}"
-              right_expr = "right.data.#{sanitize_c_identifier(arm.name)}.#{sanitize_c_identifier(field.name)}"
-              if field_type.is_a?(Types::StringView)
-                lines << "#{INDENT * 3}if (!mt_str_equal(#{left_expr}, #{right_expr})) return false;"
-              elsif field_type.is_a?(Types::Variant)
-                lines << "#{INDENT * 3}if (!mt_variant_eq_#{named_type_c_name(field_type)}(#{left_expr}, #{right_expr})) return false;"
-              elsif field_type.is_a?(Types::Nullable)
-                if c_backend_pointer_like_type?(field_type.base)
-                  lines << "#{INDENT * 3}if (#{left_expr} != #{right_expr}) return false;"
-                else
-                  lines << "#{INDENT * 3}if (#{left_expr}.has_value != #{right_expr}.has_value) return false;"
-                  lines << "#{INDENT * 3}if (#{left_expr}.has_value && #{left_expr}.value != #{right_expr}.value) return false;"
-                end
-              elsif field_type.is_a?(Types::Primitive) || field_type.is_a?(Types::EnumBase)
-                lines << "#{INDENT * 3}if (#{left_expr} != #{right_expr}) return false;"
-              else
-                lines << "#{INDENT * 3}if (#{left_expr} != #{right_expr}) return false;"
-              end
+              emit_field_equality_guards(
+                lines,
+                "left.data.#{sanitize_c_identifier(arm.name)}.#{sanitize_c_identifier(field.name)}",
+                "right.data.#{sanitize_c_identifier(arm.name)}.#{sanitize_c_identifier(field.name)}",
+                field.type,
+                outer_c:,
+                indent: 3,
+              )
             end
             lines << "#{INDENT * 3}return true;"
           end
@@ -107,6 +99,83 @@ module MilkTea
         lines << "#{INDENT}}"
         lines << "}"
         lines
+      end
+
+      def emit_struct_equality_helpers
+        struct_decls_by_linkage = (emitted_aggregate_structs + collect_generic_struct_decls).each_with_object({}) { |decl, map| map[decl.linkage_name] = decl }
+        struct_equality_types
+          .filter_map { |type| type.is_a?(Types::VariantArmPayload) ? type : struct_decls_by_linkage[named_type_c_name(type)] }
+          .flat_map { |decl_or_type| emit_struct_equality_helper(decl_or_type) }
+      end
+
+      def emit_struct_equality_helper(struct_decl_or_type)
+        if struct_decl_or_type.is_a?(IR::StructDecl)
+          outer_c = struct_decl_or_type.linkage_name
+          fields = struct_decl_or_type.fields
+        else
+          payload = struct_decl_or_type
+          outer_c = named_type_c_name(payload)
+          arm_fields = payload.variant_type.arm(payload.arm_name) || {}
+          fields = arm_fields.map { |name, field_type| IR::Field.new(name:, type: field_type) }
+        end
+
+        lines = ["static bool mt_struct_eq_#{outer_c}(struct #{outer_c} left, struct #{outer_c} right) {"]
+        fields.each do |field|
+          emit_field_equality_guards(
+            lines,
+            "left.#{sanitize_c_identifier(field.name)}",
+            "right.#{sanitize_c_identifier(field.name)}",
+            field.type,
+            outer_c:,
+          )
+        end
+        lines << "#{INDENT}return true;"
+        lines << "}"
+        lines
+      end
+
+      def emit_field_equality_guards(lines, left, right, type, outer_c: nil, indent: 1)
+        pad = INDENT * indent
+        case type
+        when Types::StringView
+          lines << "#{pad}if (!mt_str_equal(#{left}, #{right})) return false;"
+        when Types::Variant
+          if aggregate_field_creates_cycle?(type, outer_c)
+            lines << "#{pad}if (#{left} != #{right}) return false;"
+          else
+            lines << "#{pad}if (!mt_variant_eq_#{named_type_c_name(type)}(#{left}, #{right})) return false;"
+          end
+        when Types::VariantArmPayload
+          if aggregate_field_creates_cycle?(type.variant_type, outer_c)
+            lines << "#{pad}if (#{left} != #{right}) return false;"
+          else
+            lines << "#{pad}if (!mt_struct_eq_#{named_type_c_name(type)}(#{left}, #{right})) return false;"
+          end
+        when Types::Struct
+          if aggregate_field_creates_cycle?(type, outer_c)
+            lines << "#{pad}if (#{left} != #{right}) return false;"
+          else
+            lines << "#{pad}if (!mt_struct_eq_#{named_type_c_name(type)}(#{left}, #{right})) return false;"
+          end
+        when Types::Nullable
+          if c_backend_pointer_like_type?(type.base)
+            lines << "#{pad}if (#{left} != #{right}) return false;"
+          else
+            lines << "#{pad}if (#{left}.has_value != #{right}.has_value) return false;"
+            lines << "#{pad}if (#{left}.has_value) {"
+            emit_field_equality_guards(lines, "#{left}.value", "#{right}.value", type.base, outer_c:, indent: indent + 1)
+            lines << "#{pad}}"
+          end
+        else
+          if array_type?(type)
+            count = array_length(type)
+            lines << "#{pad}for (uintptr_t index = 0; index < #{count}; index++) {"
+            emit_field_equality_guards(lines, "#{left}[index]", "#{right}[index]", array_element_type(type), outer_c:, indent: indent + 1)
+            lines << "#{pad}}"
+          else
+            lines << "#{pad}if (#{left} != #{right}) return false;"
+          end
+        end
       end
 
       def emit_async_memory_helpers

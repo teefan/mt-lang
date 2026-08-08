@@ -78,6 +78,14 @@ module MilkTea
             IR::AggregateField.new(name:, value: lower_const_value_literal(field_type, field_value))
           end
           IR::AggregateLiteral.new(type:, fields:)
+        when CompileTime::VariantValue
+          arm_field_types = type.respond_to?(:arm) ? (type.arm(const_value.arm) || {}) : {}
+          fields = const_value.fields.map do |field_name, field_value|
+            field_type = arm_field_types[field_name]
+            raise LoweringError.new("constant variant arm #{const_value.arm} field #{field_name} not found in #{type}", line: 0, column: 0, path: @ctx.current_analysis_path) unless field_type
+            IR::AggregateField.new(name: field_name, value: lower_const_value_literal(field_type, field_value))
+          end
+          IR::VariantLiteral.new(type:, arm_name: const_value.arm, fields:)
         else
           raise LoweringError.new("unsupported const value type #{const_value.class}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end

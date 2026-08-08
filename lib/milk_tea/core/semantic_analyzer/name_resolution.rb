@@ -902,21 +902,63 @@ module MilkTea
         type.is_a?(Types::Struct) || type.is_a?(Types::Variant)
       end
 
-      def c_natively_equality_comparable_type?(type)
+      def c_natively_equality_comparable_type?(type, visiting = nil)
         return true if type.is_a?(Types::Primitive)
         return true if type.is_a?(Types::EnumBase)
         return true if type.is_a?(Types::Opaque)
-        return true if type.is_a?(Types::Nullable)
+        return true if type.is_a?(Types::Nullable) && equality_comparable_field_type?(type.base, visiting)
         return true if type.is_a?(Types::Null)
         return true if type.is_a?(Types::Function)
         return true if type.is_a?(Types::Error)
         return true if type.is_a?(Types::StringView)
         return true if pointer_type?(type)
         return true if ref_type?(type)
-        return true if type.is_a?(Types::Variant)
+        return true if type.is_a?(Types::Variant) && equality_comparable_variant_type?(type, visiting)
         return true if type.is_a?(Types::VariantArmPayload)
+        return true if equality_comparable_struct_type?(type, visiting)
 
         false
+      end
+
+      # A struct value is equality-comparable with ==/!= when every field is
+      # itself equality-comparable. Untagged unions are excluded because their
+      # active-field comparison is ambiguous.
+      def equality_comparable_struct_type?(type, visiting = nil)
+        type.is_a?(Types::Struct) && !type.is_a?(Types::Union) &&
+          type.fields.all? { |_name, field_type| equality_comparable_field_type?(field_type, visiting) }
+      end
+
+      def equality_comparable_field_type?(type, visiting = nil)
+        return true if c_natively_equality_comparable_type?(type, visiting)
+        return true if array_type?(type) && equality_comparable_field_type?(array_element_type(type), visiting)
+
+        false
+      end
+
+      # A variant is equality-comparable when every arm payload field is itself
+      # equality-comparable. A variant that reaches itself through value fields
+      # (a recursive/cyclic variant) is comparable too: the C backend embeds
+      # cyclic fields as pointers, and those fields compare by pointer identity.
+      def equality_comparable_variant_type?(type, visiting = nil)
+        return true if visiting&.key?(type)
+
+        visiting = (visiting || {}).merge(type => true)
+        type.arm_names.all? do |arm_name|
+          (type.arm(arm_name) || {}).all? { |_field_name, field_type| equality_comparable_field_type?(field_type, visiting) }
+        end
+      end
+
+      def first_non_equality_comparable_field(struct_type)
+        struct_type.fields.find { |_name, field_type| !equality_comparable_field_type?(field_type) }
+      end
+
+      def first_non_equality_comparable_variant_field(variant_type)
+        variant_type.arm_names.each do |arm_name|
+          (variant_type.arm(arm_name) || {}).each do |field_name, field_type|
+            return [arm_name, field_name, field_type] unless equality_comparable_field_type?(field_type)
+          end
+        end
+        nil
       end
 
       def collection_loop_type(type)

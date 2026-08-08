@@ -301,7 +301,12 @@ module MilkTea
             end
 
             if (receiver_type = resolve_type_expression(member_access_expression.receiver))
-              next resolve_enum_member_const_value(receiver_type, member_access_expression.member)
+              if receiver_type.is_a?(Types::EnumBase)
+                next resolve_enum_member_const_value(receiver_type, member_access_expression.member)
+              end
+              if receiver_type.is_a?(Types::Variant)
+                next CompileTime::VariantValue.new(arm: member_access_expression.member, fields: {})
+              end
             end
 
             next unless member_access_expression.receiver.is_a?(AST::Identifier)
@@ -321,6 +326,31 @@ module MilkTea
 
       def evaluate_compile_time_call(expression, scopes: nil)
         case expression.callee
+        when AST::MemberAccess
+          if (receiver_type = resolve_type_expression(expression.callee.receiver)) && receiver_type.is_a?(Types::Variant)
+            arm_name = expression.callee.member
+            fields = {}
+            expression.arguments.each do |argument|
+              val = CompileTime.evaluate(argument.value, resolve_identifier: lambda { |id|
+                if scopes
+                  binding = lookup_value(id.name, scopes)
+                  return binding.const_value unless binding&.const_value.nil?
+                end
+                resolve_current_module_const_value(id.name)
+              }, resolve_member_access: lambda { |ma|
+                if (member_receiver_type = resolve_type_expression(ma.receiver))
+                  next resolve_enum_member_const_value(member_receiver_type, ma.member) if member_receiver_type.is_a?(Types::EnumBase)
+                  next CompileTime::VariantValue.new(arm: ma.member, fields: {}) if member_receiver_type.is_a?(Types::Variant)
+                end
+                nil
+              }, resolve_call: lambda { |inner_call|
+                evaluate_compile_time_call(inner_call, scopes:)
+              })
+              return nil unless val
+              fields[argument.name] = val
+            end
+            return CompileTime::VariantValue.new(arm: arm_name, fields: fields)
+          end
         when AST::Identifier
           if (struct_type = @ctx.types[expression.callee.name]) && struct_type.is_a?(Types::Struct)
             fields = {}

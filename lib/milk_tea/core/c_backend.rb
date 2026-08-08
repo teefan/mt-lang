@@ -236,17 +236,45 @@ module MilkTea
         lines << ""
       end
 
+      if uses_variant_equality_helper? || uses_struct_equality_helper?
+        lines.concat(emit_aggregate_equality_forward_declarations)
+        lines << ""
+      end
       if uses_variant_equality_helper?
         unless uses_str_equality_helper?
-          variant_needs_str_eq = emitted_aggregate_variants.any? { |v| v.arms.any? { |a| a.fields.any? { |f| f.type.is_a?(Types::StringView) } } }
-          if variant_needs_str_eq
-            lines.concat(emit_string_type) unless uses_string_view?
-            lines.concat(emit_str_equality_helper)
-          end
+          emit_str_equality_support(lines) if aggregate_equality_needs_string_view?
         end
         lines.concat(emit_variant_equality_helpers)
         lines << ""
       end
+      if uses_struct_equality_helper?
+        unless uses_str_equality_helper?
+          emit_str_equality_support(lines) if aggregate_equality_needs_string_view?
+        end
+        lines.concat(emit_struct_equality_helpers)
+        lines << ""
+      end
+    end
+
+    def emit_aggregate_equality_forward_declarations
+      lines = []
+      struct_equality_types.each do |type|
+        c = named_type_c_name(type)
+        lines << "static bool mt_struct_eq_#{c}(struct #{c} left, struct #{c} right);"
+      end
+      variant_equality_types.each do |type|
+        c = named_type_c_name(type)
+        lines << "static bool mt_variant_eq_#{c}(struct #{c} left, struct #{c} right);"
+      end
+      lines
+    end
+
+    def emit_str_equality_support(lines)
+      return if @emitted_aggregate_str_equality_support
+
+      @emitted_aggregate_str_equality_support = true
+      lines.concat(emit_string_type) unless uses_string_view?
+      lines.concat(emit_str_equality_helper)
     end
 
     def emit_function_forward_declarations(lines)
