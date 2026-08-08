@@ -270,10 +270,19 @@ module MilkTea
 
         if expected_type.is_a?(Types::Primitive) && expected_type.integer? &&
            value_fits_integer_type?(expression.value, expected_type)
-          expected_type
-        else
-          @ctx.types.fetch("int")
+          return expected_type
         end
+
+        # A bare literal (no suffix, no fitting expected type) picks the
+        # narrowest fixed-width type that holds its value: int -> long -> ulong.
+        # Falling through to int unconditionally emitted overflowing C
+        # (e.g. `int32_t x = 2147483648;`).
+        ["int", "long", "ulong"].each do |name|
+          candidate = @ctx.types.fetch(name)
+          return candidate if value_fits_integer_type?(expression.value, candidate)
+        end
+
+        raise_sema_error("integer literal #{expression.value} does not fit in any integer type", expression)
       end
 
       INTEGER_SUFFIX_TYPES = {
