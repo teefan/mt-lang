@@ -54,6 +54,9 @@ extending b2.Rot:
     public function mul_vector(v: b2.Vec2) -> b2.Vec2:
         return b2.Vec2(x = this.c * v.x - this.s * v.y, y = this.s * v.x + this.c * v.y)
 
+    public function mul_vector_inv(v: b2.Vec2) -> b2.Vec2:
+        return b2.Vec2(x = this.c * v.x + this.s * v.y, y = -this.s * v.x + this.c * v.y)
+
     public function x_axis() -> b2.Vec2:
         return b2.Vec2(x = this.c, y = this.s)
 
@@ -63,6 +66,9 @@ extending b2.Rot:
 extending b2.Transform:
     public function mul_point(p: b2.Vec2) -> b2.Vec2:
         return this.p.add(this.q.mul_vector(p))
+
+    public function inv_mul_point(p: b2.Vec2) -> b2.Vec2:
+        return this.q.mul_vector_inv(p.sub(this.p))
 
 public function make_rot(angle: float) -> b2.Rot:
     let cs = b2.compute_cos_sin(angle)
@@ -82,6 +88,9 @@ public function min_int(a: int, b: int) -> int:
 
 public function max_int(a: int, b: int) -> int:
     return if a > b: a else: b
+
+public function clamp_int(value: int, lo: int, hi: int) -> int:
+    return max_int(lo, min_int(value, hi))
 
 # =============================================================================
 # Hex color conversion (b2HexColor is 0xRRGGBB)
@@ -147,6 +156,14 @@ var s_dummy_context: int = 0
 var s_paused: bool = false
 var s_single_step: bool = false
 var s_stepped: bool = false
+var s_mouse_joint_enabled: bool = true
+var s_mouse_world: b2.Vec2
+
+public function enable_mouse_joint(enable: bool) -> void:
+    s_mouse_joint_enabled = enable
+
+public function mouse_world_point() -> b2.Vec2:
+    return s_mouse_world
 
 public function paused() -> bool:
     return s_paused
@@ -188,6 +205,41 @@ public function draw_world_transform(transform: b2.Transform) -> void:
     draw_world_segment(p, p.add(transform.q.x_axis().scale(axis_scale)), b2.HexColor.b2_colorRed)
     draw_world_segment(p, p.add(transform.q.y_axis().scale(axis_scale)), b2.HexColor.b2_colorGreen)
 
+public function draw_world_string(pos: b2.Vec2, text: str, color: b2.HexColor) -> void:
+    let screen = s_camera.convert_world_to_screen(pos)
+    rl.draw_text_ex(rl.get_font_default(), text, screen, 20.0, 1.0, hex_to_color(color))
+
+public function draw_world_solid_circle(center: b2.Vec2, radius: float, color: b2.HexColor) -> void:
+    let screen = s_camera.convert_world_to_screen(center)
+    let pixel_radius = radius * s_camera.pixels_per_world_unit()
+    rl.draw_circle_v(screen, pixel_radius, hex_to_color(color))
+
+public function draw_world_solid_capsule(p1: b2.Vec2, p2: b2.Vec2, radius: float, color: b2.HexColor) -> void:
+    let s1 = s_camera.convert_world_to_screen(p1)
+    let s2 = s_camera.convert_world_to_screen(p2)
+    let pixel_radius = radius * s_camera.pixels_per_world_unit()
+    let fill = hex_to_color(color)
+    rl.draw_line_ex(s1, s2, 2.0 * pixel_radius, fill)
+    rl.draw_circle_v(s1, pixel_radius, fill)
+    rl.draw_circle_v(s2, pixel_radius, fill)
+
+public function draw_world_solid_polygon(
+    transform: b2.Transform,
+    vertices: const_ptr[b2.Vec2],
+    vertex_count: int,
+    color: b2.HexColor
+) -> void:
+    if vertex_count < 3:
+        return
+    unsafe:
+        var index = 0
+        while index < vertex_count:
+            let vertex = read(vertices + ptr_uint<-index)
+            let world_pos = transform.mul_point(vertex)
+            s_poly_points[index] = s_camera.convert_world_to_screen(world_pos)
+            index += 1
+    rl.draw_triangle_fan_ptr(const_ptr_of(s_poly_points[0]), vertex_count, hex_to_color(color))
+
 function debug_draw_polygon(
     vertices: const_ptr[b2.Vec2],
     vertex_count: int,
@@ -213,16 +265,7 @@ function debug_draw_solid_polygon(
     color: b2.HexColor,
     _context: ptr[void]
 ) -> void:
-    if vertex_count < 3:
-        return
-    unsafe:
-        var index = 0
-        while index < vertex_count:
-            let vertex = read(vertices + ptr_uint<-index)
-            let world_pos = transform.mul_point(vertex)
-            s_poly_points[index] = s_camera.convert_world_to_screen(world_pos)
-            index += 1
-    rl.draw_triangle_fan_ptr(const_ptr_of(s_poly_points[0]), vertex_count, hex_to_color(color))
+    draw_world_solid_polygon(transform, vertices, vertex_count, color)
 
 function debug_draw_circle(center: b2.Vec2, radius: float, color: b2.HexColor, _context: ptr[void]) -> void:
     draw_world_circle(center, radius, color)
@@ -244,13 +287,7 @@ function debug_draw_solid_capsule(
     color: b2.HexColor,
     _context: ptr[void]
 ) -> void:
-    let s1 = s_camera.convert_world_to_screen(p1)
-    let s2 = s_camera.convert_world_to_screen(p2)
-    let pixel_radius = radius * s_camera.pixels_per_world_unit()
-    let fill = hex_to_color(color)
-    rl.draw_line_ex(s1, s2, 2.0 * pixel_radius, fill)
-    rl.draw_circle_v(s1, pixel_radius, fill)
-    rl.draw_circle_v(s2, pixel_radius, fill)
+    draw_world_solid_capsule(p1, p2, radius, color)
 
 function debug_draw_segment(p1: b2.Vec2, p2: b2.Vec2, color: b2.HexColor, _context: ptr[void]) -> void:
     draw_world_segment(p1, p2, color)
@@ -428,12 +465,14 @@ public function run(sample: dyn[Sample], title: str, center: b2.Vec2, zoom: floa
     while not rl.window_should_close():
         let mouse = rl.get_mouse_position()
         let world_point = s_camera.convert_screen_to_world(mouse)
-        if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
-            mouse_down(world_point)
-        if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
-            mouse_move(world_point)
-        if rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT):
-            mouse_up(world_point)
+        s_mouse_world = world_point
+        if s_mouse_joint_enabled:
+            if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
+                mouse_down(world_point)
+            if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
+                mouse_move(world_point)
+            if rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT):
+                mouse_up(world_point)
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_P):
             s_paused = not s_paused
