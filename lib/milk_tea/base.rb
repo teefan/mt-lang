@@ -3,7 +3,7 @@
 require "pathname"
 
 module MilkTea
-  VERSION = "0.3.32"
+  VERSION = "0.3.33"
 
   def self.root
     @root ||= Pathname.new(File.expand_path("../..", __dir__))
