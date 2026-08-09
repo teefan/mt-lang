@@ -43,8 +43,12 @@ extending b2.Vec2:
     public function length() -> float:
         return float<-math.sqrt(double<-(this.x * this.x + this.y * this.y))
 
-    public function length_sq() -> float:
+    public     function length_sq() -> float:
         return this.x * this.x + this.y * this.y
+
+    public function normalize() -> b2.Vec2:
+        let len = this.length()
+        return b2.Vec2(x = this.x / len, y = this.y / len)
 
 extending b2.Rot:
     public function mul_vector(v: b2.Vec2) -> b2.Vec2:
