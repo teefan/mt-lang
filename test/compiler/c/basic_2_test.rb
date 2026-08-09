@@ -2649,4 +2649,18 @@ function main() -> int:
     assert_match(/emitted/, generated)
   end
 
+  def test_generate_c_for_imported_struct_const_with_array_field
+    source = <<~MT
+      import std.c.box2d as c
+
+      const EMPTY: c.b2SimplexCache = c.b2_emptySimplexCache
+
+      function main() -> int:
+          return int<-EMPTY.count
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/\.count = 0/, generated)
+  end
+
 end

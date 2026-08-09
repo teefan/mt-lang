@@ -321,7 +321,25 @@ module MilkTea
           return literal
         end
 
-        lower_expression(rewrite_static_storage_initializer(expression), env:, expected_type: expected_type)
+        rewritten = rewrite_static_storage_initializer(expression)
+        if (imported_analysis = static_storage_imported_analysis(expression))
+          with_analysis_context(imported_analysis) do
+            lower_expression(rewritten, env:, expected_type: expected_type)
+          end
+        else
+          lower_expression(rewritten, env:, expected_type: expected_type)
+        end
+      end
+
+      def static_storage_imported_analysis(expression)
+        return nil unless expression.is_a?(AST::MemberAccess)
+        return nil unless expression.receiver.is_a?(AST::Identifier)
+        return nil unless @ctx.imports.key?(expression.receiver.name)
+
+        imported_module = @ctx.imports.fetch(expression.receiver.name)
+        return nil unless imported_module.values[expression.member]&.kind == :const
+
+        analysis_for_module(imported_module.name)
       end
 
       def lower_compile_time_literal(value, type)
@@ -337,6 +355,14 @@ module MilkTea
           if type == @ctx.types.fetch("str") || type == @ctx.types.fetch("cstr")
             return IR::StringLiteral.new(value:, type:, cstring: type == @ctx.types.fetch("cstr"))
           end
+        when Array
+          return nil unless array_type?(type)
+
+          element_type = type.arguments.first
+          elements = value.map { |element| lower_compile_time_literal(element, element_type) }
+          return nil if elements.any?(&:nil?)
+
+          IR::ArrayLiteral.new(type:, elements:)
         when Hash
           return nil unless type.is_a?(Types::Struct)
           fields = value.map do |name, field_value|

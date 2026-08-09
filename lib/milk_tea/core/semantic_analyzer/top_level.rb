@@ -472,6 +472,28 @@ module MilkTea
                 end
                 return fields
               end
+              if resolved_type && array_type?(resolved_type)
+                values = []
+                expression.arguments.each do |argument|
+                  val = CompileTime.evaluate(argument.value, resolve_identifier: lambda { |id|
+                    if scopes
+                      binding = lookup_value(id.name, scopes)
+                      return binding.const_value unless binding&.const_value.nil?
+                    end
+                    resolve_current_module_const_value(id.name)
+                  }, resolve_member_access: lambda { |ma|
+                    if (receiver_type = resolve_type_expression(ma.receiver))
+                      next resolve_enum_member_const_value(receiver_type, ma.member)
+                    end
+                    nil
+                  }, resolve_call: lambda { |inner_call|
+                    evaluate_compile_time_call(inner_call, scopes:)
+                  })
+                  return nil unless val
+                  values << val
+                end
+                return values
+              end
               func = @ctx.top_level_functions[callee_name]
               if func&.ast&.respond_to?(:const) && func.ast.const
                 evaluate_const_function_body(func, expression.arguments, scopes:, type_args: expression.callee.arguments)
