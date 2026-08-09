@@ -213,13 +213,10 @@ module MilkTea
           build_block(stmt.body, next_id, break_target:, continue_target:)
         when AST::DeferStmt
           body_entry = build_block(stmt.body, next_id, break_target:, continue_target:)
-          expression_reads, expression_reads_info = statement_list_reads_with_sites(stmt.body)
           defer_id = @graph.add_node(
             kind: :defer,
             statement: stmt,
             line: stmt.line,
-            reads: expression_reads,
-            reads_info: expression_reads_info,
           )
           @graph.add_edge(defer_id, body_entry)
           defer_id
@@ -313,66 +310,6 @@ module MilkTea
         reads_info = []
         read_identifiers(expression, reads, reads_info)
         [reads, reads_info]
-      end
-
-      def statement_list_reads_with_sites(statements)
-        reads = Set.new
-        reads_info = []
-        statement_list_read_identifiers(statements, reads, reads_info)
-        [reads, reads_info]
-      end
-
-      def statement_list_read_identifiers(statements, reads, reads_info)
-        Array(statements).each do |statement|
-          statement_read_identifiers(statement, reads, reads_info)
-        end
-      end
-
-      def statement_read_identifiers(statement, reads, reads_info)
-        case statement
-        when AST::ExpressionStmt
-          read_identifiers(statement.expression, reads, reads_info)
-        when AST::DeferStmt
-          statement_list_read_identifiers(statement.body, reads, reads_info)
-        when AST::LocalDecl
-          read_identifiers(statement.value, reads, reads_info)
-          statement_list_read_identifiers(statement.else_body, reads, reads_info)
-        when AST::Assignment
-          read_identifiers(statement.target, reads, reads_info)
-          read_identifiers(statement.value, reads, reads_info)
-        when AST::ReturnStmt
-          read_identifiers(statement.value, reads, reads_info)
-        when AST::IfStmt
-          statement.branches.each do |branch|
-            read_identifiers(branch.condition, reads, reads_info)
-            statement_list_read_identifiers(branch.body, reads, reads_info)
-          end
-          statement_list_read_identifiers(statement.else_body, reads, reads_info)
-        when AST::WhileStmt
-          read_identifiers(statement.condition, reads, reads_info)
-          statement_list_read_identifiers(statement.body, reads, reads_info)
-        when AST::ForStmt
-          statement.iterables.each { |iterable| read_identifiers(iterable, reads, reads_info) }
-          statement_list_read_identifiers(statement.body, reads, reads_info)
-        when AST::UnsafeStmt
-          statement_list_read_identifiers(statement.body, reads, reads_info)
-        when AST::MatchStmt
-          read_identifiers(statement.expression, reads, reads_info)
-          statement.arms.each do |arm|
-            read_identifiers(arm.pattern, reads, reads_info)
-            statement_list_read_identifiers(arm.body, reads, reads_info)
-          end
-        when AST::StaticAssert
-          read_identifiers(statement.condition, reads, reads_info)
-          read_identifiers(statement.message, reads, reads_info)
-        when AST::WhenStmt
-          read_identifiers(statement.discriminant, reads, reads_info)
-          statement.branches.each do |branch|
-            read_identifiers(branch.pattern, reads, reads_info)
-            statement_list_read_identifiers(branch.body, reads, reads_info)
-          end
-          statement_list_read_identifiers(statement.else_body, reads, reads_info)
-        end
       end
 
       def read_identifiers(expression, names = Set.new, reads_info = [])
