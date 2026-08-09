@@ -117,14 +117,14 @@ extending ShapeCast:
         match kind:
             ShapeKind.point:
                 let p = transform.mul_point(this.point)
-                if radius > 0.0:  # lint: ignore(prefer-inline-if)
+                if radius > 0.0:
                     common.draw_world_solid_circle(p, radius, color)
                 else:
                     common.draw_world_point(p, 5.0, color)
             ShapeKind.segment:
                 let p1 = transform.mul_point(this.segment.point1)
                 let p2 = transform.mul_point(this.segment.point2)
-                if radius > 0.0:  # lint: ignore(prefer-inline-if)
+                if radius > 0.0:
                     common.draw_world_solid_capsule(p1, p2, radius, color)
                 else:
                     common.draw_world_segment(p1, p2, color)

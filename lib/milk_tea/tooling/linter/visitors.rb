@@ -846,7 +846,10 @@ module MilkTea
         return false unless else_body
         text << else_body
 
-        text.strip.length > 120
+        # The inline form would start at the `if` keyword's column, so the real
+        # line width includes the surrounding block's indentation.
+        indent = statement.branches.first.column.to_i - 1
+        (indent + text.strip.length) > 120
       end
 
       def source_line_from(line, column)

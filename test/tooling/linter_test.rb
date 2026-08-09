@@ -472,6 +472,28 @@ class MilkTeaLinterTest < Minitest::Test
     refute_includes codes, "prefer-inline-if"
   end
 
+  def test_prefer_inline_if_not_reported_when_inline_form_exceeds_line_length
+    source = <<~MT
+      # module demo.lint
+      struct Sample:
+          value: int
+      extending Sample:
+          function body() -> void:
+              match this.value:
+                  1:
+                      if radius > 0.0:
+                          draw_world_solid_circle_very_long_name(p, radius, color)
+                      else:
+                          draw_world_point_very_long_name(p, 5.0, color)
+                  _:
+                      pass
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    refute_includes codes, "prefer-inline-if",
+                   "the inline form would exceed the max line length after indentation"
+  end
+
   def test_prefer_conditional_expression_for_same_target_assignment
     source = <<~MT
       function f(x: int) -> int:
