@@ -19,8 +19,8 @@ function main() -> int:
     while not rl.window_should_close():
         mouse_position = rl.get_mouse_position()
         let scale_mark = rl.Rectangle(
-            x = rec.x + rec.width - float<-MOUSE_SCALE_MARK_SIZE,
-            y = rec.y + rec.height - float<-MOUSE_SCALE_MARK_SIZE,
+            x = rec.x + rec.width - MOUSE_SCALE_MARK_SIZE,
+            y = rec.y + rec.height - MOUSE_SCALE_MARK_SIZE,
             width = float<-MOUSE_SCALE_MARK_SIZE,
             height = float<-MOUSE_SCALE_MARK_SIZE
         )
@@ -37,15 +37,15 @@ function main() -> int:
             rec.width = mouse_position.x - rec.x
             rec.height = mouse_position.y - rec.y
 
-            if rec.width < float<-MOUSE_SCALE_MARK_SIZE:
-                rec.width = float<-MOUSE_SCALE_MARK_SIZE
-            if rec.height < float<-MOUSE_SCALE_MARK_SIZE:
-                rec.height = float<-MOUSE_SCALE_MARK_SIZE
+            if rec.width < MOUSE_SCALE_MARK_SIZE:
+                rec.width = MOUSE_SCALE_MARK_SIZE
+            if rec.height < MOUSE_SCALE_MARK_SIZE:
+                rec.height = MOUSE_SCALE_MARK_SIZE
 
-            if rec.width > float<-rl.get_screen_width() - rec.x:
-                rec.width = float<-rl.get_screen_width() - rec.x
-            if rec.height > float<-rl.get_screen_height() - rec.y:
-                rec.height = float<-rl.get_screen_height() - rec.y
+            if rec.width > rl.get_screen_width() - rec.x:
+                rec.width = rl.get_screen_width() - rec.x
+            if rec.height > rl.get_screen_height() - rec.y:
+                rec.height = rl.get_screen_height() - rec.y
 
             if rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 mouse_scale_mode = false
@@ -58,9 +58,9 @@ function main() -> int:
         if mouse_scale_ready:
             rl.draw_rectangle_lines_ex(rec, 1.0, rl.RED)
             rl.draw_triangle(
-                rl.Vector2(x = rec.x + rec.width - float<-MOUSE_SCALE_MARK_SIZE, y = rec.y + rec.height),
+                rl.Vector2(x = rec.x + rec.width - MOUSE_SCALE_MARK_SIZE, y = rec.y + rec.height),
                 rl.Vector2(x = rec.x + rec.width, y = rec.y + rec.height),
-                rl.Vector2(x = rec.x + rec.width, y = rec.y + rec.height - float<-MOUSE_SCALE_MARK_SIZE),
+                rl.Vector2(x = rec.x + rec.width, y = rec.y + rec.height - MOUSE_SCALE_MARK_SIZE),
                 rl.RED
             )
 

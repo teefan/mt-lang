@@ -9,7 +9,7 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - easings box")
     defer: rl.close_window()
 
-    var rec = rl.Rectangle(x = float<-rl.get_screen_width() / 2.0, y = -100.0, width = 100.0, height = 100.0)
+    var rec = rl.Rectangle(x = rl.get_screen_width() / 2.0, y = -100.0, width = 100.0, height = 100.0)
     var rotation: float = 0.0
     var alpha: float = 1.0
     var state = 0
@@ -20,7 +20,7 @@ function main() -> int:
     while not rl.window_should_close():
         if state == 0:
             frames_counter += 1
-            rec.y = ease.elastic_out(float<-frames_counter, -100.0, float<-rl.get_screen_height() / 2.0 + 100.0, 120.0)
+            rec.y = ease.elastic_out(float<-frames_counter, -100.0, rl.get_screen_height() / 2.0 + 100.0, 120.0)
 
             if frames_counter >= 120:
                 frames_counter = 0
@@ -56,7 +56,7 @@ function main() -> int:
                 state = 5
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
-            rec = rl.Rectangle(x = float<-rl.get_screen_width() / 2.0, y = -100.0, width = 100.0, height = 100.0)
+            rec = rl.Rectangle(x = rl.get_screen_width() / 2.0, y = -100.0, width = 100.0, height = 100.0)
             rotation = 0.0
             alpha = 1.0
             state = 0

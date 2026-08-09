@@ -21,7 +21,7 @@ function draw_textured_curve(
     curve_width: float,
     curve_segments: int
 ) -> void:
-    let step = 1.0 / float<-curve_segments
+    let step = 1.0 / curve_segments
 
     var previous = curve_start_position
     var previous_tangent = rl.Vector2(x = 0.0, y = 0.0)
@@ -32,7 +32,7 @@ function draw_textured_curve(
 
     var index = 1
     while index <= curve_segments:
-        let t = step * float<-index
+        let t = step * index
         let a = float<-math.pow(double<-(1.0 - t), 3.0)
         let b = float<-(3.0 * math.pow(double<-(1.0 - t), 2.0) * double<-t)
         let c = float<-(3.0 * double<-(1.0 - t) * math.pow(double<-t, 2.0))
@@ -44,7 +44,7 @@ function draw_textured_curve(
         )
         let delta = rl.Vector2(x = current.x - previous.x, y = current.y - previous.y)
         let normal = rm.vector2_normalize(rl.Vector2(x = -delta.y, y = delta.x))
-        let v = previous_v + (rm.vector2_length(delta) / float<-(texture.height * 2))
+        let v = previous_v + (rm.vector2_length(delta) / (texture.height * 2))
 
         if not tangent_set:
             previous_tangent = normal

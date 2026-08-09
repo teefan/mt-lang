@@ -58,10 +58,10 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
     let position_value = array[float, 3](light.position.x, light.position.y, light.position.z)
     let target_value = array[float, 3](light.target.x, light.target.y, light.target.z)
     let color_value = array[float, 4](
-        float<-light.color.r / 255.0,
-        float<-light.color.g / 255.0,
-        float<-light.color.b / 255.0,
-        float<-light.color.a / 255.0
+        light.color.r / 255.0,
+        light.color.g / 255.0,
+        light.color.b / 255.0,
+        light.color.a / 255.0
     )
     rl.set_shader_value(shader, light.position_loc, position_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
     rl.set_shader_value(shader, light.target_loc, target_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
@@ -101,7 +101,7 @@ function main() -> int:
                 z = float<-rl.get_random_value(0, 360)
             )
         )
-        let angle = float<-rl.get_random_value(0, 180) * DEG_TO_RAD
+        let angle = rl.get_random_value(0, 180) * DEG_TO_RAD
         let rotation = rm.matrix_rotate(axis, angle)
         transforms[instance_index] = rm.matrix_multiply(rotation, translation)
         instance_index += 1

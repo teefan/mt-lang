@@ -25,16 +25,16 @@ struct Star:
 
 function reset_star() -> Star:
     var star = Star(
-        position = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0),
+        position = rl.Vector2(x = SCREEN_WIDTH / 2.0, y = SCREEN_HEIGHT / 2.0),
         speed = rl.Vector2(
-            x = float<-rl.get_random_value(-1000, 1000) / 100.0,
-            y = float<-rl.get_random_value(-1000, 1000) / 100.0
+            x = rl.get_random_value(-1000, 1000) / 100.0,
+            y = rl.get_random_value(-1000, 1000) / 100.0
         )
     )
 
     while not ((math.abs(double<-star.speed.x) + math.abs(double<-star.speed.y)) > 1.0):
-        star.speed.x = float<-rl.get_random_value(-1000, 1000) / 100.0
-        star.speed.y = float<-rl.get_random_value(-1000, 1000) / 100.0
+        star.speed.x = rl.get_random_value(-1000, 1000) / 100.0
+        star.speed.y = rl.get_random_value(-1000, 1000) / 100.0
 
     star.position = rm.vector2_add(star.position, rm.vector2_multiply(star.speed, rl.Vector2(x = 8.0, y = 8.0)))
     return star
@@ -46,9 +46,9 @@ function update_star(star: Star) -> Star:
 
     if (
         updated.position.x < 0.0
-        or updated.position.x > float<-SCREEN_WIDTH
+        or updated.position.x > SCREEN_WIDTH
         or updated.position.y < 0.0
-        or updated.position.y > float<-SCREEN_HEIGHT
+        or updated.position.y > SCREEN_HEIGHT
     ):
         return reset_star()
 
@@ -93,8 +93,8 @@ function main() -> int:
 
         var speed = rl.Vector2(x = 0.0, y = 0.0)
         while (math.abs(double<-speed.x) + math.abs(double<-speed.y)) < 2.0:
-            speed.x = float<-rl.get_random_value(-400, 40) / 25.0
-            speed.y = float<-rl.get_random_value(-400, 40) / 25.0
+            speed.x = rl.get_random_value(-400, 40) / 25.0
+            speed.y = rl.get_random_value(-400, 40) / 25.0
 
         spots[index] = Spot(
             position = rl.Vector2(
@@ -102,8 +102,8 @@ function main() -> int:
                 y = float<-rl.get_random_value(64, SCREEN_HEIGHT - 64)
             ),
             speed = speed,
-            inner = 28.0 * float<-(index + 1),
-            radius = 48.0 * float<-(index + 1),
+            inner = 28.0 * (index + 1),
+            radius = 48.0 * (index + 1),
             position_loc = rl.get_shader_location(shader, position_name),
             inner_loc = rl.get_shader_location(shader, inner_name),
             radius_loc = rl.get_shader_location(shader, radius_name)
@@ -153,14 +153,14 @@ function main() -> int:
             if index == 0:
                 let mouse_position = rl.get_mouse_position()
                 spot.position.x = mouse_position.x
-                spot.position.y = float<-SCREEN_HEIGHT - mouse_position.y
+                spot.position.y = SCREEN_HEIGHT - mouse_position.y
             else:
                 spot.position.x += spot.speed.x
                 spot.position.y += spot.speed.y
 
-                if spot.position.x < 64.0 or spot.position.x > float<-(SCREEN_WIDTH - 64):
+                if spot.position.x < 64.0 or spot.position.x > SCREEN_WIDTH - 64:
                     spot.speed.x = -spot.speed.x
-                if spot.position.y < 64.0 or spot.position.y > float<-(SCREEN_HEIGHT - 64):
+                if spot.position.y < 64.0 or spot.position.y > SCREEN_HEIGHT - 64:
                     spot.speed.y = -spot.speed.y
 
             spots[index] = spot
@@ -182,8 +182,8 @@ function main() -> int:
 
         index = 0
         while index < 16:
-            let x = int<-((float<-SCREEN_WIDTH / 2.0) + float<-(math.cos(double<-(frame_counter + index * 8) / 51.45) * double<-(float<-SCREEN_WIDTH / 2.2)) - 32.0)
-            let y = int<-((float<-SCREEN_HEIGHT / 2.0) + float<-(math.sin(double<-(frame_counter + index * 8) / 17.87) * double<-(float<-SCREEN_HEIGHT / 4.2)))
+            let x = int<-((SCREEN_WIDTH / 2.0) + float<-(math.cos((frame_counter + index * 8) / 51.45) * double<-(SCREEN_WIDTH / 2.2)) - 32.0)
+            let y = int<-((SCREEN_HEIGHT / 2.0) + float<-(math.sin((frame_counter + index * 8) / 17.87) * double<-(SCREEN_HEIGHT / 4.2)))
             rl.draw_texture(tex_ray, x, y, rl.WHITE)
             index += 1
 
@@ -193,8 +193,8 @@ function main() -> int:
 
         rl.draw_fps(10, 10)
         rl.draw_text("Move the mouse!", 10, 30, 20, rl.GREEN)
-        rl.draw_text("Pitch Black", int<-(float<-SCREEN_WIDTH * 0.2), SCREEN_HEIGHT / 2, 20, rl.GREEN)
-        rl.draw_text("Dark", int<-(float<-SCREEN_WIDTH * 0.66), SCREEN_HEIGHT / 2, 20, rl.GREEN)
+        rl.draw_text("Pitch Black", int<-(SCREEN_WIDTH * 0.2), SCREEN_HEIGHT / 2, 20, rl.GREEN)
+        rl.draw_text("Dark", int<-(SCREEN_WIDTH * 0.66), SCREEN_HEIGHT / 2, 20, rl.GREEN)
         rl.end_drawing()
 
     return 0

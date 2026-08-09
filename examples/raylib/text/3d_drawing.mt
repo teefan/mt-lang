@@ -33,7 +33,7 @@ function draw_text_codepoint_3d(
     tint: rl.Color
 ) -> void:
     let glyph_index = rl.get_glyph_index(font, codepoint)
-    let scale = font_size / float<-font.baseSize
+    let scale = font_size / font.baseSize
 
     var glyph_offset_x = 0
     var glyph_offset_y = 0
@@ -45,24 +45,24 @@ function draw_text_codepoint_3d(
         rec = read(font.recs + ptr_uint<-glyph_index)
 
     var glyph_position = position
-    glyph_position.x += float<-(glyph_offset_x - glyph_padding) * scale
-    glyph_position.z += float<-(glyph_offset_y - glyph_padding) * scale
+    glyph_position.x += glyph_offset_x - glyph_padding * scale
+    glyph_position.z += glyph_offset_y - glyph_padding * scale
 
     let src_rec = rl.Rectangle(
-        x = rec.x - float<-glyph_padding,
-        y = rec.y - float<-glyph_padding,
-        width = rec.width + 2.0 * float<-glyph_padding,
-        height = rec.height + 2.0 * float<-glyph_padding
+        x = rec.x - glyph_padding,
+        y = rec.y - glyph_padding,
+        width = rec.width + 2.0 * glyph_padding,
+        height = rec.height + 2.0 * glyph_padding
     )
 
-    let width = (rec.width + 2.0 * float<-glyph_padding) * scale
-    let height = (rec.height + 2.0 * float<-glyph_padding) * scale
+    let width = (rec.width + 2.0 * glyph_padding) * scale
+    let height = (rec.height + 2.0 * glyph_padding) * scale
 
     if font.texture.id > 0:
-        let tx = src_rec.x / float<-font.texture.width
-        let ty = src_rec.y / float<-font.texture.height
-        let tw = (src_rec.x + src_rec.width) / float<-font.texture.width
-        let th = (src_rec.y + src_rec.height) / float<-font.texture.height
+        let tx = src_rec.x / font.texture.width
+        let ty = src_rec.y / font.texture.height
+        let tw = (src_rec.x + src_rec.width) / font.texture.width
+        let th = (src_rec.y + src_rec.height) / font.texture.height
 
         if show_letter_boundary:
             rl.draw_cube_wires_v(
@@ -122,7 +122,7 @@ function draw_text_3d(
     tint: rl.Color
 ) -> void:
     let length = int<-rl.text_length(body_text)
-    let scale = font_size / float<-font.baseSize
+    let scale = font_size / font.baseSize
     var text_offset_x = 0.0
     var text_offset_y = 0.0
     var index = 0
@@ -161,7 +161,7 @@ function draw_text_3d(
             if glyph_advance_x == 0:
                 text_offset_x += rec_width * scale + font_spacing
             else:
-                text_offset_x += float<-glyph_advance_x * scale + font_spacing
+                text_offset_x += glyph_advance_x * scale + font_spacing
 
         index += advance
 
@@ -179,7 +179,7 @@ function draw_text_wave_3d(
     tint: rl.Color
 ) -> void:
     let length = int<-rl.text_length(body_text)
-    let scale = font_size / float<-font.baseSize
+    let scale = font_size / font.baseSize
     var text_offset_x = 0.0
     var text_offset_y = 0.0
     var wave = false
@@ -220,9 +220,9 @@ function draw_text_wave_3d(
             if codepoint != 32 and codepoint != 9:
                 var glyph_position = position
                 if wave:
-                    glyph_position.x += float<-math.sin(double<-(time_value * config.wave_speed.x - float<-char_index * config.wave_offset.x)) * config.wave_range.x
-                    glyph_position.y += float<-math.sin(double<-(time_value * config.wave_speed.y - float<-char_index * config.wave_offset.y)) * config.wave_range.y
-                    glyph_position.z += float<-math.sin(double<-(time_value * config.wave_speed.z - float<-char_index * config.wave_offset.z)) * config.wave_range.z
+                    glyph_position.x += float<-math.sin(double<-(time_value * config.wave_speed.x - char_index * config.wave_offset.x)) * config.wave_range.x
+                    glyph_position.y += float<-math.sin(double<-(time_value * config.wave_speed.y - char_index * config.wave_offset.y)) * config.wave_range.y
+                    glyph_position.z += float<-math.sin(double<-(time_value * config.wave_speed.z - char_index * config.wave_offset.z)) * config.wave_range.z
 
                 draw_text_codepoint_3d(
                     font,
@@ -240,7 +240,7 @@ function draw_text_wave_3d(
             if glyph_advance_x == 0:
                 text_offset_x += rec_width * scale + font_spacing
             else:
-                text_offset_x += float<-glyph_advance_x * scale + font_spacing
+                text_offset_x += glyph_advance_x * scale + font_spacing
             char_index += 1
 
         index += advance
@@ -254,7 +254,7 @@ function measure_text_wave_3d(
     line_spacing: float
 ) -> rl.Vector3:
     let length = int<-rl.text_length(body_text)
-    let scale = font_size / float<-font.baseSize
+    let scale = font_size / font.baseSize
     var temp_len = 0
     var len_counter = 0
     var temp_text_width = 0.0
@@ -294,9 +294,9 @@ function measure_text_wave_3d(
 
             len_counter += 1
             if glyph_advance_x != 0:
-                text_width += float<-glyph_advance_x * scale
+                text_width += glyph_advance_x * scale
             else:
-                text_width += (rec_width + float<-glyph_offset_x) * scale
+                text_width += (rec_width + glyph_offset_x) * scale
         else:
             if temp_text_width < text_width:
                 temp_text_width = text_width
@@ -312,7 +312,7 @@ function measure_text_wave_3d(
     if temp_text_width < text_width:
         temp_text_width = text_width
 
-    return rl.Vector3(x = temp_text_width + float<-(temp_len - 1) * font_spacing, y = 0.25, z = text_height)
+    return rl.Vector3(x = temp_text_width + temp_len - 1 * font_spacing, y = 0.25, z = text_height)
 
 
 function generate_random_color(saturation: float, value: float) -> rl.Color:
@@ -392,7 +392,7 @@ function main() -> int:
                     if owns_font:
                         rl.unload_font(font)
                     font = rl.load_font(dropped_path)
-                    font_size = float<-font.baseSize
+                    font_size = font.baseSize
                     owns_font = true
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_F1):
@@ -472,7 +472,7 @@ function main() -> int:
                 text_buffer[text_len - 1] = zero[char]
         else if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER):
             if text_len < TEXT_BUFFER_CAPACITY - 1:
-                text_buffer[text_len] = char<-10
+                text_buffer[text_len] = 10
                 text_buffer[text_len + 1] = zero[char]
         else if char_pressed > 0 and text_len < TEXT_BUFFER_CAPACITY - 1:
             text_buffer[text_len] = char<-char_pressed
@@ -505,7 +505,7 @@ function main() -> int:
             draw_text_wave_3d(
                 font,
                 live_text,
-                rl.Vector3(x = -text_box.x / 2.0, y = layer_distance * float<-layer_index, z = -4.5),
+                rl.Vector3(x = -text_box.x / 2.0, y = layer_distance * layer_index, z = -4.5),
                 font_size,
                 font_spacing,
                 line_spacing,

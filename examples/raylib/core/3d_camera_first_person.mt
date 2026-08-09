@@ -46,7 +46,7 @@ function main() -> int:
 
     var index = 0
     while index < MAX_COLUMNS:
-        heights[index] = float<-rl.get_random_value(1, 12)
+        heights[index] = rl.get_random_value(1, 12)
         positions[index] = rl.Vector3(
             x = float<-rl.get_random_value(-15, 15),
             y = heights[index] / 2.0,

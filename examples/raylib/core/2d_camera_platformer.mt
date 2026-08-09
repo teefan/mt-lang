@@ -126,10 +126,10 @@ function update_camera_center_inside_map(
     let max_screen = rl.get_world_to_screen_2d(rl.Vector2(x = max_x, y = max_y), camera_value)
     let min_screen = rl.get_world_to_screen_2d(rl.Vector2(x = min_x, y = min_y), camera_value)
 
-    if max_screen.x < float<-SCREEN_WIDTH:
-        unsafe: read(camera).offset.x = float<-SCREEN_WIDTH - (max_screen.x - HALF_SCREEN_WIDTH)
-    if max_screen.y < float<-SCREEN_HEIGHT:
-        unsafe: read(camera).offset.y = float<-SCREEN_HEIGHT - (max_screen.y - HALF_SCREEN_HEIGHT)
+    if max_screen.x < SCREEN_WIDTH:
+        unsafe: read(camera).offset.x = SCREEN_WIDTH - (max_screen.x - HALF_SCREEN_WIDTH)
+    if max_screen.y < SCREEN_HEIGHT:
+        unsafe: read(camera).offset.y = SCREEN_HEIGHT - (max_screen.y - HALF_SCREEN_HEIGHT)
     if min_screen.x > 0.0:
         unsafe: read(camera).offset.x = HALF_SCREEN_WIDTH - min_screen.x
     if min_screen.y > 0.0:
@@ -182,16 +182,16 @@ function update_camera_player_bounds_push(camera: ref[rl.Camera2D], player: Play
     let bbox = rl.Vector2(x = 0.2, y = 0.2)
     let camera_value = unsafe: read(camera)
     let bbox_world_min = rl.get_screen_to_world_2d(
-        rl.Vector2(x = (ONE - bbox.x) * HALF * float<-SCREEN_WIDTH, y = (ONE - bbox.y) * HALF * float<-SCREEN_HEIGHT),
+        rl.Vector2(x = (ONE - bbox.x) * HALF * SCREEN_WIDTH, y = (ONE - bbox.y) * HALF * SCREEN_HEIGHT),
         camera_value
     )
     let bbox_world_max = rl.get_screen_to_world_2d(
-        rl.Vector2(x = (ONE + bbox.x) * HALF * float<-SCREEN_WIDTH, y = (ONE + bbox.y) * HALF * float<-SCREEN_HEIGHT),
+        rl.Vector2(x = (ONE + bbox.x) * HALF * SCREEN_WIDTH, y = (ONE + bbox.y) * HALF * SCREEN_HEIGHT),
         camera_value
     )
     unsafe: read(camera).offset = rl.Vector2(
-        x = (ONE - bbox.x) * HALF * float<-SCREEN_WIDTH,
-        y = (ONE - bbox.y) * HALF * float<-SCREEN_HEIGHT
+        x = (ONE - bbox.x) * HALF * SCREEN_WIDTH,
+        y = (ONE - bbox.y) * HALF * SCREEN_HEIGHT
     )
 
     if player.position.x < bbox_world_min.x:

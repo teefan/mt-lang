@@ -27,14 +27,14 @@ function draw_texture_tiled(
     let tile_width = int<-(source.width * scale)
     let tile_height = int<-(source.height * scale)
 
-    if dest.width < float<-tile_width and dest.height < float<-tile_height:
+    if dest.width < tile_width and dest.height < tile_height:
         rl.draw_texture_pro(
             texture,
             rl.Rectangle(
                 x = source.x,
                 y = source.y,
-                width = (dest.width / float<-tile_width) * source.width,
-                height = (dest.height / float<-tile_height) * source.height
+                width = (dest.width / tile_width) * source.width,
+                height = (dest.height / tile_height) * source.height
             ),
             dest,
             origin,
@@ -43,7 +43,7 @@ function draw_texture_tiled(
         )
         return
 
-    if dest.width <= float<-tile_width:
+    if dest.width <= tile_width:
         var dy = 0
         while dy + tile_height < int<-dest.height:
             rl.draw_texture_pro(
@@ -51,33 +51,33 @@ function draw_texture_tiled(
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = (dest.width / float<-tile_width) * source.width,
+                    width = (dest.width / tile_width) * source.width,
                     height = source.height
                 ),
-                rl.Rectangle(x = dest.x, y = dest.y + float<-dy, width = dest.width, height = float<-tile_height),
+                rl.Rectangle(x = dest.x, y = dest.y + dy, width = dest.width, height = float<-tile_height),
                 origin,
                 rotation,
                 tint
             )
             dy += tile_height
 
-        if float<-dy < dest.height:
+        if dy < dest.height:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = (dest.width / float<-tile_width) * source.width,
-                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height
+                    width = (dest.width / tile_width) * source.width,
+                    height = ((dest.height - dy) / tile_height) * source.height
                 ),
-                rl.Rectangle(x = dest.x, y = dest.y + float<-dy, width = dest.width, height = dest.height - float<-dy),
+                rl.Rectangle(x = dest.x, y = dest.y + dy, width = dest.width, height = dest.height - dy),
                 origin,
                 rotation,
                 tint
             )
         return
 
-    if dest.height <= float<-tile_height:
+    if dest.height <= tile_height:
         var dx = 0
         while dx + tile_width < int<-dest.width:
             rl.draw_texture_pro(
@@ -86,25 +86,25 @@ function draw_texture_tiled(
                     x = source.x,
                     y = source.y,
                     width = source.width,
-                    height = (dest.height / float<-tile_height) * source.height
+                    height = (dest.height / tile_height) * source.height
                 ),
-                rl.Rectangle(x = dest.x + float<-dx, y = dest.y, width = float<-tile_width, height = dest.height),
+                rl.Rectangle(x = dest.x + dx, y = dest.y, width = float<-tile_width, height = dest.height),
                 origin,
                 rotation,
                 tint
             )
             dx += tile_width
 
-        if float<-dx < dest.width:
+        if dx < dest.width:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = ((dest.width - float<-dx) / float<-tile_width) * source.width,
-                    height = (dest.height / float<-tile_height) * source.height
+                    width = ((dest.width - dx) / tile_width) * source.width,
+                    height = (dest.height / tile_height) * source.height
                 ),
-                rl.Rectangle(x = dest.x + float<-dx, y = dest.y, width = dest.width - float<-dx, height = dest.height),
+                rl.Rectangle(x = dest.x + dx, y = dest.y, width = dest.width - dx, height = dest.height),
                 origin,
                 rotation,
                 tint
@@ -119,8 +119,8 @@ function draw_texture_tiled(
                 texture,
                 source,
                 rl.Rectangle(
-                    x = dest.x + float<-dx,
-                    y = dest.y + float<-dy,
+                    x = dest.x + dx,
+                    y = dest.y + dy,
                     width = float<-tile_width,
                     height = float<-tile_height
                 ),
@@ -130,20 +130,20 @@ function draw_texture_tiled(
             )
             dy += tile_height
 
-        if float<-dy < dest.height:
+        if dy < dest.height:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
                     width = source.width,
-                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height
+                    height = ((dest.height - dy) / tile_height) * source.height
                 ),
                 rl.Rectangle(
-                    x = dest.x + float<-dx,
-                    y = dest.y + float<-dy,
+                    x = dest.x + dx,
+                    y = dest.y + dy,
                     width = float<-tile_width,
-                    height = dest.height - float<-dy
+                    height = dest.height - dy
                 ),
                 origin,
                 rotation,
@@ -151,7 +151,7 @@ function draw_texture_tiled(
             )
         dx += tile_width
 
-    if float<-dx < dest.width:
+    if dx < dest.width:
         var dy = 0
         while dy + tile_height < int<-dest.height:
             rl.draw_texture_pro(
@@ -159,13 +159,13 @@ function draw_texture_tiled(
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = ((dest.width - float<-dx) / float<-tile_width) * source.width,
+                    width = ((dest.width - dx) / tile_width) * source.width,
                     height = source.height
                 ),
                 rl.Rectangle(
-                    x = dest.x + float<-dx,
-                    y = dest.y + float<-dy,
-                    width = dest.width - float<-dx,
+                    x = dest.x + dx,
+                    y = dest.y + dy,
+                    width = dest.width - dx,
                     height = float<-tile_height
                 ),
                 origin,
@@ -174,20 +174,20 @@ function draw_texture_tiled(
             )
             dy += tile_height
 
-        if float<-dy < dest.height:
+        if dy < dest.height:
             rl.draw_texture_pro(
                 texture,
                 rl.Rectangle(
                     x = source.x,
                     y = source.y,
-                    width = ((dest.width - float<-dx) / float<-tile_width) * source.width,
-                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height
+                    width = ((dest.width - dx) / tile_width) * source.width,
+                    height = ((dest.height - dy) / tile_height) * source.height
                 ),
                 rl.Rectangle(
-                    x = dest.x + float<-dx,
-                    y = dest.y + float<-dy,
-                    width = dest.width - float<-dx,
-                    height = dest.height - float<-dy
+                    x = dest.x + dx,
+                    y = dest.y + dy,
+                    width = dest.width - dx,
+                    height = dest.height - dy
                 ),
                 origin,
                 rotation,
@@ -233,10 +233,10 @@ function main() -> int:
     var x_offset = 0
     var y_offset = 0
     while index < MAX_COLORS:
-        color_rects[index].x = 2.0 + float<-MARGIN_SIZE + float<-x_offset
-        color_rects[index].y = 22.0 + 256.0 + float<-MARGIN_SIZE + float<-y_offset
-        color_rects[index].width = float<-(COLOR_SIZE * 2)
-        color_rects[index].height = float<-COLOR_SIZE
+        color_rects[index].x = 2.0 + MARGIN_SIZE + x_offset
+        color_rects[index].y = 22.0 + 256.0 + MARGIN_SIZE + y_offset
+        color_rects[index].width = (COLOR_SIZE * 2)
+        color_rects[index].height = COLOR_SIZE
 
         if index == (MAX_COLORS / 2) - 1:
             x_offset = 0
@@ -259,8 +259,8 @@ function main() -> int:
             index = 0
             while index < MAX_PATTERNS:
                 let hit_rect = rl.Rectangle(
-                    x = 2.0 + float<-MARGIN_SIZE + patterns[index].x,
-                    y = 40.0 + float<-MARGIN_SIZE + patterns[index].y,
+                    x = 2.0 + MARGIN_SIZE + patterns[index].x,
+                    y = 40.0 + MARGIN_SIZE + patterns[index].y,
                     width = patterns[index].width,
                     height = patterns[index].height
                 )
@@ -307,8 +307,8 @@ function main() -> int:
             rl.Rectangle(
                 x = float<-OPT_WIDTH + float<-MARGIN_SIZE,
                 y = float<-MARGIN_SIZE,
-                width = float<-rl.get_screen_width() - float<-OPT_WIDTH - 2.0 * float<-MARGIN_SIZE,
-                height = float<-rl.get_screen_height() - 2.0 * float<-MARGIN_SIZE
+                width = float<-rl.get_screen_width() - float<-OPT_WIDTH - 2.0 * MARGIN_SIZE,
+                height = rl.get_screen_height() - 2.0 * MARGIN_SIZE
             ),
             rl.Vector2(x = 0.0, y = 0.0),
             rotation,

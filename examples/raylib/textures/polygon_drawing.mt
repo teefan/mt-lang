@@ -104,7 +104,7 @@ function main() -> int:
         rl.draw_text("textured polygon", 20, 20, 20, rl.DARKGRAY)
         draw_texture_poly(
             texture,
-            rl.Vector2(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0),
+            rl.Vector2(x = SCREEN_WIDTH / 2.0, y = SCREEN_HEIGHT / 2.0),
             ref_of(positions),
             ref_of(texcoords),
             MAX_POINTS,

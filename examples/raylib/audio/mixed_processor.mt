@@ -37,8 +37,8 @@ function process_audio(buffer: ptr[void], frames: uint) -> void:
             read(samples + left_index) = new_left
             read(samples + right_index) = new_right
 
-            average += float<-(math.abs(double<-new_left) / double<-frames)
-            average += float<-(math.abs(double<-new_right) / double<-frames)
+            average += float<-(math.abs(double<-new_left) / frames)
+            average += float<-(math.abs(double<-new_right) / frames)
             frame += 1u
 
         var index = 0

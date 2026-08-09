@@ -29,12 +29,12 @@ function main() -> int:
     let size_location = rl.get_shader_location(shader, "size")
 
     let screen_size = rl.Vector2(x = float<-rl.get_screen_width(), y = float<-rl.get_screen_height())
-    let freq_x: float = 25.0
-    let freq_y: float = 25.0
-    let amp_x: float = 5.0
-    let amp_y: float = 5.0
-    let speed_x: float = 8.0
-    let speed_y: float = 8.0
+    let freq_x = 25.0
+    let freq_y = 25.0
+    let amp_x = 5.0
+    let amp_y = 5.0
+    let speed_x = 8.0
+    let speed_y = 8.0
 
     rl.set_shader_value(shader, size_location, screen_size, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
     rl.set_shader_value(shader, freq_x_location, freq_x, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)

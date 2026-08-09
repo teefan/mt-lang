@@ -30,7 +30,7 @@ function draw_text_styled(
     let back_padding = 4.0
     var text_offset_y = 0.0
     var text_offset_x = 0.0
-    let scale_factor = font_size / float<-font.baseSize
+    let scale_factor = font_size / font.baseSize
 
     var index = 0
     while index < text_len:
@@ -95,7 +95,7 @@ function draw_text_styled(
         if glyph_advance_x == 0:
             increase_x = glyph_width * scale_factor + spacing
         else:
-            increase_x = float<-glyph_advance_x * scale_factor + spacing
+            increase_x = glyph_advance_x * scale_factor + spacing
 
         if back_color.a > 0:
             rl.draw_rectangle_rec(
@@ -131,7 +131,7 @@ function measure_text_styled(font_arg: rl.Font, styled_text: str, font_size: flo
     let text_len = int<-rl.text_length(styled_text)
     var text_width = 0.0
     let text_height = font_size
-    let scale_factor = font_size / float<-font.baseSize
+    let scale_factor = font_size / font.baseSize
     var valid_codepoint_counter = 0
 
     var index = 0
@@ -190,7 +190,7 @@ function measure_text_styled(font_arg: rl.Font, styled_text: str, font_size: flo
 
         index += advance
 
-    return rl.Vector2(x = text_width * scale_factor + float<-(valid_codepoint_counter - 1) * spacing, y = text_height)
+    return rl.Vector2(x = text_width * scale_factor + valid_codepoint_counter - 1 * spacing, y = text_height)
 
 
 function main() -> int:

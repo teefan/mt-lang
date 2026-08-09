@@ -31,8 +31,8 @@ function main() -> int:
     rl.unload_image(parrots)
 
     let position = rl.Vector2(
-        x = float<-SCREEN_WIDTH / 2.0 - float<-texture.width / 2.0,
-        y = float<-SCREEN_HEIGHT / 2.0 - float<-texture.height / 2.0 - 20.0
+        x = SCREEN_WIDTH / 2.0 - texture.width / 2.0,
+        y = SCREEN_HEIGHT / 2.0 - texture.height / 2.0 - 20.0
     )
 
     var show_font = false

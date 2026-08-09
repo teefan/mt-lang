@@ -22,8 +22,8 @@ function main() -> int:
         var x = 0
         while x < MAX_RECS_X:
             let index = y * MAX_RECS_X + x
-            recs[index].x = RECS_WIDTH / 2.0 + RECS_WIDTH * float<-x
-            recs[index].y = RECS_HEIGHT / 2.0 + RECS_HEIGHT * float<-y
+            recs[index].x = RECS_WIDTH / 2.0 + RECS_WIDTH * x
+            recs[index].y = RECS_HEIGHT / 2.0 + RECS_HEIGHT * y
             recs[index].width = RECS_WIDTH
             recs[index].height = RECS_HEIGHT
             x += 1

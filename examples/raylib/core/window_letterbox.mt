@@ -51,8 +51,8 @@ function main() -> int:
 
         let mouse = rl.get_mouse_position()
         var virtual_mouse = rl.Vector2(x = 0.0, y = 0.0)
-        virtual_mouse.x = (mouse.x - ((float<-rl.get_screen_width()) - ((float<-GAME_SCREEN_WIDTH) * scale)) * 0.5) / scale
-        virtual_mouse.y = (mouse.y - ((float<-rl.get_screen_height()) - ((float<-GAME_SCREEN_HEIGHT) * scale)) * 0.5) / scale
+        virtual_mouse.x = (mouse.x - ((rl.get_screen_width()) - ((GAME_SCREEN_WIDTH) * scale)) * 0.5) / scale
+        virtual_mouse.y = (mouse.y - ((rl.get_screen_height()) - ((GAME_SCREEN_HEIGHT) * scale)) * 0.5) / scale
         virtual_mouse = math.vector2_clamp(
             virtual_mouse,
             rl.Vector2(x = 0.0, y = 0.0),
@@ -94,10 +94,10 @@ function main() -> int:
             height = -(float<-target.texture.height)
         )
         let destination = rl.Rectangle(
-            x = ((float<-rl.get_screen_width()) - ((float<-GAME_SCREEN_WIDTH) * scale)) * 0.5,
-            y = ((float<-rl.get_screen_height()) - ((float<-GAME_SCREEN_HEIGHT) * scale)) * 0.5,
-            width = (float<-GAME_SCREEN_WIDTH) * scale,
-            height = (float<-GAME_SCREEN_HEIGHT) * scale
+            x = ((rl.get_screen_width()) - ((GAME_SCREEN_WIDTH) * scale)) * 0.5,
+            y = ((rl.get_screen_height()) - ((GAME_SCREEN_HEIGHT) * scale)) * 0.5,
+            width = (GAME_SCREEN_WIDTH) * scale,
+            height = (GAME_SCREEN_HEIGHT) * scale
         )
 
         rl.draw_texture_pro(target.texture, source, destination, rl.Vector2(x = 0.0, y = 0.0), 0.0, rl.WHITE)

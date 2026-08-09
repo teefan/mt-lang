@@ -58,7 +58,7 @@ function main() -> int:
             var index = 0
             while index < BUFFER_SIZE:
                 let wavelength = SAMPLE_RATE / sine_frequency
-                buffer[index] = float<-math.sin(double<-(TWO_PI * float<-sine_index / float<-wavelength))
+                buffer[index] = float<-math.sin(double<-(TWO_PI * sine_index / wavelength))
                 sine_index += 1
 
                 if sine_index >= wavelength:
@@ -83,8 +83,8 @@ function main() -> int:
         rl.draw_text("Up/down to change frequency", 10, 10, 20, rl.DARKGRAY)
         rl.draw_text("Left/right to pan", 10, 30, 20, rl.DARKGRAY)
 
-        let window_start = int<-((rl.get_time() - sine_start_time) * double<-SAMPLE_RATE)
-        let window_size = int<-(0.1 * double<-SAMPLE_RATE)
+        let window_start = int<-((rl.get_time() - sine_start_time) * SAMPLE_RATE)
+        let window_size = int<-(0.1 * SAMPLE_RATE)
         let wavelength = SAMPLE_RATE / sine_frequency
 
         var index = 0
@@ -93,11 +93,11 @@ function main() -> int:
             let t1 = window_start + (index + 1) * window_size / SCREEN_WIDTH
             let start_pos = rl.Vector2(
                 x = float<-index,
-                y = float<-(250.0 + 50.0 * math.sin(double<-(TWO_PI * float<-t0 / float<-wavelength)))
+                y = float<-(250.0 + 50.0 * math.sin(double<-(TWO_PI * t0 / wavelength)))
             )
             let end_pos = rl.Vector2(
                 x = float<-(index + 1),
-                y = float<-(250.0 + 50.0 * math.sin(double<-(TWO_PI * float<-t1 / float<-wavelength)))
+                y = float<-(250.0 + 50.0 * math.sin(double<-(TWO_PI * t1 / wavelength)))
             )
             rl.draw_line_v(start_pos, end_pos, rl.RED)
             index += 1

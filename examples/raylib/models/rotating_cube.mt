@@ -29,9 +29,9 @@ function main() -> int:
         image,
         rl.Rectangle(
             x = 0.0,
-            y = float<-image.height / 2.0,
-            width = float<-image.width / 2.0,
-            height = float<-image.height / 2.0
+            y = image.height / 2.0,
+            width = image.width / 2.0,
+            height = image.height / 2.0
         )
     )
     defer: rl.unload_image(crop)

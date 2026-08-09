@@ -11,7 +11,7 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - circle sector drawing")
     defer: rl.close_window()
 
-    let center = rl.Vector2(x = float<-(rl.get_screen_width() - 300) / 2.0, y = float<-rl.get_screen_height() / 2.0)
+    let center = rl.Vector2(x = rl.get_screen_width() - 300 / 2.0, y = rl.get_screen_height() / 2.0)
     var outer_radius: float = 180.0
     var start_angle: float = 0.0
     var end_angle: float = 180.0

@@ -59,8 +59,8 @@ function main() -> int:
         rl.set_shader_value(shader, run_time_location, run_time, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         if rl.is_window_resized():
-            resolution[0] = float<-rl.get_screen_width()
-            resolution[1] = float<-rl.get_screen_height()
+            resolution[0] = rl.get_screen_width()
+            resolution[1] = rl.get_screen_height()
             rl.set_shader_value(
                 shader,
                 resolution_location,

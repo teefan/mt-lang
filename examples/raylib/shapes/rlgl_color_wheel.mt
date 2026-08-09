@@ -31,7 +31,7 @@ function main() -> int:
     var point_scale: float = 150.0
     var value: float = 1.0
 
-    let center = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0)
+    let center = rl.Vector2(x = SCREEN_WIDTH / 2.0, y = SCREEN_HEIGHT / 2.0)
     var circle_position = center
     var color = rl.Color(r = 255, g = 255, b = 255, a = 255)
     var slider_clicked = false
@@ -42,7 +42,7 @@ function main() -> int:
 
     while not rl.window_should_close():
         triangle_count = int<-rm.clamp(
-            float<-triangle_count + rl.get_mouse_wheel_move(),
+            triangle_count + rl.get_mouse_wheel_move(),
             float<-POINTS_MIN,
             float<-POINTS_MAX
         )
@@ -57,8 +57,8 @@ function main() -> int:
 
         if rl.is_key_down(rl.KeyboardKey.KEY_UP):
             point_scale *= 1.025
-            if point_scale > float<-SCREEN_HEIGHT / 2.0:
-                point_scale = float<-SCREEN_HEIGHT / 2.0
+            if point_scale > SCREEN_HEIGHT / 2.0:
+                point_scale = SCREEN_HEIGHT / 2.0
             else:
                 circle_position = rm.vector2_add(
                     rm.vector2_multiply(rm.vector2_subtract(circle_position, center), rl.Vector2(x = 1.025, y = 1.025)),
@@ -128,9 +128,9 @@ function main() -> int:
         rlgl.begin(render_type)
         var index = 0
         while index < triangle_count:
-            let angle_offset = TWO_PI / float<-triangle_count
-            let angle = angle_offset * float<-index
-            let angle_offset_calculated = float<-(index + 1) * angle_offset
+            let angle_offset = TWO_PI / triangle_count
+            let angle = angle_offset * index
+            let angle_offset_calculated = (index + 1) * angle_offset
             let scale = rl.Vector2(x = point_scale, y = point_scale)
 
             let offset = rm.vector2_multiply(

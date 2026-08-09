@@ -17,8 +17,8 @@ function main() -> int:
         if rl.is_key_pressed(rl.KeyboardKey.KEY_S):
             scissor_mode = not scissor_mode
 
-        scissor_area.x = (float<-rl.get_mouse_x()) - scissor_area.width / 2.0
-        scissor_area.y = (float<-rl.get_mouse_y()) - scissor_area.height / 2.0
+        scissor_area.x = (rl.get_mouse_x()) - scissor_area.width / 2.0
+        scissor_area.y = (rl.get_mouse_y()) - scissor_area.height / 2.0
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)

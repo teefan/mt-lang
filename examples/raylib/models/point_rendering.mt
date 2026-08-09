@@ -39,9 +39,9 @@ function gen_mesh_points(num_points: int) -> rl.Mesh:
 
     var index = 0
     while index < num_points:
-        let theta = (rl.PI * float<-rl.get_random_value(0, RANDOM_SCALE)) / float<-RANDOM_SCALE
-        let phi = ((2.0 * rl.PI) * float<-rl.get_random_value(0, RANDOM_SCALE)) / float<-RANDOM_SCALE
-        let radius = (10.0 * float<-rl.get_random_value(0, RANDOM_SCALE)) / float<-RANDOM_SCALE
+        let theta = (rl.PI * rl.get_random_value(0, RANDOM_SCALE)) / RANDOM_SCALE
+        let phi = ((2.0 * rl.PI) * rl.get_random_value(0, RANDOM_SCALE)) / RANDOM_SCALE
+        let radius = (10.0 * rl.get_random_value(0, RANDOM_SCALE)) / RANDOM_SCALE
 
         unsafe:
             read(vertices + ptr_uint<-(index * 3 + 0)) = float<-(double<-radius * math.sin(double<-theta) * math.cos(double<-phi))

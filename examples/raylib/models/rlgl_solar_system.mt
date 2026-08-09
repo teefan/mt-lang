@@ -24,10 +24,10 @@ function draw_sphere_basic(color: rl.Color) -> void:
     while ring < rings + 2:
         var slice = 0
         while slice < slices:
-            let angle0 = DEG_TO_RAD * (270.0 + (180.0 / float<-(rings + 1)) * float<-ring)
-            let angle1 = DEG_TO_RAD * (270.0 + (180.0 / float<-(rings + 1)) * float<-(ring + 1))
-            let slice0 = DEG_TO_RAD * (float<-slice * 360.0 / float<-slices)
-            let slice1 = DEG_TO_RAD * (float<-(slice + 1) * 360.0 / float<-slices)
+            let angle0 = DEG_TO_RAD * (270.0 + (180.0 / (rings + 1)) * ring)
+            let angle1 = DEG_TO_RAD * (270.0 + (180.0 / (rings + 1)) * (ring + 1))
+            let slice0 = DEG_TO_RAD * (slice * 360.0 / slices)
+            let slice1 = DEG_TO_RAD * ((slice + 1) * 360.0 / slices)
 
             rlgl.vertex3f(
                 float<-(math.cos(double<-angle0) * math.sin(double<-slice0)),

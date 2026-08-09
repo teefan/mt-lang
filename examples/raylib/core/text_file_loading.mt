@@ -121,20 +121,20 @@ function main() -> int:
 
         index += 1
 
-    var scroll_bar = rl.Rectangle(x = (float<-SCREEN_WIDTH) - 5.0, y = 0.0, width = 5.0, height = float<-SCREEN_HEIGHT)
+    var scroll_bar = rl.Rectangle(x = (SCREEN_WIDTH) - 5.0, y = 0.0, width = 5.0, height = float<-SCREEN_HEIGHT)
     if text_height > SCREEN_HEIGHT:
-        scroll_bar.height = (float<-SCREEN_HEIGHT) * 100.0 / float<-(text_height - SCREEN_HEIGHT)
+        scroll_bar.height = (SCREEN_HEIGHT) * 100.0 / text_height - SCREEN_HEIGHT
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
         let scroll = rl.get_mouse_wheel_move()
-        cam.target.y -= scroll * (float<-font_size) * 1.5
+        cam.target.y -= scroll * (font_size) * 1.5
 
         if cam.target.y < 0.0:
             cam.target.y = 0.0
 
-        var max_scroll = (float<-text_height) - (float<-SCREEN_HEIGHT) + (float<-text_top)
+        var max_scroll = (float<-text_height) - (float<-SCREEN_HEIGHT) + (text_top)
         if max_scroll < 0.0:
             max_scroll = 0.0
         if cam.target.y > max_scroll:
@@ -143,8 +143,8 @@ function main() -> int:
         if text_height > SCREEN_HEIGHT:
             scroll_bar.y = math.lerp(
                 float<-text_top,
-                (float<-SCREEN_HEIGHT) - scroll_bar.height,
-                (cam.target.y - float<-text_top) / float<-(text_height - SCREEN_HEIGHT)
+                (SCREEN_HEIGHT) - scroll_bar.height,
+                (cam.target.y - text_top) / text_height - SCREEN_HEIGHT
             )
 
         rl.begin_drawing()

@@ -19,8 +19,8 @@ struct GameState:
 function init_game() -> GameState:
     return GameState(
         debug = debug.debug_init(),
-        ball_x = float<-SCREEN_WIDTH / 2.0,
-        ball_y = float<-SCREEN_HEIGHT / 2.0,
+        ball_x = SCREEN_WIDTH / 2.0,
+        ball_y = SCREEN_HEIGHT / 2.0,
         ball_radius = 15.0,
         ball_speed_x = 200.0,
         ball_speed_y = 180.0,
@@ -45,8 +45,8 @@ function main() -> int:
         game.ball_x = game.ball_x + game.ball_speed_x * dt
         game.ball_y = game.ball_y + game.ball_speed_y * dt
 
-        let max_x = float<-SCREEN_WIDTH - game.ball_radius
-        let max_y = float<-SCREEN_HEIGHT - game.ball_radius
+        let max_x = SCREEN_WIDTH - game.ball_radius
+        let max_y = SCREEN_HEIGHT - game.ball_radius
 
         if game.ball_x < game.ball_radius:
             game.ball_x = game.ball_radius

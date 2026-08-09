@@ -71,8 +71,8 @@ function main() -> int:
                         height = float<-collection[index].texture.height
                     ),
                     rl.Vector2(
-                        x = float<-collection[index].texture.width * 0.5,
-                        y = float<-collection[index].texture.height * 0.5
+                        x = collection[index].texture.width * 0.5,
+                        y = collection[index].texture.height * 0.5
                     ),
                     0.0,
                     rl.WHITE

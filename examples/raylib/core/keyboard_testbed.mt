@@ -132,7 +132,7 @@ function main() -> int:
         while index < 15:
             draw_keyboard_key(
                 rl.Rectangle(
-                    x = keyboard_offset.x + float<-rec_offset_x,
+                    x = keyboard_offset.x + rec_offset_x,
                     y = keyboard_offset.y,
                     width = float<-line01_key_widths[index],
                     height = 30.0
@@ -148,8 +148,8 @@ function main() -> int:
         while index < 15:
             draw_keyboard_key(
                 rl.Rectangle(
-                    x = keyboard_offset.x + float<-rec_offset_x,
-                    y = keyboard_offset.y + 30.0 + float<-KEY_REC_SPACING,
+                    x = keyboard_offset.x + rec_offset_x,
+                    y = keyboard_offset.y + 30.0 + KEY_REC_SPACING,
                     width = float<-line02_key_widths[index],
                     height = 38.0
                 ),
@@ -164,8 +164,8 @@ function main() -> int:
         while index < 15:
             draw_keyboard_key(
                 rl.Rectangle(
-                    x = keyboard_offset.x + float<-rec_offset_x,
-                    y = keyboard_offset.y + 30.0 + 38.0 + float<-(KEY_REC_SPACING * 2),
+                    x = keyboard_offset.x + rec_offset_x,
+                    y = keyboard_offset.y + 30.0 + 38.0 + (KEY_REC_SPACING * 2),
                     width = float<-line03_key_widths[index],
                     height = 38.0
                 ),
@@ -180,8 +180,8 @@ function main() -> int:
         while index < 14:
             draw_keyboard_key(
                 rl.Rectangle(
-                    x = keyboard_offset.x + float<-rec_offset_x,
-                    y = keyboard_offset.y + 30.0 + 38.0 * 2.0 + float<-(KEY_REC_SPACING * 3),
+                    x = keyboard_offset.x + rec_offset_x,
+                    y = keyboard_offset.y + 30.0 + 38.0 * 2.0 + (KEY_REC_SPACING * 3),
                     width = float<-line04_key_widths[index],
                     height = 38.0
                 ),
@@ -196,8 +196,8 @@ function main() -> int:
         while index < 14:
             draw_keyboard_key(
                 rl.Rectangle(
-                    x = keyboard_offset.x + float<-rec_offset_x,
-                    y = keyboard_offset.y + 30.0 + 38.0 * 3.0 + float<-(KEY_REC_SPACING * 4),
+                    x = keyboard_offset.x + rec_offset_x,
+                    y = keyboard_offset.y + 30.0 + 38.0 * 3.0 + (KEY_REC_SPACING * 4),
                     width = float<-line05_key_widths[index],
                     height = 38.0
                 ),
@@ -212,8 +212,8 @@ function main() -> int:
         while index < 11:
             draw_keyboard_key(
                 rl.Rectangle(
-                    x = keyboard_offset.x + float<-rec_offset_x,
-                    y = keyboard_offset.y + 30.0 + 38.0 * 4.0 + float<-(KEY_REC_SPACING * 5),
+                    x = keyboard_offset.x + rec_offset_x,
+                    y = keyboard_offset.y + 30.0 + 38.0 * 4.0 + (KEY_REC_SPACING * 5),
                     width = float<-line06_key_widths[index],
                     height = 38.0
                 ),

@@ -129,10 +129,10 @@ function main() -> int:
                 hovered_pos = position
 
             if index != 0 and (index % EMOJI_PER_WIDTH) == 0:
-                position.y += float<-font_emoji.baseSize + 24.25
+                position.y += font_emoji.baseSize + 24.25
                 position.x = 28.8
             else:
-                position.x += float<-font_emoji.baseSize + 28.8
+                position.x += font_emoji.baseSize + 28.8
             index += 1
 
         if selected != -1:
@@ -170,8 +170,8 @@ function main() -> int:
                 a = b
                 b = temp
 
-            if message_rect.x + message_rect.width > float<-SCREEN_WIDTH:
-                message_rect.x -= message_rect.x + message_rect.width - float<-SCREEN_WIDTH + 10.0
+            if message_rect.x + message_rect.width > SCREEN_WIDTH:
+                message_rect.x -= message_rect.x + message_rect.width - SCREEN_WIDTH + 10.0
 
             rl.draw_rectangle_rec(message_rect, emoji_slots[selected].color)
             rl.draw_triangle(a, b, c, emoji_slots[selected].color)

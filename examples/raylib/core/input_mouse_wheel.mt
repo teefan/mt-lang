@@ -14,7 +14,7 @@ function main() -> int:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        box_position_y -= int<-(rl.get_mouse_wheel_move() * float<-SCROLL_SPEED)
+        box_position_y -= int<-(rl.get_mouse_wheel_move() * SCROLL_SPEED)
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)

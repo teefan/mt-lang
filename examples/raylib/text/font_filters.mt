@@ -20,7 +20,7 @@ function main() -> int:
     rl.gen_texture_mipmaps(font.texture)
 
     var font_size = float<-font.baseSize
-    var font_position = rl.Vector2(x = 40.0, y = float<-SCREEN_HEIGHT / 2.0 - 80.0)
+    var font_position = rl.Vector2(x = 40.0, y = SCREEN_HEIGHT / 2.0 - 80.0)
     var text_size = rl.Vector2(x = 0.0, y = 0.0)
 
     rl.set_texture_filter(font.texture, int<-rl.TextureFilter.TEXTURE_FILTER_POINT)

@@ -47,14 +47,14 @@ function main() -> int:
     let panel_width = 270
     let panel_margin = 5
     let panel_pos = rl.Vector2(
-        x = float<-SCREEN_WIDTH - float<-panel_margin - float<-panel_width,
+        x = float<-SCREEN_WIDTH - float<-panel_margin - panel_width,
         y = float<-panel_margin
     )
     let panel_rect = rl.Rectangle(
         x = panel_pos.x,
         y = panel_pos.y,
         width = float<-panel_width,
-        height = float<-SCREEN_HEIGHT - (2.0 * float<-panel_margin)
+        height = SCREEN_HEIGHT - (2.0 * panel_margin)
     )
     let canvas = rl.Rectangle(x = 0.0, y = 0.0, width = panel_pos.x, height = float<-SCREEN_HEIGHT)
     let center = rl.Vector2(x = canvas.width / 2.0, y = canvas.height / 2.0)
@@ -185,10 +185,10 @@ function main() -> int:
         )
 
         scroll_panel_bounds = rl.Rectangle(
-            x = panel_pos.x + float<-panel_margin,
+            x = panel_pos.x + panel_margin,
             y = panel_pos.y + 202.0,
-            width = panel_rect.width - (2.0 * float<-panel_margin),
-            height = panel_rect.height - 202.0 - float<-panel_margin
+            width = panel_rect.width - (2.0 * panel_margin),
+            height = panel_rect.height - 202.0 - panel_margin
         )
         let content_height = slice_count * 35
         gui.scroll_panel(
@@ -206,7 +206,7 @@ function main() -> int:
 
         index = 0
         while index < slice_count:
-            let row_y = int<-(content_y + 5.0 + float<-index * 35.0)
+            let row_y = int<-(content_y + 5.0 + index * 35.0)
             let color = rl.color_from_hsv((float<-index / float<-slice_count) * 360.0, 0.75, 0.9)
             rl.draw_rectangle(int<-(content_x + 15.0), row_y + 5, 20, 20, color)
 

@@ -31,7 +31,7 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - window flags")
     defer: rl.close_window()
 
-    var ball_position = rl.Vector2(x = (float<-rl.get_screen_width()) / 2.0, y = (float<-rl.get_screen_height()) / 2.0)
+    var ball_position = rl.Vector2(x = (rl.get_screen_width()) / 2.0, y = (rl.get_screen_height()) / 2.0)
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)
 
     var frames_counter = 0
@@ -89,9 +89,9 @@ function main() -> int:
         ball_position.x += ball_speed.x
         ball_position.y += ball_speed.y
 
-        if ball_position.x >= (float<-rl.get_screen_width()) - BALL_RADIUS or ball_position.x <= BALL_RADIUS:
+        if ball_position.x >= (rl.get_screen_width()) - BALL_RADIUS or ball_position.x <= BALL_RADIUS:
             ball_speed.x *= -1.0
-        if ball_position.y >= (float<-rl.get_screen_height()) - BALL_RADIUS or ball_position.y <= BALL_RADIUS:
+        if ball_position.y >= (rl.get_screen_height()) - BALL_RADIUS or ball_position.y <= BALL_RADIUS:
             ball_speed.y *= -1.0
 
         rl.begin_drawing()

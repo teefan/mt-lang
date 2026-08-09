@@ -38,8 +38,8 @@ function main() -> int:
     let touch_area = rl.Rectangle(
         x = 220.0,
         y = 10.0,
-        width = (float<-SCREEN_WIDTH) - 230.0,
-        height = (float<-SCREEN_HEIGHT) - 20.0
+        width = (SCREEN_WIDTH) - 230.0,
+        height = (SCREEN_HEIGHT) - 20.0
     )
 
     var gestures_count = 0

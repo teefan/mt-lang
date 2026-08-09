@@ -38,7 +38,7 @@ function main() -> int:
 
         if not pause:
             position += CIRCLE_SPEED * delta_time
-            if position >= float<-rl.get_screen_width():
+            if position >= rl.get_screen_width():
                 position = ZERO_FLOAT
             time_counter += delta_time
 
@@ -78,7 +78,7 @@ function main() -> int:
         update_draw_time = current_time - previous_time
 
         if target_fps > 0:
-            wait_time = (1.0 / double<-target_fps) - update_draw_time
+            wait_time = (1.0 / target_fps) - update_draw_time
             if wait_time > 0.0:
                 rl.wait_time(wait_time)
                 current_time = rl.get_time()

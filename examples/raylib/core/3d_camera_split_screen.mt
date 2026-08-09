@@ -16,10 +16,10 @@ function draw_world(camera_player1: rl.Camera3D, camera_player2: rl.Camera3D) ->
 
     var x_index = -GRID_COUNT
     while x_index <= GRID_COUNT:
-        let x = float<-x_index * GRID_SPACING
+        let x = x_index * GRID_SPACING
         var z_index = -GRID_COUNT
         while z_index <= GRID_COUNT:
-            let z = float<-z_index * GRID_SPACING
+            let z = z_index * GRID_SPACING
             rl.draw_cube(rl.Vector3(x = x, y = TREE_CANOPY_Y, z = z), 1.0, 1.0, 1.0, rl.LIME)
             rl.draw_cube(rl.Vector3(x = x, y = TREE_TRUNK_Y, z = z), TRUNK_WIDTH, 1.0, TRUNK_WIDTH, rl.BROWN)
             z_index += 1

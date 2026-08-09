@@ -22,7 +22,7 @@ function main() -> int:
         var monitor_index = 0
         while monitor_index < monitor_count:
             let monitor_position = rl.get_monitor_position(monitor_index)
-            if monitor_position.x < float<-monitor_offset_x:
+            if monitor_position.x < monitor_offset_x:
                 monitor_offset_x = -(int<-monitor_position.x)
 
             let width = int<-monitor_position.x + rl.get_monitor_width(monitor_index)
@@ -66,10 +66,10 @@ function main() -> int:
             let refresh_rate = rl.get_monitor_refresh_rate(monitor_index)
 
             let rec = rl.Rectangle(
-                x = (monitor_position.x + (float<-monitor_offset_x)) * monitor_scale + 140.0,
+                x = (monitor_position.x + (monitor_offset_x)) * monitor_scale + 140.0,
                 y = monitor_position.y * monitor_scale + 80.0,
-                width = (float<-monitor_width) * monitor_scale,
-                height = (float<-monitor_height) * monitor_scale
+                width = (monitor_width) * monitor_scale,
+                height = (monitor_height) * monitor_scale
             )
 
             let heading_y = (int<-rec.y) + int<-(100.0 * monitor_scale)
@@ -110,12 +110,12 @@ function main() -> int:
                 rl.draw_rectangle_lines_ex(rec, 5.0, rl.RED)
                 let window_origin = rl.get_window_position()
                 let window_position = rl.Vector2(
-                    x = (window_origin.x + (float<-monitor_offset_x)) * monitor_scale + 140.0,
+                    x = (window_origin.x + (monitor_offset_x)) * monitor_scale + 140.0,
                     y = window_origin.y * monitor_scale + 80.0
                 )
                 rl.draw_rectangle_v(
                     window_position,
-                    rl.Vector2(x = (float<-SCREEN_WIDTH) * monitor_scale, y = (float<-SCREEN_HEIGHT) * monitor_scale),
+                    rl.Vector2(x = (SCREEN_WIDTH) * monitor_scale, y = (SCREEN_HEIGHT) * monitor_scale),
                     rl.fade(rl.GREEN, 0.5)
                 )
             else:

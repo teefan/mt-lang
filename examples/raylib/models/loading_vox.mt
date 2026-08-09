@@ -62,10 +62,10 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
     rl.set_shader_value(shader, light.target_loc, target_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
 
     let color_value = array[float, 4](
-        float<-light.color.r / 255.0,
-        float<-light.color.g / 255.0,
-        float<-light.color.b / 255.0,
-        float<-light.color.a / 255.0
+        light.color.r / 255.0,
+        light.color.g / 255.0,
+        light.color.b / 255.0,
+        light.color.a / 255.0
     )
     rl.set_shader_value(shader, light.color_loc, color_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 

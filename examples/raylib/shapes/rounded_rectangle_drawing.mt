@@ -23,8 +23,8 @@ function main() -> int:
 
     while not rl.window_should_close():
         let rec = rl.Rectangle(
-            x = (float<-rl.get_screen_width() - rect_width - 250.0) / 2.0,
-            y = (float<-rl.get_screen_height() - rect_height) / 2.0,
+            x = (rl.get_screen_width() - rect_width - 250.0) / 2.0,
+            y = (rl.get_screen_height() - rect_height) / 2.0,
             width = rect_width,
             height = rect_height
         )
@@ -48,7 +48,7 @@ function main() -> int:
             text.cstr_as_str(rl.text_format("%.2f", rect_width)),
             rect_width,
             0.0,
-            float<-rl.get_screen_width() - 300.0
+            rl.get_screen_width() - 300.0
         )
         gui.slider_bar(
             rl.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0),
@@ -56,7 +56,7 @@ function main() -> int:
             text.cstr_as_str(rl.text_format("%.2f", rect_height)),
             rect_height,
             0.0,
-            float<-rl.get_screen_height() - 50.0
+            rl.get_screen_height() - 50.0
         )
         gui.slider_bar(
             rl.Rectangle(x = 640.0, y = 140.0, width = 105.0, height = 20.0),

@@ -44,8 +44,8 @@ function create_text_particle(source_text: str, x: float, y: float, color: rl.Co
     )
 
     particle.text.assign(source_text)
-    particle.rect.width = float<-rl.measure_text(particle.text.as_str(), FONT_SIZE) + particle.padding * 2.0
-    particle.rect.height = float<-FONT_SIZE + particle.padding * 2.0
+    particle.rect.width = rl.measure_text(particle.text.as_str(), FONT_SIZE) + particle.padding * 2.0
+    particle.rect.height = FONT_SIZE + particle.padding * 2.0
     return particle
 
 
@@ -56,8 +56,8 @@ function prepare_first_text_particle(
 ) -> void:
     read(particles)[0] = create_text_particle(
         source_text,
-        float<-SCREEN_WIDTH / 2.0,
-        float<-SCREEN_HEIGHT / 2.0,
+        SCREEN_WIDTH / 2.0,
+        SCREEN_HEIGHT / 2.0,
         rl.RAYWHITE
     )
     unsafe: read(particle_count) = 1
@@ -93,7 +93,7 @@ function slice_text_particle(
 
             read(particles)[read(particle_count)] = create_text_particle(
                 piece_text,
-                read(particles)[particle_pos].rect.x + float<-index * read(particles)[particle_pos].rect.width / float<-length,
+                read(particles)[particle_pos].rect.x + index * read(particles)[particle_pos].rect.width / length,
                 read(particles)[particle_pos].rect.y,
                 random_particle_color()
             )
@@ -127,7 +127,7 @@ function slice_text_particle_by_char(
         if codepoint == int<-char_to_slice:
             read(particles)[read(particle_count)] = create_text_particle(
                 source_text.slice(ptr_uint<-index, ptr_uint<-advance),
-                particle.rect.x + float<-index * particle.rect.width / float<-length,
+                particle.rect.x + index * particle.rect.width / length,
                 particle.rect.y,
                 random_particle_color()
             )
@@ -141,7 +141,7 @@ function slice_text_particle_by_char(
         let effective_length = if token_length > 0: token_length else: 1
         read(particles)[read(particle_count)] = create_text_particle(
             token_text,
-            particle.rect.x + float<-index * particle.rect.width / float<-effective_length,
+            particle.rect.x + index * particle.rect.width / effective_length,
             particle.rect.y,
             random_particle_color()
         )
@@ -294,15 +294,15 @@ function main() -> int:
                 text_particles[index].rect.x += text_particles[index].vel.x * delta
                 text_particles[index].rect.y += text_particles[index].vel.y * delta
 
-                if text_particles[index].rect.x + text_particles[index].rect.width >= float<-SCREEN_WIDTH:
-                    text_particles[index].rect.x = float<-SCREEN_WIDTH - text_particles[index].rect.width
+                if text_particles[index].rect.x + text_particles[index].rect.width >= SCREEN_WIDTH:
+                    text_particles[index].rect.x = SCREEN_WIDTH - text_particles[index].rect.width
                     text_particles[index].vel.x = -text_particles[index].vel.x * text_particles[index].elasticity
                 else if text_particles[index].rect.x <= 0.0:
                     text_particles[index].rect.x = 0.0
                     text_particles[index].vel.x = -text_particles[index].vel.x * text_particles[index].elasticity
 
-                if text_particles[index].rect.y + text_particles[index].rect.height >= float<-SCREEN_HEIGHT:
-                    text_particles[index].rect.y = float<-SCREEN_HEIGHT - text_particles[index].rect.height
+                if text_particles[index].rect.y + text_particles[index].rect.height >= SCREEN_HEIGHT:
+                    text_particles[index].rect.y = SCREEN_HEIGHT - text_particles[index].rect.height
                     text_particles[index].vel.y = -text_particles[index].vel.y * text_particles[index].elasticity
                 else if text_particles[index].rect.y <= 0.0:
                     text_particles[index].rect.y = 0.0

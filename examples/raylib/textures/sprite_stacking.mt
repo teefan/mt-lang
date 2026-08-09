@@ -49,13 +49,13 @@ function main() -> int:
         while index >= 0:
             let source = rl.Rectangle(
                 x = 0.0,
-                y = float<-index * frame_height,
+                y = index * frame_height,
                 width = frame_width,
                 height = frame_height
             )
             let destination = rl.Rectangle(
-                x = float<-SCREEN_WIDTH / 2.0,
-                y = float<-SCREEN_HEIGHT / 2.0 + float<-index * stack_spacing - stack_spacing * float<-STACK_COUNT / 2.0,
+                x = SCREEN_WIDTH / 2.0,
+                y = SCREEN_HEIGHT / 2.0 + index * stack_spacing - stack_spacing * STACK_COUNT / 2.0,
                 width = scaled_width,
                 height = scaled_height
             )

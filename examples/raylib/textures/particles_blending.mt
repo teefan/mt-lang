@@ -33,8 +33,8 @@ function main() -> int:
             a = 255
         )
         mouse_tail[index].alpha = 1.0
-        mouse_tail[index].size = float<-rl.get_random_value(1, 30) / 20.0
-        mouse_tail[index].rotation = float<-rl.get_random_value(0, 360)
+        mouse_tail[index].size = rl.get_random_value(1, 30) / 20.0
+        mouse_tail[index].rotation = rl.get_random_value(0, 360)
         mouse_tail[index].active = false
         index += 1
 
@@ -87,12 +87,12 @@ function main() -> int:
                 let destination = rl.Rectangle(
                     x = mouse_tail[index].position.x,
                     y = mouse_tail[index].position.y,
-                    width = float<-smoke.width * mouse_tail[index].size,
-                    height = float<-smoke.height * mouse_tail[index].size
+                    width = smoke.width * mouse_tail[index].size,
+                    height = smoke.height * mouse_tail[index].size
                 )
                 let origin = rl.Vector2(
-                    x = float<-smoke.width * mouse_tail[index].size / 2.0,
-                    y = float<-smoke.height * mouse_tail[index].size / 2.0
+                    x = smoke.width * mouse_tail[index].size / 2.0,
+                    y = smoke.height * mouse_tail[index].size / 2.0
                 )
                 rl.draw_texture_pro(
                     smoke,

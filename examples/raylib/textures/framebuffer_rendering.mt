@@ -99,12 +99,12 @@ function main() -> int:
     let texture_aspect_ratio = float<-subject_target.texture.width / float<-subject_target.texture.height
 
     let crop_source = rl.Rectangle(
-        x = (float<-subject_target.texture.width - CAPTURE_SIZE) / 2.0,
-        y = (float<-subject_target.texture.height - CAPTURE_SIZE) / 2.0,
+        x = (subject_target.texture.width - CAPTURE_SIZE) / 2.0,
+        y = (subject_target.texture.height - CAPTURE_SIZE) / 2.0,
         width = CAPTURE_SIZE,
         height = -CAPTURE_SIZE
     )
-    let crop_dest = rl.Rectangle(x = float<-SPLIT_WIDTH + 20.0, y = 20.0, width = CAPTURE_SIZE, height = CAPTURE_SIZE)
+    let crop_dest = rl.Rectangle(x = SPLIT_WIDTH + 20.0, y = 20.0, width = CAPTURE_SIZE, height = CAPTURE_SIZE)
 
     rl.set_target_fps(60)
     rl.disable_cursor()
@@ -138,8 +138,8 @@ function main() -> int:
         rl.draw_grid(10, 1.0)
         rl.end_mode_3d()
         rl.draw_rectangle_lines(
-            int<-((float<-subject_target.texture.width - CAPTURE_SIZE) / 2.0),
-            int<-((float<-subject_target.texture.height - CAPTURE_SIZE) / 2.0),
+            int<-((subject_target.texture.width - CAPTURE_SIZE) / 2.0),
+            int<-((subject_target.texture.height - CAPTURE_SIZE) / 2.0),
             int<-CAPTURE_SIZE,
             int<-CAPTURE_SIZE,
             rl.GREEN

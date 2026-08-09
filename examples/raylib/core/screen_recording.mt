@@ -27,16 +27,16 @@ function main() -> int:
     var index = 0
     while index < MAX_SINEWAVE_POINTS:
         sine_points[index].x = float<-index * float<-rl.get_screen_width() / 180.0
-        sine_points[index].y = HALF_SCREEN_HEIGHT + SINE_AMPLITUDE * float<-math.sin(double<-(SINE_SCALE * FRAME_TIME_60 * float<-index))
+        sine_points[index].y = HALF_SCREEN_HEIGHT + SINE_AMPLITUDE * float<-math.sin(double<-(SINE_SCALE * FRAME_TIME_60 * index))
         index += 1
 
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
         time_counter += rl.get_frame_time()
-        circle_position.x += float<-rl.get_screen_width() / 180.0
+        circle_position.x += rl.get_screen_width() / 180.0
         circle_position.y = HALF_SCREEN_HEIGHT + SINE_AMPLITUDE * float<-math.sin(double<-(SINE_SCALE * time_counter))
-        if circle_position.x > float<-SCREEN_WIDTH:
+        if circle_position.x > SCREEN_WIDTH:
             circle_position.x = 0.0
             circle_position.y = HALF_SCREEN_HEIGHT
             time_counter = 0.0

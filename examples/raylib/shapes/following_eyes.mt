@@ -10,12 +10,12 @@ function main() -> int:
     defer: rl.close_window()
 
     let sclera_left_position = rl.Vector2(
-        x = float<-rl.get_screen_width() / 2.0 - 100.0,
-        y = float<-rl.get_screen_height() / 2.0
+        x = rl.get_screen_width() / 2.0 - 100.0,
+        y = rl.get_screen_height() / 2.0
     )
     let sclera_right_position = rl.Vector2(
-        x = float<-rl.get_screen_width() / 2.0 + 100.0,
-        y = float<-rl.get_screen_height() / 2.0
+        x = rl.get_screen_width() / 2.0 + 100.0,
+        y = rl.get_screen_height() / 2.0
     )
     let sclera_radius = 80.0
     var iris_left_position = sclera_left_position

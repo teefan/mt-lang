@@ -44,7 +44,7 @@ function main() -> int:
         anim_current_frame += 1.0
         var animation = unsafe: animations[0]
         rl.update_model_animation(model, animation, anim_current_frame)
-        if anim_current_frame >= float<-animation.keyframeCount:
+        if anim_current_frame >= animation.keyframeCount:
             anim_current_frame = 0.0
 
         let current_animation_name = text.chars_as_str(ptr_of(animation.name[0]))

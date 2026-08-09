@@ -24,8 +24,8 @@ function main() -> int:
     var container = rl.Rectangle(
         x = 25.0,
         y = 25.0,
-        width = float<-SCREEN_WIDTH - 50.0,
-        height = float<-SCREEN_HEIGHT - 250.0
+        width = SCREEN_WIDTH - 50.0,
+        height = SCREEN_HEIGHT - 250.0
     )
     var resizer = rl.Rectangle(
         x = container.x + container.width - 17.0,
@@ -36,8 +36,8 @@ function main() -> int:
 
     let min_width = 60.0
     let min_height = 60.0
-    let max_width = float<-SCREEN_WIDTH - 50.0
-    let max_height = float<-SCREEN_HEIGHT - 160.0
+    let max_width = SCREEN_WIDTH - 50.0
+    let max_height = SCREEN_HEIGHT - 160.0
 
     var last_mouse = rl.Vector2(x = 0.0, y = 0.0)
     var border_color = rl.MAROON
@@ -94,7 +94,7 @@ function main() -> int:
 
         rl.draw_rectangle(0, SCREEN_HEIGHT - 54, SCREEN_WIDTH, 54, rl.GRAY)
         rl.draw_rectangle_rec(
-            rl.Rectangle(x = 382.0, y = float<-SCREEN_HEIGHT - 34.0, width = 12.0, height = 12.0),
+            rl.Rectangle(x = 382.0, y = SCREEN_HEIGHT - 34.0, width = 12.0, height = 12.0),
             rl.MAROON
         )
         rl.draw_text("Word Wrap: ", 313, SCREEN_HEIGHT - 115, 20, rl.BLACK)

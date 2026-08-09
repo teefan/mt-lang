@@ -21,7 +21,7 @@ function main() -> int:
     var frame_rect = rl.Rectangle(
         x = 0.0,
         y = 0.0,
-        width = float<-scarfy.width / 6.0,
+        width = scarfy.width / 6.0,
         height = float<-scarfy.height
     )
     var current_frame = 0
@@ -41,7 +41,7 @@ function main() -> int:
             if current_frame > 5:
                 current_frame = 0
 
-            frame_rect.x = float<-current_frame * frame_rect.width
+            frame_rect.x = current_frame * frame_rect.width
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_RIGHT):
             frames_speed += 1

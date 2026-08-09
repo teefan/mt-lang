@@ -60,8 +60,8 @@ function main() -> int:
     )
 
     var zoom = 1
-    var offset_x = float<-(WORLD_WIDTH - WINDOW_WIDTH) / 2.0
-    var offset_y = float<-(WORLD_HEIGHT - WINDOW_HEIGHT) / 2.0
+    var offset_x = WORLD_WIDTH - WINDOW_WIDTH / 2.0
+    var offset_y = WORLD_HEIGHT - WINDOW_HEIGHT / 2.0
     var frames_per_step = 1
     var frame = 0
 
@@ -90,8 +90,8 @@ function main() -> int:
     rl.update_texture_rec(
         world2.texture,
         rl.Rectangle(
-            x = float<-WORLD_WIDTH / 2.0,
-            y = float<-WORLD_HEIGHT / 2.0,
+            x = WORLD_WIDTH / 2.0,
+            y = WORLD_HEIGHT / 2.0,
             width = float<-start_pattern.width,
             height = float<-start_pattern.height
         ),
@@ -117,14 +117,14 @@ function main() -> int:
                 rl.unload_image(image_to_draw)
                 has_image_to_draw = false
 
-            let center_x = offset_x + (float<-WINDOW_WIDTH / 2.0) / float<-zoom
-            let center_y = offset_y + (float<-WINDOW_HEIGHT / 2.0) / float<-zoom
+            let center_x = offset_x + (WINDOW_WIDTH / 2.0) / zoom
+            let center_y = offset_y + (WINDOW_HEIGHT / 2.0) / zoom
             if button_zoom_in or mouse_wheel_move > 0.0:
                 zoom *= 2
             if (button_zoom_out or mouse_wheel_move < 0.0) and zoom > 1:
                 zoom /= 2
-            offset_x = center_x - (float<-WINDOW_WIDTH / 2.0) / float<-zoom
-            offset_y = center_y - (float<-WINDOW_HEIGHT / 2.0) / float<-zoom
+            offset_x = center_x - (WINDOW_WIDTH / 2.0) / zoom
+            offset_y = center_y - (WINDOW_HEIGHT / 2.0) / zoom
 
         if button_faster and frames_per_step > 1:
             frames_per_step -= 1
@@ -138,17 +138,17 @@ function main() -> int:
 
             let mouse_position = rl.get_mouse_position()
             if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) and mouse_position.x < WINDOW_WIDTH:
-                offset_x -= (mouse_position.x - previous_mouse_position.x) / float<-zoom
-                offset_y -= (mouse_position.y - previous_mouse_position.y) / float<-zoom
+                offset_x -= (mouse_position.x - previous_mouse_position.x) / zoom
+                offset_y -= (mouse_position.y - previous_mouse_position.y) / zoom
             previous_mouse_position = mouse_position
         else:
-            let offset_decimal_x = offset_x - float<-(int<-offset_x)
-            let offset_decimal_y = offset_y - float<-(int<-offset_y)
-            var size_in_world_x = int<-((float<-WINDOW_WIDTH + offset_decimal_x * float<-zoom + float<-(zoom - 1)) / float<-zoom)
-            var size_in_world_y = int<-((float<-WINDOW_HEIGHT + offset_decimal_y * float<-zoom + float<-(zoom - 1)) / float<-zoom)
-            if offset_x + float<-size_in_world_x >= WORLD_WIDTH:
+            let offset_decimal_x = offset_x - (int<-offset_x)
+            let offset_decimal_y = offset_y - (int<-offset_y)
+            var size_in_world_x = int<-((WINDOW_WIDTH + offset_decimal_x * zoom + zoom - 1) / zoom)
+            var size_in_world_y = int<-((WINDOW_HEIGHT + offset_decimal_y * zoom + zoom - 1) / zoom)
+            if offset_x + size_in_world_x >= WORLD_WIDTH:
                 size_in_world_x = WORLD_WIDTH - int<-offset_x
-            if offset_y + float<-size_in_world_y >= WORLD_HEIGHT:
+            if offset_y + size_in_world_y >= WORLD_HEIGHT:
                 size_in_world_y = WORLD_HEIGHT - int<-offset_y
 
             if not has_image_to_draw:
@@ -174,8 +174,8 @@ function main() -> int:
 
             let mouse_position = rl.get_mouse_position()
             if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) and mouse_position.x < WINDOW_WIDTH:
-                var mouse_x = int<-((mouse_position.x + offset_decimal_x * float<-zoom) / float<-zoom)
-                var mouse_y = int<-((mouse_position.y + offset_decimal_y * float<-zoom) / float<-zoom)
+                var mouse_x = int<-((mouse_position.x + offset_decimal_x * zoom) / zoom)
+                var mouse_y = int<-((mouse_position.y + offset_decimal_y * zoom) / zoom)
                 if mouse_x >= size_in_world_x:
                     mouse_x = size_in_world_x - 1
                 if mouse_y >= size_in_world_y:
@@ -208,8 +208,8 @@ function main() -> int:
                 rl.update_texture_rec(
                     current_world.texture,
                     rl.Rectangle(
-                        x = float<-WORLD_WIDTH * preset_patterns[preset].position.x - float<-pattern.width / 2.0,
-                        y = float<-WORLD_HEIGHT * preset_patterns[preset].position.y - float<-pattern.height / 2.0,
+                        x = WORLD_WIDTH * preset_patterns[preset].position.x - pattern.width / 2.0,
+                        y = WORLD_HEIGHT * preset_patterns[preset].position.y - pattern.height / 2.0,
                         width = float<-pattern.width,
                         height = float<-pattern.height
                     ),
@@ -246,8 +246,8 @@ function main() -> int:
                 rl.unload_image(pattern)
 
             mode = int<-InteractionMode.MODE_PAUSE
-            offset_x = float<-WORLD_WIDTH * preset_patterns[preset].position.x - float<-WINDOW_WIDTH / float<-zoom / 2.0
-            offset_y = float<-WORLD_HEIGHT * preset_patterns[preset].position.y - float<-WINDOW_HEIGHT / float<-zoom / 2.0
+            offset_x = WORLD_WIDTH * preset_patterns[preset].position.x - float<-WINDOW_WIDTH / float<-zoom / 2.0
+            offset_y = WORLD_HEIGHT * preset_patterns[preset].position.y - float<-WINDOW_HEIGHT / float<-zoom / 2.0
 
         if offset_x < 0.0:
             offset_x = 0.0
@@ -311,7 +311,7 @@ function main() -> int:
         var preset_index = 0
         while preset_index < PRESET_COUNT:
             if gui.button(
-                rl.Rectangle(x = 710.0, y = 70.0 + 18.0 * float<-preset_index, width = 80.0, height = 16.0),
+                rl.Rectangle(x = 710.0, y = 70.0 + 18.0 * preset_index, width = 80.0, height = 16.0),
                 preset_patterns[preset_index].name
             ) != 0:
                 preset = preset_index

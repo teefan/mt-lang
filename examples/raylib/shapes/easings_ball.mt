@@ -23,7 +23,7 @@ function main() -> int:
             ball_position_x = int<-ease.elastic_out(
                 float<-frames_counter,
                 -100.0,
-                float<-SCREEN_WIDTH / 2.0 + 100.0,
+                SCREEN_WIDTH / 2.0 + 100.0,
                 120.0
             )
 

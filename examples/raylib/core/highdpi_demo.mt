@@ -9,8 +9,8 @@ const CELL_SIZE: int = 50
 function draw_text_center(text: str, x: int, y: int, font_size: int, color: rl.Color) -> void:
     let size = rl.measure_text_ex(rl.get_font_default(), text, float<-font_size, 3.0)
     let position = rl.Vector2(
-        x = (float<-x) - size.x / 2.0,
-        y = (float<-y) - size.y / 2.0
+        x = (x) - size.x / 2.0,
+        y = (y) - size.y / 2.0
     )
     rl.draw_text_ex(rl.get_font_default(), text, position, float<-font_size, 3.0, color)
 
@@ -40,7 +40,7 @@ function main() -> int:
 
         let current_monitor = rl.get_current_monitor()
         let dpi_scale = rl.get_window_scale_dpi()
-        let cell_size_px = (float<-CELL_SIZE) / dpi_scale.x
+        let cell_size_px = (CELL_SIZE) / dpi_scale.x
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
@@ -85,7 +85,7 @@ function main() -> int:
         var last_text_x = -min_text_space
         var render_x = CELL_SIZE
         while render_x < rl.get_render_width():
-            let x = int<-((float<-render_x) / dpi_scale.x)
+            let x = int<-((render_x) / dpi_scale.x)
             if odd:
                 rl.draw_rectangle(
                     x,
@@ -95,7 +95,7 @@ function main() -> int:
                     rl.Color(r = 0, g = 121, b = 241, a = 100)
                 )
 
-            rl.draw_line(x, pixel_grid_top, int<-((float<-render_x) / dpi_scale.x), pixel_grid_label_y - 10, rl.GRAY)
+            rl.draw_line(x, pixel_grid_top, int<-((render_x) / dpi_scale.x), pixel_grid_label_y - 10, rl.GRAY)
             if (x - last_text_x) >= min_text_space:
                 draw_text_center(f"#{render_x}", x, pixel_grid_label_y, 10, rl.LIGHTGRAY)
                 last_text_x = x
@@ -114,8 +114,8 @@ function main() -> int:
         let text = "Can you see this?"
         let size = rl.measure_text_ex(rl.get_font_default(), text, 20.0, 3.0)
         let position = rl.Vector2(
-            x = (float<-rl.get_screen_width()) - size.x - 5.0,
-            y = (float<-rl.get_screen_height()) - size.y - 5.0
+            x = (rl.get_screen_width()) - size.x - 5.0,
+            y = (rl.get_screen_height()) - size.y - 5.0
         )
         rl.draw_text_ex(rl.get_font_default(), text, position, 20.0, 3.0, rl.LIGHTGRAY)
 

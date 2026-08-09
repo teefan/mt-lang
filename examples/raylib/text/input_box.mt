@@ -12,7 +12,7 @@ function main() -> int:
 
     var name: array[char, 10] = zero[array[char, 10]]
     var letter_count = 0
-    let text_box = rl.Rectangle(x = float<-SCREEN_WIDTH / 2.0 - 100.0, y = 180.0, width = 225.0, height = 50.0)
+    let text_box = rl.Rectangle(x = SCREEN_WIDTH / 2.0 - 100.0, y = 180.0, width = 225.0, height = 50.0)
     var mouse_on_text = false
     var frames_counter = 0
 

@@ -43,10 +43,10 @@ function keep_aspect_centered_integer(
             height = -(float<-game_height)
         ),
         destination = rl.Rectangle(
-            x = float<-((screen_width - int<-((float<-game_width) * resize_ratio)) / 2),
-            y = float<-((screen_height - int<-((float<-game_height) * resize_ratio)) / 2),
-            width = float<-(int<-((float<-game_width) * resize_ratio)),
-            height = float<-(int<-((float<-game_height) * resize_ratio))
+            x = float<-((screen_width - int<-((game_width) * resize_ratio)) / 2),
+            y = float<-((screen_height - int<-((game_height) * resize_ratio)) / 2),
+            width = float<-(int<-((game_width) * resize_ratio)),
+            height = float<-(int<-((game_height) * resize_ratio))
         )
     )
 
@@ -58,15 +58,15 @@ function keep_height_centered_integer(
     game_height: int
 ) -> ViewportLayout:
     let resize_ratio = (float<-screen_height) / (float<-game_height)
-    let source_width = float<-(int<-((float<-screen_width) / resize_ratio))
+    let source_width = float<-(int<-((screen_width) / resize_ratio))
 
     return ViewportLayout(
         source = rl.Rectangle(x = 0.0, y = 0.0, width = source_width, height = -(float<-game_height)),
         destination = rl.Rectangle(
             x = float<-((screen_width - int<-(source_width * resize_ratio)) / 2),
-            y = float<-((screen_height - int<-((float<-game_height) * resize_ratio)) / 2),
+            y = float<-((screen_height - int<-((game_height) * resize_ratio)) / 2),
             width = float<-(int<-(source_width * resize_ratio)),
-            height = float<-(int<-((float<-game_height) * resize_ratio))
+            height = float<-(int<-((game_height) * resize_ratio))
         )
     )
 
@@ -78,14 +78,14 @@ function keep_width_centered_integer(
     game_height: int
 ) -> ViewportLayout:
     let resize_ratio = (float<-screen_width) / (float<-game_width)
-    let source_height = float<-(int<-((float<-screen_height) / resize_ratio))
+    let source_height = float<-(int<-((screen_height) / resize_ratio))
 
     return ViewportLayout(
         source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-game_width, height = -source_height),
         destination = rl.Rectangle(
-            x = float<-((screen_width - int<-((float<-game_width) * resize_ratio)) / 2),
+            x = float<-((screen_width - int<-((game_width) * resize_ratio)) / 2),
             y = float<-((screen_height - int<-(source_height * resize_ratio)) / 2),
-            width = float<-(int<-((float<-game_width) * resize_ratio)),
+            width = float<-(int<-((game_width) * resize_ratio)),
             height = float<-(int<-(source_height * resize_ratio))
         )
     )
@@ -111,10 +111,10 @@ function keep_aspect_centered(
             height = -(float<-game_height)
         ),
         destination = rl.Rectangle(
-            x = float<-((screen_width - int<-((float<-game_width) * resize_ratio)) / 2),
-            y = float<-((screen_height - int<-((float<-game_height) * resize_ratio)) / 2),
-            width = float<-(int<-((float<-game_width) * resize_ratio)),
-            height = float<-(int<-((float<-game_height) * resize_ratio))
+            x = float<-((screen_width - int<-((game_width) * resize_ratio)) / 2),
+            y = float<-((screen_height - int<-((game_height) * resize_ratio)) / 2),
+            width = float<-(int<-((game_width) * resize_ratio)),
+            height = float<-(int<-((game_height) * resize_ratio))
         )
     )
 
@@ -126,15 +126,15 @@ function keep_height_centered(
     game_height: int
 ) -> ViewportLayout:
     let resize_ratio = (float<-screen_height) / (float<-game_height)
-    let source_width = float<-(int<-((float<-screen_width) / resize_ratio))
+    let source_width = float<-(int<-((screen_width) / resize_ratio))
 
     return ViewportLayout(
         source = rl.Rectangle(x = 0.0, y = 0.0, width = source_width, height = -(float<-game_height)),
         destination = rl.Rectangle(
             x = float<-((screen_width - int<-(source_width * resize_ratio)) / 2),
-            y = float<-((screen_height - int<-((float<-game_height) * resize_ratio)) / 2),
+            y = float<-((screen_height - int<-((game_height) * resize_ratio)) / 2),
             width = float<-(int<-(source_width * resize_ratio)),
-            height = float<-(int<-((float<-game_height) * resize_ratio))
+            height = float<-(int<-((game_height) * resize_ratio))
         )
     )
 
@@ -146,14 +146,14 @@ function keep_width_centered(
     game_height: int
 ) -> ViewportLayout:
     let resize_ratio = (float<-screen_width) / (float<-game_width)
-    let source_height = float<-(int<-((float<-screen_height) / resize_ratio))
+    let source_height = float<-(int<-((screen_height) / resize_ratio))
 
     return ViewportLayout(
         source = rl.Rectangle(x = 0.0, y = 0.0, width = float<-game_width, height = -source_height),
         destination = rl.Rectangle(
-            x = float<-((screen_width - int<-((float<-game_width) * resize_ratio)) / 2),
+            x = float<-((screen_width - int<-((game_width) * resize_ratio)) / 2),
             y = float<-((screen_height - int<-(source_height * resize_ratio)) / 2),
-            width = float<-(int<-((float<-game_width) * resize_ratio)),
+            width = float<-(int<-((game_width) * resize_ratio)),
             height = float<-(int<-(source_height * resize_ratio))
         )
     )

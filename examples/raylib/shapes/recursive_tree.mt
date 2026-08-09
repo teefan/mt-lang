@@ -19,7 +19,7 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - recursive tree")
     defer: rl.close_window()
 
-    let start = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0 - 125.0, y = float<-SCREEN_HEIGHT)
+    let start = rl.Vector2(x = SCREEN_WIDTH / 2.0 - 125.0, y = float<-SCREEN_HEIGHT)
     var angle: float = 40.0
     var thick: float = 1.0
     var tree_depth: float = 10.0

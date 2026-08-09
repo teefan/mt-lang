@@ -12,8 +12,8 @@ function main() -> int:
     defer: rl.close_window()
 
     var current_fps = 60
-    var delta_circle = rl.Vector2(x = 0.0, y = (float<-SCREEN_HEIGHT) / 3.0)
-    var frame_circle = rl.Vector2(x = 0.0, y = (float<-SCREEN_HEIGHT) * (2.0 / 3.0))
+    var delta_circle = rl.Vector2(x = 0.0, y = (SCREEN_HEIGHT) / 3.0)
+    var frame_circle = rl.Vector2(x = 0.0, y = (SCREEN_HEIGHT) * (2.0 / 3.0))
 
     rl.set_target_fps(current_fps)
 
@@ -29,9 +29,9 @@ function main() -> int:
         delta_circle.x += rl.get_frame_time() * 6.0 * SPEED
         frame_circle.x += 0.1 * SPEED
 
-        if delta_circle.x > float<-SCREEN_WIDTH:
+        if delta_circle.x > SCREEN_WIDTH:
             delta_circle.x = 0.0
-        if frame_circle.x > float<-SCREEN_WIDTH:
+        if frame_circle.x > SCREEN_WIDTH:
             frame_circle.x = 0.0
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_R):

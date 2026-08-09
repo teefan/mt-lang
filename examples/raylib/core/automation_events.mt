@@ -122,10 +122,10 @@ function update_camera(
     let max_screen = rl.get_world_to_screen_2d(rl.Vector2(x = max_x, y = max_y), camera_value)
     let min_screen = rl.get_world_to_screen_2d(rl.Vector2(x = min_x, y = min_y), camera_value)
 
-    if max_screen.x < float<-SCREEN_WIDTH:
-        unsafe: read(camera).offset.x = float<-SCREEN_WIDTH - (max_screen.x - HALF_SCREEN_WIDTH)
-    if max_screen.y < float<-SCREEN_HEIGHT:
-        unsafe: read(camera).offset.y = float<-SCREEN_HEIGHT - (max_screen.y - HALF_SCREEN_HEIGHT)
+    if max_screen.x < SCREEN_WIDTH:
+        unsafe: read(camera).offset.x = SCREEN_WIDTH - (max_screen.x - HALF_SCREEN_WIDTH)
+    if max_screen.y < SCREEN_HEIGHT:
+        unsafe: read(camera).offset.y = SCREEN_HEIGHT - (max_screen.y - HALF_SCREEN_HEIGHT)
     if min_screen.x > 0.0:
         unsafe: read(camera).offset.x = HALF_SCREEN_WIDTH - min_screen.x
     if min_screen.y > 0.0:

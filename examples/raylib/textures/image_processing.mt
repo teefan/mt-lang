@@ -129,7 +129,7 @@ function main() -> int:
             let stroke = if selected: rl.BLUE else: rl.GRAY
             let label_color = if selected: rl.DARKBLUE else: rl.DARKGRAY
             let label = process_text(index)
-            let label_x = int<-(toggle_rects[index].x + toggle_rects[index].width / 2.0 - float<-rl.measure_text(
+            let label_x = int<-(toggle_rects[index].x + toggle_rects[index].width / 2.0 - rl.measure_text(
                 label,
                 10
             ) / 2.0)

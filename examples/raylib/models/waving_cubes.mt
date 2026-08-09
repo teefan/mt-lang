@@ -40,12 +40,12 @@ function main() -> int:
             while y < NUM_BLOCKS:
                 var z = 0
                 while z < NUM_BLOCKS:
-                    let block_scale = float<-(x + y + z) / 30.0
+                    let block_scale = (x + y + z) / 30.0
                     let scatter = float<-math.sin(double<-(block_scale * 20.0) + (time * 4.0))
                     let cube_pos = rl.Vector3(
-                        x = (x - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter,
-                        y = (y - float<-NUM_BLOCKS / 2.0) * (scale * 2.0) + scatter,
-                        z = (z - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter
+                        x = (x - NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter,
+                        y = (y - NUM_BLOCKS / 2.0) * (scale * 2.0) + scatter,
+                        z = (z - NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter
                     )
                     let cube_color = rl.color_from_hsv(float<-(((x + y + z) * 18) % 360), 0.75, 0.9)
                     let cube_size = (2.4 - scale) * block_scale

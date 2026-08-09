@@ -94,15 +94,15 @@ function main() -> int:
 
             let mouse_position = rl.get_mouse_position()
             let offset_velocity = rl.Vector2(
-                x = (mouse_position.x / float<-SCREEN_WIDTH - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom,
-                y = (mouse_position.y / float<-SCREEN_HEIGHT - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom
+                x = (mouse_position.x / SCREEN_WIDTH - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom,
+                y = (mouse_position.y / SCREEN_HEIGHT - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom
             )
             offset[0] += rl.get_frame_time() * offset_velocity.x
             offset[1] += rl.get_frame_time() * offset_velocity.y
             rl.set_shader_value(shader, zoom_location, zoom, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
             rl.set_shader_value(shader, offset_location, offset, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
-        let dc = rl.get_frame_time() * float<-increment_speed * 0.0005
+        let dc = rl.get_frame_time() * increment_speed * 0.0005
         c[0] += dc
         c[1] += dc
         rl.set_shader_value(shader, c_location, c, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)

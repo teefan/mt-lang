@@ -17,8 +17,8 @@ function main() -> int:
 
     var sine_points: array[rl.Vector2, WAVE_POINTS] = zero[array[rl.Vector2, WAVE_POINTS]]
     var cos_points: array[rl.Vector2, WAVE_POINTS] = zero[array[rl.Vector2, WAVE_POINTS]]
-    let center = rl.Vector2(x = (float<-SCREEN_WIDTH / 2.0 - 30.0), y = (float<-SCREEN_HEIGHT / 2.0))
-    let graph_bounds = rl.Rectangle(x = 20.0, y = float<-SCREEN_HEIGHT - 120.0, width = 200.0, height = 100.0)
+    let center = rl.Vector2(x = (SCREEN_WIDTH / 2.0 - 30.0), y = (SCREEN_HEIGHT / 2.0))
+    let graph_bounds = rl.Rectangle(x = 20.0, y = SCREEN_HEIGHT - 120.0, width = 200.0, height = 100.0)
     let half_graph_height = graph_bounds.height / 2.0
     let radius = 130.0
     var angle: float = 0.0

@@ -20,25 +20,25 @@ function main() -> int:
     defer: rl.close_window()
 
     let symmetry = 6
-    let angle: float = 360.0 / float<-symmetry
+    let angle: float = 360.0 / symmetry
     let thickness = 3.0
-    let reset_button_rec = rl.Rectangle(x = float<-SCREEN_WIDTH - 55.0, y = 5.0, width = 50.0, height = 25.0)
+    let reset_button_rec = rl.Rectangle(x = SCREEN_WIDTH - 55.0, y = 5.0, width = 50.0, height = 25.0)
     let back_button_rec = rl.Rectangle(
-        x = float<-SCREEN_WIDTH - 55.0,
-        y = float<-SCREEN_HEIGHT - 30.0,
+        x = SCREEN_WIDTH - 55.0,
+        y = SCREEN_HEIGHT - 30.0,
         width = 25.0,
         height = 25.0
     )
     let next_button_rec = rl.Rectangle(
-        x = float<-SCREEN_WIDTH - 30.0,
-        y = float<-SCREEN_HEIGHT - 30.0,
+        x = SCREEN_WIDTH - 30.0,
+        y = SCREEN_HEIGHT - 30.0,
         width = 25.0,
         height = 25.0
     )
     var mouse_pos: rl.Vector2 = zero[rl.Vector2]
     var prev_mouse_pos: rl.Vector2 = zero[rl.Vector2]
     let scale_vector = rl.Vector2(x = 1.0, y = -1.0)
-    let offset = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0)
+    let offset = rl.Vector2(x = SCREEN_WIDTH / 2.0, y = SCREEN_HEIGHT / 2.0)
 
     let camera = rl.Camera2D(
         target = zero[rl.Vector2],

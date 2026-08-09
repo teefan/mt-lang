@@ -25,7 +25,7 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - math angle rotation")
     defer: rl.close_window()
 
-    let center = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0)
+    let center = rl.Vector2(x = SCREEN_WIDTH / 2.0, y = SCREEN_HEIGHT / 2.0)
     let angles = array[int, ANGLE_COUNT](0, 30, 60, 90)
     var total_angle: float = 0.0
 
@@ -42,7 +42,7 @@ function main() -> int:
 
         var index = 0
         while index < ANGLE_COUNT:
-            let radians = float<-angles[index] * DEG_TO_RAD
+            let radians = angles[index] * DEG_TO_RAD
             let end_point = rl.Vector2(
                 x = center.x + float<-math.cos(double<-radians) * LINE_LENGTH,
                 y = center.y + float<-math.sin(double<-radians) * LINE_LENGTH

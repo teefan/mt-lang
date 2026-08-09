@@ -13,7 +13,7 @@ function main() -> int:
     defer: rl.close_window()
 
     var start_point = rl.Vector2(x = 30.0, y = 30.0)
-    var end_point = rl.Vector2(x = float<-SCREEN_WIDTH - 30.0, y = float<-SCREEN_HEIGHT - 30.0)
+    var end_point = rl.Vector2(x = SCREEN_WIDTH - 30.0, y = SCREEN_HEIGHT - 30.0)
     var move_start_point = false
     var move_end_point = false
 

@@ -108,10 +108,10 @@ function main() -> int:
 
             if anim_transition:
                 anim_current_frame0 += anim_frame_speed0
-                if anim_current_frame0 >= float<-anim0.keyframeCount:
+                if anim_current_frame0 >= anim0.keyframeCount:
                     anim_current_frame0 = 0.0
                 anim_current_frame1 += anim_frame_speed1
-                if anim_current_frame1 >= float<-anim1.keyframeCount:
+                if anim_current_frame1 >= anim1.keyframeCount:
                     anim_current_frame1 = 0.0
 
                 anim_blend_factor = anim_blend_time_counter / anim_blend_time
@@ -150,12 +150,12 @@ function main() -> int:
             else:
                 if current_anim_playing == 0:
                     anim_current_frame0 += anim_frame_speed0
-                    if anim_current_frame0 >= float<-anim0.keyframeCount:
+                    if anim_current_frame0 >= anim0.keyframeCount:
                         anim_current_frame0 = 0.0
                     rl.update_model_animation(model, anim0, anim_current_frame0)
                 else if current_anim_playing == 1:
                     anim_current_frame1 += anim_frame_speed1
-                    if anim_current_frame1 >= float<-anim1.keyframeCount:
+                    if anim_current_frame1 >= anim1.keyframeCount:
                         anim_current_frame1 = 0.0
                     rl.update_model_animation(model, anim1, anim_current_frame1)
 
@@ -195,7 +195,7 @@ function main() -> int:
         if dropdown_edit_mode1:
             gui.disable()
         gui.slider(
-            rl.Rectangle(x = float<-rl.get_screen_width() - 170.0, y = 38.0, width = 160.0, height = 12.0),
+            rl.Rectangle(x = rl.get_screen_width() - 170.0, y = 38.0, width = 160.0, height = 12.0),
             frame_speed_text1,
             "",
             anim_frame_speed1,
@@ -228,7 +228,7 @@ function main() -> int:
         gui.set_style(gui.Control.PROGRESSBAR, int<-gui.ProgressBarProperty.PROGRESS_SIDE, 0)
 
         if gui.dropdown_box(
-            rl.Rectangle(x = float<-rl.get_screen_width() - 170.0, y = 10.0, width = 160.0, height = 24.0),
+            rl.Rectangle(x = rl.get_screen_width() - 170.0, y = 10.0, width = 160.0, height = 24.0),
             animation_names,
             anim_index1,
             dropdown_edit_mode1
@@ -238,8 +238,8 @@ function main() -> int:
         gui.progress_bar(
             rl.Rectangle(
                 x = 60.0,
-                y = float<-rl.get_screen_height() - 60.0,
-                width = float<-rl.get_screen_width() - 180.0,
+                y = rl.get_screen_height() - 60.0,
+                width = rl.get_screen_width() - 180.0,
                 height = 20.0
             ),
             "ANIM 0",
@@ -250,15 +250,15 @@ function main() -> int:
         )
         var index = 0
         while index < anim0.keyframeCount:
-            let keyframe_x = 60 + int<-((float<-(rl.get_screen_width() - 180) / float<-anim0.keyframeCount) * float<-index)
+            let keyframe_x = 60 + int<-((float<-(rl.get_screen_width() - 180) / float<-anim0.keyframeCount) * index)
             rl.draw_rectangle(keyframe_x, rl.get_screen_height() - 60, 1, 20, rl.BLUE)
             index += 1
 
         gui.progress_bar(
             rl.Rectangle(
                 x = 60.0,
-                y = float<-rl.get_screen_height() - 30.0,
-                width = float<-rl.get_screen_width() - 180.0,
+                y = rl.get_screen_height() - 30.0,
+                width = rl.get_screen_width() - 180.0,
                 height = 20.0
             ),
             "ANIM 1",
@@ -269,7 +269,7 @@ function main() -> int:
         )
         index = 0
         while index < anim1.keyframeCount:
-            let keyframe_x = 60 + int<-((float<-(rl.get_screen_width() - 180) / float<-anim1.keyframeCount) * float<-index)
+            let keyframe_x = 60 + int<-((float<-(rl.get_screen_width() - 180) / float<-anim1.keyframeCount) * index)
             rl.draw_rectangle(keyframe_x, rl.get_screen_height() - 30, 1, 20, rl.BLUE)
             index += 1
 

@@ -63,8 +63,8 @@ function main() -> int:
     let fudesumi_pos = rl.Rectangle(
         x = 50.0,
         y = 10.0,
-        width = float<-fudesumi_image.width * 0.8,
-        height = float<-fudesumi_image.height * 0.8
+        width = fudesumi_image.width * 0.8,
+        height = fudesumi_image.height * 0.8
     )
     let red_pos = rl.Rectangle(
         x = 410.0,

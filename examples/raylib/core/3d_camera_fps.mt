@@ -153,7 +153,7 @@ function draw_level() -> void:
     while y < 25:
         var x = -25
         while x < 25:
-            let position = rl.Vector3(x = float<-x * 5.0, y = 0.0, z = float<-y * 5.0)
+            let position = rl.Vector3(x = x * 5.0, y = 0.0, z = y * 5.0)
             if (y % 2 != 0) and (x % 2 != 0):
                 rl.draw_plane(position, rl.Vector2(x = 5.0, y = 5.0), tile_color)
             else if (y % 2 == 0) and (x % 2 == 0):
@@ -244,8 +244,8 @@ function main() -> int:
             walk_lerp = rm.lerp(walk_lerp, 0.0, WALK_LERP_SPEED * delta)
             camera.fovy = rm.lerp(camera.fovy, IDLE_FOV, FOV_LERP_SPEED * delta)
 
-        lean.x = rm.lerp(lean.x, float<-sideway * LEAN_X_FACTOR, WALK_LERP_SPEED * delta)
-        lean.y = rm.lerp(lean.y, float<-forward * LEAN_Y_FACTOR, WALK_LERP_SPEED * delta)
+        lean.x = rm.lerp(lean.x, sideway * LEAN_X_FACTOR, WALK_LERP_SPEED * delta)
+        lean.y = rm.lerp(lean.y, forward * LEAN_Y_FACTOR, WALK_LERP_SPEED * delta)
         update_camera_fps(ref_of(camera))
 
         rl.begin_drawing()

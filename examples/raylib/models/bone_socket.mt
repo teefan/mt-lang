@@ -96,7 +96,7 @@ function main() -> int:
 
         let character_rotate = rm.quaternion_from_axis_angle(
             rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
-            float<-angle * DEG_TO_RAD
+            angle * DEG_TO_RAD
         )
         character_model.transform = rm.matrix_multiply(
             rm.quaternion_to_matrix(character_rotate),

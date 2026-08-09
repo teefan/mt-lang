@@ -19,8 +19,8 @@ function main() -> int:
 
     var index = 0
     while index < STAR_COUNT:
-        stars[index].x = float<-rl.get_random_value(-SCREEN_WIDTH / 2, SCREEN_WIDTH / 2)
-        stars[index].y = float<-rl.get_random_value(-SCREEN_HEIGHT / 2, SCREEN_HEIGHT / 2)
+        stars[index].x = rl.get_random_value(-SCREEN_WIDTH / 2, SCREEN_WIDTH / 2)
+        stars[index].y = rl.get_random_value(-SCREEN_HEIGHT / 2, SCREEN_HEIGHT / 2)
         stars[index].z = 1.0
         index += 1
 
@@ -45,19 +45,19 @@ function main() -> int:
         while index < STAR_COUNT:
             stars[index].z -= dt * speed
             stars_screen_pos[index] = rl.Vector2(
-                x = float<-SCREEN_WIDTH * 0.5 + stars[index].x / stars[index].z,
-                y = float<-SCREEN_HEIGHT * 0.5 + stars[index].y / stars[index].z
+                x = SCREEN_WIDTH * 0.5 + stars[index].x / stars[index].z,
+                y = SCREEN_HEIGHT * 0.5 + stars[index].y / stars[index].z
             )
 
             if (
                 stars[index].z < 0.0
                 or stars_screen_pos[index].x < 0.0
                 or stars_screen_pos[index].y < 0.0
-                or stars_screen_pos[index].x > float<-SCREEN_WIDTH
-                or stars_screen_pos[index].y > float<-SCREEN_HEIGHT
+                or stars_screen_pos[index].x > SCREEN_WIDTH
+                or stars_screen_pos[index].y > SCREEN_HEIGHT
             ):
-                stars[index].x = float<-rl.get_random_value(-SCREEN_WIDTH / 2, SCREEN_WIDTH / 2)
-                stars[index].y = float<-rl.get_random_value(-SCREEN_HEIGHT / 2, SCREEN_HEIGHT / 2)
+                stars[index].x = rl.get_random_value(-SCREEN_WIDTH / 2, SCREEN_WIDTH / 2)
+                stars[index].y = rl.get_random_value(-SCREEN_HEIGHT / 2, SCREEN_HEIGHT / 2)
                 stars[index].z = 1.0
 
             index += 1
@@ -71,8 +71,8 @@ function main() -> int:
                 let t = math.clamp(stars[index].z + (1.0 / 32.0), 0.0, 1.0)
                 if (t - stars[index].z) > 0.001:
                     let start_pos = rl.Vector2(
-                        x = float<-SCREEN_WIDTH * 0.5 + stars[index].x / t,
-                        y = float<-SCREEN_HEIGHT * 0.5 + stars[index].y / t
+                        x = SCREEN_WIDTH * 0.5 + stars[index].x / t,
+                        y = SCREEN_HEIGHT * 0.5 + stars[index].y / t
                     )
                     rl.draw_line_v(start_pos, stars_screen_pos[index], rl.RAYWHITE)
             else:

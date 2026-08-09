@@ -37,7 +37,7 @@ function draw_rectangle_rounded_gradient_h(
     if radius_left <= 0.0 and radius_right <= 0.0:
         return
 
-    let step_length = 90.0 / float<-segments
+    let step_length = 90.0 / segments
 
     let point = array[rl.Vector2, RECT_POINT_COUNT](
         rl.Vector2(x = rec.x + radius_left, y = rec.y),
@@ -141,11 +141,11 @@ function main() -> int:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        let width = float<-rl.get_screen_width() / 2.0
-        let height = float<-rl.get_screen_height() / 6.0
+        let width = rl.get_screen_width() / 2.0
+        let height = rl.get_screen_height() / 6.0
         var rec = rl.Rectangle(
-            x = float<-rl.get_screen_width() / 2.0 - width / 2.0,
-            y = float<-rl.get_screen_height() / 2.0 - 5.0 * (height / 2.0),
+            x = rl.get_screen_width() / 2.0 - width / 2.0,
+            y = rl.get_screen_height() / 2.0 - 5.0 * (height / 2.0),
             width = width,
             height = height
         )

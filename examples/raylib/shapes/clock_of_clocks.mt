@@ -389,8 +389,8 @@ function main() -> int:
                 var col = 0
                 while col < 4:
                     let centre = rl.Vector2(
-                        x = x_offset + float<-col * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
-                        y = 100.0 + float<-row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5
+                        x = x_offset + col * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
+                        y = 100.0 + row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5
                     )
 
                     rl.draw_ring(

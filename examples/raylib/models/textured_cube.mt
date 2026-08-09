@@ -29,9 +29,9 @@ function main() -> int:
         atlas_image,
         rl.Rectangle(
             x = 0.0,
-            y = float<-atlas_image.height / 2.0,
-            width = float<-atlas_image.width / 2.0,
-            height = float<-atlas_image.height / 2.0
+            y = atlas_image.height / 2.0,
+            width = atlas_image.width / 2.0,
+            height = atlas_image.height / 2.0
         )
     )
     defer: rl.unload_image(atlas_crop)

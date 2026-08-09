@@ -63,14 +63,14 @@ function draw_grid(slices: int, spacing: float) -> void:
         let line_color: float = if index == 0: 0.5 else: 0.75
 
         rlgl.color3f(line_color, line_color, line_color)
-        rlgl.vertex3f(float<-index * spacing, 0.0, float<-(-half_slices) * spacing)
+        rlgl.vertex3f(index * spacing, 0.0, -half_slices * spacing)
         rlgl.color3f(line_color, line_color, line_color)
-        rlgl.vertex3f(float<-index * spacing, 0.0, float<-half_slices * spacing)
+        rlgl.vertex3f(index * spacing, 0.0, half_slices * spacing)
 
         rlgl.color3f(line_color, line_color, line_color)
-        rlgl.vertex3f(float<-(-half_slices) * spacing, 0.0, float<-index * spacing)
+        rlgl.vertex3f(-half_slices * spacing, 0.0, index * spacing)
         rlgl.color3f(line_color, line_color, line_color)
-        rlgl.vertex3f(float<-half_slices * spacing, 0.0, float<-index * spacing)
+        rlgl.vertex3f(half_slices * spacing, 0.0, index * spacing)
 
         index += 1
     rlgl.end()

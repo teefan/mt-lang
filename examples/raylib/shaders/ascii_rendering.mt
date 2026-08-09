@@ -27,7 +27,7 @@ function main() -> int:
     rl.set_shader_value(shader, resolution_location, resolution, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     var font_size: float = 9.0
-    var circle_position = rl.Vector2(x = 40.0, y = float<-SCREEN_HEIGHT * 0.5)
+    var circle_position = rl.Vector2(x = 40.0, y = SCREEN_HEIGHT * 0.5)
     var circle_speed: float = 1.0
 
     let target = rl.load_render_texture(SCREEN_WIDTH, SCREEN_HEIGHT)

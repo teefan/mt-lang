@@ -24,7 +24,7 @@ function main() -> int:
     defer: rl.close_window()
 
     balls[0] = Ball(
-        position = rl.Vector2(x = float<-rl.get_screen_width() / 2.0, y = float<-rl.get_screen_height() / 2.0),
+        position = rl.Vector2(x = rl.get_screen_width() / 2.0, y = rl.get_screen_height() / 2.0),
         speed = rl.Vector2(x = 200.0, y = 200.0),
         prev_position = zero[rl.Vector2],
         radius = 40.0,
@@ -76,7 +76,7 @@ function main() -> int:
                         y = float<-rl.get_random_value(-300, 300)
                     ),
                     prev_position = zero[rl.Vector2],
-                    radius = 20.0 + float<-rl.get_random_value(0, 30),
+                    radius = 20.0 + rl.get_random_value(0, 30),
                     friction = 0.99,
                     elasticity = 0.9,
                     color = rl.Color(
@@ -107,15 +107,15 @@ function main() -> int:
                 balls[index].position.x += balls[index].speed.x * delta
                 balls[index].position.y += balls[index].speed.y * delta
 
-                if balls[index].position.x + balls[index].radius >= float<-SCREEN_WIDTH:
-                    balls[index].position.x = float<-SCREEN_WIDTH - balls[index].radius
+                if balls[index].position.x + balls[index].radius >= SCREEN_WIDTH:
+                    balls[index].position.x = SCREEN_WIDTH - balls[index].radius
                     balls[index].speed.x = -balls[index].speed.x * balls[index].elasticity
                 else if balls[index].position.x - balls[index].radius <= 0.0:
                     balls[index].position.x = balls[index].radius
                     balls[index].speed.x = -balls[index].speed.x * balls[index].elasticity
 
-                if balls[index].position.y + balls[index].radius >= float<-SCREEN_HEIGHT:
-                    balls[index].position.y = float<-SCREEN_HEIGHT - balls[index].radius
+                if balls[index].position.y + balls[index].radius >= SCREEN_HEIGHT:
+                    balls[index].position.y = SCREEN_HEIGHT - balls[index].radius
                     balls[index].speed.y = -balls[index].speed.y * balls[index].elasticity
                 else if balls[index].position.y - balls[index].radius <= 0.0:
                     balls[index].position.y = balls[index].radius

@@ -38,10 +38,10 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - collision ellipses")
     defer: rl.close_window()
 
-    var ellipse_a_center = rl.Vector2(x = float<-SCREEN_WIDTH / 4.0, y = float<-SCREEN_HEIGHT / 2.0)
+    var ellipse_a_center = rl.Vector2(x = SCREEN_WIDTH / 4.0, y = SCREEN_HEIGHT / 2.0)
     let ellipse_a_rx = 120.0
     let ellipse_a_ry = 70.0
-    var ellipse_b_center = rl.Vector2(x = (float<-SCREEN_WIDTH * 3.0) / 4.0, y = float<-SCREEN_HEIGHT / 2.0)
+    var ellipse_b_center = rl.Vector2(x = (SCREEN_WIDTH * 3.0) / 4.0, y = SCREEN_HEIGHT / 2.0)
     let ellipse_b_rx = 90.0
     let ellipse_b_ry = 140.0
     var controlled = 0

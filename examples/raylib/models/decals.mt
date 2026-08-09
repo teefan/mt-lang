@@ -238,7 +238,7 @@ function draw_button(bounds: rl.Rectangle, label: str) -> bool:
             let text_width = rl.measure_text(label, 10)
             rl.draw_text(
                 label,
-                int<-(bounds.x + bounds.width * 0.5 - float<-text_width * 0.5),
+                int<-(bounds.x + bounds.width * 0.5 - text_width * 0.5),
                 int<-(bounds.y + bounds.height * 0.5 - 5.0),
                 10,
                 rl.RAYWHITE
@@ -250,7 +250,7 @@ function draw_button(bounds: rl.Rectangle, label: str) -> bool:
     let text_width = rl.measure_text(label, 10)
     rl.draw_text(
         label,
-        int<-(bounds.x + bounds.width * 0.5 - float<-text_width * 0.5),
+        int<-(bounds.x + bounds.width * 0.5 - text_width * 0.5),
         int<-(bounds.y + bounds.height * 0.5 - 5.0),
         10,
         rl.DARKGRAY
@@ -350,7 +350,7 @@ function main() -> int:
         if collision.hit and rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT) and decal_count < MAX_DECALS:
             let origin = rm.vector3_add(collision.point, rm.vector3_scale(collision.normal, 1.0))
             var splat = rm.matrix_look_at(collision.point, origin, rl.Vector3(x = 0.0, y = 1.0, z = 0.0))
-            let angle = DEG_TO_RAD * float<-rl.get_random_value(-180, 180)
+            let angle = DEG_TO_RAD * rl.get_random_value(-180, 180)
             splat = rm.matrix_multiply(splat, rm.matrix_rotate_z(angle))
 
             let decal_mesh = gen_mesh_decal(model, splat, decal_size, decal_offset)
@@ -382,7 +382,7 @@ function main() -> int:
         rl.end_mode_3d()
 
         var y_position = 10.0
-        let x0 = float<-rl.get_screen_width() - 300.0
+        let x0 = rl.get_screen_width() - 300.0
         let x1 = x0 + 100.0
         let x2 = x1 + 100.0
 
@@ -447,13 +447,13 @@ function main() -> int:
 
         let show_model_label = if show_model: "Hide Model" else: "Show Model"
         if draw_button(
-            rl.Rectangle(x = 10.0, y = float<-SCREEN_HEIGHT - 100.0, width = 100.0, height = 60.0),
+            rl.Rectangle(x = 10.0, y = SCREEN_HEIGHT - 100.0, width = 100.0, height = 60.0),
             show_model_label
         ):
             show_model = not show_model
 
         if draw_button(
-            rl.Rectangle(x = 120.0, y = float<-SCREEN_HEIGHT - 100.0, width = 100.0, height = 60.0),
+            rl.Rectangle(x = 120.0, y = SCREEN_HEIGHT - 100.0, width = 100.0, height = 60.0),
             "Clear Decals"
         ):
             var index = 0

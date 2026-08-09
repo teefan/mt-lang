@@ -49,7 +49,7 @@ function main() -> int:
         )
         rl.draw_texture_ex(
             background,
-            rl.Vector2(x = float<-(background.width * 2) + scrolling_back, y = 20.0),
+            rl.Vector2(x = (background.width * 2) + scrolling_back, y = 20.0),
             0.0,
             2.0,
             rl.WHITE
@@ -58,7 +58,7 @@ function main() -> int:
         rl.draw_texture_ex(midground, rl.Vector2(x = scrolling_mid, y = 20.0), 0.0, 2.0, rl.WHITE)
         rl.draw_texture_ex(
             midground,
-            rl.Vector2(x = float<-(midground.width * 2) + scrolling_mid, y = 20.0),
+            rl.Vector2(x = (midground.width * 2) + scrolling_mid, y = 20.0),
             0.0,
             2.0,
             rl.WHITE
@@ -73,7 +73,7 @@ function main() -> int:
         )
         rl.draw_texture_ex(
             foreground,
-            rl.Vector2(x = float<-(foreground.width * 2) + scrolling_fore, y = 70.0),
+            rl.Vector2(x = (foreground.width * 2) + scrolling_fore, y = 70.0),
             0.0,
             2.0,
             rl.WHITE

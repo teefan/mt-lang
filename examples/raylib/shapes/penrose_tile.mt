@@ -93,7 +93,7 @@ function build_production_step(ls: ref[PenroseLSystem]) -> void:
 
 
 function draw_penrose_lsystem(ls: ref[PenroseLSystem]) -> void:
-    let screen_center = rl.Vector2(x = float<-rl.get_screen_width() / 2.0, y = float<-rl.get_screen_height() / 2.0)
+    let screen_center = rl.Vector2(x = rl.get_screen_width() / 2.0, y = rl.get_screen_height() / 2.0)
     var turtle = TurtleState(origin = zero[rl.Vector2], angle = -90.0)
     var repeats = 1
     let production_text = read(ls).production.as_str()

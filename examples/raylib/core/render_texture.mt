@@ -15,8 +15,8 @@ function main() -> int:
     defer: rl.unload_render_texture(target)
 
     var ball_position = rl.Vector2(
-        x = (float<-RENDER_TEXTURE_WIDTH) / 2.0,
-        y = (float<-RENDER_TEXTURE_HEIGHT) / 2.0
+        x = (RENDER_TEXTURE_WIDTH) / 2.0,
+        y = (RENDER_TEXTURE_HEIGHT) / 2.0
     )
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)
     var rotation: float = 0.0
@@ -27,9 +27,9 @@ function main() -> int:
         ball_position.x += ball_speed.x
         ball_position.y += ball_speed.y
 
-        if ball_position.x >= (float<-RENDER_TEXTURE_WIDTH) - BALL_RADIUS or ball_position.x <= BALL_RADIUS:
+        if ball_position.x >= (RENDER_TEXTURE_WIDTH) - BALL_RADIUS or ball_position.x <= BALL_RADIUS:
             ball_speed.x *= -1.0
-        if ball_position.y >= (float<-RENDER_TEXTURE_HEIGHT) - BALL_RADIUS or ball_position.y <= BALL_RADIUS:
+        if ball_position.y >= (RENDER_TEXTURE_HEIGHT) - BALL_RADIUS or ball_position.y <= BALL_RADIUS:
             ball_speed.y *= -1.0
 
         rotation += 0.5
@@ -50,14 +50,14 @@ function main() -> int:
             height = -(float<-target.texture.height)
         )
         let destination = rl.Rectangle(
-            x = (float<-SCREEN_WIDTH) / 2.0,
-            y = (float<-SCREEN_HEIGHT) / 2.0,
+            x = (SCREEN_WIDTH) / 2.0,
+            y = (SCREEN_HEIGHT) / 2.0,
             width = float<-target.texture.width,
             height = float<-target.texture.height
         )
         let origin = rl.Vector2(
-            x = (float<-target.texture.width) / 2.0,
-            y = (float<-target.texture.height) / 2.0
+            x = (target.texture.width) / 2.0,
+            y = (target.texture.height) / 2.0
         )
         rl.draw_texture_pro(target.texture, source, destination, origin, rotation, rl.WHITE)
 

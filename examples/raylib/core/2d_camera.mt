@@ -18,10 +18,10 @@ function main() -> int:
     var spacing = 0
     var building_index = 0
     while building_index < MAX_BUILDINGS:
-        buildings[building_index].width = float<-rl.get_random_value(50, 200)
-        buildings[building_index].height = float<-rl.get_random_value(100, 800)
-        buildings[building_index].y = (float<-SCREEN_HEIGHT) - 130.0 - buildings[building_index].height
-        buildings[building_index].x = -6000.0 + (float<-spacing)
+        buildings[building_index].width = rl.get_random_value(50, 200)
+        buildings[building_index].height = rl.get_random_value(100, 800)
+        buildings[building_index].y = (SCREEN_HEIGHT) - 130.0 - buildings[building_index].height
+        buildings[building_index].x = -6000.0 + (spacing)
 
         spacing += int<-buildings[building_index].width
         building_colors[building_index] = rl.Color(
@@ -34,7 +34,7 @@ function main() -> int:
 
     var camera = rl.Camera2D(
         target = rl.Vector2(x = player.x + 20.0, y = player.y + 20.0),
-        offset = rl.Vector2(x = (float<-SCREEN_WIDTH) / 2.0, y = (float<-SCREEN_HEIGHT) / 2.0),
+        offset = rl.Vector2(x = (SCREEN_WIDTH) / 2.0, y = (SCREEN_HEIGHT) / 2.0),
         rotation = 0.0,
         zoom = 1.0
     )

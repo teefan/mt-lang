@@ -77,7 +77,7 @@ function main() -> int:
             rl.draw_text(
                 label,
                 (SCREEN_WIDTH - rl.measure_text(label, 30)) / 2,
-                int<-((float<-SCREEN_HEIGHT) * 0.1),
+                int<-((SCREEN_HEIGHT) * 0.1),
                 30,
                 rl.GREEN
             )

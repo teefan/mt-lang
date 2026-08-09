@@ -68,10 +68,10 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
     let position_value = array[float, 3](light.position.x, light.position.y, light.position.z)
     let target_value = array[float, 3](light.target.x, light.target.y, light.target.z)
     let color_value = array[float, 4](
-        float<-light.color.r / 255.0,
-        float<-light.color.g / 255.0,
-        float<-light.color.b / 255.0,
-        float<-light.color.a / 255.0
+        light.color.r / 255.0,
+        light.color.g / 255.0,
+        light.color.b / 255.0,
+        light.color.a / 255.0
     )
     rl.set_shader_value(shader, light.enabled_loc, enabled_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
     rl.set_shader_value(shader, light.type_loc, light.kind, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
@@ -253,11 +253,11 @@ function main() -> int:
     var cube_index = 0
     while cube_index < MAX_CUBES:
         cube_positions[cube_index] = rl.Vector3(
-            x = float<-rl.get_random_value(0, 9) - 5.0,
+            x = rl.get_random_value(0, 9) - 5.0,
             y = float<-rl.get_random_value(0, 4),
-            z = float<-rl.get_random_value(0, 9) - 5.0
+            z = rl.get_random_value(0, 9) - 5.0
         )
-        cube_rotations[cube_index] = float<-rl.get_random_value(0, 359)
+        cube_rotations[cube_index] = rl.get_random_value(0, 359)
         cube_index += 1
 
     var mode = int<-DeferredMode.DEFERRED_SHADING

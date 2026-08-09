@@ -52,7 +52,7 @@ function main() -> int:
     defer: rl.unload_shader(shader)
     rl.set_texture_filter(font_sdf.texture, int<-rl.TextureFilter.TEXTURE_FILTER_BILINEAR)
 
-    var font_position = rl.Vector2(x = 40.0, y = float<-SCREEN_HEIGHT / 2.0 - 50.0)
+    var font_position = rl.Vector2(x = 40.0, y = SCREEN_HEIGHT / 2.0 - 50.0)
     var text_size = rl.Vector2(x = 0.0, y = 0.0)
     var font_size = 16.0
     var current_font = 0
@@ -74,8 +74,8 @@ function main() -> int:
         else:
             text_size = rl.measure_text_ex(font_sdf, msg, font_size, 0.0)
 
-        font_position.x = float<-rl.get_screen_width() / 2.0 - text_size.x / 2.0
-        font_position.y = float<-rl.get_screen_height() / 2.0 - text_size.y / 2.0 + 80.0
+        font_position.x = rl.get_screen_width() / 2.0 - text_size.x / 2.0
+        font_position.y = rl.get_screen_height() / 2.0 - text_size.y / 2.0 + 80.0
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)

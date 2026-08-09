@@ -92,8 +92,8 @@ function main() -> int:
         rl.draw_ring(mouse_pos, GLASS_RADIUS - 2.0, GLASS_RADIUS + 2.0, 0.0, 360.0, 64, rl.BLACK)
 
         let highlight_pos = rl.Vector2(
-            x = mouse_pos.x - (64.0 * (mouse_pos.x / float<-SCREEN_WIDTH)) - 32.0,
-            y = mouse_pos.y - (64.0 * (mouse_pos.y / float<-SCREEN_WIDTH)) - 32.0
+            x = mouse_pos.x - (64.0 * (mouse_pos.x / SCREEN_WIDTH)) - 32.0,
+            y = mouse_pos.y - (64.0 * (mouse_pos.y / SCREEN_WIDTH)) - 32.0
         )
         rl.draw_circle_v(highlight_pos, 4.0, rl.color_alpha(rl.WHITE, 0.5))
 

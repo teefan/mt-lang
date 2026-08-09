@@ -24,9 +24,9 @@ function main() -> int:
     var index = 0
     while index < MAX_COLORS_COUNT:
         let column = float<-(index % 7)
-        let row = float<-index / 7.0
+        let row = index / 7.0
         color_rects[index].x = 20.0 + 100.0 * column + 10.0 * column
-        color_rects[index].y = 80.0 + 100.0 * float<-(index / 7) + 10.0 * row
+        color_rects[index].y = 80.0 + 100.0 * (index / 7) + 10.0 * row
         color_rects[index].width = 100.0
         color_rects[index].height = 100.0
         index += 1
@@ -76,7 +76,7 @@ function main() -> int:
                 let name_width = rl.measure_text(color_names[index], 10)
                 rl.draw_text(
                     color_names[index],
-                    int<-(color_rects[index].x + color_rects[index].width - float<-name_width - 12.0),
+                    int<-(color_rects[index].x + color_rects[index].width - name_width - 12.0),
                     int<-(color_rects[index].y + color_rects[index].height - 20.0),
                     10,
                     colors[index]

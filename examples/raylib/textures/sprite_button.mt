@@ -25,8 +25,8 @@ function main() -> int:
     var source_rect = rl.Rectangle(x = 0.0, y = 0.0, width = float<-button.width, height = frame_height)
 
     let button_bounds = rl.Rectangle(
-        x = float<-SCREEN_WIDTH / 2.0 - float<-button.width / 2.0,
-        y = float<-SCREEN_HEIGHT / 2.0 - float<-button.height / float<-NUM_FRAMES / 2.0,
+        x = SCREEN_WIDTH / 2.0 - button.width / 2.0,
+        y = SCREEN_HEIGHT / 2.0 - float<-button.height / float<-NUM_FRAMES / 2.0,
         width = float<-button.width,
         height = frame_height
     )
@@ -55,7 +55,7 @@ function main() -> int:
         if button_action:
             rl.play_sound(fx_button)
 
-        source_rect.y = float<-button_state * frame_height
+        source_rect.y = button_state * frame_height
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)

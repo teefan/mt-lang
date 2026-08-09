@@ -28,10 +28,10 @@ struct Light:
 
 function color_vector(color: rl.Color) -> array[float, 4]:
     return array[float, 4](
-        float<-color.r / 255.0,
-        float<-color.g / 255.0,
-        float<-color.b / 255.0,
-        float<-color.a / 255.0
+        color.r / 255.0,
+        color.g / 255.0,
+        color.b / 255.0,
+        color.a / 255.0
     )
 
 

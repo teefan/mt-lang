@@ -32,7 +32,7 @@ function matrix_from_rlgl(matrix: rlgl.Matrix) -> rl.Matrix:
         m3 = matrix.m3,
         m7 = matrix.m7,
         m11 = matrix.m11,
-        m15 = matrix.m15,
+        m15 = matrix.m15
     )
 
 
@@ -47,7 +47,7 @@ function main() -> int:
 
     let shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/point_particle.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/point_particle.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/point_particle.fs", GLSL_VERSION)
     )
     defer: rl.unload_shader(shader)
 
@@ -62,7 +62,7 @@ function main() -> int:
         particles[index] = Particle(
             x = float<-rl.get_random_value(20, SCREEN_WIDTH - 20),
             y = float<-rl.get_random_value(50, SCREEN_HEIGHT - 20),
-            period = float<-rl.get_random_value(10, 30) / 10.0,
+            period = rl.get_random_value(10, 30) / 10.0
         )
         index += 1
 
@@ -82,7 +82,7 @@ function main() -> int:
         uint<-gl.ARRAY_BUFFER,
         ptr_int<-(MAX_PARTICLES * int<-size_of(Particle)),
         unsafe: ptr[void]<-ptr_of(particles[0]),
-        uint<-gl.STATIC_DRAW,
+        uint<-gl.STATIC_DRAW
     )
     gl.vertex_attrib_pointer(
         uint<-vertex_position_location,
@@ -90,7 +90,7 @@ function main() -> int:
         uint<-gl.FLOAT,
         ubyte<-gl.FALSE,
         0,
-        zero[const_ptr[void]],
+        zero[const_ptr[void]]
     )
     gl.enable_vertex_attrib_array(uint<-vertex_position_location)
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, 0)
@@ -105,7 +105,7 @@ function main() -> int:
         var color_values = array[float, 4](particle_color.x, particle_color.y, particle_color.z, particle_color.w)
         let model_view_projection = rm.matrix_multiply(
             matrix_from_rlgl(rlgl.get_matrix_modelview()),
-            matrix_from_rlgl(rlgl.get_matrix_projection()),
+            matrix_from_rlgl(rlgl.get_matrix_projection())
         )
         var mvp_values = rm.matrix_to_float_v(model_view_projection)
 

@@ -90,7 +90,7 @@ function main() -> int:
         else if rl.is_key_pressed(rl.KeyboardKey.KEY_FOUR):
             unicode_range = 4
 
-        let atlas_scale = 380.0 / float<-font.texture.width
+        let atlas_scale = 380.0 / font.texture.width
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
@@ -107,8 +107,8 @@ function main() -> int:
             rl.Rectangle(
                 x = 400.0,
                 y = 16.0,
-                width = float<-font.texture.width * atlas_scale,
-                height = float<-font.texture.height * atlas_scale
+                width = font.texture.width * atlas_scale,
+                height = font.texture.height * atlas_scale
             ),
             rl.BLACK
         )
@@ -118,8 +118,8 @@ function main() -> int:
             rl.Rectangle(
                 x = 400.0,
                 y = 16.0,
-                width = float<-font.texture.width * atlas_scale,
-                height = float<-font.texture.height * atlas_scale
+                width = font.texture.width * atlas_scale,
+                height = font.texture.height * atlas_scale
             ),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,

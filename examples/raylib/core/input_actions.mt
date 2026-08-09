@@ -100,8 +100,8 @@ function main() -> int:
         if is_action_down(ACTION_RIGHT):
             position.x += 2.0
         if is_action_pressed(ACTION_FIRE):
-            position.x = ((float<-SCREEN_WIDTH) - size.x) / 2.0
-            position.y = ((float<-SCREEN_HEIGHT) - size.y) / 2.0
+            position.x = ((SCREEN_WIDTH) - size.x) / 2.0
+            position.y = ((SCREEN_HEIGHT) - size.y) / 2.0
 
         release_action = is_action_released(ACTION_FIRE)
 

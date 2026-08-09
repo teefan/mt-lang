@@ -9,11 +9,11 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - collision area")
     defer: rl.close_window()
 
-    var box_a = rl.Rectangle(x = 10.0, y = float<-rl.get_screen_height() / 2.0 - 50.0, width = 200.0, height = 100.0)
+    var box_a = rl.Rectangle(x = 10.0, y = rl.get_screen_height() / 2.0 - 50.0, width = 200.0, height = 100.0)
     var box_a_speed_x = 4
     var box_b = rl.Rectangle(
-        x = float<-rl.get_screen_width() / 2.0 - 30.0,
-        y = float<-rl.get_screen_height() / 2.0 - 30.0,
+        x = rl.get_screen_width() / 2.0 - 30.0,
+        y = rl.get_screen_height() / 2.0 - 30.0,
         width = 60.0,
         height = 60.0
     )
@@ -28,22 +28,22 @@ function main() -> int:
         if not pause:
             box_a.x += float<-box_a_speed_x
 
-        if (box_a.x + box_a.width) >= float<-rl.get_screen_width() or box_a.x <= 0.0:
+        if (box_a.x + box_a.width) >= rl.get_screen_width() or box_a.x <= 0.0:
             box_a_speed_x *= -1
 
         let mouse_position = rl.get_mouse_position()
         box_b.x = mouse_position.x - (box_b.width / 2.0)
         box_b.y = mouse_position.y - (box_b.height / 2.0)
 
-        if (box_b.x + box_b.width) >= float<-rl.get_screen_width():
-            box_b.x = float<-rl.get_screen_width() - box_b.width
+        if (box_b.x + box_b.width) >= rl.get_screen_width():
+            box_b.x = rl.get_screen_width() - box_b.width
         else if box_b.x <= 0.0:
             box_b.x = 0.0
 
-        if (box_b.y + box_b.height) >= float<-rl.get_screen_height():
-            box_b.y = float<-rl.get_screen_height() - box_b.height
-        else if box_b.y <= float<-screen_upper_limit:
-            box_b.y = float<-screen_upper_limit
+        if (box_b.y + box_b.height) >= rl.get_screen_height():
+            box_b.y = rl.get_screen_height() - box_b.height
+        else if box_b.y <= screen_upper_limit:
+            box_b.y = screen_upper_limit
 
         collision = rl.check_collision_recs(box_a, box_b)
         if collision:

@@ -25,10 +25,10 @@ function main() -> int:
         height = float<-frame_height
     )
     let dest_rect = rl.Rectangle(
-        x = float<-SCREEN_WIDTH / 2.0,
-        y = float<-SCREEN_HEIGHT / 2.0,
-        width = float<-frame_width * 2.0,
-        height = float<-frame_height * 2.0
+        x = SCREEN_WIDTH / 2.0,
+        y = SCREEN_HEIGHT / 2.0,
+        width = frame_width * 2.0,
+        height = frame_height * 2.0
     )
     let origin = rl.Vector2(x = float<-frame_width, y = float<-frame_height)
 

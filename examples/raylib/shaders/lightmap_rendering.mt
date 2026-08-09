@@ -85,7 +85,7 @@ function main() -> int:
     rl.draw_texture_pro(
         light,
         rl.Rectangle(x = 0.0, y = 0.0, width = float<-light.width, height = float<-light.height),
-        rl.Rectangle(x = 0.0, y = 0.0, width = 2.0 * float<-MAP_SIZE, height = 2.0 * float<-MAP_SIZE),
+        rl.Rectangle(x = 0.0, y = 0.0, width = 2.0 * MAP_SIZE, height = 2.0 * MAP_SIZE),
         rl.Vector2(x = float<-MAP_SIZE, y = float<-MAP_SIZE),
         0.0,
         rl.RED
@@ -94,10 +94,10 @@ function main() -> int:
         light,
         rl.Rectangle(x = 0.0, y = 0.0, width = float<-light.width, height = float<-light.height),
         rl.Rectangle(
-            x = float<-MAP_SIZE * 0.8,
-            y = float<-MAP_SIZE / 2.0,
-            width = 2.0 * float<-MAP_SIZE,
-            height = 2.0 * float<-MAP_SIZE
+            x = MAP_SIZE * 0.8,
+            y = MAP_SIZE / 2.0,
+            width = 2.0 * MAP_SIZE,
+            height = 2.0 * MAP_SIZE
         ),
         rl.Vector2(x = float<-MAP_SIZE, y = float<-MAP_SIZE),
         0.0,
@@ -107,12 +107,12 @@ function main() -> int:
         light,
         rl.Rectangle(x = 0.0, y = 0.0, width = float<-light.width, height = float<-light.height),
         rl.Rectangle(
-            x = float<-MAP_SIZE * 0.8,
-            y = float<-MAP_SIZE * 0.8,
+            x = MAP_SIZE * 0.8,
+            y = MAP_SIZE * 0.8,
             width = float<-MAP_SIZE,
             height = float<-MAP_SIZE
         ),
-        rl.Vector2(x = float<-MAP_SIZE / 2.0, y = float<-MAP_SIZE / 2.0),
+        rl.Vector2(x = MAP_SIZE / 2.0, y = MAP_SIZE / 2.0),
         0.0,
         rl.GREEN
     )

@@ -52,8 +52,8 @@ function main() -> int:
 
         if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             let screen_center = rl.Vector2(
-                x = float<-rl.get_screen_width() / 2.0,
-                y = float<-rl.get_screen_height() / 2.0
+                x = rl.get_screen_width() / 2.0,
+                y = rl.get_screen_height() / 2.0
             )
             let ray = rl.get_screen_to_world_ray(screen_center, camera)
 

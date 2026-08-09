@@ -44,8 +44,8 @@ function main() -> int:
     let total_mass = mass1 + mass2
 
     var previous_position = calculate_double_pendulum_end_point(length1, theta1, length2, theta2)
-    previous_position.x += float<-SCREEN_WIDTH / 2.0
-    previous_position.y += float<-SCREEN_HEIGHT / 2.0 - 100.0
+    previous_position.x += SCREEN_WIDTH / 2.0
+    previous_position.y += SCREEN_HEIGHT / 2.0 - 100.0
 
     let scaled_length1 = length1 * length_scaler
     let scaled_length2 = length2 * length_scaler
@@ -61,7 +61,7 @@ function main() -> int:
 
     while not rl.window_should_close():
         let dt = rl.get_frame_time()
-        let step = dt / float<-SIMULATION_STEPS
+        let step = dt / SIMULATION_STEPS
         let step2 = step * step
 
         var index = 0
@@ -94,8 +94,8 @@ function main() -> int:
             index += 1
 
         var current_position = calculate_double_pendulum_end_point(length1, theta1, length2, theta2)
-        current_position.x += float<-SCREEN_WIDTH / 2.0
-        current_position.y += float<-SCREEN_HEIGHT / 2.0 - 100.0
+        current_position.x += SCREEN_WIDTH / 2.0
+        current_position.y += SCREEN_HEIGHT / 2.0 - 100.0
 
         rl.begin_texture_mode(target)
         rl.draw_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, rl.fade(rl.BLACK, trail_fade_alpha))
@@ -116,8 +116,8 @@ function main() -> int:
 
         rl.draw_rectangle_pro(
             rl.Rectangle(
-                x = float<-SCREEN_WIDTH / 2.0,
-                y = float<-SCREEN_HEIGHT / 2.0 - 100.0,
+                x = SCREEN_WIDTH / 2.0,
+                y = SCREEN_HEIGHT / 2.0 - 100.0,
                 width = 10.0 * length1,
                 height = line_thickness
             ),
@@ -129,8 +129,8 @@ function main() -> int:
         let endpoint1 = calculate_pendulum_end_point(length1, theta1)
         rl.draw_rectangle_pro(
             rl.Rectangle(
-                x = (float<-SCREEN_WIDTH / 2.0 + endpoint1.x),
-                y = (float<-SCREEN_HEIGHT / 2.0 - 100.0 + endpoint1.y),
+                x = (SCREEN_WIDTH / 2.0 + endpoint1.x),
+                y = (SCREEN_HEIGHT / 2.0 - 100.0 + endpoint1.y),
                 width = 10.0 * length2,
                 height = line_thickness
             ),

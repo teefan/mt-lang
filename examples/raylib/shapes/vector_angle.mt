@@ -11,7 +11,7 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - vector angle")
     defer: rl.close_window()
 
-    let v0 = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0)
+    let v0 = rl.Vector2(x = SCREEN_WIDTH / 2.0, y = SCREEN_HEIGHT / 2.0)
     var v1 = math.vector2_add(v0, rl.Vector2(x = 100.0, y = 80.0))
     var v2: rl.Vector2 = zero[rl.Vector2]
     var angle: float = 0.0

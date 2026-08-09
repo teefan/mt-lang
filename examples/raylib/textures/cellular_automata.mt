@@ -55,10 +55,10 @@ function main() -> int:
             let cell_x = DRAW_RULE_START_X - DRAW_RULE_GROUP_SPACING * index + DRAW_RULE_SPACING
             let cell_y = DRAW_RULE_START_Y + DRAW_RULE_SPACING
             if (
-                mouse.x >= float<-cell_x
-                and mouse.x <= float<-(cell_x + DRAW_RULE_SIZE)
-                and mouse.y >= float<-cell_y
-                and mouse.y <= float<-(cell_y + DRAW_RULE_SIZE)
+                mouse.x >= cell_x
+                and mouse.x <= (cell_x + DRAW_RULE_SIZE)
+                and mouse.y >= cell_y
+                and mouse.y <= (cell_y + DRAW_RULE_SIZE)
             ):
                 mouse_in_cell = index
                 break
@@ -70,10 +70,10 @@ function main() -> int:
                 let cell_x = 4 + (PRESETS_SIZE_X + 2) * (index / 2)
                 let cell_y = 2 + (PRESETS_SIZE_Y + 2) * (index % 2)
                 if (
-                    mouse.x >= float<-cell_x
-                    and mouse.x <= float<-(cell_x + PRESETS_SIZE_X)
-                    and mouse.y >= float<-cell_y
-                    and mouse.y <= float<-(cell_y + PRESETS_SIZE_Y)
+                    mouse.x >= cell_x
+                    and mouse.x <= (cell_x + PRESETS_SIZE_X)
+                    and mouse.y >= cell_y
+                    and mouse.y <= (cell_y + PRESETS_SIZE_Y)
                 ):
                     mouse_in_cell = index + 8
                     break

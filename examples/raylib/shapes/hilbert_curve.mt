@@ -10,7 +10,7 @@ var hilbert_path: array[rl.Vector2, MAX_HILBERT_STROKES] = zero[array[rl.Vector2
 
 function load_hilbert_path(order: int, size: float) -> int:
     let n = 1 << order
-    let segment_length = size / float<-n
+    let segment_length = size / n
     let stroke_count = n * n
 
     var index = 0
@@ -52,8 +52,8 @@ function compute_hilbert_step(order: int, index: int) -> rl.Vector2:
             vect.x += float<-length
             vect.y += float<-length
         else:
-            let temp = float<-length - 1.0 - vect.x
-            vect.x = (2.0 * float<-length) - 1.0 - vect.y
+            let temp = length - 1.0 - vect.x
+            vect.x = (2.0 * length) - 1.0 - vect.y
             vect.y = temp
 
         level += 1
@@ -66,7 +66,7 @@ function main() -> int:
     defer: rl.close_window()
 
     var order = 2
-    var size: float = float<-rl.get_screen_height()
+    var size: float = rl.get_screen_height()
     var stroke_count = load_hilbert_path(order, size)
 
     var prev_order = order
@@ -142,7 +142,7 @@ function main() -> int:
             "",
             size,
             10.0,
-            float<-rl.get_screen_height() * 1.5
+            rl.get_screen_height() * 1.5
         )
         rl.end_drawing()
 

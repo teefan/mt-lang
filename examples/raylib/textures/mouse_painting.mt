@@ -38,7 +38,7 @@ function main() -> int:
     var color_rects: array[rl.Rectangle, MAX_COLORS_COUNT] = zero[array[rl.Rectangle, MAX_COLORS_COUNT]]
     var index = 0
     while index < MAX_COLORS_COUNT:
-        color_rects[index].x = 10.0 + 30.0 * float<-index + 2.0 * float<-index
+        color_rects[index].x = 10.0 + 30.0 * index + 2.0 * index
         color_rects[index].y = 10.0
         color_rects[index].width = 30.0
         color_rects[index].height = 30.0

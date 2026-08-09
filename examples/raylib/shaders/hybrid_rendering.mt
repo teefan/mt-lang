@@ -86,7 +86,7 @@ function main() -> int:
         cam_dir = rl.get_shader_location(raymarch_shader, "camDir"),
         screen_center = rl.get_shader_location(raymarch_shader, "screenCenter")
     )
-    let screen_center = array[float, 2](float<-SCREEN_WIDTH / 2.0, float<-SCREEN_HEIGHT / 2.0)
+    let screen_center = array[float, 2](SCREEN_WIDTH / 2.0, SCREEN_HEIGHT / 2.0)
     rl.set_shader_value(
         raymarch_shader,
         ray_locations.screen_center,

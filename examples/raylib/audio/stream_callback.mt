@@ -44,7 +44,7 @@ function sine_callback(frames_out: ptr[void], frame_count: uint) -> void:
 
         var index: uint = 0
         while index < frame_count:
-            read(samples + ptr_uint<-index) = float<-math.sin(double<-(TWO_PI * float<-wave_index / float<-wavelength))
+            read(samples + ptr_uint<-index) = float<-math.sin(double<-(TWO_PI * wave_index / wavelength))
             wave_index += 1
             if wave_index >= wavelength:
                 wave_frequency = new_wave_frequency
@@ -82,9 +82,9 @@ function triangle_callback(frames_out: ptr[void], frame_count: uint) -> void:
         var index: uint = 0
         while index < frame_count:
             if wave_index < wavelength / 2:
-                read(samples + ptr_uint<-index) = (-1.0 + (2.0 * float<-wave_index / float<-(wavelength / 2)))
+                read(samples + ptr_uint<-index) = (-1.0 + (2.0 * wave_index / (wavelength / 2)))
             else:
-                read(samples + ptr_uint<-index) = (1.0 - (2.0 * float<-(wave_index - wavelength / 2) / float<-(wavelength / 2)))
+                read(samples + ptr_uint<-index) = (1.0 - (2.0 * (wave_index - wavelength / 2) / (wavelength / 2)))
             wave_index += 1
             if wave_index >= wavelength:
                 wave_frequency = new_wave_frequency
@@ -101,7 +101,7 @@ function sawtooth_callback(frames_out: ptr[void], frame_count: uint) -> void:
 
         var index: uint = 0
         while index < frame_count:
-            read(samples + ptr_uint<-index) = (-1.0 + (2.0 * float<-wave_index / float<-wavelength))
+            read(samples + ptr_uint<-index) = (-1.0 + (2.0 * wave_index / wavelength))
             wave_index += 1
             if wave_index >= wavelength:
                 wave_frequency = new_wave_frequency

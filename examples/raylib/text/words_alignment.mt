@@ -19,10 +19,10 @@ function main() -> int:
     defer: rl.close_window()
 
     let text_container_rect = rl.Rectangle(
-        x = float<-SCREEN_WIDTH / 2.0 - float<-SCREEN_WIDTH / 4.0,
-        y = float<-SCREEN_HEIGHT / 2.0 - float<-SCREEN_HEIGHT / 3.0,
-        width = float<-SCREEN_WIDTH / 2.0,
-        height = float<-SCREEN_HEIGHT * 2.0 / 3.0
+        x = SCREEN_WIDTH / 2.0 - SCREEN_WIDTH / 4.0,
+        y = SCREEN_HEIGHT / 2.0 - SCREEN_HEIGHT / 3.0,
+        width = SCREEN_WIDTH / 2.0,
+        height = SCREEN_HEIGHT * 2.0 / 3.0
     )
 
     let text_align_name_h = array[str, 3]("Left", "Centre", "Right")
@@ -61,7 +61,7 @@ function main() -> int:
 
         word_index = (int<-rl.get_time()) % WORD_COUNT
         let current_word = words[word_index]
-        let text_size = rl.measure_text_ex(font, current_word, float<-font_size, float<-font_size * 0.1)
+        let text_size = rl.measure_text_ex(font, current_word, float<-font_size, font_size * 0.1)
         let text_pos = rl.Vector2(
             x = text_container_rect.x + rm.lerp(
                 0.0,
@@ -91,7 +91,7 @@ function main() -> int:
             rl.LIGHTGRAY
         )
         rl.draw_rectangle_rec(text_container_rect, rl.BLUE)
-        rl.draw_text_ex(font, current_word, text_pos, float<-font_size, float<-font_size * 0.1, rl.RAYWHITE)
+        rl.draw_text_ex(font, current_word, text_pos, float<-font_size, font_size * 0.1, rl.RAYWHITE)
 
         rl.end_drawing()
 

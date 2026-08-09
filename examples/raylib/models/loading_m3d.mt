@@ -64,7 +64,7 @@ function main() -> int:
 
         let animation = unsafe: animations[anim_index]
         anim_current_frame += 1.0
-        if anim_current_frame >= float<-animation.keyframeCount:
+        if anim_current_frame >= animation.keyframeCount:
             anim_current_frame = 0.0
         rl.update_model_animation(model, animation, anim_current_frame)
 

@@ -14,7 +14,7 @@ function main() -> int:
     defer: rl.close_window()
 
     var points: array[rl.Vector2, POINT_CAPACITY] = zero[array[rl.Vector2, POINT_CAPACITY]]
-    let center = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0 - 125.0, y = float<-SCREEN_HEIGHT / 2.0)
+    let center = rl.Vector2(x = SCREEN_WIDTH / 2.0 - 125.0, y = SCREEN_HEIGHT / 2.0)
     var segments: float = 6.0
     let inside_radius = 100.0
     let outside_radius = 150.0
@@ -24,12 +24,12 @@ function main() -> int:
 
     while not rl.window_should_close():
         let point_count = int<-segments
-        let angle_step = (360.0 / float<-point_count) * DEG_TO_RAD
+        let angle_step = (360.0 / point_count) * DEG_TO_RAD
 
         var index = 0
         var point_index = 0
         while index < point_count:
-            let angle1 = float<-index * angle_step
+            let angle1 = index * angle_step
             points[point_index] = rl.Vector2(
                 x = center.x + float<-math.cos(double<-angle1) * inside_radius,
                 y = center.y + float<-math.sin(double<-angle1) * inside_radius
@@ -56,7 +56,7 @@ function main() -> int:
             let b = points[(index * 2) + 1]
             let c = points[(index * 2) + 2]
             let d = points[(index * 2) + 3]
-            let angle1 = float<-index * angle_step
+            let angle1 = index * angle_step
             rl.draw_triangle(c, b, a, rl.color_from_hsv(angle1 / DEG_TO_RAD, 1.0, 1.0))
             rl.draw_triangle(d, b, c, rl.color_from_hsv((angle1 + (angle_step / 2.0)) / DEG_TO_RAD, 1.0, 1.0))
 

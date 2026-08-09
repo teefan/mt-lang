@@ -27,11 +27,11 @@ struct Envelope:
 function fill_audio_buffer(index: int, buffer: ptr[float], envelope_value: float, audio_time: ref[float]) -> void:
     let frequency = 440.0
     unsafe: read(buffer + ptr_uint<-index) = envelope_value * float<-math.sin(double<-(2.0 * rl.PI * frequency * read(audio_time)))
-    read(audio_time) += 1.0 / float<-SAMPLE_RATE
+    read(audio_time) += 1.0 / SAMPLE_RATE
 
 
 function update_envelope(env: ref[Envelope]) -> void:
-    let sample_time: float = 1.0 / float<-SAMPLE_RATE
+    let sample_time: float = 1.0 / SAMPLE_RATE
 
     if read(env).state == ADSRState.ATTACK:
         read(env).current_value += (1.0 / read(env).attack_time) * sample_time

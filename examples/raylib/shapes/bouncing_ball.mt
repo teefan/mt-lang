@@ -9,7 +9,7 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - bouncing ball")
     defer: rl.close_window()
 
-    var ball_position = rl.Vector2(x = float<-rl.get_screen_width() / 2.0, y = float<-rl.get_screen_height() / 2.0)
+    var ball_position = rl.Vector2(x = rl.get_screen_width() / 2.0, y = rl.get_screen_height() / 2.0)
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)
     let ball_radius = 20
     let gravity = 0.2
@@ -32,11 +32,11 @@ function main() -> int:
             if use_gravity:
                 ball_speed.y += gravity
 
-            if ball_position.x >= float<-(rl.get_screen_width() - ball_radius) or ball_position.x <= float<-ball_radius:
+            if ball_position.x >= rl.get_screen_width() - ball_radius or ball_position.x <= ball_radius:
                 ball_speed.x *= -1.0
             if (
-                ball_position.y >= float<-(rl.get_screen_height() - ball_radius)
-                or ball_position.y <= float<-ball_radius
+                ball_position.y >= rl.get_screen_height() - ball_radius
+                or ball_position.y <= ball_radius
             ):
                 ball_speed.y *= -0.95
         else:

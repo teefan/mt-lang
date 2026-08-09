@@ -43,7 +43,7 @@ function main() -> int:
         let mouse_position = rl.get_mouse_position()
         let swirl_center = rl.Vector2(
             x = mouse_position.x,
-            y = float<-SCREEN_HEIGHT - mouse_position.y
+            y = SCREEN_HEIGHT - mouse_position.y
         )
         rl.set_shader_value(
             shader,

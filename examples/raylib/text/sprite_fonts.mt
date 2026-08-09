@@ -48,15 +48,15 @@ function main() -> int:
 
     var index = 0
     while index < MAX_FONTS:
-        let font_size = float<-fonts[index].baseSize * 2.0
+        let font_size = fonts[index].baseSize * 2.0
         let spacing = float<-spacings[index]
-        positions[index].x = float<-SCREEN_WIDTH / 2.0 - rl.measure_text_ex(
+        positions[index].x = SCREEN_WIDTH / 2.0 - rl.measure_text_ex(
             fonts[index],
             messages[index],
             font_size,
             spacing
         ).x / 2.0
-        positions[index].y = 60.0 + float<-fonts[index].baseSize + 45.0 * float<-index
+        positions[index].y = 60.0 + fonts[index].baseSize + 45.0 * index
         index += 1
 
     positions[3].y += 8.0
@@ -78,7 +78,7 @@ function main() -> int:
                 fonts[index],
                 messages[index],
                 positions[index],
-                float<-fonts[index].baseSize * 2.0,
+                fonts[index].baseSize * 2.0,
                 float<-spacings[index],
                 colors[index]
             )

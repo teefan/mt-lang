@@ -72,21 +72,21 @@ function update_clock(clock: ref[Clock]) -> void:
 
 
 function draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
-    rl.draw_circle_v(position, float<-clock.second.length + 40.0, rl.LIGHTGRAY)
+    rl.draw_circle_v(position, clock.second.length + 40.0, rl.LIGHTGRAY)
     rl.draw_circle_v(position, 12.0, rl.GRAY)
 
     var index = 0
     while index < 60:
         let long_tick = index % 5 == 0
-        var outer_radius: float = float<-clock.second.length
+        var outer_radius: float = clock.second.length
         var line_thickness: float = 1.0
         if long_tick:
             outer_radius = (outer_radius + 6.0)
             line_thickness = 3.0
         else:
             outer_radius = (outer_radius + 10.0)
-        let inner_radius = float<-clock.second.length + 20.0
-        let angle = (6.0 * float<-index - 90.0)
+        let inner_radius = clock.second.length + 20.0
+        let angle = (6.0 * index - 90.0)
         rl.draw_line_ex(
             rl.Vector2(
                 x = (position.x + outer_radius * float<-math.cos(double<-(angle * DEG_TO_RAD))),
@@ -108,7 +108,7 @@ function draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
             width = float<-clock.second.length,
             height = float<-clock.second.thickness
         ),
-        rl.Vector2(x = 0.0, y = float<-clock.second.thickness / 2.0),
+        rl.Vector2(x = 0.0, y = clock.second.thickness / 2.0),
         clock.second.angle,
         clock.second.color
     )
@@ -119,7 +119,7 @@ function draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
             width = float<-clock.minute.length,
             height = float<-clock.minute.thickness
         ),
-        rl.Vector2(x = 0.0, y = float<-clock.minute.thickness / 2.0),
+        rl.Vector2(x = 0.0, y = clock.minute.thickness / 2.0),
         clock.minute.angle,
         clock.minute.color
     )
@@ -130,7 +130,7 @@ function draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
             width = float<-clock.hour.length,
             height = float<-clock.hour.thickness
         ),
-        rl.Vector2(x = 0.0, y = float<-clock.hour.thickness / 2.0),
+        rl.Vector2(x = 0.0, y = clock.hour.thickness / 2.0),
         clock.hour.angle,
         clock.hour.color
     )
@@ -178,12 +178,12 @@ function draw_display_value(position: rl.Vector2, value: int, color_on: rl.Color
 function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color, color_off: rl.Color) -> void:
     let segment_len = 60
     let segment_thick = 20
-    let offset_y_adjust: float = float<-segment_thick * 0.3
+    let offset_y_adjust: float = segment_thick * 0.3
 
     draw_display_segment(
         rl.Vector2(
-            x = position.x + float<-segment_thick + float<-segment_len / 2.0,
-            y = position.y + float<-segment_thick
+            x = position.x + segment_thick + segment_len / 2.0,
+            y = position.y + segment_thick
         ),
         segment_len,
         segment_thick,
@@ -192,8 +192,8 @@ function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color
     )
     draw_display_segment(
         rl.Vector2(
-            x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0,
-            y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust
+            x = position.x + segment_thick + segment_len + segment_thick / 2.0,
+            y = position.y + 2.0 * segment_thick + segment_len / 2.0 - offset_y_adjust
         ),
         segment_len,
         segment_thick,
@@ -202,8 +202,8 @@ function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color
     )
     draw_display_segment(
         rl.Vector2(
-            x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0,
-            y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust
+            x = position.x + segment_thick + segment_len + segment_thick / 2.0,
+            y = position.y + 4.0 * segment_thick + segment_len + segment_len / 2.0 - 3.0 * offset_y_adjust
         ),
         segment_len,
         segment_thick,
@@ -212,8 +212,8 @@ function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color
     )
     draw_display_segment(
         rl.Vector2(
-            x = position.x + float<-segment_thick + float<-segment_len / 2.0,
-            y = position.y + 5.0 * float<-segment_thick + 2.0 * float<-segment_len - 4.0 * offset_y_adjust
+            x = position.x + segment_thick + segment_len / 2.0,
+            y = position.y + 5.0 * segment_thick + 2.0 * segment_len - 4.0 * offset_y_adjust
         ),
         segment_len,
         segment_thick,
@@ -222,8 +222,8 @@ function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color
     )
     draw_display_segment(
         rl.Vector2(
-            x = position.x + float<-segment_thick / 2.0,
-            y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust
+            x = position.x + segment_thick / 2.0,
+            y = position.y + 4.0 * segment_thick + segment_len + segment_len / 2.0 - 3.0 * offset_y_adjust
         ),
         segment_len,
         segment_thick,
@@ -232,8 +232,8 @@ function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color
     )
     draw_display_segment(
         rl.Vector2(
-            x = position.x + float<-segment_thick / 2.0,
-            y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust
+            x = position.x + segment_thick / 2.0,
+            y = position.y + 2.0 * segment_thick + segment_len / 2.0 - offset_y_adjust
         ),
         segment_len,
         segment_thick,
@@ -242,8 +242,8 @@ function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color
     )
     draw_display_segment(
         rl.Vector2(
-            x = position.x + float<-segment_thick + float<-segment_len / 2.0,
-            y = position.y + 3.0 * float<-segment_thick + float<-segment_len - 2.0 * offset_y_adjust
+            x = position.x + segment_thick + segment_len / 2.0,
+            y = position.y + 3.0 * segment_thick + segment_len - 2.0 * offset_y_adjust
         ),
         segment_len,
         segment_thick,
@@ -256,19 +256,19 @@ function draw_display_segment(center: rl.Vector2, length: int, thick: int, verti
     var points: array[rl.Vector2, 6] = zero[array[rl.Vector2, 6]]
 
     if not vertical:
-        points[0] = rl.Vector2(x = center.x - float<-length / 2.0 - float<-thick / 2.0, y = center.y)
-        points[1] = rl.Vector2(x = center.x - float<-length / 2.0, y = center.y + float<-thick / 2.0)
-        points[2] = rl.Vector2(x = center.x - float<-length / 2.0, y = center.y - float<-thick / 2.0)
-        points[3] = rl.Vector2(x = center.x + float<-length / 2.0, y = center.y + float<-thick / 2.0)
-        points[4] = rl.Vector2(x = center.x + float<-length / 2.0, y = center.y - float<-thick / 2.0)
-        points[5] = rl.Vector2(x = center.x + float<-length / 2.0 + float<-thick / 2.0, y = center.y)
+        points[0] = rl.Vector2(x = center.x - length / 2.0 - thick / 2.0, y = center.y)
+        points[1] = rl.Vector2(x = center.x - length / 2.0, y = center.y + thick / 2.0)
+        points[2] = rl.Vector2(x = center.x - length / 2.0, y = center.y - thick / 2.0)
+        points[3] = rl.Vector2(x = center.x + length / 2.0, y = center.y + thick / 2.0)
+        points[4] = rl.Vector2(x = center.x + length / 2.0, y = center.y - thick / 2.0)
+        points[5] = rl.Vector2(x = center.x + length / 2.0 + thick / 2.0, y = center.y)
     else:
-        points[0] = rl.Vector2(x = center.x, y = center.y - float<-length / 2.0 - float<-thick / 2.0)
-        points[1] = rl.Vector2(x = center.x - float<-thick / 2.0, y = center.y - float<-length / 2.0)
-        points[2] = rl.Vector2(x = center.x + float<-thick / 2.0, y = center.y - float<-length / 2.0)
-        points[3] = rl.Vector2(x = center.x - float<-thick / 2.0, y = center.y + float<-length / 2.0)
-        points[4] = rl.Vector2(x = center.x + float<-thick / 2.0, y = center.y + float<-length / 2.0)
-        points[5] = rl.Vector2(x = center.x, y = center.y + float<-length / 2.0 + float<-thick / 2.0)
+        points[0] = rl.Vector2(x = center.x, y = center.y - length / 2.0 - thick / 2.0)
+        points[1] = rl.Vector2(x = center.x - thick / 2.0, y = center.y - length / 2.0)
+        points[2] = rl.Vector2(x = center.x + thick / 2.0, y = center.y - length / 2.0)
+        points[3] = rl.Vector2(x = center.x - thick / 2.0, y = center.y + length / 2.0)
+        points[4] = rl.Vector2(x = center.x + thick / 2.0, y = center.y + length / 2.0)
+        points[5] = rl.Vector2(x = center.x, y = center.y + length / 2.0 + thick / 2.0)
 
     rl.draw_triangle_strip_ptr(ptr_of(points[0]), 6, color)
 

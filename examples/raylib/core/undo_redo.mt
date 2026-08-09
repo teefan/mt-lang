@@ -169,8 +169,8 @@ function main() -> int:
             while index < current_undo_index:
                 rl.draw_rectangle_rec(
                     rl.Rectangle(
-                        x = grid_position.x + float<-(states[index].cell.x * GRID_CELL_SIZE),
-                        y = grid_position.y + float<-(states[index].cell.y * GRID_CELL_SIZE),
+                        x = grid_position.x + (states[index].cell.x * GRID_CELL_SIZE),
+                        y = grid_position.y + (states[index].cell.y * GRID_CELL_SIZE),
                         width = float<-GRID_CELL_SIZE,
                         height = float<-GRID_CELL_SIZE
                     ),
@@ -183,8 +183,8 @@ function main() -> int:
                 while index < current_undo_index:
                     rl.draw_rectangle_rec(
                         rl.Rectangle(
-                            x = grid_position.x + float<-(states[index].cell.x * GRID_CELL_SIZE),
-                            y = grid_position.y + float<-(states[index].cell.y * GRID_CELL_SIZE),
+                            x = grid_position.x + (states[index].cell.x * GRID_CELL_SIZE),
+                            y = grid_position.y + (states[index].cell.y * GRID_CELL_SIZE),
                             width = float<-GRID_CELL_SIZE,
                             height = float<-GRID_CELL_SIZE
                         ),

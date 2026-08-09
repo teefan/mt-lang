@@ -24,12 +24,12 @@ function main() -> int:
         parrots,
         cat,
         rl.Rectangle(x = 0.0, y = 0.0, width = float<-cat.width, height = float<-cat.height),
-        rl.Rectangle(x = 30.0, y = 40.0, width = float<-cat.width * 1.5, height = float<-cat.height * 1.5),
+        rl.Rectangle(x = 30.0, y = 40.0, width = cat.width * 1.5, height = cat.height * 1.5),
         rl.WHITE
     )
     rl.image_crop(
         parrots,
-        rl.Rectangle(x = 0.0, y = 50.0, width = float<-parrots.width, height = float<-parrots.height - 100.0)
+        rl.Rectangle(x = 0.0, y = 50.0, width = float<-parrots.width, height = parrots.height - 100.0)
     )
     rl.image_draw_pixel(parrots, 10, 10, rl.RAYWHITE)
     rl.image_draw_circle_lines(parrots, 10, 10, 5, rl.RAYWHITE)

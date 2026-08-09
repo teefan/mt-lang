@@ -64,7 +64,7 @@ function main() -> int:
         )
 
         var label_y = (int<-mouse_pos.y) + 30
-        if mouse_pos.y > (float<-rl.get_screen_height()) - 60.0:
+        if mouse_pos.y > (rl.get_screen_height()) - 60.0:
             label_y = (int<-mouse_pos.y) - 46
 
         rl.draw_text(f"[#{rl.get_mouse_x()},#{rl.get_mouse_y()}]", int<-mouse_pos.x - 44, label_y, 20, rl.BLACK)

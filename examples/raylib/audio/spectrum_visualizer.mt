@@ -55,7 +55,7 @@ function cooley_tukey_fft_slow(n: int) -> void:
 
     var len = 2
     while len <= n:
-        let angle: float = -2.0 * rl.PI / float<-len
+        let angle: float = -2.0 * rl.PI / len
         let twiddle_unit = FFTComplex(
             real = float<-math.cos(double<-angle),
             imaginary = float<-math.sin(double<-angle)
@@ -89,7 +89,7 @@ function cooley_tukey_fft_slow(n: int) -> void:
 function capture_frame(audio_samples: ptr[float]) -> void:
     var index = 0
     while index < FFT_WINDOW_SIZE:
-        let x: float = (2.0 * rl.PI * float<-index) / float<-(FFT_WINDOW_SIZE - 1)
+        let x: float = (2.0 * rl.PI * index) / FFT_WINDOW_SIZE - 1
         let blackman_weight: float = 0.42 - 0.5 * float<-math.cos(double<-x) + 0.08 * float<-math.cos(double<-(2.0 * x))
         unsafe:
             fft_work_buffer[index].real = read(audio_samples + ptr_uint<-index) * blackman_weight
@@ -139,8 +139,8 @@ function render_frame(fft_image: ref[rl.Image]) -> void:
     var frames_since_tapback = float<-math.floor(double<-(fft_tapback_pos / float<-WINDOW_TIME))
     if frames_since_tapback < 0.0:
         frames_since_tapback = 0.0
-    if frames_since_tapback > float<-(FFT_HISTORY_LEN - 1):
-        frames_since_tapback = float<-(FFT_HISTORY_LEN - 1)
+    if frames_since_tapback > FFT_HISTORY_LEN - 1:
+        frames_since_tapback = FFT_HISTORY_LEN - 1
 
     var history_position = (fft_history_pos - 1 - int<-frames_since_tapback) % FFT_HISTORY_LEN
     if history_position < 0:

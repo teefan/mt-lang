@@ -70,8 +70,8 @@ function main() -> int:
                         let pixel = unsafe: map_pixels[y * cubicmap.width + x]
                         let hit_wall = pixel.r == 255
                         let wall_rect = rl.Rectangle(
-                            x = map_position.x - 0.5 + float<-x,
-                            y = map_position.z - 0.5 + float<-y,
+                            x = map_position.x - 0.5 + x,
+                            y = map_position.z - 0.5 + y,
                             width = 1.0,
                             height = 1.0
                         )

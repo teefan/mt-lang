@@ -114,8 +114,8 @@ function main() -> int:
 
             let mouse_position = rl.get_mouse_position()
             let offset_velocity = rl.Vector2(
-                x = (mouse_position.x / float<-SCREEN_WIDTH - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom,
-                y = (mouse_position.y / float<-SCREEN_HEIGHT - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom
+                x = (mouse_position.x / SCREEN_WIDTH - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom,
+                y = (mouse_position.y / SCREEN_HEIGHT - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom
             )
             offset[0] += rl.get_frame_time() * offset_velocity.x
             offset[1] += rl.get_frame_time() * offset_velocity.y

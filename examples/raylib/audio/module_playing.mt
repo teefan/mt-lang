@@ -46,16 +46,16 @@ function main() -> int:
     var index = MAX_CIRCLES - 1
     while index >= 0:
         circles[index].alpha = 0.0
-        circles[index].radius = float<-rl.get_random_value(10, 40)
-        circles[index].position.x = float<-rl.get_random_value(
+        circles[index].radius = rl.get_random_value(10, 40)
+        circles[index].position.x = rl.get_random_value(
             int<-circles[index].radius,
-            int<-(float<-SCREEN_WIDTH - circles[index].radius)
+            int<-(SCREEN_WIDTH - circles[index].radius)
         )
-        circles[index].position.y = float<-rl.get_random_value(
+        circles[index].position.y = rl.get_random_value(
             int<-circles[index].radius,
-            int<-(float<-SCREEN_HEIGHT - circles[index].radius)
+            int<-(SCREEN_HEIGHT - circles[index].radius)
         )
-        circles[index].speed = float<-rl.get_random_value(1, 100) / 2000.0
+        circles[index].speed = rl.get_random_value(1, 100) / 2000.0
         circles[index].color = colors[rl.get_random_value(0, 13)]
         index -= 1
 
@@ -91,7 +91,7 @@ function main() -> int:
             pitch += 0.01
 
         rl.set_music_pitch(music, pitch)
-        time_played = (rl.get_music_time_played(music) / rl.get_music_time_length(music)) * float<-(SCREEN_WIDTH - 40)
+        time_played = (rl.get_music_time_played(music) / rl.get_music_time_length(music)) * SCREEN_WIDTH - 40
 
         index = MAX_CIRCLES - 1
         while index >= 0 and not pause:
@@ -103,17 +103,17 @@ function main() -> int:
 
             if circles[index].alpha <= 0.0:
                 circles[index].alpha = 0.0
-                circles[index].radius = float<-rl.get_random_value(10, 40)
-                circles[index].position.x = float<-rl.get_random_value(
+                circles[index].radius = rl.get_random_value(10, 40)
+                circles[index].position.x = rl.get_random_value(
                     int<-circles[index].radius,
-                    int<-(float<-SCREEN_WIDTH - circles[index].radius)
+                    int<-(SCREEN_WIDTH - circles[index].radius)
                 )
-                circles[index].position.y = float<-rl.get_random_value(
+                circles[index].position.y = rl.get_random_value(
                     int<-circles[index].radius,
-                    int<-(float<-SCREEN_HEIGHT - circles[index].radius)
+                    int<-(SCREEN_HEIGHT - circles[index].radius)
                 )
                 circles[index].color = colors[rl.get_random_value(0, 13)]
-                circles[index].speed = float<-rl.get_random_value(1, 100) / 2000.0
+                circles[index].speed = rl.get_random_value(1, 100) / 2000.0
             index -= 1
 
         rl.begin_drawing()

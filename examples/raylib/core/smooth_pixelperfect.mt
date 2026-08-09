@@ -49,8 +49,8 @@ function main() -> int:
     let dest_rec = rl.Rectangle(
         x = -virtual_ratio,
         y = -virtual_ratio,
-        width = (float<-SCREEN_WIDTH) + (virtual_ratio * 2.0),
-        height = (float<-SCREEN_HEIGHT) + (virtual_ratio * 2.0)
+        width = (SCREEN_WIDTH) + (virtual_ratio * 2.0),
+        height = (SCREEN_HEIGHT) + (virtual_ratio * 2.0)
     )
     let origin = rl.Vector2(x = 0.0, y = 0.0)
 

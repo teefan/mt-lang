@@ -76,7 +76,7 @@ function main() -> int:
         let current_animation = unsafe: animations[anim_index]
         if not anim_pause:
             anim_current_frame += anim_frame_speed
-            if anim_current_frame >= float<-current_animation.keyframeCount:
+            if anim_current_frame >= current_animation.keyframeCount:
                 anim_current_frame = 0.0
             rl.update_model_animation(model, current_animation, anim_current_frame)
 
@@ -116,8 +116,8 @@ function main() -> int:
         gui.label(
             rl.Rectangle(
                 x = 10.0,
-                y = float<-rl.get_screen_height() - 64.0,
-                width = float<-rl.get_screen_width() - 20.0,
+                y = rl.get_screen_height() - 64.0,
+                width = rl.get_screen_width() - 20.0,
                 height = 24.0
             ),
             timeline_text
@@ -125,8 +125,8 @@ function main() -> int:
         gui.progress_bar(
             rl.Rectangle(
                 x = 10.0,
-                y = float<-rl.get_screen_height() - 40.0,
-                width = float<-rl.get_screen_width() - 20.0,
+                y = rl.get_screen_height() - 40.0,
+                width = rl.get_screen_width() - 20.0,
                 height = 24.0
             ),
             "",
@@ -138,7 +138,7 @@ function main() -> int:
 
         var index = 0
         while index < current_animation.keyframeCount:
-            let keyframe_x = 10 + int<-((float<-(rl.get_screen_width() - 20) / float<-current_animation.keyframeCount) * float<-index)
+            let keyframe_x = 10 + int<-((float<-(rl.get_screen_width() - 20) / float<-current_animation.keyframeCount) * index)
             rl.draw_rectangle(keyframe_x, rl.get_screen_height() - 40, 1, 24, rl.BLUE)
             index += 1
 

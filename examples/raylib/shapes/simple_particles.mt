@@ -51,7 +51,7 @@ function emit_particle(head: ref[int], tail: int, emitter_position: rl.Vector2, 
     particles[particle_index].life_time = 0.0
     particles[particle_index].particle_type = particle_type
 
-    var speed: float = float<-rl.get_random_value(0, 9) / 5.0
+    var speed: float = rl.get_random_value(0, 9) / 5.0
     if particle_type == WATER:
         particles[particle_index].radius = 5.0
         particles[particle_index].color = rl.BLUE
@@ -105,9 +105,9 @@ function update_particles(head: int, tail: int, screen_width: int, screen_height
         let radius = particles[index].radius
         if (
             center.x < -radius
-            or center.x > float<-screen_width + radius
+            or center.x > screen_width + radius
             or center.y < -radius
-            or center.y > float<-screen_height + radius
+            or center.y > screen_height + radius
         ):
             particles[index].alive = false
 
@@ -135,7 +135,7 @@ function main() -> int:
     var tail = 0
     var emission_rate = -2
     var current_type = WATER
-    var emitter_position = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0)
+    var emitter_position = rl.Vector2(x = SCREEN_WIDTH / 2.0, y = SCREEN_HEIGHT / 2.0)
 
     rl.set_target_fps(60)
 

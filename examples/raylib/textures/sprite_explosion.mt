@@ -59,8 +59,8 @@ function main() -> int:
 
                 frames_counter = 0
 
-        frame_rect.x = frame_width * float<-current_frame
-        frame_rect.y = frame_height * float<-current_line
+        frame_rect.x = frame_width * current_frame
+        frame_rect.y = frame_height * current_line
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)

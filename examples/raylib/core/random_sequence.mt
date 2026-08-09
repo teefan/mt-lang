@@ -30,7 +30,7 @@ function generate_random_color_rect_sequence(
         fatal("could not allocate random sequence")
     defer: rl.unload_random_sequence(sequence)
 
-    let rect_sequence_width = (float<-rect_count) * rect_width
+    let rect_sequence_width = (rect_count) * rect_width
     let start_x = (screen_width - rect_sequence_width) * 0.5
 
     var index = 0
@@ -41,8 +41,8 @@ function generate_random_color_rect_sequence(
         rectangles.push(ColorRect(
             color = generate_random_color(),
             rect = rl.Rectangle(
-                x = start_x + (float<-index) * rect_width,
-                y = screen_height - (float<-rect_height),
+                x = start_x + (index) * rect_width,
+                y = screen_height - (rect_height),
                 width = rect_width,
                 height = float<-rect_height
             )
@@ -87,7 +87,7 @@ function main() -> int:
         rect_count,
         rect_size,
         float<-SCREEN_WIDTH,
-        0.75 * float<-SCREEN_HEIGHT
+        0.75 * SCREEN_HEIGHT
     )
     defer: rectangles.release()
 
@@ -105,7 +105,7 @@ function main() -> int:
                 rect_count,
                 rect_size,
                 float<-SCREEN_WIDTH,
-                0.75 * float<-SCREEN_HEIGHT
+                0.75 * SCREEN_HEIGHT
             )
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_DOWN) and rect_count >= 4:
@@ -116,7 +116,7 @@ function main() -> int:
                 rect_count,
                 rect_size,
                 float<-SCREEN_WIDTH,
-                0.75 * float<-SCREEN_HEIGHT
+                0.75 * SCREEN_HEIGHT
             )
 
         rl.begin_drawing()

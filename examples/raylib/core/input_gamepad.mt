@@ -82,7 +82,7 @@ function main() -> int:
         let mouse_position = rl.get_mouse_position()
         vibrate_button = rl.Rectangle(
             x = 10.0,
-            y = 70.0 + float<-(20 * rl.get_gamepad_axis_count(gamepad) + 20),
+            y = 70.0 + (20 * rl.get_gamepad_axis_count(gamepad) + 20),
             width = 75.0,
             height = 24.0
         )

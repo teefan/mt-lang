@@ -47,12 +47,12 @@ function main() -> int:
 
         if player_position.x < 0.0:
             player_position.x = 0.0
-        else if player_position.x + float<-PLAYER_SIZE > float<-(MAP_TILES_X * MAP_TILE_SIZE):
-            player_position.x = float<-(MAP_TILES_X * MAP_TILE_SIZE - PLAYER_SIZE)
+        else if player_position.x + PLAYER_SIZE > (MAP_TILES_X * MAP_TILE_SIZE):
+            player_position.x = (MAP_TILES_X * MAP_TILE_SIZE - PLAYER_SIZE)
         if player_position.y < 0.0:
             player_position.y = 0.0
-        else if player_position.y + float<-PLAYER_SIZE > float<-(MAP_TILES_Y * MAP_TILE_SIZE):
-            player_position.y = float<-(MAP_TILES_Y * MAP_TILE_SIZE - PLAYER_SIZE)
+        else if player_position.y + PLAYER_SIZE > (MAP_TILES_Y * MAP_TILE_SIZE):
+            player_position.y = (MAP_TILES_Y * MAP_TILE_SIZE - PLAYER_SIZE)
 
         index = 0
         while index < MAP_TILE_COUNT:
@@ -60,8 +60,8 @@ function main() -> int:
                 map.tile_fog[index] = 2
             index += 1
 
-        player_tile_x = int<-((player_position.x + float<-MAP_TILE_SIZE / 2.0) / float<-MAP_TILE_SIZE)
-        player_tile_y = int<-((player_position.y + float<-MAP_TILE_SIZE / 2.0) / float<-MAP_TILE_SIZE)
+        player_tile_x = int<-((player_position.x + MAP_TILE_SIZE / 2.0) / MAP_TILE_SIZE)
+        player_tile_y = int<-((player_position.y + MAP_TILE_SIZE / 2.0) / MAP_TILE_SIZE)
 
         var y = player_tile_y - PLAYER_TILE_VISIBILITY
         while y < player_tile_y + PLAYER_TILE_VISIBILITY:

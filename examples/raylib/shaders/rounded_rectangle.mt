@@ -33,10 +33,10 @@ function create_rounded_rectangle(shader: rl.Shader) -> RoundedRectangle:
 
 function color_vector(color: rl.Color) -> array[float, 4]:
     return array[float, 4](
-        float<-color.r / 255.0,
-        float<-color.g / 255.0,
-        float<-color.b / 255.0,
-        float<-color.a / 255.0
+        color.r / 255.0,
+        color.g / 255.0,
+        color.b / 255.0,
+        color.a / 255.0
     )
 
 
@@ -113,7 +113,7 @@ function main() -> int:
         )
         rl.draw_text("Rounded rectangle", int<-rec.x - 20, int<-rec.y - 35, 10, rl.DARKGRAY)
 
-        rec.y = float<-SCREEN_HEIGHT - rec.y - rec.height
+        rec.y = SCREEN_HEIGHT - rec.y - rec.height
         let rec0 = array[float, 4](rec.x, rec.y, rec.width, rec.height)
         rl.set_shader_value(
             shader,
@@ -152,7 +152,7 @@ function main() -> int:
             rl.DARKGRAY
         )
         rl.draw_text("Rounded rectangle shadow", int<-rec.x - 20, int<-rec.y - 35, 10, rl.DARKGRAY)
-        rec.y = float<-SCREEN_HEIGHT - rec.y - rec.height
+        rec.y = SCREEN_HEIGHT - rec.y - rec.height
         let rec1 = array[float, 4](rec.x, rec.y, rec.width, rec.height)
         rl.set_shader_value(
             shader,
@@ -191,7 +191,7 @@ function main() -> int:
             rl.DARKGRAY
         )
         rl.draw_text("Rounded rectangle border", int<-rec.x - 20, int<-rec.y - 35, 10, rl.DARKGRAY)
-        rec.y = float<-SCREEN_HEIGHT - rec.y - rec.height
+        rec.y = SCREEN_HEIGHT - rec.y - rec.height
         let rec2 = array[float, 4](rec.x, rec.y, rec.width, rec.height)
         rl.set_shader_value(
             shader,
@@ -230,7 +230,7 @@ function main() -> int:
             rl.DARKGRAY
         )
         rl.draw_text("Rectangle with all three combined", int<-rec.x - 30, int<-rec.y - 45, 10, rl.DARKGRAY)
-        rec.y = float<-SCREEN_HEIGHT - rec.y - rec.height
+        rec.y = SCREEN_HEIGHT - rec.y - rec.height
         let rec3 = array[float, 4](rec.x, rec.y, rec.width, rec.height)
         rl.set_shader_value(
             shader,
