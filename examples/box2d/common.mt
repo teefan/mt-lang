@@ -16,7 +16,7 @@ import std.str as str_mod
 
 const SCREEN_WIDTH: int = 1280
 const SCREEN_HEIGHT: int = 720
-const HERTZ: float = 60.0
+public const HERTZ: float = 60.0
 const SUB_STEP_COUNT: int = 4
 const MAX_POLYGON_VERTICES: int = 8
 
@@ -142,6 +142,13 @@ var s_poly_points: array[rl.Vector2, MAX_POLYGON_VERTICES]
 var s_dummy_context: int = 0
 var s_paused: bool = false
 var s_single_step: bool = false
+var s_stepped: bool = false
+
+public function paused() -> bool:
+    return s_paused
+
+public function stepped() -> bool:
+    return s_stepped
 
 # =============================================================================
 # Debug draw callbacks
@@ -149,10 +156,33 @@ var s_single_step: bool = false
 # Debug draw callbacks
 # =============================================================================
 
-function draw_segment_world(p1: b2.Vec2, p2: b2.Vec2, color: b2.HexColor) -> void:
+public function draw_world_segment(p1: b2.Vec2, p2: b2.Vec2, color: b2.HexColor) -> void:
     let s1 = s_camera.convert_world_to_screen(p1)
     let s2 = s_camera.convert_world_to_screen(p2)
     rl.draw_line_ex(s1, s2, 2.0, hex_to_color(color))
+
+public function draw_world_point(p: b2.Vec2, size: float, color: b2.HexColor) -> void:
+    let screen = s_camera.convert_world_to_screen(p)
+    rl.draw_circle_v(screen, 0.5 * size, hex_to_color(color))
+
+public function draw_world_circle(center: b2.Vec2, radius: float, color: b2.HexColor) -> void:
+    let screen = s_camera.convert_world_to_screen(center)
+    let pixel_radius = radius * s_camera.pixels_per_world_unit()
+    rl.draw_circle_lines_v(screen, pixel_radius, hex_to_color(color))
+
+public function draw_world_aabb(aabb: b2.AABB, color: b2.HexColor) -> void:
+    let lower = aabb.lowerBound
+    let upper = aabb.upperBound
+    draw_world_segment(lower, b2.Vec2(x = upper.x, y = lower.y), color)
+    draw_world_segment(b2.Vec2(x = upper.x, y = lower.y), upper, color)
+    draw_world_segment(upper, b2.Vec2(x = lower.x, y = upper.y), color)
+    draw_world_segment(b2.Vec2(x = lower.x, y = upper.y), lower, color)
+
+public function draw_world_transform(transform: b2.Transform) -> void:
+    let axis_scale = 0.2
+    let p = transform.p
+    draw_world_segment(p, p.add(transform.q.x_axis().scale(axis_scale)), b2.HexColor.b2_colorRed)
+    draw_world_segment(p, p.add(transform.q.y_axis().scale(axis_scale)), b2.HexColor.b2_colorGreen)
 
 function debug_draw_polygon(
     vertices: const_ptr[b2.Vec2],
@@ -167,7 +197,7 @@ function debug_draw_polygon(
         var index = 0
         while index < vertex_count:
             let current = read(vertices + ptr_uint<-index)
-            draw_segment_world(last, current, color)
+            draw_world_segment(last, current, color)
             last = current
             index += 1
 
@@ -191,9 +221,7 @@ function debug_draw_solid_polygon(
     rl.draw_triangle_fan_ptr(const_ptr_of(s_poly_points[0]), vertex_count, hex_to_color(color))
 
 function debug_draw_circle(center: b2.Vec2, radius: float, color: b2.HexColor, _context: ptr[void]) -> void:
-    let screen = s_camera.convert_world_to_screen(center)
-    let pixel_radius = radius * s_camera.pixels_per_world_unit()
-    rl.draw_circle_lines_v(screen, pixel_radius, hex_to_color(color))
+    draw_world_circle(center, radius, color)
 
 function debug_draw_solid_circle(
     transform: b2.Transform,
@@ -221,17 +249,13 @@ function debug_draw_solid_capsule(
     rl.draw_circle_v(s2, pixel_radius, fill)
 
 function debug_draw_segment(p1: b2.Vec2, p2: b2.Vec2, color: b2.HexColor, _context: ptr[void]) -> void:
-    draw_segment_world(p1, p2, color)
+    draw_world_segment(p1, p2, color)
 
 function debug_draw_transform(transform: b2.Transform, _context: ptr[void]) -> void:
-    let axis_scale = 0.2
-    let p = transform.p
-    draw_segment_world(p, p.add(transform.q.x_axis().scale(axis_scale)), b2.HexColor.b2_colorRed)
-    draw_segment_world(p, p.add(transform.q.y_axis().scale(axis_scale)), b2.HexColor.b2_colorGreen)
+    draw_world_transform(transform)
 
 function debug_draw_point(p: b2.Vec2, size: float, color: b2.HexColor, _context: ptr[void]) -> void:
-    let screen = s_camera.convert_world_to_screen(p)
-    rl.draw_circle_v(screen, 0.5 * size, hex_to_color(color))
+    draw_world_point(p, size, color)
 
 function debug_draw_string(world_pos: b2.Vec2, text: cstr, color: b2.HexColor, _context: ptr[void]) -> void:
     let screen = s_camera.convert_world_to_screen(world_pos)
@@ -344,12 +368,30 @@ public function random_float() -> float:
 public function random_float_range(lo: float, hi: float) -> float:
     return lo + random_float() * (hi - lo)
 
+public function random_polygon(extent: float) -> b2.Polygon:
+    var points: array[b2.Vec2, b2.B2_MAX_POLYGON_VERTICES]
+    let count = 3 + random_int() % 6
+    var index = 0
+    while index < count:
+        points[index] = b2.Vec2(
+            x = random_float_range(-extent, extent),
+            y = random_float_range(-extent, extent)
+        )
+        index += 1
+    let hull = b2.compute_hull(const_ptr_of(points[0]), count)
+    if hull.count > 0:
+        return b2.make_polygon(const_ptr_of(hull), 0.0)
+    return b2.make_square(extent)
+
 # =============================================================================
 # Sample interface and run() driver
 # =============================================================================
 
 public interface Sample:
+    # Called every frame after the world step; safe to read contact/body events
+    # and to create or destroy bodies. Samples poll rl.is_key_pressed here.
     editable function on_step() -> void
+    # Called each frame inside the draw pass after the world debug draw.
     function draw_overlay() -> void
 
 var s_text_line: int = 0
@@ -391,18 +433,19 @@ public function run(sample: dyn[Sample], title: str, center: b2.Vec2, zoom: floa
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_P):
             s_paused = not s_paused
-        if rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
+        if rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE) and s_paused:
             s_single_step = true
         if rl.is_key_pressed(rl.KeyboardKey.KEY_F12):
             rl.take_screenshot("box2d_screenshot.png")
-
-        sample.on_step()
 
         var time_step = 1.0 / HERTZ
         if s_paused:
             if s_single_step: s_single_step = false else: time_step = 0.0
 
+        s_stepped = time_step > 0.0
         b2.world_step(s_world_id, time_step, SUB_STEP_COUNT)
+
+        sample.on_step()
 
         rl.begin_drawing()
         rl.clear_background(rl.Color(r = 38ub, g = 38ub, b = 44ub, a = 255ub))
