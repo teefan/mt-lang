@@ -30,6 +30,38 @@ class StructEqualityTest < Minitest::Test
                  "struct == must call the generated helper")
   end
 
+  def test_emits_struct_equality_helper_for_external_struct
+    source = <<~'MT'
+      import std.c.ffi_types as ffi
+
+      function main() -> int:
+          let a = ffi.ExternalId(index1 = 1, world0 = 2)
+          let b = ffi.ExternalId(index1 = 1, world0 = 2)
+          if a == b:
+              return 1
+          return 0
+    MT
+
+    external_source = <<~'MT'
+      external
+
+      include "ffi_types.h"
+
+      struct ExternalId:
+          index1: int
+          world0: ushort
+
+      external function make_id(value: int) -> ExternalId
+    MT
+
+    generated = generate_c_from_program_source(source, "std/c/ffi_types.mt" => external_source)
+
+    assert_match(/static bool mt_struct_eq_ExternalId\(struct ExternalId left, struct ExternalId right\)/, generated,
+                 "== on an external raw-module struct must emit a field-wise helper")
+    assert_match(/if \(left\.index1 != right\.index1\) return false;/, generated)
+    assert_match(/if \(left\.world0 != right\.world0\) return false;/, generated)
+  end
+
   def test_emits_str_equality_dependency_for_str_field
     source = <<~'MT'
       # module demo.seq_str

@@ -22,8 +22,14 @@ module MilkTea
                 "cstr"
               else
                 pointee = pointer_candidate.sub(/\s*\*\z/, "")
-                pointer_name = top_level_const_qualified?(pointee) ? "const_ptr" : "ptr"
-                "#{pointer_name}[#{map_c_type(pointee, context:)}]"
+                if function_type_typedef?(pointee)
+                  # `Name *` where Name is a function-type typedef is a function
+                  # pointer, which is exactly what the `fn` type already is.
+                  map_c_type(pointee, context:)
+                else
+                  pointer_name = top_level_const_qualified?(pointee) ? "const_ptr" : "ptr"
+                  "#{pointer_name}[#{map_c_type(pointee, context:)}]"
+                end
               end
             else
               unqualified = strip_qualifiers(normalized)
@@ -513,6 +519,10 @@ module MilkTea
 
         def pointer_type?(qual_type)
           qual_type.end_with?("*")
+        end
+
+        def function_type_typedef?(qual_type)
+          @function_type_typedef_names.include?(strip_qualifiers(qual_type))
         end
 
         def c_string_pointer?(qual_type)

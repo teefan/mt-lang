@@ -373,7 +373,7 @@ class MilkTeaBindgenTest < Minitest::Test
       )
 
       assert_match(/type FrictionCallback = fn\(arg0: float, arg1: ulong, arg2: float, arg3: ulong\) -> float/, generated)
-      assert_match(/struct WorldDef:\n\s+friction_callback: ptr\[FrictionCallback\]/, generated)
+      assert_match(/struct WorldDef:\n\s+friction_callback: FrictionCallback/, generated)
 
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)

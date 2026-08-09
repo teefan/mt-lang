@@ -104,7 +104,17 @@ module MilkTea
       def emit_struct_equality_helpers
         struct_decls_by_linkage = (emitted_aggregate_structs + collect_generic_struct_decls).each_with_object({}) { |decl, map| map[decl.linkage_name] = decl }
         struct_equality_types
-          .filter_map { |type| type.is_a?(Types::VariantArmPayload) ? type : struct_decls_by_linkage[named_type_c_name(type)] }
+          .filter_map do |type|
+            if type.is_a?(Types::VariantArmPayload)
+              type
+            elsif struct_decls_by_linkage.key?(named_type_c_name(type))
+              struct_decls_by_linkage[named_type_c_name(type)]
+            elsif type.is_a?(Types::Struct)
+              # External structs (raw ABI bindings) are not lowered into
+              # @program.structs, but their field layout is still known.
+              type
+            end
+          end
           .flat_map { |decl_or_type| emit_struct_equality_helper(decl_or_type) }
       end
 
@@ -112,11 +122,14 @@ module MilkTea
         if struct_decl_or_type.is_a?(IR::StructDecl)
           outer_c = struct_decl_or_type.linkage_name
           fields = struct_decl_or_type.fields
-        else
+        elsif struct_decl_or_type.is_a?(Types::VariantArmPayload)
           payload = struct_decl_or_type
           outer_c = named_type_c_name(payload)
           arm_fields = payload.variant_type.arm(payload.arm_name) || {}
           fields = arm_fields.map { |name, field_type| IR::Field.new(name:, type: field_type) }
+        else
+          outer_c = named_type_c_name(struct_decl_or_type)
+          fields = struct_decl_or_type.fields.map { |name, field_type| IR::Field.new(name:, type: field_type) }
         end
 
         lines = ["static bool mt_struct_eq_#{outer_c}(struct #{outer_c} left, struct #{outer_c} right) {"]

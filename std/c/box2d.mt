@@ -10,9 +10,9 @@ type b2AllocFcn = fn(arg0: uint, arg1: int) -> ptr[void]
 type b2FreeFcn = fn(arg0: ptr[void]) -> void
 type b2AssertFcn = fn(arg0: cstr, arg1: cstr, arg2: int) -> int
 
-external function b2SetAllocator(allocFcn: ptr[b2AllocFcn], freeFcn: ptr[b2FreeFcn]) -> void
+external function b2SetAllocator(allocFcn: b2AllocFcn, freeFcn: b2FreeFcn) -> void
 external function b2GetByteCount() -> int
-external function b2SetAssertFcn(assertFcn: ptr[b2AssertFcn]) -> void
+external function b2SetAssertFcn(assertFcn: b2AssertFcn) -> void
 
 struct b2Version:
     major: int
@@ -313,15 +313,15 @@ external function b2DynamicTree_GetCategoryBits(tree: ptr[b2DynamicTree], proxyI
 
 type b2TreeQueryCallbackFcn = fn(arg0: int, arg1: ulong, arg2: ptr[void]) -> bool
 
-external function b2DynamicTree_Query(tree: const_ptr[b2DynamicTree], aabb: b2AABB, maskBits: ptr_uint, callback: ptr[b2TreeQueryCallbackFcn], context: ptr[void]) -> b2TreeStats
+external function b2DynamicTree_Query(tree: const_ptr[b2DynamicTree], aabb: b2AABB, maskBits: ptr_uint, callback: b2TreeQueryCallbackFcn, context: ptr[void]) -> b2TreeStats
 
 type b2TreeRayCastCallbackFcn = fn(arg0: const_ptr[b2RayCastInput], arg1: int, arg2: ulong, arg3: ptr[void]) -> float
 
-external function b2DynamicTree_RayCast(tree: const_ptr[b2DynamicTree], input: const_ptr[b2RayCastInput], maskBits: ptr_uint, callback: ptr[b2TreeRayCastCallbackFcn], context: ptr[void]) -> b2TreeStats
+external function b2DynamicTree_RayCast(tree: const_ptr[b2DynamicTree], input: const_ptr[b2RayCastInput], maskBits: ptr_uint, callback: b2TreeRayCastCallbackFcn, context: ptr[void]) -> b2TreeStats
 
 type b2TreeShapeCastCallbackFcn = fn(arg0: const_ptr[b2ShapeCastInput], arg1: int, arg2: ulong, arg3: ptr[void]) -> float
 
-external function b2DynamicTree_ShapeCast(tree: const_ptr[b2DynamicTree], input: const_ptr[b2ShapeCastInput], maskBits: ptr_uint, callback: ptr[b2TreeShapeCastCallbackFcn], context: ptr[void]) -> b2TreeStats
+external function b2DynamicTree_ShapeCast(tree: const_ptr[b2DynamicTree], input: const_ptr[b2ShapeCastInput], maskBits: ptr_uint, callback: b2TreeShapeCastCallbackFcn, context: ptr[void]) -> b2TreeStats
 external function b2DynamicTree_GetHeight(tree: const_ptr[b2DynamicTree]) -> int
 external function b2DynamicTree_GetAreaRatio(tree: const_ptr[b2DynamicTree]) -> float
 external function b2DynamicTree_GetRootBounds(tree: const_ptr[b2DynamicTree]) -> b2AABB
@@ -382,7 +382,7 @@ const b2_nullChainId: b2ChainId = b2ChainId(index1 = 0, world0 = 0, generation =
 const b2_nullJointId: b2JointId = b2JointId(index1 = 0, world0 = 0, generation = 0)
 
 type b2TaskCallback = fn(arg0: int, arg1: int, arg2: uint, arg3: ptr[void]) -> void
-type b2EnqueueTaskCallback = fn(arg0: ptr[b2TaskCallback], arg1: int, arg2: int, arg3: ptr[void], arg4: ptr[void]) -> ptr[void]
+type b2EnqueueTaskCallback = fn(arg0: b2TaskCallback, arg1: int, arg2: int, arg3: ptr[void], arg4: ptr[void]) -> ptr[void]
 type b2FinishTaskCallback = fn(arg0: ptr[void], arg1: ptr[void]) -> void
 type b2FrictionCallback = fn(arg0: float, arg1: int, arg2: float, arg3: int) -> float
 type b2RestitutionCallback = fn(arg0: float, arg1: int, arg2: float, arg3: int) -> float
@@ -404,13 +404,13 @@ struct b2WorldDef:
     contactDampingRatio: float
     maxContactPushSpeed: float
     maximumLinearSpeed: float
-    frictionCallback: ptr[b2FrictionCallback]
-    restitutionCallback: ptr[b2RestitutionCallback]
+    frictionCallback: b2FrictionCallback
+    restitutionCallback: b2RestitutionCallback
     enableSleep: bool
     enableContinuous: bool
     workerCount: int
-    enqueueTask: ptr[b2EnqueueTaskCallback]
-    finishTask: ptr[b2FinishTaskCallback]
+    enqueueTask: b2EnqueueTaskCallback
+    finishTask: b2FinishTaskCallback
     userTaskContext: ptr[void]
     userData: ptr[void]
     internalValue: int
@@ -942,13 +942,13 @@ external function b2World_Draw(worldId: b2WorldId, draw: ptr[b2DebugDraw]) -> vo
 external function b2World_GetBodyEvents(worldId: b2WorldId) -> b2BodyEvents
 external function b2World_GetSensorEvents(worldId: b2WorldId) -> b2SensorEvents
 external function b2World_GetContactEvents(worldId: b2WorldId) -> b2ContactEvents
-external function b2World_OverlapAABB(worldId: b2WorldId, aabb: b2AABB, filter: b2QueryFilter, fcn: ptr[b2OverlapResultFcn], context: ptr[void]) -> b2TreeStats
-external function b2World_OverlapShape(worldId: b2WorldId, proxy: const_ptr[b2ShapeProxy], filter: b2QueryFilter, fcn: ptr[b2OverlapResultFcn], context: ptr[void]) -> b2TreeStats
-external function b2World_CastRay(worldId: b2WorldId, origin: b2Vec2, translation: b2Vec2, filter: b2QueryFilter, fcn: ptr[b2CastResultFcn], context: ptr[void]) -> b2TreeStats
+external function b2World_OverlapAABB(worldId: b2WorldId, aabb: b2AABB, filter: b2QueryFilter, fcn: b2OverlapResultFcn, context: ptr[void]) -> b2TreeStats
+external function b2World_OverlapShape(worldId: b2WorldId, proxy: const_ptr[b2ShapeProxy], filter: b2QueryFilter, fcn: b2OverlapResultFcn, context: ptr[void]) -> b2TreeStats
+external function b2World_CastRay(worldId: b2WorldId, origin: b2Vec2, translation: b2Vec2, filter: b2QueryFilter, fcn: b2CastResultFcn, context: ptr[void]) -> b2TreeStats
 external function b2World_CastRayClosest(worldId: b2WorldId, origin: b2Vec2, translation: b2Vec2, filter: b2QueryFilter) -> b2RayResult
-external function b2World_CastShape(worldId: b2WorldId, proxy: const_ptr[b2ShapeProxy], translation: b2Vec2, filter: b2QueryFilter, fcn: ptr[b2CastResultFcn], context: ptr[void]) -> b2TreeStats
+external function b2World_CastShape(worldId: b2WorldId, proxy: const_ptr[b2ShapeProxy], translation: b2Vec2, filter: b2QueryFilter, fcn: b2CastResultFcn, context: ptr[void]) -> b2TreeStats
 external function b2World_CastMover(worldId: b2WorldId, mover: const_ptr[b2Capsule], translation: b2Vec2, filter: b2QueryFilter) -> float
-external function b2World_CollideMover(worldId: b2WorldId, mover: const_ptr[b2Capsule], filter: b2QueryFilter, fcn: ptr[b2PlaneResultFcn], context: ptr[void]) -> void
+external function b2World_CollideMover(worldId: b2WorldId, mover: const_ptr[b2Capsule], filter: b2QueryFilter, fcn: b2PlaneResultFcn, context: ptr[void]) -> void
 external function b2World_EnableSleeping(worldId: b2WorldId, flag: bool) -> void
 external function b2World_IsSleepingEnabled(worldId: b2WorldId) -> bool
 external function b2World_EnableContinuous(worldId: b2WorldId, flag: bool) -> void
@@ -957,8 +957,8 @@ external function b2World_SetRestitutionThreshold(worldId: b2WorldId, value: flo
 external function b2World_GetRestitutionThreshold(worldId: b2WorldId) -> float
 external function b2World_SetHitEventThreshold(worldId: b2WorldId, value: float) -> void
 external function b2World_GetHitEventThreshold(worldId: b2WorldId) -> float
-external function b2World_SetCustomFilterCallback(worldId: b2WorldId, fcn: ptr[b2CustomFilterFcn], context: ptr[void]) -> void
-external function b2World_SetPreSolveCallback(worldId: b2WorldId, fcn: ptr[b2PreSolveFcn], context: ptr[void]) -> void
+external function b2World_SetCustomFilterCallback(worldId: b2WorldId, fcn: b2CustomFilterFcn, context: ptr[void]) -> void
+external function b2World_SetPreSolveCallback(worldId: b2WorldId, fcn: b2PreSolveFcn, context: ptr[void]) -> void
 external function b2World_SetGravity(worldId: b2WorldId, gravity: b2Vec2) -> void
 external function b2World_GetGravity(worldId: b2WorldId) -> b2Vec2
 external function b2World_Explode(worldId: b2WorldId, explosionDef: const_ptr[b2ExplosionDef]) -> void
@@ -972,8 +972,8 @@ external function b2World_GetProfile(worldId: b2WorldId) -> b2Profile
 external function b2World_GetCounters(worldId: b2WorldId) -> b2Counters
 external function b2World_SetUserData(worldId: b2WorldId, userData: ptr[void]) -> void
 external function b2World_GetUserData(worldId: b2WorldId) -> ptr[void]
-external function b2World_SetFrictionCallback(worldId: b2WorldId, callback: ptr[b2FrictionCallback]) -> void
-external function b2World_SetRestitutionCallback(worldId: b2WorldId, callback: ptr[b2RestitutionCallback]) -> void
+external function b2World_SetFrictionCallback(worldId: b2WorldId, callback: b2FrictionCallback) -> void
+external function b2World_SetRestitutionCallback(worldId: b2WorldId, callback: b2RestitutionCallback) -> void
 external function b2World_DumpMemoryStats(worldId: b2WorldId) -> void
 external function b2World_RebuildStaticTree(worldId: b2WorldId) -> void
 external function b2World_EnableSpeculative(worldId: b2WorldId, flag: bool) -> void

@@ -147,6 +147,11 @@ module MilkTea
         @visible_typedef_names = top_level_nodes.filter_map do |node|
           node["name"] if node["kind"] == "TypedefDecl" && allowed_declaration_name?(node["name"])
         end
+        @function_type_typedef_names = top_level_nodes.filter_map do |node|
+          if node["kind"] == "TypedefDecl" && allowed_declaration_name?(node["name"]) && extract_function_proto(node) && !function_pointer_type?(type_qual_type(node))
+            node["name"]
+          end
+        end
         build_alias_maps(top_level_nodes)
 
         declarations = []
