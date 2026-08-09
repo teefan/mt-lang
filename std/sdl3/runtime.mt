@@ -52,3 +52,14 @@ public function locale_string(locale: ptr[sdl.Locale]) -> string.String:
 
 public function debug_text_width(text_value: str) -> float:
     return float<-sdl.DEBUG_TEXT_FONT_CHARACTER_SIZE * float<-text_value.len
+
+
+public function asset_path(relative: str) -> string.String:
+    let base = sdl.get_base_path() else:
+        fatal("could not resolve the application base path")
+
+    var path = string.String.with_capacity(relative.len + 64)
+    path.append(text.cstr_as_str(base))
+    path.append("../resources/")
+    path.append(relative)
+    return path
