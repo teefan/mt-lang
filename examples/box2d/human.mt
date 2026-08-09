@@ -341,6 +341,13 @@ public function human_set_joint_spring_hertz(human: ref[Human], hertz: float) ->
             b2.revolute_joint_set_spring_hertz(human.bones[index].joint_id, hertz)
             index += 1
 
+public function human_enable_sensor_events(human: ref[Human], enable: bool) -> void:
+    let body_id = human.bones[BONE_TORSO].body_id
+    var shape_id: b2.ShapeId = b2.b2_nullShapeId
+    let count = b2.body_get_shapes(body_id, ptr_of(shape_id), 1)
+    if count == 1:
+        b2.shape_enable_sensor_events(shape_id, enable)
+
 public function human_set_joint_damping_ratio(human: ref[Human], damping_ratio: float) -> void:
     var index = 1
     while index < BONE_COUNT:

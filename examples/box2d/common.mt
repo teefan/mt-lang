@@ -92,6 +92,47 @@ public function max_int(a: int, b: int) -> int:
 public function clamp_int(value: int, lo: int, hi: int) -> int:
     return max_int(lo, min_int(value, hi))
 
+public function abs_float(value: float) -> float:
+    return if value < 0.0: -value else: value
+
+public function get_length_and_normalize(v: b2.Vec2) -> (float, b2.Vec2):
+    let len = v.length()
+    if len < 0.000001:
+        return (0.0, b2.b2Vec2_zero)
+    return (len, b2.Vec2(x = v.x / len, y = v.y / len))
+
+public function spring_damper(
+    hertz: float,
+    damping_ratio: float,
+    position: float,
+    velocity: float,
+    time_step: float
+) -> float:
+    let omega = 2.0 * b2.B2_PI * hertz
+    let omega_h = omega * time_step
+    return (velocity - omega * omega_h * position) / (1.0 + 2.0 * damping_ratio * omega_h + omega_h * omega_h)
+
+public function rot_product(a: b2.Rot, b: b2.Rot) -> b2.Rot:
+    return b2.Rot(c = a.c * b.c - a.s * b.s, s = a.s * b.c + a.c * b.s)
+
+public function rot_inv_product(a: b2.Rot, b: b2.Rot) -> b2.Rot:
+    return b2.Rot(c = a.c * b.c + a.s * b.s, s = a.c * b.s - a.s * b.c)
+
+public function mul_transforms(a: b2.Transform, b: b2.Transform) -> b2.Transform:
+    return b2.Transform(p = a.p.add(a.q.mul_vector(b.p)), q = rot_product(a.q, b.q))
+
+public function inv_mul_transforms(a: b2.Transform, b: b2.Transform) -> b2.Transform:
+    return b2.Transform(p = a.q.mul_vector_inv(b.p.sub(a.p)), q = rot_inv_product(a.q, b.q))
+
+public function transform_polygon(t: b2.Transform, p: b2.Polygon) -> b2.Polygon:
+    var result = p
+    var index = 0
+    while index < result.count:
+        result.vertices[index] = t.mul_point(p.vertices[index])
+        index += 1
+    result.centroid = t.mul_point(p.centroid)
+    return result
+
 # =============================================================================
 # Hex color conversion (b2HexColor is 0xRRGGBB)
 # =============================================================================
@@ -164,6 +205,9 @@ public function enable_mouse_joint(enable: bool) -> void:
 
 public function mouse_world_point() -> b2.Vec2:
     return s_mouse_world
+
+public function set_camera_center(center: b2.Vec2) -> void:
+    s_camera.center = center
 
 public function paused() -> bool:
     return s_paused
@@ -341,7 +385,7 @@ function overlap_query_callback(shape_id: b2.ShapeId, _context: ptr[void]) -> bo
         return false
     return true
 
-function null_context() -> ptr[void]:
+public function null_context() -> ptr[void]:
     return unsafe: reinterpret[ptr[void]](ptr_of(s_dummy_context))
 
 function mouse_down(world_point: b2.Vec2) -> void:
