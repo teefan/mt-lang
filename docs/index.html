@@ -1262,7 +1262,7 @@ let d: dyn[Drawable] = adapt[Drawable](ref_of(entity))</code></pre>
       <tr><td><code>ptr_int</code> <code>ptr_uint</code></td><td>Pointer-sized integers</td></tr>
       <tr><td><code>float</code> <code>double</code></td><td>Floating-point</td></tr>
       <tr><td><code>void</code></td><td>No value</td></tr>
-      <tr><td><code>str</code></td><td>UTF-8 string view (borrowed). The <code>+</code> operator concatenates two <code>str</code> values, allocating a new heap-backed string.</td></tr>
+      <tr><td><code>str</code></td><td>UTF-8 string view (borrowed). The <code>+</code> operator concatenates two <code>str</code> values into a per-thread scratch buffer (no allocation); the result is valid while the scratch budget lasts.</td></tr>
       <tr><td><code>cstr</code></td><td>NUL-terminated C string</td></tr>
       <tr><td><code>vec2</code> <code>vec3</code> <code>vec4</code></td><td>Float vectors with <code>.x .y .z .w</code></td></tr>
       <tr><td><code>ivec2</code> <code>ivec3</code> <code>ivec4</code></td><td>Integer vectors</td></tr>
@@ -1871,7 +1871,7 @@ function field_equal[T](a: const_ptr[T], b: const_ptr[T]) -&gt; bool:
   <div class="table-wrap">
     <table class="attr-table">
       <tr><th>Type</th><th>Ownership</th><th>Use Case</th></tr>
-      <tr><td><code>str</code></td><td>Borrowed</td><td>Read-only UTF-8 view (literals, format strings, slicing)</td></tr>
+      <tr><td><code>str</code></td><td>Borrowed</td><td>Read-only UTF-8 view (literals, format strings, slicing); a stored or returned dynamic format string carries its own heap buffer</td></tr>
       <tr><td><code>cstr</code></td><td>Borrowed</td><td>NUL-terminated C ABI string (<code>c"hello"</code>)</td></tr>
       <tr><td><code>str_buffer[N]</code></td><td>Owned (stack)</td><td>Fixed-capacity mutable UTF-8 builder</td></tr>
       <tr><td><code>std.string.String</code></td><td>Owned (heap)</td><td>Growable owned text via <code>fmt.format(f"...")</code></td></tr>
@@ -1889,9 +1889,9 @@ let info = f"value=#{pi:.4}"
 ## Hex format for ints
 let hex = f"address=#{ptr_value:x}"
 
-## Owned text (escape stack lifetime)
+## Owned text with explicit release
 import std.fmt
-let owned = fmt.format(f"count=#{count}")  ## -> string.String</code></pre>
+let owned = fmt.format(f"count=#{count}")  ## -> string.String (call .release())</code></pre>
 </div>
   <p>Interpolated expressions must be <code>str</code>, <code>cstr</code>, <code>bool</code>, a numeric primitive, an integer-backed enum or flags type, or a type implementing <code>format_len()</code> and <code>append_format()</code> (custom formatting hooks). The compiler lowers <code>fmt.format(f"...")</code>, <code>str_buffer.append_format(f"...")</code>, and <code>string.String.append_format(f"...")</code> directly to the formatted output without an intermediate allocation.</p>
 
@@ -2242,7 +2242,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>std.gzip</code> <code>std.tar</code></td><td>Compression</td></tr>
       <tr><td><code>std.sync</code> <code>std.thread</code> <code>std.jobs</code></td><td>Concurrency</td></tr>
       <tr><td><code>std.fsm</code> <code>std.goap</code> <code>std.behavior_tree</code></td><td>AI / State machines</td></tr>
-      <tr><td><code>std.cell</code></td><td>Shared mutable cell allocation</td></tr>
+      <tr><td><code>std.box</code></td><td>Explicit single-value heap storage for shared mutable state</td></tr>
     </table>
   </div>
 </section>

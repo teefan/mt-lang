@@ -1072,7 +1072,7 @@ Rules:
 11. `+`, `-`
 12. `*`, `/`, `%`
 
-The `+` operator also concatenates two `str` operands, producing a new heap-backed `str` (§2.3). It does not concatenate `cstr` or mixed `str`/`cstr` operands.
+The `+` operator also concatenates two `str` operands into a per-thread scratch buffer, producing a borrowed `str` (no heap allocation) whose validity is bounded by the scratch buffer budget (§2.3). It does not concatenate `cstr` or mixed `str`/`cstr` operands.
 
 ### 5.4 Assignment operators
 

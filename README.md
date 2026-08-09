@@ -939,7 +939,7 @@ See module source for full method surface. Iterator forms:
 
 Text categories:
 
-- `str` -> string view. The `+` operator concatenates two `str` values, allocating a new heap-backed string. For loops or repeated concatenation, prefer `string.String` for amortized performance.
+- `str` -> string view. The `+` operator concatenates two `str` values into a per-thread scratch buffer (no heap allocation), returning a borrowed `str`; the result stays valid while cumulative concatenations on that thread remain within the scratch buffer budget. For loops or repeated concatenation, prefer `string.String` for amortized building.
 - `cstr` -> C ABI string
 - `str_buffer[N]` -> fixed-capacity mutable UTF-8 text buffer
 
@@ -959,7 +959,7 @@ Format strings:
 
 - `f"count=#{count}"` has type `str`.
 - Allowed interpolations: `str`, `cstr`, `bool`, numeric primitives, integer-backed enums and flags, plus types implementing `format_len() -> ptr_uint` and `append_format(output: ref[std.string.String]) -> void`.
-- `f"..."` is a borrowed temporary on the stack — it cannot be returned from a function as `str`. Use `std.fmt.format(f"...")` returning `string.String` when ownership must escape.
+- Dynamic `f"..."` expressions build into a heap-backed temporary that the compiler releases after use. A dynamic `f"..."` may be returned from a function (or stored in a `str` local): ownership of that buffer transfers to the caller. `std.fmt.format(f"...")` returns an owned `string.String` when you want explicit owned-text lifetime management.
 - Float and double interpolations support `:.N` precision.
 - Integer primitive and integer-backed enum/flags interpolations support `:x` (lowercase hex) and `:X` (uppercase hex).
 - Integer primitive and integer-backed enum/flags interpolations support `:o` / `:O` (octal) and `:b` / `:B` (binary).

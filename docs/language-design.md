@@ -28,7 +28,7 @@ The output target is beautiful C. The generated C should be readable enough that
 - No macro system that rewrites arbitrary ASTs
 - No garbage collector
 - No implicit conversions between unrelated primitive types
-- No user-invisible allocation for strings, collections, ordinary values, or method calls. Capturing a `proc` may allocate a ref-counted closure environment as part of proc value semantics; owned text and other storage use explicit allocating surfaces.
+- No user-invisible allocation for collections, ordinary values, or method calls. Capturing a `proc` may allocate a ref-counted closure environment as part of proc value semantics. Dynamic format strings are the one text case that builds a heap-backed temporary, released after use (see the text-construction rule in §1); other owned text and storage use explicit allocating surfaces.
 
 ## Design rules
 
@@ -38,7 +38,7 @@ If code allocates, takes an address, dereferences a raw pointer, performs an FFI
 
 FFI visibility belongs at the declaration site. Raw `external` files expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
 
-The same rule applies to text construction. Plain string literals and format string literals are borrowed `str` values. The `+` operator on `str` allocates a new heap-backed `str` — the one everyday convenience that does allocate. For loops or amortized building, `string.String` and `str_buffer[N]` remain the explicit surfaces with visible cost. Any other surface that builds owned text must say so explicitly, for example `std.fmt.format(f"...")` when ownership must escape.
+The same rule applies to text construction. Plain string literals are borrowed `str` values. A dynamic format string `f"..."` builds into a heap-backed temporary that the compiler releases after the surrounding statement; returning it (or storing it in a `str` local) transfers ownership of that buffer to the caller. The `+` operator on `str` concatenates into a per-thread scratch buffer without allocating — the result is a borrowed `str` valid until that buffer's budget is exhausted. For loops or amortized building, and whenever ownership should stay explicit and controllable, `string.String` and `str_buffer[N]` remain the explicit surfaces with visible cost; `std.fmt.format(f"...")` is the explicit owned-text path returning a `string.String`.
 
 ### 2. C is the ABI ground truth
 
@@ -762,7 +762,7 @@ Built-in operators should match familiar C behavior where possible:
 
 No user-defined operator overloading.
 
-The `+` operator also concatenates two `str` values, allocating a new heap-backed string; `cstr` values are not concatenable. This is the one operator exception to the arithmetic rules, and it is described in the text-construction rule under Design rules §1.
+The `+` operator also concatenates two `str` values into a per-thread scratch buffer, returning a borrowed `str`; `cstr` values are not concatenable. This is the one operator exception to the arithmetic rules, and it is described in the text-construction rule under Design rules §1.
 
 Built-in vector, matrix, and quaternion types support component-wise arithmetic with the standard operators:
 
