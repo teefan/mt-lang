@@ -486,13 +486,11 @@ module MilkTea
           expected_type: return_type,
           contextual_int_to_float: contextual_int_to_float_target?(return_type),
         ) : nil
-        if prepared_cleanups.any? && cstr_trackable_type?(return_type)
-          raise LoweringError.new("formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape",
-            line: statement.line, column: statement.column, path: @ctx.current_analysis_path)
-        end
-
         prepared_cleanup_list = prepared_cleanups.flat_map(&:itself)
-        if prepared_cleanup_list.any? && return_type.is_a?(Types::Struct) && struct_contains_string_field?(return_type)
+        if prepared_cleanup_list.any? && (cstr_trackable_type?(return_type) ||
+                                          (return_type.is_a?(Types::Struct) && struct_contains_string_field?(return_type)))
+          # A dynamic f-string temp owns its heap buffer; returning it transfers
+          # ownership to the caller, so the format release must not run.
           prepared_cleanup_list = prepared_cleanup_list.reject { |stmt| stmt.is_a?(IR::ExpressionStmt) && stmt.expression.is_a?(IR::Call) && stmt.expression.callee == "mt_format_str_release" }
         end
         cleanup = prepared_cleanup_list + cleanup_statements(local_defers, active_defers)
@@ -793,7 +791,7 @@ module MilkTea
             else_body: nil,
           )
         end
-        local_defers.concat(prepared_cleanups)
+        local_defers.concat(reject_format_releases_for_assignment(prepared_cleanups, storage_type))
         if contains_proc_storage_type?(storage_type)
           local_value = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
           local_defers << lower_proc_nullable_release_statements(local_value, storage_type)

@@ -772,7 +772,7 @@ function main() -> int:
     assert_equal 2, generated.scan(/__fmt_\w+ = mt_format_str_make\(__fmt_\w+_cap\)/).length
   end
 
-  def test_rejects_returning_general_format_string_as_borrowed_text
+  def test_returns_format_string_as_owned_text_without_release
     source = <<~MT
       # module demo.format_expr_escape
 
@@ -780,11 +780,51 @@ function main() -> int:
           return f"value=\#{value}"
     MT
 
-    error = assert_raises(MilkTea::LoweringError) do
-      generate_c_from_source(source)
-    end
+    generated = generate_c_from_source(source)
 
-    assert_match(/formatted string temporaries cannot be returned as borrowed text/, error.message)
+    assert_match(/return __\w*_fmt_\w+;/, generated,
+                 "a returned format string temp must be passed straight out")
+    refute_match(/mt_format_str_release/, generated,
+                 "returning a format string must transfer ownership, not release it")
+  end
+
+  def test_returns_stored_format_string_without_release
+    source = <<~MT
+      # module demo.format_expr_store
+
+      function label(value: int) -> str:
+          let text = f"stored=\#{value}"
+          return text
+    MT
+
+    generated = generate_c_from_source(source)
+
+    refute_match(/mt_format_str_release/, generated,
+                 "a stored format string must keep its buffer when returned")
+    assert_match(/return text;/, generated)
+  end
+
+  def test_run_program_returns_stored_format_string
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.format_expr_store_run
+
+      function label(value: int) -> str:
+          let text = f"stored=\#{value}"
+          return text
+
+      function main() -> int:
+          if label(8) == "stored=8":
+              return 0
+          return 1
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
   end
 
   def test_generate_c_for_cstr_backed_string_constants_without_foreign_temps
