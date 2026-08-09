@@ -2861,6 +2861,135 @@ function main() -> int:
     assert_match(/add_one/, generated)
   end
 
+  def test_generate_c_for_value_param_const_function_folded
+    source = <<~MT
+      const function mul[N: int](x: int) -> int:
+          return x * N
+
+      const RESULT: int = mul[8](5)
+
+      function main() -> int:
+          return RESULT
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/40/, generated)
+    refute_match(/mul/, generated)
+  end
+
+  def test_run_program_for_value_param_const_function
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.value_param_const
+
+      const function mul[N: int](x: int) -> int:
+          return x * N
+
+      function main() -> int:
+          return mul[8](5)
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 40, result.exit_status
+  end
+
+  def test_run_program_for_value_param_generic_function
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.value_param_generic
+
+      function mul[N: int](x: int) -> int:
+          return x * N
+
+      function main() -> int:
+          return mul[8](5)
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 40, result.exit_status
+  end
+
+  def test_const_initializer_rejects_non_const_function_call
+    source = <<~MT
+      function add_one(x: int) -> int:
+          return x + 1
+
+      const RESULT: int = add_one(41)
+
+      function main() -> int:
+          return RESULT
+    MT
+
+    error = assert_raises(MilkTea::LoweringError) do
+      generate_c_from_source(source)
+    end
+
+    assert_match(/constant RESULT initializer is not a compile-time value/, error.message)
+  end
+
+  def test_const_initializer_rejects_unfoldable_const_function
+    source = <<~MT
+      const function make_buf[N: int]() -> int:
+          var buf: array[ubyte, N]
+          buf[0] = 7
+          return buf[0]
+
+      const A: int = make_buf[8]()
+
+      function main() -> int:
+          return A
+    MT
+
+    error = assert_raises(MilkTea::LoweringError) do
+      generate_c_from_source(source)
+    end
+
+    assert_match(/constant A initializer is not a compile-time value/, error.message)
+  end
+
+  def test_generate_c_for_false_bool_const
+    source = <<~MT
+      const function is_even(n: int) -> bool:
+          return n % 2 == 0
+
+      const EVEN: bool = is_even(4)
+      const ODD: bool = is_even(3)
+
+      function main() -> int:
+          if EVEN and not ODD:
+              return 1
+          return 0
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/false/, generated)
+  end
+
+  def test_generate_c_for_emit_inside_inline_if_in_const_function
+    source = <<~MT
+      const ENABLED: bool = true
+
+      const function generate_helpers() -> void:
+          inline if ENABLED:
+              emit function zero_meaning() -> int:
+                  return 0
+
+      function main() -> int:
+          return zero_meaning()
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/zero_meaning/, generated)
+  end
+
   # ── Native math types ─────────────────────────────────────────────────────
 
   def test_generate_c_for_vec3_construction

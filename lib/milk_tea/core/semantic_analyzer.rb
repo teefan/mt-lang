@@ -175,6 +175,7 @@ module MilkTea
         @mutable_lvalue_argument_identifier_ids = {}
         @editable_receiver_expression_ids = {}
         @preassigned_local_binding_ids = {}
+        @predeclared_const_names = Set.new
         @nullability_flow_result = nil
         @unsafe_statement_lines = []
         @callable_value_identifier_sites = {}
@@ -196,6 +197,7 @@ module MilkTea
         run_phase(:resolve_generic_type_param_constraints, requires: [:declare_named_types])
         run_phase(:resolve_type_aliases, requires: [:declare_named_types])
         run_phase(:declare_attributes)
+        run_phase(:predeclare_top_level_consts)
         run_phase(:resolve_aggregate_fields, requires: [:resolve_type_aliases, :declare_named_types])
         run_phase(:resolve_enum_members, requires: [:declare_named_types])
         run_phase(:resolve_variant_arms, requires: [:declare_named_types])
@@ -260,12 +262,16 @@ module MilkTea
           when AST::WhenStmt
             body = when_chosen_body(stmt) || []
             body.each { |nested| collect_emit_from_statements([nested]) }
-          when AST::ForStmt, AST::WhileStmt, AST::IfStmt, AST::MatchStmt
+          when AST::ForStmt, AST::WhileStmt
             next unless stmt.inline
             stmt.body&.each { |s| collect_emit_from_statements([s]) }
-            if stmt.is_a?(AST::IfStmt)
-              stmt.else_body&.each { |s| collect_emit_from_statements([s]) }
-            end
+          when AST::IfStmt
+            next unless stmt.inline
+            stmt.branches.each { |branch| collect_emit_from_statements(branch.body) }
+            stmt.else_body&.each { |s| collect_emit_from_statements([s]) }
+          when AST::MatchStmt
+            next unless stmt.inline
+            stmt.arms.each { |arm| collect_emit_from_statements(arm.body) }
           end
         end
       end
@@ -302,6 +308,7 @@ module MilkTea
         run_collecting_phase(:resolve_generic_type_param_constraints, requires: [:declare_named_types])
         run_collecting_phase(:resolve_type_aliases, requires: [:declare_named_types])
         run_collecting_phase(:declare_attributes)
+        run_collecting_phase(:predeclare_top_level_consts)
         run_collecting_phase(:resolve_aggregate_fields, requires: [:resolve_type_aliases, :declare_named_types])
         run_collecting_phase(:resolve_enum_members, requires: [:declare_named_types])
         run_collecting_phase(:resolve_variant_arms, requires: [:declare_named_types])

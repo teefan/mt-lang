@@ -206,7 +206,8 @@ class SemaLoweringTypeConsistencyTest < Minitest::Test
           static function default() -> Counter:
               return Counter(value = 0)
 
-      const A: Counter = default[Counter]
+      function main() -> Counter:
+          return default[Counter]
     MT
   end
 

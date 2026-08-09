@@ -9,6 +9,7 @@ module MilkTea
       attr_accessor :methods, :attributes, :attribute_applications, :implemented_interfaces
       attr_accessor :struct_types, :union_types, :opaque_types
       attr_accessor :current_type_substitutions
+      attr_accessor :current_value_type_params
       attr_accessor :resolved_expr_types
       attr_accessor :resolved_call_kinds
       attr_accessor :const_values
@@ -27,6 +28,7 @@ module MilkTea
         @attribute_applications = {}
         @implemented_interfaces = {}
         @current_type_substitutions = nil
+        @current_value_type_params = nil
         @resolved_expr_types = {}
         @resolved_call_kinds = {}
         @const_values = {}

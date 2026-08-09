@@ -699,7 +699,7 @@ module MilkTea
       end
 
       def infer_expression_type(expression, env:, expected_type: nil)
-        if !@bypass_sema_type_cache && expected_type.nil? && (id = @ctx.ast.node_ids[expression.object_id]) && (resolved = @ctx.resolved_expr_types[id])
+        if !@bypass_sema_type_cache && expected_type.nil? && !expression.is_a?(AST::Identifier) && (id = @ctx.ast.node_ids[expression.object_id]) && (resolved = @ctx.resolved_expr_types[id])
           return resolved
         end
 
@@ -740,6 +740,9 @@ module MilkTea
         when AST::Identifier
           binding = lookup_value(expression.name, env)
           return binding[:type] if binding
+          if (value_param_type = value_param_declared_type(expression.name))
+            return value_param_type
+          end
             return function_type_for_name(expression.name) if @ctx.functions.key?(expression.name)
 
             raise LoweringError.new("unknown identifier #{expression.name}", line: expression.line, column: expression.column)
@@ -2435,6 +2438,25 @@ module MilkTea
 
       def current_type_params
         @ctx.current_type_substitutions || {}
+      end
+
+      def value_param_substitution(name)
+        substitution = current_type_params[name]
+        substitution.is_a?(Types::LiteralTypeArg) ? substitution : nil
+      end
+
+      def value_param_declared_type(name)
+        return nil unless value_param_substitution(name)
+
+        @ctx.current_value_type_params&.[](name)
+      end
+
+      def value_param_literal(name, expected_type = nil)
+        substitution = value_param_substitution(name)
+        return nil unless substitution && substitution.value.is_a?(Integer)
+
+        type = @ctx.current_value_type_params&.[](name) || expected_type || @ctx.types.fetch("int")
+        IR::IntegerLiteral.new(value: substitution.value, type:)
       end
 
       def resolve_type_ref(type_ref, type_params: current_type_params)

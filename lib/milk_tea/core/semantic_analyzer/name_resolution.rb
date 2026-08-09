@@ -7,6 +7,10 @@ module MilkTea
         @current_type_substitutions || {}
       end
 
+      def current_value_type_params
+        @current_value_type_params || {}
+      end
+
       def current_type_param_constraints
         @current_type_param_constraints || {}
       end
@@ -463,9 +467,13 @@ module MilkTea
                   resolve_imported_module_const_value(type_ref.name.parts.first, type_ref.name.parts.last)
                 end
 
-        return unless value.is_a?(Integer) || value.is_a?(Float)
+        return if value.nil?
+        return Types::LiteralTypeArg.new(value) if value.is_a?(Integer) || value.is_a?(Float)
+        return value if value.is_a?(Types::Base)
 
-        Types::LiteralTypeArg.new(value)
+        nil
+      rescue SemanticError
+        nil
       end
 
       def resolve_current_module_const_value(name)
@@ -657,12 +665,8 @@ module MilkTea
         return false unless expression
 
         ct_value = evaluate_compile_time_const_value(expression, scopes:)
-        if ct_value.is_a?(Types::Struct) || ct_value.is_a?(Types::Primitive) ||
-           ct_value.is_a?(Types::Union) || ct_value.is_a?(Types::Nullable) ||
-           ct_value.is_a?(Types::StructInstance)
-          if sized_layout_type?(ct_value)
-            return true
-          end
+        if sized_layout_type?(ct_value)
+          return true
         end
 
         false

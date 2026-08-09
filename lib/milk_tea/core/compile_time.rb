@@ -437,7 +437,7 @@ module MilkTea
                 resolve_identifier: ->(id) { @variables[id.name] || @checker.evaluate_compile_time_const_value(id, scopes:) },
                 resolve_member_access: ->(ma) { @checker.evaluate_compile_time_const_value(ma, scopes:) },
                 resolve_type_ref: nil,
-                resolve_call: nil,
+                resolve_call: ->(call_expr) { resolve_compile_time_call(call_expr, scopes:) },
               )
             end
             return nil unless arg_value

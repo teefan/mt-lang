@@ -726,6 +726,8 @@ module MilkTea
 
       def ensure_available_value_name!(name, kind_label: "value", line: nil, column: nil, length: nil)
         ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:, length:)
+        return if @predeclared_const_names.delete?(name)
+
         raise_sema_error("duplicate value #{name}") if @ctx.top_level_values.key?(name) || @ctx.top_level_functions.key?(name)
       end
 
@@ -762,6 +764,7 @@ module MilkTea
                   type: type,
                   mutable: false,
                   kind: :const,
+                  const_value: @ctx.top_level_values[decl.name]&.const_value,
                 )
               rescue SemanticError => e
                 collect_structural_error(e)
@@ -770,6 +773,7 @@ module MilkTea
                   type: @error_type,
                   mutable: false,
                   kind: :const,
+                  const_value: @ctx.top_level_values[decl.name]&.const_value,
                 ) unless @ctx.top_level_values.key?(decl.name)
               end
             when AST::VarDecl

@@ -26,9 +26,9 @@ module MilkTea
 
           next if type == Types::BUILTIN_TYPE_META_TYPE
 
-          if const_value && (decl.value.is_a?(AST::Call) || decl.value.is_a?(AST::Specialization))
+          if !const_value.nil? && (decl.value.is_a?(AST::Call) || decl.value.is_a?(AST::Specialization))
             value = lower_const_value_literal(type, const_value)
-          elsif const_value && (decl.block_body || decl.value.is_a?(AST::ExpressionList))
+          elsif !const_value.nil? && (decl.block_body || decl.value.is_a?(AST::ExpressionList))
             if const_value.is_a?(Array) && const_value.empty? && decl.value.is_a?(AST::ExpressionList) && !decl.value.elements.empty?
               value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
             else
@@ -38,9 +38,43 @@ module MilkTea
             raise LoweringError.new("constant #{decl.name} has no compile-time value", line: decl.line, column: decl.column)
           else
             value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
+            if (decl.value.is_a?(AST::Call) || decl.value.is_a?(AST::Specialization)) && static_initializer_ir_has_call?(value)
+              raise LoweringError.new("constant #{decl.name} initializer is not a compile-time value", line: decl.line, column: decl.column, path: @ctx.current_analysis_path)
+            end
           end
 
           IR::Constant.new(name: decl.name, linkage_name: value_c_name(decl.name), type:, value:, line: decl.line, path: @ctx.current_analysis_path)
+        end
+      end
+
+      def static_initializer_ir_has_call?(node)
+        case node
+        when IR::Call
+          true
+        when IR::AggregateLiteral
+          node.fields.any? { |field| static_initializer_ir_has_call?(field.value) }
+        when IR::ArrayLiteral
+          node.elements.any? { |element| static_initializer_ir_has_call?(element) }
+        when IR::VariantLiteral
+          node.fields.any? { |field| static_initializer_ir_has_call?(field.value) }
+        when IR::Binary
+          static_initializer_ir_has_call?(node.left) || static_initializer_ir_has_call?(node.right)
+        when IR::Unary
+          static_initializer_ir_has_call?(node.operand)
+        when IR::Conditional
+          static_initializer_ir_has_call?(node.condition) || static_initializer_ir_has_call?(node.then_expression) || static_initializer_ir_has_call?(node.else_expression)
+        when IR::Cast
+          static_initializer_ir_has_call?(node.expression)
+        when IR::AddressOf
+          static_initializer_ir_has_call?(node.expression)
+        when IR::Member
+          static_initializer_ir_has_call?(node.receiver)
+        when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
+          static_initializer_ir_has_call?(node.receiver) || static_initializer_ir_has_call?(node.index)
+        when IR::ReinterpretExpr
+          static_initializer_ir_has_call?(node.expression)
+        else
+          false
         end
       end
 

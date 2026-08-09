@@ -117,7 +117,9 @@ module MilkTea
         env = empty_env
         parameter_setup = []
         previous_type_substitutions = @ctx.current_type_substitutions
+        previous_value_type_params = @ctx.current_value_type_params
         @ctx.current_type_substitutions = binding.type_substitutions
+        @ctx.current_value_type_params = resolve_value_type_params(decl.type_params)
 
         return lower_async_function_decl(binding, receiver_type:) if binding.async
 
@@ -176,6 +178,15 @@ module MilkTea
         )
       ensure
         @ctx.current_type_substitutions = previous_type_substitutions
+        @ctx.current_value_type_params = previous_value_type_params
+      end
+
+      def resolve_value_type_params(type_params)
+        type_params.each_with_object({}) do |type_param, map|
+          next unless type_param.is_a?(AST::ValueTypeParam)
+
+          map[type_param.name] = resolve_type_ref(type_param.type, type_params: current_type_params)
+        end
       end
 
       def lower_async_function_decl(binding, receiver_type: nil)

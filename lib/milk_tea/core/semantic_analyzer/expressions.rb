@@ -31,6 +31,7 @@ module MilkTea
           receiver_type = infer_lvalue_receiver(
             expression.receiver,
             scopes:,
+            allow_ref_identifier: true,
             allow_pointer_identifier: true,
             require_mutable_pointer: true,
             allow_span_param_identifier: true,
@@ -331,6 +332,10 @@ module MilkTea
         if binding
           record_identifier_binding(expression, binding)
           return binding.type
+        end
+
+        if (value_param_type = current_value_type_params[expression.name])
+          return value_param_type
         end
 
         if @ctx.top_level_functions.key?(expression.name)

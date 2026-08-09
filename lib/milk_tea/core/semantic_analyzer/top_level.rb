@@ -184,6 +184,23 @@ module MilkTea
         !binding.external && binding.type_params.empty?
       end
 
+      def predeclare_top_level_consts
+        @ctx.ast.declarations.each do |decl|
+          next unless decl.is_a?(AST::ConstDecl)
+
+          @ctx.const_declarations[decl.name] ||= decl
+          next if @ctx.top_level_values.key?(decl.name)
+
+          @ctx.top_level_values[decl.name] = value_binding(
+            name: decl.name,
+            type: @error_type,
+            mutable: false,
+            kind: :const,
+          )
+          @predeclared_const_names << decl.name
+        end
+      end
+
       def finalize_top_level_const_values
         @ctx.const_declarations.each_key { |name| evaluate_top_level_const_value(name) }
       end
@@ -247,7 +264,7 @@ module MilkTea
           kind: binding.kind,
           const_value: value,
         )
-        @evaluated_const_values[name] = true
+        @evaluated_const_values[name] = true unless value.nil?
       end
 
       def evaluate_compile_time_block(statements, scopes: nil)
@@ -261,6 +278,10 @@ module MilkTea
       end
 
       def evaluate_compile_time_const_value(expression, scopes: nil)
+        if (type_value = evaluate_type_constructor_index_access(expression, scopes:))
+          return type_value
+        end
+
         CompileTime.evaluate(
           expression,
           resolve_identifier: lambda do |identifier_expression|
@@ -322,6 +343,26 @@ module MilkTea
         )
       rescue CompileTime::Error => e
         raise_sema_error(e.message)
+      end
+
+      def evaluate_type_constructor_index_access(expression, scopes:)
+        return nil unless expression.is_a?(AST::IndexAccess)
+        return nil unless expression.receiver.is_a?(AST::Identifier)
+        return nil unless expression.index.is_a?(AST::Identifier)
+        return nil unless %w[ptr const_ptr array span own ref].include?(expression.receiver.name)
+
+        type_ref = AST::TypeRef.new(
+          name: AST::QualifiedName.new(parts: [expression.index.name]),
+          arguments: [],
+          nullable: false,
+        )
+        specialization = AST::Specialization.new(
+          callee: expression.receiver,
+          arguments: [AST::TypeArgument.new(value: type_ref)],
+        )
+        evaluate_type_returning_call(specialization, scopes:)
+      rescue SemanticError
+        nil
       end
 
       def evaluate_compile_time_call(expression, scopes: nil)
@@ -433,7 +474,7 @@ module MilkTea
               end
               func = @ctx.top_level_functions[callee_name]
               if func&.ast&.respond_to?(:const) && func.ast.const
-                evaluate_const_function_body(func, expression.arguments, scopes:)
+                evaluate_const_function_body(func, expression.arguments, scopes:, type_args: expression.callee.arguments)
               else
                 evaluate_type_returning_call(expression, scopes:)
               end
@@ -453,7 +494,7 @@ module MilkTea
         CompileTime::Reflection.core_evaluate_type_returning(
           callee_name, type_args,
           evaluate_value: ->(v) { evaluate_compile_time_const_value(v, scopes:) },
-          resolve_type_ref: ->(tr) { resolve_type_ref(tr) },
+          resolve_type_ref: ->(tr) { resolve_named_literal_type_argument(tr) || resolve_type_ref(tr) },
           pointer_to: ->(t) { pointer_to(t) },
           const_pointer_to: ->(t) { const_pointer_to(t) },
           top_level_functions: ->(name) { @ctx.top_level_functions[name] },
@@ -484,7 +525,11 @@ module MilkTea
           when AST::IntegerLiteral
             initial_vars[param.name] = arg_value.value
           when AST::TypeRef
-            initial_vars[param.name] = resolve_type_ref(arg_value)
+            if (literal = resolve_named_literal_type_argument(arg_value))
+              initial_vars[param.name] = literal.value
+            else
+              initial_vars[param.name] = resolve_type_ref(arg_value)
+            end
           else
             return nil
           end
@@ -498,10 +543,11 @@ module MilkTea
         raise_sema_error(e.message)
       end
 
-      def evaluate_const_function_body(func, arguments, scopes:)
+      def evaluate_const_function_body(func, arguments, scopes:, type_args: nil)
         return nil unless func.ast.params.length == arguments.length
 
         initial_vars = {}
+        bind_const_function_value_type_params(func, type_args, initial_vars)
         func.ast.params.each_with_index do |param, idx|
           arg_expr = arguments[idx].value
           arg_value = if scopes
@@ -526,6 +572,25 @@ module MilkTea
         e.value
       rescue CompileTime::Error => e
         raise_sema_error(e.message)
+      end
+
+      def bind_const_function_value_type_params(func, type_args, initial_vars)
+        value_params = func.ast.type_params.select { |p| p.is_a?(AST::ValueTypeParam) }
+        return if value_params.empty? || type_args.nil?
+
+        value_params.zip(type_args).each do |param, arg|
+          arg_value = arg.value
+          case arg_value
+          when AST::IntegerLiteral
+            initial_vars[param.name] = arg_value.value
+          when AST::TypeRef
+            if (literal = resolve_named_literal_type_argument(arg_value))
+              initial_vars[param.name] = literal.value
+            else
+              initial_vars[param.name] = resolve_type_ref(arg_value)
+            end
+          end
+        end
       end
 
       def evaluate_has_attribute_call(arguments, scopes:)

@@ -615,6 +615,7 @@ module MilkTea
 
         previous_type_substitutions = @current_type_substitutions
         previous_specialization_owner = @current_specialization_owner
+        previous_value_type_params = @current_value_type_params
         started_check = false
         return if binding.external
         return if @checked_function_bindings[binding.object_id]
@@ -624,6 +625,7 @@ module MilkTea
         started_check = true
         @current_type_substitutions = binding.type_substitutions
         @current_specialization_owner = binding.specialization_owner
+        @current_value_type_params = resolve_value_type_params(binding.ast.type_params)
         with_error_node(binding.ast) do
           with_scope(binding.body_params) do |scopes|
             start_local_completion_frame(binding, scopes)
@@ -678,7 +680,20 @@ module MilkTea
         @nullability_flow_result = nil
         @current_type_substitutions = previous_type_substitutions
         @current_specialization_owner = previous_specialization_owner
+        @current_value_type_params = previous_value_type_params
         @checking_function_bindings.delete(binding.object_id)
+      end
+
+      def resolve_value_type_params(type_params)
+        type_params.each_with_object({}) do |type_param, map|
+          next unless type_param.is_a?(AST::ValueTypeParam)
+
+          map[type_param.name] = resolve_type_ref(
+            type_param.type,
+            type_params: current_type_params,
+            type_param_constraints: current_type_param_constraints,
+          )
+        end
       end
     end
   end

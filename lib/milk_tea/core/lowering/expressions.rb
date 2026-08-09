@@ -1323,10 +1323,10 @@ module MilkTea
           IR::FloatLiteral.new(value: expression.value, type:)
         when AST::SizeofExpr
           target_type = resolve_type_ref_with_fallback(expression.type, env:)
-          target_type ? IR::SizeofExpr.new(target_type:, type:) : raise(LoweringError, "size_of argument is not a concrete type")
+          target_type ? IR::SizeofExpr.new(target_type:, type:) : raise(LoweringError.new("size_of argument is not a concrete type", line: expression.line, column: expression.column, path: @ctx.current_analysis_path))
         when AST::AlignofExpr
           target_type = resolve_type_ref_with_fallback(expression.type, env:)
-          target_type ? IR::AlignofExpr.new(target_type:, type:) : raise(LoweringError, "align_of argument is not a concrete type")
+          target_type ? IR::AlignofExpr.new(target_type:, type:) : raise(LoweringError.new("align_of argument is not a concrete type", line: expression.line, column: expression.column, path: @ctx.current_analysis_path))
         when AST::OffsetofExpr
           target_type = resolve_type_ref(expression.type)
           if !@bypass_sema_type_cache && (precomputed = @ctx.const_values[@ctx.ast.node_ids[expression.object_id]])
@@ -1348,6 +1348,8 @@ module MilkTea
           binding = lookup_value(expression.name, env)
           if binding
             lower_bound_identifier(binding, expected_type:)
+          elsif (value_param = value_param_literal(expression.name, type))
+            value_param
           elsif @ctx.functions.key?(expression.name)
             function_binding = @ctx.functions.fetch(expression.name)
             raise LoweringError.new("generic function #{expression.name} cannot be used as a value", line: 0, column: 0, path: @ctx.current_analysis_path) if function_binding.type_params.any?
@@ -1699,10 +1701,21 @@ module MilkTea
         return unless expression
 
         ct_value = compile_time_const_value(expression, env:)
-        if ct_value.is_a?(Types::Struct) || ct_value.is_a?(Types::Primitive) ||
-            ct_value.is_a?(Types::Union) || ct_value.is_a?(Types::Nullable) ||
-            ct_value.is_a?(Types::StructInstance)
+        if sized_layout_ct_value?(ct_value)
           ct_value
+        end
+      end
+
+      def sized_layout_ct_value?(type)
+        case type
+        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::Span, Types::StringView, Types::Task, Types::Event, Types::Subscription
+          true
+        when Types::Nullable
+          true
+        when Types::GenericInstance
+          pointer_type?(type) || array_type?(type) || str_buffer_type?(type)
+        else
+          false
         end
       end
 
