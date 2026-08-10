@@ -139,6 +139,8 @@ module MilkTea
           end
         when Types::Task
           [task_type_name(type)]
+        when Types::Dyn
+          [dyn_type_name(type)]
         when Types::Proc
           [proc_type_name(type)]
         when Types::GenericInstance

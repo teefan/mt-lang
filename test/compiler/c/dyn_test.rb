@@ -341,4 +341,39 @@ class DynTest < Minitest::Test
     assert_equal 42, result.exit_status
   end
 
+  def test_run_program_with_dyn_struct_field
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.dyn_struct_field
+
+      interface Speaker:
+          function speak() -> str
+
+      struct Dog implements Speaker:
+          name: str
+
+      extending Dog:
+          function speak() -> str:
+              return this.name + " woof"
+
+      struct Zoo:
+          animal: dyn[Speaker]
+
+      function main() -> int:
+          var d = Dog(name = "rex")
+          var zoo = Zoo(animal = adapt[Speaker](ref_of(d)))
+          if zoo.animal.speak() != "rex woof":
+              return 1
+          return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
 end
