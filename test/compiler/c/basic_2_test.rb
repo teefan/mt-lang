@@ -1873,6 +1873,24 @@ function main() -> int:
     refute_match(/static int32_t demo_global_state_counter = demo_global_state_BASE;/, generated)
   end
 
+  def test_generate_c_emits_simd_typedef_for_module_var
+    source = <<~MT
+
+# module demo.simd_module_var
+
+function main() -> int:
+    return 0
+
+var v: simd[float, 4] = simd[float, 4](1.0, 2.0, 3.0, 4.0)
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef float mt_simd_floatx4 __attribute__\(\(__vector_size__\(16\)\)\);/, generated)
+    assert_match(/static mt_simd_floatx4 demo_simd_module_var_v = \{ 1\.0f, 2\.0f, 3\.0f, 4\.0f \};/, generated)
+  end
+
   def test_generate_c_for_integer_match_with_default_case
     source = <<~MT
 

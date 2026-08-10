@@ -1144,6 +1144,36 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_simd_module_var_initializer
+    source = <<~MT
+      # module demo.simd_module_var
+
+      function main() -> int:
+          return 0
+
+      var v: simd[float, 4] = simd[float, 4](1.0, 2.0, 3.0, 4.0)
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_task_module_var_initializer
+    source = <<~MT
+      # module demo.task_module_var
+
+      function main() -> int:
+          return 0
+
+      var t: Task[int] = Task[int]()
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_ffi_declaration_surface
     source = <<~MT
       # module demo.ffi

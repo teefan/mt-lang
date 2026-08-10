@@ -173,7 +173,7 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return if specialized_type.is_a?(Types::Struct) || result_type?(specialized_type)
+            return if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion) || specialized_type.is_a?(Types::Simd)
           end
         end
 

@@ -266,6 +266,10 @@ module MilkTea
         simd_types = []
         visited = {}
 
+        all_emitted_top_level_values.each do |value|
+          collect_simd_type(value.type, simd_types, visited)
+        end
+
         emitted_functions.each do |function|
           collect_simd_type(function.return_type, simd_types, visited)
           function.params.each do |param|
@@ -278,6 +282,16 @@ module MilkTea
           struct_decl.fields.each do |field|
             collect_simd_type(field.type, simd_types, visited)
           end
+        end
+
+        @program.unions.each do |union_decl|
+          union_decl.fields.each do |field|
+            collect_simd_type(field.type, simd_types, visited)
+          end
+        end
+
+        each_variant_arm_field_type do |field_type|
+          collect_simd_type(field_type, simd_types, visited)
         end
 
         simd_types.uniq
@@ -299,9 +313,32 @@ module MilkTea
         return unless type
         return if visited[type]
 
-        if type.is_a?(Types::Simd)
+        visited[type] = true
+
+        case type
+        when Types::Simd
           simd_types << type
-          visited[type] = true
+        when Types::Nullable
+          collect_simd_type(type.base, simd_types, visited)
+        when Types::GenericInstance
+          type.arguments.each do |argument|
+            collect_simd_type(argument, simd_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
+          end
+        when Types::Function
+          type.params.each do |param|
+            collect_simd_type(param.type, simd_types, visited)
+          end
+          collect_simd_type(type.return_type, simd_types, visited)
+        when Types::Struct, Types::Union
+          type.fields.each_value do |field_type|
+            collect_simd_type(field_type, simd_types, visited)
+          end
+        when Types::Variant
+          type.arm_names.each do |arm_name|
+            type.arm(arm_name).each_value do |field_type|
+              collect_simd_type(field_type, simd_types, visited)
+            end
+          end
         end
       end
 
