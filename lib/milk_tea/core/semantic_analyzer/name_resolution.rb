@@ -101,9 +101,19 @@ module MilkTea
 
       def find_method_by_receiver_name(module_binding, receiver_type, name)
         module_binding.methods.each do |key, methods|
-          return methods[name] if key.is_a?(receiver_type.class) && key.name == receiver_type.name && methods.key?(name)
+          next unless key.is_a?(receiver_type.class)
+          next unless key.name == receiver_type.name
+          next unless same_type_module?(key, receiver_type)
+          return methods[name] if methods.key?(name)
         end
         nil
+      end
+
+      def same_type_module?(type_a, type_b)
+        module_a = receiver_type_module_name(type_a)
+        module_b = receiver_type_module_name(type_b)
+        return true if module_a.nil? || module_b.nil?
+        module_a == module_b
       end
 
     def reachable_module_binding_for_type(receiver_type)
