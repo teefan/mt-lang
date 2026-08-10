@@ -1677,7 +1677,15 @@ module MilkTea
             evaluate_attribute_arg_call(expression.arguments, env:)
           else
             callee_name = expression.callee.callee.is_a?(AST::Identifier) ? expression.callee.callee.name : nil
-            if callee_name
+            if callee_name == "array"
+              values = []
+              expression.arguments.each do |argument|
+                val = compile_time_const_value(argument.value, env:)
+                return nil unless val
+                values << val
+              end
+              values
+            elsif callee_name
               func = @ctx.functions[callee_name]
               if func&.ast&.respond_to?(:const) && func.ast.const
                 evaluate_const_function_body_lower(func, expression.arguments)

@@ -1913,6 +1913,42 @@ function main() -> int:
     assert_match(/int32_t total = 0;\s+total \+= 1;\s+total \+= 2;/m, generated)
   end
 
+  def test_generate_c_unrolls_inline_for_with_loop_value_substitution
+    source = <<~MT
+
+# module demo.inline_for_unroll
+
+function main() -> int:
+    var total: int = 0
+    inline for i in (1, 2, 3, 4):
+        total += i
+    return total
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t total = 0;\s+total \+= 1;\s+total \+= 2;\s+total \+= 3;\s+total \+= 4;/m, generated)
+  end
+
+  def test_generate_c_unrolls_inline_for_over_array_constructor
+    source = <<~MT
+
+# module demo.inline_for_array_ctor
+
+function main() -> int:
+    var total: int = 0
+    inline for i in array[int, 3](10, 20, 30):
+        total += i
+    return total
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t total = 0;\s+total \+= 10;\s+total \+= 20;\s+total \+= 30;/m, generated)
+  end
+
   def test_generate_c_for_integer_match_with_default_case
     source = <<~MT
 

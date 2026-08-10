@@ -186,6 +186,7 @@ module MilkTea
             mutable: false,
             pointer: false,
             const_value: element,
+            substitute_const_value: true,
           )
           emit_stmts, other_stmts = statement.body.partition { |s| s.is_a?(AST::EmitStmt) }
           emit_stmts.each do |emit_stmt|

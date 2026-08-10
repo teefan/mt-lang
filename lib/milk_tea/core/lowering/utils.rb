@@ -459,8 +459,8 @@ module MilkTea
         end
       end
 
-      def local_binding(type:, linkage_name:, mutable:, pointer:, storage_type: nil, projection: nil, cstr_backed: false, cstr_list_backed: false, const_value: nil)
-        { type:, storage_type: storage_type || type, linkage_name:, mutable:, pointer:, projection:, cstr_backed:, cstr_list_backed:, const_value: }
+      def local_binding(type:, linkage_name:, mutable:, pointer:, storage_type: nil, projection: nil, cstr_backed: false, cstr_list_backed: false, const_value: nil, substitute_const_value: false)
+        { type:, storage_type: storage_type || type, linkage_name:, mutable:, pointer:, projection:, cstr_backed:, cstr_list_backed:, const_value:, substitute_const_value: }
       end
 
       def callable_type?(type)
@@ -903,6 +903,10 @@ module MilkTea
         storage_type = binding[:storage_type]
         visible_type = binding[:type]
         projection = binding[:projection]
+
+        if binding[:substitute_const_value] && !binding[:const_value].nil?
+          return lower_const_value_literal(visible_type, binding[:const_value])
+        end
 
         if projection == :result_success_value
           local_ref = IR::Name.new(name: binding[:linkage_name], type: storage_type, pointer: binding[:pointer])
