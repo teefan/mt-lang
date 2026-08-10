@@ -1891,6 +1891,28 @@ var v: simd[float, 4] = simd[float, 4](1.0, 2.0, 3.0, 4.0)
     assert_match(/static mt_simd_floatx4 demo_simd_module_var_v = \{ 1\.0f, 2\.0f, 3\.0f, 4\.0f \};/, generated)
   end
 
+  def test_generate_c_folds_enum_member_value_in_inline_for
+    source = <<~MT
+
+# module demo.member_value_fold
+
+enum Palette: ubyte
+    red = 1
+    green = 2
+
+function main() -> int:
+    var total: int = 0
+    inline for member in members_of(Palette):
+        total += member.value
+    return total
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t total = 0;\s+total \+= 1;\s+total \+= 2;/m, generated)
+  end
+
   def test_generate_c_for_integer_match_with_default_case
     source = <<~MT
 

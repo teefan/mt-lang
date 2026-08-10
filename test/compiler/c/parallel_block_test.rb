@@ -86,4 +86,29 @@ class ParallelBlockTest < Minitest::Test
     assert_includes c_code, "mt_spawn_all"
     refute_match(/struct mt_spawn_cap.*\{\s*\}/, c_code)
   end
+
+  def test_parallel_block_scalar_writes_propagate_to_captured_locals
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.pblock_write
+
+      function main() -> int:
+          var a = 0
+          var b = 0
+          parallel:
+              a = 21
+              b = 22
+          if a != 21 or b != 22:
+              return 1
+          return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
 end

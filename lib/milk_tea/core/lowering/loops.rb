@@ -643,6 +643,8 @@ module MilkTea
               end
             end
 
+            written_scalar_captures = captures.select { |c| written_names.include?(c.name) && !array_capture_names.include?(c.name) }
+
             @artifacts.synthetic_structs << IR::StructDecl.new(
               name: cap_struct_c_name, linkage_name: cap_struct_c_name,
               fields: cap_fields, packed: false, alignment: nil,
@@ -674,6 +676,14 @@ module MilkTea
 
             rewritten_body = array_capture_names.empty? ? block_body : rewrite_pfor_array_captures(block_body, array_capture_names)
             worker_body.concat(rewritten_body)
+
+            written_scalar_captures.each do |c|
+              worker_body << IR::Assignment.new(
+                target: IR::Member.new(receiver: cap_name_ir, member: c.name, type: c.type),
+                operator: "=",
+                value: IR::Name.new(name: c.name, type: c.type, pointer: false),
+              )
+            end
           end
 
           @artifacts.synthetic_functions << IR::Function.new(
@@ -715,7 +725,7 @@ module MilkTea
                         )
                       end
 
-          { worker_c_name:, cap_local_name:, cap_struct_type:, cap_init:, capture_names: Set.new(captures.map(&:name)), written_names:, captureless: }
+          { worker_c_name:, cap_local_name:, cap_struct_type:, cap_init:, capture_names: Set.new(captures.map(&:name)), written_names:, written_scalar_captures: captureless ? [] : written_scalar_captures, captureless: }
         end
 
         validate_pfor_write_conflicts!(block_infos)
@@ -767,6 +777,20 @@ module MilkTea
           ],
           type: void_type,
         ))
+
+        block_infos.each do |info|
+          info[:written_scalar_captures].each do |c|
+            call_site << IR::Assignment.new(
+              target: IR::Name.new(name: c.name, type: c.type, pointer: false),
+              operator: "=",
+              value: IR::Member.new(
+                receiver: IR::Name.new(name: info[:cap_local_name], type: info[:cap_struct_type], pointer: false),
+                member: c.name,
+                type: c.type,
+              ),
+            )
+          end
+        end
 
         IR::BlockStmt.new(body: call_site)
       end

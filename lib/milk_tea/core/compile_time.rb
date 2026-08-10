@@ -506,7 +506,7 @@ module MilkTea
       end
 
       def self.core_member_handles(type)
-        type.members.map { |name, value| Types::MemberHandle.new(nil, name, value) }
+        type.members.map { |name| Types::MemberHandle.new(nil, name, type.member_value(name)) }
       end
 
       def self.core_evaluate_type_returning(
