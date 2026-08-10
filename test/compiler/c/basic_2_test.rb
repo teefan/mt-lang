@@ -1891,6 +1891,35 @@ var v: simd[float, 4] = simd[float, 4](1.0, 2.0, 3.0, 4.0)
     assert_match(/static mt_simd_floatx4 demo_simd_module_var_v = \{ 1\.0f, 2\.0f, 3\.0f, 4\.0f \};/, generated)
   end
 
+  def test_run_program_with_foreign_param_modes_via_libc
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      import std.c.libc as libc
+
+      foreign function next_rand(inout seed: uint) -> int = libc.rand_r
+      foreign function parse_num(text: str as cstr) -> int = libc.atoi
+
+      function main() -> int:
+          var seed: uint = 1
+          let first = next_rand(seed)
+          var before = seed
+          let second = next_rand(seed)
+          if seed == before:
+              return 1
+          if parse_num("123") != 123:
+              return 2
+          return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
   def test_generate_c_folds_enum_member_value_in_inline_for
     source = <<~MT
 
