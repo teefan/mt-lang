@@ -78,6 +78,10 @@ module MilkTea
           nil
         when AST::ExpressionList
           expression.elements.filter_map { |element| evaluate(element) }
+        when AST::RangeExpr
+          start_val = evaluate(expression.start_expr)
+          end_val = evaluate(expression.end_expr)
+          start_val.is_a?(Integer) && end_val.is_a?(Integer) ? (start_val...end_val).to_a : nil
         when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
           expression.value
         when AST::StringLiteral
@@ -184,6 +188,8 @@ module MilkTea
         right = evaluate(expression.right)
 
         case expression.operator
+        when ".."
+          left.is_a?(Integer) && right.is_a?(Integer) ? (left...right).to_a : nil
         when "=="
           CompileTime.equality_result(left, right)
         when "!="
@@ -243,33 +249,39 @@ module MilkTea
         result = nil
 
         statements.each do |statement|
-          case statement
-          when AST::LocalDecl
-            result = evaluate_local_decl(statement, scopes:)
-          when AST::ReturnStmt
-            value = statement.value ? evaluate_expression(statement.value, scopes:) : nil
-            raise ReturnValue.new(value)
-          when AST::WhileStmt
-            result = evaluate_while(statement, scopes:)
-          when AST::ForStmt
-            result = evaluate_for(statement, scopes:)
-          when AST::Assignment
-            result = evaluate_assignment(statement, scopes:)
-          when AST::IfStmt
-            result = evaluate_if(statement, scopes:)
-          when AST::ExpressionStmt
-            evaluate_expression(statement.expression, scopes:)
-          when AST::PassStmt, AST::BreakStmt, AST::ContinueStmt
-            # no-op at compile time
-          when AST::EmitStmt
-            # evaluated during lowering
-            result = nil
-          else
-            result = nil
-          end
+          result = evaluate_statement(statement, scopes:)
         end
 
         result
+      end
+
+      def evaluate_statement(statement, scopes:)
+        case statement
+        when AST::LocalDecl
+          evaluate_local_decl(statement, scopes:)
+        when AST::ReturnStmt
+          value = statement.value ? evaluate_expression(statement.value, scopes:) : nil
+          raise ReturnValue.new(value)
+        when AST::WhileStmt
+          evaluate_while(statement, scopes:)
+        when AST::ForStmt
+          evaluate_for(statement, scopes:)
+        when AST::MatchStmt
+          evaluate_match(statement, scopes:)
+        when AST::Assignment
+          evaluate_assignment(statement, scopes:)
+        when AST::IfStmt
+          evaluate_if(statement, scopes:)
+        when AST::ExpressionStmt
+          evaluate_expression(statement.expression, scopes:)
+        when AST::PassStmt, AST::BreakStmt, AST::ContinueStmt
+          # no-op at compile time
+        when AST::EmitStmt
+          # emitted declarations are collected during lowering
+          nil
+        else
+          nil
+        end
       end
 
       def evaluate_expression(expression, scopes:)
@@ -304,9 +316,32 @@ module MilkTea
         value = evaluate_expression(assignment.value, scopes:)
         case assignment.target
         when AST::Identifier
+          if assignment.operator != "="
+            current = @variables[assignment.target.name]
+            value = apply_compile_time_binary(assignment.operator.chomp("="), current, value)
+          end
           @variables[assignment.target.name] = value
         end
         value
+      end
+
+      def apply_compile_time_binary(operator, left, right)
+        case operator
+        when "+" then left.is_a?(Numeric) && right.is_a?(Numeric) ? left + right : nil
+        when "-" then left.is_a?(Numeric) && right.is_a?(Numeric) ? left - right : nil
+        when "*" then left.is_a?(Numeric) && right.is_a?(Numeric) ? left * right : nil
+        when "/" then left.is_a?(Numeric) && right.is_a?(Numeric) && !zero_numeric?(right) ? left / right : nil
+        when "%" then left.is_a?(Integer) && right.is_a?(Integer) && !right.zero? ? left % right : nil
+        when "&" then left.is_a?(Integer) && right.is_a?(Integer) ? left & right : nil
+        when "|" then left.is_a?(Integer) && right.is_a?(Integer) ? left | right : nil
+        when "^" then left.is_a?(Integer) && right.is_a?(Integer) ? left ^ right : nil
+        when "<<" then left.is_a?(Integer) && right.is_a?(Integer) ? left << right : nil
+        when ">>" then left.is_a?(Integer) && right.is_a?(Integer) ? left >> right : nil
+        end
+      end
+
+      def zero_numeric?(value)
+        (value.is_a?(Integer) && value.zero?) || (value.is_a?(Float) && value.zero?)
       end
 
       def evaluate_while(statement, scopes:)
@@ -319,17 +354,7 @@ module MilkTea
           break unless condition
           break unless CompileTime.boolean_value?(condition)
 
-          statement.body.each do |body_stmt|
-            case body_stmt
-            when AST::ReturnStmt
-              value = body_stmt.value ? evaluate_expression(body_stmt.value, scopes:) : nil
-              raise ReturnValue.new(value)
-            when AST::Assignment
-              evaluate_assignment(body_stmt, scopes:)
-            when AST::ExpressionStmt
-              evaluate_expression(body_stmt.expression, scopes:)
-            end
-          end
+          statement.body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
           iterations += 1
         end
 
@@ -347,21 +372,7 @@ module MilkTea
 
         iterable.each do |element|
           @variables[loop_var_name] = element
-          statement.body.each do |body_stmt|
-            case body_stmt
-            when AST::ReturnStmt
-              value = body_stmt.value ? evaluate_expression(body_stmt.value, scopes:) : nil
-              raise ReturnValue.new(value)
-            when AST::Assignment
-              evaluate_assignment(body_stmt, scopes:)
-            when AST::ExpressionStmt
-              evaluate_expression(body_stmt.expression, scopes:)
-            when AST::IfStmt
-              result = evaluate_if(body_stmt, scopes:)
-            when AST::WhileStmt
-              result = evaluate_while(body_stmt, scopes:)
-            end
-          end
+          statement.body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
         end
 
         result
@@ -371,32 +382,27 @@ module MilkTea
         statement.branches.each do |branch|
           condition = evaluate_expression(branch.condition, scopes:)
           if CompileTime.boolean_value?(condition) && condition
-            branch.body.each do |body_stmt|
-              case body_stmt
-              when AST::ReturnStmt
-                value = body_stmt.value ? evaluate_expression(body_stmt.value, scopes:) : nil
-                raise ReturnValue.new(value)
-              when AST::Assignment
-                evaluate_assignment(body_stmt, scopes:)
-              when AST::ExpressionStmt
-                evaluate_expression(body_stmt.expression, scopes:)
-              end
-            end
+            branch.body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
             return condition
           end
         end
 
         if statement.else_body
-          statement.else_body.each do |body_stmt|
-            case body_stmt
-            when AST::ReturnStmt
-              value = body_stmt.value ? evaluate_expression(body_stmt.value, scopes:) : nil
-              raise ReturnValue.new(value)
-            when AST::Assignment
-              evaluate_assignment(body_stmt, scopes:)
-            when AST::ExpressionStmt
-              evaluate_expression(body_stmt.expression, scopes:)
-            end
+          statement.else_body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
+        end
+
+        nil
+      end
+
+      def evaluate_match(statement, scopes:)
+        scrutinee = evaluate_expression(statement.expression, scopes:)
+        return nil unless scrutinee
+
+        statement.arms.each do |arm|
+          wildcard = arm.pattern.is_a?(AST::Identifier) && arm.pattern.name == "_"
+          if wildcard || CompileTime.equality_result(scrutinee, evaluate_expression(arm.pattern, scopes:)) == true
+            arm.body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
+            return scrutinee
           end
         end
 

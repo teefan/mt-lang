@@ -1949,6 +1949,50 @@ function main() -> int:
     assert_match(/int32_t total = 0;\s+total \+= 10;\s+total \+= 20;\s+total \+= 30;/m, generated)
   end
 
+  def test_generate_c_folds_inline_forms_in_block_bodied_const
+    source = <<~MT
+
+# module demo.const_inline
+
+enum Backend: ubyte
+    gl    = 1
+    metal = 2
+
+const TARGET: Backend = Backend.gl
+
+const SUM -> int:
+    var total: int = 0
+    inline for i in (1, 2, 3, 4):
+        total += i
+    return total
+
+const LABEL -> str:
+    var label: str = ""
+    inline match TARGET:
+        Backend.gl:
+            label = "OpenGL"
+        Backend.metal:
+            label = "Metal"
+    return label
+
+const ACC -> int:
+    var n: int = 10
+    n += 5
+    n *= 2
+    return n
+
+function main() -> int:
+    return SUM + ACC
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static const int32_t demo_const_inline_SUM = 10;/, generated)
+    assert_match(/static const mt_str demo_const_inline_LABEL = \{ \.data = "OpenGL", \.len = 6 \};/, generated)
+    assert_match(/static const int32_t demo_const_inline_ACC = 30;/, generated)
+  end
+
   def test_generate_c_for_integer_match_with_default_case
     source = <<~MT
 
