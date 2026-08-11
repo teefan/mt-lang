@@ -745,7 +745,7 @@ module MilkTea
           end
             return function_type_for_name(expression.name) if @ctx.functions.key?(expression.name)
 
-            raise LoweringError.new("unknown identifier #{expression.name}", line: expression.line, column: expression.column)
+            raise LoweringError.new("unknown identifier #{expression.name}", line: expression.line, column: expression.column, path: @ctx.current_analysis_path)
         when AST::MemberAccess
           if (type_expr = resolve_type_expression(expression.receiver))
             member_type = resolve_type_member(type_expr, expression.member)
@@ -784,7 +784,7 @@ module MilkTea
           end
 
           return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)
-          raise LoweringError.new("unknown member #{expression.member}", line: expression.line, column: expression.column)
+          raise LoweringError.new("unknown member #{expression.member}", line: expression.line, column: expression.column, path: @ctx.current_analysis_path)
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           index_type = infer_expression_type(expression.index, env:)

@@ -155,6 +155,8 @@ module MilkTea
           end
         when Types::Function
           []
+        when Types::Tuple
+          [tuple_type_name(type)]
         when Types::Struct, Types::StructInstance, Types::Union, Types::Variant, Types::VariantInstance, Types::Event, Types::Subscription
           [named_type_c_name(type)]
         when Types::VariantArmPayload

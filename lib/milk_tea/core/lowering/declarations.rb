@@ -23,6 +23,7 @@ module MilkTea
         expanded_declarations.grep(AST::ConstDecl).filter_map do |decl|
           type = @ctx.values.fetch(decl.name).type
           const_value = @ctx.values.fetch(decl.name).const_value
+          ensure_registered_storage_type_types(type)
 
           next if type == Types::BUILTIN_TYPE_META_TYPE
 
@@ -35,7 +36,7 @@ module MilkTea
               value = lower_const_value_literal(type, const_value)
             end
           elsif decl.block_body || decl.value.is_a?(AST::ExpressionList)
-            raise LoweringError.new("constant #{decl.name} has no compile-time value", line: decl.line, column: decl.column)
+            raise LoweringError.new("constant #{decl.name} has no compile-time value", line: decl.line, column: decl.column, path: @ctx.current_analysis_path)
           else
             value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
             if (decl.value.is_a?(AST::Call) || decl.value.is_a?(AST::Specialization)) && static_initializer_ir_has_call?(value)
@@ -75,6 +76,43 @@ module MilkTea
           static_initializer_ir_has_call?(node.expression)
         else
           false
+        end
+      end
+
+      ## Register C struct typedefs for every tuple type reachable from a
+      ## module-storage type (consts and globals).  `ensure_tuple_struct` is
+      ## normally called while lowering tuple *expressions*, so a tuple that
+      ## only appears in static storage never gets its `mt_tuple_...` typedef
+      ## emitted; the C compiler then fails with "unknown type name".
+      def ensure_registered_storage_type_types(type, seen = {})
+        return if type.nil? || seen[type]
+
+        seen[type] = true
+        if type.is_a?(Types::Tuple)
+          ensure_tuple_struct(type)
+          type.element_types.each { |element_type| ensure_registered_storage_type_types(element_type, seen) }
+        end
+
+        case type
+        when Types::Nullable
+          ensure_registered_storage_type_types(type.base, seen)
+        when Types::Span
+          ensure_registered_storage_type_types(type.element_type, seen)
+        when Types::Task
+          ensure_registered_storage_type_types(type.result_type, seen)
+        when Types::GenericInstance, Types::StructInstance, Types::VariantInstance
+          type.arguments.each do |argument|
+            ensure_registered_storage_type_types(argument, seen) unless argument.is_a?(Types::LiteralTypeArg)
+          end
+        end
+
+        if type.respond_to?(:fields) && type.fields
+          type.fields.each_value { |field_type| ensure_registered_storage_type_types(field_type, seen) }
+        end
+        if type.respond_to?(:arms)
+          type.arms.each_value do |arm_fields|
+            arm_fields.each_value { |field_type| ensure_registered_storage_type_types(field_type, seen) }
+          end
         end
       end
 
@@ -130,6 +168,7 @@ module MilkTea
           next unless decl.is_a?(AST::VarDecl) || decl.is_a?(AST::EventDecl)
 
           type = @ctx.values.fetch(decl.name).type
+          ensure_registered_storage_type_types(type)
           ensure_event_runtime(type) if type.is_a?(Types::Event)
           value = if decl.is_a?(AST::VarDecl) && decl.value
             lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)

@@ -972,6 +972,51 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ReturnStmt, match_stmt.arms[0].body.first
   end
 
+  def test_mixed_inline_and_block_match_arms_normalize_to_block_arms
+    source = <<~MT
+      function classify(n: int) -> int:
+          match n:
+              0: 10
+              1:
+                  return 20
+              _: 30
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    match_stmt = ast.declarations[0].body.first
+
+    assert_instance_of MilkTea::AST::MatchStmt, match_stmt
+    assert_equal 3, match_stmt.arms.length
+    match_stmt.arms.each do |arm|
+      assert_instance_of MilkTea::AST::MatchArm, arm
+    end
+    assert_equal [MilkTea::AST::ExpressionStmt], match_stmt.arms[0].body.map(&:class)
+    assert_instance_of MilkTea::AST::IntegerLiteral, match_stmt.arms[0].body.first.expression
+    assert_equal "10", match_stmt.arms[0].body.first.expression.lexeme
+    assert_instance_of MilkTea::AST::ReturnStmt, match_stmt.arms[1].body.first
+    assert_instance_of MilkTea::AST::ExpressionStmt, match_stmt.arms[2].body.first
+  end
+
+  def test_all_inline_match_arms_stay_a_match_expression
+    source = <<~MT
+      function classify(n: int) -> int:
+          match n:
+              0: 10
+              _: 30
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    stmt = ast.declarations[0].body.first
+
+    assert_instance_of MilkTea::AST::ExpressionStmt, stmt
+    assert_instance_of MilkTea::AST::MatchExpr, stmt.expression
+    stmt.expression.arms.each do |arm|
+      assert_instance_of MilkTea::AST::MatchExprArm, arm
+    end
+  end
+
   def test_parses_generic_nullable_types_and_bare_returns
     source = <<~MT
       const missing: ptr[Window]? = null

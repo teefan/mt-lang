@@ -297,7 +297,7 @@ module MilkTea
         expression = nil
         arms = []
         expression = parse_expression
-        arms = parse_match_arms(arms)
+        arms = normalize_mixed_match_arms(parse_match_arms(arms))
         if arms.first&.is_a?(AST::MatchExprArm)
           expr = AST::MatchExpr.new(expression:, arms:, line:, column: token.column, length: token.lexeme.length)
           AST::ExpressionStmt.new(expression: expr, line:)
@@ -311,12 +311,13 @@ module MilkTea
         recovered_arms = synchronize_to_match_arm_boundary
         target_line = line
         if recovered_arms
+          combined_arms = normalize_mixed_match_arms(arms + recovered_arms)
           stmt =
-            if recovered_arms.first&.is_a?(AST::MatchExprArm)
-              expr = AST::MatchExpr.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, line: target_line, column: token.column, length: token.lexeme.length)
+            if combined_arms.first&.is_a?(AST::MatchExprArm)
+              expr = AST::MatchExpr.new(expression: expression || recovery_error_expr(e), arms: combined_arms, line: target_line, column: token.column, length: token.lexeme.length)
               AST::ExpressionStmt.new(expression: expr, line: target_line)
             else
-              AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, line: target_line, column: token.column, length: token.lexeme.length)
+              AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: combined_arms, line: target_line, column: token.column, length: token.lexeme.length)
             end
           return stmt
         end
@@ -333,6 +334,33 @@ module MilkTea
 
         consume(:dedent, "expected end of block")
         arms
+      end
+
+      ## A statement match may mix inline value arms (`pattern: expr`) with
+      ## block arms.  The inline form is a single expression statement, so when
+      ## any arm is a block the inline arms are rewritten to block arms with a
+      ## single expression-statement body.  This keeps MatchStmt arms
+      ## homogeneous (all MatchArm) and MatchExpr arms homogeneous (all
+      ## MatchExprArm); the sema / control-flow / lowering consumers rely on
+      ## that invariant.
+      def normalize_mixed_match_arms(arms)
+        return arms unless arms.any? { |arm| arm.is_a?(AST::MatchExprArm) } && arms.any? { |arm| arm.is_a?(AST::MatchArm) }
+
+        arms.map do |arm|
+          if arm.is_a?(AST::MatchExprArm)
+            AST::MatchArm.new(
+              pattern: arm.pattern,
+              binding_name: arm.binding_name,
+              binding_line: arm.binding_line,
+              binding_column: arm.binding_column,
+              body: [AST::ExpressionStmt.new(expression: arm.value, line: arm.line)],
+              line: arm.line,
+              column: arm.column,
+            )
+          else
+            arm
+          end
+        end
       end
 
       def parse_match_arm_body(arms = [])
@@ -652,7 +680,7 @@ module MilkTea
         token = previous
         line = token.line
         discriminant = parse_expression
-        branches = parse_match_arms([])
+        branches = normalize_mixed_match_arms(parse_match_arms([]))
         else_body = if check(:else)
           if check_next(:newline) || check_next(:indent)
             parse_else_branch_body
@@ -734,14 +762,14 @@ module MilkTea
         line = token.line
         arms = []
         expression = parse_expression
-        arms = parse_match_arms(arms)
+        arms = normalize_mixed_match_arms(parse_match_arms(arms))
         AST::MatchStmt.new(expression:, arms:, inline: true, line:, column: token.column, length: token.lexeme.length)
       rescue ParseError => e
         raise unless @recovery_errors
 
         @recovery_errors << e
         recovered_arms = synchronize_to_match_arm_boundary
-        return AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, inline: true, line:, column: token.column, length: token.lexeme.length) if recovered_arms
+        return AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: normalize_mixed_match_arms(arms + recovered_arms), inline: true, line:, column: token.column, length: token.lexeme.length) if recovered_arms
 
         recovery_error_stmt(e)
       end

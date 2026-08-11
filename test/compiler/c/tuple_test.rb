@@ -158,4 +158,70 @@ class TupleTest < Minitest::Test
     assert_equal "", result.stderr
     assert_equal 6, result.exit_status
   end
+
+  def test_run_program_with_const_tuple_array
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      const PAIRS: array[(int, int), 2] = ((1, 2), (3, 4))
+
+      function main() -> int:
+          var total = 0
+          for entry in PAIRS:
+              total += entry._0 + entry._1
+          return total
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 10, result.exit_status
+  end
+
+  def test_run_program_with_const_struct_field_of_tuple
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      struct WithTuple:
+          point: (int, int)
+          tag: int
+
+      const S: WithTuple = WithTuple(point = (7, 8), tag = 9)
+
+      function main() -> int:
+          return S.point._0 + S.point._1 + S.tag
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 24, result.exit_status
+  end
+
+  def test_run_program_with_global_tuple_array
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      var GLOBAL_ARRAY: array[(int, int), 2]
+
+      function main() -> int:
+          GLOBAL_ARRAY[0] = (1, 2)
+          GLOBAL_ARRAY[1] = (3, 4)
+          var total = 0
+          for entry in GLOBAL_ARRAY:
+              total += entry._0 + entry._1
+          return total
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 10, result.exit_status
+  end
 end
