@@ -303,4 +303,42 @@ class VariantCodegenTest < Minitest::Test
     refute_match(/std_option_Option_demo_optcycle_Expr else_b;/, generated,
                 "Option[Expr] in variant arm must NOT be embedded by value")
   end
+
+  def test_cyclic_payload_field_from_call_result_materializes_rvalue
+    # A cyclic variant payload field (here Option[TypeVal].some's value, where
+    # TypeVal embeds Option[TypeVal]) is stored as a heap copy.  When the value
+    # is a call result rather than a name, the C backend must materialize the
+    # rvalue into a compound literal instead of emitting `&(call())`.
+    source = <<~MT
+      # module demo.cyclicall
+
+      variant TypeVal:
+          null_val(target_type: Option[TypeVal])
+          primitive(name: str)
+
+      function make_leaf() -> TypeVal:
+          return TypeVal.primitive(name = "int")
+
+      function build() -> Option[TypeVal]:
+          return Option[TypeVal].some(value = make_leaf())
+
+      function main() -> int:
+          let o = build()
+          match o:
+              Option.some as s:
+                  match s.value:
+                      TypeVal.primitive as p:
+                          return 1
+                      TypeVal.null_val:
+                          return 0
+              Option.none:
+                  return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    refute_match(/&\(demo_cyclicall_make_leaf\(\)\)/, generated,
+                "cyclic field must not take the address of a call result")
+    assert_match(/&\(demo_cyclicall_TypeVal\[1\]\)\{ demo_cyclicall_make_leaf\(\) \}\[0\]/, generated,
+                "cyclic field from call result must materialize via compound literal")
+  end
 end

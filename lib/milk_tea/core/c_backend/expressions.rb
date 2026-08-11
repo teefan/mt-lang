@@ -347,7 +347,22 @@ module MilkTea
       def emit_address_of_operand(expression)
         return emit_expression(expression.operand) if expression.is_a?(IR::Unary) && expression.operator == "*"
 
-        "&#{wrap_expression(expression)}"
+        return "&#{wrap_expression(expression)}" if c_expression_lvalue?(expression)
+
+        "&(#{c_type(expression.type)}[1]){ #{emit_expression(expression)} }[0]"
+      end
+
+      def c_expression_lvalue?(expression)
+        case expression
+        when IR::Name, IR::CheckedIndex, IR::CheckedSpanIndex, IR::AggregateLiteral, IR::ArrayLiteral, IR::VariantLiteral, IR::ZeroInit
+          true
+        when IR::Member, IR::Index
+          c_expression_lvalue?(expression.receiver)
+        when IR::Unary
+          expression.operator == "*"
+        else
+          false
+        end
       end
 
       def emit_cast_operand(expression)
@@ -464,7 +479,12 @@ module MilkTea
       def emit_addressof_field_initializer(field_type, value)
         c_type_name = named_type_c_name(field_type)
         inner = value.expression
-        "((#{c_type_name}*)memcpy(malloc(sizeof(#{c_type_name})), &(#{emit_expression(inner)}), sizeof(#{c_type_name})))"
+        source = if c_expression_lvalue?(inner)
+          "&(#{emit_expression(inner)})"
+        else
+          "&(#{c_type(field_type)}[1]){ #{emit_expression(inner)} }[0]"
+        end
+        "((#{c_type_name}*)memcpy(malloc(sizeof(#{c_type_name})), #{source}, sizeof(#{c_type_name})))"
       end
 
       def emit_cyclic_array_initializer(field_type, value)
@@ -479,8 +499,10 @@ module MilkTea
         init = emit_initializer(value)
         source_expr = if init.start_with?("{")
           "&(#{c_type(field_type)})#{init}"
-        else
+        elsif c_expression_lvalue?(value)
           "&(#{init})"
+        else
+          "&(#{c_type(field_type)}[1]){ #{init} }[0]"
         end
         "((#{field_c_name}*)memcpy(malloc(sizeof(#{field_c_name})), #{source_expr}, sizeof(#{field_c_name})))"
       end
