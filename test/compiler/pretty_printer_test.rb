@@ -458,6 +458,23 @@ function main() -> int:
     assert_includes output, "default:"
   end
 
+  def test_formats_lowered_ir_for_simd_lane_with
+    source = <<~MT
+
+    function main() -> int:
+        let f4 = simd[float, 4](1.0, 2.0, 3.0, 4.0)
+        let updated = f4.with(1, 999.0)
+        return int<-(updated[1])
+
+    MT
+
+    output = with_program(source, relative_path: File.join("demo", "pretty_simd.mt")) do |program|
+      MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
+    end
+
+    assert_includes output, "let updated: simd[float, 4] = f4.with(1, 999.0)"
+  end
+
   def test_formats_constructs_repaired_in_completeness_fixes
     sources = {
       char_literal: <<~MT,
