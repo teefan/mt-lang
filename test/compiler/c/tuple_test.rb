@@ -224,4 +224,32 @@ class TupleTest < Minitest::Test
     assert_equal "", result.stderr
     assert_equal 10, result.exit_status
   end
+
+  def test_run_program_with_vec_of_tuples
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    # Tuples in a generic container force heap.resize[T] specialization, whose
+    # body calls align_of(T)/size_of(T).  sized_layout_type? must accept the
+    # tuple element type or specialization fails at check time.
+    source = <<~'MT'
+      import std.vec as vec
+
+      function main() -> int:
+          var v = vec.Vec[(int, int)].create()
+          v.push((1, 2))
+          v.push((3, 4))
+          var total = 0
+          let first = v.get(0)
+          if first != null:
+              total += 1
+          return total
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 1, result.exit_status
+  end
 end

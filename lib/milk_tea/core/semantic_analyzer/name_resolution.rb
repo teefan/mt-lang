@@ -719,7 +719,7 @@ module MilkTea
 
       def sized_layout_type?(type)
         case type
-        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::Span, Types::StringView, Types::Task, Types::Event, Types::Subscription
+        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::Tuple, Types::Span, Types::StringView, Types::Task, Types::Event, Types::Subscription
           true
         when Types::Nullable
           true
