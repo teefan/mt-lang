@@ -18,7 +18,8 @@ module MilkTea
                 collect_structural_error(e)
               end
             when AST::VarDecl
-              binding = @ctx.top_level_values.fetch(decl.name)
+              binding = @ctx.top_level_values[decl.name]
+              next unless binding
               if decl.value
                 validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
                 validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
@@ -39,7 +40,8 @@ module MilkTea
       end
 
       def check_expr_const(decl)
-        binding = @ctx.top_level_values.fetch(decl.name)
+        binding = @ctx.top_level_values[decl.name]
+        return unless binding
         validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
         validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
 
@@ -270,9 +272,7 @@ module MilkTea
       def evaluate_compile_time_block(statements, scopes: nil)
         ctx = CompileTime::BlockContext.new(self)
         result = ctx.evaluate_block(statements, scopes:)
-        result
-      rescue CompileTime::ReturnValue => e
-        e.value
+        result.is_a?(CompileTime::ReturnOutcome) ? result.value : result
       rescue CompileTime::Error => e
         raise_sema_error(e.message)
       end
@@ -558,9 +558,8 @@ module MilkTea
         end
 
         ctx = CompileTime::BlockContext.new(self, initial_variables: initial_vars)
-        ctx.evaluate_block(func.ast.body, scopes: nil)
-      rescue CompileTime::ReturnValue => e
-        e.value
+        result = ctx.evaluate_block(func.ast.body, scopes: nil)
+        result.is_a?(CompileTime::ReturnOutcome) ? result.value : result
       rescue CompileTime::Error => e
         raise_sema_error(e.message)
       end
@@ -589,9 +588,8 @@ module MilkTea
         end
 
         ctx = CompileTime::BlockContext.new(self, initial_variables: initial_vars)
-        ctx.evaluate_block(func.ast.body, scopes: nil)
-      rescue CompileTime::ReturnValue => e
-        e.value
+        result = ctx.evaluate_block(func.ast.body, scopes: nil)
+        result.is_a?(CompileTime::ReturnOutcome) ? result.value : result
       rescue CompileTime::Error => e
         raise_sema_error(e.message)
       end

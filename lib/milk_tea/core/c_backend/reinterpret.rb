@@ -116,13 +116,13 @@ module MilkTea
         return false if expression.expression.type.is_a?(Types::Null)
 
         c_type(expression.target_type) == c_type(expression.expression.type)
-      rescue StandardError
+      rescue CBackendError
         false
       end
 
       def identity_reinterpret?(target_type, source_type)
         c_type(target_type) == c_type(source_type)
-      rescue StandardError
+      rescue CBackendError
         false
       end
 

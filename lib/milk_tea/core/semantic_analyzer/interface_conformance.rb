@@ -9,7 +9,8 @@ module MilkTea
             next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::OpaqueDecl)
             next if decl.implements.empty?
 
-            receiver_type = @ctx.types.fetch(decl.name)
+            receiver_type = @ctx.types[decl.name]
+            next unless receiver_type
             resolved_interfaces = []
             seen = {}
 

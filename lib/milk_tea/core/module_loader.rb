@@ -14,6 +14,18 @@ module MilkTea
     def code
       "module/error"
     end
+
+    def to_diagnostic(path: nil)
+      Diagnostic.new(
+        path: @path || path,
+        line: @line,
+        column: @column,
+        length: nil,
+        code: code,
+        message: message,
+        severity: :error,
+      )
+    end
   end
 
   class ModuleLoader
@@ -69,11 +81,10 @@ module MilkTea
       suffix_platform = platform_suffix_for_path(path)
       return suffix_platform if suffix_platform
 
-      manifest_platform = PackageManifest.load(path).platform
+      manifest = PackageManifest.load_option(path)
+      manifest_platform = manifest&.platform
       return manifest_platform if manifest_platform
 
-      normalize_platform_name(host_platform || default_host_platform)
-    rescue PackageManifestError
       normalize_platform_name(host_platform || default_host_platform)
     end
 
@@ -167,7 +178,10 @@ module MilkTea
 
     def check_program(path)
       with_check_context(path) do |root_path|
-        check_program_parallel(root_path)
+        errors = []
+        check_program_parallel(root_path, collecting_errors: errors)
+        raise errors.first if errors.any?
+
         build_program(root_path)
       end
     end
@@ -313,7 +327,7 @@ module MilkTea
         check_path(resolved_path)
       rescue SemanticError => e
         @analysis_cache[resolved_path] = previous if previous
-        collecting_errors << e if collecting_errors
+        collecting_errors << e
       end
       @forward_bindings.clear
 
@@ -322,13 +336,14 @@ module MilkTea
       # are not themselves part of a cycle; they just depended on cycle members.
       (levels + [tail_members]).each do |level_paths|
         if level_paths.length == 1
-          check_path(level_paths.first)
+          begin
+            check_path(level_paths.first)
+          rescue SemanticError => e
+            collecting_errors << e
+          end
         elsif level_paths.any?
-          check_level_parallel(level_paths)
+          collecting_errors.concat(check_level_parallel(level_paths))
         end
-      rescue SemanticError => e
-        raise unless collecting_errors
-        collecting_errors << e
       end
     end
 
@@ -369,28 +384,31 @@ module MilkTea
       levels
     end
 
+    # Checks a level of independent modules on worker threads. Each worker
+    # returns { ok: analysis } or { error: e } as an ordinary value; the join
+    # point collects the failed outcomes instead of re-raising them, so the
+    # caller decides whether to propagate or accumulate.
     def check_level_parallel(paths)
-      threads = paths.map do |resolved_path|
+      workers = paths.map do |resolved_path|
         Thread.new do
-          Thread.current[:resolved_path] = resolved_path
           begin
-            analysis = check_path(resolved_path)
-            Thread.current[:analysis] = analysis
+            { ok: check_path(resolved_path) }
           rescue ModuleLoadError, PackageLockError, SemanticError => e
-            Thread.current[:error] = e
+            { error: e }
           end
         end
       end
 
-      threads.each(&:join)
+      workers.each(&:join)
 
-      paths.zip(threads).each do |resolved_path, t|
-        raise t[:error] if t[:error]
-      end
+      workers.map(&:value).filter_map { |result| result[:error] }
     end
 
     def imported_modules_for_ast(ast, importer_path: nil)
-      resolve_imports_for_ast(ast, importer_path:, collecting: false)
+      result = resolve_imports_for_ast(ast, importer_path:, collecting: false)
+      raise result.errors.first.error if result.errors.any?
+
+      result.modules
     end
 
     def imported_modules_for_ast_collecting_errors(ast, importer_path: nil)
@@ -421,29 +439,27 @@ module MilkTea
             modules[import.path.to_s] = @binder.module_binding(import_analysis)
           end
         rescue ModuleLoadError, PackageLockError, SemanticError => e
-          raise unless collecting
-
-          handle_circular_import_in_collecting_mode(import, import_path, modules, errors, e)
+          if collecting
+            handle_circular_import_in_collecting_mode(import, import_path, modules, errors, e)
+          else
+            errors << ImportResolutionError.new(import:, error: e)
+          end
         end
       end
 
       begin
         @async_runtime_installer.install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: collecting)
       rescue ModuleLoadError, PackageLockError => e
-        raise unless collecting
         errors << ImportResolutionError.new(import: nil, error: e)
       end
 
       begin
         @prelude_installer.install_prelude_modules!(ast, modules, importer_path:, collecting_errors: collecting)
       rescue ModuleLoadError, PackageLockError => e
-        raise unless collecting
         errors << ImportResolutionError.new(import: nil, error: e)
       end
 
-      return ImportResolution.new(modules: modules.freeze, errors: errors.freeze) if collecting
-
-      modules.freeze
+      ImportResolution.new(modules: modules.freeze, errors: errors.freeze)
     ensure
       @import_resolve_depth -= 1 if @import_resolve_depth
     end
@@ -528,7 +544,7 @@ module MilkTea
       if use_shared_cache?
         entry = @shared_cache[resolved_path]
         if entry
-          mtime = File.mtime(resolved_path).to_f rescue nil
+          mtime = source_mtime(resolved_path)
           if mtime && entry[:mtime] == mtime
             @analysis_cache[resolved_path] = entry[:analysis]
             return [resolved_path, nil, entry[:analysis]]
@@ -540,10 +556,19 @@ module MilkTea
       [resolved_path, ast, nil]
     end
 
+    # Option-style source modification time: nil when the file's mtime cannot
+    # be read (e.g. the file was removed between resolution and stat), so
+    # shared-cache reads simply miss instead of raising.
+    def source_mtime(path)
+      File.mtime(path).to_f
+    rescue SystemCallError
+      nil
+    end
+
     def update_shared_cache(resolved_path, analysis)
       return unless use_shared_cache?
 
-      mtime = File.mtime(resolved_path).to_f rescue nil
+      mtime = source_mtime(resolved_path)
       @shared_cache[resolved_path] = { mtime:, analysis: } if mtime
     end
 
@@ -575,11 +600,7 @@ module MilkTea
     end
 
     def inferred_module_name_for_path(path)
-      manifest = begin
-        PackageManifest.load(path)
-      rescue PackageManifestError
-        nil
-      end
+      manifest = PackageManifest.load_option(path)
 
       if manifest && path_within_root?(path, manifest.source_root)
         return module_name_for_path(path, manifest.source_root)
@@ -632,8 +653,9 @@ module MilkTea
       import_result = resolve_imports_for_ast(ast, importer_path: resolved_path, collecting: true)
       result = SemanticAnalyzer.check_collecting_errors(ast, imported_modules: import_result.modules, path: resolved_path)
       @analysis_cache[resolved_path] = result[:analysis] if result[:analysis]
-    rescue StandardError
-      # Analysis capture is best-effort.
+    rescue ModuleLoadError, PackageLockError, SemanticError
+      # Analysis capture is best-effort; named load/check failures leave the
+      # cycle member to the pass-2 re-check instead.
     ensure
       @checking_paths.pop
     end

@@ -249,32 +249,20 @@ module MilkTea
         end
       end
 
-      def check_functions
-        @ctx.top_level_functions.each_value do |binding|
-          check_function(binding)
-        end
-
-        @ctx.methods.each_value do |method_map|
-          method_map.each_value do |binding|
-            check_function(binding)
-          end
-        end
-      end
-
       # Validates the body of a specialized (instantiated) function or method
-      # binding.  The owner checker may be in collecting-errors mode, which
-      # would silently swallow body errors into @structural_errors.  We
-      # temporarily disable collect mode on the owner so the caller receives
-      # the SemanticError directly.
+      # binding.  The owner checker always accumulates body errors into its
+      # structural buffer, so this pulls out the new errors and surfaces the
+      # first non-tolerated one directly; tolerated ones are dropped.
       def validate_specialized_function_body!(binding)
         owner = binding.owner
-        prev_collecting = owner.instance_variable_get(:@collecting_errors)
-        owner.instance_variable_set(:@collecting_errors, false)
+        structural_errors = owner.instance_variable_get(:@structural_errors)
+        prev_count = structural_errors.length
         owner.check_function(binding)
+        new_errors = structural_errors[prev_count..].to_a
+        structural_errors.slice!(prev_count..) unless new_errors.empty?
+        new_errors.each { |error| raise error unless error.message.include?("cannot assign through immutable") }
       rescue SemanticError => e
         raise unless e.message.include?("cannot assign through immutable")
-      ensure
-        owner.instance_variable_set(:@collecting_errors, prev_collecting) if owner
       end
 
       # Per-function error collection used by check_collecting_errors.

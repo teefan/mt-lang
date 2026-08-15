@@ -27,6 +27,18 @@ module MilkTea
     def code
       "backend/internal"
     end
+
+    def to_diagnostic(path: nil)
+      Diagnostic.new(
+        path: @path || path,
+        line: @line,
+        column: @column,
+        length: nil,
+        code: code,
+        message: message,
+        severity: :error,
+      )
+    end
   end
 
   class CBackend

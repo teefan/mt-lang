@@ -9,7 +9,8 @@ module MilkTea
             case decl
             when AST::StructDecl
               packed, alignment = check_decl_attribute_applications!(decl.attributes, target_kind: :struct, target_label: "struct #{decl.name}", target_node: decl)
-              @ctx.types.fetch(decl.name).set_layout(packed:, alignment:)
+              struct_type = @ctx.types[decl.name]
+              struct_type.set_layout(packed:, alignment:) if struct_type
 
               decl.fields.each do |field|
                 with_error_node(field) do

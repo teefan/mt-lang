@@ -34,17 +34,17 @@ module MilkTea
                   end
                   record_local_completion_snapshot(end_line, 1_000_000, nested_scopes)
                 rescue SemanticError => e
-                  if @collecting_errors
-                    @structural_errors << e
-                    next
+                  if e.line.nil? && statement.line
+                    e = SemanticError.new(
+                      e.message,
+                      line: statement.line,
+                      column: source_column(statement),
+                      length: source_length(statement),
+                      path: @path,
+                    )
                   end
-
-                  raise e unless e.line.nil?
-
-                  stmt_line = statement.line
-                  raise e if stmt_line.nil?
-
-                  raise_sema_error(e.message, statement)
+                  @structural_errors << e
+                  next
                 end
               end
             end

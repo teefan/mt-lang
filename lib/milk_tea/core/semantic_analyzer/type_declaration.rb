@@ -293,9 +293,15 @@ module MilkTea
 
             constraints = resolve_type_param_constraints(decl.type_params)
             if decl.is_a?(AST::InterfaceDecl)
-              @ctx.interfaces[decl.name] = @ctx.interfaces.fetch(decl.name).with(type_param_constraints: constraints)
+              interface_binding = @ctx.interfaces[decl.name]
+              next unless interface_binding
+
+              @ctx.interfaces[decl.name] = interface_binding.with(type_param_constraints: constraints)
             else
-              @ctx.types.fetch(decl.name).define_type_param_constraints(constraints)
+              type_binding = @ctx.types[decl.name]
+              next unless type_binding
+
+              type_binding.define_type_param_constraints(constraints)
             end
           end
         end
@@ -455,7 +461,8 @@ module MilkTea
           with_error_node(decl) do
             next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::UnionDecl)
 
-            struct_type = @ctx.types.fetch(decl.name)
+            struct_type = @ctx.types[decl.name]
+            next unless struct_type
             struct_type.ast_declaration = decl if struct_type.respond_to?(:ast_declaration=)
             type_params = if struct_type.is_a?(Types::GenericStructDefinition)
               seen = {}
@@ -581,7 +588,8 @@ module MilkTea
           with_error_node(decl) do
             next unless decl.is_a?(AST::EnumDecl) || decl.is_a?(AST::FlagsDecl)
 
-            enum_type = @ctx.types.fetch(decl.name)
+            enum_type = @ctx.types[decl.name]
+            next unless enum_type
             backing_type = resolve_type_ref(decl.backing_type)
             unless backing_type.is_a?(Types::Primitive) && backing_type.integer?
               raise_sema_error("#{decl.name} backing type must be an integer primitive, got #{backing_type}")
@@ -641,7 +649,8 @@ module MilkTea
           with_error_node(decl) do
             next unless decl.is_a?(AST::VariantDecl)
 
-            variant_type = @ctx.types.fetch(decl.name)
+            variant_type = @ctx.types[decl.name]
+            next unless variant_type
             type_params = if variant_type.is_a?(Types::GenericVariantDefinition)
               seen = {}
               variant_type.type_params.each_with_object({}) do |name, params|

@@ -31,6 +31,18 @@ module MilkTea
     def code
       "parse/error"
     end
+
+    def to_diagnostic(path: nil)
+      Diagnostic.new(
+        path: @path || path,
+        line: line,
+        column: column,
+        length: nil,
+        code: code,
+        message: message,
+        severity: :error,
+      )
+    end
   end
 
   class SyntaxTokenStream

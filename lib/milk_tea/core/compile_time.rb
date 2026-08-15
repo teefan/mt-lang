@@ -6,16 +6,27 @@ module MilkTea
   module CompileTime
     Layout = ::MilkTea::Types::Layout
 
-    class ReturnValue < StandardError
-      attr_reader :value
+    # Carries the value of a `return` statement out of the block evaluator as
+    # an ordinary value instead of an exception; callers unwrap it when present.
+    ReturnOutcome = Data.define(:value)
 
-      def initialize(value)
-        @value = value
-        super("return #{value.inspect}")
+    class Error < StandardError
+      def code
+        "compile_time/error"
+      end
+
+      def to_diagnostic(path: nil)
+        Diagnostic.new(
+          path: path,
+          line: nil,
+          column: nil,
+          length: nil,
+          code: code,
+          message: message,
+          severity: :error,
+        )
       end
     end
-
-    class Error < StandardError; end
 
     def self.evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
       Evaluator.new(
@@ -249,7 +260,10 @@ module MilkTea
         result = nil
 
         statements.each do |statement|
-          result = evaluate_statement(statement, scopes:)
+          outcome = evaluate_statement(statement, scopes:)
+          return outcome if outcome.is_a?(ReturnOutcome)
+
+          result = outcome
         end
 
         result
@@ -261,7 +275,7 @@ module MilkTea
           evaluate_local_decl(statement, scopes:)
         when AST::ReturnStmt
           value = statement.value ? evaluate_expression(statement.value, scopes:) : nil
-          raise ReturnValue.new(value)
+          ReturnOutcome.new(value)
         when AST::WhileStmt
           evaluate_while(statement, scopes:)
         when AST::ForStmt
@@ -276,6 +290,7 @@ module MilkTea
           evaluate_expression(statement.expression, scopes:)
         when AST::PassStmt, AST::BreakStmt, AST::ContinueStmt
           # no-op at compile time
+          nil
         when AST::EmitStmt
           # emitted declarations are collected during lowering
           nil
@@ -354,7 +369,10 @@ module MilkTea
           break unless condition
           break unless CompileTime.boolean_value?(condition)
 
-          statement.body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
+          statement.body.each do |body_stmt|
+            outcome = evaluate_statement(body_stmt, scopes:)
+            return outcome if outcome.is_a?(ReturnOutcome)
+          end
           iterations += 1
         end
 
@@ -372,7 +390,10 @@ module MilkTea
 
         iterable.each do |element|
           @variables[loop_var_name] = element
-          statement.body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
+          statement.body.each do |body_stmt|
+            outcome = evaluate_statement(body_stmt, scopes:)
+            return outcome if outcome.is_a?(ReturnOutcome)
+          end
         end
 
         result
@@ -382,13 +403,19 @@ module MilkTea
         statement.branches.each do |branch|
           condition = evaluate_expression(branch.condition, scopes:)
           if CompileTime.boolean_value?(condition) && condition
-            branch.body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
+            branch.body.each do |body_stmt|
+              outcome = evaluate_statement(body_stmt, scopes:)
+              return outcome if outcome.is_a?(ReturnOutcome)
+            end
             return condition
           end
         end
 
         if statement.else_body
-          statement.else_body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
+          statement.else_body.each do |body_stmt|
+            outcome = evaluate_statement(body_stmt, scopes:)
+            return outcome if outcome.is_a?(ReturnOutcome)
+          end
         end
 
         nil
@@ -401,7 +428,10 @@ module MilkTea
         statement.arms.each do |arm|
           wildcard = arm.pattern.is_a?(AST::Identifier) && arm.pattern.name == "_"
           if wildcard || CompileTime.equality_result(scrutinee, evaluate_expression(arm.pattern, scopes:)) == true
-            arm.body.each { |body_stmt| evaluate_statement(body_stmt, scopes:) }
+            arm.body.each do |body_stmt|
+              outcome = evaluate_statement(body_stmt, scopes:)
+              return outcome if outcome.is_a?(ReturnOutcome)
+            end
             return scrutinee
           end
         end
@@ -451,9 +481,8 @@ module MilkTea
             initial_vars[param.name] = arg_value
           end
           ctx = BlockContext.new(@checker, initial_variables: initial_vars)
-          ctx.evaluate_block(func.ast.body, scopes:)
-        rescue ReturnValue => e
-          e.value
+          result = ctx.evaluate_block(func.ast.body, scopes:)
+          result.is_a?(ReturnOutcome) ? result.value : result
         end
       end
 

@@ -1850,9 +1850,8 @@ module MilkTea
 
         evaluator = ConstFnLowerEvaluator.new(self)
         ctx = CompileTime::BlockContext.new(evaluator, initial_variables: initial_vars)
-        ctx.evaluate_block(func.ast.body, scopes: nil)
-      rescue CompileTime::ReturnValue => e
-        e.value
+        result = ctx.evaluate_block(func.ast.body, scopes: nil)
+        result.is_a?(CompileTime::ReturnOutcome) ? result.value : result
       end
 
       class ConstFnLowerEvaluator

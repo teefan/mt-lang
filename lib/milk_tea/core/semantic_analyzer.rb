@@ -187,31 +187,9 @@ module MilkTea
       end
 
       def check
-        @completed_phases = Set.new
-
-        run_phase(:install_builtin_types)
-        run_phase(:install_builtin_attributes)
-        run_phase(:install_imports)
-        run_phase(:install_prelude_types, requires: [:install_imports])
-        run_phase(:declare_named_types, requires: [:install_builtin_types, :install_imports, :install_prelude_types])
-        run_phase(:resolve_generic_type_param_constraints, requires: [:declare_named_types])
-        run_phase(:resolve_type_aliases, requires: [:declare_named_types])
-        run_phase(:declare_attributes)
-        run_phase(:predeclare_top_level_consts)
-        run_phase(:resolve_aggregate_fields, requires: [:resolve_type_aliases, :declare_named_types])
-        run_phase(:resolve_enum_members, requires: [:declare_named_types])
-        run_phase(:resolve_variant_arms, requires: [:declare_named_types])
-        run_phase(:collect_emit_declarations)
-        run_phase(:declare_top_level_values, requires: [:resolve_aggregate_fields, :resolve_type_aliases])
-        run_phase(:check_attribute_applications, requires: [:declare_attributes])
-        run_phase(:declare_functions, requires: [:resolve_aggregate_fields, :resolve_enum_members, :resolve_variant_arms])
-        run_phase(:check_interface_conformances, requires: [:declare_functions, :resolve_aggregate_fields])
-        run_phase(:check_top_level_values, requires: [:declare_top_level_values])
-        run_phase(:finalize_top_level_const_values, requires: [:check_top_level_values])
-        run_phase(:check_top_level_static_asserts, requires: [:finalize_top_level_const_values])
-        run_phase(:check_functions, requires: [:declare_functions, :resolve_aggregate_fields, :check_interface_conformances])
-
-        build_analysis
+        result = check_collecting_errors
+        raise result[:errors].first unless result[:errors].empty?
+        result[:analysis]
       end
 
       def run_phase(name, requires: [])
@@ -291,12 +269,11 @@ module MilkTea
         end
       end
 
-      # Like check, but collects per-function errors instead of raising at first.
-      # Structural phases (imports, type resolution, declaration) collect errors per
-      # declaration so that the maximum number of diagnostics are surfaced.
+      # Runs all sema phases and collects every error instead of stopping at
+      # the first one.  Structural phases collect per-declaration, and
+      # function-body phases collect per function/method.
       # Returns { analysis: Analysis, errors: [SemanticError] }.
       def check_collecting_errors
-        @collecting_errors = true
         @structural_errors = []
         @completed_phases = Set.new
 
@@ -353,8 +330,6 @@ module MilkTea
       end
 
       def collect_structural_error(error)
-        raise error unless @collecting_errors
-
         @structural_errors << error
       end
     end

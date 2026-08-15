@@ -42,6 +42,15 @@ module MilkTea
       new(path).load
     end
 
+    # Best-effort manifest load for optional lookups: returns nil when no
+    # manifest applies to the path or when the manifest is invalid, instead
+    # of raising PackageManifestError.
+    def self.load_option(path)
+      load(path)
+    rescue PackageManifestError
+      nil
+    end
+
     def self.manifest_exists_for?(path)
       path = File.expand_path(path)
       current = File.directory?(path) ? path : File.dirname(path)
