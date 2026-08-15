@@ -211,7 +211,8 @@ module MilkTea
         when IR::NullableSpanIndex
           "nullable_span_index<#{expression.receiver_type}>(#{render_expression(expression.receiver)}, #{render_expression(expression.index)})"
         when IR::Call
-          wrap("#{expression.callee}(#{expression.arguments.map { |argument| render_expression(argument) }.join(', ')})", parent_precedence, POSTFIX_PRECEDENCE)
+          callee_text = expression.callee.is_a?(String) ? expression.callee : render_expression(expression.callee)
+          wrap("#{callee_text}(#{expression.arguments.map { |argument| render_expression(argument) }.join(', ')})", parent_precedence, POSTFIX_PRECEDENCE)
         when IR::Unary
           operand = render_expression(expression.operand, UNARY_PRECEDENCE)
           text = expression.operator == "not" ? "not #{operand}" : "#{expression.operator}#{operand}"
