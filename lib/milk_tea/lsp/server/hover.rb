@@ -271,6 +271,24 @@ module MilkTea
           'Subscription' => 'Opaque handle returned by `event.subscribe`. Pass to `event.unsubscribe` to remove a listener.',
         }.freeze
 
+        VEC_METHOD_SIGNATURES = {
+          'with' => 'function with(...) -> vec',
+          'dot' => 'function dot(other: vec) -> float',
+          'length' => 'function length() -> float',
+          'length_sq' => 'function length_sq() -> float',
+          'cross' => 'function cross(other: vec) -> vec',
+          'normalized' => 'function normalized() -> vec',
+          'squared_len' => 'function squared_len() -> float',
+        }.freeze
+
+        PTR_METHOD_SIGNATURES = {
+          'load' => 'function load() -> T',
+          'store' => 'function store(value: T) -> void',
+          'load_at' => 'function load_at(offset: ptr_uint) -> T',
+          'store_at' => 'function store_at(offset: ptr_uint, value: T) -> void',
+          'cast' => 'function cast() -> ptr[U]',
+        }.freeze
+
         BUILTIN_TYPE_METHOD_SIGNATURES = {
           'atomic' => {
             'load' => 'function load() -> T',
@@ -298,6 +316,44 @@ module MilkTea
             'as_str' => 'static function as_str() -> str',
             'as_cstr' => 'static function as_cstr() -> cstr',
           },
+          'vec2' => VEC_METHOD_SIGNATURES,
+          'vec3' => VEC_METHOD_SIGNATURES,
+          'vec4' => VEC_METHOD_SIGNATURES,
+          'ivec2' => VEC_METHOD_SIGNATURES,
+          'ivec3' => VEC_METHOD_SIGNATURES,
+          'ivec4' => VEC_METHOD_SIGNATURES,
+          'mat3' => {
+            'identity' => 'static function identity() -> mat3',
+            'with' => 'function with(...) -> mat3',
+          },
+          'mat4' => {
+            'identity' => 'static function identity() -> mat4',
+            'with' => 'function with(...) -> mat4',
+          },
+          'quat' => {
+            'identity' => 'static function identity() -> quat',
+            'with' => 'function with(x: float, y: float, z: float, w: float) -> quat',
+          },
+          'simd' => {
+            'with' => 'function with(index: int, value: T) -> simd[T, N]',
+            'load' => 'function load() -> T',
+            'store' => 'function store(value: T) -> void',
+          },
+          'array' => {
+            'as_span' => 'function as_span() -> span[T]',
+            'len' => 'function len() -> ptr_uint',
+            'with' => 'function with(index: int, value: T) -> array[T, N]',
+          },
+          'span' => {
+            'len' => 'function len() -> ptr_uint',
+          },
+          'str' => {
+            'len' => 'function len() -> ptr_uint',
+            'slice' => 'function slice(start: ptr_uint, len: ptr_uint) -> str',
+          },
+          'ptr' => PTR_METHOD_SIGNATURES,
+          'const_ptr' => PTR_METHOD_SIGNATURES,
+          'own' => PTR_METHOD_SIGNATURES,
         }.freeze
 
         def handle_hover(params)
@@ -466,11 +522,11 @@ module MilkTea
               docs ||= BUILTIN_TYPE_DOCS[name]
             elsif (binding = facts.values[name])
               signature = value_hover_signature(binding)
-            elsif !BUILTIN_CALL_HOVER_INFO.key?(name) && (member_info = find_member_in_types(facts, name))
+            elsif bare_member_name_candidate?(tokens, token_index) && (member_info = find_member_in_types(facts, name))
               type, member, value = member_info
               signature = value ? "#{type.name}.#{member} = #{value}" : "#{type.name}.#{member}"
               resolved_via_type_member = true
-            elsif !BUILTIN_CALL_HOVER_INFO.key?(name) && (arm_sig = find_variant_arm_in_types(facts, name))
+            elsif bare_member_name_candidate?(tokens, token_index) && (arm_sig = find_variant_arm_in_types(facts, name))
               signature = arm_sig
               resolved_via_type_member = true
             elsif (import_binding = facts.imports[name])
@@ -526,7 +582,7 @@ module MilkTea
                   if (method_binding = methods[name])
                     signature = method_signature(method_binding)
                   else
-                    type_base = receiver_type.to_s[/^([A-Za-z_]+)/, 1]
+                    type_base = receiver_type.to_s[/^([A-Za-z0-9_]+)/, 1]
                     if type_base && (method_sigs = BUILTIN_TYPE_METHOD_SIGNATURES[type_base])
                       signature = method_sigs[name]
                     end
@@ -549,8 +605,14 @@ module MilkTea
             end
 
             unless signature
-              if token_index && tokens && attribute_target_token?(tokens, token_index)
-                signature = "attribute target #{name}"
+              if token_index && tokens
+                if (type_param = type_parameter_hover_signature(tokens, token_index))
+                  signature = type_param
+                elsif (attr_sig = builtin_attribute_hover_signature(tokens, token_index))
+                  signature = attr_sig
+                elsif attribute_target_token?(tokens, token_index)
+                  signature = "attribute target #{name}"
+                end
               end
             end
 
@@ -1023,14 +1085,25 @@ module MilkTea
 
             method_receiver_type = project_method_receiver_type_for_completion(current_type)
             method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])
+            if method_info.nil?
+              # Native/builtin receivers (vectors, matrices, pointers, arrays,
+              # simd, atomic, ...) have no facts.methods entries; fall back to the
+              # builtin method signature table so member calls resolve accurately
+              # instead of falling through to a bare-name match.
+              base = method_receiver_type.to_s[/^([A-Za-z0-9_]+)/, 1]
+              method_info = base && BUILTIN_TYPE_METHOD_SIGNATURES[base]&.fetch(segment[:name], nil)
+              method_info = { signature: method_info, module_name: nil, binding: nil } if method_info.is_a?(String)
+            end
             return nil unless method_info
 
-            source_location = module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding])
-            source_location ||= module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
+            source_location = if method_info[:binding]
+              module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding])
+            end
+            source_location ||= (module_member_definition_location(current_uri, method_info[:module_name], segment[:name]) if method_info[:module_name])
             definition_entry = hover_definition_entry_from_location(source_location)
 
             return {
-              signature: method_signature(method_info[:binding]),
+              signature: method_info[:signature] || (method_info[:binding] && method_signature(method_info[:binding])),
               docs: hover_doc_comment_for_definition(definition_entry),
               source: hover_source_label_from_location(source_location),
               source_uri: hover_source_uri_from_location(source_location),
@@ -1202,7 +1275,86 @@ module MilkTea
             end
           end
 
+          # Variant arm constructors: `Option[int].some(value = 42)`.
+          if (arm_info = variant_arm_constructor_info(facts, tokens, token_index))
+            field_type = arm_info[:fields][field_name]
+            if field_type
+              return {
+                signature: "#{field_name}: #{field_type}",
+                docs: nil,
+                source: nil,
+                source_uri: nil,
+                source_line: nil,
+              }
+            end
+          end
+
+          # Builtin constructors with named parameters: `span[T](data, len)`.
+          if (builtin_arg = BUILTIN_NAMED_ARGUMENT_SIGNATURES.dig(receiver_name, field_name))
+            return {
+              signature: builtin_arg,
+              docs: nil,
+              source: nil,
+              source_uri: nil,
+              source_line: nil,
+            }
+          end
+
           nil
+        end
+
+        BUILTIN_NAMED_ARGUMENT_SIGNATURES = {
+          'span' => {
+            'data' => 'data: ptr[T]',
+            'len' => 'len: ptr_uint',
+          },
+        }.freeze
+
+        def variant_arm_constructor_info(facts, tokens, token_index)
+          opener_index = parameter_list_opener_index(tokens, token_index)
+          return nil unless opener_index
+
+          head_index = previous_non_trivia_token_index(tokens, opener_index)
+          return nil unless head_index && tokens[head_index].type == :identifier
+
+          arm_name = tokens[head_index].lexeme
+
+          # Walk back over `.`, optional generic args `[...]`, to the type name.
+          idx = head_index - 1
+          idx = previous_non_trivia_token_index(tokens, idx) if idx >= 0 && tokens[idx].type == :dot
+          if idx >= 0 && tokens[idx].type == :rbracket
+            lbracket = matching_opener_index(tokens, idx)
+            return nil unless lbracket
+
+            idx = previous_non_trivia_token_index(tokens, lbracket)
+          end
+          return nil unless idx && tokens[idx].type == :identifier
+
+          type_name = tokens[idx].lexeme
+          type = resolve_arm_receiver_type(facts, tokens, idx)
+
+          arm = if type.respond_to?(:arm)
+            type.arm(arm_name)
+          elsif type.respond_to?(:arms)
+            type.arms[arm_name]
+          end
+          return nil unless arm
+
+          { arm_name: arm_name, fields: arm }
+        end
+
+        def resolve_arm_receiver_type(facts, tokens, type_name_index)
+          type_name = tokens[type_name_index].lexeme
+          return facts.types[type_name] if facts.types.key?(type_name)
+
+          dot_index = previous_non_trivia_token_index(tokens, type_name_index)
+          return nil unless dot_index && tokens[dot_index].type == :dot
+
+          module_index = previous_non_trivia_token_index(tokens, dot_index)
+          return nil unless module_index && tokens[module_index].type == :identifier
+
+          module_binding = facts.imports[tokens[module_index].lexeme]
+          module_binding&.types&.fetch(type_name, nil)
         end
 
         def named_argument_param_result(field_name, param, callable_ast)
@@ -1248,7 +1400,15 @@ module MilkTea
 
           head_index = previous_non_trivia_token_index(tokens, opener_index)
           return nil unless head_index
-          return nil unless tokens[head_index].type == :identifier
+
+          # Skip generic type arguments before the callee: `span[int](...)`.
+          if tokens[head_index].type == :rbracket
+            lbracket_index = matching_opener_index(tokens, head_index)
+            return nil unless lbracket_index
+
+            head_index = previous_non_trivia_token_index(tokens, lbracket_index)
+          end
+          return nil unless head_index && tokens[head_index].type == :identifier
 
           tokens[head_index].lexeme
         end
@@ -1490,13 +1650,108 @@ module MilkTea
         def attribute_target_token?(tokens, index)
           return false unless index && tokens[index]&.type == :identifier
 
-          prev = previous_non_trivia_token_index(tokens, index)
-          return false unless prev && [:lbracket, :comma].include?(tokens[prev].type)
+          opener = enclosing_bracket_opener_index(tokens, index, :lbracket, :rbracket)
+          return false unless opener
+
+          before_opener = previous_non_trivia_token_index(tokens, opener)
+          return false unless before_opener && tokens[before_opener].type == :attribute
 
           after = next_non_trivia_token_index(tokens, index + 1)
           return false unless after && [:rbracket, :comma].include?(tokens[after].type)
 
           true
+        end
+
+        BUILTIN_ATTRIBUTE_SIGNATURES = {
+          'packed' => 'built-in attribute packed',
+          'deprecated' => 'built-in attribute deprecated(message: str)',
+          'align' => 'built-in attribute align(bytes: int)',
+        }.freeze
+
+        def builtin_attribute_hover_signature(tokens, token_index)
+          return nil unless token_index && tokens[token_index]&.type == :identifier
+
+          name = tokens[token_index].lexeme
+          signature = BUILTIN_ATTRIBUTE_SIGNATURES[name]
+          return nil unless signature
+
+          prev = previous_non_trivia_token_index(tokens, token_index)
+          return nil unless prev && tokens[prev].type == :lbracket
+
+          at_index = previous_non_trivia_token_index(tokens, prev)
+          return nil unless at_index && tokens[at_index].type == :at
+
+          signature
+        end
+
+        # A bare identifier that could be a flags/enum/variant member name.
+        # Non-builtin names always qualify; builtin-named identifiers (e.g.
+        # `read`) qualify only when not a call/specialization, so a builtin call
+        # keeps resolving to the builtin instead of a member collision.
+        def bare_member_name_candidate?(tokens, token_index)
+          return false unless token_index && tokens[token_index]&.type == :identifier
+
+          name = tokens[token_index].lexeme
+          return true unless BUILTIN_CALL_HOVER_INFO.key?(name)
+
+          nxt = next_non_trivia_token_index(tokens, token_index + 1)
+          nxt.nil? || ![:lparen, :lbracket].include?(tokens[nxt].type)
+        end
+
+        # Hover content for an identifier sitting in a `[...]` type-parameter or
+        # type-argument position: `struct Pair[A, B]:`, `ref[T]`, `Result[T, E]`,
+        # and generic value parameters `[N: int]`. Returns nil when the brackets
+        # belong to something else (attribute targets, array indices).
+        def type_parameter_hover_signature(tokens, index)
+          return nil unless index && tokens[index]&.type == :identifier
+
+          opener = enclosing_bracket_opener_index(tokens, index, :lbracket, :rbracket)
+          return nil unless opener
+
+          before_opener = previous_non_trivia_token_index(tokens, opener)
+          return nil if before_opener && tokens[before_opener].type == :attribute
+
+          token = tokens[index]
+          next_index = next_non_trivia_token_index(tokens, index + 1)
+          prev_index = previous_non_trivia_token_index(tokens, index)
+
+          if next_index && tokens[next_index].type == :colon
+            # Generic value parameter declaration: `[N: int]`.
+            value_type = next_non_trivia_token_index(tokens, next_index + 1)
+            value_type_text = value_type ? tokens[value_type].lexeme : nil
+            type_text = value_type_text ? ": #{value_type_text}" : ""
+            return "generic value parameter #{token.lexeme}#{type_text}"
+          end
+
+          if prev_index && [:lbracket, :comma].include?(tokens[prev_index].type) &&
+             next_index && tokens[next_index].type == :implements
+            # Constrained declaration: `[T implements Damageable]`.
+            return "type parameter #{token.lexeme}"
+          end
+
+          if prev_index && [:lbracket, :comma].include?(tokens[prev_index].type) &&
+             next_index && [:rbracket, :comma].include?(tokens[next_index].type)
+            return "type parameter #{token.lexeme}"
+          end
+
+          nil
+        end
+
+        def enclosing_bracket_opener_index(tokens, index, opener_type, closer_type)
+          depth = 0
+          i = index
+          while i >= 0
+            tok = tokens[i]
+            if tok.type == closer_type
+              depth += 1
+            elsif tok.type == opener_type
+              return i if depth.zero?
+
+              depth -= 1
+            end
+            i -= 1
+          end
+          nil
         end
 
         def call_argument_token?(tokens, index)
@@ -1834,40 +2089,54 @@ module MilkTea
         def for_binding_context_at(tokens, token_index)
           return nil unless token_index
 
-          i = token_index - 1
-          passed_in = false
+          tok = tokens[token_index]
+          return nil unless tok&.type == :identifier
 
+          # Find the `for` keyword on the same line at or before the binding.
+          for_index = nil
+          i = token_index
           while i >= 0
             current = tokens[i]
-            break if current.type == :newline && current.line != tokens[token_index].line
-
-            if current.type == :identifier
-              case current.lexeme
-              when "in"
-                passed_in = true
-              when "for"
-                if passed_in
-                  ie = token_index + 1
-                  while ie < tokens.length
-                    nt = tokens[ie]
-                    break if nt.type == :newline || nt.type == :colon
-
-                    ie += 1
-                  end
-                  iterable_text = tokens[(token_index + 1)...ie].map(&:lexeme).join(" ")
-                  iterable_text = iterable_text.gsub(/\s+/, " ").strip
-                  return {
-                    name: tokens[token_index].lexeme,
-                    iterable_text: iterable_text.empty? ? nil : iterable_text,
-                  }
-                end
-              end
+            break if current.type == :newline && current.line != tok.line
+            if current.type == :for && current.line == tok.line
+              for_index = i
+              break
             end
-
             i -= 1
           end
+          return nil unless for_index
 
-          nil
+          # Find `in` after the bindings, still on the same line.
+          in_index = nil
+          j = for_index + 1
+          while j < tokens.length
+            t = tokens[j]
+            break if t.type == :newline && t.line != tok.line
+            if t.type == :in && t.line == tok.line
+              in_index = j
+              break
+            end
+            j += 1
+          end
+          return nil unless in_index
+
+          # The hovered token must be one of the bindings between `for` and `in`.
+          return nil unless token_index > for_index && token_index < in_index
+
+          ie = in_index + 1
+          while ie < tokens.length
+            nt = tokens[ie]
+            break if nt.type == :newline || nt.type == :colon
+
+            ie += 1
+          end
+          iterable_text = tokens[(in_index + 1)...ie].map(&:lexeme).join(" ")
+          iterable_text = iterable_text.gsub(/\s+/, " ").strip
+
+          {
+            name: tok.lexeme,
+            iterable_text: iterable_text.empty? ? nil : iterable_text,
+          }
         end
 
         def resolve_lexical_local_hover_signature(definition_uri, name, definition_token)
