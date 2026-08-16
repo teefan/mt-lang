@@ -650,6 +650,63 @@ module MilkTea
       def array_element_type(type)
         type.arguments.first
       end
+
+      def common_numeric_type(left_type, right_type)
+        left_type = left_type.backing_type if left_type.is_a?(Types::EnumBase)
+        right_type = right_type.backing_type if right_type.is_a?(Types::EnumBase)
+        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
+        return unless left_type.numeric? && right_type.numeric?
+        return left_type if left_type == right_type
+
+        return common_integer_type(left_type, right_type) if left_type.integer? && right_type.integer?
+        return wider_float_type(left_type, right_type) if left_type.float? && right_type.float?
+
+        float_type, integer_type = left_type.float? ? [left_type, right_type] : [right_type, left_type]
+        return unless integer_type.integer? && integer_type.fixed_width_integer?
+
+        float_type
+      end
+
+      def common_integer_type(left_type, right_type)
+        left_type = left_type.backing_type if left_type.is_a?(Types::EnumBase)
+        right_type = right_type.backing_type if right_type.is_a?(Types::EnumBase)
+        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
+        return unless left_type.integer? && right_type.integer?
+        return left_type if left_type == right_type
+        return unless left_type.fixed_width_integer? && right_type.fixed_width_integer?
+
+        # Same signedness: the wider type wins. Mixed signed/unsigned: promote to
+        # the narrowest signed type that holds both operands' full ranges. A
+        # strictly-wider signed type covers an unsigned operand; equal-width or
+        # wider unsigned operands widen to the next signed width. Mixing with a
+        # 64-bit unsigned type has no safe signed common type, so callers fall
+        # back to requiring an explicit cast.
+        if left_type.signed_integer? == right_type.signed_integer?
+          return left_type.integer_width >= right_type.integer_width ? left_type : right_type
+        end
+
+        signed_type, unsigned_type = if left_type.signed_integer?
+          [left_type, right_type]
+        else
+          [right_type, left_type]
+        end
+
+        return signed_type if signed_type.integer_width > unsigned_type.integer_width
+
+        signed_type_above_width(unsigned_type.integer_width)
+      end
+
+      def signed_type_above_width(width)
+        case width
+        when 8 then Types::Registry.primitive("short")
+        when 16 then Types::Registry.primitive("int")
+        when 32 then Types::Registry.primitive("long")
+        end
+      end
+
+      def wider_float_type(left_type, right_type)
+        left_type.float_width >= right_type.float_width ? left_type : right_type
+      end
     end
   end
 end

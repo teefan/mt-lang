@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require_relative "../core"
-require_relative "cst_formatter"
 
 module MilkTea
   class FormatterError < StandardError; end
@@ -49,12 +48,12 @@ module MilkTea
 
     def self.preserve_format(source, path:, profile: nil)
       cst = profile_phase(profile, "format.cst") { build_cst(source, path:) }
-      profile_phase(profile, "format.cst_fmt") { CSTFormatter.format(cst) }
+      profile_phase(profile, "format.cst_fmt") { cst.reconstruct }
     end
 
     def self.tidy_format(source, path:, max_line_length: DEFAULT_MAX_LINE_LENGTH, profile: nil)
       cst = profile_phase(profile, "format.cst") { build_cst(source, path:) }
-      normalized = profile_phase(profile, "format.normalize") { CSTFormatter.format_normalized(cst) }
+      normalized = profile_phase(profile, "format.normalize") { cst.reconstruct_normalized }
       wrapped = profile_phase(profile, "format.wrap") { wrap_long_argument_lists(normalized, max_line_length:, path:) }
       profile_phase(profile, "format.blank_lines") { normalize_blank_lines(wrapped, path:) }
     end

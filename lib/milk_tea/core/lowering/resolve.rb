@@ -1117,62 +1117,6 @@ module MilkTea
         expected_type || null_type
       end
 
-      def common_numeric_type(left_type, right_type)
-        left_type = left_type.backing_type if left_type.is_a?(Types::EnumBase)
-        right_type = right_type.backing_type if right_type.is_a?(Types::EnumBase)
-        return left_type if left_type == right_type
-        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
-        return unless left_type.numeric? && right_type.numeric?
-
-        return common_integer_type(left_type, right_type) if left_type.integer? && right_type.integer?
-        return wider_float_type(left_type, right_type) if left_type.float? && right_type.float?
-
-        float_type, integer_type = left_type.float? ? [left_type, right_type] : [right_type, left_type]
-        return unless integer_type.integer? && integer_type.fixed_width_integer?
-
-        float_type
-      end
-
-      def common_integer_type(left_type, right_type)
-        left_type = left_type.backing_type if left_type.is_a?(Types::EnumBase)
-        right_type = right_type.backing_type if right_type.is_a?(Types::EnumBase)
-        return left_type if left_type == right_type
-        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
-        return unless left_type.integer? && right_type.integer?
-        return unless left_type.fixed_width_integer? && right_type.fixed_width_integer?
-
-        # Mirrors the semantic analyzer's rule: same signedness picks the wider
-        # type; mixed signed/unsigned promotes to the narrowest signed type that
-        # holds both operands' full ranges (a strictly-wider signed type covers
-        # an unsigned operand, otherwise widen to the next signed width). Mixing
-        # with a 64-bit unsigned type has no safe signed common type.
-        if left_type.signed_integer? == right_type.signed_integer?
-          return left_type.integer_width >= right_type.integer_width ? left_type : right_type
-        end
-
-        signed_type, unsigned_type = if left_type.signed_integer?
-          [left_type, right_type]
-        else
-          [right_type, left_type]
-        end
-
-        return signed_type if signed_type.integer_width > unsigned_type.integer_width
-
-        signed_type_above_width(unsigned_type.integer_width)
-      end
-
-      def signed_type_above_width(width)
-        case width
-        when 8 then @ctx.types.fetch("short")
-        when 16 then @ctx.types.fetch("int")
-        when 32 then @ctx.types.fetch("long")
-        end
-      end
-
-      def wider_float_type(left_type, right_type)
-        left_type.float_width >= right_type.float_width ? left_type : right_type
-      end
-
       def aggregate_arithmetic_result_type(operator, left_type, right_type)
         if left_type.is_a?(Types::Vector) && right_type.is_a?(Types::Vector) && left_type.name == right_type.name
           return left_type
