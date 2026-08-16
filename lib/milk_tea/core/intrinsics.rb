@@ -96,7 +96,7 @@ module MilkTea
 
       nested = receiver_type.respond_to?(:nested_types) ? receiver_type.nested_types : nil
       scope = { receiver_type.name => receiver_type }
-      scope.merge(nested) if nested && !nested.empty?
+      scope = scope.merge(nested) if nested && !nested.empty?
       scope
     end
 

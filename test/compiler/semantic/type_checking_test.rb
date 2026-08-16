@@ -3167,6 +3167,36 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_deeply_nested_type_references_by_bare_name
+    source = <<~MT
+      # module demo.nested_field_ref
+
+      struct Outer:
+          struct Counter:
+              struct Item:
+                  n: int
+              items: array[Item, 2]
+              function first() -> Item:
+                  return this.items[0]
+          c: Counter
+
+      function main() -> int:
+          var o: Outer
+          o.c.items[0] = Outer.Counter.Item(n = 9)
+          return o.c.first().n
+    MT
+
+    result = check_program_source(source)
+    outer_type = result.root_analysis.types.fetch("Outer")
+    counter_type = outer_type.nested_types.fetch("Counter")
+    item_type = counter_type.nested_types.fetch("Item")
+    methods = result.root_analysis.methods.fetch(counter_type)
+
+    assert_equal item_type, counter_type.field("items").arguments.first
+    assert_equal item_type, methods.fetch("first").type.return_type
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_array_construction_for_locals_consts_and_struct_fields
     source = <<~MT
       # module demo.arrays

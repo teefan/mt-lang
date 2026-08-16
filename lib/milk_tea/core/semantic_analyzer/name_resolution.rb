@@ -247,11 +247,11 @@ module MilkTea
 
       def resolve_non_nullable_type(type_ref, type_params: {}, type_param_constraints: {}, nested_types: nil)
         if type_ref.is_a?(AST::FunctionType)
-          return resolve_function_type_ref(type_ref, type_params:, type_param_constraints:)
+          return resolve_function_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
         end
 
         if type_ref.is_a?(AST::ProcType)
-          return resolve_proc_type_ref(type_ref, type_params:, type_param_constraints:)
+          return resolve_proc_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
         end
 
         if type_ref.is_a?(AST::DynType)
@@ -259,13 +259,13 @@ module MilkTea
         end
 
         if type_ref.is_a?(AST::TupleType)
-          return resolve_tuple_type_ref(type_ref, type_params:, type_param_constraints:)
+          return resolve_tuple_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
         end
 
         parts = type_ref.name.parts
 
         if type_ref.arguments.any?
-          return resolve_generic_instance_type_ref(type_ref, parts, type_params:, type_param_constraints:)
+          return resolve_generic_instance_type_ref(type_ref, parts, type_params:, type_param_constraints:, nested_types:)
         end
 
         if parts.length == 1 && type_ref.lifetime
@@ -279,18 +279,18 @@ module MilkTea
         resolve_multi_part_type_ref(type_ref, parts)
       end
 
-      def resolve_function_type_ref(type_ref, type_params:, type_param_constraints:)
+      def resolve_function_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
         params = type_ref.params.map do |param|
-          Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
+          Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:, nested_types:))
         end
-        Types::Registry.function(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
+        Types::Registry.function(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:, nested_types:))
       end
 
-      def resolve_proc_type_ref(type_ref, type_params:, type_param_constraints:)
+      def resolve_proc_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
         params = type_ref.params.map do |param|
-          Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
+          Types::Registry.parameter(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:, nested_types:))
         end
-        Types::Registry.proc(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
+        Types::Registry.proc(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:, nested_types:))
       end
 
       def resolve_dyn_type_ref(type_ref)
@@ -302,25 +302,25 @@ module MilkTea
         type
       end
 
-      def resolve_tuple_type_ref(type_ref, type_params:, type_param_constraints:)
+      def resolve_tuple_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
         names = []
         element_types = []
         type_ref.element_types.each do |et|
           if et.is_a?(AST::Argument)
             names << et.name
-            element_types << resolve_type_ref(et.value, type_params:, type_param_constraints:)
+            element_types << resolve_type_ref(et.value, type_params:, type_param_constraints:, nested_types:)
           else
             names << nil
-            element_types << resolve_type_ref(et, type_params:, type_param_constraints:)
+            element_types << resolve_type_ref(et, type_params:, type_param_constraints:, nested_types:)
           end
         end
         has_named = names.any?
         Types::Registry.tuple(element_types, field_names: has_named ? names : nil)
       end
 
-      def resolve_generic_instance_type_ref(type_ref, parts, type_params:, type_param_constraints:)
+      def resolve_generic_instance_type_ref(type_ref, parts, type_params:, type_param_constraints:, nested_types:)
         name = parts.join(".")
-        arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:, type_param_constraints:) }
+        arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:, type_param_constraints:, nested_types:) }
 
         if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
           raise_sema_error("ref types cannot be nested inside #{name}", type_ref)
@@ -434,12 +434,12 @@ module MilkTea
         value.is_a?(Types::Base) ? value : nil
       end
 
-      def resolve_type_argument(argument, type_params: current_type_params, type_param_constraints: current_type_param_constraints)
+      def resolve_type_argument(argument, type_params: current_type_params, type_param_constraints: current_type_param_constraints, nested_types: current_nested_types)
         case argument
         when AST::TypeRef
-          resolve_type_argument_ref(argument, type_params:, type_param_constraints:)
+          resolve_type_argument_ref(argument, type_params:, type_param_constraints:, nested_types:)
         when AST::FunctionType, AST::ProcType, AST::TupleType
-          resolve_type_ref(argument, type_params:, type_param_constraints:)
+          resolve_type_ref(argument, type_params:, type_param_constraints:, nested_types:)
         when AST::IntegerLiteral, AST::FloatLiteral
           Types::LiteralTypeArg.new(argument.value)
         else
@@ -447,20 +447,20 @@ module MilkTea
         end
       end
 
-      def resolve_type_argument_ref(type_ref, type_params:, type_param_constraints:)
-        return resolve_type_ref(type_ref, type_params:, type_param_constraints:) unless literal_type_argument_name_candidate?(type_ref)
+      def resolve_type_argument_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
+        return resolve_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:) unless literal_type_argument_name_candidate?(type_ref)
 
-        result = try_resolve_type_ref(type_ref, type_params:, type_param_constraints:)
+        result = try_resolve_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
         return result if result
 
         literal_type_argument = resolve_named_literal_type_argument(type_ref)
         return literal_type_argument if literal_type_argument
 
-        resolve_type_ref(type_ref, type_params:, type_param_constraints:)
+        resolve_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
       end
 
-      def try_resolve_type_ref(type_ref, type_params:, type_param_constraints:)
-        resolve_type_ref(type_ref, type_params:, type_param_constraints:)
+      def try_resolve_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
+        resolve_type_ref(type_ref, type_params:, type_param_constraints:, nested_types:)
       rescue SemanticError
         nil
       end
