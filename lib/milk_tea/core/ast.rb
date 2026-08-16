@@ -111,8 +111,8 @@ module MilkTea
     InterfaceDecl = Data.define(:name, :type_params, :methods, :visibility, :line, :column) do
       def initialize(name:, type_params: [], methods:, visibility:, line: nil, column: nil) = super
     end
-    ExtendingBlock = Data.define(:type_name, :methods, :line, :column) do
-      def initialize(type_name:, methods:, line: nil, column: nil) = super
+    ExtendingBlock = Data.define(:type_name, :methods, :line, :column, :inline) do
+      def initialize(type_name:, methods:, line: nil, column: nil, inline: false) = super
     end
     InterfaceMethodDecl = Data.define(:name, :params, :return_type, :kind, :async, :attributes, :line, :column) do
       def initialize(name:, params:, return_type:, kind:, async:, attributes: [], line: nil, column: nil) = super

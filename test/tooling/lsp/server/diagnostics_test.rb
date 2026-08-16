@@ -5,6 +5,29 @@ require_relative "helpers"
 class DiagnosticsTest < Minitest::Test
   include LSPServerTestHelpers
 
+  def test_collect_surfaces_prefer_inline_methods_hint
+    Dir.mktmpdir("milk-tea-lsp-inline-hint") do |dir|
+      path = File.join(dir, "demo.mt")
+      source = <<~MT
+        struct Counter:
+            value: int
+
+        extending Counter:
+            function read() -> int:
+                return this.value
+      MT
+      File.write(path, source)
+
+      result = MilkTea::LSP::Diagnostics.collect(path_to_uri(path), source)
+      hint = result[:diagnostics].find { |d| d[:code] == "prefer-inline-methods" }
+
+      assert hint, "expected prefer-inline-methods hint, got codes: #{result[:diagnostics].map { |d| d[:code] }.inspect}"
+      assert_equal 4, hint[:severity]
+      assert_equal 3, hint.dig(:range, :start, :line)
+      assert_equal "methods on 'Counter' can be written inline inside the struct declaration", hint[:message]
+    end
+  end
+
   def test_did_save_republishes_diagnostics
     with_lsp_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

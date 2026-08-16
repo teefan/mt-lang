@@ -586,6 +586,38 @@ module MilkTea
       def lvalue_expression?(expression)
         expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::IndexAccess)
       end
+      # ── prefer-inline-methods ──────────────────────────────────────────────
+      # Flag `extending X:` blocks whose receiver struct is declared in the same
+      # file, suggesting the methods be written inline inside the struct body
+      # (which desugars to the identical `extending` block).
+
+      def emit_prefer_inline_methods_warnings(source_file)
+        struct_names = source_file.declarations.filter_map { |decl| decl.name if decl.is_a?(AST::StructDecl) }.to_set
+        return if struct_names.empty?
+
+        source_file.declarations.each do |declaration|
+          next unless declaration.is_a?(AST::ExtendingBlock)
+          next if declaration.inline
+
+          parts = declaration.type_name.name.parts
+          next unless parts.length == 1
+          next if declaration.type_name.arguments.any?
+
+          name = parts.first
+          next unless struct_names.include?(name)
+
+          @warnings << Warning.new(
+            path: @path,
+            line: declaration.line,
+            column: declaration.column,
+            length: name.length,
+            code: "prefer-inline-methods",
+            message: "methods on '#{name}' can be written inline inside the struct declaration",
+            severity: :hint,
+            symbol_name: name,
+          )
+        end
+      end
     end
   end
 end

@@ -35,6 +35,7 @@ module MilkTea
       owning-release-double
       prefer-conditional-expression
       prefer-inline-if
+      prefer-inline-methods
       prefer-is-variant
       prefer-let
       prefer-let-else
@@ -771,6 +772,7 @@ module MilkTea
       profile_phase("rule.doc_tag") { emit_doc_tag_warnings(ast) } if full_tier?
       profile_phase("rule.event_capacity") { emit_event_capacity_warnings(ast) }
       profile_phase("rule.trailing_list_comma") { emit_trailing_list_comma_warnings(ast) }
+      profile_phase("rule.prefer_inline_methods") { emit_prefer_inline_methods_warnings(ast) }
       profile_phase("rule.line_too_long") { emit_line_too_long_warnings }
       @warnings
     end

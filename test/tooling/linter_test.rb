@@ -2025,7 +2025,6 @@ class MilkTeaLinterTest < Minitest::Test
       struct Counter:
           value: int
 
-      extending Counter:
           function get() -> int:
               return this.value
     MT
@@ -3339,5 +3338,75 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
 
     w = warnings.find { |w| w.code == "owning-release-double" && w.symbol_name == "p" }
     assert w, "expected owning-release-double warning for double heap.release"
+  end
+end
+
+# ── prefer-inline-methods ───────────────────────────────────────────────
+
+class MilkTeaLinterPreferInlineMethodsTest < Minitest::Test
+  def test_warns_on_extending_same_file_struct
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct Counter:
+          value: int
+
+      extending Counter:
+          function read() -> int:
+              return this.value
+    MT
+
+    w = warnings.find { |entry| entry.code == "prefer-inline-methods" }
+    assert w, "expected prefer-inline-methods warning"
+    assert_equal :hint, w.severity
+    assert_equal "Counter", w.symbol_name
+    assert_equal 4, w.line
+  end
+
+  def test_does_not_warn_on_already_inline_methods
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct Counter:
+          value: int
+
+          function read() -> int:
+              return this.value
+    MT
+
+    refute warnings.any? { |entry| entry.code == "prefer-inline-methods" }
+  end
+
+  def test_does_not_warn_on_cross_module_extending
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      import std.counter as counter
+
+      extending counter.Counter:
+          function read() -> int:
+              return this.value
+    MT
+
+    refute warnings.any? { |entry| entry.code == "prefer-inline-methods" }
+  end
+
+  def test_does_not_warn_on_generic_extending
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct Counter[T]:
+          value: T
+
+      extending Counter[T]:
+          function read() -> T:
+              return this.value
+    MT
+
+    refute warnings.any? { |entry| entry.code == "prefer-inline-methods" }
+  end
+
+  def test_does_not_warn_on_non_struct_target
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      opaque Handle
+
+      extending Handle:
+          function close() -> void:
+              pass
+    MT
+
+    refute warnings.any? { |entry| entry.code == "prefer-inline-methods" }
   end
 end

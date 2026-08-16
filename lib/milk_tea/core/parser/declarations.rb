@@ -407,7 +407,7 @@ module MilkTea
           )
         end
         type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts: qualified_name), arguments: type_ref_args, nullable: false, line: name_token.line, column: name_token.column)
-        AST::ExtendingBlock.new(type_name: type_ref, methods:, line: name_token.line, column: name_token.column)
+        AST::ExtendingBlock.new(type_name: type_ref, methods:, line: name_token.line, column: name_token.column, inline: true)
       end
 
       def parse_struct_decl_params
