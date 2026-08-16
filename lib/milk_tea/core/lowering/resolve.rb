@@ -444,7 +444,7 @@ module MilkTea
           return [:compile_time_builtin, callee.name, nil, compile_time_builtin_function_type(callee.name, arguments, env)]
         end
 
-        type = @ctx.types[callee.name]
+        type = lookup_named_type(callee.name)
         if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
           return [:struct_literal, nil, nil, type]
         end
@@ -1160,7 +1160,7 @@ module MilkTea
         when AST::Identifier
           return current_type_params[expression.name] if current_type_params.key?(expression.name)
 
-          @ctx.types[expression.name]
+          lookup_named_type(expression.name)
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 
@@ -2471,7 +2471,7 @@ module MilkTea
                 elsif parts.length == 1 && type_params.key?(parts.first)
                   type_params.fetch(parts.first)
                 elsif parts.length == 1
-                  type = @ctx.types[parts.first]
+                  type = lookup_named_type(parts.first)
                   raise LoweringError.new("unknown type #{parts.first}", line: 0, column: 0, path: @ctx.current_analysis_path) unless type
                   raise LoweringError.new("generic type #{parts.first} requires type arguments", line: 0, column: 0, path: @ctx.current_analysis_path) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 

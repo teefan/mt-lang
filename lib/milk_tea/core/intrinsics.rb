@@ -84,5 +84,27 @@ module MilkTea
     def string_literal_cstr_compatibility?(expression, expected_type)
       expression.is_a?(AST::StringLiteral) && !expression.cstring && expected_type == BUILTIN_CSTR
     end
+
+    def current_nested_types
+      @current_nested_types
+    end
+
+    # Resolves the receiver type's short name (self-reference) and its own
+    # nested types as a bare-name scope for method bodies and signatures.
+    def method_receiver_nested_scope(receiver_type)
+      return nil unless receiver_type.respond_to?(:name)
+
+      nested = receiver_type.respond_to?(:nested_types) ? receiver_type.nested_types : nil
+      scope = { receiver_type.name => receiver_type }
+      scope.merge(nested) if nested && !nested.empty?
+      scope
+    end
+
+    # Looks up a bare type name, consulting the active method-receiver nested
+    # scope before the module type namespace so nested types self-reference
+    # by their short name inside their own methods.
+    def lookup_named_type(name)
+      (@current_nested_types && @current_nested_types[name]) || @ctx.types[name]
+    end
   end
 end

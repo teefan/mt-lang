@@ -1309,7 +1309,7 @@ module MilkTea
           return [:has_attribute, nil, nil] if callee.name == "has_attribute"
           return [:get, nil, nil] if callee.name == "get"
 
-          type = @ctx.types[callee.name]
+          type = lookup_named_type(callee.name)
           return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
           if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
             raise_sema_error("generic type #{callee.name} requires type arguments")

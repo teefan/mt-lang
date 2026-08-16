@@ -236,7 +236,7 @@ module MilkTea
         end
       end
 
-      def resolve_type_ref(type_ref, type_params: current_type_params, type_param_constraints: current_type_param_constraints, nested_types: nil)
+      def resolve_type_ref(type_ref, type_params: current_type_params, type_param_constraints: current_type_param_constraints, nested_types: current_nested_types)
         base = resolve_non_nullable_type(type_ref, type_params:, type_param_constraints:, nested_types:)
         return base if type_ref.is_a?(AST::FunctionType) || type_ref.is_a?(AST::ProcType) || type_ref.is_a?(AST::TupleType)
 
@@ -1075,7 +1075,7 @@ module MilkTea
         when AST::Identifier
           return current_type_params[expression.name] if current_type_params.key?(expression.name)
 
-          @ctx.types[expression.name]
+          lookup_named_type(expression.name)
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 

@@ -22,25 +22,31 @@ module MilkTea
             when AST::ExtendingBlock
               dispatch_receiver_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints = resolve_methods_receiver_target(decl.type_name)
 
-              decl.methods.each do |method|
-                begin
-                  binding = with_error_node(method) do
-                    declare_function_binding(
-                      method,
-                      receiver_type:,
-                      declared_receiver_type: receiver_type,
-                      receiver_type_param_names:,
-                      receiver_type_param_constraints:,
-                    )
-                  end
-                  instance_method = receiver_type && method.kind != :static
-                  method_key = instance_method ? binding.name : "static:#{binding.name}"
-                  raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @ctx.methods[dispatch_receiver_type].key?(method_key)
+              previous_nested_types = @current_nested_types
+              @current_nested_types = method_receiver_nested_scope(receiver_type)
+              begin
+                decl.methods.each do |method|
+                  begin
+                    binding = with_error_node(method) do
+                      declare_function_binding(
+                        method,
+                        receiver_type:,
+                        declared_receiver_type: receiver_type,
+                        receiver_type_param_names:,
+                        receiver_type_param_constraints:,
+                      )
+                    end
+                    instance_method = receiver_type && method.kind != :static
+                    method_key = instance_method ? binding.name : "static:#{binding.name}"
+                    raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @ctx.methods[dispatch_receiver_type].key?(method_key)
 
-                  @ctx.methods[dispatch_receiver_type][method_key] = binding
-                rescue SemanticError => e
-                  collect_structural_error(e)
+                    @ctx.methods[dispatch_receiver_type][method_key] = binding
+                  rescue SemanticError => e
+                    collect_structural_error(e)
+                  end
                 end
+              ensure
+                @current_nested_types = previous_nested_types
               end
             end
           end
@@ -604,6 +610,7 @@ module MilkTea
         previous_type_substitutions = @current_type_substitutions
         previous_specialization_owner = @current_specialization_owner
         previous_value_type_params = @current_value_type_params
+        previous_nested_types = @current_nested_types
         started_check = false
         return if binding.external
         return if @checked_function_bindings[binding.object_id]
@@ -614,6 +621,7 @@ module MilkTea
         @current_type_substitutions = binding.type_substitutions
         @current_specialization_owner = binding.specialization_owner
         @current_value_type_params = resolve_value_type_params(binding.ast.type_params)
+        @current_nested_types = method_receiver_nested_scope(binding.declared_receiver_type)
         with_error_node(binding.ast) do
           with_scope(binding.body_params) do |scopes|
             start_local_completion_frame(binding, scopes)
@@ -669,6 +677,7 @@ module MilkTea
         @current_type_substitutions = previous_type_substitutions
         @current_specialization_owner = previous_specialization_owner
         @current_value_type_params = previous_value_type_params
+        @current_nested_types = previous_nested_types
         @checking_function_bindings.delete(binding.object_id)
       end
 

@@ -118,8 +118,10 @@ module MilkTea
         parameter_setup = []
         previous_type_substitutions = @ctx.current_type_substitutions
         previous_value_type_params = @ctx.current_value_type_params
+        previous_nested_types = @current_nested_types
         @ctx.current_type_substitutions = binding.type_substitutions
         @ctx.current_value_type_params = resolve_value_type_params(decl.type_params)
+        @current_nested_types = method_receiver_nested_scope(binding.declared_receiver_type)
 
         return lower_async_function_decl(binding, receiver_type:) if binding.async
 
@@ -179,6 +181,7 @@ module MilkTea
       ensure
         @ctx.current_type_substitutions = previous_type_substitutions
         @ctx.current_value_type_params = previous_value_type_params
+        @current_nested_types = previous_nested_types
       end
 
       def resolve_value_type_params(type_params)

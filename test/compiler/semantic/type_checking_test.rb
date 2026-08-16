@@ -3134,6 +3134,39 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_nested_struct_method_self_reference_by_bare_name
+    source = <<~MT
+      # module demo.nested_self_ref
+
+      struct Outer:
+          struct Counter:
+              value: int
+              editable function inc() -> void:
+                  this.value += 1
+              static function zero() -> Counter:
+                  return Counter(value = 0)
+              function clone() -> Counter:
+                  return Counter(value = this.value)
+          c: Counter
+
+      function main() -> int:
+          var o: Outer
+          o.c = Outer.Counter.zero()
+          o.c.inc()
+          let cloned = o.c.clone()
+          return cloned.value
+    MT
+
+    result = check_program_source(source)
+    outer_type = result.root_analysis.types.fetch("Outer")
+    counter_type = outer_type.nested_types.fetch("Counter")
+    methods = result.root_analysis.methods.fetch(counter_type)
+
+    assert_equal counter_type, methods.fetch("static:zero").type.return_type
+    assert_equal counter_type, methods.fetch("clone").type.return_type
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_array_construction_for_locals_consts_and_struct_fields
     source = <<~MT
       # module demo.arrays
