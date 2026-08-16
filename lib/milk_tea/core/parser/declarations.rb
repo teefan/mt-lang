@@ -369,10 +369,11 @@ module MilkTea
         AST::AttributeDecl.new(name: name_token.lexeme, targets:, params:, visibility:, line:, column: name_token.column)
       end
 
-      def parse_struct_decl(packed: false, alignment: nil, visibility: :private, attributes: [], inline_methods: true)
+      def parse_struct_decl(packed: false, alignment: nil, visibility: :private, attributes: [], qualified_parts: [])
         line = previous.line
         name_token = consume_name("expected struct name")
         name = name_token.lexeme
+        qualified_name = qualified_parts + [name]
         lifetime_params, type_params = parse_struct_decl_params
         implements = parse_implements_clause
         c_name = parse_optional_c_name
@@ -380,29 +381,33 @@ module MilkTea
         receiver_type_param_names = type_params.map(&:name)
         members = with_type_param_names(receiver_type_param_names) do
           parse_recoverable_block do
-            parse_struct_member
+            parse_struct_member(qualified_name)
           end
         end
         fields = members.filter_map { |kind, member| member if kind == :field }
         events = members.filter_map { |kind, member| member if kind == :event }
         nested_types = members.filter_map { |kind, member| member if kind == :nested_type }
         methods = members.filter_map { |kind, member| member if kind == :method }
+        nested_extending_blocks = members.filter_map { |kind, _, blocks| blocks if kind == :nested_type }.flatten(1)
         struct_decl = AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, events:, nested_types:, attributes:, packed:, alignment:, visibility:, lifetime_params:, line:, column: name_token.column)
 
-        if inline_methods && methods.any?
-          type_ref_args = type_params.map do |tp|
-            AST::TypeArgument.new(
-              value: AST::TypeRef.new(name: AST::QualifiedName.new(parts: [tp.name]), arguments: [], nullable: false, line: tp.line, column: tp.column),
-              line: tp.line,
-              column: tp.column,
-            )
-          end
-          type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts: [name]), arguments: type_ref_args, nullable: false, line: name_token.line, column: name_token.column)
-          extending_block = AST::ExtendingBlock.new(type_name: type_ref, methods:, line: name_token.line, column: name_token.column)
-          [struct_decl, extending_block]
-        else
-          struct_decl
+        extending_blocks = []
+        extending_blocks << inline_methods_extending_block(qualified_name, type_params, methods, name_token) if methods.any?
+        extending_blocks.concat(nested_extending_blocks)
+
+        extending_blocks.empty? ? struct_decl : [struct_decl, *extending_blocks]
+      end
+
+      def inline_methods_extending_block(qualified_name, type_params, methods, name_token)
+        type_ref_args = type_params.map do |tp|
+          AST::TypeArgument.new(
+            value: AST::TypeRef.new(name: AST::QualifiedName.new(parts: [tp.name]), arguments: [], nullable: false, line: tp.line, column: tp.column),
+            line: tp.line,
+            column: tp.column,
+          )
         end
+        type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts: qualified_name), arguments: type_ref_args, nullable: false, line: name_token.line, column: name_token.column)
+        AST::ExtendingBlock.new(type_name: type_ref, methods:, line: name_token.line, column: name_token.column)
       end
 
       def parse_struct_decl_params
@@ -459,7 +464,7 @@ module MilkTea
         result
       end
 
-      def parse_struct_member
+      def parse_struct_member(qualified_name)
         field_attributes = parse_attribute_applications
 
         if check_method_start?
@@ -475,7 +480,9 @@ module MilkTea
 
         if check(:struct) && !check_next(:colon)
           advance
-          return [:nested_type, parse_struct_decl(visibility:, attributes: field_attributes, inline_methods: false)]
+          result = parse_struct_decl(visibility:, attributes: field_attributes, qualified_parts: qualified_name)
+          nested_decl, *nested_blocks = result.is_a?(Array) ? result : [result]
+          return [:nested_type, nested_decl, nested_blocks]
         end
 
         raise error(visibility_token, "public is only allowed on struct events") if visibility == :public

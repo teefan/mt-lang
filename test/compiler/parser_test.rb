@@ -3450,6 +3450,53 @@ class MilkTeaParserTest < Minitest::Test
     assert_empty edge.nested_types
   end
 
+  def test_parses_nested_struct_with_inline_methods
+    source = <<~MT
+      struct Outer:
+          struct Inner:
+              value: int
+              function read() -> int:
+                  return this.value
+          inner: Inner
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    outer = ast.declarations.first
+    assert_kind_of MilkTea::AST::StructDecl, outer
+    assert_equal 1, outer.nested_types.length
+
+    inner = outer.nested_types.first
+    assert_equal "Inner", inner.name
+    assert_equal %w[value], inner.fields.map(&:name)
+
+    extending_blocks = ast.declarations.grep(MilkTea::AST::ExtendingBlock)
+    assert_equal 1, extending_blocks.length
+    assert_equal %w[Outer Inner], extending_blocks.first.type_name.name.parts
+    assert_equal ["read"], extending_blocks.first.methods.map(&:name)
+  end
+
+  def test_parses_deeply_nested_struct_with_inline_methods
+    source = <<~MT
+      struct A:
+          struct B:
+              struct C:
+                  value: int
+                  function read() -> int:
+                      return this.value
+              c: C
+          b: B
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    a = ast.declarations.first
+    c = a.nested_types.first.nested_types.first
+    assert_equal "C", c.name
+
+    extending_blocks = ast.declarations.grep(MilkTea::AST::ExtendingBlock)
+    assert_equal 1, extending_blocks.length
+    assert_equal %w[A B C], extending_blocks.first.type_name.name.parts
+  end
+
   def test_parses_deeply_nested_struct
     source = <<~MT
       struct A:

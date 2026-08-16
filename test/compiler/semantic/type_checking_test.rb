@@ -3107,6 +3107,33 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_inline_methods_on_nested_structs
+    source = <<~MT
+      # module demo.nested_inline
+
+      struct Outer:
+          struct Inner:
+              value: int
+              function read() -> int:
+                  return this.value
+          inner: Inner
+
+      function main() -> int:
+          var o: Outer
+          o.inner.value = 42
+          return o.inner.read()
+    MT
+
+    result = check_program_source(source)
+    outer_type = result.root_analysis.types.fetch("Outer")
+    inner_type = outer_type.nested_types.fetch("Inner")
+    methods = result.root_analysis.methods.fetch(inner_type)
+
+    assert_equal inner_type, methods.fetch("read").type.receiver_type
+    assert_equal "int", methods.fetch("read").type.return_type.name
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_array_construction_for_locals_consts_and_struct_fields
     source = <<~MT
       # module demo.arrays
