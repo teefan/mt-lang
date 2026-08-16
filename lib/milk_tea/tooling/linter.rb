@@ -70,6 +70,7 @@ module MilkTea
       redundant-ignored-match-binding
       prefer-let-else
       prefer-var-else
+      prefer-inline-methods
       redundant-bool-compare
       redundant-cast
       redundant-else
@@ -96,6 +97,7 @@ module MilkTea
       "redundant-type-annotation" => "Remove redundant type annotation",
       "prefer-let-else" => "Rewrite as let-else",
       "prefer-var-else" => "Rewrite as var-else",
+      "prefer-inline-methods" => "Inline methods into struct",
       "trailing-list-comma" => "Remove trailing list comma",
     }.freeze
     EVENT_STACK_SNAPSHOT_WARNING_THRESHOLD = 128

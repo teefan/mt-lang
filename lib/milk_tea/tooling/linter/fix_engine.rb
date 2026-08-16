@@ -17,6 +17,7 @@ module MilkTea
         when "redundant-else"         then redundant_else_edits(lines, warning)
         when "redundant-return"       then redundant_return_edits(lines, warning)
         when "redundant-type-annotation" then redundant_type_annotation_edits(lines, warning)
+        when "prefer-inline-methods"  then prefer_inline_methods_edits(lines, warning)
         when "unused-import"          then unused_import_edits(lines, warning)
         when "trailing-list-comma"    then trailing_list_comma_edits(lines, warning)
         else []
@@ -150,6 +151,51 @@ module MilkTea
         return [] unless lines[line_idx]&.match?(/\A\s*return\s*\z/)
 
         [FixEdit.new(start_line: line_idx, start_char: 0, end_line: line_idx + 1, end_char: 0, new_text: "")]
+      end
+
+      # Moves the methods of an `extending X:` block inline into the matching
+      # `struct X:` declaration. Only rewrites when the struct immediately
+      # precedes the extending block (blank lines allowed between them); other
+      # layouts are left alone since the move would be non-local.
+      def self.prefer_inline_methods_edits(lines, warning)
+        name = warning.symbol_name
+        return [] unless name && warning.line
+
+        struct_idx = lines.index { |l| l.match?(/\A\s*struct\s+#{Regexp.escape(name)}\b/) }
+        return [] unless struct_idx
+
+        last_member_idx = nil
+        ((struct_idx + 1)...lines.length).each do |i|
+          l = lines[i]
+          break if !l.chomp.empty? && !l.start_with?(" ", "\t")
+
+          last_member_idx = i unless l.chomp.empty?
+        end
+        return [] unless last_member_idx
+
+        ext_start_idx = warning.line - 1
+        return [] unless last_member_idx < ext_start_idx
+
+        ext_end_idx = ext_start_idx
+        ((ext_start_idx + 1)...lines.length).each do |i|
+          l = lines[i]
+          break if !l.chomp.empty? && !l.start_with?(" ", "\t")
+
+          ext_end_idx = i unless l.chomp.empty?
+        end
+
+        method_lines = lines[(ext_start_idx + 1)..ext_end_idx].to_a
+        method_lines.shift while method_lines.first && method_lines.first.chomp.empty?
+        method_lines.pop while method_lines.last && method_lines.last.chomp.empty?
+        return [] if method_lines.empty?
+
+        between = lines[(last_member_idx + 1)...ext_start_idx]
+        return [] unless between.all? { |l| l.chomp.empty? }
+
+        method_text = method_lines.join
+        new_text = "#{lines[last_member_idx].chomp}\n\n#{method_text}"
+
+        [FixEdit.new(start_line: last_member_idx, start_char: 0, end_line: ext_end_idx + 1, end_char: 0, new_text: new_text)]
       end
 
       def self.unused_import_edits(lines, warning)

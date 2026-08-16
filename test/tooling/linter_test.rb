@@ -3409,4 +3409,53 @@ class MilkTeaLinterPreferInlineMethodsTest < Minitest::Test
 
     refute warnings.any? { |entry| entry.code == "prefer-inline-methods" }
   end
+
+  def test_fix_source_inlines_methods
+    source = <<~MT
+      struct Counter:
+          value: int
+
+      extending Counter:
+          function read() -> int:
+              return this.value
+
+      function main() -> int:
+          var c = Counter(value = 10)
+          return c.read()
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["prefer-inline-methods"])
+
+    expected = <<~MT
+      struct Counter:
+          value: int
+
+          function read() -> int:
+              return this.value
+
+      function main() -> int:
+          var c = Counter(value = 10)
+          return c.read()
+    MT
+
+    assert_equal expected, fixed
+  end
+
+  def test_fix_source_does_not_fix_non_adjacent_extending
+    source = <<~MT
+      struct Counter:
+          value: int
+
+      function helper() -> int:
+          return 0
+
+      extending Counter:
+          function read() -> int:
+              return this.value
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["prefer-inline-methods"])
+
+    assert_equal source, fixed
+  end
 end
