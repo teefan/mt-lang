@@ -16,7 +16,8 @@ module MilkTea
           # Enrich with hierarchical children from AST
           ast = @workspace.get_ast(uri)
           if ast && result
-            enrich_with_children(result, ast)
+            facts = @workspace.get_facts(uri)
+            enrich_with_children(result, ast, facts)
           end
 
           module_name = resolve_outline_module_name(uri)
@@ -74,17 +75,42 @@ module MilkTea
           children
         end
 
-        def enrich_with_children(symbols, ast)
+        def enrich_with_children(symbols, ast, facts)
           removed_local_names = []
           removed_method_names = []
           removed_nested_type_names = []
           removed_event_names = []
           name_index = symbols.each_with_object(Hash.new { |h, k| h[k] = [] }) { |s, h| h[s[:name]] << s }
 
-          ast.declarations&.each do |decl|
+          flatten_module_declarations(ast.declarations).each do |decl|
             removed_nested_type_names.concat(collect_nested_type_names(decl)) if decl.is_a?(AST::StructDecl)
 
             case decl
+            when AST::VarDecl
+              parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
+              next unless parent
+
+              detail = decl.type ? type_detail_string(decl.type) : nil
+              detail ||= resolved_local_type_detail(decl, facts)
+              parent[:detail] = detail if detail
+
+            when AST::TypeAliasDecl
+              parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
+              next unless parent
+
+              if (detail = type_detail_string(decl.target))
+                parent[:detail] = "= #{detail}"
+              end
+
+            when AST::ExternFunctionDecl, AST::ForeignFunctionDecl
+              parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
+              next unless parent
+
+              detail_parts = []
+              detail_parts << 'async' if decl.respond_to?(:async) && decl.async
+              detail_parts << "-> #{type_detail_string(decl.return_type) || 'void'}"
+              parent[:detail] = detail_parts.join(' ')
+
             when AST::EventDecl
               parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
               next unless parent
@@ -100,26 +126,11 @@ module MilkTea
               detail_parts = []
               detail_parts << 'const' if decl.respond_to?(:const) && decl.const
               detail_parts << 'async' if decl.respond_to?(:async) && decl.async
-              if (ret = type_detail_string(decl.return_type))
-                detail_parts << "-> #{ret}"
-              end
-              parent[:detail] = detail_parts.join(' ') unless detail_parts.empty?
+              detail_parts << "-> #{type_detail_string(decl.return_type) || 'void'}"
+              parent[:detail] = detail_parts.join(' ')
 
               locals = collect_local_decls(decl.body)
-              next unless locals&.any?
-
-              parent[:children] ||= []
-              parent_children = parent[:children]
-              locals.each do |local|
-                next unless local.name
-
-                child = local_decl_symbol(local)
-                next unless child
-
-                parent_children << child unless parent_children.any? { |pc| pc[:name] == child[:name] }
-                removed_local_names << local.name
-                removed_local_names.concat(descendant_names(child))
-              end
+              append_local_children(parent, locals, facts, removed_local_names)
             when AST::ExtendingBlock
               type_name_str = decl.type_name.name.parts.join('.')
 
@@ -153,20 +164,7 @@ module MilkTea
                 removed_method_names << child[:name] if child[:kind] == 6
 
                 locals = collect_local_decls(method.respond_to?(:body) ? method.body : nil)
-                next unless locals&.any?
-
-                child[:children] ||= []
-                child_children = child[:children]
-                locals.each do |local|
-                  next unless local.name
-
-                  local_child = local_decl_symbol(local)
-                  next unless local_child
-
-                  child_children << local_child unless child_children.any? { |pc| pc[:name] == local_child[:name] }
-                  removed_local_names << local.name
-                  removed_local_names.concat(descendant_names(local_child))
-                end
+                append_local_children(child, locals, facts, removed_local_names)
               end
             when AST::ConstDecl
               parent = name_index[decl.name]&.find { |s| symbol_line(s) == (decl.line || 0) }
@@ -179,25 +177,13 @@ module MilkTea
               next unless decl.block_body
 
               locals = collect_local_decls(decl.block_body)
-              next unless locals&.any?
-
-              parent[:children] ||= []
-              parent_children = parent[:children]
-              locals.each do |local|
-                next unless local.name
-
-                child = local_decl_symbol(local)
-                next unless child
-
-                parent_children << child unless parent_children.any? { |pc| pc[:name] == child[:name] }
-                removed_local_names << local.name
-                removed_local_names.concat(descendant_names(child))
-              end
+              append_local_children(parent, locals, facts, removed_local_names)
             else
               parent_name = child_parent_name(decl)
               parent = parent_name ? name_index[parent_name]&.find { |s| symbol_line(s) == (decl.line || 0) } : nil
               next unless parent
 
+              detail_parts = []
               if decl.is_a?(AST::StructDecl) && decl.implements&.any?
                 ifaces = decl.implements.map { |i|
                   base = i.respond_to?(:parts) ? i.parts.join('.') : i.name.parts.join('.')
@@ -210,8 +196,18 @@ module MilkTea
                         end
                   "#{base}#{args}"
                 }.join(', ')
-                parent[:detail] = "(#{ifaces})"
+                detail_parts << "(#{ifaces})"
               end
+
+              if decl.respond_to?(:backing_type) && decl.backing_type && (bt = type_detail_string(decl.backing_type))
+                detail_parts << ": #{bt}"
+              end
+
+              if (generic = generic_signature_detail(decl))
+                detail_parts << generic
+              end
+
+              parent[:detail] = detail_parts.join(' ') unless detail_parts.empty?
 
               type_params = expand_generic_type_params(decl)
               if type_params&.any?
@@ -374,14 +370,78 @@ module MilkTea
           line = (a.line) ? a.line : default_line
           return nil unless a.respond_to?(:name) && a.name && line
           col = a.column ? a.column : 1
+
+          detail = nil
+          if a.respond_to?(:fields) && a.fields&.any?
+            fields = a.fields.map { |f| "#{f.name}: #{type_detail_string(f.type)}" }.join(', ')
+            detail = "(#{fields})"
+          end
+
           {
             name: a.name, kind: 22,
+            detail: detail,
             range: { start: { line: line - 1, character: 0 }, end: { line: line, character: 0 } },
             selectionRange: {
               start: { line: line - 1, character: col - 1 },
               end: { line: line - 1, character: col - 1 + a.name.length },
             },
-          }
+          }.compact
+        end
+
+        # Renders the generic parameter clause of a type declaration, e.g.
+        # `[A, B]` for `struct Pair[A, B]` or `[@a]` for `struct Buffer[@a]`.
+        def generic_signature_detail(decl)
+          parts = []
+          if decl.respond_to?(:lifetime_params) && decl.lifetime_params&.any?
+            parts.concat(decl.lifetime_params.map(&:to_s))
+          end
+          if decl.respond_to?(:type_params) && decl.type_params&.any?
+            parts.concat(decl.type_params.map { |tp| tp.respond_to?(:name) ? tp.name : tp.to_s })
+          end
+          parts.empty? ? nil : "[#{parts.join(', ')}]"
+        end
+
+        # Module-level `when` branches are compile-time conditionals; the token
+        # symbol scan lists their declarations, so flatten the branch bodies so
+        # the enrichment below can type them like ordinary top-level decls.
+        def flatten_module_declarations(declarations)
+          (declarations || []).flat_map do |decl|
+            if decl.is_a?(AST::WhenStmt)
+              (decl.branches || []).flat_map { |b| flatten_module_declarations(b.body) } +
+                flatten_module_declarations(decl.else_body)
+            else
+              [decl]
+            end
+          end
+        end
+
+        # Adds local declaration children to an outline symbol. Destructure
+        # locals (`let Vec2(x, y) = ...`) introduce a spurious flat variable
+        # symbol named after the destructure type; that symbol is collected for
+        # removal instead of being shown as a typed child.
+        def append_local_children(container, locals, facts, removed_local_names)
+          return unless locals&.any?
+
+          container[:children] ||= []
+          children = container[:children]
+          locals.each do |local|
+            if local.respond_to?(:destructure_bindings) && local.destructure_bindings
+              type_name = local.destructure_type_name
+              if type_name
+                name = type_name.is_a?(Array) ? type_name.join('.') : type_name.to_s
+                removed_local_names << name unless removed_local_names.include?(name)
+              end
+              next
+            end
+            next unless local.name
+
+            child = local_decl_symbol(local, facts:)
+            next unless child
+
+            children << child unless children.any? { |pc| pc[:name] == child[:name] }
+            removed_local_names << local.name
+            removed_local_names.concat(descendant_names(child))
+          end
         end
 
         def collect_local_decls(body)
@@ -417,7 +477,7 @@ module MilkTea
           end
         end
 
-        def local_decl_symbol(decl)
+        def local_decl_symbol(decl, facts: nil)
           return nil unless decl.name
           return nil if decl.name == '_'
 
@@ -429,8 +489,9 @@ module MilkTea
           if decl.respond_to?(:value) && decl.value.is_a?(AST::ProcExpr)
             detail ||= proc_signature_detail(decl.value)
             proc_locals = collect_local_decls(decl.value.body)
-            children = proc_locals.filter_map { |l| local_decl_symbol(l) }
+            children = proc_locals.filter_map { |l| local_decl_symbol(l, facts:) }
           end
+          detail ||= resolved_local_type_detail(decl, facts)
 
           {
             name: decl.name, kind: 13,
@@ -439,6 +500,60 @@ module MilkTea
             selectionRange: { start: { line: line - 1, character: col - 1 }, end: { line: line - 1, character: col - 1 + decl.name.length } },
             children: children.any? ? children : nil,
           }.compact
+        end
+
+        # Resolves the declared type of an inferred local from semantic facts.
+        # Prefers the sema binding type (which reflects let/var ... else: and
+        # other flow refinement), falling back to the initializer expression
+        # type recorded during checking. Returns nil when facts are unavailable
+        # or the binding is missing.
+        def resolved_local_type_detail(decl, facts)
+          return nil unless facts
+          return nil unless facts.respond_to?(:binding_resolution) && facts.binding_resolution
+
+          binding_id = facts.binding_resolution.declaration_binding_ids[decl.object_id]
+          if binding_id
+            type = facts.binding_resolution.binding_types[binding_id]
+            return nil if type.is_a?(Types::Error)
+            return short_type_detail(type) if type
+          end
+
+          return nil unless decl.respond_to?(:value) && decl.value
+          return nil unless facts.respond_to?(:resolved_expr_types)
+
+          node_id = facts.respond_to?(:ast) && facts.ast ? facts.ast.node_ids[decl.value.object_id] : nil
+          return nil unless node_id
+
+          type = facts.resolved_expr_types[node_id]
+          return nil if type.is_a?(Types::Error)
+
+          short_type_detail(type)
+        end
+
+        # Renders a resolved semantic type for outline display without module
+        # qualifiers (e.g. std.deque.Deque[int] as Deque[int]). Falls back to
+        # the canonical #to_s when a type has no usable short form.
+        def short_type_detail(type)
+          return nil unless type
+
+          case type
+          when Types::Nullable
+            "#{short_type_detail(type.base)}?"
+          when Types::Span
+            "span[#{short_type_detail(type.element_type)}]"
+          when Types::SoA
+            "SoA[#{short_type_detail(type.element_type)}, #{type.count}]"
+          when Types::StructInstance, Types::VariantInstance, Types::GenericInstance
+            args = type.arguments.map { |arg| short_type_arg(arg) }.join(', ')
+            args.empty? ? type.name : "#{type.name}[#{args}]"
+          else
+            name = type.respond_to?(:name) ? type.name.to_s : ''
+            name.empty? ? type.to_s : name
+          end
+        end
+
+        def short_type_arg(arg)
+          arg.is_a?(Types::LiteralTypeArg) ? arg.value.to_s : short_type_detail(arg)
         end
 
         def descendant_names(symbol)
@@ -487,9 +602,7 @@ module MilkTea
           detail_parts << 'mut' if m.respond_to?(:kind) && m.kind == :editable_function
           detail_parts << 'static' if m.respond_to?(:kind) && m.kind == :static_function
           detail_parts << 'async' if m.respond_to?(:async) && m.async
-          if (ret = type_detail_string(m.return_type))
-            detail_parts << "-> #{ret}"
-          end
+          detail_parts << "-> #{type_detail_string(m.return_type) || 'void'}"
           {
             name: m.name, kind: 6,
             range: { start: { line: m.line - 1, character: 0 }, end: { line: (m.respond_to?(:end_line) && m.end_line ? m.end_line : m.line), character: 0 } },
@@ -507,10 +620,11 @@ module MilkTea
           case type
           when AST::TypeRef
             type.to_s
-          when AST::ProcType
+          when AST::FunctionType, AST::ProcType
             params = (type.params || []).map { |p| type_detail_string(p.type) }.join(', ')
             ret = type_detail_string(type.return_type) || 'void'
-            "proc(#{params}) -> #{ret}"
+            keyword = type.is_a?(AST::FunctionType) ? 'fn' : 'proc'
+            "#{keyword}(#{params}) -> #{ret}"
           when AST::TupleType
             base = "(#{(type.element_types || []).map { |t| type_detail_string(t) }.join(', ')})"
             type.nullable ? "#{base}?" : base
