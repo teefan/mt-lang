@@ -404,6 +404,12 @@ module MilkTea
         end
 
         def handle_workspace_diagnostic(params)
+          progress = nil
+          if (work_done_token = params['workDoneToken'])
+            progress = create_progress_handle(@protocol, work_done_token)
+            progress.report(percentage: 0, message: 'Collecting workspace diagnostics...')
+          end
+
           previous_ids = params['previousResultIds'] || []
           prev_map = previous_ids.each_with_object({}) do |entry, h|
             h[entry['uri']] = entry['value'] if entry.is_a?(Hash) && entry['uri']
@@ -420,15 +426,19 @@ module MilkTea
 
             cached = @workspace_diagnostic_cache[uri]
             if cached && cached[:result_id] == prev_map[uri] && cached[:fingerprint] == fingerprint
-              { uri: uri, kind: 'unchanged', resultId: result_id, items: [] }
+              { uri: uri, kind: 'unchanged', resultId: result_id, items: [], version: nil }
             else
               @workspace_diagnostic_cache[uri] = { result_id: result_id, fingerprint: fingerprint }
-              { uri: uri, kind: 'full', resultId: result_id, items: diagnostics }
+              { uri: uri, kind: 'full', resultId: result_id, items: diagnostics, version: nil }
             end
           end
 
+          progress&.report(percentage: 100, message: "#{items.length} document#{items.length == 1 ? '' : 's'} checked")
+          progress&.done(message: 'Workspace diagnostics ready')
+
           { items: items }
         rescue StandardError => e
+          progress&.done(message: 'Workspace diagnostics failed')
           warn "Error in workspace/diagnostic handler: #{e.message}"
           { items: [] }
         end

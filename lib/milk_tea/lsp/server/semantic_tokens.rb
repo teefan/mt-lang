@@ -18,7 +18,7 @@ module MilkTea
             short_uri = shorten_uri(uri) || uri
             log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
                               "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=hit data_len=#{cached[:data].length}")
-            return { data: cached[:data] }
+            return { resultId: cached[:result_id], data: cached[:data] }
           end
 
           tokens_start = monotonic_time
@@ -37,9 +37,8 @@ module MilkTea
           data = encode_semantic_tokens(semantic_entries)
           encode_ms = elapsed_ms(encode_start)
 
-          @semantic_tokens_cache[uri] = { content_hash: cache_key, data: data }
-
           result_id = next_semantic_token_result_id(uri)
+          @semantic_tokens_cache[uri] = { content_hash: cache_key, data: data, result_id: result_id }
           @semantic_tokens_delta_cache[uri] = {
             result_id: result_id,
             content_hash: cache_key,
@@ -51,7 +50,7 @@ module MilkTea
           log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
                             "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=miss tokens=#{tokens.length} entries=#{semantic_entries.length} data_len=#{data.length} facts=on stages_ms=tokens:#{tokens_ms},facts:#{facts_ms},build:#{build_ms},encode:#{encode_ms}")
 
-          { data: data }
+          { resultId: result_id, data: data }
         rescue StandardError => e
           warn "Error in semanticTokens/full handler: #{e.message}"
           { data: [] }
@@ -1745,7 +1744,12 @@ module MilkTea
 
           start_offset = prefix * 5
           delete_count = old_mid * 5
-          insert_tokens = encode_semantic_tokens(new_entries[prefix...(new_entries.length - suffix)])
+
+          # The inserted segment must keep the relative encoding against the
+          # last unchanged token preceding the edit, so encode the full token
+          # stream from the document origin and slice out the middle segment.
+          full_encoded = encode_semantic_tokens(new_entries)
+          insert_tokens = full_encoded[start_offset...(new_entries.length - suffix) * 5]
 
           [{ start: start_offset, deleteCount: delete_count, data: insert_tokens }]
         end

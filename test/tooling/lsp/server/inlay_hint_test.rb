@@ -108,4 +108,32 @@ class InlayHintTest < Minitest::Test
              "Already-named arguments should not have hints"
     end
   end
+
+  def test_inferred_type_hints_for_local_declarations
+    with_lsp_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_ih_inferred_type_test.mt"
+      source = <<~MT
+        struct Point:
+            x: int
+            y: int
+
+        function main() -> int:
+            var origin = Point(x = 0, y = 0)
+            return 0
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/inlayHint", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 20, "character" => 0 } }
+      })
+      result = response.fetch("result")
+      labels = result.map { |hint| hint["label"] }
+
+      assert_includes labels, ": Point"
+    end
+  end
 end

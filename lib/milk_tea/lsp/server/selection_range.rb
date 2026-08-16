@@ -24,7 +24,7 @@ module MilkTea
           line_str = lines[lsp_line] || ""
           return nil if line_str.empty?
 
-          token_range = token_bounds_at(line_str, lsp_char)
+          token_range = token_bounds_at(line_str, lsp_line, lsp_char)
           line_range = { start: { line: lsp_line, character: 0 },
                          end: { line: lsp_line, character: line_str.length } }
 
@@ -47,7 +47,7 @@ module MilkTea
           current
         end
 
-        def token_bounds_at(line_str, lsp_char)
+        def token_bounds_at(line_str, lsp_line, lsp_char)
           col = [lsp_char, line_str.length - 1].min
           col = [col, 0].max
 
@@ -61,8 +61,8 @@ module MilkTea
           return nil if left == right && line_str[left] !~ /[A-Za-z0-9_]/
 
           {
-            start: { line: 0, character: left },
-            end: { line: 0, character: right + 1 },
+            start: { line: lsp_line, character: left },
+            end: { line: lsp_line, character: right + 1 },
           }
         end
 

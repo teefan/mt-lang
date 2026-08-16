@@ -1951,6 +1951,36 @@ end
       end
     end
 
+    def test_semantic_tokens_full_returns_result_id_and_delta_handshake
+      with_lsp_server do |client|
+        client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_delta_handshake_test.mt"
+        source = "function main() -> int:\n    return 0\n"
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        full = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        }).fetch("result")
+        refute_nil full["resultId"], "full semantic tokens response should include resultId for delta support"
+        assert_kind_of Array, full["data"]
+
+        delta = client.send_request("textDocument/semanticTokens/full/delta", {
+          "textDocument" => { "uri" => uri },
+          "previousResultId" => full["resultId"],
+        }).fetch("result")
+
+        if delta.key?("edits")
+          assert_equal full["resultId"], delta["resultId"]
+          assert_equal [], delta["edits"]
+        else
+          # Full fallback responses are spec-legal from a delta request.
+          assert delta.key?("data")
+        end
+      end
+    end
+
   public
 
 end

@@ -5,11 +5,11 @@ module MilkTea
     class Server
       module ServerTypeHierarchy
         TYPE_KIND_MAP = {
-          struct: 22,
-          enum: 13,
-          flags: 13,
-          variant: 13,
-          union: 22,
+          struct: 23,
+          enum: 10,
+          flags: 10,
+          variant: 23,
+          union: 23,
           interface: 11,
         }.freeze
 

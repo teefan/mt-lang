@@ -108,13 +108,11 @@ module MilkTea
         def collect_inferred_type_hints(facts, start_line, start_char, end_line, end_char)
           hints = []
           collect_local_decls(facts.ast).each do |decl|
+            next unless decl.name && decl.name != '_'
             next unless decl.type.nil?
             next unless position_in_range?(decl.line - 1, decl.column - 1, start_line, start_char, end_line, end_char)
 
-            binding = facts.values[decl.name]
-            next unless binding
-
-            display_type = describe_type_for_hint(binding.storage_type)
+            display_type = resolved_decl_type_detail(decl, facts)
             next unless display_type
 
             hints << {
@@ -127,20 +125,30 @@ module MilkTea
           hints
         end
 
+        # Resolves the declared type of an inferred local from semantic facts so
+        # the hint reflects flow refinement (let/var ... else:, ?-propagation).
+        def resolved_decl_type_detail(decl, facts)
+          resolution = facts.respond_to?(:binding_resolution) ? facts.binding_resolution : nil
+          return nil unless resolution
+
+          binding_id = resolution.declaration_binding_ids[decl.object_id]
+          return nil unless binding_id
+
+          type = resolution.binding_types[binding_id]
+          return nil if type.is_a?(Types::Error)
+
+          short_type_detail(type)
+        end
+
         def collect_inferred_return_hints(facts, start_line, start_char, end_line, end_char)
           hints = []
           collect_function_defs(facts.ast).each do |func|
             next unless func.return_type.nil?
             next unless position_in_range?(func.line - 1, func.column - 1, start_line, start_char, end_line, end_char)
 
-            binding = facts.functions[func.name]
-            unless binding
-              facts.imports.each_value do |mod|
-                binding = mod.functions[func.name]
-                break if binding
-              end
-            end
+            binding = resolve_function_binding(facts, func)
             next unless binding
+            next unless binding.respond_to?(:type) && binding.type.respond_to?(:return_type)
 
             return_type = binding.type.return_type
             next unless return_type
@@ -158,6 +166,20 @@ module MilkTea
             }
           end
           hints
+        end
+
+        def resolve_function_binding(facts, func)
+          name = func.name
+          if func.is_a?(AST::MethodDef)
+            facts.methods.each_value do |methods|
+              binding = methods[name] || methods["static:#{name}"]
+              return binding if binding
+            end
+            return nil
+          end
+
+          facts.functions[name] ||
+            facts.imports.each_value.find { |mod| mod.functions.key?(name) }&.functions&.dig(name)
         end
 
         def collect_local_decls(ast_node)
