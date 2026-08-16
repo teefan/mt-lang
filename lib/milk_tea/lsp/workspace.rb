@@ -11,6 +11,7 @@ require_relative 'workspace/analysis'
 require_relative 'workspace/dependency_graph'
 require_relative 'workspace/definition_index'
 require_relative 'workspace/collection'
+require_relative 'workspace/module_index'
 require_relative 'workspace/utilities'
 
 module MilkTea
@@ -81,6 +82,10 @@ module MilkTea
         @identifier_index = {}
         @identifier_index_mutex = Mutex.new
         @indexed_uris = Set.new
+        # Module index: root path -> { mt_files: {dir => {name => path}}, mt_dirs: {dir => Set<subdir>} }
+        @module_index = {}
+        @module_index_mutex = Mutex.new
+        @indexed_workspace_paths = nil
       end
 
       def reset
@@ -113,6 +118,8 @@ module MilkTea
         @reverse_import_dependents.clear
         @diagnostics_cache.clear
         @facts_generation.clear
+        @module_index_mutex.synchronize { @module_index.clear }
+        @indexed_workspace_paths = nil
       end
 
       include WorkspaceStore
@@ -121,6 +128,7 @@ module MilkTea
       include WorkspaceDependencyGraph
       include WorkspaceDefinitionIndex
       include WorkspaceCollection
+      include WorkspaceModuleIndex
       include WorkspaceUtilities
     end
   end

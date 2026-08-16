@@ -10,7 +10,7 @@ module MilkTea
           content = params['textDocument']['text']
           source = @workspace.document_source(uri) || 'unknown'
           open_start = monotonic_time
-          open_stats = @workspace.open_document(uri, content)
+          open_stats = @workspace.open_document(uri, content, warm_facts: false)
           open_ms = elapsed_ms(open_start)
           @semantic_tokens_cache.delete(uri)
           @semantic_tokens_delta_cache.delete(uri)
@@ -38,7 +38,7 @@ module MilkTea
           changes = params['contentChanges'] || []
           previous_content = @workspace.get_content(uri)
 
-          @workspace.apply_incremental_changes(uri, changes)
+          @workspace.apply_incremental_changes(uri, changes, warm_facts: false)
 
           invalidate_document_caches(uri)
           current_content = @workspace.get_content(uri)

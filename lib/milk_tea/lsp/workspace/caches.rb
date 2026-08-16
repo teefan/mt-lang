@@ -23,12 +23,28 @@ module MilkTea
         end
 
         def get_ast(uri)
-          @ast_cache[uri] ||= parse_document(uri)
+          @ast_cache[uri] ||= begin
+            # Prefer the facts' own AST so consumers that iterate the AST and
+            # resolve bindings via facts.binding_resolution operate on the same
+            # node instances (binding IDs are keyed by AST node object_id).
+            peek_facts(uri)&.ast || parse_document(uri)
+          end
         end
 
         def get_facts(uri, allow_last_good_fallback: true)
           snapshot = get_tooling_snapshot(uri, allow_last_good_fallback:)
           snapshot&.facts
+        end
+
+        # Return the most recent facts already computed for +uri+ without ever
+        # running analysis or blocking on the analysis mutex. Used by hot request
+        # paths (semantic tokens) that must not stall the request thread on sema;
+        # they serve the latest cached/last-good facts and are told to re-fetch
+        # once fresh facts land in the background.
+        def peek_facts(uri)
+          @facts_cache_mutex.synchronize do
+            @facts_cache[uri] || @last_good_facts_cache[uri]
+          end
         end
 
         def get_tooling_snapshot(uri, allow_last_good_fallback: true)

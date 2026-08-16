@@ -177,6 +177,7 @@ module MilkTea
 
         def handle_did_change_watched_files(params)
           changes = params['changes'] || []
+          @workspace.apply_module_index_events(changes)
           affected_uris = Set.new
           changes.each do |change|
             uri = change['uri']
@@ -198,6 +199,9 @@ module MilkTea
           @semantic_tokens_cache.delete(uri)
           @semantic_tokens_delta_cache.delete(uri)
           @fixall_cache.delete(uri)
+          @document_symbol_cache.delete(uri)
+          @completion_docs_cache.clear
+          @completion_resolve_cache.clear
           path = uri_to_path(uri)
           if path
             prefix = "#{path}:"

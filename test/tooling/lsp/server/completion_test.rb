@@ -801,4 +801,116 @@ class CompletionTest < Minitest::Test
     end
   end
 
+  def test_import_completion_reflects_module_creation_and_deletion
+    Dir.mktmpdir("milk-tea-lsp-import-index") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+      File.write(File.join(std_dir, "marker.mt"), "public function marker() -> int:\n    return 0\n")
+
+      main_path = File.join(dir, "main.mt")
+      main_source = "import \n"
+      File.write(main_path, main_source)
+
+      protocol = RecordingProtocol.new
+      server = MilkTea::LSP::Server.new(protocol: protocol)
+      server.send(:handle_initialize, { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+      server.send(:handle_initialized, {})
+      server.instance_variable_get(:@_indexing_thread)&.join
+
+      uri = path_to_uri(main_path)
+      server.send(:handle_did_open, {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source },
+      })
+
+      pos = { "textDocument" => { "uri" => uri }, "position" => { "line" => 0, "character" => 7 } }
+      labels = server.send(:handle_completion, pos)[:items].map { |item| item[:label] }
+      assert_includes labels, "std"
+      refute_includes labels, "geometry"
+
+      geometry_path = File.join(dir, "geometry.mt")
+      File.write(geometry_path, "public function area() -> int:\n    return 0\n")
+      server.send(:handle_did_change_watched_files, { "changes" => [{ "uri" => path_to_uri(geometry_path), "type" => 1 }] })
+
+      labels = server.send(:handle_completion, pos)[:items].map { |item| item[:label] }
+      assert_includes labels, "geometry"
+
+      File.delete(geometry_path)
+      server.send(:handle_did_change_watched_files, { "changes" => [{ "uri" => path_to_uri(geometry_path), "type" => 3 }] })
+
+      labels = server.send(:handle_completion, pos)[:items].map { |item| item[:label] }
+      refute_includes labels, "geometry"
+    ensure
+      server&.send(:handle_shutdown, {})
+    end
+  end
+
+  def test_completion_session_refilters_on_incomplete_trigger
+    Dir.mktmpdir("milk-tea-lsp-completion-session") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        function compute_alpha() -> int:
+            return 1
+
+        function compute_beta() -> int:
+            return 2
+
+        function count_items() -> int:
+            return 3
+
+        function main() -> int:
+            return c
+      MT
+      File.write(path, source)
+
+      protocol = RecordingProtocol.new
+      server = MilkTea::LSP::Server.new(protocol: protocol)
+      server.send(:handle_initialize, { "rootUri" => nil, "capabilities" => {} })
+      uri = path_to_uri(path)
+      server.send(:handle_did_open, {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source },
+      })
+
+      let_line = source.lines.index { |line| line.include?("return c") }
+
+      change_to = lambda do |content|
+        server.send(:handle_did_change, {
+          "textDocument" => { "uri" => uri, "version" => 2 },
+          "contentChanges" => [{ "text" => content }],
+        })
+      end
+      complete_at = lambda do |content, trigger_kind|
+        char = content.lines.fetch(let_line).chomp.length
+        server.send(:handle_completion, {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => let_line, "character" => char },
+          "context" => { "triggerKind" => trigger_kind },
+        })
+      end
+
+      labels = ->(response) { response[:items].map { |item| item[:label] } }
+
+      # First request computes and stores the candidate pool (prefix "c").
+      r1 = complete_at.call(source, 1)
+      assert_includes labels.call(r1), "compute_alpha"
+      assert_includes labels.call(r1), "count_items"
+
+      # Extending the prefix re-filters the cached pool; "count_items" drops out.
+      extended = source.sub("return c", "return com")
+      change_to.call(extended)
+      r2 = complete_at.call(extended, 2)
+      assert_includes labels.call(r2), "compute_alpha"
+      assert_includes labels.call(r2), "compute_beta"
+      refute_includes labels.call(r2), "count_items"
+
+      # Shrinking the prefix is NOT a line-context extension: recompute happens
+      # and full "c"-prefixed candidates are served again.
+      change_to.call(source)
+      r3 = complete_at.call(source, 2)
+      assert_includes labels.call(r3), "compute_alpha"
+      assert_includes labels.call(r3), "count_items"
+    ensure
+      server&.send(:handle_shutdown, {})
+    end
+  end
+
 end

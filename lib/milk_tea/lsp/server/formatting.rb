@@ -10,19 +10,29 @@ module MilkTea
           stages = new_perf_stages
           total_start = stages ? monotonic_time : nil
           uri = params['textDocument']['uri']
+
+          content_hash = @workspace.get_content(uri).hash
+          facts = @workspace.get_facts(uri)
+          facts_id = facts&.object_id
+          cached = @document_symbol_cache[uri]
+          if cached && cached[:content_hash] == content_hash && cached[:facts_id] == facts_id
+            return cached[:result]
+          end
+
           symbols = measure_perf_stage(stages, 'symbols') { @workspace.get_symbols(uri) }
           result = measure_perf_stage(stages, 'format') { symbols.map { |sym| format_document_symbol(sym) } }
 
-          # Enrich with hierarchical children from AST
-          ast = @workspace.get_ast(uri)
+          # Enrich with hierarchical children from AST. Use the facts' own AST so
+          # binding_resolution node object_ids line up with the outline locals.
+          ast = facts&.ast || @workspace.get_ast(uri)
           if ast && result
-            facts = @workspace.get_facts(uri)
             enrich_with_children(result, ast, facts)
           end
 
           module_name = resolve_outline_module_name(uri)
           result = wrap_in_module_hierarchy(result, module_name, uri) if module_name && result&.any?
 
+          @document_symbol_cache[uri] = { content_hash: content_hash, facts_id: facts_id, result: result }
           result
         rescue StandardError => e
           warn "Error in documentSymbol handler: #{e.message}"

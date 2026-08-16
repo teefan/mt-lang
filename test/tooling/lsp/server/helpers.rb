@@ -137,7 +137,26 @@ module LSPServerTestHelpers
       @next_id = 1
     end
 
+    SEMANTIC_TOKEN_FACT_DEPENDENT = %w[
+      textDocument/semanticTokens/full
+      textDocument/semanticTokens/full/delta
+      textDocument/semanticTokens/range
+    ].freeze
+
     def send_request(method, params = {})
+      # didOpen defers facts analysis to the background diagnostics worker, so a
+      # semanticTokens request issued right after open would race it. Force the
+      # facts for this document synchronously (via pull diagnostics) first so
+      # semantic-token classification is deterministic.
+      if SEMANTIC_TOKEN_FACT_DEPENDENT.include?(method)
+        uri = params.dig("textDocument", "uri")
+        if uri
+          diagnostic_id = @next_id
+          @next_id += 1
+          write_message({ jsonrpc: "2.0", id: diagnostic_id, method: "textDocument/diagnostic", params: { "textDocument" => { "uri" => uri } } })
+        end
+      end
+
       id = @next_id
       @next_id += 1
       write_message({ jsonrpc: "2.0", id: id, method: method, params: params })

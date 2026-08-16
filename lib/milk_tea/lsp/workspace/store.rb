@@ -29,13 +29,13 @@ module MilkTea
 
         # ── Document lifecycle ──────────────────────────────────────────────────
 
-        def open_document(uri, content)
+        def open_document(uri, content, warm_facts: true)
           @document_state_mutex.synchronize do
             @open_documents[uri] = content
           end
           invalidate_cache(uri)
           enqueue_definition_warmup(uri) unless background_document?(uri)
-          warm_document_facts(uri, content)
+          warm_document_facts(uri, content, warm: warm_facts)
         end
 
         def close_document(uri)
@@ -56,7 +56,7 @@ module MilkTea
           enqueue_definition_warmup(uri) unless background_document?(uri)
         end
 
-        def apply_incremental_changes(uri, changes)
+        def apply_incremental_changes(uri, changes, warm_facts: true)
           content = get_content(uri)
           edits = Array(changes)
 
@@ -79,7 +79,7 @@ module MilkTea
           end
           dependent_uris.each { |dep_uri| invalidate_cache(dep_uri) }
 
-          warm_document_facts(uri, new_content)
+          warm_document_facts(uri, new_content, warm: warm_facts)
         end
 
         def apply_incremental_change_to_content(content, change)
@@ -107,11 +107,16 @@ module MilkTea
         end
 
         # Index all .mt files under root_uri so they are available for workspace-wide queries.
+        # Skips the per-file sweep when the on-disk file set is unchanged since the last
+        # index, so repeated workspace/symbol calls do not re-walk and re-read the tree.
         def index_workspace(root_uri, &progress)
           root_path = uri_to_path(root_uri)
           return unless root_path && File.directory?(root_path)
 
           paths = Dir.glob(File.join(root_path, '**', '*.mt')).sort
+          return if @indexed_workspace_paths == paths
+
+          @indexed_workspace_paths = paths
           total = paths.length
           paths.each_with_index do |path, idx|
             file_uri = path_to_uri(path)

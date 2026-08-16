@@ -209,6 +209,15 @@ module MilkTea
         @fixall_cache = {}
         @definition_file_token_cache = {}
         @definition_file_ast_cache = {}
+        # Completion session re-filtering pool keyed by [uri, line].
+        @completion_session_cache = {}
+        @completion_session_order = []
+        @completion_session_order_set = Set.new
+        # Server-scoped documentation / resolve memoization keyed by [uri, name].
+        @completion_docs_cache = {}
+        @completion_resolve_cache = {}
+        # Enriched documentSymbol outline keyed by uri -> content_hash.
+        @document_symbol_cache = {}
         @diagnostics_perf = {
           scheduled: 0,
           skipped_unchanged: 0,

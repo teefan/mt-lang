@@ -12,6 +12,7 @@
 
 require "tmpdir"
 require "cgi/escape"
+require "fileutils"
 require "json"
 
 PERF_ENABLED = ARGV.include?("--perf")
@@ -438,6 +439,70 @@ def run_all_endpoints_benchmark(iterations_default:)
     measure.call("milkTea/debugInfo", 1, call: lambda {
       server.send(:handle_debug_info, text_doc)
     }, result: lambda { "text" })
+
+    # ── Module index at scale (1500 synthetic modules) ─────────────────────
+    synth_root = File.join(dir, "synth_ws")
+    FileUtils.mkdir_p(File.join(synth_root, "std"))
+    50.times do |i|
+      mod_dir = File.join(synth_root, format("mod_%04d", i))
+      FileUtils.mkdir_p(mod_dir)
+      30.times do |j|
+        File.write(File.join(mod_dir, format("m%03d.mt", j)), "public function value() -> int:\n    return #{j}\n")
+      end
+    end
+    synth_path = File.join(synth_root, "main.mt")
+    synth_source = "import \n"
+    File.write(synth_path, synth_source)
+    synth_uri = AllEndpointsBenchmark.path_to_uri(synth_path)
+    ws.open_document(synth_uri, synth_source)
+
+    measure.call("textDocument/completion (1500-module root)", iterations_default, call: lambda {
+      server.send(:handle_completion, {
+        "textDocument" => { "uri" => synth_uri },
+        "position" => { "line" => 0, "character" => 7 }
+      })
+    }, result: lambda { "items" })
+
+    # ── triggerFromIncompleteCompletions re-filtering sequence ─────────────
+    session_path = File.join(dir, "session.mt")
+    session_source = <<~MT
+      function compute_alpha() -> int:
+          return 1
+
+      function compute_beta() -> int:
+          return 2
+
+      function count_items() -> int:
+          return 3
+
+      function main() -> int:
+          return c
+    MT
+    File.write(session_path, session_source)
+    session_uri = AllEndpointsBenchmark.path_to_uri(session_path)
+    ws.open_document(session_uri, session_source)
+    session_line = session_source.lines.index { |line| line.include?("return c") }
+    session_sequence_ms = nil
+
+    measure.call("textDocument/completion (incomplete-trigger sequence)", 1, warmup: false, call: lambda {
+      word = "comput"
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      word.length.times do |i|
+        content = session_source.sub("return c", "return #{word[0, i + 1]}")
+        server.send(:handle_did_change, {
+          "textDocument" => { "uri" => session_uri, "version" => i + 2 },
+          "contentChanges" => [{ "text" => content }]
+        })
+        char = content.lines.fetch(session_line).chomp.length
+        server.send(:handle_completion, {
+          "textDocument" => { "uri" => session_uri },
+          "position" => { "line" => session_line, "character" => char },
+          "context" => { "triggerKind" => i.zero? ? 1 : 2 }
+        })
+      end
+      session_sequence_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round(2)
+      nil
+    }, result: lambda { "total #{session_sequence_ms} ms" })
 
     # ── Workspace endpoints ────────────────────────────────────────────────
     measure.call("workspace/symbol", 3, call: lambda {

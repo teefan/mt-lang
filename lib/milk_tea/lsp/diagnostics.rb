@@ -31,8 +31,10 @@ module MilkTea
         # Parse
         begin
           parse_start = total_start ? monotonic_time : nil
+          parse_errors = []
           ast = if path && File.file?(path)
                   parse_result = Parser.parse_collecting_errors(content, path: uri)
+                  parse_errors = parse_result.errors
                   parse_result.errors.each { |error| diagnostics << format_error(error) }
                   parse_result.ast
                 else
@@ -63,6 +65,10 @@ module MilkTea
             source_overrides: source_overrides,
             workspace_root_path: workspace_root_path,
             content: content,
+            # A file whose own parse recovered with errors can poison the loader's
+            # program-check cache and yield no facts on the standard path; skip the
+            # program check and resolve imports directly for those files.
+            skip_program_check: !parse_errors.empty?,
           )
           imports_ms = elapsed_ms(imports_start) if imports_start
           unresolved_import_paths = imported_modules.fetch(:unresolved_import_paths)
@@ -167,7 +173,7 @@ module MilkTea
 
       private
 
-      def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil, workspace_root_path: nil, content: nil)
+      def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil, workspace_root_path: nil, content: nil, skip_program_check: false)
         path = uri_to_path(uri)
          return { modules: {}, unresolved_import_paths: [], module_name: nil } unless path && File.file?(path)
 
@@ -186,10 +192,14 @@ module MilkTea
         # cached analysis and resolves correctly. If the program check fails
         # (e.g. missing module), fall through to the standard resolution
         # path so that prelude modules and regular errors are still reported.
-        begin
-          loader.check_program_collecting(path)
-        rescue ModuleLoadError, PackageLockError
-          # best-effort — standard path below handles diagnostics
+        # Skipped when the file's own parse recovered with errors: the program
+        # check poisons the loader cache and yields no facts on that path.
+        unless skip_program_check
+          begin
+            loader.check_program_collecting(path)
+          rescue ModuleLoadError, PackageLockError
+            # best-effort — standard path below handles diagnostics
+          end
         end
 
         resolution_result = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)

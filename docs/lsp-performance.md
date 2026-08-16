@@ -6,7 +6,11 @@ Research into how to drastically improve Milk Tea LSP performance, especially
 techniques used by clangd, SourceKit-LSP, Deno's LSP, Shopify's ruby-lsp,
 typescript-language-server, and Roslyn.
 
-## 1. Profile snapshot (current state)
+## 1. Profile snapshot (pre-optimization baseline)
+
+> The table below is the **pre-optimization baseline** measured against the
+> original implementation. Every row it describes has since been addressed; see
+> §8 for current measurements. Retained for reference.
 
 Measured on Ruby 4.0.3 + YJIT (via `RUBY_YJIT_ENABLE=1`) against a synthetic
 multi-module workspace (10 iterations per endpoint, facts pre-warmed). The
@@ -33,18 +37,22 @@ on an `import` line; everything else is healthy once facts are warm.
 
 ## 2. The completion hotspot: `import_completions`
 
-`lib/milk_tea/lsp/server/completion.rb:837` runs **on every keystroke** when the
+> Historical analysis of the original hotspot. The filesystem walk described
+> here was replaced by the persistent module index (§8, item 1); `module_dir_contains_mt?`
+> no longer exists.
+
+`lib/milk_tea/lsp/server/completion.rb` ran **on every keystroke** when the
 current line starts with `import `. For each module root it:
 
-1. walks the full directory tree recursively via `module_dir_contains_mt?`
-   (`completion.rb:907`) to decide whether a subdirectory is importable, and
-2. stat's every entry.
+1. walked the full directory tree recursively via `module_dir_contains_mt?`
+   to decide whether a subdirectory is importable, and
+2. stat'ed every entry.
 
 Measured cost against this repo's tree: **4,720 directories and 573 `.mt`
-files, ~130–220 ms, zero caching, every keystroke**. The same scan is repeated
+files, ~130–220 ms, zero caching, every keystroke**. The same scan was repeated
 for each module root returned by `roots_for_path` (for a `/tmp` path this
-resolves to the single repo root; a package workspace with `std` and project
-roots would repeat the scan per root). There is no persistent module index.
+resolved to the single repo root; a package workspace with `std` and project
+roots would repeat the scan per root). There was no persistent module index.
 
 ## 3. Ruby constraints that shape the solution
 
@@ -245,3 +253,95 @@ rather than full sema.
   unnecessary. `Dir.scan` (Ruby 4.1, `ruby/ruby#16153`, yields the child type
   via `dirent.d_type` without N+1 `stat`s, ~2× faster scans) is a future
   accelerator for the index build itself, not a hot-path fix.
+
+## 8. Implementation status
+
+Implemented against the priority order in §5:
+
+1. **Persistent module index** (`lib/milk_tea/lsp/workspace/module_index.rb`).
+   Built once per module root (on `initialized` and lazily on first use),
+   refreshed by `workspace/didChangeWatchedFiles` create/delete events
+   (deduped per root per event batch), and rebuilt on workspace-folder
+   changes. `import_completions` filters the in-memory index instead of
+   walking the tree. `Dir.glob("**/*.mt")` replaces the per-entry `stat`
+   recursion; measured build cost on this repo's tree is ~1 ms.
+2. **Completion sessions** (`handle_completion`). The candidate pool for a
+   `[uri, line]` is cached with its line-prefix context; a
+   `triggerFromIncompleteCompletions` request whose prefix is a strict
+   extension re-filters the cached pool instead of recomputing. A prefix
+   shrink or line-context change falls back to a full recompute. Bounded to
+   64 entries (FIFO eviction).
+3. **Server-scoped completion doc + resolve caches.** `completion_function_documentation`
+   results are memoized per `[uri, name]` across requests (previously a
+   per-request cache reset every keystroke); `completionItem/resolve` results
+   are memoized the same way. Both invalidated on document change.
+4. **Deferred `didOpen`/`didChange` facts.** `open_document` and
+   `apply_incremental_changes` keep the synchronous floor (content apply, cache
+   invalidation, dependency refresh) but skip the eager sema/import-resolution
+   warm for both the keystroke path and file open (`handle_did_open` and
+   `handle_did_change` pass `warm_facts: false`). The debounced diagnostics
+   worker computes facts in the background; requests serve `last_good_facts`
+   until it lands. This keeps the request thread responsive while the first
+   analysis of a large import-heavy module (e.g. `examples/language_baseline.mt`,
+   ~2.4 s cold) is in flight.
+5. **Cached `documentSymbol` outline.** The enriched outline (AST child
+   enrichment + module hierarchy) is cached keyed by content hash, removing
+   the enrichment walk from repeat requests.
+6. **Cached completion resolve.** See #3.
+   Plus two fixes surfaced by the new benchmark sections: `workspace/symbol`
+   skips re-indexing when the on-disk file set is unchanged, and the module
+   index ignores watched-file events for open documents (matching
+   `apply_watched_file_change`).
+7. **Eventually-consistent semantic tokens.** `handle_semantic_tokens_full`/
+   `range`/`delta` never run or wait on sema: they consume `Workspace#peek_facts`
+   (cached or last-good facts, never blocking) so the request thread stays
+   responsive while facts are recomputed after an edit. The semantic-token cache
+   is keyed by content hash **and the facts object identity**, so tokens built
+   from the lexical fallback (facts not yet computed) are never served once
+   facts land — a stale-cache bug where edited tokens stayed lexical until the
+   next content change. When the diagnostics worker lands fresh facts it sends a
+   `workspace/semanticTokens/refresh` notification so the editor re-fetches and
+   gets analyzed highlighting.
+8. **Faster facts-driven token build.** `enclosing_completion_frame`,
+   `type_parameter_names_in_scope`, and `known_type_name?` are memoized per
+   `[facts, line]`/`[facts, name]` for the duration of one token build, turning
+   the O(tokens × frames) per-token scans into O(1) lookups. Measured build for
+   `examples/language_baseline.mt`: ~370 ms → ~110 ms steady-state.
+9. **Diagnostics facts-path fix.** `Diagnostics.collect` skipped producing facts
+   for files whose parse recovered with errors because the loader's
+   `check_program_collecting` pass poisoned the module cache; the diagnostics
+   worker then silently kept serving stale last-good facts. The program check is
+   now skipped for parse-error files (resolving imports directly), making
+   `collect_diagnostics` facts consistent with the `analyze_document` path.
+   Also: the module index is refreshed on `workspace/willRenameFiles` so a
+   renamed module never leaves a stale import-completion entry.
+
+Measured with `all_endpoints_benchmark.rb` (10 iterations, same run config as
+§1):
+
+| endpoint | before | after |
+|---|---|---|
+| `textDocument/completion` (import line) | ~135 ms | **~0.9 ms** |
+| `textDocument/didChange` (scratch file) | ~10 ms | **~1.6 ms** |
+| `textDocument/didOpen` (scratch file) | ~15 ms | **~0.3 ms** (facts deferred to worker) |
+| `textDocument/documentSymbol` | ~5.4 ms avg / ~44 ms max | **~0 ms** (cached outline) |
+| `textDocument/completion` (1500-module root) | n/a | **~1.3 ms** (indexed) |
+| `textDocument/completion` (incomplete-trigger, 6 keystrokes) | n/a | ~46 ms worst case with diagnostics workers stopped; workers running, the debounced facts pass keeps per-keystroke cost at the didChange floor |
+
+First-open flow for a large import-heavy module (`examples/language_baseline.mt`,
+53 KB / 2062 lines, cold analysis ~2.1 s): `didOpen` returns in <1 ms on the
+request thread, the editor renders lexical highlighting immediately, and the
+background diagnostics worker computes facts (~2.1 s) and pushes a
+`workspace/semanticTokens/refresh`; the follow-up `semanticTokens/full` request
+serves the analyzed highlighting. The request thread is never blocked by the
+initial analysis.
+
+Regression tests: `test/tooling/lsp/workspace_test.rb` (module-index build,
+create/delete and rename invalidation, current-file exclusion),
+`test/tooling/lsp/server/completion_test.rb` (import completion create/delete
+contract, `triggerFromIncompleteCompletions` re-filtering and the prefix-shrink
+recompute guard), and `test/tooling/lsp/server/semantic_tokens_test.rb`
+(semantic tokens rebuild when facts land after open — the stale-cache
+regression). The LSP test client forces facts deterministically before
+semantic-token requests because didOpen defers analysis to the background
+worker.

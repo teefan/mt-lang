@@ -168,7 +168,9 @@ module MilkTea
         end
 
         def module_level_reference_locations(uri, name, facts, include_declaration:, cross_file_allowed: true)
-          ast = @workspace.get_ast(uri)
+          # Use the facts' own AST so binding_resolution node object_ids line up;
+          # a separately-parsed AST would miss every binding lookup.
+          ast = facts&.ast || @workspace.get_ast(uri)
           return [] unless ast
 
           results = []

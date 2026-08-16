@@ -1499,6 +1499,104 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_module_index_built_for_workspace_roots_after_initialization
+    Dir.mktmpdir("lsp_workspace_module_index_build") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+      File.write(File.join(std_dir, "geometry.mt"), "public function area() -> int:\n    return 0\n")
+
+      workspace = MilkTea::LSP::Workspace.new
+      workspace.workspace_root_path = dir
+      workspace.refresh_module_index_for_workspace
+
+      top_level = workspace.send(:module_importable_names, dir, "", current_path: nil)
+      assert_includes top_level.keys, "std"
+
+      std_modules = workspace.send(:module_importable_names, dir, "std", current_path: nil)
+      assert_includes std_modules.keys, "geometry"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_module_index_reflects_module_creation_and_deletion_events
+    Dir.mktmpdir("lsp_workspace_module_index_events") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+      File.write(File.join(std_dir, "geometry.mt"), "public function area() -> int:\n    return 0\n")
+
+      workspace = MilkTea::LSP::Workspace.new
+      workspace.workspace_root_path = dir
+      workspace.refresh_module_index_for_workspace
+
+      assert_includes workspace.send(:module_importable_names, dir, "std", current_path: nil).keys, "geometry"
+      refute_includes workspace.send(:module_importable_names, dir, "std", current_path: nil).keys, "newmod"
+
+      path = File.join(std_dir, "newmod.mt")
+      File.write(path, "public function f() -> int:\n    return 1\n")
+      uri = path_to_uri(path)
+      workspace.send(:apply_module_index_events, [{ "uri" => uri, "type" => 1 }])
+
+      assert_includes workspace.send(:module_importable_names, dir, "std", current_path: nil).keys, "newmod"
+
+      File.delete(path)
+      workspace.send(:apply_module_index_events, [{ "uri" => uri, "type" => 3 }])
+
+      refute_includes workspace.send(:module_importable_names, dir, "std", current_path: nil).keys, "newmod"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_module_importable_names_excludes_current_file
+    Dir.mktmpdir("lsp_workspace_module_index_exclude") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+      current_path = File.join(std_dir, "geometry.mt")
+      File.write(current_path, "public function area() -> int:\n    return 0\n")
+
+      workspace = MilkTea::LSP::Workspace.new
+      workspace.workspace_root_path = dir
+      workspace.refresh_module_index_for_workspace
+
+      names = workspace.send(:module_importable_names, dir, "std", current_path: current_path)
+      refute_includes names.keys, "geometry"
+
+      names = workspace.send(:module_importable_names, dir, "std", current_path: nil)
+      assert_includes names.keys, "geometry"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_module_index_reflects_module_rename
+    Dir.mktmpdir("lsp_workspace_module_index_rename") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+      old_path = File.join(std_dir, "oldname.mt")
+      new_path = File.join(std_dir, "newname.mt")
+      File.write(old_path, "public function f() -> int:\n    return 1\n")
+
+      workspace = MilkTea::LSP::Workspace.new
+      workspace.workspace_root_path = dir
+      workspace.refresh_module_index_for_workspace
+
+      assert_includes workspace.send(:module_importable_names, dir, "std", current_path: nil).keys, "oldname"
+      refute_includes workspace.send(:module_importable_names, dir, "std", current_path: nil).keys, "newname"
+
+      File.rename(old_path, new_path)
+      workspace.send(:apply_module_index_events,
+        [{ "uri" => path_to_uri(old_path), "type" => 3 }, { "uri" => path_to_uri(new_path), "type" => 1 }],
+        skip_open: false)
+
+      names = workspace.send(:module_importable_names, dir, "std", current_path: nil).keys
+      refute_includes names, "oldname"
+      assert_includes names, "newname"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   private
 
   def path_to_uri(path)

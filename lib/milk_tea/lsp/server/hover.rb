@@ -858,15 +858,20 @@ module MilkTea
         def completion_function_documentation(uri, name, cache:)
           key = [uri, name]
           return cache[key] if cache.key?(key)
+          # Server-scoped memo so per-keystroke completion does not re-resolve the
+          # definition and re-extract docs for every candidate on every request.
+          if @completion_docs_cache.key?(key)
+            return cache[key] = @completion_docs_cache[key]
+          end
 
           definition_entry = @workspace.find_definition_token_global(name, preferred_uri: uri)
           unless definition_entry
             cache[key] = ''
-            return ''
+            return @completion_docs_cache[key] = ''
           end
 
           doc_comment = @workspace.doc_comment_data_for_definition(definition_entry[:uri], definition_entry[:token])
-          cache[key] = signature_help_markdown_for_doc_comment(doc_comment)
+          @completion_docs_cache[key] = cache[key] = signature_help_markdown_for_doc_comment(doc_comment)
         end
 
         def hover_source_label_for_definition(definition_entry)
@@ -1777,9 +1782,15 @@ module MilkTea
         end
 
         def enclosing_completion_frame(facts, line)
+          # Memoized for the duration of one semantic-token build; completion and
+          # hover only resolve a handful of identifiers per request so they
+          # repopulate the (nil) cache harmlessly.
+          memo_key = [:frame, facts.object_id, line]
+          return semantic_build_memo(memo_key) if semantic_build_memo?(memo_key)
+
           frames = Array(facts.local_completion_frames)
           containing = frames.select { |frame| frame.start_line && frame.end_line && frame.start_line <= line && line <= frame.end_line }
-          containing.min_by { |frame| frame.end_line - frame.start_line }
+          store_semantic_build_memo(memo_key, containing.min_by { |frame| frame.end_line - frame.start_line })
         end
 
         def latest_completion_snapshot(frame, line, char)

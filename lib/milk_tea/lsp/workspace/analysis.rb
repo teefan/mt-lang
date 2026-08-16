@@ -62,8 +62,11 @@ module MilkTea
           nil
         end
 
-        def warm_document_facts(uri, content)
-          ast = ast_for_content(uri, content)
+        # Eagerly compute and cache facts for +uri+. The keystroke path
+        # (didChange) passes warm: false so the sema/import-resolution cost runs
+        # on the debounced diagnostics worker instead of the request thread;
+        # requests then serve last-good facts until the background pass lands.
+        def warm_document_facts(uri, content, warm: true)
           stats = {
             bytes: content.bytesize,
             lines: content.count("\n") + 1,
@@ -71,7 +74,7 @@ module MilkTea
             facts_mode: nil,
             facts_ms: nil,
             skip_reason: nil,
-            import_count: ast.respond_to?(:imports) ? ast.imports.length : 0,
+            import_count: 0,
             shared_module_cache_size: @shared_module_cache.length,
           }
 
@@ -79,6 +82,14 @@ module MilkTea
             stats[:skip_reason] = :background_document
             return stats
           end
+
+          unless warm
+            stats[:skip_reason] = :deferred
+            return stats
+          end
+
+          ast = ast_for_content(uri, content)
+          stats[:import_count] = ast.respond_to?(:imports) ? ast.imports.length : 0
 
           facts_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           facts_path = uri_to_path(uri)

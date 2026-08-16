@@ -12,8 +12,10 @@ module MilkTea
 
           content = @workspace.get_content(uri)
           cache_key = content.hash
+          facts = @workspace.peek_facts(uri)
+          facts_id = facts&.object_id
           cached = @semantic_tokens_cache[uri]
-          if cached && cached[:content_hash] == cache_key
+          if cached && cached[:content_hash] == cache_key && cached[:facts_id] == facts_id
             elapsed = elapsed_ms(total_start)
             short_uri = shorten_uri(uri) || uri
             log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
@@ -25,10 +27,6 @@ module MilkTea
           tokens = @workspace.get_tokens(uri) || []
           tokens_ms = elapsed_ms(tokens_start)
 
-          facts_start = monotonic_time
-          facts = @workspace.get_facts(uri, allow_last_good_fallback: semantic_tokens_allow_last_good_fallback?(uri))
-          facts_ms = elapsed_ms(facts_start)
-
           build_start = monotonic_time
           semantic_entries = build_semantic_token_entries(tokens, facts)
           build_ms = elapsed_ms(build_start)
@@ -38,17 +36,18 @@ module MilkTea
           encode_ms = elapsed_ms(encode_start)
 
           result_id = next_semantic_token_result_id(uri)
-          @semantic_tokens_cache[uri] = { content_hash: cache_key, data: data, result_id: result_id }
+          @semantic_tokens_cache[uri] = { content_hash: cache_key, data: data, result_id: result_id, facts_id: facts_id }
           @semantic_tokens_delta_cache[uri] = {
             result_id: result_id,
             content_hash: cache_key,
+            facts_id: facts_id,
             entries: semantic_entries,
           }
 
           elapsed = elapsed_ms(total_start)
           short_uri = shorten_uri(uri) || uri
           log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
-                            "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=miss tokens=#{tokens.length} entries=#{semantic_entries.length} data_len=#{data.length} facts=on stages_ms=tokens:#{tokens_ms},facts:#{facts_ms},build:#{build_ms},encode:#{encode_ms}")
+                            "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=miss tokens=#{tokens.length} entries=#{semantic_entries.length} data_len=#{data.length} facts=#{facts_id ? 'on' : 'off'} stages_ms=tokens:#{tokens_ms},build:#{build_ms},encode:#{encode_ms}")
 
           { resultId: result_id, data: data }
         rescue StandardError => e
@@ -68,18 +67,20 @@ module MilkTea
 
           content = @workspace.get_content(uri)
           cache_key = content.hash
-          if cached[:content_hash] == cache_key
+          facts = @workspace.peek_facts(uri)
+          facts_id = facts&.object_id
+          if cached[:content_hash] == cache_key && cached[:facts_id] == facts_id
             return { resultId: cached[:result_id], edits: [] }
           end
 
           tokens = @workspace.get_tokens(uri) || []
-          facts = @workspace.get_facts(uri, allow_last_good_fallback: semantic_tokens_allow_last_good_fallback?(uri))
           new_entries = build_semantic_token_entries(tokens, facts)
 
           new_result_id = next_semantic_token_result_id(uri)
           @semantic_tokens_delta_cache[uri] = {
             result_id: new_result_id,
             content_hash: cache_key,
+            facts_id: facts_id,
             entries: new_entries,
           }
 
@@ -109,7 +110,7 @@ module MilkTea
               ![:newline, :indent, :dedent, :eof].include?(t.type)
           end
 
-          facts = @workspace.get_facts(uri, allow_last_good_fallback: semantic_tokens_allow_last_good_fallback?(uri))
+          facts = @workspace.peek_facts(uri)
           semantic_entries = build_semantic_token_entries(range_tokens, facts)
 
           entries_in_range = semantic_entries.select do |entry|
@@ -128,6 +129,7 @@ module MilkTea
           # is O(1) per call instead of O(n), turning the overall build from O(n²) to O(n).
           trivia_types = Set[:newline, :indent, :dedent, :eof]
           @tokens_by_line_cache = Hash.new { |h, k| h[k] = [] }
+          @semantic_token_build_cache = {}
           tokens.each { |t| @tokens_by_line_cache[t.line] << t unless trivia_types.include?(t.type) }
           @attribute_name_semantic_overrides = build_attribute_name_semantic_overrides(tokens, facts)
 
@@ -152,6 +154,24 @@ module MilkTea
         ensure
           @tokens_by_line_cache = nil
           @attribute_name_semantic_overrides = nil
+          @semantic_token_build_cache = nil
+        end
+
+        # Memoize facts-derived lookups for the duration of one semantic-token
+        # build. The build cache is scoped per build (set up and torn down in
+        # build_semantic_token_entries) so repeated per-token classifications do
+        # not re-scan frames/type scopes/types for every identifier token.
+        def semantic_build_memo?(key)
+          !@semantic_token_build_cache.nil? && @semantic_token_build_cache.key?(key)
+        end
+
+        def semantic_build_memo(key)
+          @semantic_token_build_cache[key][1] if @semantic_token_build_cache&.key?(key)
+        end
+
+        def store_semantic_build_memo(key, value)
+          @semantic_token_build_cache[key] = [:ok, value] if @semantic_token_build_cache
+          value
         end
 
         def fstring_interpolation_entries(fstring_tok, facts)
@@ -1052,11 +1072,23 @@ module MilkTea
 
         def known_type_name?(facts, name)
           return false unless facts
-          return true if facts.types.key?(name)
-          facts.types.each_value do |type|
-            return true if type.respond_to?(:nested_types) && type.nested_types.key?(name)
+          memo_key = [:known_type, facts.object_id, name]
+          return semantic_build_memo(memo_key) if semantic_build_memo?(memo_key)
+
+          result = if facts.types.key?(name)
+            true
+          else
+            found = false
+            facts.types.each_value do |type|
+              if type.respond_to?(:nested_types) && type.nested_types.key?(name)
+                found = true
+                break
+              end
+            end
+            found
           end
-          false
+
+          store_semantic_build_memo(memo_key, result)
         end
 
         def dot_nested_type_member?(tokens, index, facts)
@@ -1317,6 +1349,9 @@ module MilkTea
         end
 
         def type_parameter_names_in_scope(facts, line)
+          memo_key = [:type_param_names, facts.object_id, line]
+          return semantic_build_memo(memo_key) if semantic_build_memo?(memo_key)
+
           scopes = @type_parameter_scope_cache ||= {}
           cached = scopes[facts.object_id]
           unless cached
@@ -1330,11 +1365,15 @@ module MilkTea
             scopes[facts.object_id] = cached
           end
 
+          result = []
           cached.reverse_each do |scope|
-            return scope[:names] if line >= scope[:start_line] && line <= scope[:end_line]
+            if line >= scope[:start_line] && line <= scope[:end_line]
+              result = scope[:names]
+              break
+            end
           end
 
-          []
+          store_semantic_build_memo(memo_key, result)
         end
 
         def type_parameter_scopes_for_declaration(decl, end_line: Float::INFINITY)

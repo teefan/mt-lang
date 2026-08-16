@@ -37,11 +37,15 @@ module MilkTea
           result.empty? ? nil : result
         end
 
+        TRIGGER_KIND_INCOMPLETE = 2
+        MAX_COMPLETION_SESSION_ENTRIES = 64
+
         def handle_completion(params)
           stages = new_perf_stages
           total_start = stages ? monotonic_time : nil
           uri      = params['textDocument']['uri']
           @current_completion_uri = uri
+          @current_completion_trigger_kind = params.dig('context', 'triggerKind') || 1
           lsp_line = params['position']['line']
           lsp_char = params['position']['character']
           branch = 'none'
@@ -49,50 +53,61 @@ module MilkTea
 
           prefix = measure_perf_stage(stages, 'prefix') { current_word_prefix(uri, lsp_line, lsp_char) }
 
+          # Completion session re-filtering: when the editor keeps requesting
+          # while the prefix grows (triggerFromIncompleteCompletions), re-filter
+          # the previously computed candidate pool instead of rebuilding it.
+          response = measure_perf_stage(stages, 'session') { completion_session_response(uri, lsp_line, lsp_char, prefix) }
+          if response
+            branch = 'session'
+            item_count = response[:items].length
+            return response
+          end
+
+          branch, item_count, response = measure_perf_stage(stages, 'compute') { compute_completion_items(uri, lsp_line, lsp_char, prefix, stages) }
+          store_completion_session(uri, lsp_line, lsp_char, prefix, response)
+          response
+        rescue StandardError => e
+          branch = 'error'
+          warn "Error in completion handler: #{e.message}"
+          { isIncomplete: false, items: [] }
+        ensure
+          log_request_stage_breakdown('textDocument/completion', total_start, uri: uri, stages: stages, summary: "branch=#{branch} items=#{item_count}")
+        end
+
+        def compute_completion_items(uri, lsp_line, lsp_char, prefix, stages)
           import_items = measure_perf_stage(stages, 'import_context') { import_completions(uri, lsp_line, lsp_char) }
           if import_items
-            branch = 'import'
-            item_count = import_items.length
-            return { isIncomplete: false, items: import_items }
+            return ['import', import_items.length, { isIncomplete: false, items: import_items }]
           end
 
           facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
 
           unless facts
-            branch = 'no-facts'
-            return { isIncomplete: false, items: [] }
+            return ['no-facts', 0, { isIncomplete: false, items: [] }]
           end
 
           # Attribute context: complete inside @[...]
           attr_items = attribute_completions(facts, uri, lsp_line, lsp_char)
           if attr_items
-            branch = 'attribute'
-            item_count = attr_items.length
-            return { isIncomplete: false, items: attr_items }
+            return ['attribute', attr_items.length, { isIncomplete: false, items: attr_items }]
           end
 
           # Format string interpolation: complete inside f"... #{ }
           fmt_items = format_string_completions(facts, uri, lsp_line, lsp_char)
           if fmt_items
-            branch = 'format-string'
-            item_count = fmt_items.length
-            return { isIncomplete: false, items: fmt_items }
+            return ['format-string', fmt_items.length, { isIncomplete: false, items: fmt_items }]
           end
 
           # Named argument completions: inside function/struct call e.g. Point(x: 1, |)
           named_items = named_argument_completions(facts, uri, lsp_line, lsp_char)
           if named_items
-            branch = 'named-arg'
-            item_count = named_items.length
-            return { isIncomplete: false, items: named_items }
+            return ['named-arg', named_items.length, { isIncomplete: false, items: named_items }]
           end
 
           # Specialization context: inside name[...]
           spec_items = specialization_completions(facts, uri, lsp_line, lsp_char)
           if spec_items
-            branch = 'specialization'
-            item_count = spec_items.length
-            return { isIncomplete: false, items: spec_items }
+            return ['specialization', spec_items.length, { isIncomplete: false, items: spec_items }]
           end
 
           # When user is typing after '.', return module members or method completions.
@@ -105,7 +120,6 @@ module MilkTea
           if dot_recv
             # Module member access: rl.init_window, rl.RAYWHITE, etc.
             if (module_binding = facts.imports[dot_recv])
-              branch = 'module'
               items = measure_perf_stage(stages, 'build') do
                 result = []
                 module_binding.functions.each do |fname, binding|
@@ -152,8 +166,7 @@ module MilkTea
                 end
                 result
               end
-              item_count = items.length
-              return { isIncomplete: false, items: items }
+              return ['module', items.length, { isIncomplete: false, items: items }]
             end
             if (type_receiver = measure_perf_stage(stages, 'type_receiver') { resolve_type_receiver_info(facts, dot_recv, dot_recv_path) })
               receiver_label = type_receiver[:label]
@@ -162,7 +175,6 @@ module MilkTea
 
               # Enum/Flags member access: Color.RED, KeyboardKey.A, etc.
               if type.is_a?(Types::EnumBase)
-                branch = 'enum-members'
                 items = measure_perf_stage(stages, 'build') do
                   type.members.filter_map do |mname|
                     next if !prefix.empty? && !mname.start_with?(prefix)
@@ -176,13 +188,11 @@ module MilkTea
                     }
                   end
                 end
-                item_count = items.length
-                return { isIncomplete: false, items: items }
+                return ['enum-members', items.length, { isIncomplete: false, items: items }]
               end
 
               # Variant arm access: Option.none, Result.success, etc.
               if type.is_a?(Types::Variant)
-                branch = 'variant-arms'
                 items = measure_perf_stage(stages, 'build') do
                   type.arm_names.filter_map do |aname|
                     next if !prefix.empty? && !aname.start_with?(prefix)
@@ -196,13 +206,11 @@ module MilkTea
                     }
                   end
                 end
-                item_count = items.length
-                return { isIncomplete: false, items: items }
+                return ['variant-arms', items.length, { isIncomplete: false, items: items }]
               end
 
               # Nested struct type members: ShapeGroup.CircleData, etc.
               if type.is_a?(Types::Struct) && type.respond_to?(:nested_types) && type.nested_types.any?
-                branch = 'nested-types'
                 items = measure_perf_stage(stages, 'build') do
                   type.nested_types.filter_map do |nt_name, _nt_type|
                     next if !prefix.empty? && !nt_name.start_with?(prefix)
@@ -216,15 +224,12 @@ module MilkTea
                     }
                   end
                 end
-                item_count = items.length
-                return { isIncomplete: false, items: items } unless items.empty?
+                return ['nested-types', items.length, { isIncomplete: false, items: items }] unless items.empty?
               end
 
               items = measure_perf_stage(stages, 'build') { completion_items_for_type_receiver(facts, type, prefix) }
               unless items.empty?
-                branch = 'type-receiver'
-                item_count = items.length
-                return { isIncomplete: false, items: items }
+                return ['type-receiver', items.length, { isIncomplete: false, items: items }]
               end
             end
 
@@ -237,17 +242,13 @@ module MilkTea
                   receiver_type = measure_perf_stage(stages, 'imported_value_receiver') { val_binding.type }
                   items = measure_perf_stage(stages, 'build') { completion_items_for_value_receiver(facts, receiver_type, prefix) }
                   unless items.empty?
-                    branch = 'imported-value-receiver'
-                    item_count = items.length
-                    return { isIncomplete: false, items: items }
+                    return ['imported-value-receiver', items.length, { isIncomplete: false, items: items }]
                   end
                 end
               else
                 chain_items = measure_perf_stage(stages, 'value_chain') { value_chain_completions(facts, dot_recv_path, lsp_line, lsp_char, prefix) }
                 if chain_items
-                  branch = 'value-chain'
-                  item_count = chain_items.length
-                  return { isIncomplete: false, items: chain_items }
+                  return ['value-chain', chain_items.length, { isIncomplete: false, items: chain_items }]
                 end
               end
             end
@@ -255,14 +256,11 @@ module MilkTea
             if (receiver_type = measure_perf_stage(stages, 'value_receiver') { resolve_dot_receiver_value_type(facts, dot_recv, lsp_line + 1, lsp_char + 1) })
               items = measure_perf_stage(stages, 'build') { completion_items_for_value_receiver(facts, receiver_type, prefix) }
               unless items.empty?
-                branch = 'value-receiver'
-                item_count = items.length
-                return { isIncomplete: false, items: items }
+                return ['value-receiver', items.length, { isIncomplete: false, items: items }]
               end
             end
 
             # Method completions on a non-module receiver.
-            branch = 'method-fallback'
             method_items = measure_perf_stage(stages, 'build') do
               result = []
               facts.methods.each do |_recv_type, methods|
@@ -296,10 +294,9 @@ module MilkTea
               method_items = method_items.first(MAX_COMPLETION_ITEMS)
               item_count = MAX_COMPLETION_ITEMS
             end
-            return { isIncomplete: truncated, items: method_items }
+            return ['method-fallback', item_count, { isIncomplete: truncated, items: method_items }]
           end
 
-          branch = 'global'
           items = measure_perf_stage(stages, 'build') do
             result = []
             function_docs_cache = {}
@@ -450,13 +447,51 @@ module MilkTea
             items = items.first(MAX_COMPLETION_ITEMS)
             item_count = MAX_COMPLETION_ITEMS
           end
-          { isIncomplete: truncated, items: items }
-        rescue StandardError => e
-          branch = 'error'
-          warn "Error in completion handler: #{e.message}"
-          { isIncomplete: false, items: [] }
-        ensure
-          log_request_stage_breakdown('textDocument/completion', total_start, uri: uri, stages: stages, summary: "branch=#{branch} items=#{item_count}")
+          ['global', item_count, { isIncomplete: truncated, items: items }]
+        end
+
+        # Serve a previously computed candidate pool when the editor is
+        # re-triggering with a longer prefix (triggerFromIncompleteCompletions)
+        # on the same line. Safe only when the text before the cursor is a strict
+        # extension of the cached context and the word prefix has grown; re-filter
+        # the (already prefix-filtered) pool with the longer prefix.
+        def completion_session_response(uri, lsp_line, lsp_char, prefix)
+          return nil if prefix.empty?
+          return nil unless @current_completion_trigger_kind == TRIGGER_KIND_INCOMPLETE
+
+          content = @workspace.get_content(uri)
+          line_prefix = (content.split("\n", -1)[lsp_line] || '')[0...lsp_char]
+          cached = @completion_session_cache[[uri, lsp_line]]
+          return nil unless cached
+          return nil unless line_prefix.start_with?(cached[:line_prefix])
+          return nil unless prefix.start_with?(cached[:prefix])
+
+          items = cached[:items].select { |item| item[:label].to_s.start_with?(prefix) }
+          { isIncomplete: cached[:isIncomplete], items: items }
+        end
+
+        def store_completion_session(uri, lsp_line, lsp_char, prefix, response)
+          return if prefix.empty?
+
+          content = @workspace.get_content(uri)
+          line_prefix = (content.split("\n", -1)[lsp_line] || '')[0...lsp_char]
+          key = [uri, lsp_line]
+          @completion_session_cache[key] = {
+            line_prefix: line_prefix,
+            prefix: prefix,
+            isIncomplete: response[:isIncomplete],
+            items: response[:items],
+          }
+          if @completion_session_order_set.add?(key)
+            @completion_session_order << key
+            evict_completion_sessions while @completion_session_order.length > MAX_COMPLETION_SESSION_ENTRIES
+          end
+        end
+
+        def evict_completion_sessions
+          key = @completion_session_order.shift
+          @completion_session_cache.delete(key)
+          @completion_session_order_set.delete(key)
         end
 
         def value_chain_completions(facts, dot_recv_path, lsp_line, lsp_char, prefix)
@@ -821,6 +856,11 @@ module MilkTea
           return params if name.to_s.empty?
 
           uri = data['uri'] || ''
+          key = [uri, name]
+          if @completion_resolve_cache.key?(key)
+            return @completion_resolve_cache[key]
+          end
+
           definition_entry = @workspace.find_definition_token_global(name, preferred_uri: uri)
           return params unless definition_entry
 
@@ -828,7 +868,7 @@ module MilkTea
           docs = signature_help_markdown_for_doc_comment(doc_comment)
           return params if docs.empty?
 
-          params.merge('documentation' => { 'kind' => 'markdown', 'value' => docs })
+          @completion_resolve_cache[key] = params.merge('documentation' => { 'kind' => 'markdown', 'value' => docs })
         rescue StandardError => e
           warn "Error in completion resolve handler: #{e.message}"
           params
@@ -862,6 +902,7 @@ module MilkTea
 
           current_path = uri_to_path(uri)
           return nil unless current_path
+          current_path = File.expand_path(current_path)
 
           roots = MilkTea::ModuleRoots.roots_for_path(current_path)
           fs_dir = dir_segments.join(File::SEPARATOR)
@@ -870,23 +911,13 @@ module MilkTea
           filter_lower = filter.downcase
 
           roots.each do |root|
-            search_dir = fs_dir.empty? ? root : File.join(root, fs_dir)
-            next unless File.directory?(search_dir)
+            names = @workspace.module_importable_names(root, fs_dir, current_path: current_path)
+            next unless names
 
-            Dir.children(search_dir).sort.each do |name|
-              next if name.start_with?('.')
-              full_path = File.join(search_dir, name)
+            names.each_key do |mod_name|
+              next unless filter.empty? || mod_name.downcase.start_with?(filter_lower)
 
-              if name.end_with?('.mt')
-                mod_name = name.delete_suffix('.mt')
-                next if mod_name.start_with?('.')
-                next if full_path == current_path
-                next unless filter.empty? || mod_name.downcase.start_with?(filter_lower)
-                modules[mod_name] = mod_name
-              elsif File.directory?(full_path) && module_dir_contains_mt?(full_path)
-                next unless filter.empty? || name.downcase.start_with?(filter_lower)
-                modules[name] = name
-              end
+              modules[mod_name] = mod_name
             end
           end
 
@@ -901,14 +932,6 @@ module MilkTea
               sortText:   "0_#{mod_name}",
               data:       completion_data(mod_name),
             }
-          end
-        end
-
-        def module_dir_contains_mt?(dir)
-          Dir.children(dir).any? do |name|
-            next false if name.start_with?('.')
-            full = File.join(dir, name)
-            name.end_with?('.mt') || (File.directory?(full) && module_dir_contains_mt?(full))
           end
         end
 

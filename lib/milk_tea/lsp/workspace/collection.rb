@@ -67,6 +67,10 @@ module MilkTea
                   @facts_cache[uri] = facts if facts
                   @last_good_facts_cache[uri] = facts if facts
                   @document_module_names[uri] = facts.module_name if facts&.module_name
+                  # Consumers resolve binding_resolution against get_ast(uri) node
+                  # object_ids; keep the AST cache aligned with the facts that
+                  # reference it so binding lookups line up across the worker path.
+                  @ast_cache[uri] = snapshot.facts.ast if snapshot&.facts&.ast
                   update_dependency_index(uri, facts)
                   @diagnostics_cache[uri] = {
                     content_hash: hash,

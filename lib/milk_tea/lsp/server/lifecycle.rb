@@ -23,6 +23,12 @@ module MilkTea
             @semantic_tokens_cache.clear
             @semantic_tokens_delta_cache.clear
             @fixall_cache.clear
+            @completion_session_cache.clear
+            @completion_session_order.clear
+            @completion_session_order_set.clear
+            @completion_docs_cache.clear
+            @completion_resolve_cache.clear
+            @document_symbol_cache.clear
             @definition_file_token_cache.clear
             @definition_file_ast_cache.clear
             MilkTea::Types::Registry.reset!
@@ -138,6 +144,7 @@ module MilkTea
           @_indexing_thread = Thread.new do
             progress = create_progress(title: 'Milk Tea LSP: Indexing workspace', message: 'Scanning source files...')
             @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) }
+            @workspace.refresh_module_index_for_workspace
             document_count = @workspace.all_documents.length
             progress.done(message: "#{document_count} document#{document_count == 1 ? '' : 's'} indexed")
             log_message(:info, "Milk Tea LSP ready — #{document_count} document#{document_count == 1 ? '' : 's'} indexed")
@@ -182,6 +189,7 @@ module MilkTea
           Thread.new do
             progress = create_progress(title: 'Milk Tea LSP: Reindexing workspace', message: 'Scanning source files...')
             @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) }
+            @workspace.refresh_module_index_for_workspace
             doc_count = @workspace.all_documents.length
             progress.done(message: "#{doc_count} document#{doc_count == 1 ? '' : 's'} indexed")
 
@@ -200,6 +208,10 @@ module MilkTea
             next unless old_uri && new_uri
 
             @workspace.rename_indexed_file(old_uri, new_uri)
+            @workspace.apply_module_index_events(
+              [{ 'uri' => old_uri, 'type' => 3 }, { 'uri' => new_uri, 'type' => 1 }],
+              skip_open: false,
+            )
           end
           nil
         end

@@ -142,6 +142,10 @@ module MilkTea
                   end
                 end
               end
+              # Fresh facts just landed for this document; let the editor
+              # re-fetch semantic tokens so analyzed highlighting replaces the
+              # lexical fallback that was served while facts were unavailable.
+              refresh_client_semantic_tokens
             elsif perf_logging?
               @diagnostics_perf[:dropped_stale] += 1
             end
@@ -221,12 +225,6 @@ module MilkTea
           return false unless related_uris.length > 1
 
           dependency_export_surface_fingerprint(previous_content) != dependency_export_surface_fingerprint(current_content)
-        end
-
-        def semantic_tokens_allow_last_good_fallback?(uri)
-          @diagnostics_mutex.synchronize do
-            @diagnostics_pending.key?(uri) || @diagnostics_enqueued.include?(uri)
-          end
         end
 
         def notify_diagnostic_errors(uri, diagnostics)

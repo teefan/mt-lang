@@ -1923,9 +1923,62 @@ end
       )
     end
 
-    def test_semantic_tokens_full_stays_within_latency_budget
-      with_lsp_server do |client|
-        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+  def test_semantic_tokens_rebuild_when_facts_land_after_open
+    Dir.mktmpdir("mt_lsp_semantic_tokens_stale_cache") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        struct Vec2:
+            x: float
+            y: float
+
+        function main() -> int:
+            let v = Vec2(x = 1.0, y = 2.0)
+            return int<-v.x
+      MT
+      File.write(path, source)
+
+      protocol = RecordingProtocol.new
+      server = MilkTea::LSP::Server.new(protocol: protocol)
+      server.send(:stop_diagnostics_workers)
+      server.send(:handle_initialize, { "rootUri" => nil, "capabilities" => {} })
+      uri = path_to_uri(path)
+      server.send(:handle_did_open, {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source },
+      })
+
+      legend = {
+        "tokenTypes" => MilkTea::LSP::Server::SEMANTIC_TOKEN_TYPES,
+        "tokenModifiers" => MilkTea::LSP::Server::SEMANTIC_TOKEN_MODIFIERS,
+      }
+
+      # Facts are deferred to the background, so the first request is served from
+      # the lexical fallback: the struct constructor is classified as a function.
+      first = server.send(:handle_semantic_tokens_full, { "textDocument" => { "uri" => uri } })
+      first_entries = decode_semantic_token_entries(first.fetch(:data), legend)
+      ctor = semantic_entry_for_lexeme_on_line(source, first_entries, "Vec2", 5)
+      assert_equal "function", ctor.fetch("tokenType")
+
+      # Facts land in the background (here forced synchronously). The cached
+      # lexical tokens must NOT be served — the facts_id cache key forces a
+      # rebuild, upgrading the constructor to a type.
+      server.instance_variable_get(:@workspace).get_facts(uri)
+      second = server.send(:handle_semantic_tokens_full, { "textDocument" => { "uri" => uri } })
+      refute_equal first.fetch(:data), second.fetch(:data), "semantic tokens must be rebuilt once facts land"
+      second_entries = decode_semantic_token_entries(second.fetch(:data), legend)
+      ctor_after = semantic_entry_for_lexeme_on_line(source, second_entries, "Vec2", 5)
+      assert_equal "type", ctor_after.fetch("tokenType")
+
+      # Stable while facts are unchanged.
+      third = server.send(:handle_semantic_tokens_full, { "textDocument" => { "uri" => uri } })
+      assert_equal second.fetch(:data), third.fetch(:data)
+    ensure
+      server&.send(:handle_shutdown, {})
+    end
+  end
+
+  def test_semantic_tokens_full_stays_within_latency_budget
+    with_lsp_server do |client|
+      init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_latency_test.mt"
         source = <<~MT
           #{SOURCE_WITH_STR_BUFFER_METHODS}
