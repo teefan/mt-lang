@@ -691,7 +691,6 @@ module MilkTea
           private_values: full_binding.private_values,
           private_functions: full_binding.private_functions,
           private_methods: full_binding.private_methods,
-          private_implemented_interfaces: full_binding.private_implemented_interfaces,
         )
       end
     end
@@ -728,7 +727,6 @@ module MilkTea
         implemented_interfaces: {}, imports: {},
         private_types: {}, private_interfaces: {}, private_attributes: {},
         private_values: {}, private_functions: {}, private_methods: {},
-        private_implemented_interfaces: {},
       )
     end
 

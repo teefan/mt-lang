@@ -186,7 +186,6 @@ module MilkTea
           implemented_interfaces: {}, imports: {},
           private_types: {}, private_interfaces: {}, private_attributes: {},
           private_values: {}, private_functions: {}, private_methods: {},
-          private_implemented_interfaces: {},
         )
       end
 
@@ -342,7 +341,6 @@ module MilkTea
               params: params.freeze,
               module_name: @ctx.module_name,
               builtin: false,
-              ast: decl,
             )
           end
         end

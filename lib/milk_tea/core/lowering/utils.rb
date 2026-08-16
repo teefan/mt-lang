@@ -155,18 +155,6 @@ module MilkTea
         receiver_type
       end
 
-      def collection_loop_type(type)
-        super
-      end
-
-      def collection_loop_binding_type(iterable_type, element_type)
-        super
-      end
-
-      def collection_loop_ref_element_type?(type)
-        super
-      end
-
       def collection_loop_item_value(iterable_ref, iterable_type, index_ref, element_type)
         if array_type?(iterable_type)
           IR::Index.new(receiver: iterable_ref, index: index_ref, type: element_type)
@@ -247,11 +235,6 @@ module MilkTea
 
         raise LoweringError.new("cannot index #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
       end
-
-      def contains_type_var?(type)
-        super
-      end
-
 
       def stored_ref_supported_type?(type, visited = {})
         return true unless type

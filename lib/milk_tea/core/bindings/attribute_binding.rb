@@ -2,7 +2,7 @@
 
 module MilkTea
   module Bindings
-    AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
+    AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin)
     BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated test expect_fatal].freeze
 
     def self.builtin_attribute_binding(name, types)
@@ -14,7 +14,6 @@ module MilkTea
           params: [].freeze,
           module_name: nil,
           builtin: true,
-          ast: nil,
         )
       when "align"
         AttributeBinding.new(
@@ -23,7 +22,6 @@ module MilkTea
           params: [Types::Registry.parameter("bytes", types.fetch("ptr_uint"))].freeze,
           module_name: nil,
           builtin: true,
-          ast: nil,
         )
       when "deprecated"
         AttributeBinding.new(
@@ -32,7 +30,6 @@ module MilkTea
           params: [Types::Registry.parameter("message", types.fetch("str"))].freeze,
           module_name: nil,
           builtin: true,
-          ast: nil,
         )
       when "test"
         AttributeBinding.new(
@@ -41,7 +38,6 @@ module MilkTea
           params: [].freeze,
           module_name: nil,
           builtin: true,
-          ast: nil,
         )
       when "expect_fatal"
         AttributeBinding.new(
@@ -50,7 +46,6 @@ module MilkTea
           params: [].freeze,
           module_name: nil,
           builtin: true,
-          ast: nil,
         )
       end
     end

@@ -1397,7 +1397,6 @@ module MilkTea
           end
 
           return [:callable_value, field_receiver_type.field(callee.member), nil] if aggregate_type?(field_receiver_type) && callable_type?(field_receiver_type.field(callee.member))
-          return [:callable_value, field_receiver_type.field(callee.member), nil] if aggregate_type?(field_receiver_type) && callable_type?(field_receiver_type.field(callee.member))
 
           if (imported_module = imported_module_with_private_method(method_receiver_type, callee.member))
             raise_sema_error("#{method_receiver_type}.#{callee.member} is private to module #{imported_module.name}")

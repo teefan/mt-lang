@@ -100,7 +100,6 @@ module MilkTea
     include Intrinsics
 
     attr_accessor :bypass_sema_type_cache
-    attr_reader :recorded_expr_types
 
     include Lowering::Scans
     include Lowering::Declarations
@@ -122,6 +121,7 @@ module MilkTea
       @program = program
       @ctx = LoweringContext.new
       @artifacts = Artifacts.new
+      @error_type = Types::Error.new
       @synthetic_proc_counter = 0
       @parallel_for_counter = 0
       @async_binding_counter = 0
@@ -130,7 +130,6 @@ module MilkTea
     end
 
     def lower
-      @recorded_expr_types = {} if @bypass_sema_type_cache
       ir_program, _modules, _synths = lower_and_assemble
       ir_program
     end

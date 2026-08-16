@@ -607,7 +607,6 @@ module MilkTea
         end
 
         member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
-        member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
         return [:callable_value, nil, nil, member_type, nil] if callable_type?(member_type)
 
         raise LoweringError.new("unknown callee #{callee.receiver}.#{callee.member}", line: 0, column: 0, path: @ctx.current_analysis_path)
@@ -1055,7 +1054,7 @@ module MilkTea
         end
       end
 
-      def type_contains_array_storage?(type, visited = Set.new)
+      def type_contains_array_storage?(type)
         visitor = Types::ContainsArrayStorageVisitor.new
         visitor.visit(type)
         visitor.found?
@@ -1869,10 +1868,6 @@ module MilkTea
 
         def top_level_function(name)
           @lowerer.instance_variable_get(:@ctx).functions&.[](name)
-        end
-
-        def raise_sema_error(message)
-          raise CompileTime::Error, message
         end
       end
 

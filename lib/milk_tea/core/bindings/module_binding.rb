@@ -2,7 +2,7 @@
 
 module MilkTea
   module Bindings
-    ModuleBinding = Data.define(:name, :types, :type_declarations, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :imports, :private_types, :private_interfaces, :private_attributes, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
+    ModuleBinding = Data.define(:name, :types, :type_declarations, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :imports, :private_types, :private_interfaces, :private_attributes, :private_values, :private_functions, :private_methods) do
       def private_type?(name)
         private_types.key?(name)
       end

@@ -42,7 +42,7 @@ module MilkTea
       end
 
       methods, private_methods = exported_methods(analysis, types)
-      implemented_interfaces, private_implemented_interfaces = exported_interface_implementations(analysis, types, interfaces)
+      implemented_interfaces = exported_interface_implementations(analysis, types, interfaces)
 
       Bindings::ModuleBinding.new(
         name: analysis.module_name,
@@ -62,7 +62,6 @@ module MilkTea
         private_values:,
         private_functions:,
         private_methods:,
-        private_implemented_interfaces:,
       )
     end
 
@@ -102,28 +101,18 @@ module MilkTea
 
     def exported_interface_implementations(analysis, exported_types, exported_interfaces)
       implemented_interfaces = {}
-      private_implemented_interfaces = {}
 
       analysis.implemented_interfaces.each do |receiver_type, interfaces|
-        public_interfaces = []
-        hidden_interfaces = []
-
-        interfaces.each do |interface|
-          visible = exported_method_receiver?(receiver_type, analysis, exported_types) &&
+        public_interfaces = interfaces.select do |interface|
+          exported_method_receiver?(receiver_type, analysis, exported_types) &&
             exported_interface_binding?(interface, analysis, exported_interfaces) &&
             exported_interface_methods?(receiver_type, interface, analysis, exported_types)
-          if visible
-            public_interfaces << interface
-          else
-            hidden_interfaces << interface
-          end
         end
 
         implemented_interfaces[receiver_type] = public_interfaces.freeze unless public_interfaces.empty?
-        private_implemented_interfaces[receiver_type] = hidden_interfaces.freeze unless hidden_interfaces.empty?
       end
 
-      [implemented_interfaces.freeze, private_implemented_interfaces.freeze]
+      implemented_interfaces.freeze
     end
 
     def exported_interface_methods?(receiver_type, interface, analysis, exported_types)

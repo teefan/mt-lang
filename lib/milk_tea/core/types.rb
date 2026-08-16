@@ -1712,10 +1712,6 @@ module MilkTea
       GenericInstance.new("ptr", [type])
     end
 
-    def self.integer_type?(type)
-      type.is_a?(Primitive) && %w[int ptr_uint i8 i16 i32 i64 u8 u16 u32 u64].include?(type.name)
-    end
-
     def self.array_type?(type)
       type.is_a?(GenericInstance) && type.name == "array" && type.arguments.length == 2
     end

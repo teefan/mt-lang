@@ -443,10 +443,6 @@ module MilkTea
           { items: [] }
         end
 
-        def refresh_workspace_diagnostics
-          @protocol.write_notification('workspace/diagnostic/refresh', nil)
-        end
-
         def find_match_end_line(lines, match_start_idx)
           return nil if match_start_idx >= lines.length
 

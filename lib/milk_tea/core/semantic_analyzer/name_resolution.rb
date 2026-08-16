@@ -867,10 +867,6 @@ module MilkTea
         Types.pointer_to(type)
       end
 
-      def contains_type_var?(type)
-        super
-      end
-
       def resolve_nested_type_ref(parts)
         current = @ctx.types[parts.first]
         return nil unless current.is_a?(Types::Struct) || current.is_a?(Types::GenericStructDefinition)
@@ -973,18 +969,6 @@ module MilkTea
           end
         end
         nil
-      end
-
-      def collection_loop_type(type)
-        super
-      end
-
-      def collection_loop_binding_type(iterable_type, element_type)
-        super
-      end
-
-      def collection_loop_ref_element_type?(type)
-        super
       end
 
       def iterator_loop_type(type)

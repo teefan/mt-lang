@@ -129,53 +129,23 @@ module MilkTea
       def validate_async_statement!(statement)
         case statement
         when AST::ErrorBlockStmt
-          if statement.header_expression
-            context = case statement.header_type
-                      when :if then "if conditions"
-                      when :while then "while conditions"
-                      end
-            validate_async_expression_support!(statement.header_expression, context:) if context
-          end
-          if statement.header_type == :for
-            Array(statement.header_iterables).each do |iterable|
-              validate_async_expression_support!(iterable, context: "for iterables")
-            end
-          end
           statement.body.each { |s| validate_async_statement!(s) }
         when AST::ErrorStmt
           nil
         when AST::LocalDecl
-          validate_async_expression_support!(statement.value, context: "local initializer") if statement.value
           statement.else_body&.each { |s| validate_async_statement!(s) }
-        when AST::Assignment
-          validate_async_expression_support!(statement.target, context: "assignment target")
-          validate_async_expression_support!(statement.value, context: "assignment")
-        when AST::ExpressionStmt
-          validate_async_expression_support!(statement.expression, context: "expression statement")
-        when AST::ReturnStmt
-          return unless statement.value
-
-          validate_async_expression_support!(statement.value, context: "return statement")
+        when AST::Assignment, AST::ExpressionStmt, AST::ReturnStmt
+          nil
         when AST::IfStmt
           statement.branches.each do |branch|
-            validate_async_expression_support!(branch.condition, context: "if conditions")
-
             branch.body.each { |s| validate_async_statement!(s) }
           end
           statement.else_body&.each { |s| validate_async_statement!(s) }
         when AST::WhileStmt
-          validate_async_expression_support!(statement.condition, context: "while conditions")
-
           statement.body.each { |s| validate_async_statement!(s) }
         when AST::ForStmt
-          statement.iterables.each do |iterable|
-            validate_async_expression_support!(iterable, context: "for iterables")
-          end
-
           statement.body.each { |s| validate_async_statement!(s) }
         when AST::MatchStmt
-          validate_async_expression_support!(statement.expression, context: "match discriminants")
-
           statement.arms.each { |arm| arm.body.each { |s| validate_async_statement!(s) } }
         when AST::UnsafeStmt
           statement.body.each { |s| validate_async_statement!(s) }
@@ -188,85 +158,6 @@ module MilkTea
           nil
         else
           raise_sema_error("async functions currently only support straight-line local declarations, assignments, expression statements, and return statements")
-        end
-      end
-
-      def validate_async_expression_support!(expression, context:)
-        unsupported_context = unsupported_await_position(expression)
-        return unless unsupported_context
-
-        raise_sema_error("await in async functions is not supported inside #{unsupported_context} yet")
-      end
-
-      def unsupported_await_position(expression)
-        nil
-      end
-
-      def statement_contains_await?(statement)
-        case statement
-        when AST::ErrorBlockStmt
-          (statement.header_expression && expression_contains_await?(statement.header_expression)) ||
-            Array(statement.header_iterables).any? { |iterable| expression_contains_await?(iterable) } ||
-            statements_contain_await?(statement.body)
-        when AST::LocalDecl
-          (statement.value && expression_contains_await?(statement.value)) ||
-            (statement.else_body && statements_contain_await?(statement.else_body))
-        when AST::Assignment
-          expression_contains_await?(statement.target) || expression_contains_await?(statement.value)
-        when AST::IfStmt
-          statement.branches.any? { |branch| expression_contains_await?(branch.condition) || statements_contain_await?(branch.body) } ||
-            (statement.else_body && statements_contain_await?(statement.else_body))
-        when AST::MatchStmt
-          expression_contains_await?(statement.expression) || statement.arms.any? { |arm| expression_contains_await?(arm.pattern) || statements_contain_await?(arm.body) }
-        when AST::UnsafeStmt
-          statements_contain_await?(statement.body)
-        when AST::StaticAssert
-          expression_contains_await?(statement.condition) || expression_contains_await?(statement.message)
-        when AST::ForStmt
-          statement.iterables.any? { |iterable| expression_contains_await?(iterable) } || statements_contain_await?(statement.body)
-        when AST::WhileStmt
-          expression_contains_await?(statement.condition) || statements_contain_await?(statement.body)
-        when AST::ReturnStmt
-          statement.value && expression_contains_await?(statement.value)
-        when AST::DeferStmt
-          statements_contain_await?(statement.body)
-        when AST::ExpressionStmt
-          expression_contains_await?(statement.expression)
-        else
-          false
-        end
-      end
-
-      def statements_contain_await?(statements)
-        statements.any? { |statement| statement_contains_await?(statement) }
-      end
-
-      def expression_contains_await?(expression)
-        case expression
-        when AST::AwaitExpr
-          true
-        when AST::Call, AST::Specialization
-          expression_contains_await?(expression.callee) || expression.arguments.any? { |argument| expression_contains_await?(argument.value) }
-        when AST::UnaryOp
-          expression_contains_await?(expression.operand)
-        when AST::BinaryOp
-          expression_contains_await?(expression.left) || expression_contains_await?(expression.right)
-        when AST::IfExpr
-          expression_contains_await?(expression.condition) || expression_contains_await?(expression.then_expression) || expression_contains_await?(expression.else_expression)
-        when AST::MatchExpr
-          expression_contains_await?(expression.expression) || expression.arms.any? { |arm| expression_contains_await?(arm.pattern) || expression_contains_await?(arm.value) }
-        when AST::UnsafeExpr
-          expression_contains_await?(expression.expression)
-        when AST::PrefixCast
-          expression_contains_await?(expression.expression)
-        when AST::MemberAccess
-          expression_contains_await?(expression.receiver)
-        when AST::IndexAccess
-          expression_contains_await?(expression.receiver) || expression_contains_await?(expression.index)
-        when AST::FormatString
-          expression.parts.any? { |part| part.is_a?(AST::FormatExprPart) && expression_contains_await?(part.expression) }
-        else
-          false
         end
       end
 
