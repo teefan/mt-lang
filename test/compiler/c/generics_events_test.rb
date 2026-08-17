@@ -1425,4 +1425,53 @@ function main() -> int:
     assert_equal 49, result.exit_status
   end
 
+  def test_generate_c_for_generic_instances_do_not_leak_sema_types
+    source = <<~MT
+      # module demo.generic_inst_types
+
+      function twice[T](x: T) -> T:
+          let r = x + x
+          return r
+
+      function main() -> int:
+          let a = twice[int](3)
+          let b = twice[float](2.5)
+          let s = float<-a + b
+          return if int<-s == 11: 0 else: 1
+    MT
+
+    generated = generate_c_from_source(source)
+
+    # The two instances share the same generic AST; the sema type cache must
+    # not leak one instance's types into the other. The int instance must
+    # declare an int32_t local, not the float instance's float.
+    assert_match(/static int32_t demo_generic_inst_types_twice__int\(int32_t x\) \{.*?int32_t r = x \+ x;/m, generated)
+    assert_match(/static float demo_generic_inst_types_twice__float\(float x\) \{.*?float r = x \+ x;/m, generated)
+    refute_match(/demo_generic_inst_types_twice__int\(int32_t x\) \{.*?float r = x \+ x;/m, generated)
+  end
+
+  def test_run_program_for_generic_instances_do_not_leak_sema_types
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.generic_inst_types_run
+
+      function twice[T](x: T) -> T:
+          let r = x + x
+          return r
+
+      function main() -> int:
+          let a = twice[int](3)
+          let b = twice[float](2.5)
+          let s = float<-a + b
+          return if int<-s == 11: 0 else: 1
+    MT
+
+    result = run_program_from_source(source, compiler:)
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
 end

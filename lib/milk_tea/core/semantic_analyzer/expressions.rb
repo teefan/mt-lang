@@ -248,7 +248,13 @@ module MilkTea
             raise_sema_error("unsupported expression #{expression.class.name}")
           end
 
-          @resolved_expr_types[@ctx.ast.node_ids[expression.object_id]] = type
+          # Specialized generic-instance bodies share the same AST nodes across
+          # substitutions, so a node-id keyed cache cannot be populated there:
+          # the last-checked instance would overwrite every other instance's
+          # types and leak wrong types to lowering, which reads this cache.
+          # Regular functions carry an empty (but non-nil) substitution hash, so
+          # only a non-empty hash identifies an instance body.
+          @resolved_expr_types[@ctx.ast.node_ids[expression.object_id]] = type unless @current_type_substitutions&.any?
           type
         end
       end
@@ -961,7 +967,7 @@ module MilkTea
         callable_kind = resolution.kind
         callable = resolution.value
         receiver = resolution.receiver
-        @resolved_call_kinds[@ctx.ast.node_ids[expression.callee.object_id]] = callable_kind
+        @resolved_call_kinds[@ctx.ast.node_ids[expression.callee.object_id]] = callable_kind unless @current_type_substitutions&.any?
 
         case callable_kind
         when :function

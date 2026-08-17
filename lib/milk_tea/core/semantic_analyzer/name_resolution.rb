@@ -695,7 +695,9 @@ module MilkTea
         offset = CompileTime::Layout.offset_of(type, binding.const_value.field_name)
         return unless offset
 
-        @const_values[@ctx.ast.node_ids[expression.object_id]] = offset
+        # Same node-id key collision as resolved_expr_types: instance bodies
+        # share AST nodes across substitutions, so never cache their values.
+        @const_values[@ctx.ast.node_ids[expression.object_id]] = offset unless @current_type_substitutions&.any?
       end
 
       def infer_offsetof_type(type_ref, field_name, scopes: nil)
