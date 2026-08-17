@@ -486,4 +486,124 @@ class ComptimeFoldTest < Minitest::Test
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
   end
+
+  def test_comptime_folds_numeric_prefix_casts
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_precast
+
+      const F1: int = int<-3.7
+      const F2: ubyte = ubyte<-300
+      const F3: byte = byte<-(-300)
+      const F4: int = int<-true
+      const F5: uint = uint<-(-1)
+      const F6: short = short<-70000
+      const F7: float = float<-7
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_precast_F1 = 3"
+    assert_includes c_code, "comptime_precast_F2 = 44"
+    assert_includes c_code, "comptime_precast_F3 = -44"
+    assert_includes c_code, "comptime_precast_F4 = 1"
+    assert_includes c_code, "comptime_precast_F5 = 4294967295"
+    assert_includes c_code, "comptime_precast_F6 = 4464"
+    assert_includes c_code, "comptime_precast_F7 = 7.0f"
+  end
+
+  def test_comptime_folds_const_block_field_and_index_assignment
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_assign
+
+      struct Pt:
+          x: int
+          y: int
+
+      const D -> int:
+          var p = Pt(x = 1, y = 2)
+          p.y = 5
+          return p.y
+
+      const DA -> int:
+          var arr = array[int, 3](1, 2, 3)
+          arr[1] = 9
+          arr[2] += 1
+          return arr[1] + arr[2]
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_assign_D = 5"
+    assert_includes c_code, "comptime_assign_DA = 13"
+  end
+
+  def test_comptime_folds_const_block_destructuring
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_destructure
+
+      struct Pt:
+          x: int
+          y: int
+
+      const E -> int:
+          let (a, b) = (10, 20)
+          let Pt(cx, cy) = Pt(x = 3, y = 4)
+          return a + b + cx + cy
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_destructure_E = 37"
+  end
+
+  def test_comptime_folds_runtime_behavior_for_casts_assignments_destructure
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      # module demo.comptime_bde_run
+
+      struct Pt:
+          x: int
+          y: int
+
+      const F1: int = int<-3.7
+      const F2: ubyte = ubyte<-300
+      const F3: int = int<-true
+
+      const D -> int:
+          var p = Pt(x = 1, y = 2)
+          p.y = 5
+          return p.y
+
+      const E -> int:
+          let (a, b) = (10, 20)
+          let Pt(cx, cy) = Pt(x = 3, y = 4)
+          return a + b + cx + cy
+
+      const COW -> int:
+          var a = Pt(x = 1, y = 2)
+          var b = a
+          a.x = 5
+          return b.x
+
+      function main() -> int:
+          if int<-3.7 != F1: return 1
+          if ubyte<-300 != F2: return 2
+          if int<-true != F3: return 3
+          if D != 5: return 4
+          if E != 37: return 5
+          if COW != 1: return 6
+          return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
 end

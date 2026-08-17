@@ -141,9 +141,56 @@ module MilkTea
           evaluate_match_expression(expression)
         when AST::IndexAccess
           evaluate_index_access(expression)
+        when AST::PrefixCast
+          evaluate_prefix_cast(expression)
         else
           nil
         end
+      end
+
+      def evaluate_prefix_cast(expression)
+        operand = evaluate(expression.expression)
+        operand = 1 if operand == true
+        operand = 0 if operand == false
+        return nil unless operand.is_a?(Numeric)
+
+        target_type = begin
+          @resolve_type_ref&.call(expression.target_type)
+        rescue SemanticError
+          nil
+        end
+        return nil unless target_type.is_a?(Types::Primitive)
+
+        if target_type.boolean?
+          return operand != 0
+        end
+
+        if target_type.integer?
+          return nil unless target_type.integer_width
+
+          value = operand.is_a?(Float) ? operand.truncate : operand
+          return nil unless value.is_a?(Integer)
+
+          return wrap_integer(value, target_type.integer_width, target_type.signed_integer?)
+        end
+
+        return nil unless target_type.float?
+
+        value = operand.to_f
+        target_type.name == "float" ? float32_round(value) : value
+      end
+
+      def wrap_integer(value, width, signed)
+        mask = (1 << width) - 1
+        wrapped = value & mask
+        return wrapped unless signed
+
+        half = 1 << (width - 1)
+        wrapped >= half ? wrapped - (1 << width) : wrapped
+      end
+
+      def float32_round(value)
+        [value].pack("f").unpack1("f")
       end
 
       def evaluate_index_access(expression)
@@ -389,6 +436,7 @@ module MilkTea
               @checker.evaluate_compile_time_const_value(ma_expr, scopes:)
             },
             resolve_call: ->(call_expr) { resolve_compile_time_call(call_expr, scopes:) },
+            resolve_type_ref: ->(type_ref) { @checker.resolve_type_ref(type_ref) },
           )
         end
       end
@@ -397,9 +445,48 @@ module MilkTea
         return nil unless decl.value
 
         value = evaluate_expression(decl.value, scopes:)
+        return value unless value
+
+        if decl.destructure_bindings&.any?
+          return evaluate_destructure_local_decl(decl, value)
+        end
+
         @variables[decl.name] = value
         @variable_types[decl.name] = compile_time_decl_type(decl.value, scopes:) unless @variable_types.key?(decl.name)
         value
+      end
+
+      def evaluate_destructure_local_decl(decl, value)
+        if value.is_a?(Array)
+          decl.destructure_bindings.each_with_index do |name, idx|
+            next if name == "_"
+
+            @variables[name] = value[idx]
+          end
+          return value
+        end
+
+        if value.is_a?(Hash)
+          field_names = destructure_field_names(decl.destructure_type_name)
+          decl.destructure_bindings.each_with_index do |name, idx|
+            next if name == "_"
+
+            field_name = field_names&.[](idx) || name
+            @variables[name] = value[field_name]
+          end
+          return value
+        end
+
+        nil
+      end
+
+      def destructure_field_names(type_name)
+        return nil unless type_name
+        return nil unless @checker.respond_to?(:compile_time_struct_field_names)
+
+        @checker.compile_time_struct_field_names(type_name)
+      rescue StandardError
+        nil
       end
 
       def compile_time_decl_type(expression, scopes:)
@@ -412,15 +499,64 @@ module MilkTea
 
       def evaluate_assignment(assignment, scopes:)
         value = evaluate_expression(assignment.value, scopes:)
+        return nil unless value
+
         case assignment.target
         when AST::Identifier
+          return nil unless @variables.key?(assignment.target.name)
+
           if assignment.operator != "="
             current = @variables[assignment.target.name]
             value = apply_compile_time_binary(assignment.operator.chomp("="), current, value)
           end
           @variables[assignment.target.name] = value
+        when AST::MemberAccess
+          return nil unless evaluate_member_assignment(assignment, value, scopes:)
+        when AST::IndexAccess
+          return nil unless evaluate_index_assignment(assignment, value, scopes:)
         end
         value
+      end
+
+      def evaluate_member_assignment(assignment, value, scopes:)
+        target = assignment.target
+        return nil unless target.receiver.is_a?(AST::Identifier)
+        return nil unless @variables.key?(target.receiver.name)
+
+        receiver = @variables[target.receiver.name]
+        return nil unless receiver.is_a?(Hash)
+
+        if assignment.operator != "="
+          current = receiver[target.member]
+          value = apply_compile_time_binary(assignment.operator.chomp("="), current, value)
+          return nil unless value
+        end
+
+        updated = receiver.dup
+        updated[target.member] = value
+        @variables[target.receiver.name] = updated
+      end
+
+      def evaluate_index_assignment(assignment, value, scopes:)
+        target = assignment.target
+        return nil unless target.receiver.is_a?(AST::Identifier)
+        return nil unless @variables.key?(target.receiver.name)
+
+        receiver = @variables[target.receiver.name]
+        return nil unless receiver.is_a?(Array)
+
+        index = evaluate_expression(target.index, scopes:)
+        return nil unless index.is_a?(Integer)
+
+        if assignment.operator != "="
+          current = receiver[index]
+          value = apply_compile_time_binary(assignment.operator.chomp("="), current, value)
+          return nil unless value
+        end
+
+        updated = receiver.dup
+        updated[index] = value
+        @variables[target.receiver.name] = updated
       end
 
       def apply_compile_time_binary(operator, left, right)

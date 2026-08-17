@@ -747,6 +747,17 @@ module MilkTea
         true
       end
 
+      def compile_time_struct_field_names(type_name)
+        parts = type_name.is_a?(Array) ? type_name.map(&:to_s) : [type_name.to_s]
+        return nil if parts.empty?
+
+        type = resolve_type_expression(::MilkTea::AST.build_chain_from_parts(parts))
+        return nil unless type
+        return nil unless type.respond_to?(:fields) && type.fields
+
+        type.fields.keys
+      end
+
       def compile_time_expression_type(expression, scopes:)
         case expression
         when AST::Call

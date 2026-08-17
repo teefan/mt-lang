@@ -1930,6 +1930,17 @@ module MilkTea
         end
       end
 
+      def compile_time_struct_field_names_lower(type_name)
+        parts = type_name.is_a?(Array) ? type_name.map(&:to_s) : [type_name.to_s]
+        return nil if parts.empty?
+
+        type = resolve_type_expression(::MilkTea::AST.build_chain_from_parts(parts))
+        return nil unless type
+        return nil unless type.respond_to?(:fields) && type.fields
+
+        type.fields.keys
+      end
+
       def compile_time_call_return_type_lower(call_expr)
         case call_expr.callee
         when AST::MemberAccess
@@ -1963,6 +1974,14 @@ module MilkTea
 
         def top_level_function(name)
           @lowerer.instance_variable_get(:@ctx).functions&.[](name)
+        end
+
+        def resolve_type_ref(type_ref)
+          @lowerer.resolve_type_ref(type_ref)
+        end
+
+        def compile_time_struct_field_names(type_name)
+          @lowerer.compile_time_struct_field_names_lower(type_name)
         end
 
         def const_method_binding_for_receiver(receiver_type, member)
