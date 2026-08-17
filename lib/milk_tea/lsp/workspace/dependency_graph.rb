@@ -112,16 +112,28 @@ module MilkTea
         # longer authoritative — e.g. a closed document whose buffer differed from
         # disk. Kept rare: closing a file is infrequent, so a wholesale clear is
         # safer than reasoning about which dependents could have observed the
-        # closed buffer.
+        # closed buffer. Open documents keep their last-known-good snapshots so
+        # they keep serving rich features while re-analysis lands.
         def clear_shared_module_cache
           @facts_state_mutex.synchronize do
             @facts_cache_mutex.synchronize do
+              all_open = @document_state_mutex.synchronize { @open_documents.keys }
+              preserved_facts = all_open.each_with_object({}) do |open_uri, preserved|
+                facts = @last_good_facts_cache[open_uri]
+                preserved[open_uri] = facts if facts
+              end
+              preserved_snapshots = all_open.each_with_object({}) do |open_uri, preserved|
+                snapshot = @last_good_tooling_snapshot_cache[open_uri]
+                preserved[open_uri] = snapshot if snapshot
+              end
               @shared_module_cache.clear
               @facts_cache.clear
               @tooling_snapshot_cache.clear
               @diagnostics_cache.clear
               @last_good_facts_cache.clear
               @last_good_tooling_snapshot_cache.clear
+              preserved_snapshots.each { |open_uri, snapshot| @last_good_tooling_snapshot_cache[open_uri] = snapshot }
+              preserved_facts.each { |open_uri, facts| @last_good_facts_cache[open_uri] = facts }
             end
           end
         end

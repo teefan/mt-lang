@@ -42,7 +42,7 @@ class DiagnosticsTest < Minitest::Test
     end
   end
 
-  def test_publish_diagnostics_uses_fast_mode_on_change_and_full_on_open_save
+  def test_diagnostics_use_full_tier_for_open_change_and_save
     protocol = RecordingProtocol.new
     server = MilkTea::LSP::Server.new(protocol: protocol)
     uri = "file:///tmp/lsp_fast_publish_diagnostics.mt"
@@ -105,8 +105,11 @@ class DiagnosticsTest < Minitest::Test
       end
     end
 
+    # Pull-based diagnostics always request the full tier; scheduling a lighter
+    # tier on change would compute in the worker and then duplicate the full
+    # lint on the request thread. All of open/change/save schedule :full.
     assert_equal :full, observed_tiers.pop
-    assert_equal :fast, observed_tiers.pop
+    assert_equal :full, observed_tiers.pop
     assert_equal :full, observed_tiers.pop
 
   ensure

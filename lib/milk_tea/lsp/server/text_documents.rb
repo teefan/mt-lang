@@ -43,7 +43,12 @@ module MilkTea
           invalidate_document_caches(uri)
           current_content = @workspace.get_content(uri)
           refresh_open_document_dependency_state(uri, previous_content: previous_content, current_content: current_content)
-          schedule_diagnostics(uri, lint_tier: :fast) unless @workspace.background_document?(uri)
+          # This server is always pull-based (diagnosticProvider), so the
+          # client's textDocument/diagnostic request asks for the full tier.
+          # Scheduling a lighter tier here computes in the worker and then
+          # duplicates the full lint on the request thread; keep the tiers
+          # aligned so the pull can serve the worker's result.
+          schedule_diagnostics(uri, lint_tier: :full) unless @workspace.background_document?(uri)
           nil
         end
 

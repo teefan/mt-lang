@@ -202,28 +202,72 @@ module MilkTea
           end.join("\n")
         end
 
-        def dependency_export_surface_fingerprint(content)
-          content.to_s.each_line.filter_map do |line|
-            stripped = line.strip
-            next if stripped.empty? || stripped.start_with?('#')
+        # Declaration-prefix regex. Unlike the old form, it also covers the
+        # `const function` compound, async/foreign/external/editable/static
+        # modifiers, and `attribute` declarations. `static_assert` is not
+        # matched: `static` requires whitespace before the keyword, and a bare
+        # module-level statement cannot be a declaration.
+        SURFACE_DECL_LINE = %r{\A(?:(?:public|foreign|external|async|editable|static|const)\s+)*(?:function|struct|union|enum|flags|variant|interface|event|type|const|var|extending|opaque|attribute)\b}
 
-            if stripped.match?(/\A(?:public\s+)?(?:type|struct|union|enum|flags|variant|interface|event|function|const|var)\b/)
-              stripped
-            elsif stripped.match?(/\Aextending\b/)
-              stripped
-            elsif stripped.match?(/\Apublic\s+(?:function|const|var|type)\b/)
-              stripped
+        # A bare `name: Type` line. Only struct/union fields (and continuation
+        # parameter lines) take this shape; local declarations use `let`/`var`,
+        # named arguments use `=`, and match-arm labels start with a keyword or
+        # pattern. Requires a type-like token after the colon so `_:` arm labels
+        # are not treated as surface.
+        SURFACE_FIELD_LINE = /\A[A-Za-z_][A-Za-z0-9_]*\s*:\s*[A-Za-z_\[\]]/
+
+        # Over-approximation of the module's externally-observable surface. It
+        # must never MISS a surface change (a miss leaves shared-cache analyses
+        # of dependents stale); false positives only trigger a harmless
+        # re-analysis. In addition to declaration lines it captures:
+        #   - `@[...]` attributes (packed/align/deprecated change layout/docs)
+        #   - multi-line declaration headers, so parameter/signature edits on
+        #     continuation lines are detected
+        #   - struct/union field lines (`name: Type`)
+        def dependency_export_surface_fingerprint(content)
+          lines = content.to_s.lines.map(&:strip)
+          surface = []
+          i = 0
+          while i < lines.length
+            line = lines[i]
+            if line.empty? || line.start_with?('#')
+              i += 1
+              next
             end
-          end.join("\n")
+
+            if line.start_with?('@[') || line.match?(SURFACE_DECL_LINE) || line.match?(SURFACE_FIELD_LINE)
+              surface << line
+              # Multi-line header: absorb continuation lines until the
+              # terminating ':' so edits inside the header are surfaced too.
+              unless line.end_with?(':')
+                i += 1
+                while i < lines.length
+                  cont = lines[i]
+                  break if cont.empty?
+                  surface << cont
+                  i += 1
+                  break if cont.end_with?(':')
+                end
+                next
+              end
+            end
+            i += 1
+          end
+          surface.join("\n")
         end
 
         def dependency_refresh_required_for_edit?(changed_uri, previous_content, current_content)
           return false if previous_content == current_content
           return true if dependency_import_fingerprint(previous_content) != dependency_import_fingerprint(current_content)
 
-          related_uris = @workspace.related_open_document_uris(changed_uri)
-          return false unless related_uris.length > 1
+          # Keep the open-document dependency index fresh (related_open_document_uris
+          # updates it as a side effect) so dependent tracking stays accurate.
+          @workspace.related_open_document_uris(changed_uri)
 
+          # A surface edit can invalidate shared-cache analyses of NON-open
+          # dependents (their cached entries are recomputed against this module
+          # on their next pull), so clearing must not be gated on there being
+          # open dependents to refresh.
           dependency_export_surface_fingerprint(previous_content) != dependency_export_surface_fingerprint(current_content)
         end
 
