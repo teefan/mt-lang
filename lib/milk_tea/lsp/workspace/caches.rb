@@ -99,14 +99,41 @@ module MilkTea
 
           lock_wait_start = total_start ? monotonic_time : nil
           if @facts_state_mutex.try_lock
+            # No analysis is in flight; computing here is fine (cold paths,
+            # tests). It does not block on other work.
             begin
               compute_snapshot.call
             ensure
               @facts_state_mutex.unlock
             end
           elsif allow_last_good_fallback && last_good_snapshot
-            cache_state = 'last_good'
+            # Facts exist from a prior pass; never block on the in-flight one.
             snapshot = last_good_snapshot
+            cache_state = 'last_good'
+          elsif allow_last_good_fallback
+            # No facts yet and a background analysis is computing this document.
+            # Wait briefly (bounded) for it so the request usually returns fresh
+            # facts instead of a lexical fallback — without duplicating the work
+            # (we never run analysis here) or blocking indefinitely. Beyond the
+            # budget, serve nil and let the handler fall back.
+            deadline = monotonic_time + (IN_FLIGHT_FACTS_WAIT_MS / 1000.0)
+            acquired = false
+            while monotonic_time < deadline
+              if @facts_state_mutex.try_lock
+                acquired = true
+                break
+              end
+              sleep 0.02
+            end
+            if acquired
+              begin
+                compute_snapshot.call
+              ensure
+                @facts_state_mutex.unlock
+              end
+            else
+              cache_state = 'nil'
+            end
           else
             @facts_state_mutex.synchronize do
               lock_wait_ms = elapsed_ms(lock_wait_start) if lock_wait_start

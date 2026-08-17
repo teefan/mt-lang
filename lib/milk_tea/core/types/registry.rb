@@ -41,16 +41,28 @@ module MilkTea
         _intern([:string_view]) { StringView.new }
       end
 
+      # Param signature for intern keys. Parameter#eql? is name-insensitive
+      # (assignability must not depend on parameter names), so arrays of
+      # Parameter objects would conflate fn(value: int) with fn(arg0: int) in
+      # the intern pool. Embedding names here keeps distinct signatures
+      # distinct across independent programs sharing a long-lived pool (the LSP
+      # never resets the registry between checks).
+      def self.param_signature(params)
+        params.map { |p| [p.name, p.type, p.mutable, p.passing_mode, p.boundary_type] }
+      end
+
       def self.function(name, params:, return_type:, receiver_type: nil, receiver_editable: false, variadic: false, external: false)
         params_frozen = params.freeze
-        _intern([:function, name, params_frozen, return_type, receiver_type, receiver_editable, variadic, external]) {
+        param_key = param_signature(params_frozen)
+        _intern([:function, name, param_key, return_type, receiver_type, receiver_editable, variadic, external]) {
           Function.new(name, params: params_frozen, return_type: return_type, receiver_type: receiver_type, receiver_editable: receiver_editable, variadic: variadic, external: external)
         }
       end
 
       def self.proc(params:, return_type:)
         params_frozen = params.freeze
-        _intern([:proc, params_frozen, return_type]) { Proc.new(params: params_frozen, return_type: return_type) }
+        param_key = param_signature(params_frozen)
+        _intern([:proc, param_key, return_type]) { Proc.new(params: params_frozen, return_type: return_type) }
       end
 
       def self.parameter(name, type, mutable: false, passing_mode: :plain, boundary_type: nil)

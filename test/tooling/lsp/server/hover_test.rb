@@ -1938,6 +1938,7 @@ class HoverTest < Minitest::Test
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
+      force_document_facts(client, uri)
 
       line = source.lines.index { |text| text.include?('f"Score  #{this.snapshot.score}"') }
       line_text = source.lines.fetch(line)
@@ -1990,6 +1991,7 @@ class HoverTest < Minitest::Test
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
+      force_document_facts(client, uri)
 
       line = source.lines.index { |text| text.include?("this.reset()") }
       character = source.lines.fetch(line).index("reset")
@@ -2042,6 +2044,7 @@ class HoverTest < Minitest::Test
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
+      force_document_facts(client, uri)
 
       line = source.lines.index { |text| text.include?("KEY_ENTER") }
       character = source.lines.fetch(line).index("KEY_ENTER")

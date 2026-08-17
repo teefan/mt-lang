@@ -72,7 +72,13 @@ module MilkTea
           invalidate_cache(uri)
           enqueue_definition_warmup(uri) unless background_document?(uri)
 
-          @shared_module_cache.clear
+          # The shared module cache is intentionally NOT cleared here. Imported
+          # module analyses only become stale when this file's dependency surface
+          # (imports or exported declarations) changes; a body-only edit leaves
+          # them valid. handle_did_change detects surface changes via
+          # dependency_refresh_required_for_edit? and clears the cache through
+          # refresh_import_dependent_caches. Clearing it on every keystroke forced
+          # a full re-analysis of every transitive module per edit.
           dependent_uris = @facts_cache_mutex.synchronize do
             all_open = @document_state_mutex.synchronize { @open_documents.keys }
             dependent_open_document_uris_for(uri, all_open)

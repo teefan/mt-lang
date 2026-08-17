@@ -107,6 +107,25 @@ module MilkTea
           @full_reverse_index_built = false
         end
 
+        # Drop all cached module analyses (and the per-uri snapshots derived from
+        # them) when an analysis input that was captured in those analyses is no
+        # longer authoritative — e.g. a closed document whose buffer differed from
+        # disk. Kept rare: closing a file is infrequent, so a wholesale clear is
+        # safer than reasoning about which dependents could have observed the
+        # closed buffer.
+        def clear_shared_module_cache
+          @facts_state_mutex.synchronize do
+            @facts_cache_mutex.synchronize do
+              @shared_module_cache.clear
+              @facts_cache.clear
+              @tooling_snapshot_cache.clear
+              @diagnostics_cache.clear
+              @last_good_facts_cache.clear
+              @last_good_tooling_snapshot_cache.clear
+            end
+          end
+        end
+
         def update_dependency_index(uri, facts)
           imported_module_names = if facts
             facts.imports.each_value.filter_map(&:name).to_set

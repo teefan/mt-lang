@@ -823,6 +823,14 @@ function main(value: int) -> int:
     [(finished - started) * 1000.0, response]
   end
 
+  # Wait for background facts analysis of +uri+ to land by issuing a pull
+  # diagnostics request (the same warming path the semantic-token tests use).
+  # This lets hover/definition assertions run against rich facts on disk-backed
+  # projects instead of racing the async diagnostics worker.
+  def force_document_facts(client, uri)
+    client.send_request("textDocument/diagnostic", { "textDocument" => { "uri" => uri } })
+  end
+
   def assert_embedded_heredoc_body_has_no_string_semantic_tokens(source, uri)
     with_lsp_server do |client|
       init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

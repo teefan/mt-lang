@@ -65,12 +65,23 @@ module MilkTea
 
         def handle_did_close(params)
           uri = params['textDocument']['uri']
+          previous_content = @workspace.get_content(uri)
           cancel_diagnostics(uri)
           @workspace.close_document(uri)
           invalidate_document_caches(uri)
           @diagnostic_report_cache.delete(uri)
           @workspace_diagnostic_cache.delete(uri)
-          refresh_open_document_dependency_state(uri)
+          # Once closed, the buffer is no longer authoritative. If it differed
+          # from disk, module analyses computed against it (for dependents and
+          # the file itself) are stale; drop the whole shared cache. Closing is
+          # a rare per-file event, so an unconditional clear is cheap and safe.
+          disk_content = begin
+            path = uri_to_path(uri)
+            path && File.file?(path) ? File.read(path) : nil
+          rescue StandardError
+            nil
+          end
+          clear_shared_module_cache if previous_content != disk_content
           unless defined?(@pull_diagnostics_active) && @pull_diagnostics_active
             @protocol.write_notification('textDocument/publishDiagnostics', {
               uri: uri,

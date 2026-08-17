@@ -22,6 +22,12 @@ module MilkTea
       DOCUMENT_SOURCES = %w[active-editor visible-editor background-document].freeze
       PERF_LOG_THRESHOLD_MS = 1000
 
+      # How long a request thread waits (when no facts are available yet) for an
+      # in-flight background analysis to finish before falling back to lexical/
+      # nil results. Bounds the main-loop stall while usually returning fresh
+      # facts; request threads never run the analysis themselves in this window.
+      IN_FLIGHT_FACTS_WAIT_MS = Integer(ENV.fetch('MILK_TEA_LSP_FACTS_WAIT_MS', '500'))
+
       # Token types that introduce a named definition, in order of precedence.
       #
       # NOTE: this list is intentionally minimal. Multi-keyword prefixes such as

@@ -467,6 +467,7 @@ class DefinitionTest < Minitest::Test
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
+      force_document_facts(client, uri)
 
       line = source.lines.index { |text| text.include?("this.drop_timer +=") }
       character = source.lines.fetch(line).index("drop_timer")

@@ -360,6 +360,8 @@ module MilkTea
         end
 
         def handle_document_diagnostic(params)
+          return { kind: 'full', items: [] } if request_cancelled?(@current_request_id)
+
           uri = params.dig('textDocument', 'uri')
           return { kind: 'full', items: [] } unless uri
 
@@ -404,6 +406,8 @@ module MilkTea
         end
 
         def handle_workspace_diagnostic(params)
+          return { items: [] } if request_cancelled?(@current_request_id)
+
           progress = nil
           if (work_done_token = params['workDoneToken'])
             progress = create_progress_handle(@protocol, work_done_token)
@@ -416,7 +420,13 @@ module MilkTea
           end
 
           all_uris = @workspace.open_document_uris
-          items = all_uris.filter_map do |uri|
+          items = []
+          all_uris.each do |uri|
+            # Coarse cancellation: workspace/diagnostic can iterate many cold
+            # documents (~1s each); bail early when the client cancels so we do
+            # not sink CPU into results that will be discarded.
+            break if request_cancelled?(@current_request_id)
+
             content = @workspace.get_content(uri)
             next if content.empty?
 
@@ -426,10 +436,10 @@ module MilkTea
 
             cached = @workspace_diagnostic_cache[uri]
             if cached && cached[:result_id] == prev_map[uri] && cached[:fingerprint] == fingerprint
-              { uri: uri, kind: 'unchanged', resultId: result_id, items: [], version: nil }
+              items << { uri: uri, kind: 'unchanged', resultId: result_id, items: [], version: nil }
             else
               @workspace_diagnostic_cache[uri] = { result_id: result_id, fingerprint: fingerprint }
-              { uri: uri, kind: 'full', resultId: result_id, items: diagnostics, version: nil }
+              items << { uri: uri, kind: 'full', resultId: result_id, items: diagnostics, version: nil }
             end
           end
 

@@ -158,7 +158,30 @@ module MilkTea
 
     def load_file(path)
       resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
-      @ast_cache[resolved_path] ||= parse_file(resolved_path)
+      @ast_cache[resolved_path] ||= cached_or_parse_file(resolved_path)
+    end
+
+    # Parse +resolved_path+, reusing the shared-cache parsed AST when the source
+    # is disk-backed and unchanged. ASTs are immutable Data, so sharing them
+    # across loaders (and worker threads) is safe; node_ids are assigned at
+    # parse time and analyses keep their own per-node result hashes. Source
+    # files covered by source_overrides are always re-parsed so live editor
+    # buffers win.
+    def cached_or_parse_file(resolved_path)
+      if use_shared_cache_for?(resolved_path)
+        mtime = source_mtime(resolved_path)
+        if mtime
+          entry = @shared_cache[[:ast, resolved_path]]
+          return entry[:ast] if entry && entry[:mtime] == mtime
+        end
+      end
+
+      ast = parse_file(resolved_path)
+      if use_shared_cache_for?(resolved_path)
+        mtime = source_mtime(resolved_path)
+        @shared_cache[[:ast, resolved_path]] = { mtime:, ast: } if mtime
+      end
+      ast
     end
 
     def check_file(path)
@@ -166,7 +189,14 @@ module MilkTea
     end
 
     def with_check_context(path, &block)
-      Types::Registry.reset!
+      # NOTE: Types::Registry.reset! is intentionally NOT called here. The LSP
+      # runs check_program_collecting concurrently on diagnostics workers and
+      # the request thread; a reset would clear the global intern pool while
+      # another thread is mid-analysis, causing threads to intern duplicate type
+      # instances. Interning is idempotent and the pool stays small (bounded by
+      # the type universe), so it is safe to let it grow for the process
+      # lifetime. Single-threaded entry points that want a clean slate (Build#build,
+      # server re-initialize) reset explicitly.
       requested_path = File.expand_path(path)
       previous_platform = @platform
       @platform ||= self.class.platform_suffix_for_path(requested_path)
@@ -541,7 +571,7 @@ module MilkTea
       return [resolved_path, nil, @analysis_cache[resolved_path]] if @analysis_cache.key?(resolved_path)
       return [resolved_path, nil, extra_cache[resolved_path]] if extra_cache&.key?(resolved_path)
 
-      if use_shared_cache?
+      if use_shared_cache_for?(resolved_path)
         entry = @shared_cache[resolved_path]
         if entry
           mtime = source_mtime(resolved_path)
@@ -566,7 +596,7 @@ module MilkTea
     end
 
     def update_shared_cache(resolved_path, analysis)
-      return unless use_shared_cache?
+      return unless use_shared_cache_for?(resolved_path)
 
       mtime = source_mtime(resolved_path)
       @shared_cache[resolved_path] = { mtime:, analysis: } if mtime
@@ -730,8 +760,13 @@ module MilkTea
       )
     end
 
-    def use_shared_cache?
-      @shared_cache && @source_overrides.empty?
+    # The shared cache stores per-module analyses keyed by resolved path. It is
+    # consulted only for paths NOT covered by source_overrides: source-overridden
+    # files reflect live editor buffers (or in-memory sources) that never match
+    # disk, so their entries would be stale by construction. This lets a single
+    # open document invalidate only itself while imported modules stay cached.
+    def use_shared_cache_for?(resolved_path)
+      @shared_cache && !@source_overrides.key?(resolved_path)
     end
   end
 end
