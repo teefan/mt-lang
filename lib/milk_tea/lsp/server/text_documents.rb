@@ -86,7 +86,7 @@ module MilkTea
           rescue StandardError
             nil
           end
-          clear_shared_module_cache if previous_content != disk_content
+          @workspace.clear_shared_module_cache if previous_content != disk_content
           unless defined?(@pull_diagnostics_active) && @pull_diagnostics_active
             @protocol.write_notification('textDocument/publishDiagnostics', {
               uri: uri,
