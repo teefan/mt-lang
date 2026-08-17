@@ -17,7 +17,7 @@ module MilkTea
           if (alias_name = checked_index_alias(expression))
             "(*#{alias_name})"
           else
-            "(*#{checked_array_index_helper_name(expression.receiver_type)}(#{emit_address_of_operand(expression.receiver)}, #{emit_expression(expression.index)}))"
+            "(*#{checked_array_index_helper_name(expression.receiver_type)}(#{emit_checked_array_index_argument(expression.receiver)}, #{emit_expression(expression.index)}))"
           end
         when IR::CheckedSpanIndex
           if (alias_name = checked_index_alias(expression))
@@ -26,7 +26,7 @@ module MilkTea
             "(*#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)}))"
           end
         when IR::NullableIndex
-          "#{nullable_array_index_helper_name(expression.receiver_type)}(#{emit_address_of_operand(expression.receiver)}, #{emit_expression(expression.index)})"
+          "#{nullable_array_index_helper_name(expression.receiver_type)}(#{emit_checked_array_index_argument(expression.receiver)}, #{emit_expression(expression.index)})"
         when IR::NullableSpanIndex
           "#{nullable_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
         when IR::Call
@@ -81,7 +81,7 @@ module MilkTea
           case expression.expression
           when IR::CheckedIndex
             alias_name = checked_index_alias(expression.expression)
-            alias_name || "#{checked_array_index_helper_name(expression.expression.receiver_type)}(#{emit_address_of_operand(expression.expression.receiver)}, #{emit_expression(expression.expression.index)})"
+            alias_name || "#{checked_array_index_helper_name(expression.expression.receiver_type)}(#{emit_checked_array_index_argument(expression.expression.receiver)}, #{emit_expression(expression.expression.index)})"
           when IR::CheckedSpanIndex
             alias_name = checked_index_alias(expression.expression)
             alias_name || "#{checked_span_index_helper_name(expression.expression.receiver_type)}(#{emit_expression(expression.expression.receiver)}, #{emit_expression(expression.expression.index)})"
@@ -344,6 +344,16 @@ module MilkTea
         "(void)#{wrap_expression(expression)}"
       end
 
+      def emit_checked_array_index_argument(receiver)
+        if receiver.is_a?(IR::Unary) && receiver.operator == "*"
+          emit_expression(receiver.operand)
+        elsif c_expression_lvalue?(receiver)
+          emit_expression(receiver)
+        else
+          "&(#{c_type(receiver.type)}[1]){ #{emit_expression(receiver)} }[0]"
+        end
+      end
+
       def emit_address_of_operand(expression)
         return emit_expression(expression.operand) if expression.is_a?(IR::Unary) && expression.operator == "*"
 
@@ -490,8 +500,14 @@ module MilkTea
       def emit_cyclic_array_initializer(field_type, value)
         elem_c_name = c_type(array_element_type(field_type))
         elem_count = array_length(field_type)
-        elements = value.is_a?(IR::ArrayLiteral) ? value.elements.map { |e| emit_initializer(e) }.join(", ") : ""
-        "((#{elem_c_name}*)memcpy(malloc(#{elem_count} * sizeof(#{elem_c_name})), &(#{elem_c_name}[#{elem_count}]){ #{elements} }, #{elem_count} * sizeof(#{elem_c_name})))"
+        source_expr = if value.is_a?(IR::ArrayLiteral)
+          "&(#{elem_c_name}[#{elem_count}]){ #{value.elements.map { |e| emit_initializer(e) }.join(", ")} }"
+        elsif c_expression_lvalue?(value)
+          "&(#{emit_expression(value)})"
+        else
+          "&(#{elem_c_name}[#{elem_count}]){ #{emit_expression(value)} }"
+        end
+        "((#{elem_c_name}*)memcpy(malloc(#{elem_count} * sizeof(#{elem_c_name})), #{source_expr}, #{elem_count} * sizeof(#{elem_c_name})))"
       end
 
       def emit_cyclic_struct_initializer(field_type, value)

@@ -223,6 +223,26 @@ module MilkTea
         soa_types = []
         visited = {}
 
+        all_emitted_top_level_values.each do |value|
+          collect_soa_type(value.type, soa_types, visited)
+        end
+
+        @program.structs.each do |struct_decl|
+          struct_decl.fields.each do |field|
+            collect_soa_type(field.type, soa_types, visited)
+          end
+        end
+
+        @program.unions.each do |union_decl|
+          union_decl.fields.each do |field|
+            collect_soa_type(field.type, soa_types, visited)
+          end
+        end
+
+        each_variant_arm_field_type do |field_type|
+          collect_soa_type(field_type, soa_types, visited)
+        end
+
         emitted_functions.each do |function|
           collect_soa_type(function.return_type, soa_types, visited)
           function.params.each do |param|
@@ -231,10 +251,9 @@ module MilkTea
           collect_soa_from_statements(function.body, soa_types, visited)
         end
 
-        @program.structs.each do |struct_decl|
-          struct_decl.fields.each do |field|
-            collect_soa_type(field.type, soa_types, visited)
-          end
+        @program.static_asserts.each do |statement|
+          collect_soa_type_in_expression(statement.condition, soa_types, visited)
+          collect_soa_type_in_expression(statement.message, soa_types, visited)
         end
 
         soa_types.uniq

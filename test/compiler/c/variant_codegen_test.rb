@@ -341,4 +341,38 @@ class VariantCodegenTest < Minitest::Test
     assert_match(/&\(demo_cyclicall_TypeVal\[1\]\)\{ demo_cyclicall_make_leaf\(\) \}\[0\]/, generated,
                 "cyclic field from call result must materialize via compound literal")
   end
+
+  def test_run_program_for_cyclic_variant_array_field_copy_and_index
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.cyclic_array_field
+
+      variant Node:
+          leaf(value: int)
+          branch(children: array[Node, 2])
+
+      function main() -> int:
+          let a = Node.leaf(value = 7)
+          let b = Node.leaf(value = 8)
+          var arr = array[Node, 2](a, b)
+          let node = Node.branch(children = arr)
+          match node:
+              Node.branch as payload:
+                  match payload.children[0]:
+                      Node.leaf as l:
+                          return l.value - 7
+                      Node.branch:
+                          return 9
+              Node.leaf:
+                  return 9
+          return 9
+    MT
+
+    result = run_program_from_source(source, compiler:)
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
 end

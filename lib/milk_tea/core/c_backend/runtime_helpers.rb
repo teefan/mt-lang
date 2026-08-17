@@ -594,11 +594,11 @@ module MilkTea
 
       def emit_checked_array_index_helper(type)
         helper_name = checked_array_index_helper_name(type)
-        params = [c_declaration(type, '(*array)'), c_declaration(Types::Registry.primitive('ptr_uint'), 'index')].join(', ')
+        params = [c_declaration(pointer_to(array_element_type(type)), 'array'), c_declaration(Types::Registry.primitive('ptr_uint'), 'index')].join(', ')
         [
           "static inline #{c_function_declaration(pointer_to(array_element_type(type)), helper_name, params)} {",
           "#{INDENT}if (index >= #{array_length(type)}) mt_fatal(\"array index out of bounds\");",
-          "#{INDENT}return &(*array)[index];",
+          "#{INDENT}return &array[index];",
           "}",
         ]
       end
@@ -616,11 +616,11 @@ module MilkTea
 
       def emit_nullable_array_index_helper(type)
         helper_name = nullable_array_index_helper_name(type)
-        params = [c_declaration(type, '(*array)'), c_declaration(Types::Registry.primitive('ptr_uint'), 'index')].join(', ')
+        params = [c_declaration(pointer_to(array_element_type(type)), 'array'), c_declaration(Types::Registry.primitive('ptr_uint'), 'index')].join(', ')
         [
           "static inline #{c_function_declaration(pointer_to(array_element_type(type)), helper_name, params)} {",
           "#{INDENT}if (index >= #{array_length(type)}) return NULL;",
-          "#{INDENT}return &(*array)[index];",
+          "#{INDENT}return &array[index];",
           "}",
         ]
       end

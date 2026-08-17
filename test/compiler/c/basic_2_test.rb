@@ -865,9 +865,9 @@ function main() -> uint:
     generated = generate_c_from_source(source)
 
     assert_match(/demo_ptr_array_addr_Palette \*base = &holder;/, generated)
-    assert_match(/uint32_t \*first = mt_checked_index_array_uint_4\(&base->colors, 0\);/, generated)
+    assert_match(/uint32_t \*first = mt_checked_index_array_uint_4\(base->colors, 0\);/, generated)
     assert_match(/\*first = 9;/, generated)
-    assert_match(/return \(\*mt_checked_index_array_uint_4\(&holder\.colors, 0\)\);/, generated)
+    assert_match(/return \(\*mt_checked_index_array_uint_4\(holder\.colors, 0\)\);/, generated)
   end
 
   def test_generate_c_hoists_repeated_checked_index_helper_within_expression_statement
@@ -900,9 +900,9 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(&points, index\);/, generated)
+    assert_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(points, index\);/, generated)
     assert_match(/demo_checked_index_alias_surface_use\(__mt_checked_index_ptr_\d+->x, __mt_checked_index_ptr_\d+->y, __mt_checked_index_ptr_\d+->x \+ __mt_checked_index_ptr_\d+->y, __mt_checked_index_ptr_\d+->x\);/, generated)
-    refute_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(&points, demo_checked_index_alias_surface_next\(&cursor\)\);/, generated)
+    refute_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(points, demo_checked_index_alias_surface_next\(&cursor\)\);/, generated)
   end
 
   def test_generate_c_for_safe_array_indexing_and_assignment
@@ -928,11 +928,11 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static inline uint32_t \*mt_checked_index_array_uint_4\(uint32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
+    assert_match(/static inline uint32_t \*mt_checked_index_array_uint_4\(uint32_t \*array, uintptr_t index\)/, generated)
     assert_match(/if \(index >= 4\) mt_fatal\("array index out of bounds"\);/, generated)
-    assert_match(/\(\*mt_checked_index_array_uint_4\(\&palette, 1\)\) = 9;/, generated)
-    assert_match(/\(\*mt_checked_index_array_uint_4\(\&holder\.colors, 2\)\) = 10;/, generated)
-    assert_match(/if \(\(\*mt_checked_index_array_uint_4\(\&palette, 0\)\) != 1\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_uint_4\(palette, 1\)\) = 9;/, generated)
+    assert_match(/\(\*mt_checked_index_array_uint_4\(holder\.colors, 2\)\) = 10;/, generated)
+    assert_match(/if \(\(\*mt_checked_index_array_uint_4\(palette, 0\)\) != 1\)/, generated)
   end
 
   def test_generate_c_for_zero_initialization
@@ -1006,12 +1006,12 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/int32_t values_input\[4\]/, generated)
-    assert_match(/static inline int32_t \*mt_checked_index_array_int_4\(int32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
+    assert_match(/static inline int32_t \*mt_checked_index_array_int_4\(int32_t \*array, uintptr_t index\)/, generated)
     assert_match(/int32_t values\[4\];\n  memcpy\(values, values_input, sizeof\(values\)\);/, generated)
     assert_match(/int32_t local\[4\];\n  memcpy\(local, values, sizeof\(local\)\);/, generated)
     assert_match(/memcpy\(lhs, rhs, sizeof\(lhs\)\);/, generated)
-    assert_match(/return \(\*mt_checked_index_array_int_4\(\&local, 1\)\);/, generated)
-    assert_match(/if \(\(\*mt_checked_index_array_int_4\(\&lhs, 1\)\) != 6\)/, generated)
+    assert_match(/return \(\*mt_checked_index_array_int_4\(local, 1\)\);/, generated)
+    assert_match(/if \(\(\*mt_checked_index_array_int_4\(lhs, 1\)\) != 6\)/, generated)
   end
 
   def test_generate_c_for_local_array_returns
@@ -1147,7 +1147,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/char buffer\[32\] = \{ 0 \};/, generated)
-    assert_match(/\(\*mt_checked_index_array_char_32\(&buffer, 0\)\) = \(char\) 65;/, generated)
+    assert_match(/\(\*mt_checked_index_array_char_32\(buffer, 0\)\) = \(char\) 65;/, generated)
     assert_match(/\(mt_span_char\)\{ \.data = &buffer\[0\], \.len = 32 \}/, generated)
   end
 
@@ -1586,7 +1586,7 @@ function main() -> int:
 
     assert_match(/float \(\*callback\)\(float value\);/, generated)
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\)/, generated)
-    assert_match(/int32_t left = \(\*mt_checked_index_array_.*_1\(&callbacks, 0\)\)\(1\);/, generated)
+    assert_match(/int32_t left = \(\*mt_checked_index_array_.*_1\(callbacks, 0\)\)\(1\);/, generated)
     assert_match(/float right = callback\(1\.0f\);/, generated)
   end
 
@@ -1622,7 +1622,7 @@ public function times_two(value: int) -> int:
 
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\) = \{ std_ease_times_two \};/, generated)
     assert_match(/\.callback = std_ease_times_two/, generated)
-    assert_match(/return \(\*mt_checked_index_array_.*_1\(&callbacks, 0\)\)\(3\) \+ entry\.callback\(4\);/, generated)
+    assert_match(/return \(\*mt_checked_index_array_.*_1\(callbacks, 0\)\)\(3\) \+ entry\.callback\(4\);/, generated)
   end
 
   def test_generate_c_for_stored_callable_values_with_ref_parameters
@@ -1654,7 +1654,7 @@ function main() -> int:
 
     assert_match(/bool \(\*callback\)\(demo_ref_callable_values_Counter \*arg0\);/, generated)
     assert_match(/bool \(\*callbacks\[1\]\)\(demo_ref_callable_values_Counter \*arg0\)/, generated)
-    assert_match(/\(\*mt_checked_index_array_.*_1\(&callbacks, 0\)\)\(&counter\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_.*_1\(callbacks, 0\)\)\(&counter\)/, generated)
   end
 
   def test_generate_c_for_same_length_function_arrays_with_distinct_signatures
@@ -1688,8 +1688,8 @@ function main() -> int:
 
     assert_match(/static inline int32_t \(\*\*mt_checked_index_array_int32_t_value_int32_t_value_2\(/, generated)
     assert_match(/static inline bool \(\*\*mt_checked_index_array_bool_value_demo_same_length_fn_arrays_Counter_arg0_2\(/, generated)
-    assert_match(/\(\*mt_checked_index_array_int32_t_value_int32_t_value_2\(&callbacks, 0\)\)\(1\)/, generated)
-    assert_match(/\(\*mt_checked_index_array_bool_value_demo_same_length_fn_arrays_Counter_arg0_2\(&ref_callbacks, 0\)\)\(&counter\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_int32_t_value_int32_t_value_2\(callbacks, 0\)\)\(1\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_bool_value_demo_same_length_fn_arrays_Counter_arg0_2\(ref_callbacks, 0\)\)\(&counter\)/, generated)
   end
 
   def test_generate_c_for_proc_closure_capture_and_param_calls
@@ -1841,7 +1841,7 @@ function main() -> int:
     assert_match(/typedef struct mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool/, generated)
     assert_match(/\.invoke = demo_proc_ref_storage_codegen__proc_1__invoke/, generated)
     assert_match(/entry\.callback\.retain\(entry\.callback\.env\);/, generated)
-    assert_match(/\(\*mt_checked_index_array_mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_value_1\(&callbacks, 0\)\)\.invoke\(\(\*mt_checked_index_array_mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_value_1\(&callbacks, 0\)\)\.env, &counter\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_value_1\(callbacks, 0\)\)\.invoke\(\(\*mt_checked_index_array_mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_value_1\(callbacks, 0\)\)\.env, &counter\)/, generated)
   end
 
   def test_generate_c_for_proc_var_reassign_lifecycle
@@ -2477,7 +2477,7 @@ function main() -> int:
 
     result = generate_c_from_source(source)
 
-    assert_match(/static inline int\d*_t \*mt_nullable_index_array_int_4\(int\d*_t \(\*array\)\[4\], uintptr_t index\)/, result)
+    assert_match(/static inline int\d*_t \*mt_nullable_index_array_int_4\(int\d*_t \*array, uintptr_t index\)/, result)
     assert_match(/if \(index >= 4\) return NULL/, result)
   end
 

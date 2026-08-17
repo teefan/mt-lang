@@ -495,7 +495,7 @@ module MilkTea
       def emit_checked_index_pointer(expression)
         case expression
         when IR::CheckedIndex
-          "#{checked_array_index_helper_name(expression.receiver_type)}(#{emit_address_of_operand(expression.receiver)}, #{emit_expression(expression.index)})"
+          "#{checked_array_index_helper_name(expression.receiver_type)}(#{emit_checked_array_index_argument(expression.receiver)}, #{emit_expression(expression.index)})"
         when IR::CheckedSpanIndex
           "#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
         else

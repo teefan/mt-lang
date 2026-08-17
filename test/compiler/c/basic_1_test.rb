@@ -3137,6 +3137,34 @@ function main() -> int:
     assert_match(/mt_soa_/, generated)
   end
 
+  def test_run_program_for_soa_in_union_field
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.soa_union
+
+      struct Particle:
+          x: float
+          y: float
+
+      union Storage:
+          particles: SoA[Particle, 4]
+          raw: array[float, 8]
+
+      function main() -> int:
+          var u: Storage
+          u.particles[0].x = 1.0
+          u.particles[3].y = 2.0
+          return if int<-u.particles[3].y == 2: 0 else: 1
+    MT
+
+    result = run_program_from_source(source, compiler:)
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
   def test_generate_c_for_struct_with_partial_update
     source = <<~MT
       struct Point:
