@@ -747,4 +747,69 @@ async function main() -> int:
     assert_equal 0, result.exit_status
   end
 
+  def test_generate_c_for_async_release_frees_frame_when_not_ready
+    source = <<~MT
+      # module demo.async_release_not_ready_codegen
+
+      import std.async as aio
+
+      async function child() -> int:
+          await aio.sleep(1)
+          return 42
+
+      async function parent() -> int:
+          return await child()
+    MT
+
+    generated = generate_c_from_source(source)
+
+    # The not-ready release path must free the frame after releasing pending
+    # awaits, not leak it. The release function therefore contains a free in
+    # both the not-ready branch and the ready-path tail.
+    release_body = generated[/static void demo_async_release_not_ready_codegen_parent__release\(void \*__mt_frame_raw\) \{.*?\n\}/m, 0]
+    refute_nil release_body
+    assert_equal 2, release_body.scan(/mt_async_free\(__mt_frame_raw\)/).length
+  end
+
+  def test_run_program_for_async_wait_over_result_and_struct_roots
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.async_wait_variant_struct_roots
+
+      import std.async as aio
+
+      struct Pair:
+          first: int
+          second: int
+
+      async function pick(flag: int) -> Result[int, int]:
+          if flag != 0:
+              return Result[int, int].success(value = 7)
+          return Result[int, int].failure(error = 0)
+
+      async function make_pair() -> Pair:
+          return Pair(first = 3, second = 4)
+
+      function main() -> int:
+          let r = aio.wait(pick(1))
+          match r:
+              Result.success as s:
+                  pass
+              Result.failure:
+                  return 1
+          let p = aio.wait(make_pair())
+          if p.first != 3 or p.second != 4:
+              return 2
+          return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
 end

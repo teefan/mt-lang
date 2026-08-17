@@ -364,6 +364,17 @@ module MilkTea
         end
       end
 
+      # Emits a type-name prefix that the semantic re-check of generated proc
+      # roots can actually resolve: bare names for prelude and current-module
+      # types, the qualified module path otherwise.
+      def ast_type_ref_base_parts(type)
+        return [type.name] if type.module_name.nil?
+        return [type.name] if type.module_name == @ctx.module_name
+        return [type.name] if %w[std.option std.result].include?(type.module_name)
+
+        type.module_name.split(".") + [type.name]
+      end
+
       def ast_type_ref_for(type)
         case type
         when Types::Primitive
@@ -392,9 +403,8 @@ module MilkTea
         when Types::TypeVar
           AST::TypeRef.new(name: AST::QualifiedName.new(parts: [type.name]), arguments: [], nullable: false)
         when Types::StructInstance
-          base_parts = type.module_name ? type.module_name.split(".") + [type.name] : [type.name]
           AST::TypeRef.new(
-            name: AST::QualifiedName.new(parts: base_parts),
+            name: AST::QualifiedName.new(parts: ast_type_ref_base_parts(type)),
             arguments: type.arguments.map do |argument|
               if argument.is_a?(Types::LiteralTypeArg)
                 AST::TypeArgument.new(value: AST::IntegerLiteral.new(lexeme: argument.value.to_s, value: argument.value))
@@ -404,9 +414,20 @@ module MilkTea
             end,
             nullable: false,
           )
-        when Types::Struct, Types::Union, Types::Opaque, Types::Enum, Types::Flags
-          parts = type.module_name ? type.module_name.split(".") + [type.name] : [type.name]
-          AST::TypeRef.new(name: AST::QualifiedName.new(parts: parts), arguments: [], nullable: false)
+        when Types::VariantInstance
+          AST::TypeRef.new(
+            name: AST::QualifiedName.new(parts: ast_type_ref_base_parts(type)),
+            arguments: type.arguments.map do |argument|
+              if argument.is_a?(Types::LiteralTypeArg)
+                AST::TypeArgument.new(value: AST::IntegerLiteral.new(lexeme: argument.value.to_s, value: argument.value))
+              else
+                AST::TypeArgument.new(value: ast_type_ref_for(argument))
+              end
+            end,
+            nullable: false,
+          )
+        when Types::Struct, Types::Union, Types::Opaque, Types::Enum, Types::Flags, Types::Variant
+          AST::TypeRef.new(name: AST::QualifiedName.new(parts: ast_type_ref_base_parts(type)), arguments: [], nullable: false)
         when Types::Function
           AST::FunctionType.new(
             params: type.params.each_with_index.map { |param, i| AST::Param.new(name: param.name || "p#{i}", type: ast_type_ref_for(param.type)) },

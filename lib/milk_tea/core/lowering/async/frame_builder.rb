@@ -421,7 +421,8 @@ module MilkTea
         body = [async_frame_cast_declaration(frame_type, async_info)]
 
         not_ready_expr = IR::Unary.new(operator: "not", operand: async_frame_field_expression(frame_expr, "ready", @ctx.types.fetch("bool")), type: @ctx.types.fetch("bool"))
-        not_ready_return = [IR::ReturnStmt.new(value: nil)]
+        frame_free_stmt = IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @ctx.types.fetch("void")))
+        not_ready_return = [frame_free_stmt, IR::ReturnStmt.new(value: nil)]
 
         if async_info[:await_fields].any?
           await_release_stmts = []
