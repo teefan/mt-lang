@@ -111,4 +111,28 @@ class ParallelBlockTest < Minitest::Test
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
   end
+
+  def test_parallel_block_executes_more_than_64_statements
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    declarations = (0...66).map { |i| "    var v#{i}: int = 0" }
+    writes = (0...66).map { |i| "        v#{i} = #{i + 1}" }
+    checks = (0...66).map { |i| "v#{i}" }
+    source = <<~MT
+      # module demo.pblock_many
+
+      function main() -> int:
+    MT
+    source += declarations.join("\n") + "\n"
+    source += "    parallel:\n"
+    source += writes.join("\n") + "\n"
+    source += "    return #{checks.join(" + ")} - 2211\n"
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
 end

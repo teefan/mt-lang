@@ -589,11 +589,17 @@ module MilkTea
         )
         body << IR::ExpressionStmt.new(expression: ready_assign)
 
-        waiter_frame_expr = async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr])
+        waiter_frame_field = async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr])
         wake_stmts = [
+          IR::LocalDecl.new(
+            name: "waiter_frame",
+            linkage_name: "__mt_waiter_frame",
+            type: async_info[:void_ptr],
+            value: waiter_frame_field,
+          ),
           IR::ExpressionStmt.new(
             expression: IR::Assignment.new(
-              target: async_frame_field_expression(frame_expr, "waiter_frame", async_info[:void_ptr]),
+              target: waiter_frame_field,
               operator: "=",
               value: IR::NullLiteral.new(type: async_info[:void_ptr]),
             ),
@@ -601,13 +607,13 @@ module MilkTea
           IR::ExpressionStmt.new(
             expression: IR::Call.new(
               callee: IR::Name.new(name: async_frame_field_c_name("waiter"), type: async_info[:wake_type], pointer: false),
-              arguments: [waiter_frame_expr],
+              arguments: [IR::Name.new(name: "__mt_waiter_frame", type: async_info[:void_ptr], pointer: false)],
               type: @ctx.types.fetch("void"),
             ),
           ),
         ]
         body << IR::IfStmt.new(
-          condition: waiter_frame_expr,
+          condition: waiter_frame_field,
           then_body: wake_stmts,
           else_body: nil,
         )

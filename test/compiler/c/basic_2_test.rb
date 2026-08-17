@@ -442,6 +442,26 @@ function main() -> int:
     assert_match(/return mt_str_concat\(left, right\);/, generated)
   end
 
+  def test_generate_c_for_str_concat_overflow_guard_emits_fatal
+    source = <<~MT
+      # module demo.str_concat_guard
+
+      function main() -> str:
+          let left = "left"
+          let right = "right"
+          return left + right
+    MT
+
+    generated = generate_c_from_source(source)
+
+    # Concat over the scratch buffer budget must abort cleanly instead of
+    # overflowing the per-thread buffer, and mt_fatal must be emitted even
+    # when str+str is the only feature that needs it.
+    assert_match(/if \(total > MT_STR_CONCAT_BUF_SIZE\) mt_fatal/, generated)
+    assert_match(/str concatenation exceeds the scratch buffer budget/, generated)
+    assert_match(/static _Noreturn void mt_fatal/, generated)
+  end
+
   def test_rejects_codegen_for_cstr_addition
     source = <<~MT
       # module demo.bad_cstr_addition

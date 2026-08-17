@@ -636,13 +636,9 @@ module MilkTea
                 active_defers: active_defers + local_defers,
                 loop_flow: nested_loop_flow(loop_flow, local_defers),
               )
+              storage_ref = IR::Name.new(name: linkage_name, type: storage_type, pointer: false)
               lowered << IR::IfStmt.new(
-                condition: IR::Binary.new(
-                  operator: "==",
-                  left: IR::Name.new(name: linkage_name, type: storage_type, pointer: false),
-                  right: IR::NullLiteral.new(type: storage_type),
-                  type: @ctx.types.fetch("bool"),
-                ),
+                condition: let_else_failure_condition(storage_ref, storage_type),
                 then_body: else_body,
                 else_body: nil,
               )

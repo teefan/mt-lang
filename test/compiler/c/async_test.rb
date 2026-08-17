@@ -677,4 +677,74 @@ async function main() -> int:
     refute_match(/async main runtime loop failed/, generated)
   end
 
+  def test_generate_c_for_async_cancel_wakes_waiter_with_saved_frame
+    source = <<~MT
+      # module demo.async_cancel_wake_codegen
+
+      import std.async as aio
+
+      async function child() -> int:
+          await aio.sleep(1)
+          return 42
+
+      async function parent() -> int:
+          return await child()
+    MT
+
+    generated = generate_c_from_source(source)
+
+    # Cancel must wake the waiter with the frame saved before the field is
+    # nulled, never with the just-nulled field value.
+    refute_match(/__mt_frame->waiter\(\s*__mt_frame->waiter_frame\s*\)/, generated)
+    assert_match(/void \*__mt_waiter_frame = __mt_frame->waiter_frame;/, generated)
+    assert_match(/__mt_frame->waiter\(__mt_waiter_frame\);/, generated)
+  end
+
+  def test_generate_c_for_async_non_await_let_else_over_result
+    source = <<~MT
+      # module demo.async_let_else_result_codegen
+
+      import std.async as aio
+
+      async function parent(flag: int) -> int:
+          let r = Result[int, int].success(value = flag)
+          let v = r else:
+              return 0
+          return v
+    MT
+
+    generated = generate_c_from_source(source)
+
+    # A let-else over a Result with no await in the initializer must lower to a
+    # kind check, not to a variant equality call against NULL.
+    assert_match(/if \(v\.kind == std_result_Result_int_int_kind_failure\)/, generated)
+    refute_match(/mt_variant_eq_std_result_Result_int_int\([^)]*NULL/, generated)
+  end
+
+  def test_run_program_for_async_non_await_let_else_over_result
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.async_let_else_result_run
+
+      import std.async as aio
+
+      async function parent(flag: int) -> int:
+          let r = Result[int, int].success(value = flag)
+          let v = r else:
+              return 0
+          return v
+
+      async function main() -> int:
+          return await parent(5) - 5
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
 end

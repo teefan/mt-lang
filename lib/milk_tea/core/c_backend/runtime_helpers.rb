@@ -51,6 +51,7 @@ module MilkTea
           "",
           "static mt_str mt_str_concat(mt_str a, mt_str b) {",
           "#{INDENT}uintptr_t total = a.len + b.len;",
+          "#{INDENT}if (total > MT_STR_CONCAT_BUF_SIZE) mt_fatal(\"str concatenation exceeds the scratch buffer budget\");",
           "#{INDENT}if (mt_str_concat_offset + total > MT_STR_CONCAT_BUF_SIZE) {",
           "#{INDENT * 2}mt_str_concat_offset = 0;",
           "#{INDENT}}",
@@ -296,6 +297,9 @@ module MilkTea
           "#{INDENT}items[0].work(items[0].data);",
           "#{INDENT}for (int t = 0; t < nworkers; t++) {",
           "#{INDENT * 2}uv_thread_join(&threads[t]);",
+          "#{INDENT}}",
+          "#{INDENT}for (int t = nworkers + 1; t < count; t++) {",
+          "#{INDENT * 2}items[t].work(items[t].data);",
           "#{INDENT}}",
           "}",
         ]
