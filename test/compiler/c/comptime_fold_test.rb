@@ -285,4 +285,205 @@ class ComptimeFoldTest < Minitest::Test
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
   end
+
+  def test_comptime_folds_static_const_method
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_const_method_static
+
+      struct Rect:
+          w: int
+          h: int
+
+      extending Rect:
+          static const function make(w: int, h: int) -> Rect:
+              return Rect(w = w, h = h)
+
+      const R: Rect = Rect.make(10, 20)
+      const AREA: int = R.w * R.h
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, ".w = 10, .h = 20"
+  end
+
+  def test_comptime_folds_plain_const_method_with_receiver
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_const_method_plain
+
+      struct Rect:
+          w: int
+          h: int
+
+          const function area() -> int:
+              return this.w * this.h
+
+      const R: Rect = Rect(w = 10, h = 20)
+      const AREA: int = R.area()
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_const_method_plain_AREA = 200"
+  end
+
+  def test_comptime_folds_const_method_this_dispatch
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_const_method_this
+
+      struct Rect:
+          w: int
+          h: int
+
+          const function area() -> int:
+              return this.w * this.h
+
+          const function double_area() -> int:
+              return this.area() * 2
+
+      const R: Rect = Rect(w = 10, h = 20)
+      const DOUBLE: int = R.double_area()
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_const_method_this_DOUBLE = 400"
+  end
+
+  def test_comptime_folds_const_method_on_block_local
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_const_method_local
+
+      struct Rect:
+          w: int
+          h: int
+
+          const function area() -> int:
+              return this.w * this.h
+
+      extending Rect:
+          static const function make(w: int, h: int) -> Rect:
+              return Rect(w = w, h = h)
+
+      const COMBINED -> int:
+          let r = Rect.make(3, 4)
+          return r.area() + r.area()
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_const_method_local_COMBINED = 24"
+  end
+
+  def test_comptime_folds_const_method_in_inline_conditions
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_const_method_inline
+
+      struct Rect:
+          w: int
+          h: int
+
+          const function area() -> int:
+              return this.w * this.h
+
+      extending Rect:
+          static const function make(w: int, h: int) -> Rect:
+              return Rect(w = w, h = h)
+
+      const R: Rect = Rect.make(10, 20)
+
+      function when_demo() -> int:
+          when R.area():
+              200:
+                  return 1
+              else:
+                  return 0
+
+      function inline_if_demo() -> int:
+          inline if Rect.make(2, 5).area() == 10:
+              return 1
+          return 0
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, ".w = 10, .h = 20"
+  end
+
+  def test_const_method_rejects_editable_and_interface
+    source = <<~MT
+      # module demo.comptime_const_method_bad
+
+      struct S:
+          a: int
+          editable const function bad() -> void:
+              pass
+
+      function main() -> int:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::ParseError) { check_program_source(source) }
+    assert_match(/editable methods cannot be const/, error.message)
+
+    interface_source = <<~MT
+      # module demo.comptime_const_method_interface_bad
+
+      interface I:
+          const function bad() -> void
+
+      function main() -> int:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::ParseError) { check_program_source(interface_source) }
+    assert_match(/const is not allowed on interface methods/, error.message)
+  end
+
+  def test_comptime_folds_const_method_runtime_behavior
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      # module demo.comptime_const_method_run
+
+      struct Rect:
+          w: int
+          h: int
+
+          const function area() -> int:
+              return this.w * this.h
+
+      extending Rect:
+          static const function make(w: int, h: int) -> Rect:
+              return Rect(w = w, h = h)
+
+          const function helpers() -> void:
+              emit function from_method() -> int:
+                  return 7
+
+      const R: Rect = Rect.make(10, 20)
+      const AREA_FOLDED: int = R.area()
+
+      function main() -> int:
+          if R.area() != 200: return 1
+          if AREA_FOLDED != 200: return 2
+          let local = Rect.make(5, 6)
+          if local.area() != 30: return 3
+          if Rect.make(2, 3).area() != 6: return 4
+          if from_method() != 7: return 5
+          return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
 end

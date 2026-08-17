@@ -120,8 +120,8 @@ module MilkTea
     FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility, :async, :const, :attributes, :line, :column) do
       def initialize(name:, type_params:, params:, return_type:, body:, visibility:, async:, const: false, attributes: [], line: nil, column: nil) = super
     end
-    MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async, :attributes, :line, :column) do
-      def initialize(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, attributes: [], line: nil, column: nil) = super
+    MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async, :const, :attributes, :line, :column) do
+      def initialize(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, const: false, attributes: [], line: nil, column: nil) = super
     end
     ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :attributes, :line, :column, :mapping) do
       def initialize(name:, type_params:, params:, return_type:, variadic:, attributes: [], line: nil, column: nil, mapping: nil) = super

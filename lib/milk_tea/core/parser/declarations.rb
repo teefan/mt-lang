@@ -459,6 +459,7 @@ module MilkTea
         match(:async)
         match(:editable) if check(:editable)
         match(:static) if check(:static)
+        match(:const) if check(:const)
         result = check(:function) && !check_next(:colon)
         @current = saved
         result
@@ -657,10 +658,10 @@ module MilkTea
       end
 
       def parse_method_def(attributes: [])
-        visibility, _visibility_token, async, kind, line, name_token = parse_method_head
+        visibility, _visibility_token, async, kind, const, line, name_token = parse_method_head
         name = name_token.lexeme
         type_params, params, return_type, body = parse_callable_signature
-        AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, attributes:, line:, column: name_token.column)
+        AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, const:, attributes:, line:, column: name_token.column)
       rescue ParseError => e
         raise unless @recovery_errors
 
@@ -668,11 +669,12 @@ module MilkTea
         name = name_token&.lexeme || "unknown"
         col = name_token&.column || 1
         advance until eof? || check(:function) || check(:dedent)
-        AST::MethodDef.new(name:, type_params: [], params: [], return_type: nil, body: nil, kind: kind || :plain, visibility: visibility || :private, async: async || false, attributes:, line:, column: col)
+        AST::MethodDef.new(name:, type_params: [], params: [], return_type: nil, body: nil, kind: kind || :plain, visibility: visibility || :private, async: async || false, const: const || false, attributes:, line:, column: col)
       end
 
       def parse_interface_method_decl(attributes: [])
-        visibility, visibility_token, async, kind, line, name_token = parse_method_head
+        visibility, visibility_token, async, kind, const, line, name_token = parse_method_head
+        raise error(name_token, "const is not allowed on interface methods") if const
         raise error(visibility_token, "public is not allowed on interface methods") if visibility == :public
 
         name = name_token.lexeme
@@ -689,6 +691,9 @@ module MilkTea
         visibility, visibility_token = parse_visibility
         async = match(:async)
         kind = parse_method_kind
+        const = match(:const)
+        raise error(previous, "editable methods cannot be const") if kind == :editable && const
+        raise error(previous, "async methods cannot be const") if async && const
         if check(:function)
           consume(:function, "expected function declaration")
         elsif check(:identifier)
@@ -699,7 +704,7 @@ module MilkTea
         end
         line = previous.line
         name_token = consume_name("expected function name")
-        [visibility, visibility_token, async, kind, line, name_token]
+        [visibility, visibility_token, async, kind, const, line, name_token]
       end
 
       def parse_method_kind

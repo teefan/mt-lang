@@ -419,6 +419,11 @@ module MilkTea
             end
             return CompileTime::VariantValue.new(arm: arm_name, fields: fields)
           end
+
+          if (method_binding = compile_time_member_method_binding(expression.callee, scopes:))
+            receiver_value = compile_time_member_receiver_value(expression.callee.receiver, scopes:)
+            return evaluate_const_method_body(method_binding, expression.arguments, scopes:, receiver_value:)
+          end
         when AST::Identifier
           if (struct_type = @ctx.types[expression.callee.name]) && struct_type.is_a?(Types::Struct)
             fields = {}
@@ -614,7 +619,10 @@ module MilkTea
           initial_vars[param.name] = arg_value
         end
 
-        ctx = CompileTime::BlockContext.new(self, initial_variables: initial_vars)
+        variable_types = func.body_params.each_with_object({}) do |param, acc|
+          acc[param.name] = param.type
+        end
+        ctx = CompileTime::BlockContext.new(self, initial_variables: initial_vars, variable_types: variable_types)
         result = ctx.evaluate_block(func.ast.body, scopes: nil)
         result.is_a?(CompileTime::ReturnOutcome) ? result.value : result
       rescue CompileTime::Error => e
@@ -638,6 +646,132 @@ module MilkTea
             end
           end
         end
+      end
+
+      def evaluate_const_method_body(binding, arguments, scopes:, receiver_value:)
+        method = binding.ast
+        return nil unless method.respond_to?(:body) && method.body
+        return nil if binding.type_params.any?
+        return nil unless method.params.length == arguments.length
+
+        initial_vars = {}
+        if binding.type.receiver_type
+          return nil unless compile_time_receiver_value?(receiver_value)
+
+          initial_vars["this"] = receiver_value
+        end
+
+        method.params.each_with_index do |param, idx|
+          arg_value = evaluate_compile_time_const_value(arguments[idx].value, scopes:)
+          return nil unless arg_value
+
+          initial_vars[param.name] = arg_value
+        end
+
+        variable_types = binding.body_params.each_with_object({}) do |param, acc|
+          acc[param.name] = param.type
+        end
+        ctx = CompileTime::BlockContext.new(self, initial_variables: initial_vars, variable_types: variable_types)
+        result = ctx.evaluate_block(method.body, scopes: nil)
+        result.is_a?(CompileTime::ReturnOutcome) ? result.value : result
+      rescue CompileTime::Error => e
+        raise_sema_error(e.message)
+      end
+
+      def compile_time_member_method_binding(member_access, scopes:)
+        member = member_access.member
+        keys = ["static:#{member}", member]
+
+        type = resolve_type_expression(member_access.receiver)
+        if type && (binding = compile_time_method_binding_for_type(type, keys))
+          return binding
+        end
+
+        receiver_type = compile_time_receiver_type(member_access.receiver, scopes:)
+        return unless receiver_type
+
+        compile_time_method_binding_for_type(receiver_type, keys)
+      end
+
+      def compile_time_method_binding_for_type(type, keys)
+        dispatch_type = type.respond_to?(:definition) ? type.definition : type
+        method_map = @ctx.methods.fetch(dispatch_type, nil)
+        return unless method_map
+
+        keys.each do |key|
+          binding = method_map[key]
+          next unless binding
+
+          ast = binding.ast
+          next unless ast.respond_to?(:const) && ast.const && ast.body
+          next unless binding.type_params.empty?
+
+          return binding
+        end
+        nil
+      end
+
+      def const_method_binding_for_receiver(receiver_type, member)
+        compile_time_method_binding_for_type(receiver_type, ["static:#{member}", member])
+      end
+
+      def compile_time_receiver_type(receiver, scopes:)
+        case receiver
+        when AST::Identifier
+          type = lookup_value(receiver.name, scopes)&.type if scopes
+          return type if type
+
+          @ctx.top_level_values[receiver.name]&.type
+        when AST::MemberAccess
+          return unless receiver.receiver.is_a?(AST::Identifier)
+
+          imported_module = @ctx.imports[receiver.receiver.name]
+          return unless imported_module
+
+          imported_module.values[receiver.member]&.type
+        when AST::Call, AST::Specialization
+          compile_time_call_return_type(receiver, scopes:)
+        end
+      end
+
+      def compile_time_member_receiver_value(receiver, scopes:)
+        return nil if resolve_type_expression(receiver)
+
+        evaluate_compile_time_const_value(receiver, scopes:)
+      end
+
+      def compile_time_receiver_value?(value)
+        return false if value.nil?
+        return false if value.is_a?(Types::Base)
+
+        true
+      end
+
+      def compile_time_expression_type(expression, scopes:)
+        case expression
+        when AST::Call
+          compile_time_call_return_type(expression, scopes:)
+        when AST::Specialization
+          compile_time_call_return_type(expression, scopes:)
+        end
+      end
+
+      def compile_time_call_return_type(call_expr, scopes:)
+        case call_expr.callee
+        when AST::MemberAccess
+          binding = compile_time_member_method_binding(call_expr.callee, scopes:)
+          return binding.body_return_type if binding
+        when AST::Identifier
+          func = @ctx.top_level_functions[call_expr.callee.name]
+          return func.body_return_type if func&.ast&.respond_to?(:const) && func.ast.const
+        when AST::Specialization
+          callee_name = call_expr.callee.callee.is_a?(AST::Identifier) ? call_expr.callee.callee.name : nil
+          if callee_name
+            func = @ctx.top_level_functions[callee_name]
+            return func.body_return_type if func&.ast&.respond_to?(:const) && func.ast.const
+          end
+        end
+        nil
       end
 
       def evaluate_has_attribute_call(arguments, scopes:)

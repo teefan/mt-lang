@@ -301,9 +301,10 @@ module MilkTea
     class BlockContext
       attr_reader :checker
 
-      def initialize(checker, initial_variables: nil)
+      def initialize(checker, initial_variables: nil, variable_types: nil)
         @checker = checker
         @variables = initial_variables || {}
+        @variable_types = variable_types || {}
       end
 
       def evaluate_block(statements, scopes: nil)
@@ -397,7 +398,16 @@ module MilkTea
 
         value = evaluate_expression(decl.value, scopes:)
         @variables[decl.name] = value
+        @variable_types[decl.name] = compile_time_decl_type(decl.value, scopes:) unless @variable_types.key?(decl.name)
         value
+      end
+
+      def compile_time_decl_type(expression, scopes:)
+        return nil unless @checker.respond_to?(:compile_time_expression_type)
+
+        @checker.compile_time_expression_type(expression, scopes:)
+      rescue StandardError
+        nil
       end
 
       def evaluate_assignment(assignment, scopes:)
@@ -526,6 +536,9 @@ module MilkTea
         result = try_const_function_call(call_expr, scopes:)
         return result if result
 
+        result = try_const_method_call(call_expr, scopes:)
+        return result if result
+
         result = try_struct_constructor_call(call_expr, scopes:)
         return result if result
 
@@ -533,6 +546,27 @@ module MilkTea
         return result if result
 
         @checker.evaluate_compile_time_const_value(call_expr, scopes:)
+      end
+
+      def try_const_method_call(call_expr, scopes:)
+        return unless call_expr.callee.is_a?(AST::MemberAccess)
+        return unless @checker.respond_to?(:const_method_binding_for_receiver)
+        return unless @checker.respond_to?(:evaluate_const_method_body)
+
+        receiver = call_expr.callee.receiver
+        return unless receiver.is_a?(AST::Identifier)
+        return unless @variables.key?(receiver.name)
+
+        receiver_value = @variables[receiver.name]
+        return nil if receiver_value.nil? || receiver_value.is_a?(Types::Base)
+
+        receiver_type = @variable_types[receiver.name]
+        return nil unless receiver_type
+
+        binding = @checker.const_method_binding_for_receiver(receiver_type, call_expr.callee.member)
+        return nil unless binding
+
+        @checker.evaluate_const_method_body(binding, call_expr.arguments, scopes:, receiver_value:)
       end
 
       def try_const_function_call(call_expr, scopes:)

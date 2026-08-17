@@ -298,14 +298,16 @@ module MilkTea
 
       def render_function_signature(function, prefix: "")
         signature_prefix = if function.is_a?(AST::MethodDef)
-          case function.kind
-          when :editable
-            "editable function "
-          when :static
-            "static function "
-          else
-            "function "
-          end
+          kind_prefix = case function.kind
+                        when :editable
+                          "editable "
+                        when :static
+                          "static "
+                        else
+                          ""
+                        end
+          const_prefix = function.respond_to?(:const) && function.const ? "const " : ""
+          "#{kind_prefix}#{const_prefix}function "
         elsif function.is_a?(AST::ForeignFunctionDecl)
           "foreign function "
         else

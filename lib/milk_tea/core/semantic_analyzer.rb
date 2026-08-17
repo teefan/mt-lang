@@ -222,8 +222,14 @@ module MilkTea
           when AST::WhenStmt
             body = when_chosen_body(decl)
             collect_emit_from_declarations(body) if body
-          when AST::StructDecl, AST::ExtendingBlock
-            # no emit in structs/extending blocks
+          when AST::StructDecl
+            # no emit in structs
+          when AST::ExtendingBlock
+            decl.methods.each do |method|
+              next unless method.respond_to?(:const) && method.const && method.body
+
+              collect_emit_from_statements(method.body)
+            end
           end
         end
       end
