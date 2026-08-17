@@ -448,8 +448,31 @@ module MilkTea
         value = evaluate_expression(decl.value, scopes:)
         return value unless value
 
+        if decl.else_body
+          return evaluate_guard_local_decl(decl, value, scopes:)
+        end
+
         if decl.destructure_bindings&.any?
           return evaluate_destructure_local_decl(decl, value)
+        end
+
+        @variables[decl.name] = value
+        @variable_types[decl.name] = compile_time_decl_type(decl.value, scopes:) unless @variable_types.key?(decl.name)
+        value
+      end
+
+      def evaluate_guard_local_decl(decl, value, scopes:)
+        if value.is_a?(CompileTime::VariantValue)
+          case value.arm
+          when "some", "success"
+            @variables[decl.name] = value.fields["value"]
+            @variable_types[decl.name] = compile_time_decl_type(decl.value, scopes:) unless @variable_types.key?(decl.name)
+            return value
+          when "none", "failure"
+            @variables[decl.else_binding.name] = value.fields["error"] if decl.else_binding
+            return evaluate_block(decl.else_body, scopes:)
+          end
+          return nil
         end
 
         @variables[decl.name] = value

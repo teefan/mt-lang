@@ -606,4 +606,144 @@ class ComptimeFoldTest < Minitest::Test
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
   end
+
+  def test_comptime_folds_const_block_guards
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_guard
+
+      const OPT_SOME -> int:
+          let x = Option[int].some(value = 42) else:
+              return 9
+          return x
+
+      const OPT_NONE -> int:
+          let x = Option[int].none else:
+              return 9
+          return x
+
+      const RESULT_OK -> int:
+          let x = Result[int, str].success(value = 7) else as error:
+              return 0
+          return x
+
+      const RESULT_ERR -> int:
+          let x = Result[int, str].failure(error = "bad") else as error:
+              if error == "bad":
+                  return 44
+              return 0
+          return x
+
+      const DISCARD -> int:
+          let _ = Result[int, int].success(value = 1) else:
+              return 0
+          return 55
+
+      const NULLABLE_PRESENT -> int:
+          let maybe: int? = 42
+          let x = maybe else:
+              return 9
+          return x
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_guard_OPT_SOME = 42"
+    assert_includes c_code, "comptime_guard_OPT_NONE = 9"
+    assert_includes c_code, "comptime_guard_RESULT_OK = 7"
+    assert_includes c_code, "comptime_guard_RESULT_ERR = 44"
+    assert_includes c_code, "comptime_guard_DISCARD = 55"
+    assert_includes c_code, "comptime_guard_NULLABLE_PRESENT = 42"
+  end
+
+  def test_comptime_folds_guard_in_const_method
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_guard_method
+
+      struct Wrapper:
+          v: int
+
+      extending Wrapper:
+          const function guarded() -> int:
+              let x = Option[int].some(value = 100) else:
+                  return 0
+              return x + this.v
+
+      const W: Wrapper = Wrapper(v = 5)
+      const W_GUARDED: int = W.guarded()
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_guard_method_W_GUARDED = 105"
+  end
+
+  def test_comptime_folds_runtime_behavior_for_guards
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      # module demo.comptime_guard_run
+
+      const F_SOME -> int:
+          let x = Option[int].some(value = 42) else:
+              return 9
+          return x
+
+      const F_NONE -> int:
+          let x = Option[int].none else:
+              return 9
+          return x
+
+      const F_ERR -> int:
+          let x = Result[int, str].failure(error = "bad") else as error:
+              if error == "bad":
+                  return 44
+              return 0
+          return x
+
+      const F_NULL -> int:
+          let maybe: int? = 42
+          let x = maybe else:
+              return 9
+          return x
+
+      function r_some() -> int:
+          let x = Option[int].some(value = 42) else:
+              return 9
+          return x
+
+      function r_none() -> int:
+          let x = Option[int].none else:
+              return 9
+          return x
+
+      function r_err() -> int:
+          let x = Result[int, str].failure(error = "bad") else as error:
+              if error == "bad":
+                  return 44
+              return 0
+          return x
+
+      function r_null() -> int:
+          let maybe: int? = 42
+          let x = maybe else:
+              return 9
+          return x
+
+      function main() -> int:
+          if F_SOME != r_some(): return 1
+          if F_NONE != r_none(): return 2
+          if F_ERR != r_err(): return 3
+          if F_NULL != r_null(): return 4
+          return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
 end
