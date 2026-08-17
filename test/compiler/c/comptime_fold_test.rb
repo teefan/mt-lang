@@ -190,6 +190,34 @@ class ComptimeFoldTest < Minitest::Test
     assert_includes c_code, "comptime_block_local_BLOCKED = 30"
   end
 
+  def test_comptime_folds_char_literal_values
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_char
+
+      const CHAR_ADD -> int:
+          return 'A' + 0
+
+      const CHAR_ESC: ubyte = '\\n'
+
+      const CHAR_MATCH -> int:
+          return match 'b':
+              'a': 1
+              'b': 2
+              _: 0
+
+      const CHAR_CMP -> bool:
+          return 'A' == 'A' and 'B' != 'A'
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_char_CHAR_ADD = 65"
+    assert_includes c_code, "comptime_char_CHAR_ESC = 10"
+    assert_includes c_code, "comptime_char_CHAR_MATCH = 2"
+    assert_includes c_code, "comptime_char_CHAR_CMP = true"
+  end
+
   def test_comptime_folds_runtime_behavior
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

@@ -97,7 +97,7 @@ module MilkTea
           start_val = evaluate(expression.start_expr)
           end_val = evaluate(expression.end_expr)
           start_val.is_a?(Integer) && end_val.is_a?(Integer) ? (start_val...end_val).to_a : nil
-        when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral, AST::CharLiteral
           expression.value
         when AST::StringLiteral
           expression.value
