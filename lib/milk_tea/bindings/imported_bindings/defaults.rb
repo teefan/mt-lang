@@ -61,6 +61,13 @@ module MilkTea
           policy_path: root.join("bindings/imported/box2d.binding.json"),
         ),
         Binding.new(
+          name: "box3d",
+          module_name: "std.box3d",
+          binding_path: root.join("std/box3d.mt"),
+          raw_module_name: "std.c.box3d",
+          policy_path: root.join("bindings/imported/box3d.binding.json"),
+        ),
+        Binding.new(
           name: "cjson",
           module_name: "std.cjson",
           binding_path: root.join("std/cjson.mt"),

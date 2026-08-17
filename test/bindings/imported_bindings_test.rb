@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "gl", "glfw", "box2d", "cjson", "flecs", "libuv", "enet", "zstd", "sqlite3", "curl", "pcre2", "steamworks", "miniaudio", "tracy", "rres", "rpng", "stb_image", "stb_truetype", "stb_image_write", "stb_image_resize2", "stb_rect_pack", "stb_vorbis", "cgltf"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "gl", "glfw", "box2d", "box3d", "cjson", "flecs", "libuv", "enet", "zstd", "sqlite3", "curl", "pcre2", "steamworks", "miniaudio", "tracy", "rres", "rpng", "stb_image", "stb_truetype", "stb_image_write", "stb_image_resize2", "stb_rect_pack", "stb_vorbis", "cgltf"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -302,6 +302,30 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function create_body\(world_id: WorldId, in body_def: BodyDef\) -> BodyId = c\.b2CreateBody$/, source)
     assert_match(/^public foreign function create_polygon_shape\(body_id: BodyId, in shape_def: ShapeDef, in polygon: Polygon\) -> ShapeId = c\.b2CreatePolygonShape$/, source)
     assert_match(/^public foreign function world_draw\(world_id: WorldId, inout draw: DebugDraw\) -> void = c\.b2World_Draw$/, source)
+  end
+
+  def test_checked_in_box3d_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("box3d")
+
+    assert_includes binding.check!, "/std/c/box3d.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^import std\.c\.box3d as c$/, source)
+    assert_match(/^public type WorldId = c\.b3WorldId$/, source)
+    assert_match(/^public type Vec3 = c\.b3Vec3$/, source)
+    assert_match(/^public type DebugDraw = c\.b3DebugDraw$/, source)
+    assert_match(/^public opaque Recording = c"b3Recording"$/, source)
+    assert_match(/^public opaque RecPlayer = c"b3RecPlayer"$/, source)
+    assert_match(/^public const b3_nullWorldId: WorldId = c\.b3_nullWorldId$/, source)
+    assert_match(/^public const b3Vec3_zero: Vec3 = c\.b3Vec3_zero$/, source)
+    assert_match(/^public foreign function default_world_def\(\) -> WorldDef = c\.b3DefaultWorldDef$/, source)
+    assert_match(/^public foreign function create_world\(in world_def: WorldDef\) -> WorldId = c\.b3CreateWorld$/, source)
+    assert_match(/^public foreign function create_body\(world_id: WorldId, in body_def: BodyDef\) -> BodyId = c\.b3CreateBody$/, source)
+    assert_match(/^public foreign function create_sphere_shape\(body_id: BodyId, in shape_def: ShapeDef, in sphere: Sphere\) -> ShapeId = c\.b3CreateSphereShape$/, source)
+    assert_match(/^public foreign function create_hull_shape\(body_id: BodyId, in shape_def: ShapeDef, in hull: HullData\) -> ShapeId = c\.b3CreateHullShape$/, source)
+    assert_match(/^public foreign function world_draw\(world_id: WorldId, inout draw: DebugDraw, mask_bits: ulong\) -> void = c\.b3World_Draw$/, source)
+    assert_match(/^public foreign function world_step\(world_id: WorldId, time_step: float, sub_step_count: int\) -> void = c\.b3World_Step$/, source)
+    assert_match(/^public foreign function body_get_position\(body_id: BodyId\) -> Pos = c\.b3Body_GetPosition$/, source)
   end
 
   def test_checked_in_cjson_binding_matches_policy_and_loads

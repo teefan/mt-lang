@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 glfw gl box2d cjson flecs libuv enet zstd sqlite3 curl pcre2 steamworks miniaudio tracy rres rpng stb_image stb_truetype stb_image_write stb_image_resize2 stb_rect_pack stb_vorbis cgltf], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 glfw gl box2d box3d cjson flecs libuv enet zstd sqlite3 curl pcre2 steamworks miniaudio tracy rres rpng stb_image stb_truetype stb_image_write stb_image_resize2 stb_rect_pack stb_vorbis cgltf], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -178,6 +178,15 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("box2d").link_flags, "-L#{MilkTea::VendoredBox2D.archive_path.dirname}"
     assert_includes registry.fetch("box2d").link_flags, "-lm"
     assert_equal ["b2", "B2_"], registry.fetch("box2d").declaration_name_prefixes
+    assert_equal "std.c.box3d", registry.fetch("box3d").module_name
+    assert_equal ["box3d"], registry.fetch("box3d").link_libraries
+    assert_includes registry.fetch("box3d").compiler_flags, "-I#{MilkTea::VendoredBox3D.include_root}"
+    assert_includes registry.fetch("box3d").header_candidates.first, "third_party/box3d-upstream/include/box3d/box3d.h"
+    assert_includes registry.fetch("box3d").tracked_header_paths.first, "third_party/box3d-upstream/include/box3d/box3d.h"
+    assert_includes registry.fetch("box3d").tracked_header_prefixes.first, "third_party/box3d-upstream/include/box3d"
+    assert_includes registry.fetch("box3d").link_flags, "-L#{MilkTea::VendoredBox3D.archive_path.dirname}"
+    assert_includes registry.fetch("box3d").link_flags, "-lm"
+    assert_equal ["b3", "B3_"], registry.fetch("box3d").declaration_name_prefixes
     assert_equal "std.c.cjson", registry.fetch("cjson").module_name
     assert_equal ["cjson"], registry.fetch("cjson").link_libraries
     assert_includes registry.fetch("cjson").header_candidates.first, "third_party/cjson-upstream/cJSON.h"

@@ -11,6 +11,8 @@ module MilkTea
       vendored_glfw_library = vendored_glfw.library(root:)
       vendored_box2d = MilkTea::VendoredBox2D
       vendored_box2d_library = vendored_box2d.library(root:)
+      vendored_box3d = MilkTea::VendoredBox3D
+      vendored_box3d_library = vendored_box3d.library(root:)
       vendored_cjson = MilkTea::VendoredCJSON
       vendored_cjson_library = vendored_cjson.library(root:)
       vendored_flecs = MilkTea::VendoredFlecs
@@ -958,6 +960,26 @@ module MilkTea
           declaration_name_prefixes: ["b2", "B2_"],
           header_candidates: [
             vendored_box2d.header_root(root:).join("box2d.h").to_s,
+          ],
+        ),
+        Binding.new(
+          name: "box3d",
+          module_name: "std.c.box3d",
+          binding_path: root.join("std/c/box3d.mt"),
+          include_directives: ["box3d/box3d.h"],
+          link_libraries: ["box3d"],
+          vendored_library: vendored_box3d_library,
+          clang_args: vendored_box3d.include_flags(root:),
+          compiler_flags: vendored_box3d.include_flags(root:),
+          tracked_header_paths: [
+            vendored_box3d.header_root(root:).join("box3d.h").to_s,
+          ],
+          tracked_header_prefixes: [
+            vendored_box3d.header_root(root:).to_s,
+          ],
+          declaration_name_prefixes: ["b3", "B3_"],
+          header_candidates: [
+            vendored_box3d.header_root(root:).join("box3d.h").to_s,
           ],
         ),
         Binding.new(

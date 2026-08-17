@@ -196,6 +196,15 @@ module MilkTea
           ],
         ),
         Source.new(
+          name: "box3d",
+          checkout_root: data.join("third_party/box3d-upstream"),
+          repository_url: "https://github.com/erincatto/box3d.git",
+          revision: "30c67b5e6d0a3a66f0f506c69ce9e9e0587e3b7c",
+          sentinel_paths: %w[
+            include/box3d/box3d.h
+          ],
+        ),
+        Source.new(
           name: "cjson",
           checkout_root: data.join("third_party/cjson-upstream"),
           repository_url: "https://github.com/DaveGamble/cJSON.git",

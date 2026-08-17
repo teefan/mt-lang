@@ -2,12 +2,9 @@
 
 import std.c.miniaudio as c
 
-public type context_anonymous_union_14 = c.ma_context_anonymous_union_14
-public type context_anonymous_union_15 = c.ma_context_anonymous_union_15
 public type device_resampling = c.ma_device_resampling
 public type device_playback = c.ma_device_playback
 public type device_capture = c.ma_device_capture
-public type device_anonymous_union_24 = c.ma_device_anonymous_union_24
 public type linear_resampler_x0 = c.ma_linear_resampler_x0
 public type linear_resampler_x1 = c.ma_linear_resampler_x1
 public type resampler_config_linear = c.ma_resampler_config_linear
@@ -39,16 +36,16 @@ public type resource_manager_data_buffer_connector = c.ma_resource_manager_data_
 public type resource_manager_data_source_backend = c.ma_resource_manager_data_source_backend
 public type resource_manager_data_supply_backend = c.ma_resource_manager_data_supply_backend
 public type engine_node_fadeSettings = c.ma_engine_node_fadeSettings
-public type context_anonymous_union_14_alsa = c.ma_context_anonymous_union_14_alsa
-public type context_anonymous_union_14_pulse = c.ma_context_anonymous_union_14_pulse
-public type context_anonymous_union_14_jack = c.ma_context_anonymous_union_14_jack
-public type context_anonymous_union_14_null_backend = c.ma_context_anonymous_union_14_null_backend
-public type context_anonymous_union_15_posix = c.ma_context_anonymous_union_15_posix
+public type context_alsa = c.ma_context_alsa
+public type context_pulse = c.ma_context_pulse
+public type context_jack = c.ma_context_jack
+public type context_null_backend = c.ma_context_null_backend
+public type context_posix = c.ma_context_posix
 public type device_resampling_linear = c.ma_device_resampling_linear
-public type device_anonymous_union_24_alsa = c.ma_device_anonymous_union_24_alsa
-public type device_anonymous_union_24_pulse = c.ma_device_anonymous_union_24_pulse
-public type device_anonymous_union_24_jack = c.ma_device_anonymous_union_24_jack
-public type device_anonymous_union_24_null_device = c.ma_device_anonymous_union_24_null_device
+public type device_alsa = c.ma_device_alsa
+public type device_pulse = c.ma_device_pulse
+public type device_jack = c.ma_device_jack
+public type device_null_device = c.ma_device_null_device
 public type job_toc_breakup = c.ma_job_toc_breakup
 public type job_data_custom = c.ma_job_data_custom
 public type job_data_resourceManager = c.ma_job_data_resourceManager

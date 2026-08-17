@@ -280,9 +280,26 @@ module MilkTea
           qual_type = node.dig("type", "qualType")
           if macro_probe_declaration?(node) && qual_type.to_s.include?("typeof")
             node.dig("type", "desugaredQualType") || qual_type
+          elsif constant_typedef_alias_aggregate?(node)
+            node.dig("type", "desugaredQualType") || qual_type
           else
             qual_type
           end
+        end
+
+        # A constant whose spelled type is a typedef alias that resolves to an
+        # aggregate (e.g. `typedef b3Vec3 b3Pos` followed by
+        # `static const b3Pos b3Pos_zero`) must lower against the underlying
+        # record, not the alias name, so init-list emission can find the
+        # aggregate declaration.
+        def constant_typedef_alias_aggregate?(node)
+          qual_type = node.dig("type", "qualType").to_s
+          spelled = strip_qualifiers(qual_type)
+          return false unless spelled.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+          return false if @aggregate_declarations.key?(spelled)
+
+          desugared = strip_qualifiers(node.dig("type", "desugaredQualType").to_s)
+          !desugared.empty? && desugared != spelled && desugared.match?(/\A(?:struct|union)\b/)
         end
 
         def function_return_type(node)

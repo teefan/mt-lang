@@ -1,0 +1,188 @@
+{
+  "module_name": "std.box3d",
+  "raw_module_name": "std.c.box3d",
+  "raw_import_alias": "c",
+  "types": {
+    "strip_prefix": "b3",
+    "overrides": [
+      { "raw": "b3Recording", "kind": "opaque" },
+      { "raw": "b3RecPlayer", "kind": "opaque" }
+    ]
+  },
+  "constants": {},
+  "functions": {
+    "strip_prefix": "b3",
+    "overrides": [
+      {
+        "raw": "b3CreateWorld",
+        "params": [
+          { "name": "world_def", "type": "WorldDef", "mode": "in" }
+        ],
+        "return_type": "WorldId"
+      },
+      {
+        "raw": "b3World_Draw",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "draw", "type": "DebugDraw", "mode": "inout" },
+          { "name": "mask_bits", "type": "ulong" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "b3World_Explode",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "explosion_def", "type": "ExplosionDef", "mode": "in" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "b3CreateBody",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "body_def", "type": "BodyDef", "mode": "in" }
+        ],
+        "return_type": "BodyId"
+      },
+      {
+        "raw": "b3CreateSphereShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "sphere", "type": "Sphere", "mode": "in" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b3CreateCapsuleShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "capsule", "type": "Capsule", "mode": "in" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b3CreateHullShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "hull", "type": "HullData", "mode": "in" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b3CreateTransformedHullShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "hull", "type": "HullData", "mode": "in" },
+          { "name": "transform", "type": "Transform" },
+          { "name": "scale", "type": "Vec3" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b3CreateMeshShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "mesh", "type": "MeshData", "mode": "in" },
+          { "name": "scale", "type": "Vec3" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b3CreateHeightFieldShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "in" },
+          { "name": "height_field", "type": "HeightFieldData", "mode": "in" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b3CreateBakedCompoundShape",
+        "params": [
+          { "name": "body_id", "type": "BodyId" },
+          { "name": "shape_def", "type": "ShapeDef", "mode": "inout" },
+          { "name": "compound", "type": "const_ptr[CompoundData]" }
+        ],
+        "return_type": "ShapeId"
+      },
+      {
+        "raw": "b3CreateParallelJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "ParallelJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b3CreateDistanceJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "DistanceJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b3CreateMotorJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "MotorJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b3CreateFilterJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "FilterJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b3CreatePrismaticJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "PrismaticJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b3CreateRevoluteJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "RevoluteJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b3CreateSphericalJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "SphericalJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b3CreateWeldJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "WeldJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      },
+      {
+        "raw": "b3CreateWheelJoint",
+        "params": [
+          { "name": "world_id", "type": "WorldId" },
+          { "name": "joint_def", "type": "WheelJointDef", "mode": "in" }
+        ],
+        "return_type": "JointId"
+      }
+    ]
+  }
+}

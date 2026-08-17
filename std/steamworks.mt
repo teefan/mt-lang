@@ -2,7 +2,6 @@
 
 import std.c.steamworks as c
 
-public type InputActionEvent_t_anonymous_union_2 = c.SteamInputActionEvent_t_anonymous_union_2
 public type CCallbackBase = c.CCallbackBase
 public type CallbackMsg_t = c.CallbackMsg_t
 public type Apps = c.ISteamApps

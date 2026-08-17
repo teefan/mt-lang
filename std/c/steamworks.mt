@@ -4,10 +4,6 @@ external
 link "steam_api"
 include "steamworks.h"
 
-union SteamInputActionEvent_t_anonymous_union_2:
-    analogAction: SteamInputActionEvent_t_AnalogAction_t
-    digitalAction: SteamInputActionEvent_t_DigitalAction_t
-
 opaque CCallbackBase = c"CCallbackBase"
 opaque CallbackMsg_t = c"CallbackMsg_t"
 opaque ISteamApps = c"ISteamApps"
@@ -3671,7 +3667,8 @@ struct SteamInputActionEvent_t_DigitalAction_t:
 struct SteamInputActionEvent_t:
     controllerHandle: ulong
     eEventType: ESteamInputActionEventType
-    anonymous_union_2: SteamInputActionEvent_t_anonymous_union_2
+    analogAction: SteamInputActionEvent_t_AnalogAction_t
+    digitalAction: SteamInputActionEvent_t_DigitalAction_t
 
 type PFNPreMinidumpCallback = fn(arg0: ptr[void]) -> void
 type SteamInputActionEventCallbackPointer = fn(arg0: ptr[SteamInputActionEvent_t]) -> void

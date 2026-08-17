@@ -6,16 +6,6 @@ link "pthread"
 link "m"
 include "miniaudio.h"
 
-union ma_context_anonymous_union_14:
-    alsa: ma_context_anonymous_union_14_alsa
-    pulse: ma_context_anonymous_union_14_pulse
-    jack: ma_context_anonymous_union_14_jack
-    null_backend: ma_context_anonymous_union_14_null_backend
-
-union ma_context_anonymous_union_15:
-    posix: ma_context_anonymous_union_15_posix
-    _unused: int
-
 struct ma_device_resampling:
     algorithm: ma_resample_algorithm
     pBackendVTable: ptr[ma_resampling_backend_vtable]
@@ -67,12 +57,6 @@ struct ma_device_capture:
     pIntermediaryBuffer: ptr[void]
     intermediaryBufferCap: uint
     intermediaryBufferLen: uint
-
-union ma_device_anonymous_union_24:
-    alsa: ma_device_anonymous_union_24_alsa
-    pulse: ma_device_anonymous_union_24_pulse
-    jack: ma_device_anonymous_union_24_jack
-    null_device: ma_device_anonymous_union_24_null_device
 
 union ma_linear_resampler_x0:
     f32: ptr[float]
@@ -230,7 +214,7 @@ struct ma_engine_node_fadeSettings:
     fadeLengthInFrames: ma_atomic_uint64
     absoluteGlobalTimeInFrames: ma_atomic_uint64
 
-struct ma_context_anonymous_union_14_alsa:
+struct ma_context_alsa:
     asoundSO: ptr[void]
     snd_pcm_open: fn() -> void
     snd_pcm_close: fn() -> void
@@ -302,7 +286,7 @@ struct ma_context_anonymous_union_14_alsa:
     internalDeviceEnumLock: pthread_mutex_t
     useVerboseDeviceEnumeration: uint
 
-struct ma_context_anonymous_union_14_pulse:
+struct ma_context_pulse:
     pulseSO: ptr[void]
     pa_mainloop_new: fn() -> void
     pa_mainloop_free: fn() -> void
@@ -370,7 +354,7 @@ struct ma_context_anonymous_union_14_pulse:
     pApplicationName: ptr[char]
     pServerName: ptr[char]
 
-struct ma_context_anonymous_union_14_jack:
+struct ma_context_jack:
     jackSO: ptr[void]
     jack_client_open: fn() -> void
     jack_client_close: fn() -> void
@@ -391,16 +375,16 @@ struct ma_context_anonymous_union_14_jack:
     pClientName: ptr[char]
     tryStartServer: uint
 
-struct ma_context_anonymous_union_14_null_backend:
+struct ma_context_null_backend:
     _unused: int
 
-struct ma_context_anonymous_union_15_posix:
+struct ma_context_posix:
     _unused: int
 
 struct ma_device_resampling_linear:
     lpfOrder: uint
 
-struct ma_device_anonymous_union_24_alsa:
+struct ma_device_alsa:
     pPCMPlayback: ptr[void]
     pPCMCapture: ptr[void]
     pPollDescriptorsPlayback: ptr[void]
@@ -412,20 +396,20 @@ struct ma_device_anonymous_union_24_alsa:
     isUsingMMapPlayback: ubyte
     isUsingMMapCapture: ubyte
 
-struct ma_device_anonymous_union_24_pulse:
+struct ma_device_pulse:
     pMainLoop: ptr[void]
     pPulseContext: ptr[void]
     pStreamPlayback: ptr[void]
     pStreamCapture: ptr[void]
 
-struct ma_device_anonymous_union_24_jack:
+struct ma_device_jack:
     pClient: ptr[void]
     ppPortsPlayback: ptr[ma_ptr]
     ppPortsCapture: ptr[ma_ptr]
     pIntermediaryBufferPlayback: ptr[float]
     pIntermediaryBufferCapture: ptr[float]
 
-struct ma_device_anonymous_union_24_null_device:
+struct ma_device_null_device:
     deviceThread: ptr_uint
     operationEvent: ma_event
     operationCompletionEvent: ma_event
@@ -2245,8 +2229,12 @@ struct ma_context:
     playbackDeviceInfoCount: uint
     captureDeviceInfoCount: uint
     pDeviceInfos: ptr[ma_device_info]
-    anonymous_union_14: ma_context_anonymous_union_14
-    anonymous_union_15: ma_context_anonymous_union_15
+    alsa: ma_context_alsa
+    pulse: ma_context_pulse
+    jack: ma_context_jack
+    null_backend: ma_context_null_backend
+    posix: ma_context_posix
+    _unused: int
 
 struct ma_device:
     pContext: ptr[ma_context]
@@ -2273,7 +2261,10 @@ struct ma_device:
     resampling: ma_device_resampling
     playback: ma_device_playback
     capture: ma_device_capture
-    anonymous_union_24: ma_device_anonymous_union_24
+    alsa: ma_device_alsa
+    pulse: ma_device_pulse
+    jack: ma_device_jack
+    null_device: ma_device_null_device
 
 external function ma_context_config_init() -> ma_context_config
 external function ma_context_init(backends: const_ptr[ma_backend], backendCount: uint, pConfig: const_ptr[ma_context_config], pContext: ptr[ma_context]) -> ma_result

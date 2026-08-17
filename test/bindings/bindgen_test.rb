@@ -313,7 +313,7 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
-  def test_generate_names_anonymous_union_fields
+  def test_generate_flattens_anonymous_union_fields
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)
 
@@ -337,8 +337,8 @@ class MilkTeaBindgenTest < Minitest::Test
         clang:,
       )
 
-      assert_match(/union Holder_anonymous_union_(\d+):\n\s+left: int\n\s+right: float/m, generated)
-      assert_match(/struct Holder:\n\s+tag: int\n\s+anonymous_union_(\d+): Holder_anonymous_union_\1/m, generated)
+      refute_match(/Holder_anonymous_union_/, generated)
+      assert_match(/struct Holder:\n\s+tag: int\n\s+left: int\n\s+right: float/m, generated)
 
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
@@ -346,7 +346,7 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.types.keys, "Holder"
-      assert analysis.types.keys.any? { |name| name.start_with?("Holder_anonymous_union_") }
+      refute analysis.types.keys.any? { |name| name.start_with?("Holder_anonymous_union_") }
     end
   end
 

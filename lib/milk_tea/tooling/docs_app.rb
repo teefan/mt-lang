@@ -18,7 +18,7 @@ module MilkTea
       "Files & I/O" => %w[fs path stdio],
       "System" => %w[ctype errno process time c],
       "Network & HTTP" => %w[net http uri cookie curl],
-      "Game & Graphics" => %w[raylib box2d flecs enet cgltf cjson],
+      "Game & Graphics" => %w[raylib box2d box3d flecs enet cgltf cjson],
       "Algorithms & AI" => %w[fsm behavior_tree goap],
       "Database & Matching" => %w[sqlite3 pcre2],
       "Utilities" => %w[cli terminal span spatial asset_pack],

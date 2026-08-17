@@ -2812,4 +2812,54 @@ function main() -> int:
     assert_match(/\.count = 0/, generated)
   end
 
+  def test_generate_c_for_imported_box3d_world_body_shape
+    source = <<~MT
+      import std.box3d as b3d
+
+      function main() -> int:
+          var world_def = b3d.default_world_def()
+          let world = b3d.create_world(world_def)
+
+          var body_def = b3d.default_body_def()
+          body_def.position = b3d.b3Vec3_zero
+          let body = b3d.create_body(world, body_def)
+
+          var box_hull = b3d.make_box_hull(0.5, 0.5, 0.5)
+          var shape_def = b3d.default_shape_def()
+          let shape = b3d.create_hull_shape(body, shape_def, box_hull.base)
+
+          b3d.world_step(world, 1.0 / 60.0, 4)
+          let pos = b3d.body_get_position(body)
+          return int<-pos.y
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/b3CreateWorld\(\s*&world_def\s*\)|b3CreateWorld\(&world_def\)/, generated)
+    assert_match(/b3CreateBody\(\s*[A-Za-z0-9_]+, &body_def\s*\)|b3CreateBody\([A-Za-z0-9_]+, &body_def\)/, generated)
+    assert_match(/b3MakeBoxHull\(0\.5f, 0\.5f, 0\.5f\)/, generated)
+    assert_match(/b3CreateHullShape\(\s*[A-Za-z0-9_]+, &shape_def, &box_hull\.base\s*\)|b3CreateHullShape\([A-Za-z0-9_]+, &shape_def, &box_hull\.base\)/, generated)
+    assert_match(/b3World_Step\(\s*[A-Za-z0-9_]+, 1\.0f \/ 60\.0f, 4\s*\)|b3World_Step\([A-Za-z0-9_]+, 1\.0f \/ 60\.0f, 4\)/, generated)
+    assert_match(/b3Body_GetPosition\([A-Za-z0-9_]+\)/, generated)
+  end
+
+  def test_generate_c_for_imported_box3d_flattened_anonymous_union_child_shape
+    source = <<~MT
+      import std.box3d as b3d
+
+      function main() -> int:
+          var box_hull = b3d.make_box_hull(0.5, 0.5, 0.5)
+          var child = b3d.ChildShape(
+              hull = ptr_of(box_hull.base),
+              transform = b3d.b3Transform_identity,
+              materialIndices = array[int, 4](0, 0, 0, 0),
+              type = b3d.ShapeType.b3_hullShape,
+          )
+          return int<-child.type
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/\.hull = &box_hull\.base/, generated)
+    assert_match(/b3_hullShape/, generated)
+  end
+
 end

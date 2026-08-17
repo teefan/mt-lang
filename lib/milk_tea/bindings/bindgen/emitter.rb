@@ -75,11 +75,36 @@ module MilkTea
           lines = [header]
           fields = Array(node["inner"]).select { |child| child["kind"] == "FieldDecl" }
           fields.each do |field|
+            anonymous_record = anonymous_record_decl_for_field(field, node)
+            if anonymous_record && field_unnamed?(field)
+              lines.concat(emit_flattened_anonymous_record(anonymous_record, owner_name: name))
+              next
+            end
             field_type = aggregate_field_type(field, owner_name: name, aggregate_node: node)
             mt_name = emitted_name(aggregate_field_name(field, aggregate_node: node))
             lines << "    #{mt_name}: #{field_type}"
           end
           lines
+        end
+
+        # Anonymous union/struct members are flattened into the owning aggregate,
+        # matching C semantics where their fields are accessible directly on the
+        # enclosing type (e.g. `b3ChildShape.hull`, `b3TreeNode.children`).
+        def emit_flattened_anonymous_record(record, owner_name:)
+          Array(record["inner"]).select { |child| child["kind"] == "FieldDecl" }.flat_map do |field|
+            anonymous_record = anonymous_record_decl_for_field(field, record)
+            if anonymous_record && field_unnamed?(field)
+              emit_flattened_anonymous_record(anonymous_record, owner_name:)
+            else
+              field_type = aggregate_field_type(field, owner_name:, aggregate_node: record)
+              ["    #{emitted_name(field["name"])}: #{field_type}"]
+            end
+          end
+        end
+
+        def field_unnamed?(field)
+          name = field["name"]
+          name.nil? || name.empty?
         end
 
         def bindgen_param_name(name)
@@ -109,6 +134,13 @@ module MilkTea
             Array(aggregate_node["inner"]).select { |child| child["kind"] == "FieldDecl" }.each do |field|
               anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
               next unless anonymous_record
+
+              if field_unnamed?(field)
+                # Anonymous member: flattened into the parent. Keep walking so
+                # named nested records still get synthesized.
+                pending << [owner_name, anonymous_record]
+                next
+              end
 
               synthetic_name = synthetic_aggregate_name(owner_name, field, aggregate_node)
               unless @synthetic_declarations.any? { |declaration| declaration[:name] == synthetic_name }
@@ -140,12 +172,19 @@ module MilkTea
             seen[key] = true
 
             Array(aggregate_node["inner"]).select { |child| child["kind"] == "FieldDecl" }.each do |field|
-              aggregate_field_type(field, owner_name:, aggregate_node:)
-
               anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
-              next unless anonymous_record
+              if anonymous_record
+                if field_unnamed?(field)
+                  # Flattened anonymous member: walk its fields under the owner.
+                  pending << [owner_name, anonymous_record]
+                  next
+                end
 
-              pending << [synthetic_aggregate_name(owner_name, field, aggregate_node), anonymous_record]
+                pending << [synthetic_aggregate_name(owner_name, field, aggregate_node), anonymous_record]
+                next
+              end
+
+              aggregate_field_type(field, owner_name:, aggregate_node:)
             end
           end
         end
@@ -155,7 +194,7 @@ module MilkTea
           return override if override
 
           anonymous_record = anonymous_record_decl_for_field(field, aggregate_node)
-          return synthetic_aggregate_name(owner_name, field, aggregate_node) if anonymous_record
+          return synthetic_aggregate_name(owner_name, field, aggregate_node) if anonymous_record && !field_unnamed?(field)
 
           map_type_node(field, context: "field #{owner_name}.#{field["name"]}")
         end
