@@ -9,6 +9,10 @@ module MilkTea
     # Carries the value of a `return` statement out of the block evaluator as
     # an ordinary value instead of an exception; callers unwrap it when present.
     ReturnOutcome = Data.define(:value)
+    # Signals that a `break` was executed inside a compile-time loop body.
+    BreakOutcome = Data.define(:value)
+    # Signals that a `continue` was executed inside a compile-time loop body.
+    ContinueOutcome = Data.define(:value)
 
     class Error < StandardError
       def code
@@ -133,9 +137,49 @@ module MilkTea
           return unless CompileTime.boolean_value?(condition)
 
           evaluate(condition ? expression.then_expression : expression.else_expression)
+        when AST::MatchExpr
+          evaluate_match_expression(expression)
+        when AST::IndexAccess
+          evaluate_index_access(expression)
         else
           nil
         end
+      end
+
+      def evaluate_index_access(expression)
+        receiver = evaluate(expression.receiver)
+        return nil if receiver.nil?
+
+        if expression.index.is_a?(AST::RangeExpr)
+          start_val = evaluate(expression.index.start_expr)
+          end_val = evaluate(expression.index.end_expr)
+          return nil unless start_val.is_a?(Integer) && end_val.is_a?(Integer)
+
+          return receiver[start_val...end_val] if receiver.is_a?(Array) || receiver.is_a?(String)
+
+          return nil
+        end
+
+        index = evaluate(expression.index)
+        return nil unless index.is_a?(Integer)
+        return receiver[index] if receiver.is_a?(Array)
+        return receiver.getbyte(index) if receiver.is_a?(String)
+
+        nil
+      end
+
+      def evaluate_match_expression(expression)
+        scrutinee = evaluate(expression.expression)
+        return nil unless scrutinee
+
+        expression.arms.each do |arm|
+          wildcard = arm.pattern.is_a?(AST::Identifier) && arm.pattern.name == "_"
+          if wildcard || CompileTime.equality_result(scrutinee, evaluate(arm.pattern)) == true
+            return evaluate(arm.value)
+          end
+        end
+
+        nil
       end
 
       def resolve_layout_type(type_ref)
@@ -207,7 +251,13 @@ module MilkTea
           result = CompileTime.equality_result(left, right)
           result.nil? ? nil : !result
         when "+"
-          left.is_a?(Numeric) && right.is_a?(Numeric) ? left + right : nil
+          if left.is_a?(String) && right.is_a?(String)
+            left + right
+          elsif left.is_a?(Numeric) && right.is_a?(Numeric)
+            left + right
+          else
+            nil
+          end
         when "-"
           left.is_a?(Numeric) && right.is_a?(Numeric) ? left - right : nil
         when "*"
@@ -261,12 +311,16 @@ module MilkTea
 
         statements.each do |statement|
           outcome = evaluate_statement(statement, scopes:)
-          return outcome if outcome.is_a?(ReturnOutcome)
+          return outcome if control_outcome?(outcome)
 
           result = outcome
         end
 
         result
+      end
+
+      def control_outcome?(outcome)
+        outcome.is_a?(ReturnOutcome) || outcome.is_a?(BreakOutcome) || outcome.is_a?(ContinueOutcome)
       end
 
       def evaluate_statement(statement, scopes:)
@@ -288,9 +342,13 @@ module MilkTea
           evaluate_if(statement, scopes:)
         when AST::ExpressionStmt
           evaluate_expression(statement.expression, scopes:)
-        when AST::PassStmt, AST::BreakStmt, AST::ContinueStmt
+        when AST::PassStmt
           # no-op at compile time
           nil
+        when AST::BreakStmt
+          BreakOutcome.new(nil)
+        when AST::ContinueStmt
+          ContinueOutcome.new(nil)
         when AST::EmitStmt
           # emitted declarations are collected during lowering
           nil
@@ -312,6 +370,21 @@ module MilkTea
               @checker.evaluate_compile_time_const_value(id_expr, scopes:)
             },
             resolve_member_access: ->(ma_expr) {
+              if ma_expr.receiver.is_a?(AST::Identifier) && @variables.key?(ma_expr.receiver.name)
+                value = @variables[ma_expr.receiver.name]
+                case value
+                when Hash
+                  return value[ma_expr.member] if value.key?(ma_expr.member)
+                when Array
+                  if ma_expr.member =~ /\A_(\d+)\z/
+                    return value[Regexp.last_match(1).to_i]
+                  end
+                  return value.length if ma_expr.member == "len"
+                when String
+                  return value.length if ma_expr.member == "len"
+                end
+              end
+
               @checker.evaluate_compile_time_const_value(ma_expr, scopes:)
             },
             resolve_call: ->(call_expr) { resolve_compile_time_call(call_expr, scopes:) },
@@ -342,7 +415,14 @@ module MilkTea
 
       def apply_compile_time_binary(operator, left, right)
         case operator
-        when "+" then left.is_a?(Numeric) && right.is_a?(Numeric) ? left + right : nil
+        when "+"
+          if left.is_a?(String) && right.is_a?(String)
+            left + right
+          elsif left.is_a?(Numeric) && right.is_a?(Numeric)
+            left + right
+          else
+            nil
+          end
         when "-" then left.is_a?(Numeric) && right.is_a?(Numeric) ? left - right : nil
         when "*" then left.is_a?(Numeric) && right.is_a?(Numeric) ? left * right : nil
         when "/" then left.is_a?(Numeric) && right.is_a?(Numeric) && !zero_numeric?(right) ? left / right : nil
@@ -371,7 +451,11 @@ module MilkTea
 
           statement.body.each do |body_stmt|
             outcome = evaluate_statement(body_stmt, scopes:)
-            return outcome if outcome.is_a?(ReturnOutcome)
+            case outcome
+            when ReturnOutcome then return outcome
+            when BreakOutcome then return result
+            when ContinueOutcome then break
+            end
           end
           iterations += 1
         end
@@ -392,31 +476,34 @@ module MilkTea
           @variables[loop_var_name] = element
           statement.body.each do |body_stmt|
             outcome = evaluate_statement(body_stmt, scopes:)
-            return outcome if outcome.is_a?(ReturnOutcome)
+            case outcome
+            when ReturnOutcome then return outcome
+            when BreakOutcome then return result
+            when ContinueOutcome then break
+            end
           end
         end
 
         result
       end
 
+      def run_body(body, scopes:, fallback: nil)
+        body.each do |body_stmt|
+          outcome = evaluate_statement(body_stmt, scopes:)
+          return outcome if control_outcome?(outcome)
+        end
+        fallback
+      end
+
       def evaluate_if(statement, scopes:)
         statement.branches.each do |branch|
           condition = evaluate_expression(branch.condition, scopes:)
-          if CompileTime.boolean_value?(condition) && condition
-            branch.body.each do |body_stmt|
-              outcome = evaluate_statement(body_stmt, scopes:)
-              return outcome if outcome.is_a?(ReturnOutcome)
-            end
-            return condition
-          end
+          next unless CompileTime.boolean_value?(condition) && condition
+
+          return run_body(branch.body, scopes:, fallback: condition)
         end
 
-        if statement.else_body
-          statement.else_body.each do |body_stmt|
-            outcome = evaluate_statement(body_stmt, scopes:)
-            return outcome if outcome.is_a?(ReturnOutcome)
-          end
-        end
+        return run_body(statement.else_body, scopes:) if statement.else_body
 
         nil
       end
@@ -428,11 +515,7 @@ module MilkTea
         statement.arms.each do |arm|
           wildcard = arm.pattern.is_a?(AST::Identifier) && arm.pattern.name == "_"
           if wildcard || CompileTime.equality_result(scrutinee, evaluate_expression(arm.pattern, scopes:)) == true
-            arm.body.each do |body_stmt|
-              outcome = evaluate_statement(body_stmt, scopes:)
-              return outcome if outcome.is_a?(ReturnOutcome)
-            end
-            return scrutinee
+            return run_body(arm.body, scopes:, fallback: scrutinee)
           end
         end
 

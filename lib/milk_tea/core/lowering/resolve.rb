@@ -1558,7 +1558,7 @@ module MilkTea
                     end
                     resolve_current_module_const_value(identifier_expression.name)
                   end,
-                  resolve_member_access: lambda { |ma| nil },
+                  resolve_member_access: lambda { |ma| compile_time_const_value(ma, env:) },
                   resolve_type_ref: lambda { |tr| resolve_type_ref(tr) },
                   resolve_call: lambda { |ce| evaluate_compile_time_call(ce, env:) },
                 ))
@@ -1573,6 +1573,15 @@ module MilkTea
                 when "name" then next receiver_value.member_name
                 when "value" then next receiver_value.member_value
                 end
+              when Hash
+                next receiver_value[member_access_expression.member] if receiver_value.key?(member_access_expression.member)
+              when Array
+                if member_access_expression.member =~ /\A_(\d+)\z/
+                  next receiver_value[Regexp.last_match(1).to_i]
+                end
+                next receiver_value.length if member_access_expression.member == "len"
+              when String
+                next receiver_value.length if member_access_expression.member == "len"
               end
             end
 

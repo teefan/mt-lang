@@ -298,6 +298,33 @@ module MilkTea
             current_type_params[identifier_expression.name] || @ctx.types[identifier_expression.name]
           end,
           resolve_member_access: lambda do |member_access_expression|
+            if (receiver_value = CompileTime.evaluate(
+                  member_access_expression.receiver,
+                  resolve_identifier: lambda do |identifier_expression|
+                    if scopes
+                      binding = lookup_value(identifier_expression.name, scopes)
+                      return binding.const_value unless binding&.const_value.nil?
+                    end
+
+                    resolve_current_module_const_value(identifier_expression.name)
+                  end,
+                  resolve_member_access: lambda { |ma| evaluate_compile_time_const_value(ma, scopes:) },
+                  resolve_type_ref: lambda { |tr| resolve_type_ref(tr) },
+                  resolve_call: lambda { |ce| evaluate_compile_time_call(ce, scopes:) },
+                ))
+              case receiver_value
+              when Hash
+                next receiver_value[member_access_expression.member] if receiver_value.key?(member_access_expression.member)
+              when Array
+                if member_access_expression.member =~ /\A_(\d+)\z/
+                  next receiver_value[Regexp.last_match(1).to_i]
+                end
+                next receiver_value.length if member_access_expression.member == "len"
+              when String
+                next receiver_value.length if member_access_expression.member == "len"
+              end
+            end
+
             if member_access_expression.receiver.is_a?(AST::Identifier) && scopes
               binding = lookup_value(member_access_expression.receiver.name, scopes)
               if binding && binding.const_value
