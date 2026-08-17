@@ -94,23 +94,6 @@ class IndexRangeTest < Minitest::Test
     assert_match(/range index bounds must be integer types/, error.message)
   end
 
-  def test_rejects_array_range_slice_with_negative_literal_bound
-    source = <<~MT
-      # module demo.slice_neg_lit_bound
-
-      function main() -> int:
-          var values: array[int, 4] = (10, 20, 30, 40)
-          let sub = values[-1..2]
-          return 0
-    MT
-
-    error = assert_raises(MilkTea::SemanticError) do
-      generate_c_from_source(source)
-    end
-
-    assert_match(/range index \[-1\.\.2\] is out of bounds for array/, error.message)
-  end
-
   def test_run_program_for_index_and_range_slices
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

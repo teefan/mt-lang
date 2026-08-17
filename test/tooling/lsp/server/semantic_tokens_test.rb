@@ -1976,7 +1976,7 @@ end
     end
   end
 
-  def test_semantic_tokens_full_stays_within_latency_budget
+    def test_semantic_tokens_full_stays_within_latency_budget
     with_lsp_server do |client|
       init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_latency_test.mt"

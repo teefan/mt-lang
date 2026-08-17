@@ -1330,7 +1330,6 @@ module MilkTea
           end
           return nil unless idx && tokens[idx].type == :identifier
 
-          type_name = tokens[idx].lexeme
           type = resolve_arm_receiver_type(facts, tokens, idx)
 
           arm = if type.respond_to?(:arm)

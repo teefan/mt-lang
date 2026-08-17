@@ -1459,7 +1459,6 @@ module MilkTea
       end
 
       def lower_range_index_access(receiver, receiver_type, range, env:, type:)
-        ptr_uint = @ctx.types.fetch("ptr_uint")
         start = lower_range_index_bound(range.start_expr, env:)
         stop = lower_range_index_bound(range.end_expr, env:)
 
