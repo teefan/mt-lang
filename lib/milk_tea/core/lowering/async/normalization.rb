@@ -400,6 +400,8 @@ module MilkTea
           AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["span"]), arguments: [AST::TypeArgument.new(value: ast_type_ref_for(type.element_type))], nullable: false)
         when Types::Task
           AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["Task"]), arguments: [AST::TypeArgument.new(value: ast_type_ref_for(type.result_type))], nullable: false)
+        when Types::StringView
+          AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["str"]), arguments: [], nullable: false)
         when Types::TypeVar
           AST::TypeRef.new(name: AST::QualifiedName.new(parts: [type.name]), arguments: [], nullable: false)
         when Types::StructInstance
