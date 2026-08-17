@@ -131,6 +131,7 @@ module MilkTea
 
     class Checker
       include Intrinsics
+      include CompileTime::MethodFolding
 
       attr_reader :ctx
 

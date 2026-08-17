@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "types/layout"
+require_relative "compile_time/method_folding"
 
 module MilkTea
   module CompileTime
@@ -482,17 +483,17 @@ module MilkTea
 
       def destructure_field_names(type_name)
         return nil unless type_name
-        return nil unless @checker.respond_to?(:compile_time_struct_field_names)
+        return nil unless @checker.respond_to?(:comptime_struct_field_names)
 
-        @checker.compile_time_struct_field_names(type_name)
+        @checker.comptime_struct_field_names(type_name)
       rescue StandardError
         nil
       end
 
       def compile_time_decl_type(expression, scopes:)
-        return nil unless @checker.respond_to?(:compile_time_expression_type)
+        return nil unless @checker.respond_to?(:comptime_expression_type)
 
-        @checker.compile_time_expression_type(expression, scopes:)
+        @checker.comptime_expression_type(expression, scopes:)
       rescue StandardError
         nil
       end
@@ -686,8 +687,8 @@ module MilkTea
 
       def try_const_method_call(call_expr, scopes:)
         return unless call_expr.callee.is_a?(AST::MemberAccess)
-        return unless @checker.respond_to?(:const_method_binding_for_receiver)
-        return unless @checker.respond_to?(:evaluate_const_method_body)
+        return unless @checker.respond_to?(:comptime_method_binding_for_receiver)
+        return unless @checker.respond_to?(:comptime_const_method_body)
 
         receiver = call_expr.callee.receiver
         return unless receiver.is_a?(AST::Identifier)
@@ -699,10 +700,10 @@ module MilkTea
         receiver_type = @variable_types[receiver.name]
         return nil unless receiver_type
 
-        binding = @checker.const_method_binding_for_receiver(receiver_type, call_expr.callee.member)
+        binding = @checker.comptime_method_binding_for_receiver(receiver_type, call_expr.callee.member)
         return nil unless binding
 
-        @checker.evaluate_const_method_body(binding, call_expr.arguments, scopes:, receiver_value:)
+        @checker.comptime_const_method_body(binding, call_expr.arguments, scopes:, receiver_value:)
       end
 
       def try_const_function_call(call_expr, scopes:)
