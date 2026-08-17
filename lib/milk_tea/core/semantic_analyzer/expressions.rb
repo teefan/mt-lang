@@ -481,6 +481,10 @@ module MilkTea
 
         index_type = infer_expression(expression.index, scopes:)
 
+        if receiver_type.is_a?(Types::StringView) && (literal = integer_literal_bound_value(expression.index)) && literal < 0
+          raise_sema_error("str index #{literal} is negative; str indices must be non-negative", expression)
+        end
+
         if soa_type?(receiver_type)
           return receiver_type.element_type
         end

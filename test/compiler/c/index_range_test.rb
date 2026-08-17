@@ -77,22 +77,38 @@ class IndexRangeTest < Minitest::Test
     refute_match(/mt_span_slice/, generated)
   end
 
-  def test_generate_c_for_range_slice_with_non_ptr_uint_bounds
+  def test_rejects_range_index_with_non_integer_bounds
     source = <<~MT
-      # module demo.slice_mixed_bounds
+      # module demo.range_float_bounds
 
       function main() -> int:
-          let text: str = "hello world"
-          var start: int = 3
-          let head = text[0..start]
-          if head != "hel":
-              return 1
+          let text: str = "hello"
+          let bad = text[0.0..2.0]
           return 0
     MT
 
-    generated = generate_c_from_source(source)
+    error = assert_raises(MilkTea::SemanticError) do
+      generate_c_from_source(source)
+    end
 
-    assert_match(/mt_str_slice\(text, 0, \(uintptr_t\) start\)/, generated)
+    assert_match(/range index bounds must be integer types/, error.message)
+  end
+
+  def test_rejects_array_range_slice_with_negative_literal_bound
+    source = <<~MT
+      # module demo.slice_neg_lit_bound
+
+      function main() -> int:
+          var values: array[int, 4] = (10, 20, 30, 40)
+          let sub = values[-1..2]
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      generate_c_from_source(source)
+    end
+
+    assert_match(/range index \[-1\.\.2\] is out of bounds for array/, error.message)
   end
 
   def test_run_program_for_index_and_range_slices
@@ -279,13 +295,30 @@ class IndexRangeTest < Minitest::Test
     assert_match(/cannot range-index int; expected str, array\[T, N\], or span\[T\]/, error.message)
   end
 
-  def test_rejects_range_index_with_non_integer_bounds
+  def test_rejects_str_byte_index_with_negative_literal
     source = <<~MT
-      # module demo.range_float_bounds
+      # module demo.str_negative_literal
 
       function main() -> int:
           let text: str = "hello"
-          let bad = text[0.0..2.0]
+          let b = text[-1]
+          return int<-b
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      generate_c_from_source(source)
+    end
+
+    assert_match(/str index -1 is negative/, error.message)
+  end
+
+  def test_rejects_array_range_slice_with_negative_literal_bound
+    source = <<~MT
+      # module demo.array_negative_literal_bound
+
+      function main() -> int:
+          var values: array[int, 4] = (10, 20, 30, 40)
+          let sub = values[-1..2]
           return 0
     MT
 
@@ -293,6 +326,6 @@ class IndexRangeTest < Minitest::Test
       generate_c_from_source(source)
     end
 
-    assert_match(/range index bounds must be integer types/, error.message)
+    assert_match(/range index \[-1\.\.2\] is out of bounds for array\[T, 4\]/, error.message)
   end
 end
