@@ -786,6 +786,9 @@ module MilkTea
           raise LoweringError.new("unknown member #{expression.member}", line: expression.line, column: expression.column, path: @ctx.current_analysis_path)
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
+          if expression.index.is_a?(AST::RangeExpr)
+            return range_index_result_type(receiver_type)
+          end
           index_type = infer_expression_type(expression.index, env:)
           infer_index_result_type(receiver_type, index_type)
         when AST::UnaryOp

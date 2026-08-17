@@ -206,6 +206,9 @@ module MilkTea
         when AST::IndexAccess
           collect_proc_captures_from_expression(expression.receiver, env, local_scopes, captures)
           collect_proc_captures_from_expression(expression.index, env, local_scopes, captures)
+        when AST::RangeExpr
+          collect_proc_captures_from_expression(expression.start_expr, env, local_scopes, captures)
+          collect_proc_captures_from_expression(expression.end_expr, env, local_scopes, captures)
         when AST::Specialization
           collect_proc_captures_from_expression(expression.callee, env, local_scopes, captures)
           expression.arguments.each { |argument| collect_proc_captures_from_expression(argument.value, env, local_scopes, captures) }

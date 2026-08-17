@@ -538,6 +538,7 @@ module MilkTea
           require_mutable_pointer: true,
           allow_span_param_identifier: true,
         )
+        raise_sema_error("cannot assign through str index; str is an immutable borrowed view") if receiver_type.is_a?(Types::StringView)
         element_type = infer_index_result_type(receiver_type, @ctx.types.fetch("ptr_uint"))
 
         statement.value.elements.each_with_index do |elem, i|

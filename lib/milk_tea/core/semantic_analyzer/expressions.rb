@@ -37,6 +37,8 @@ module MilkTea
             allow_span_param_identifier: true,
           )
 
+          raise_sema_error("cannot assign through str index; str is an immutable borrowed view") if receiver_type.is_a?(Types::StringView)
+
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
@@ -101,6 +103,8 @@ module MilkTea
             require_mutable_pointer:,
             allow_span_param_identifier:,
           )
+          raise_sema_error("cannot index through str as an assignment receiver; str is an immutable borrowed view") if receiver_type.is_a?(Types::StringView)
+
           index_type = infer_expression(expression.index, scopes:)
           infer_index_result_type(receiver_type, index_type)
         when AST::Call
@@ -470,6 +474,11 @@ module MilkTea
 
       def infer_index_access(expression, scopes:)
         receiver_type = infer_expression(expression.receiver, scopes:)
+
+        if expression.index.is_a?(AST::RangeExpr)
+          return infer_range_index_access(expression, receiver_type, scopes:)
+        end
+
         index_type = infer_expression(expression.index, scopes:)
 
         if soa_type?(receiver_type)

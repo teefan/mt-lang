@@ -1262,7 +1262,7 @@ let d: dyn[Drawable] = adapt[Drawable](ref_of(entity))</code></pre>
       <tr><td><code>ptr_int</code> <code>ptr_uint</code></td><td>Pointer-sized integers</td></tr>
       <tr><td><code>float</code> <code>double</code></td><td>Floating-point</td></tr>
       <tr><td><code>void</code></td><td>No value</td></tr>
-      <tr><td><code>str</code></td><td>UTF-8 string view (borrowed). The <code>+</code> operator concatenates two <code>str</code> values into a per-thread scratch buffer (no allocation); the result is valid while the scratch budget lasts.</td></tr>
+      <tr><td><code>str</code></td><td>UTF-8 string view (borrowed). <code>s[i]</code> reads the byte at <code>i</code> as <code>ubyte</code> (bounds-checked); <code>s[start..stop]</code> returns a borrowed view using byte offsets and traps off UTF-8 boundaries. The <code>+</code> operator concatenates two <code>str</code> values into a per-thread scratch buffer (no allocation); the result is valid while the scratch budget lasts.</td></tr>
       <tr><td><code>cstr</code></td><td>NUL-terminated C string</td></tr>
       <tr><td><code>vec2</code> <code>vec3</code> <code>vec4</code></td><td>Float vectors with <code>.x .y .z .w</code></td></tr>
       <tr><td><code>ivec2</code> <code>ivec3</code> <code>ivec4</code></td><td>Integer vectors</td></tr>
@@ -1487,8 +1487,18 @@ else:
     do_work()</code></pre>
 </div>
 
+  <h3>Range Index</h3>
+  <p>Range-index reads borrow a sub-view with no copy and no allocation. The result is a borrowed <code class="code-inline">str</code> for string receivers and a borrowed <code class="code-inline">span[T]</code> for arrays and spans. Bounds may be any integer types. The range is start-inclusive and end-exclusive. <code>start &gt; stop</code> or <code>stop &gt; len</code> traps at runtime; string slices additionally require UTF-8 code-unit boundaries at both bounds.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>let text: str = "hello world"
+let head = text[0..5]              # str view: "hello"
+var values: array[int, 4] = (10, 20, 30, 40)
+let middle = values[1..3]          # span[int] view over 20, 30</code></pre>
+</div>
+
   <h3>Range Index Assignment</h3>
-  <p>Assign a tuple to a contiguous slice using an exclusive range with literal bounds. The tuple width must match the slice width exactly.</p>
+  <p>Assign a tuple to a contiguous slice using an exclusive range with literal bounds. The tuple width must match the slice width exactly. String views are immutable and cannot be assigned through.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>var buf: array[float, 4]
@@ -1749,6 +1759,10 @@ value.field
 arr[i]
 func(arg)
 
+## Range index: str returns str view; arrays and spans return span[T] view
+let head = text[0..5]
+let middle = values[1..3]
+
 ## Partial field update (returns copy)
 let moved = v.with(x = 10.0)
 
@@ -1871,7 +1885,7 @@ function field_equal[T](a: const_ptr[T], b: const_ptr[T]) -&gt; bool:
   <div class="table-wrap">
     <table class="attr-table">
       <tr><th>Type</th><th>Ownership</th><th>Use Case</th></tr>
-      <tr><td><code>str</code></td><td>Borrowed</td><td>Read-only UTF-8 view (literals, format strings, slicing); a stored or returned dynamic format string carries its own heap buffer</td></tr>
+      <tr><td><code>str</code></td><td>Borrowed</td><td>Read-only UTF-8 view (literals, format strings, slicing, <code>x[start..stop]</code>); a stored or returned dynamic format string carries its own heap buffer</td></tr>
       <tr><td><code>cstr</code></td><td>Borrowed</td><td>NUL-terminated C ABI string (<code>c"hello"</code>)</td></tr>
       <tr><td><code>str_buffer[N]</code></td><td>Owned (stack)</td><td>Fixed-capacity mutable UTF-8 builder</td></tr>
       <tr><td><code>std.string.String</code></td><td>Owned (heap)</td><td>Growable owned text via <code>fmt.format(f"...")</code></td></tr>
@@ -1980,7 +1994,7 @@ MSG</code></pre>
       <tr><td>Conditions must be <code>bool</code></td><td>No truthy/falsy coercion from integers or pointers</td></tr>
       <tr><td>Explicit casts for mixed signed/unsigned</td><td>Mixed signed/unsigned arithmetic requires <code>T&lt;-value</code></td></tr>
       <tr><td>Enum/flags don't auto-coerce</td><td>Outside external-call boundaries, no implicit conversion to backing integers</td></tr>
-      <tr><td>Safe indexing is bounds-checked</td><td><code>arr[i]</code> calls <code>fatal</code> on OOB; use <code>get(arr, i)</code> for recoverable access</td></tr>
+      <tr><td>Safe indexing is bounds-checked</td><td><code>arr[i]</code> and <code>a[start..stop]</code> call <code>fatal</code> on OOB; string slices additionally require UTF-8 boundaries; use <code>get(arr, i)</code> for recoverable single-element access</td></tr>
       <tr><td>Pointer indexing requires <code>unsafe</code></td><td>Raw pointer dereference, arithmetic, casts, <code>reinterpret</code> all need <code>unsafe</code></td></tr>
       <tr><td><code>%</code> requires integer operands</td><td></td></tr>
       <tr><td>Bitwise ops require matching types</td><td>Integer or flags types</td></tr>
@@ -2429,6 +2443,8 @@ import std.math  # intentionally available for downstream</code></pre>
     <li>Enum and flags values do not implicitly coerce to backing integers</li>
     <li><code>+</code> concatenates <code>str</code>; <code>cstr</code> and mixed <code>str</code>/<code>cstr</code> are not concatenable</li>
     <li><code>==</code>/<code>!=</code> on structs and variants requires all fields equality-comparable; use <code>equal[T]</code> for non-comparable types</li>
+    <li>Range expressions are restricted to <code>for</code>-loop iterables, range-index reads (<code>a[start..stop]</code>), and range-index assignment targets</li>
+    <li><code>str</code> views are immutable borrowed text; index and range-index results cannot be assigned through</li>
     <li>A statement cannot begin with a binary operator (including <code>+</code>, <code>-</code>, <code>and</code>, <code>or</code>, <code>is</code>, <code>..</code>); continuation requires ending the previous line with the operator or wrapping in <code>()</code></li>
     <li>Bare function and method names are not usable as values (cannot be assigned or passed without calling). Use <code>fn(...)</code> function pointer types or <code>proc(...)</code> closures for callable values.</li>
   </ul>

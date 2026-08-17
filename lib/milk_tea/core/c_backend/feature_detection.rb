@@ -136,8 +136,9 @@ module MilkTea
         return true if @debug_guards
 
         collect_checked_array_index_types.any? || collect_checked_span_index_types.any? ||
+          !collect_span_slice_helper_names.empty? ||
           uses_format_helpers? ||
-          emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_fatal mt_str_buffer_len mt_str_buffer_as_cstr mt_str_buffer_assign mt_str_buffer_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp mt_str_concat]) }
+          emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_fatal mt_str_buffer_len mt_str_buffer_as_cstr mt_str_buffer_assign mt_str_buffer_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp mt_str_concat mt_str_index mt_str_slice]) }
       end
 
       def uses_mt_fatal_str_helper?
@@ -295,6 +296,10 @@ module MilkTea
         @uses_str_concat = emitted_functions.any? do |function|
           function_uses_named_call?(function, %w[mt_str_concat])
         end
+      end
+
+      def uses_str_slice_helpers?
+        emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_index mt_str_slice]) }
       end
 
       def uses_variant_equality_helper?

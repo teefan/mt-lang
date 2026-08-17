@@ -213,6 +213,10 @@ module MilkTea
 
         receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
 
+        if receiver_type.is_a?(Types::StringView)
+          return @ctx.types.fetch("ubyte")
+        end
+
         if array_type?(receiver_type)
           return array_element_type(receiver_type)
         end
@@ -234,6 +238,28 @@ module MilkTea
         end
 
         raise LoweringError.new("cannot index #{receiver_type}", line: 0, column: 0, path: @ctx.current_analysis_path)
+      end
+
+      def range_index_result_type(receiver_type)
+        receiver_type = referenced_type(receiver_type) if ref_type?(receiver_type)
+
+        if receiver_type.is_a?(Types::StringView)
+          return @ctx.types.fetch("str")
+        end
+
+        if array_type?(receiver_type)
+          return Types::Span.new(array_element_type(receiver_type))
+        end
+
+        if receiver_type.is_a?(Types::Span)
+          return receiver_type
+        end
+
+        raise LoweringError.new("cannot range-index #{receiver_type}; expected str, array[T, N], or span[T]", line: 0, column: 0, path: @ctx.current_analysis_path)
+      end
+
+      def span_slice_callee(span_type)
+        "mt_span_slice_#{sanitize_identifier(span_type.element_type.to_s)}"
       end
 
       def stored_ref_supported_type?(type, visited = {})

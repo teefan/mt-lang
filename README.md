@@ -746,6 +746,7 @@ Postfix forms:
 
 - member access: `a.b`
 - indexing: `a[i]`
+- range index: `a[start..stop]` — `str` yields a borrowed `str` view; `array[T, N]` and `span[T]` yield a borrowed `span[T]` view; half-open `[start, stop)`, no copy, no allocation
 - call: `f(x)`
 - partial field update: `v.with(x = 10.0)` — returns a copy with specified fields replaced
 - specialization: `name[T]`, `name[32]`, `mod.name[T]`
@@ -939,7 +940,7 @@ See module source for full method surface. Iterator forms:
 
 Text categories:
 
-- `str` -> string view. The `+` operator concatenates two `str` values into a per-thread scratch buffer (no heap allocation), returning a borrowed `str`; the result stays valid while cumulative concatenations on that thread remain within the scratch buffer budget. For loops or repeated concatenation, prefer `string.String` for amortized building.
+- `str` -> string view. `s[i]` reads the byte at `i` as `ubyte` (bounds-checked). `s[start..stop]` returns a borrowed `str` view using byte offsets; bounds must be UTF-8 code-unit boundaries or the slice traps. The `+` operator concatenates two `str` values into a per-thread scratch buffer (no heap allocation), returning a borrowed `str`; the result stays valid while cumulative concatenations on that thread remain within the scratch buffer budget. For loops or repeated concatenation, prefer `string.String` for amortized building.
 - `cstr` -> C ABI string
 - `str_buffer[N]` -> fixed-capacity mutable UTF-8 text buffer
 
@@ -989,6 +990,7 @@ Heredoc notes:
 - Shift operators require integer operands.
 - Safe array indexing requires an addressable array value.
 - Safe indexing (`arr[i]`) is bounds-checked and calls `fatal` on out-of-bounds access.
+- Range indexing (`arr[start..stop]`, `span[start..stop]`, `str[start..stop]`) returns a borrowed view: `span[T]` for arrays and spans, `str` for strings. Bounds may be any integer types (converted to `ptr_uint`); `start > stop` or `stop > len` traps at runtime. Array range slices require an addressable array value; str slices must land on UTF-8 code-unit boundaries. Bounds-checked with no copy or allocation.
 - Use `get(arr, i)` for recoverable indexing that returns `ptr[T]?` (null on out-of-bounds) instead of aborting.
 - Pointer indexing requires `unsafe`.
 - `read(ptr)` requires `unsafe`.
@@ -1145,7 +1147,8 @@ Current compiler rejects:
 
 - `+` concatenates `str`; `cstr` and mixed `str`/`cstr` concatenation are not supported
 - `==`/`!=` on structs and variants requires all fields equality-comparable; use `equal[T]` otherwise
-- range expressions are restricted to `for`-loop iterables and range-index assignment targets
+- range expressions are restricted to `for`-loop iterables, range index reads (`a[start..stop]`), and range-index assignment targets
+- `str` is an immutable borrowed view: index and range-index results cannot be assigned through
 - functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
 - `read(...)` of a raw pointer requires `unsafe`
 - a statement cannot begin with a binary operator (including `+`, `-`, `and`, `or`, `is`, `..`); continuation requires ending the previous line with the operator or wrapping in `()`

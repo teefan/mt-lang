@@ -415,6 +415,50 @@ function custom_iter_demo() -> int:
         result += i
     return result
 
+# --- Indexing & range slicing: str byte access, str slice, array/span slice ---
+function indexing_and_range_demo() -> int:
+    var result: int = 0
+
+    # str byte read: returns ubyte (here cast to int for accumulation)
+    let text: str = "hello world"
+    let first_byte: int = int<-text[0]
+    result += first_byte - int<-byte<-104     # 'h' -> 0
+
+    # str range slice returns a borrowed str view (no copy)
+    let head = text[0..5]
+    let tail = text[6..text.len]
+    if head != "hello" or tail != "world":
+        return 100
+
+    # empty slice at the same boundary is allowed
+    let middle = text[5..5]
+    if middle != "":
+        return 101
+
+    # array range slice returns a borrowed span view; requires var array
+    var values: array[int, 4] = (10, 20, 30, 40)
+    let view = values[1..3]
+    if view.len != 2:
+        return 102
+    var sum: int = 0
+    for v in view:
+        sum += v
+    if sum != 50:
+        return 103
+
+    # span range slice returns a span view (same type)
+    let sp: span[int] = view[0..1]
+    if sp[0] != 20:
+        return 104
+
+    # range index assignment is element-wise (existing surface)
+    var buf: array[float, 4]
+    buf[0..3] = (1.0, 2.0, 3.0)
+    if buf[2] != 3.0:
+        return 105
+
+    return result
+
 # detached concurrency helpers
 function compute_side() -> void:
     global_counter += 1
@@ -2042,6 +2086,7 @@ function main() -> int:
     total += foreign_demo()
     total += attributes_demo()
     total += custom_iter_demo()
+    total += indexing_and_range_demo()
     total += dyn_generic_demo()
     total += type_label_demo()
     total += member_value_demo()

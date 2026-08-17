@@ -1364,13 +1364,19 @@ module MilkTea
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
-          index = lower_expression(expression.index, env:)
-          if array_type?(receiver_type) && addressable_storage_expression?(expression.receiver)
-            IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
-          elsif receiver_type.is_a?(Types::Span)
-            IR::CheckedSpanIndex.new(receiver:, index:, receiver_type:, type:)
+          if expression.index.is_a?(AST::RangeExpr)
+            lower_range_index_access(receiver, receiver_type, expression.index, env:, type:)
           else
-            IR::Index.new(receiver:, index:, type:)
+            index = lower_expression(expression.index, env:)
+            if array_type?(receiver_type) && addressable_storage_expression?(expression.receiver)
+              IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
+            elsif receiver_type.is_a?(Types::Span)
+              IR::CheckedSpanIndex.new(receiver:, index:, receiver_type:, type:)
+            elsif receiver_type.is_a?(Types::StringView)
+              IR::Call.new(callee: "mt_str_index", arguments: [receiver, index], type:)
+            else
+              IR::Index.new(receiver:, index:, type:)
+            end
           end
         when AST::UnaryOp
           raise LoweringError.new("propagation expressions must be prepared before direct lowering", line: 0, column: 0, path: @ctx.current_analysis_path) if expression.operator == "?"
@@ -1450,6 +1456,26 @@ module MilkTea
         else
           raise LoweringError.new("unsupported expression #{expression.class.name}", line: 0, column: 0, path: @ctx.current_analysis_path)
         end
+      end
+
+      def lower_range_index_access(receiver, receiver_type, range, env:, type:)
+        ptr_uint = @ctx.types.fetch("ptr_uint")
+        start = lower_range_index_bound(range.start_expr, env:)
+        stop = lower_range_index_bound(range.end_expr, env:)
+
+        if receiver_type.is_a?(Types::StringView)
+          return IR::Call.new(callee: "mt_str_slice", arguments: [receiver, start, stop], type:)
+        end
+
+        span_type = range_index_result_type(receiver_type)
+        span_argument = receiver_type.is_a?(Types::Span) ? receiver : lower_array_to_span_expression(receiver, span_type)
+        IR::Call.new(callee: span_slice_callee(span_type), arguments: [span_argument, start, stop], type: span_type)
+      end
+
+      def lower_range_index_bound(bound, env:)
+        ptr_uint = @ctx.types.fetch("ptr_uint")
+        lowered = lower_expression(bound, env:, expected_type: ptr_uint)
+        lowered.type == ptr_uint ? lowered : IR::Cast.new(target_type: ptr_uint, expression: lowered, type: ptr_uint)
       end
 
       def lower_member_access(expression, env:, type:)

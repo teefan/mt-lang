@@ -64,6 +64,36 @@ module MilkTea
         ]
       end
 
+      def emit_str_slice_helpers
+        [
+          "static uint8_t mt_str_index(mt_str text, uintptr_t index) {",
+          "#{INDENT}if (index >= text.len) mt_fatal(\"str index out of bounds\");",
+          "#{INDENT}return (uint8_t)text.data[index];",
+          "}",
+          "",
+          "static bool mt_str_utf8_boundary(mt_str text, uintptr_t index) {",
+          "#{INDENT}if (index == 0 || index == text.len) return true;",
+          "#{INDENT}return ((uint8_t)text.data[index] & 0xC0) != 0x80;",
+          "}",
+          "",
+          "static mt_str mt_str_slice(mt_str text, uintptr_t start, uintptr_t stop) {",
+          "#{INDENT}if (start > stop || stop > text.len) mt_fatal(\"str slice out of bounds\");",
+          "#{INDENT}if (!mt_str_utf8_boundary(text, start) || !mt_str_utf8_boundary(text, stop)) mt_fatal(\"str slice bounds must be UTF-8 code-unit boundaries\");",
+          "#{INDENT}return (mt_str){ .data = text.data + start, .len = stop - start };",
+          "}",
+        ]
+      end
+
+      def emit_span_slice_helper(helper_name)
+        span_name = helper_name.sub("mt_span_slice_", "mt_span_")
+        [
+          "static inline #{span_name} #{helper_name}(#{span_name} span, uintptr_t start, uintptr_t stop) {",
+          "#{INDENT}if (start > stop || stop > span.len) mt_fatal(\"span slice out of bounds\");",
+          "#{INDENT}return (#{span_name}){ .data = span.data + start, .len = stop - start };",
+          "}",
+        ]
+      end
+
       def emit_variant_equality_helpers
         variant_decls_by_linkage = (emitted_aggregate_variants + collect_generic_variant_decls).each_with_object({}) { |decl, map| map[decl.linkage_name] = decl }
         variant_equality_types

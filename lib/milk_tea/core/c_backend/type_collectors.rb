@@ -19,6 +19,80 @@ module MilkTea
         span_types.uniq
       end
 
+      def collect_span_slice_helper_names
+        names = []
+        emitted_functions.each do |function|
+          collect_span_slice_helper_names_from_statements(function.body, names)
+        end
+        names.uniq
+      end
+
+      def collect_span_slice_helper_names_from_statements(statements, names)
+        statements.each do |statement|
+          case statement
+          when IR::LocalDecl
+            collect_span_slice_helper_names_from_expression(statement.value, names)
+          when IR::Assignment
+            collect_span_slice_helper_names_from_expression(statement.target, names)
+            collect_span_slice_helper_names_from_expression(statement.value, names)
+          when IR::BlockStmt
+            collect_span_slice_helper_names_from_statements(statement.body, names)
+          when IR::WhileStmt
+            collect_span_slice_helper_names_from_expression(statement.condition, names)
+            collect_span_slice_helper_names_from_statements(statement.body, names)
+          when IR::ForStmt
+            collect_span_slice_helper_names_from_statements([statement.init], names)
+            collect_span_slice_helper_names_from_expression(statement.condition, names)
+            collect_span_slice_helper_names_from_statements(statement.body, names)
+            collect_span_slice_helper_names_from_statements([statement.post], names)
+          when IR::IfStmt
+            collect_span_slice_helper_names_from_expression(statement.condition, names)
+            collect_span_slice_helper_names_from_statements(statement.then_body, names)
+            collect_span_slice_helper_names_from_statements(statement.else_body, names) if statement.else_body
+          when IR::SwitchStmt
+            collect_span_slice_helper_names_from_expression(statement.expression, names)
+            statement.cases.each { |switch_case| collect_span_slice_helper_names_from_statements(switch_case.body, names) }
+          when IR::ReturnStmt
+            collect_span_slice_helper_names_from_expression(statement.value, names) if statement.value
+          when IR::ExpressionStmt
+            collect_span_slice_helper_names_from_expression(statement.expression, names)
+          end
+        end
+      end
+
+      def collect_span_slice_helper_names_from_expression(expression, names)
+        return unless expression
+
+        case expression
+        when IR::Call
+          names << expression.callee if expression.callee.is_a?(String) && expression.callee.start_with?("mt_span_slice_")
+          collect_span_slice_helper_names_from_expression(expression.callee, names) unless expression.callee.is_a?(String)
+          expression.arguments.each { |argument| collect_span_slice_helper_names_from_expression(argument, names) }
+        when IR::Member
+          collect_span_slice_helper_names_from_expression(expression.receiver, names)
+        when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
+          collect_span_slice_helper_names_from_expression(expression.receiver, names)
+          collect_span_slice_helper_names_from_expression(expression.index, names)
+        when IR::Unary
+          collect_span_slice_helper_names_from_expression(expression.operand, names)
+        when IR::Binary
+          collect_span_slice_helper_names_from_expression(expression.left, names)
+          collect_span_slice_helper_names_from_expression(expression.right, names)
+        when IR::Conditional
+          collect_span_slice_helper_names_from_expression(expression.condition, names)
+          collect_span_slice_helper_names_from_expression(expression.then_expression, names)
+          collect_span_slice_helper_names_from_expression(expression.else_expression, names)
+        when IR::Cast, IR::AddressOf
+          collect_span_slice_helper_names_from_expression(expression.expression, names)
+        when IR::AggregateLiteral
+          expression.fields.each { |field| collect_span_slice_helper_names_from_expression(field.value, names) }
+        when IR::ArrayLiteral
+          expression.elements.each { |element| collect_span_slice_helper_names_from_expression(element, names) }
+        when IR::VariantLiteral
+          expression.fields.each { |field| collect_span_slice_helper_names_from_expression(field.value, names) }
+        end
+      end
+
       def collect_checked_array_index_types_from_statements(statements, array_types, nullable_only: false)
         statements.each do |statement|
           case statement

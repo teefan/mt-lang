@@ -934,22 +934,41 @@ Unsafe context is required for raw-pointer-level operations such as:
 - pointer casts
 - `reinterpret[...]`
 
-### 4.6 Range index assignment
+### 4.6 Range indexing
 
-Contiguous indexed slices may be assigned from an expression list:
+Range index reads borrow a sub-view with no copy and no allocation:
+
+```mt
+let text: str = "hello world"
+let head = text[0..5]              # str view: "hello"
+var values: array[int, 4] = (10, 20, 30, 40)
+let middle = values[1..3]          # span[int] view over 20, 30
+```
+
+Rules for range index reads:
+
+- the receiver must be `str`, `array[T, N]`, or `span[T]`
+- the result is a borrowed view: `str` for string receivers, `span[T]` for arrays and spans
+- the range is start-inclusive and end-exclusive; bounds may be any integer types
+- `start > stop` or `stop > len` traps at runtime
+- array receivers require an addressable array value; literal bounds are checked at compile time
+- `str` slices use byte offsets and both bounds must be UTF-8 code-unit boundaries or the slice traps
+
+Range index assignment writes elements in place:
 
 ```mt
 var buf: array[float, 4]
 buf[0..3] = (1.0, 2.0, 3.0)
 ```
 
-Rules:
+Rules for range index assignment:
 
 - the target must be an addressable array-, span-, or pointer-indexable lvalue
 - the index must be a range expression with integer literal bounds
 - the range is start-inclusive and end-exclusive
 - the right-hand side must be an expression list whose length exactly matches the range width
 - each element must be assignable to the indexed element type
+- `str` receivers cannot be assigned through; str views are immutable
 
 ### 4.7 When (compile-time conditional)
 
@@ -1051,6 +1070,7 @@ Rules:
 
 - member access: `a.b`
 - indexing: `a[i]`
+- range index: `a[start..stop]` — `str` yields a borrowed `str` view; `array[T, N]` and `span[T]` yield a borrowed `span[T]` view; half-open `[start, stop)` with no copy (§4.6)
 - call: `f(x)`
 - partial field update: `v.with(x = 10.0)` — returns a copy with specified fields replaced; supported on structs and native types (vector, matrix, quaternion)
 - specialization: `name[T]`, `name[32]`, `mod.name[T]`
@@ -1306,7 +1326,7 @@ Iterator notes for those collection modules:
 
 String categories:
 
-- `str` -> string view
+- `str` -> string view. `s[i]` reads the byte at `i` as `ubyte` (bounds-checked); `s[start..stop]` returns a borrowed `str` view using byte offsets (UTF-8 boundary-checked)
 - `cstr` -> C ABI string
 - `str_buffer[N]` -> fixed-capacity mutable UTF-8 text buffer
 
@@ -1373,6 +1393,8 @@ Custom formatting hook notes:
 - shift operators require integer operands
 - safe array indexing requires an addressable array value
 - safe indexing (`arr[i]`) is bounds-checked and calls `fatal` on out-of-bounds access
+- safe range indexing (`a[start..stop]`) is bounds-checked and calls `fatal` on out-of-bounds or out-of-order bounds
+- `str` range slices require UTF-8 code-unit boundaries at both bounds
 - use `get(arr, i)` for recoverable indexing that returns `ptr[T]?` (null on out-of-bounds) instead of aborting
 - pointer indexing requires `unsafe`
 - `read(...)` of raw pointer requires `unsafe`
@@ -1622,7 +1644,8 @@ The compiler intentionally rejects the following patterns. These are design cons
 
 - `+` concatenates `str`; `cstr` and mixed `str`/`cstr` are not concatenable
 - `==`/`!=` on structs and variants requires all fields equality-comparable; use `equal[T]` otherwise (§3.4b)
-- range expressions are restricted to `for`-loop iterables and range-index assignment targets
+- range expressions are restricted to `for`-loop iterables, range-index reads (`a[start..stop]`), and range-index assignment targets
+- `str` views are immutable borrowed text; index and range-index results cannot be assigned through
 - functions, methods, generic functions, and variant arms must be called — they are not usable as bare values
 - `read(...)` of a raw pointer requires `unsafe`
 

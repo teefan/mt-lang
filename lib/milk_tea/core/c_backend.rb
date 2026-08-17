@@ -162,6 +162,10 @@ module MilkTea
         lines.concat(emit_str_concat_helper)
         lines << ""
       end
+      if uses_str_slice_helpers?
+        lines.concat(emit_str_slice_helpers)
+        lines << ""
+      end
       if uses_str_buffer_helpers?
         lines.concat(emit_utf8_validation_helpers)
         lines << ""
@@ -332,6 +336,11 @@ module MilkTea
 
       collect_checked_span_index_types.each do |type|
         lines.concat(emit_checked_span_index_helper(type))
+        lines << ""
+      end
+
+      collect_span_slice_helper_names.each do |helper_name|
+        lines.concat(emit_span_slice_helper(helper_name))
         lines << ""
       end
 

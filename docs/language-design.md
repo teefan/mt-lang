@@ -409,13 +409,15 @@ Rules:
 - Parallel `for` accepts multiple array/span iterables and binds them in lockstep.
 - Parallel `for` does not accept ranges, and iterable lengths must match.
 
+Range-index reads borrow sub-views with the same syntax. `a[start..stop]` on `array[T, N]` or `span[T]` returns a borrowed `span[T]`; on `str` it returns a borrowed `str`. The range is end-exclusive, bounds may be any integer types, and out-of-bounds or inverted bounds trap at runtime like all safe indexing. These reads copy nothing and allocate nothing — they only form a pointer-plus-length view.
+
 Range-index assignment is also part of the control-flow-and-mutation surface when code wants an explicit fixed-width slice update:
 
 ```mt
 buf[0..3] = (1.0, 2.0, 3.0)
 ```
 
-The bounds are integer literals, the range is end-exclusive, and the right-hand tuple width must match the slice width exactly.
+The bounds are integer literals, the range is end-exclusive, and the right-hand tuple width must match the slice width exactly. Range-index assignment writes element-wise into array or span storage; `str` views are immutable and cannot be assigned through.
 
 ### Useful structured features
 
@@ -580,6 +582,7 @@ Notes:
 - Fixed-array indexing is bounds-checked and safe by default.
 - Safe array indexing requires an addressable array value; bind temporaries before indexing them.
 - Safe indexing (`arr[i]`) aborts on out-of-bounds via `fatal`. Use `get(arr, i)` for recoverable bounds-checked access that returns `ptr[T]?`.
+- Range indexing (`arr[start..stop]` on arrays and spans) returns a borrowed `span[T]` view; it copies nothing and requires an addressable array value.
 - When a `span[T]` boundary is expected, addressable `array[T, N]` values coerce directly. Arrays also expose `.as_span()` for explicit conversion when the target type is not a call boundary.
 - `array[char, N]` and `span[char]` are the ordinary source-level forms for raw writable character storage and byte-oriented foreign buffers. They are not alternate text objects and should not grow a parallel everyday text API.
 - `str_buffer[N]` is the one source-level mutable UTF-8 text type. It owns `N` writable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
@@ -592,7 +595,7 @@ Notes:
 - `.len()` returns the tracked text length, revalidating UTF-8 and rescanning for the trailing NUL if the builder was passed through a writable `span[char]` or `ptr[char]` alias.
 - `.capacity()` reports the maximum writable text bytes, not counting the reserved trailing NUL slot.
 - `.as_str()` and `.as_cstr()` borrow from the same builder storage and revalidate through that same dirty-refresh path before returning.
-- `str.slice(start, len)` uses byte offsets and byte lengths, but both the start and end position must be UTF-8 code-unit boundaries or the slice traps at runtime.
+- `str[start..stop]` is the language-level slice surface: it returns a borrowed `str` view using byte offsets with an end-exclusive range, and both bounds must be UTF-8 code-unit boundaries or the slice traps at runtime. `s[i]` reads the byte at `i` as `ubyte`, bounds-checked. `str.slice(start, len)` remains the library spelling for start-plus-length slicing.
 - Ordinary string lists stay `array[str, N]` or `span[str]` in source. If an imported foreign declaration chooses that public surface for a raw `char **`, `span[cstr]`, or pointer-plus-length text-list API, the boundary owns the temporary marshalling.
 - Imported foreign declarations may map `str_buffer[N] as ptr[char]` directly when the public surface wants writable UTF-8 text with fixed caller capacity.
 - If the raw call also needs the caller buffer size, a `str_buffer[N]` public signature should pass `text_public.capacity() + 1` in the foreign mapping so the raw side sees the full writable byte count including the trailing NUL slot.

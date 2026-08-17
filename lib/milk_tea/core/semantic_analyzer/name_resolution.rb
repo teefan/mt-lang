@@ -1022,6 +1022,10 @@ module MilkTea
       def infer_index_result_type(receiver_type, index_type)
         raise_sema_error("index must be an integer type, got #{index_type}") unless integer_type?(index_type)
 
+        if receiver_type.is_a?(Types::StringView)
+          return @ctx.types.fetch("ubyte")
+        end
+
         if array_type?(receiver_type)
           return array_element_type(receiver_type)
         end
@@ -1045,6 +1049,48 @@ module MilkTea
         end
 
         raise_sema_error("cannot index #{receiver_type}")
+      end
+
+      def infer_range_index_access(expression, receiver_type, scopes:)
+        start_type = infer_expression(expression.index.start_expr, scopes:)
+        stop_type = infer_expression(expression.index.end_expr, scopes:)
+        raise_sema_error("range index bounds must be integer types, got #{start_type} and #{stop_type}") unless start_type.integer? && stop_type.integer?
+
+        if array_type?(receiver_type) && !addressable_storage_expression?(expression.receiver, scopes:)
+          raise_sema_error("array range slice requires an addressable array value; bind it to a local first", expression)
+        end
+
+        if array_type?(receiver_type) && (start_val = integer_literal_bound_value(expression.index.start_expr)) && (stop_val = integer_literal_bound_value(expression.index.end_expr))
+          length = array_length(receiver_type)
+          unless start_val >= 0 && start_val <= stop_val && stop_val <= length
+            raise_sema_error("range index [#{start_val}..#{stop_val}] is out of bounds for array[T, #{length}]", expression)
+          end
+        end
+
+        range_index_result_type(receiver_type)
+      end
+
+      def range_index_result_type(receiver_type)
+        if receiver_type.is_a?(Types::StringView)
+          return @ctx.types.fetch("str")
+        end
+
+        if array_type?(receiver_type)
+          return Types::Span.new(array_element_type(receiver_type))
+        end
+
+        if span_type?(receiver_type)
+          return receiver_type
+        end
+
+        raise_sema_error("cannot range-index #{receiver_type}; expected str, array[T, N], or span[T]")
+      end
+
+      def integer_literal_bound_value(expression)
+        return expression.value if expression.is_a?(AST::IntegerLiteral)
+        return -expression.operand.value if expression.is_a?(AST::UnaryOp) && expression.operator == "-" && expression.operand.is_a?(AST::IntegerLiteral)
+
+        nil
       end
 
       def addressable_storage_expression?(expression, scopes:)
