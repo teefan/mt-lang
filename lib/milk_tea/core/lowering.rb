@@ -26,6 +26,7 @@
 
 require_relative "lowering/scans"
 require_relative "lowering/declarations"
+require_relative "lowering/assertions"
 require_relative "lowering/events"
 require_relative "lowering/functions"
 require_relative "lowering/async/analysis"
@@ -107,6 +108,7 @@ module MilkTea
     include Lowering::Functions
     include Lowering::Async
     include Lowering::Block
+    include Lowering::Assertions
     include Lowering::Proc
     include Lowering::Loops
     include Lowering::Expressions

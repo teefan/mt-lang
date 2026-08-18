@@ -1,46 +1,41 @@
 # In-language tests for std.queue (migrated from
 # test/std/std_queue_test.rb, run by `mtc test`).
 
-import std.testing as t
 import std.queue as queue
 
 @[test]
-function test_queue_with_capacity_reserves() -> t.Check:
+function test_queue_with_capacity_reserves() -> void:
     var values = queue.Queue[int].with_capacity(2)
-    let result = t.expect(values.capacity() >= 2z, "capacity should be at least 2")
+    expect(values.capacity() >= 2z, "capacity should be at least 2")
     values.release()
-    return result
 
 
 @[test]
-function test_queue_starts_empty() -> t.Check:
+function test_queue_starts_empty() -> void:
     var values = queue.Queue[int].with_capacity(2)
-    let result = t.expect_true(values.is_empty())
+    expect(values.is_empty())
     values.release()
-    return result
 
 
 @[test]
-function test_queue_peek_empty_is_null() -> t.Check:
+function test_queue_peek_empty_is_null() -> void:
     var values = queue.Queue[int].with_capacity(2)
-    let result = t.expect(values.peek() == null, "peek on empty queue should be null")
+    expect(values.peek() == null, "peek on empty queue should be null")
     values.release()
-    return result
 
 
 @[test]
-function test_queue_enqueue_updates_len() -> t.Check:
+function test_queue_enqueue_updates_len() -> void:
     var values = queue.Queue[int].with_capacity(2)
     values.enqueue(10)
     values.enqueue(20)
     values.enqueue(30)
-    let result = t.expect(values.len() == 3z, "len should be 3 after three enqueues")
+    expect(values.len() == 3z, "len should be 3 after three enqueues")
     values.release()
-    return result
 
 
 @[test]
-function test_queue_iteration_sums_values() -> t.Check:
+function test_queue_iteration_sums_values() -> void:
     var values = queue.Queue[int].with_capacity(2)
     values.enqueue(10)
     values.enqueue(20)
@@ -55,12 +50,12 @@ function test_queue_iteration_sums_values() -> t.Check:
 
     values.release()
 
-    t.expect_equal_int(count, 3)?
-    return t.expect_equal_int(total, 60)
+    expect_eq(count, 3)
+    expect_eq(total, 60)
 
 
 @[test]
-function test_queue_peek_mutates_front() -> t.Check:
+function test_queue_peek_mutates_front() -> void:
     var values = queue.Queue[int].with_capacity(2)
     values.enqueue(10)
     values.enqueue(20)
@@ -68,7 +63,8 @@ function test_queue_peek_mutates_front() -> t.Check:
 
     let front = values.peek() else:
         values.release()
-        return t.fail("peek should return front pointer")
+        expect(false, "peek should return front pointer")
+        return
     unsafe:
         read(front) = 12
 
@@ -80,11 +76,11 @@ function test_queue_peek_mutates_front() -> t.Check:
             first = payload.value
 
     values.release()
-    return t.expect_equal_int(first, 12)
+    expect_eq(first, 12)
 
 
 @[test]
-function test_queue_dequeue_order_drains() -> t.Check:
+function test_queue_dequeue_order_drains() -> void:
     var values = queue.Queue[int].with_capacity(2)
     values.enqueue(10)
     values.enqueue(20)
@@ -114,14 +110,14 @@ function test_queue_dequeue_order_drains() -> t.Check:
     let drained = values.is_empty()
     values.release()
 
-    t.expect_equal_int(first, 10)?
-    t.expect_equal_int(second, 20)?
-    t.expect_equal_int(third, 30)?
-    return t.expect_true(drained)
+    expect_eq(first, 10)
+    expect_eq(second, 20)
+    expect_eq(third, 30)
+    expect(drained)
 
 
 @[test]
-function test_queue_clear_resets() -> t.Check:
+function test_queue_clear_resets() -> void:
     var values = queue.Queue[int].with_capacity(2)
     values.enqueue(4)
     values.clear()
@@ -129,27 +125,27 @@ function test_queue_clear_resets() -> t.Check:
     let peek_null = values.peek() == null
     values.release()
 
-    t.expect_true(empty)?
-    return t.expect(peek_null, "peek should be null after clear")
+    expect(empty)
+    expect(peek_null, "peek should be null after clear")
 
 
 @[test]
-function test_queue_shrink_to_fit() -> t.Check:
+function test_queue_shrink_to_fit() -> void:
     var values = queue.Queue[int].create()
     defer: values.release()
     values.enqueue(10)
     values.enqueue(20)
     values.reserve(128)
-    t.expect(values.capacity() >= 128z, "capacity inflated")?
+    expect(values.capacity() >= 128z, "capacity inflated")
 
     values.shrink_to_fit()
-    t.expect(values.capacity() == 2z, "capacity == len")?
-    t.expect(values.len() == 2z, "len unchanged")?
+    expect(values.capacity() == 2z, "capacity == len")
+    expect(values.len() == 2z, "len unchanged")
 
     var first = 0
     match values.dequeue():
         Option.some as payload:
             first = payload.value
         Option.none:
-            return t.fail("dequeue returned none after shrink")
-    return t.expect_equal_int(first, 10)
+            expect(false, "dequeue returned none after shrink")
+    expect_eq(first, 10)

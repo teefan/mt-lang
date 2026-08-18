@@ -1,12 +1,11 @@
 # In-language tests for std.binary (migrated from
 # test/std/std_binary_test.rb, run by `mtc test`).
 
-import std.testing as t
 import std.binary as bin
 import std.str as str
 
 @[test]
-function test_binary_round_trips_unsigned_integers() -> t.Check:
+function test_binary_round_trips_unsigned_integers() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_ubyte(0xFF)
@@ -18,29 +17,28 @@ function test_binary_round_trips_unsigned_integers() -> t.Check:
 
     match reader.read_ubyte():
         Result.failure:
-            return t.fail("read_ubyte failed")
+            expect(false, "read_ubyte failed")
         Result.success as payload:
-            t.expect(payload.value == 0xFF, "ubyte round-trips")?
+            expect(payload.value == 0xFF, "ubyte round-trips")
     match reader.read_ushort():
         Result.failure:
-            return t.fail("read_ushort failed")
+            expect(false, "read_ushort failed")
         Result.success as payload:
-            t.expect(payload.value == 0xABCD, "ushort round-trips")?
+            expect(payload.value == 0xABCD, "ushort round-trips")
     match reader.read_uint():
         Result.failure:
-            return t.fail("read_uint failed")
+            expect(false, "read_uint failed")
         Result.success as payload:
-            t.expect(payload.value == 0xDEADBEEF, "uint round-trips")?
+            expect(payload.value == 0xDEADBEEF, "uint round-trips")
     match reader.read_ulong():
         Result.failure:
-            return t.fail("read_ulong failed")
+            expect(false, "read_ulong failed")
         Result.success as payload:
-            t.expect(payload.value == 0x0123456789ABCDEF, "ulong round-trips")?
-    return t.ok()
+            expect(payload.value == 0x0123456789ABCDEF, "ulong round-trips")
 
 
 @[test]
-function test_binary_round_trips_signed_integers() -> t.Check:
+function test_binary_round_trips_signed_integers() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_byte(byte<--1)
@@ -52,29 +50,28 @@ function test_binary_round_trips_signed_integers() -> t.Check:
 
     match reader.read_byte():
         Result.failure:
-            return t.fail("read_byte failed")
+            expect(false, "read_byte failed")
         Result.success as payload:
-            t.expect(payload.value == byte<--1, "byte round-trips")?
+            expect(payload.value == byte<--1, "byte round-trips")
     match reader.read_short():
         Result.failure:
-            return t.fail("read_short failed")
+            expect(false, "read_short failed")
         Result.success as payload:
-            t.expect(payload.value == short<--30000, "short round-trips")?
+            expect(payload.value == short<--30000, "short round-trips")
     match reader.read_int():
         Result.failure:
-            return t.fail("read_int failed")
+            expect(false, "read_int failed")
         Result.success as payload:
-            t.expect(payload.value == -2000000000, "int round-trips")?
+            expect(payload.value == -2000000000, "int round-trips")
     match reader.read_long():
         Result.failure:
-            return t.fail("read_long failed")
+            expect(false, "read_long failed")
         Result.success as payload:
-            t.expect(payload.value == -9000000000000000000, "long round-trips")?
-    return t.ok()
+            expect(payload.value == -9000000000000000000, "long round-trips")
 
 
 @[test]
-function test_binary_round_trips_floats() -> t.Check:
+function test_binary_round_trips_floats() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_float(3.140000104904175)
@@ -84,19 +81,18 @@ function test_binary_round_trips_floats() -> t.Check:
 
     match reader.read_float():
         Result.failure:
-            return t.fail("read_float failed")
+            expect(false, "read_float failed")
         Result.success as payload:
-            t.expect(payload.value == 3.140000104904175, "float round-trips")?
+            expect(payload.value == 3.140000104904175, "float round-trips")
     match reader.read_double():
         Result.failure:
-            return t.fail("read_double failed")
+            expect(false, "read_double failed")
         Result.success as payload:
-            t.expect(payload.value == 2.718281828459045, "double round-trips")?
-    return t.ok()
+            expect(payload.value == 2.718281828459045, "double round-trips")
 
 
 @[test]
-function test_binary_round_trips_bool() -> t.Check:
+function test_binary_round_trips_bool() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_bool(true)
@@ -107,24 +103,24 @@ function test_binary_round_trips_bool() -> t.Check:
 
     match reader.read_bool():
         Result.failure:
-            return t.fail("read_bool 1 failed")
+            expect(false, "read_bool 1 failed")
         Result.success as payload:
-            t.expect_true(payload.value)?
+            expect(payload.value)
     match reader.read_bool():
         Result.failure:
-            return t.fail("read_bool 2 failed")
+            expect(false, "read_bool 2 failed")
         Result.success as payload:
-            t.expect_false(payload.value)?
+            expect(not payload.value)
     match reader.read_bool():
         Result.failure:
-            return t.fail("read_bool 3 failed")
+            expect(false, "read_bool 3 failed")
         Result.success as payload:
-            t.expect_true(payload.value)?
-    return t.expect_false(reader.has_more())
+            expect(payload.value)
+    expect(not reader.has_more())
 
 
 @[test]
-function test_binary_round_trips_strings() -> t.Check:
+function test_binary_round_trips_strings() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_str("hello")
@@ -135,30 +131,29 @@ function test_binary_round_trips_strings() -> t.Check:
 
     match reader.read_str():
         Result.failure:
-            return t.fail("read_str 1 failed")
+            expect(false, "read_str 1 failed")
         Result.success as payload:
             var s1 = payload.value
             defer: s1.release()
-            t.expect_true(s1.as_str().equal("hello"))?
+            expect(s1.as_str().equal("hello"))
     match reader.read_str():
         Result.failure:
-            return t.fail("read_str 2 failed")
+            expect(false, "read_str 2 failed")
         Result.success as payload:
             var s2 = payload.value
             defer: s2.release()
-            t.expect(s2.len() == 0, "empty string len 0")?
+            expect(s2.len() == 0, "empty string len 0")
     match reader.read_str():
         Result.failure:
-            return t.fail("read_str 3 failed")
+            expect(false, "read_str 3 failed")
         Result.success as payload:
             var s3 = payload.value
             defer: s3.release()
-            t.expect_true(s3.as_str().equal("world"))?
-    return t.ok()
+            expect(s3.as_str().equal("world"))
 
 
 @[test]
-function test_binary_round_trips_bytes() -> t.Check:
+function test_binary_round_trips_bytes() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     let data = str.as_byte_span("abcde")
@@ -168,41 +163,41 @@ function test_binary_round_trips_bytes() -> t.Check:
 
     match reader.read_bytes(5):
         Result.failure:
-            return t.fail("read_bytes failed")
+            expect(false, "read_bytes failed")
         Result.success as payload:
             var chunk = payload.value
             defer: chunk.release()
             match chunk.as_str():
                 Option.none:
-                    return t.fail("bytes not valid utf-8")
+                    expect(false, "bytes not valid utf-8")
                 Option.some as str_payload:
-                    t.expect_true(str_payload.value.equal("abcde"))?
-    return t.expect_false(reader.has_more())
+                    expect(str_payload.value.equal("abcde"))
+    expect(not reader.has_more())
 
 
 @[test]
-function test_binary_reset_and_finish() -> t.Check:
+function test_binary_reset_and_finish() -> void:
     var w = bin.Writer.create()
     w.write_uint(42)
     w.reset()
     w.write_uint(99)
 
     var reader = bin.reader(w.as_span())
-    t.expect(w.len() == 4, "len == 4 after reset/rewrite")?
+    expect(w.len() == 4, "len == 4 after reset/rewrite")
 
     match reader.read_uint():
         Result.failure:
-            return t.fail("read_uint failed")
+            expect(false, "read_uint failed")
         Result.success as payload:
-            t.expect(payload.value == 99, "reset discarded first value")?
+            expect(payload.value == 99, "reset discarded first value")
 
     var result = w.finish()
     defer: result.release()
-    return t.expect(result.len == 4z, "finished buffer len 4")
+    expect(result.len == 4z, "finished buffer len 4")
 
 
 @[test]
-function test_binary_write_uint_at_positional_patch() -> t.Check:
+function test_binary_write_uint_at_positional_patch() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_uint(0)
@@ -215,19 +210,18 @@ function test_binary_write_uint_at_positional_patch() -> t.Check:
 
     match reader.read_uint():
         Result.failure:
-            return t.fail("read_uint failed")
+            expect(false, "read_uint failed")
         Result.success as payload:
-            t.expect(payload.value == 9999, "patched uint")?
+            expect(payload.value == 9999, "patched uint")
     match reader.read_ubyte():
         Result.failure:
-            return t.fail("read_ubyte failed")
+            expect(false, "read_ubyte failed")
         Result.success as payload:
-            t.expect(payload.value == 1, "trailing byte preserved")?
-    return t.ok()
+            expect(payload.value == 1, "trailing byte preserved")
 
 
 @[test]
-function test_binary_reader_reports_end_of_buffer() -> t.Check:
+function test_binary_reader_reports_end_of_buffer() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_ubyte(1)
@@ -236,21 +230,20 @@ function test_binary_reader_reports_end_of_buffer() -> t.Check:
 
     match reader.read_ubyte():
         Result.failure:
-            return t.fail("first read should succeed")
+            expect(false, "first read should succeed")
         Result.success:
             pass
 
-    t.expect_false(reader.has_more())?
+    expect(not reader.has_more())
 
     match reader.read_ubyte():
         Result.failure:
-            return t.ok()
         Result.success:
-            return t.fail("read past end should fail")
+            expect(false, "read past end should fail")
 
 
 @[test]
-function test_binary_reader_reports_invalid_bool() -> t.Check:
+function test_binary_reader_reports_invalid_bool() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_ubyte(42)
@@ -258,24 +251,22 @@ function test_binary_reader_reports_invalid_bool() -> t.Check:
 
     match reader.read_bool():
         Result.failure:
-            return t.ok()
         Result.success:
-            return t.fail("invalid bool byte should fail")
+            expect(false, "invalid bool byte should fail")
 
 
 @[test]
-function test_binary_writer_with_capacity_preallocates() -> t.Check:
+function test_binary_writer_with_capacity_preallocates() -> void:
     var w = bin.Writer.with_capacity(256)
     defer: w.release()
-    t.expect(w.buffer.capacity() >= 256, "capacity >= 256")?
-    t.expect(w.len() == 0, "len == 0 initially")?
+    expect(w.buffer.capacity() >= 256, "capacity >= 256")
+    expect(w.len() == 0, "len == 0 initially")
     w.write_uint(1)
     w.write_uint(2)
-    return t.ok()
 
 
 @[test]
-function test_binary_reader_remaining_and_has_more() -> t.Check:
+function test_binary_reader_remaining_and_has_more() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_uint(100)
@@ -283,27 +274,27 @@ function test_binary_reader_remaining_and_has_more() -> t.Check:
 
     var reader = bin.reader(w.as_span())
 
-    t.expect(reader.remaining() == 6z, "remaining == 6")?
-    t.expect_true(reader.has_more())?
+    expect(reader.remaining() == 6z, "remaining == 6")
+    expect(reader.has_more())
 
     match reader.read_uint():
         Result.failure:
-            return t.fail("read_uint failed")
+            expect(false, "read_uint failed")
         Result.success:
             pass
-    t.expect(reader.remaining() == 2z, "remaining == 2")?
+    expect(reader.remaining() == 2z, "remaining == 2")
 
     match reader.read_ushort():
         Result.failure:
-            return t.fail("read_ushort failed")
+            expect(false, "read_ushort failed")
         Result.success:
             pass
-    t.expect(reader.remaining() == 0z, "remaining == 0")?
-    return t.expect_false(reader.has_more())
+    expect(reader.remaining() == 0z, "remaining == 0")
+    expect(not reader.has_more())
 
 
 @[test]
-function test_binary_reader_skip_advances_position() -> t.Check:
+function test_binary_reader_skip_advances_position() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_uint(100)
@@ -314,24 +305,24 @@ function test_binary_reader_skip_advances_position() -> t.Check:
 
     match reader.skip(4):
         Result.failure:
-            return t.fail("skip failed")
+            expect(false, "skip failed")
         Result.success:
             pass
     match reader.read_ubyte():
         Result.failure:
-            return t.fail("read_ubyte failed")
+            expect(false, "read_ubyte failed")
         Result.success as p:
-            t.expect(p.value == 42, "byte after skip")?
+            expect(p.value == 42, "byte after skip")
     match reader.read_ushort():
         Result.failure:
-            return t.fail("read_ushort failed")
+            expect(false, "read_ushort failed")
         Result.success as p:
-            t.expect(p.value == 200, "ushort after skip")?
-    return t.expect_false(reader.has_more())
+            expect(p.value == 200, "ushort after skip")
+    expect(not reader.has_more())
 
 
 @[test]
-function test_binary_round_trips_mixed_types() -> t.Check:
+function test_binary_round_trips_mixed_types() -> void:
     var w = bin.Writer.create()
     defer: w.release()
     w.write_bool(true)
@@ -344,29 +335,29 @@ function test_binary_round_trips_mixed_types() -> t.Check:
 
     match reader.read_bool():
         Result.failure:
-            return t.fail("read_bool failed")
+            expect(false, "read_bool failed")
         Result.success as p:
-            t.expect_true(p.value)?
+            expect(p.value)
     match reader.read_uint():
         Result.failure:
-            return t.fail("read_uint failed")
+            expect(false, "read_uint failed")
         Result.success as p:
-            t.expect(p.value == 1234567890, "uint round-trips")?
+            expect(p.value == 1234567890, "uint round-trips")
     match reader.read_float():
         Result.failure:
-            return t.fail("read_float failed")
+            expect(false, "read_float failed")
         Result.success as p:
-            t.expect(p.value == 1.5, "float round-trips")?
+            expect(p.value == 1.5, "float round-trips")
     match reader.read_str():
         Result.failure:
-            return t.fail("read_str failed")
+            expect(false, "read_str failed")
         Result.success as p:
             var s = p.value
             defer: s.release()
-            t.expect_true(s.as_str().equal("mixed"))?
+            expect(s.as_str().equal("mixed"))
     match reader.read_ushort():
         Result.failure:
-            return t.fail("read_ushort failed")
+            expect(false, "read_ushort failed")
         Result.success as p:
-            t.expect(p.value == 42, "ushort round-trips")?
-    return t.expect_false(reader.has_more())
+            expect(p.value == 42, "ushort round-trips")
+    expect(not reader.has_more())

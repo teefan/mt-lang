@@ -422,6 +422,11 @@ module MilkTea
       end
 
       def lower_expression_stmt(statement, lowered:, local_defers:, local_env:)
+        if (assert_statements = lower_assert_like_statement(statement, env: local_env))
+          lowered.concat(assert_statements)
+          return
+        end
+
         if (format_sink_statements = lower_explicit_format_sink_expression_statement(statement.expression, env: local_env, line: statement.line))
           lowered.concat(format_sink_statements)
           return

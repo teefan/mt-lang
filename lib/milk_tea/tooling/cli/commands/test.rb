@@ -399,21 +399,14 @@ module MilkTea
           return 1
         end
 
-        testing_import = ast.imports.find { |import| import.path.parts == %w[std testing] }
-        unless testing_import
-          @err.puts("a test file must import std.testing: #{path}")
-          return 1
-        end
-        testing_alias = testing_import.alias_name || testing_import.path.parts.last
-
         death_tests, normal_tests = tests.partition { |test| expect_fatal_attribute?(test) }
 
         exit_code = 0
 
         unless normal_tests.empty?
           runner_source = source.dup
-          runner_source << "\n\n" << test_runner_main(testing_alias, normal_tests.map(&:name))
-          exit_code = run_synthesized_tests(path, runner_source, options:, locked:)
+          runner_source << "\n\n" << test_runner_main(normal_tests.map(&:name))
+          exit_code = run_normal_tests(path, runner_source, normal_tests.map(&:name), options:, locked:)
         end
 
         death_tests.each do |death_test|
@@ -459,28 +452,51 @@ module MilkTea
       def death_test_runner_main(test_name)
         [
           "function main() -> int:",
-          "    match #{test_name}():",
-          "        Result.success:",
-          "            return 0",
-          "        Result.failure:",
-          "            return 0",
+          "    #{test_name}()",
+          "    return 0",
         ].join("\n") + "\n"
       end
 
-      def test_runner_main(testing_alias, test_names)
-        lines = ["function main() -> int:"]
-        lines << "    var __mt_test_stats = #{testing_alias}.Stats.create()"
+      # The runner binary runs exactly one test per invocation, selected by
+      # `argv[1]`. This gives per-test isolation: an aborting assertion in one
+      # test cannot suppress the results of its siblings.
+      def test_runner_main(test_names)
+        lines = ["function main(args: span[str]) -> int:"]
+        lines << "    let which = if args.len > 1: args[1] else: \"\""
+        lines << "    match which:"
         test_names.each do |name|
-          lines << "    __mt_test_stats = #{testing_alias}.record(__mt_test_stats, #{name.inspect}, #{name}())"
+          lines << "        \"#{name}\":"
+          lines << "            #{name}()"
         end
-        lines << "    return #{testing_alias}.summarize(__mt_test_stats)"
+        lines << "        _:"
+        lines << "            return 2"
+        lines << "    return 0"
         lines.join("\n") + "\n"
       end
 
-      def run_synthesized_tests(source_path, runner_source, options:, locked:)
+      def run_normal_tests(source_path, runner_source, test_names, options:, locked:)
         with_synthesized_binary(source_path, runner_source, options:, locked:) do |binary_path|
-          run_test_binary(binary_path)
+          exit_code = 0
+          test_names.each do |name|
+            output, status, timed_out = spawn_sandboxed(binary_path, [name])
+            if timed_out
+              @out.puts("FAIL - #{name}: timed out")
+              exit_code = 1
+            elsif status&.exitstatus == 0
+              @out.puts("ok   - #{name}")
+            else
+              @out.puts("FAIL - #{name}: #{first_fail_message(output)}")
+              exit_code = 1
+            end
+            @out.flush if @out.respond_to?(:flush)
+          end
+          exit_code
         end
+      end
+
+      def first_fail_message(output)
+        line = output.to_s.lines.map(&:chomp).find { |entry| !entry.strip.empty? }
+        line.nil? || line.strip.empty? ? "test aborted" : line.strip
       end
 
       def with_synthesized_binary(source_path, runner_source, options:, locked:)
@@ -508,30 +524,13 @@ module MilkTea
         end
       end
 
-      def run_test_binary(binary_path)
-        output, status, timed_out = spawn_sandboxed(binary_path)
-        @out.write(output)
-        @out.flush if @out.respond_to?(:flush)
-
-        if timed_out
-          @err.puts("test run timed out after #{@test_timeout_seconds || TEST_RUN_TIMEOUT_SECONDS}s")
-          return 1
-        end
-        if status&.signaled?
-          @err.puts("test run crashed (signal #{status.termsig})")
-          return 1
-        end
-
-        status&.exitstatus || 1
-      end
-
-      def spawn_sandboxed(binary_path)
+      def spawn_sandboxed(binary_path, args = [])
         timeout_seconds = @test_timeout_seconds || TEST_RUN_TIMEOUT_SECONDS
         memory_bytes = @test_memory_bytes || TEST_RUN_MEMORY_LIMIT_BYTES
         reader, writer = IO.pipe
         spawn_options = { out: writer, err: writer, pgroup: true }
         spawn_options[:rlimit_as] = memory_bytes unless @test_sanitize
-        pid = Process.spawn(binary_path, **spawn_options)
+        pid = Process.spawn(binary_path, *args, **spawn_options)
         writer.close
 
         status = nil

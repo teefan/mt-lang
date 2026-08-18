@@ -1,7 +1,6 @@
 ## Utility AI tests.
 ## Run via `mtc test test/mt/`.
 
-import std.testing as t
 import std.utility as util
 
 
@@ -78,58 +77,54 @@ function idle_score(_ctx: ptr[TestCtx]) -> float:
 # ── tests ──
 
 @[test]
-function test_utility_select_attack() -> t.Check:
+function test_utility_select_attack() -> void:
     var ctx = TestCtx(health = 1.0, ammo = 0.8, enemies = 2, distance = 5.0)
     var selector = build_selector()
     defer: selector.release()
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect(chosen.selected, "an action was selected")?
-    t.expect(chosen.name == "attack", "selects attack when in range with ammo")?
+    expect(chosen.selected, "an action was selected")
+    expect(chosen.name == "attack", "selects attack when in range with ammo")
 
-    return t.ok()
 
 
 @[test]
-function test_utility_select_flee() -> t.Check:
+function test_utility_select_flee() -> void:
     var ctx = TestCtx(health = 0.01, ammo = 0.9, enemies = 2, distance = 5.0)
     var selector = build_selector()
     defer: selector.release()
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect(chosen.selected, "an action was selected")?
-    t.expect(chosen.name == "flee", "selects flee when health is low")?
+    expect(chosen.selected, "an action was selected")
+    expect(chosen.name == "flee", "selects flee when health is low")
 
-    return t.ok()
 
 
 @[test]
-function test_utility_select_idle() -> t.Check:
+function test_utility_select_idle() -> void:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 100.0)
     var selector = build_selector()
     defer: selector.release()
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect(chosen.selected, "an action was selected")?
-    t.expect(chosen.name == "idle", "selects idle when nothing to do")?
+    expect(chosen.selected, "an action was selected")
+    expect(chosen.name == "idle", "selects idle when nothing to do")
 
-    return t.ok()
 
 
 @[test]
-function test_utility_empty_selector() -> t.Check:
+function test_utility_empty_selector() -> void:
     var ctx = TestCtx(health = 1.0, ammo = 0.5, enemies = 1, distance = 20.0)
     var selector = util.Selector[TestCtx].create()
     defer: selector.release()
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect_false(chosen.selected)?
+    expect(not chosen.selected)
 
-    return t.ok()
 
 
 @[test]
-function test_utility_combine_average() -> t.Check:
+function test_utility_combine_average() -> void:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
     defer: selector.release()
@@ -140,10 +135,9 @@ function test_utility_combine_average() -> t.Check:
     selector.add_action(a)
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect(chosen.selected, "an action was selected")?
-    t.expect(chosen.score >= 0.4 and chosen.score <= 0.6, "average of 0.5 + 0.5")?
+    expect(chosen.selected, "an action was selected")
+    expect(chosen.score >= 0.4 and chosen.score <= 0.6, "average of 0.5 + 0.5")
 
-    return t.ok()
 
 
 function half_score(_ctx: ptr[TestCtx]) -> float:
@@ -151,7 +145,7 @@ function half_score(_ctx: ptr[TestCtx]) -> float:
 
 
 @[test]
-function test_utility_combine_minimum() -> t.Check:
+function test_utility_combine_minimum() -> void:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
     defer: selector.release()
@@ -162,9 +156,8 @@ function test_utility_combine_minimum() -> t.Check:
     selector.add_action(a)
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect(chosen.score <= 0.3, "minimum picks the lower value")?
+    expect(chosen.score <= 0.3, "minimum picks the lower value")
 
-    return t.ok()
 
 
 function score_high(_ctx: ptr[TestCtx]) -> float:
@@ -176,7 +169,7 @@ function score_low(_ctx: ptr[TestCtx]) -> float:
 
 
 @[test]
-function test_utility_combine_maximum() -> t.Check:
+function test_utility_combine_maximum() -> void:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
     defer: selector.release()
@@ -187,13 +180,12 @@ function test_utility_combine_maximum() -> t.Check:
     selector.add_action(a)
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect(chosen.score >= 0.8, "maximum picks the higher value")?
+    expect(chosen.score >= 0.8, "maximum picks the higher value")
 
-    return t.ok()
 
 
 @[test]
-function test_utility_weight() -> t.Check:
+function test_utility_weight() -> void:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
     defer: selector.release()
@@ -209,13 +201,12 @@ function test_utility_weight() -> t.Check:
     selector.add_action(boosted)
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect(chosen.name == "boosted", "weighted action wins over equal-scoring action")?
+    expect(chosen.name == "boosted", "weighted action wins over equal-scoring action")
 
-    return t.ok()
 
 
 @[test]
-function test_utility_veto_by_zero() -> t.Check:
+function test_utility_veto_by_zero() -> void:
     var ctx = TestCtx(health = 1.0, ammo = 0.0, enemies = 0, distance = 0.0)
     var selector = util.Selector[TestCtx].create()
     defer: selector.release()
@@ -226,9 +217,8 @@ function test_utility_veto_by_zero() -> t.Check:
     selector.add_action(a)
 
     let chosen = selector.select(ptr_of(ctx))
-    t.expect_false(chosen.selected)?
+    expect(not chosen.selected)
 
-    return t.ok()
 
 
 function score_zero(_ctx: ptr[TestCtx]) -> float:

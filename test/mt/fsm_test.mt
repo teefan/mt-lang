@@ -1,7 +1,6 @@
 # In-language tests for std.fsm (migrated from
 # test/std/std_fsm_test.rb, run by `mtc test`).
 
-import std.testing as t
 import std.fsm as fsm
 
 enum ActorState: ubyte
@@ -72,7 +71,7 @@ function events_equal(left: ActorEvent, right: ActorEvent) -> bool:
 
 
 @[test]
-function test_table_driven_fsm() -> t.Check:
+function test_table_driven_fsm() -> void:
     var machine = fsm.StateMachine[ActorState, ActorEvent, Context].create(ActorState.idle, states_equal, events_equal)
     defer: machine.release()
 
@@ -125,43 +124,43 @@ function test_table_driven_fsm() -> t.Check:
         )
     )
 
-    t.expect(machine.transitions_len() == 4, "4 transitions")?
-    t.expect(machine.hooks_len() == 2, "2 hooks")?
-    t.expect_true(machine.is_in_state(ActorState.idle))?
+    expect(machine.transitions_len() == 4, "4 transitions")
+    expect(machine.hooks_len() == 2, "2 hooks")
+    expect(machine.is_in_state(ActorState.idle))
 
     var context = Context(energy = 3, score = 0, updates = 0)
 
     let ran = machine.dispatch(context, ActorEvent.run)
-    t.expect_true(ran.did_transition())?
-    t.expect(ran.previous_state == ActorState.idle, "previous state idle")?
-    t.expect(ran.current_state == ActorState.walking, "current state walking")?
+    expect(ran.did_transition())
+    expect(ran.previous_state == ActorState.idle, "previous state idle")
+    expect(ran.current_state == ActorState.walking, "current state walking")
 
     machine.tick(context)
-    t.expect_equal_int(context.updates, 1)?
+    expect_eq(context.updates, 1)
 
     let jumped = machine.dispatch(context, ActorEvent.jump)
-    t.expect_true(jumped.did_transition())?
-    t.expect_equal_int(context.energy, 1)?
+    expect(jumped.did_transition())
+    expect_eq(context.energy, 1)
 
     let ignored = machine.dispatch(context, ActorEvent.jump)
-    t.expect_false(ignored.did_transition())?
+    expect(not ignored.did_transition())
 
     machine.tick(context)
-    t.expect_equal_int(context.updates, 11)?
+    expect_eq(context.updates, 11)
 
     let landed = machine.dispatch(context, ActorEvent.land)
-    t.expect_true(landed.did_transition())?
-    t.expect_true(machine.is_in_state(ActorState.walking))?
+    expect(landed.did_transition())
+    expect(machine.is_in_state(ActorState.walking))
 
     let stopped = machine.dispatch(context, ActorEvent.stop)
-    t.expect_true(stopped.did_transition())?
-    t.expect(machine.state() == ActorState.idle, "state is idle")?
+    expect(stopped.did_transition())
+    expect(machine.state() == ActorState.idle, "state is idle")
 
     let forced = machine.set_state(context, ActorState.jumping)
-    t.expect_true(forced.did_transition())?
-    t.expect_equal_int(context.energy, -1)?
+    expect(forced.did_transition())
+    expect_eq(context.energy, -1)
 
     let same_state = machine.set_state(context, ActorState.jumping)
-    t.expect_false(same_state.did_transition())?
+    expect(not same_state.did_transition())
 
-    return t.expect_equal_int(context.score, 42)
+    expect_eq(context.score, 42)

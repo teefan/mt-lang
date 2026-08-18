@@ -271,6 +271,8 @@ module MilkTea
           )
         when :zero
           IR::ZeroInit.new(type:)
+        when :assert, :expect, :expect_eq, :expect_ne
+          raise LoweringError.new("#{kind} must be used as a statement", line: 0, column: 0, path: @ctx.current_analysis_path)
         when :fatal
           argument = expression.arguments.fetch(0)
           message_type = infer_expression_type(argument.value, env:)

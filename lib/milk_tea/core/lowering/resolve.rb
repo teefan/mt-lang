@@ -6,6 +6,10 @@ module MilkTea
       include CompileTime::MethodFolding
       PASS_THROUGH_BUILTINS = {
         "fatal"         => :fatal,
+        "assert"        => :assert,
+        "expect"        => :expect,
+        "expect_eq"     => :expect_eq,
+        "expect_ne"     => :expect_ne,
         "ref_of"        => :ref_of,
         "const_ptr_of"   => :const_ptr_of,
         "read"          => :read,

@@ -105,12 +105,23 @@ module MilkTea
       def terminating_expression?(expression)
         case expression
         when AST::Call
-          terminating_callee?(expression.callee) || static_assert_false?(expression)
+          terminating_callee?(expression.callee) || static_assert_false?(expression) || assertion_false?(expression)
         when AST::Specialization
-          terminating_callee?(expression.callee) || static_assert_false?(expression)
+          terminating_callee?(expression.callee) || static_assert_false?(expression) || assertion_false?(expression)
         else
           false
         end
+      end
+
+      def assertion_false?(expression)
+        return false unless expression.is_a?(AST::Call)
+
+        callee = expression.callee
+        return false unless callee.is_a?(AST::Identifier)
+        return false unless %w[assert expect].include?(callee.name)
+
+        first_arg = expression.arguments.first
+        first_arg.is_a?(AST::BooleanLiteral) && first_arg.value == false
       end
 
       def static_assert_false?(expression)

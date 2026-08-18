@@ -3,7 +3,6 @@
 # These exercise the compiler's resolution of `field.type` as a type in both the
 # semantic and lowering phases, across heterogeneous field types (int + str).
 
-import std.testing as t
 import std.hash as hash
 import std.fmt as fmt
 import std.string as string
@@ -25,29 +24,27 @@ extending Pair:
 
 
 @[test]
-function test_equal_struct_content() -> t.Check:
+function test_equal_struct_content() -> void:
     let p1 = Pair(id = 1, name = "milk")
     let p2 = Pair(id = 1, name = "milk")
     let p3 = Pair(id = 1, name = "tea")
-    t.expect_true(equal[Pair](p1, p2))?
-    t.expect_false(equal[Pair](p1, p3))?
-    return t.ok()
+    expect(equal[Pair](p1, p2))
+    expect(not equal[Pair](p1, p3))
 
 
 @[test]
-function test_hash_struct_consistent() -> t.Check:
+function test_hash_struct_consistent() -> void:
     let p1 = Pair(id = 2, name = "milk")
     let p2 = Pair(id = 2, name = "milk")
-    return t.expect_true(hash[Pair](p1) == hash[Pair](p2))
+    expect(hash[Pair](p1) == hash[Pair](p2))
 
 
 @[test]
-function test_order_struct_lexicographic() -> t.Check:
+function test_order_struct_lexicographic() -> void:
     let p1 = Pair(id = 1, name = "milk")
     let p2 = Pair(id = 1, name = "tea")
-    t.expect_true(order[Pair](p1, p2) < 0)?
-    t.expect_true(order[Pair](p1, p1) == 0)?
-    return t.ok()
+    expect(order[Pair](p1, p2) < 0)
+    expect(order[Pair](p1, p1) == 0)
 
 
 struct Wrapper:
@@ -67,31 +64,28 @@ extending Wrapper:
 
 
 @[test]
-function test_nested_equal_struct() -> t.Check:
+function test_nested_equal_struct() -> void:
     let w1 = Wrapper(tag = 1, pair = Pair(id = 1, name = "milk"))
     let w2 = Wrapper(tag = 1, pair = Pair(id = 1, name = "milk"))
     let w3 = Wrapper(tag = 1, pair = Pair(id = 1, name = "tea"))
-    t.expect_true(equal[Wrapper](w1, w2))?
-    t.expect_false(equal[Wrapper](w1, w3))?
-    t.expect_true(order[Wrapper](w1, w3) < 0)?
-    return t.ok()
+    expect(equal[Wrapper](w1, w2))
+    expect(not equal[Wrapper](w1, w3))
+    expect(order[Wrapper](w1, w3) < 0)
 
 
 @[test]
-function test_format_value_flat() -> t.Check:
+function test_format_value_flat() -> void:
     var s = string.String.create()
     let p = Pair(id = 7, name = "milk")
     fmt.format_value[Pair](ref_of(s), const_ptr_of(p))
-    let result = t.expect_equal_str(s.as_str(), "{ id = 7, name = milk }")
+    expect_eq(s.as_str(), "{ id = 7, name = milk }")
     s.release()
-    return result
 
 
 @[test]
-function test_format_value_nested() -> t.Check:
+function test_format_value_nested() -> void:
     var s = string.String.create()
     let w = Wrapper(tag = 2, pair = Pair(id = 3, name = "tea"))
     fmt.format_value[Wrapper](ref_of(s), const_ptr_of(w))
-    let result = t.expect_equal_str(s.as_str(), "{ tag = 2, pair = { id = 3, name = tea } }")
+    expect_eq(s.as_str(), "{ tag = 2, pair = { id = 3, name = tea } }")
     s.release()
-    return result

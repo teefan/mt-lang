@@ -2,7 +2,7 @@
 
 This manual documents the Milk Tea language as implemented today in the lexer, parser, semantic checker, and compiler tests.
 
-Package manifests and build or run workflow are documented separately in `docs/build-guide.md`.
+Package manifests and build or run workflow are documented separately in `docs/build-guide.md`. The `@[test]` attribute, assertion intrinsics, and `mtc test` runner are documented in `docs/testing.md`.
 
 ## 1. Source Files And Modules
 
@@ -1225,6 +1225,10 @@ The call site specializes with a literal: `int_with_bits[64]`.
 Special recognized callables:
 
 - `fatal(message)`
+- `assert(condition, message?)` — runtime check; aborts with `message` when the `bool` condition is false
+- `expect(condition, message?)` — same as `assert`, always-on test assertion
+- `expect_eq(actual, expected, message?)` — compares with the language `==` operator (works for primitives, `str`, structs, variants, arrays) and aborts when the values differ
+- `expect_ne(actual, expected, message?)` — compares with `!=` and aborts when the values are equal
 - `ref_of(x)`
 - `const_ptr_of(x)`
 - `read(r)`
@@ -1241,6 +1245,8 @@ Special recognized callables:
 - `span[T](data = ..., len = ...)`
 - `get(coll, index)` — recoverable array/span indexing returning `ptr[T]?`; null on out‑of‑bounds instead of aborting
 - `adapt[I](value)` — constructs a `dyn[I]` runtime interface value; verifies `value`'s type implements `I` at compile time
+
+`assert`, `expect`, `expect_eq`, and `expect_ne` are special recognized callables, not reserved words: they are recognized in bare call position and may be shadowed by user declarations like any ordinary name. Their message argument (when given) must be `str` or `cstr`; when omitted, the compiler synthesizes a message carrying the source location. The message is only evaluated on the failing path. A literal-false `assert(false, ...)` or `expect(false, ...)` is treated as terminating control flow (like `static_assert(false, ...)`), so it may be used where the checker requires guaranteed exit, such as the `else:` block of a `let ... else:` guard.
 
 `default[T]` requires an accessible zero-argument associated function `T.default()` that returns `T`.
 

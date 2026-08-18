@@ -597,10 +597,11 @@ module MilkTea
           root), recursively discovers every .mt file that contains @[test] functions,
           runs each as its own test binary, and prints an aggregate summary.
 
-          Functions annotated with @[test] must take no parameters and return
-          std.testing.Check. `mtc test` synthesizes a runner that invokes each
-          test through std.testing and reports the results; a test file must import
-          std.testing and must not define `main`.
+          Functions annotated with @[test] must take no parameters and return void;
+          a failing test aborts via the `assert`/`expect`/`expect_eq`/`expect_ne`
+          intrinsics. `mtc test` synthesizes a runner that invokes each test in its
+          own process (for isolation) and reports the results. A test file must not
+          define `main`.
 
           Each test binary runs under a wall-clock timeout and an address-space
           memory cap so a hanging or runaway test cannot stall or exhaust the host.

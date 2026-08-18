@@ -834,6 +834,37 @@ module MilkTea
 
         raise_sema_error("fatal expects str or cstr, got #{message_type}")
       end
+      def check_assert_call(kind, arguments, scopes:)
+        name = kind.to_s
+        raise_sema_error("#{name} does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("#{name} expects 1 or 2 arguments, got #{arguments.length}") unless arguments.length == 1 || arguments.length == 2
+
+        condition_type = infer_expression(arguments.fetch(0).value, scopes:, expected_type: @ctx.types.fetch("bool"))
+        ensure_assignable!(condition_type, @ctx.types.fetch("bool"), "#{name} condition must be bool, got #{condition_type}", expression: arguments.fetch(0).value)
+        check_assert_message(name, arguments[1]&.value, scopes:) if arguments.length == 2
+
+        @ctx.types.fetch("void")
+      end
+      def check_expect_eq_call(kind, arguments, scopes:)
+        name = kind.to_s
+        raise_sema_error("#{name} does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("#{name} expects 2 or 3 arguments, got #{arguments.length}") unless arguments.length == 2 || arguments.length == 3
+
+        left = arguments.fetch(0).value
+        right = arguments.fetch(1).value
+        operator = kind == :expect_ne ? "!=" : "=="
+        comparison = AST::BinaryOp.new(operator:, left:, right:, line: nil, column: nil)
+        infer_binary(comparison, scopes:, expected_type: @ctx.types.fetch("bool"))
+        check_assert_message(name, arguments[2]&.value, scopes:) if arguments.length == 3
+
+        @ctx.types.fetch("void")
+      end
+      def check_assert_message(name, message, scopes:)
+        return unless message
+
+        message_type = infer_expression(message, scopes:, expected_type: @ctx.types.fetch("str"))
+        raise_sema_error("#{name} message must be str or cstr, got #{message_type}") unless string_like_type?(message_type)
+      end
       def check_get_call(arguments, scopes:)
         raise_sema_error("get does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("get expects 2 arguments, got #{arguments.length}") unless arguments.length == 2

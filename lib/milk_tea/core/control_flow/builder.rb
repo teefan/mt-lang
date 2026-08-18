@@ -254,7 +254,16 @@ module MilkTea
       end
 
       def fatal_expression?(expression)
-        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "fatal"
+        return true if expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "fatal"
+
+        # A literal-false `assert`/`expect` always aborts, so it terminates the
+        # current control flow like a `fatal` call (matching static_assert(false)).
+        expression.is_a?(AST::Call) &&
+          expression.callee.is_a?(AST::Identifier) &&
+          %w[assert expect].include?(expression.callee.name) &&
+          (first_arg = expression.arguments.first) &&
+          first_arg.value.is_a?(AST::BooleanLiteral) &&
+          first_arg.value.value == false
       end
 
       def assignment_target_reads(target, operator)

@@ -1,40 +1,39 @@
 # In-language tests for std.stack (migrated from
 # test/std/std_stack_test.rb, run by `mtc test`).
 
-import std.testing as t
 import std.stack as stack
 
 @[test]
-function test_stack_with_capacity() -> t.Check:
+function test_stack_with_capacity() -> void:
     var values = stack.Stack[int].with_capacity(2)
     let cap = values.capacity()
     values.release()
-    return t.expect(cap >= 2z, "capacity should be at least 2")
+    expect(cap >= 2z, "capacity should be at least 2")
 
 
 @[test]
-function test_stack_starts_empty() -> t.Check:
+function test_stack_starts_empty() -> void:
     var values = stack.Stack[int].with_capacity(2)
     let empty = values.is_empty()
     let top_is_null = values.peek() == null
     values.release()
-    t.expect_true(empty)?
-    return t.expect_true(top_is_null)
+    expect(empty)
+    expect(top_is_null)
 
 
 @[test]
-function test_stack_push_increases_len() -> t.Check:
+function test_stack_push_increases_len() -> void:
     var values = stack.Stack[int].with_capacity(2)
     values.push(10)
     values.push(20)
     values.push(30)
     let count = values.len()
     values.release()
-    return t.expect(count == 3z, "len should be 3 after three pushes")
+    expect(count == 3z, "len should be 3 after three pushes")
 
 
 @[test]
-function test_stack_peek_returns_top() -> t.Check:
+function test_stack_peek_returns_top() -> void:
     var values = stack.Stack[int].with_capacity(2)
     values.push(10)
     values.push(20)
@@ -44,11 +43,11 @@ function test_stack_peek_returns_top() -> t.Check:
         unsafe:
             value = read(ptr[int]<-top)
     values.release()
-    return t.expect_equal_int(value, 20)
+    expect_eq(value, 20)
 
 
 @[test]
-function test_stack_iteration_sums_values() -> t.Check:
+function test_stack_iteration_sums_values() -> void:
     var values = stack.Stack[int].with_capacity(2)
     values.push(10)
     values.push(20)
@@ -60,19 +59,20 @@ function test_stack_iteration_sums_values() -> t.Check:
             total += read(value)
         count += 1
     values.release()
-    t.expect_equal_int(count, 3)?
-    return t.expect_equal_int(total, 60)
+    expect_eq(count, 3)
+    expect_eq(total, 60)
 
 
 @[test]
-function test_stack_peek_allows_mutation() -> t.Check:
+function test_stack_peek_allows_mutation() -> void:
     var values = stack.Stack[int].with_capacity(2)
     values.push(10)
     values.push(20)
     values.push(30)
     let top = values.peek() else:
         values.release()
-        return t.fail("peek returned null")
+        expect(false, "peek returned null")
+        return
 
     unsafe:
         read(top) = 32
@@ -83,11 +83,11 @@ function test_stack_peek_allows_mutation() -> t.Check:
             total += read(value)
 
     values.release()
-    return t.expect_equal_int(total, 62)
+    expect_eq(total, 62)
 
 
 @[test]
-function test_stack_pop_lifo_order() -> t.Check:
+function test_stack_pop_lifo_order() -> void:
     var values = stack.Stack[int].with_capacity(2)
     values.push(10)
     values.push(20)
@@ -116,50 +116,49 @@ function test_stack_pop_lifo_order() -> t.Check:
 
     let empty = values.is_empty()
     values.release()
-    t.expect_equal_int(first, 30)?
-    t.expect_equal_int(second, 20)?
-    t.expect_equal_int(third, 10)?
-    return t.expect_true(empty)
+    expect_eq(first, 30)
+    expect_eq(second, 20)
+    expect_eq(third, 10)
+    expect(empty)
 
 
 @[test]
-function test_stack_pop_empty_returns_none() -> t.Check:
+function test_stack_pop_empty_returns_none() -> void:
     var values = stack.Stack[int].create()
     let popped = values.pop()
-    let result = t.expect_none[int](popped)
+    expect(popped.is_none())
     values.release()
-    return result
 
 
 @[test]
-function test_stack_clear_empties() -> t.Check:
+function test_stack_clear_empties() -> void:
     var values = stack.Stack[int].with_capacity(2)
     values.push(4)
     values.clear()
     let empty = values.is_empty()
     let top_is_null = values.peek() == null
     values.release()
-    t.expect_true(empty)?
-    return t.expect_true(top_is_null)
+    expect(empty)
+    expect(top_is_null)
 
 
 @[test]
-function test_stack_shrink_to_fit() -> t.Check:
+function test_stack_shrink_to_fit() -> void:
     var values = stack.Stack[int].create()
     defer: values.release()
     values.push(10)
     values.push(20)
     values.reserve(128)
-    t.expect(values.capacity() >= 128z, "capacity inflated")?
+    expect(values.capacity() >= 128z, "capacity inflated")
 
     values.shrink_to_fit()
-    t.expect(values.capacity() == 2z, "capacity == len")?
-    t.expect(values.len() == 2z, "len unchanged")?
+    expect(values.capacity() == 2z, "capacity == len")
+    expect(values.len() == 2z, "len unchanged")
 
     var top = 0
     match values.pop():
         Option.some as payload:
             top = payload.value
         Option.none:
-            return t.fail("pop returned none after shrink")
-    return t.expect_equal_int(top, 20)
+            expect(false, "pop returned none after shrink")
+    expect_eq(top, 20)

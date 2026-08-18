@@ -20,7 +20,7 @@ It is the preferred first entry point for getting to know the language.
 If this file conflicts with `docs/language-manual.md`, the manual wins.
 `docs/language-design.md` is for design direction and rationale, not the authoritative implementation spec.
 
-Package manifests, build workflow, and run workflow are documented separately in `docs/build-guide.md`.
+Package manifests, build workflow, and run workflow are documented separately in `docs/build-guide.md`. The `@[test]` attribute, assertion intrinsics, and `mtc test` runner are documented in `docs/testing.md`.
 
 ## 1. File Kinds And Layout
 
@@ -860,6 +860,10 @@ Generics:
 Special recognized callables:
 
 - `fatal(message)`
+- `assert(condition, message?)` — runtime check; aborts when the `bool` condition is false
+- `expect(condition, message?)` — same as `assert`, always-on test assertion
+- `expect_eq(actual, expected, message?)` — compares with the language `==` operator (primitives, `str`, structs, variants, arrays) and aborts when the values differ
+- `expect_ne(actual, expected, message?)` — compares with `!=` and aborts when the values are equal
 - `ref_of(x)`
 - `const_ptr_of(x)`
 - `read(r)`
@@ -876,6 +880,8 @@ Special recognized callables:
 - `span[T](data = ..., len = ...)`
 - `get(coll, index)` — recoverable array/span indexing returning `ptr[T]?`; null on out‑of‑bounds instead of aborting
 - `adapt[I](value)` — constructs a `dyn[I]` runtime interface value; verifies `value`'s type implements interface `I` at compile time
+
+`assert`, `expect`, `expect_eq`, and `expect_ne` are recognized in bare call position (not reserved words) and take an optional `str`/`cstr` message. When omitted, the compiler synthesizes a message carrying the source location; the message is only evaluated on the failing path. A literal-false `assert(false, ...)` / `expect(false, ...)` is treated as terminating control flow, so it satisfies the `else:` block of a `let ... else:` guard.
 
 Reference and pointer notes:
 

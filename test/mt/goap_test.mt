@@ -1,7 +1,6 @@
 # In-language tests for std.goap (migrated from
 # test/std/std_goap_test.rb, run by `mtc test`).
 
-import std.testing as t
 import std.goap as goap
 import std.str as str_mod
 
@@ -114,7 +113,7 @@ function expensive_cost(context: ptr[Context], world: World) -> float:
 
 
 @[test]
-function test_low_cost_goap_plan() -> t.Check:
+function test_low_cost_goap_plan() -> void:
     var planner = goap.Planner[World, Goal, Context].create(is_goal, heuristic, worlds_equal)
     defer: planner.release()
 
@@ -124,7 +123,7 @@ function test_low_cost_goap_plan() -> t.Check:
     planner.add_action(goap.Action[World, Context].create("craft", can_craft, craft, craft_cost))
     planner.add_action(goap.Action[World, Context].create("buy_shortcut", can_buy, buy_shortcut, expensive_cost))
 
-    t.expect(planner.action_count() == 5, "5 actions")?
+    expect(planner.action_count() == 5, "5 actions")
 
     var context = Context(unused = 0)
     let initial_world = World(
@@ -137,30 +136,34 @@ function test_low_cost_goap_plan() -> t.Check:
     var result = planner.plan(context, initial_world, Goal.craft_item)
     defer: result.release()
 
-    t.expect(result.status == goap.PlanningStatus.found, "plan found")?
-    t.expect_true(result.has_plan())?
-    t.expect(result.iterations != 0, "iterations > 0")?
+    expect(result.status == goap.PlanningStatus.found, "plan found")
+    expect(result.has_plan())
+    expect(result.iterations != 0, "iterations > 0")
 
     match result.plan:
         Option.none:
-            return t.fail("plan is none")
+            expect(false, "plan is none")
         Option.some as payload:
             let plan = payload.value
-            t.expect(plan.step_count() == 4, "4 steps")?
-            t.expect(plan.total_cost == 6.0, "total cost 6.0")?
-            t.expect_true(plan.final_world.item_crafted)?
+            expect(plan.step_count() == 4, "4 steps")
+            expect(plan.total_cost == 6.0, "total cost 6.0")
+            expect(plan.final_world.item_crafted)
             let step0 = plan.step(0) else:
-                return t.fail("missing step 0")
+                expect(false, "missing step 0")
+                return
             let step1 = plan.step(1) else:
-                return t.fail("missing step 1")
+                expect(false, "missing step 1")
+                return
             let step2 = plan.step(2) else:
-                return t.fail("missing step 2")
+                expect(false, "missing step 2")
+                return
             let step3 = plan.step(3) else:
-                return t.fail("missing step 3")
+                expect(false, "missing step 3")
+                return
             var names_ok = false
             unsafe:
                 names_ok = read(step0).action_name.equal(str_mod.cstr_as_str(c"move_to_resource")) and read(step1).action_name.equal(str_mod.cstr_as_str(c"gather_resources")) and read(step2).action_name.equal(str_mod.cstr_as_str(c"move_to_workbench")) and read(step3).action_name.equal(str_mod.cstr_as_str(c"craft"))
-            t.expect_true(names_ok)?
+            expect(names_ok)
 
     var limited_planner = goap.Planner[World, Goal, Context].create(is_goal, heuristic, worlds_equal)
     defer: limited_planner.release()
@@ -172,5 +175,5 @@ function test_low_cost_goap_plan() -> t.Check:
 
     var limited_result = limited_planner.plan(context, initial_world, Goal.craft_item)
     defer: limited_result.release()
-    t.expect(limited_result.status == goap.PlanningStatus.iteration_limit, "iteration limit reached")?
-    return t.expect_false(limited_result.has_plan())
+    expect(limited_result.status == goap.PlanningStatus.iteration_limit, "iteration limit reached")
+    expect(not limited_result.has_plan())

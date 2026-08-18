@@ -1879,6 +1879,10 @@ let sized = name[32]</code></pre>
     <table class="attr-table">
       <tr><th>Callable</th><th>Description</th></tr>
       <tr><td><code>fatal(message)</code></td><td>Terminate with message</td></tr>
+      <tr><td><code>assert(condition, message?)</code></td><td>Runtime check; aborts when the <code>bool</code> condition is false</td></tr>
+      <tr><td><code>expect(condition, message?)</code></td><td>Always-on test assertion (same as <code>assert</code>)</td></tr>
+      <tr><td><code>expect_eq(actual, expected, message?)</code></td><td>Compares with the language <code>==</code> (primitives, <code>str</code>, structs, variants, arrays); aborts when the values differ</td></tr>
+      <tr><td><code>expect_ne(actual, expected, message?)</code></td><td>Compares with <code>!=</code>; aborts when the values are equal</td></tr>
       <tr><td><code>ref_of(x)</code></td><td>Writable safe reference to an addressable lvalue</td></tr>
       <tr><td><code>const_ptr_of(x)</code></td><td>Read-only raw pointer to an addressable lvalue</td></tr>
       <tr><td><code>ptr_of(x)</code></td><td>Writable raw pointer from a mutable addressable lvalue</td></tr>
@@ -2660,6 +2664,7 @@ const ATOMS = new Set(['true','false','null'])
 const BUILTINS = new Set([
   'ref_of','ptr_of','const_ptr_of','read','reinterpret','zero','default',
   'hash','equal','order','size_of','align_of','offset_of','get','adapt','fatal',
+  'assert','expect','expect_eq','expect_ne',
   'field_of','callable_of','attribute_of','has_attribute','attribute_arg',
   'fields_of','members_of','attributes_of',
 ])

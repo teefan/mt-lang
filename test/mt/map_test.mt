@@ -1,7 +1,6 @@
 # In-language tests for std.map (migrated from
 # test/std/std_map_test.rb, run by `mtc test`).
 
-import std.testing as t
 import std.map as map
 
 struct Key:
@@ -38,86 +37,86 @@ function read_int(value: ptr[int]?) -> int:
 
 
 @[test]
-function test_map_basic_operations() -> t.Check:
+function test_map_basic_operations() -> void:
     var values = map.Map[Key, int].with_capacity(4)
     defer: values.release()
 
     let first_key = Key(value = 1)
     let second_key = Key(value = 2)
 
-    t.expect(values.capacity() >= 4z, "capacity >= 4")?
-    t.expect_true(values.is_empty())?
-    t.expect(values.get(first_key) == null, "missing get null")?
+    expect(values.capacity() >= 4z, "capacity >= 4")
+    expect(values.is_empty())
+    expect(values.get(first_key) == null, "missing get null")
 
-    t.expect_none[int](values.set(first_key, 10))?
+    expect(values.set(first_key, 10).is_none())
 
-    t.expect(values.len() == 1z, "len == 1")?
-    t.expect_true(values.contains(first_key))?
-    t.expect_equal_int(read_int(values.get(first_key)), 10)?
+    expect(values.len() == 1z, "len == 1")
+    expect(values.contains(first_key))
+    expect_eq(read_int(values.get(first_key)), 10)
 
     var replaced_value = -1
     match values.set(first_key, 15):
         Option.none:
-            return t.fail("replace returned none")
+            expect(false, "replace returned none")
         Option.some as payload:
             replaced_value = payload.value
-    t.expect_equal_int(replaced_value, 10)?
-    t.expect_equal_int(read_int(values.get(first_key)), 15)?
+    expect_eq(replaced_value, 10)
+    expect_eq(read_int(values.get(first_key)), 15)
 
-    t.expect_none[int](values.set(second_key, 20))?
-    t.expect(values.len() == 2z, "len == 2")?
-    t.expect_equal_int(read_int(values.get(second_key)), 20)?
+    expect(values.set(second_key, 20).is_none())
+    expect(values.len() == 2z, "len == 2")
+    expect_eq(read_int(values.get(second_key)), 20)
 
     var removed_value = -1
     match values.remove(first_key):
         Option.none:
-            return t.fail("remove returned none")
+            expect(false, "remove returned none")
         Option.some as payload:
             removed_value = payload.value
-    t.expect_equal_int(removed_value, 15)?
+    expect_eq(removed_value, 15)
 
-    t.expect_false(values.contains(first_key))?
-    t.expect(values.len() == 1z, "len == 1 after remove")?
-    t.expect_none[int](values.remove(first_key))?
+    expect(not values.contains(first_key))
+    expect(values.len() == 1z, "len == 1 after remove")
+    expect(values.remove(first_key).is_none())
 
     values.clear()
-    t.expect_true(values.is_empty())?
-    return t.expect(values.capacity() >= 4z, "capacity retained")
+    expect(values.is_empty())
+    expect(values.capacity() >= 4z, "capacity retained")
 
 
 @[test]
-function test_map_growth_and_collisions() -> t.Check:
+function test_map_growth_and_collisions() -> void:
     var values = map.Map[CollisionKey, int].create()
     defer: values.release()
 
     var index: int = 0
     while index < 12:
-        t.expect_none[int](values.set(CollisionKey(value = index), index * 10))?
+        expect(values.set(CollisionKey(value = index), index * 10).is_none())
         index += 1
 
-    t.expect(values.len() == 12z, "len == 12")?
-    t.expect(values.capacity() >= 12z, "capacity >= 12")?
+    expect(values.len() == 12z, "len == 12")
+    expect(values.capacity() >= 12z, "capacity >= 12")
 
     index = 0
     while index < 12:
-        t.expect_equal_int(read_int(values.get(CollisionKey(value = index))), index * 10)?
+        expect_eq(read_int(values.get(CollisionKey(value = index))), index * 10)
         index += 1
 
     var removed_value = -1
     match values.remove(CollisionKey(value = 5)):
         Option.none:
-            return t.fail("remove(5) none")
+            expect(false, "remove(5) none")
         Option.some as payload:
             removed_value = payload.value
-    t.expect_equal_int(removed_value, 50)?
+    expect_eq(removed_value, 50)
 
-    t.expect(values.get(CollisionKey(value = 5)) == null, "removed get null")?
-    t.expect_equal_int(read_int(values.get(CollisionKey(value = 4))), 40)?
-    return t.expect_equal_int(read_int(values.get(CollisionKey(value = 6))), 60)
+    expect(values.get(CollisionKey(value = 5)) == null, "removed get null")
+    expect_eq(read_int(values.get(CollisionKey(value = 4))), 40)
+    expect_eq(read_int(values.get(CollisionKey(value = 6))), 60)
 
 
 @[test]
-function test_map_iterators_and_get_or_insert() -> t.Check:
+function test_map_iterators_and_get_or_insert() -> void:
     var values = map.Map[Key, int].create()
     defer: values.release()
 
@@ -126,55 +125,55 @@ function test_map_iterators_and_get_or_insert() -> t.Check:
     unsafe:
         inserted_value = read(inserted)
         read(inserted) = 31
-    t.expect_equal_int(inserted_value, 30)?
+    expect_eq(inserted_value, 30)
 
     let existing = values.get_or_insert(Key(value = 3), 99)
     var existing_value = 0
     unsafe:
         existing_value = read(existing)
-    t.expect_equal_int(existing_value, 31)?
+    expect_eq(existing_value, 31)
 
     var removed_key = 0
     var removed_value = 0
     match values.remove_entry(Key(value = 3)):
         Option.none:
-            return t.fail("remove_entry none")
+            expect(false, "remove_entry none")
         Option.some as payload:
             removed_key = payload.value.key.value
             removed_value = payload.value.value
-    t.expect_equal_int(removed_key, 3)?
-    t.expect_equal_int(removed_value, 31)?
+    expect_eq(removed_key, 3)
+    expect_eq(removed_value, 31)
 
-    t.expect_false(values.contains(Key(value = 3)))?
+    expect(not values.contains(Key(value = 3)))
 
     values.set(Key(value = 1), 10)
     values.set(Key(value = 2), 20)
 
     let stored_key = values.get_key(Key(value = 2))
-    t.expect(stored_key != null, "get_key non-null")?
+    expect(stored_key != null, "get_key non-null")
     var stored_key_value = 0
     unsafe:
         stored_key_value = read(ptr[Key]<-stored_key).value
-    t.expect_equal_int(stored_key_value, 2)?
+    expect_eq(stored_key_value, 2)
 
     var key_total = 0
     for key in values.keys():
         unsafe:
             key_total += read(ptr[Key]<-key).value
-    t.expect_equal_int(key_total, 3)?
+    expect_eq(key_total, 3)
 
     var value_total = 0
     for value in values.values():
         unsafe:
             value_total += read(value)
-    t.expect_equal_int(value_total, 30)?
+    expect_eq(value_total, 30)
 
     var entry_total = 0
     for entry in values:
         unsafe:
             entry_total += read(ptr[Key]<-entry.key).value
             entry_total += read(entry.value)
-    t.expect_equal_int(entry_total, 33)?
+    expect_eq(entry_total, 33)
 
     var current_total = 0
     var entries = values.entries()
@@ -185,12 +184,12 @@ function test_map_iterators_and_get_or_insert() -> t.Check:
             if read(entry.value) == 20:
                 read(entry.value) = 21
             current_total += read(entry.value)
-    t.expect_equal_int(current_total, 34)?
+    expect_eq(current_total, 34)
 
     for value in values.values():
         unsafe:
             if read(value) == 10:
                 read(value) = 11
 
-    t.expect_equal_int(read_int(values.get(Key(value = 1))), 11)?
-    return t.expect_equal_int(read_int(values.get(Key(value = 2))), 21)
+    expect_eq(read_int(values.get(Key(value = 1))), 11)
+    expect_eq(read_int(values.get(Key(value = 2))), 21)

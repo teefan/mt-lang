@@ -1,7 +1,6 @@
 ## HTN planner tests.
 ## Run via `mtc test test/mt/`.
 
-import std.testing as t
 import std.htn as htn
 
 
@@ -68,7 +67,7 @@ function build_collect_domain() -> htn.HtnPlanner[World, Context]:
 
 
 @[test]
-function test_htn_primitive_success() -> t.Check:
+function test_htn_primitive_success() -> void:
     var planner = build_collect_domain()
     defer: planner.release()
 
@@ -77,14 +76,13 @@ function test_htn_primitive_success() -> t.Check:
     var r = planner.plan(ptr_of(ctx), world, "move_to_door")
     defer: r.release()
 
-    t.expect(r.status == htn.HtnStatus.success, "primitive task succeeds")?
-    t.expect_true(r.has_plan())?
+    expect(r.status == htn.HtnStatus.success, "primitive task succeeds")
+    expect(r.has_plan())
 
-    return t.ok()
 
 
 @[test]
-function test_htn_primitive_fails_precondition() -> t.Check:
+function test_htn_primitive_fails_precondition() -> void:
     var planner = build_collect_domain()
     defer: planner.release()
 
@@ -93,14 +91,13 @@ function test_htn_primitive_fails_precondition() -> t.Check:
     var r = planner.plan(ptr_of(ctx), world, "take_treasure")
     defer: r.release()
 
-    t.expect(r.status == htn.HtnStatus.failure, "primitive fails precondition")?
-    t.expect_false(r.has_plan())?
+    expect(r.status == htn.HtnStatus.failure, "primitive fails precondition")
+    expect(not r.has_plan())
 
-    return t.ok()
 
 
 @[test]
-function test_htn_compound_decomposition() -> t.Check:
+function test_htn_compound_decomposition() -> void:
     var planner = build_collect_domain()
     defer: planner.release()
 
@@ -109,22 +106,21 @@ function test_htn_compound_decomposition() -> t.Check:
     var r = planner.plan(ptr_of(ctx), world, "collect_treasure")
     defer: r.release()
 
-    t.expect(r.status == htn.HtnStatus.success, "compound task succeeds")?
-    t.expect_true(r.has_plan())?
+    expect(r.status == htn.HtnStatus.success, "compound task succeeds")
+    expect(r.has_plan())
 
     match r.plan:
         Option.none:
-            t.fail("expected plan")?
+            expect(false, "expected plan")
         Option.some as payload:
             let plan = payload.value
-            t.expect(plan.step_count() > 0, "plan has steps")?
-            t.expect(plan.final_world.has_treasure, "final world has treasure")?
+            expect(plan.step_count() > 0, "plan has steps")
+            expect(plan.final_world.has_treasure, "final world has treasure")
 
-    return t.ok()
 
 
 @[test]
-function test_htn_unknown_task() -> t.Check:
+function test_htn_unknown_task() -> void:
     var planner = build_collect_domain()
     defer: planner.release()
 
@@ -133,14 +129,13 @@ function test_htn_unknown_task() -> t.Check:
     var r = planner.plan(ptr_of(ctx), world, "nonexistent_task")
     defer: r.release()
 
-    t.expect(r.status == htn.HtnStatus.failure, "unknown task fails")?
-    t.expect_false(r.has_plan())?
+    expect(r.status == htn.HtnStatus.failure, "unknown task fails")
+    expect(not r.has_plan())
 
-    return t.ok()
 
 
 @[test]
-function test_htn_max_depth_exceeded() -> t.Check:
+function test_htn_max_depth_exceeded() -> void:
     var planner = build_collect_domain()
     defer: planner.release()
     planner.set_max_depth(1)
@@ -150,7 +145,6 @@ function test_htn_max_depth_exceeded() -> t.Check:
     var r = planner.plan(ptr_of(ctx), world, "collect_treasure")
     defer: r.release()
 
-    t.expect(r.status == htn.HtnStatus.max_depth, "depth limit exceeded")?
-    t.expect_false(r.has_plan())?
+    expect(r.status == htn.HtnStatus.max_depth, "depth limit exceeded")
+    expect(not r.has_plan())
 
-    return t.ok()

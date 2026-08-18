@@ -1043,6 +1043,10 @@ module MilkTea
           check_order_call(callable, expression.arguments, scopes:)
         when :fatal
           check_fatal_call(expression.arguments, scopes:)
+        when :assert, :expect
+          check_assert_call(callable_kind, expression.arguments, scopes:)
+        when :expect_eq, :expect_ne
+          check_expect_eq_call(callable_kind, expression.arguments, scopes:)
         when :ref_of
           check_ref_of_call(expression.arguments, scopes:)
         when :const_ptr_of
@@ -1318,6 +1322,10 @@ module MilkTea
 
           return [:function, @ctx.top_level_functions.fetch(callee.name), nil] if @ctx.top_level_functions.key?(callee.name)
           return [:fatal, nil, nil] if callee.name == "fatal"
+          return [:assert, nil, nil] if callee.name == "assert"
+          return [:expect, nil, nil] if callee.name == "expect"
+          return [:expect_eq, nil, nil] if callee.name == "expect_eq"
+          return [:expect_ne, nil, nil] if callee.name == "expect_ne"
           return [:ref_of, nil, nil] if callee.name == "ref_of"
           return [:const_ptr_of, nil, nil] if callee.name == "const_ptr_of"
           return [:read, nil, nil] if callee.name == "read"

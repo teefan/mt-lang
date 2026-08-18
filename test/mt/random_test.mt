@@ -1,23 +1,21 @@
 # In-language tests for std.random (migrated from
 # test/std/std_random_test.rb, run by `mtc test`).
 
-import std.testing as t
 import std.random as rng
 import std.vec as vec
 
 @[test]
-function test_random_deterministic_output_from_seed() -> t.Check:
+function test_random_deterministic_output_from_seed() -> void:
     var a = rng.from_seed(42)
     var b = rng.from_seed(42)
     var i: ptr_uint = 0
     while i < 10z:
-        t.expect(a.next_uint() == b.next_uint(), "same seed same output")?
+        expect(a.next_uint() == b.next_uint(), "same seed same output")
         i += 1
-    return t.ok()
 
 
 @[test]
-function test_random_different_seeds_differ() -> t.Check:
+function test_random_different_seeds_differ() -> void:
     var a = rng.from_seed(1)
     var b = rng.from_seed(999)
     var diff = false
@@ -27,11 +25,11 @@ function test_random_different_seeds_differ() -> t.Check:
             diff = true
             break
         i += 1
-    return t.expect_true(diff)
+    expect(diff)
 
 
 @[test]
-function test_random_fork_independent_streams() -> t.Check:
+function test_random_fork_independent_streams() -> void:
     var parent = rng.from_seed(12345)
     var child = parent.fork()
     var all_different = true
@@ -41,11 +39,11 @@ function test_random_fork_independent_streams() -> t.Check:
             all_different = false
             break
         i += 1
-    return t.expect_true(all_different)
+    expect(all_different)
 
 
 @[test]
-function test_random_next_double_in_range() -> t.Check:
+function test_random_next_double_in_range() -> void:
     var r = rng.from_seed(7)
     var ok_range = true
     var i: ptr_uint = 0
@@ -55,11 +53,11 @@ function test_random_next_double_in_range() -> t.Check:
             ok_range = false
             break
         i += 1
-    return t.expect_true(ok_range)
+    expect(ok_range)
 
 
 @[test]
-function test_random_next_bool_produces_both() -> t.Check:
+function test_random_next_bool_produces_both() -> void:
     var r = rng.from_seed(100)
     var found_true = false
     var found_false = false
@@ -70,11 +68,11 @@ function test_random_next_bool_produces_both() -> t.Check:
         else:
             found_false = true
         i += 1
-    return t.expect(found_true and found_false, "both bool values produced")
+    expect(found_true and found_false, "both bool values produced")
 
 
 @[test]
-function test_random_next_uint_range_in_bounds() -> t.Check:
+function test_random_next_uint_range_in_bounds() -> void:
     var r = rng.from_seed(99)
     var ok_range = true
     var i: ptr_uint = 0
@@ -84,11 +82,11 @@ function test_random_next_uint_range_in_bounds() -> t.Check:
             ok_range = false
             break
         i += 1
-    return t.expect_true(ok_range)
+    expect(ok_range)
 
 
 @[test]
-function test_random_next_int_range_in_bounds() -> t.Check:
+function test_random_next_int_range_in_bounds() -> void:
     var r = rng.from_seed(77)
     var ok_range = true
     var i: ptr_uint = 0
@@ -98,22 +96,21 @@ function test_random_next_int_range_in_bounds() -> t.Check:
             ok_range = false
             break
         i += 1
-    return t.expect_true(ok_range)
+    expect(ok_range)
 
 
 @[test]
-function test_random_from_seed_str_deterministic() -> t.Check:
+function test_random_from_seed_str_deterministic() -> void:
     var a = rng.from_seed_str("hello")
     var b = rng.from_seed_str("hello")
     var i: ptr_uint = 0
     while i < 5z:
-        t.expect(a.next_uint() == b.next_uint(), "same string seed same output")?
+        expect(a.next_uint() == b.next_uint(), "same string seed same output")
         i += 1
-    return t.ok()
 
 
 @[test]
-function test_random_shuffle_preserves_elements() -> t.Check:
+function test_random_shuffle_preserves_elements() -> void:
     var r = rng.from_seed(55)
     var list = vec.Vec[uint].create()
     defer: list.release()
@@ -129,7 +126,8 @@ function test_random_shuffle_preserves_elements() -> t.Check:
     var i: ptr_uint = 0
     while i < list.len():
         let entity_ptr = list.get(i) else:
-            return t.fail("list.get none")
+            expect(false, "list.get none")
+            return
         var val: uint = 0
         unsafe:
             val = read(entity_ptr)
@@ -138,7 +136,7 @@ function test_random_shuffle_preserves_elements() -> t.Check:
             break
         counts[val] += 1
         i += 1
-    t.expect_true(in_range)?
+    expect(in_range)
 
     var all_once = true
     var j: ptr_uint = 0
@@ -147,11 +145,11 @@ function test_random_shuffle_preserves_elements() -> t.Check:
             all_once = false
             break
         j += 1
-    return t.expect_true(all_once)
+    expect(all_once)
 
 
 @[test]
-function test_random_skip_changes_output() -> t.Check:
+function test_random_skip_changes_output() -> void:
     var a = rng.from_seed(42)
     a.skip(3)
     var b = rng.from_seed(42)
@@ -159,21 +157,20 @@ function test_random_skip_changes_output() -> t.Check:
     while i < 3z:
         b.next_uint()
         i += 1
-    return t.expect(a.next_uint() == b.next_uint(), "skip(3) matches three draws")
+    expect(a.next_uint() == b.next_uint(), "skip(3) matches three draws")
 
 
 @[test]
-function test_random_chance_always_true_with_one() -> t.Check:
+function test_random_chance_always_true_with_one() -> void:
     var r = rng.from_seed(42)
     var i: ptr_uint = 0
     while i < 10z:
-        t.expect_true(r.chance(1.0))?
+        expect(r.chance(1.0))
         i += 1
-    return t.ok()
 
 
 @[test]
-function test_random_pick_returns_element() -> t.Check:
+function test_random_pick_returns_element() -> void:
     var r = rng.from_seed(99)
     var list = vec.Vec[uint].create()
     defer: list.release()
@@ -185,7 +182,7 @@ function test_random_pick_returns_element() -> t.Check:
     var picked: uint = 0
     match r.pick(ref_of(list)):
         Option.none:
-            return t.fail("pick returned none")
+            expect(false, "pick returned none")
         Option.some as sp:
             picked = sp.value
-    return t.expect(picked >= 10 and picked <= 14, "picked in [10, 14]")
+    expect(picked >= 10 and picked <= 14, "picked in [10, 14]")

@@ -1,7 +1,6 @@
 # In-language tests for std.linked_set (migrated from
 # test/std/std_linked_set_test.rb, run by `mtc test`).
 
-import std.testing as t
 import std.linked_set as linked_set
 
 struct Key:
@@ -18,23 +17,23 @@ extending Key:
 
 
 @[test]
-function test_linked_set_insertion_order_operations() -> t.Check:
+function test_linked_set_insertion_order_operations() -> void:
     var values = linked_set.LinkedSet[Key].with_capacity(2)
     defer: values.release()
 
-    t.expect(values.capacity() >= 2, "capacity >= 2")?
-    t.expect_true(values.insert(Key(value = 3)))?
-    t.expect_true(values.insert(Key(value = 1)))?
-    t.expect_true(values.insert(Key(value = 4)))?
-    t.expect_true(values.insert(Key(value = 2)))?
-    t.expect_false(values.insert(Key(value = 1)))?
+    expect(values.capacity() >= 2, "capacity >= 2")
+    expect(values.insert(Key(value = 3)))
+    expect(values.insert(Key(value = 1)))
+    expect(values.insert(Key(value = 4)))
+    expect(values.insert(Key(value = 2)))
+    expect(not values.insert(Key(value = 1)))
 
     let stored = values.get(Key(value = 2))
-    t.expect(stored != null, "get(2) non-null")?
+    expect(stored != null, "get(2) non-null")
     var stored_value = 0
     unsafe:
         stored_value = read(ptr[Key]<-stored).value
-    t.expect_equal_int(stored_value, 2)?
+    expect_eq(stored_value, 2)
 
     var order_ok = true
     var step = 0
@@ -50,11 +49,11 @@ function test_linked_set_insertion_order_operations() -> t.Check:
             if step == 3 and current != 2:
                 order_ok = false
         step += 1
-    t.expect_true(order_ok)?
-    t.expect_equal_int(step, 4)?
+    expect(order_ok)
+    expect_eq(step, 4)
 
-    t.expect_true(values.remove(Key(value = 1)))?
-    t.expect_true(values.insert(Key(value = 1)))?
+    expect(values.remove(Key(value = 1)))
+    expect(values.insert(Key(value = 1)))
 
     var iter_order_ok = true
     var iter = values.iter()
@@ -74,8 +73,8 @@ function test_linked_set_insertion_order_operations() -> t.Check:
             if iter_step == 3 and current != 1:
                 iter_order_ok = false
         iter_step += 1
-    t.expect_true(iter_order_ok)?
-    t.expect_equal_int(iter_step, 4)?
+    expect(iter_order_ok)
+    expect_eq(iter_step, 4)
 
     var other = linked_set.LinkedSet[Key].create()
     defer: other.release()
@@ -101,8 +100,8 @@ function test_linked_set_insertion_order_operations() -> t.Check:
             if union_step == 4 and current != 5:
                 union_order_ok = false
         union_step += 1
-    t.expect_true(union_order_ok)?
-    t.expect_equal_int(union_step, 5)?
+    expect(union_order_ok)
+    expect_eq(union_step, 5)
 
     var intersection_values = values.intersection(other)
     defer: intersection_values.release()
@@ -116,8 +115,8 @@ function test_linked_set_insertion_order_operations() -> t.Check:
             if intersection_step == 1 and current != 1:
                 intersection_order_ok = false
         intersection_step += 1
-    t.expect_true(intersection_order_ok)?
-    t.expect_equal_int(intersection_step, 2)?
+    expect(intersection_order_ok)
+    expect_eq(intersection_step, 2)
 
     var difference_values = values.difference(other)
     defer: difference_values.release()
@@ -131,16 +130,16 @@ function test_linked_set_insertion_order_operations() -> t.Check:
             if difference_step == 1 and current != 4:
                 difference_order_ok = false
         difference_step += 1
-    t.expect_true(difference_order_ok)?
-    t.expect_equal_int(difference_step, 2)?
+    expect(difference_order_ok)
+    expect_eq(difference_step, 2)
 
     var subset = linked_set.LinkedSet[Key].create()
     defer: subset.release()
     subset.insert(Key(value = 3))
     subset.insert(Key(value = 1))
-    t.expect_true(subset.is_subset(values))?
-    t.expect_false(other.is_subset(values))?
+    expect(subset.is_subset(values))
+    expect(not other.is_subset(values))
 
     values.clear()
-    t.expect_true(values.is_empty())?
-    return t.expect(values.capacity() >= 2, "capacity retained")
+    expect(values.is_empty())
+    expect(values.capacity() >= 2, "capacity retained")
