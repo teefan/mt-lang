@@ -138,6 +138,31 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_run_command_writes_captured_output_when_stdout_is_not_a_tty
+    Dir.mktmpdir("milk-tea-cli-run-captured") do |dir|
+      source_path = write_simple_source(dir)
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "captured-run\n", stderr: "captured-err\n", exit_status: 0)
+      out = StringIO.new
+      err = StringIO.new
+      original_stdout = $stdout
+      original_stderr = $stderr
+
+      $stdout = out
+      $stderr = err
+      begin
+        status = MilkTea::CLI.start(["run", source_path, "--cc", compiler_path])
+      ensure
+        $stdout = original_stdout
+        $stderr = original_stderr
+      end
+
+      assert_equal 0, status
+      assert_includes out.string, "captured-run\n"
+      assert_includes err.string, "captured-err\n"
+    end
+  end
+
   def test_format_command_check_mode_reports_changes
     Dir.mktmpdir("milk-tea-cli-fmt-check") do |dir|
       path = File.join(dir, "sample.mt")

@@ -72,11 +72,12 @@ module MilkTea
           argv: @argv.dup,
           **options.except(:timings)
         )
-        unless @out.equal?($stdout) || preview_notice_emitted
+        live = $stdout.tty?
+        unless (@out.equal?($stdout) && live) || preview_notice_emitted
           @out.write(result.stdout)
         end
         @out.flush if @out.respond_to?(:flush)
-        @err.write(result.stderr) unless @err.equal?($stderr)
+        @err.write(result.stderr) unless @err.equal?($stderr) && live
         info("[cached]") if result.cached
         result.exit_status
       end
