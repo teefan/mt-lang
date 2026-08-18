@@ -459,8 +459,8 @@ module MilkTea
           return nil if prefix.empty?
           return nil unless @current_completion_trigger_kind == TRIGGER_KIND_INCOMPLETE
 
-          content = @workspace.get_content(uri)
-          line_prefix = (content.split("\n", -1)[lsp_line] || '')[0...lsp_char]
+          lines = @workspace.document_lines(uri)
+          line_prefix = (lines[lsp_line] || '')[0...lsp_char]
           cached = @completion_session_cache[[uri, lsp_line]]
           return nil unless cached
           return nil unless line_prefix.start_with?(cached[:line_prefix])
@@ -473,8 +473,8 @@ module MilkTea
         def store_completion_session(uri, lsp_line, lsp_char, prefix, response)
           return if prefix.empty?
 
-          content = @workspace.get_content(uri)
-          line_prefix = (content.split("\n", -1)[lsp_line] || '')[0...lsp_char]
+          lines = @workspace.document_lines(uri)
+          line_prefix = (lines[lsp_line] || '')[0...lsp_char]
           key = [uri, lsp_line]
           @completion_session_cache[key] = {
             line_prefix: line_prefix,
@@ -875,8 +875,7 @@ module MilkTea
         end
 
         def import_completions(uri, lsp_line, lsp_char)
-          content = @workspace.get_content(uri)
-          lines = content.split("\n", -1)
+          lines = @workspace.document_lines(uri)
           line = lines[lsp_line] || ''
           stripped = line.lstrip
           return nil unless stripped.start_with?('import ')
@@ -936,9 +935,7 @@ module MilkTea
         end
 
         def attribute_completions(facts, uri, line, char)
-          content = @workspace.get_content(uri)
-          return nil unless content
-          lines = content.split("\n", -1)
+          lines = @workspace.document_lines(uri)
           line_text = lines[line] || ''
           return nil if line_text.empty?
 
@@ -980,9 +977,7 @@ module MilkTea
         def format_string_completions(facts, uri, line, char)
           return nil unless facts
 
-          content = @workspace.get_content(uri)
-          return nil unless content
-          lines = content.split("\n", -1)
+          lines = @workspace.document_lines(uri)
           line_text = lines[line] || ''
           return nil if line_text.empty?
 
@@ -1045,9 +1040,7 @@ module MilkTea
         def named_argument_completions(facts, uri, line, char)
           return nil unless facts
 
-          content = @workspace.get_content(uri)
-          return nil unless content
-          lines = content.split("\n", -1)
+          lines = @workspace.document_lines(uri)
           line_text = lines[line] || ''
           return nil if line_text.empty?
 
@@ -1109,9 +1102,7 @@ module MilkTea
         def specialization_completions(facts, _uri, line, char)
           return nil unless facts
 
-          content = @workspace.get_content(_uri)
-          return nil unless content
-          lines = content.split("\n", -1)
+          lines = @workspace.document_lines(_uri)
           line_text = lines[line] || ''
           return nil if line_text.empty?
 

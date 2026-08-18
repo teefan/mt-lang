@@ -48,7 +48,6 @@ module MilkTea
         private
 
         def candidate_definition_uris(name, exclude_uri: nil)
-          matcher = definition_line_matcher(name)
           open_uris, indexed_uris = @document_state_mutex.synchronize do
             [@open_documents.keys, @indexed_documents.keys]
           end
@@ -57,33 +56,33 @@ module MilkTea
           warmed_candidates = nil
           warmed_uris = nil
           @definition_cache_mutex.synchronize do
-            warmed_candidates = @definition_candidate_uris[name].dup
+            warmed_candidates = @definition_candidate_uris[name].to_a
             warmed_uris = @definition_names_by_uri.keys.to_set
           end
 
-          matches = warmed_candidates.to_a.filter_map do |doc_uri|
-            next if doc_uri == exclude_uri
+          matches = warmed_candidates.reject { |doc_uri| doc_uri == exclude_uri }
 
-            doc_uri
-          end
-
+          # One-time lazy index: extract each document's definition names and
+          # cache them so repeat lookups are Set-membership checks instead of
+          # re-scanning every indexed document's full content with a regex on
+          # each lookup (which scaled with total workspace bytes).
           ordered_uris.each do |doc_uri|
             next if doc_uri == exclude_uri
             next if warmed_uris.include?(doc_uri)
 
             content = get_content(doc_uri)
             next if content.empty?
-            next unless content.match?(matcher)
 
             warm_definition_candidates_for_uri(doc_uri, content)
-            matches << doc_uri
+          end
+
+          @definition_cache_mutex.synchronize do
+            @definition_candidate_uris[name].each do |doc_uri|
+              matches << doc_uri unless doc_uri == exclude_uri
+            end
           end
 
           matches.uniq
-        end
-
-        def definition_line_matcher(name)
-          /#{DEFINITION_LINE_PREFIX}#{Regexp.escape(name)}\b/
         end
 
         def cache_definition_entry(name, entry)

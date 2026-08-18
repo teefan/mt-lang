@@ -79,10 +79,9 @@ module MilkTea
         # Scan text up to the cursor to find the innermost open function call context.
         # Returns { name:, active_parameter: } or nil if not inside a call.
         def find_call_context(uri, lsp_line, lsp_char)
-          content = get_content(uri)
-          return nil if content.empty?
+          lines = document_lines(uri)
+          return nil if lines.empty?
 
-          lines = content.split("\n", -1)
           cursor_line = lines[lsp_line] || ''
           prefix = lsp_line.positive? ? lines[0...lsp_line].join("\n") + "\n" : ''
           text = prefix + cursor_line[0...lsp_char]
@@ -150,13 +149,18 @@ module MilkTea
         end
 
         def token_contains_position?(token, target_line, target_char)
-          segments = token.lexeme.split("\n", -1)
-          end_line = token.line + segments.length - 1
-          return false if target_line < token.line || target_line > end_line
+          return false if target_line < token.line
 
-          if segments.length == 1
-            return token.column <= target_char && target_char < (token.column + segments.first.length)
+          lexeme = token.lexeme
+          unless lexeme.include?("\n")
+            return false if target_line > token.line
+
+            return token.column <= target_char && target_char < (token.column + lexeme.length)
           end
+
+          segments = lexeme.split("\n", -1)
+          end_line = token.line + segments.length - 1
+          return false if target_line > end_line
 
           if target_line == token.line
             return token.column <= target_char && target_char <= (token.column + segments.first.length - 1)
@@ -178,8 +182,7 @@ module MilkTea
         end
 
         def find_dot_receiver_path(uri, lsp_line, lsp_char)
-          content = get_content(uri)
-          lines = content.split("\n", -1)
+          lines = document_lines(uri)
           line_str = lines[lsp_line] || ''
 
           idx = [lsp_char - 1, line_str.length - 1].min
@@ -222,38 +225,55 @@ module MilkTea
         # (def, struct, union, enum, flags, variant, type, const, var) for the given name.
         # Returns the identifier Token, or nil if not found.
         def find_definition_token(uri, name, before_line: nil, before_char: nil)
-          tokens = get_tokens(uri)
-          return nil if tokens.nil?
+          candidates = definition_token_index(uri)[name]
+          return nil if candidates.nil? || candidates.empty?
 
-          nearest = nil
-          tokens.each_cons(2) do |kw_tok, id_tok|
-            next unless DEFINITION_KEYWORDS.include?(kw_tok.type)
-            next unless id_tok.type == :identifier && id_tok.lexeme == name
-
-            if before_line
-              next if id_tok.line > before_line
-              next if id_tok.line == before_line && before_char && id_tok.column >= before_char
+          if before_line
+            matches = candidates.select do |tok|
+              tok.line < before_line || (tok.line == before_line && (!before_char || tok.column < before_char))
             end
-
-            if nearest.nil? || id_tok.line > nearest.line || (id_tok.line == nearest.line && id_tok.column > nearest.column)
-              nearest = id_tok
-            end
+            return matches.max_by { |tok| [tok.line, tok.column] } unless matches.empty?
           end
 
-          return nearest if nearest
+          candidates.first
+        end
 
-          tokens.each_cons(2) do |kw_tok, id_tok|
-            next unless DEFINITION_KEYWORDS.include?(kw_tok.type)
-            next unless id_tok.type == :identifier && id_tok.lexeme == name
-
-            return id_tok
+        # Return the cached line array for +uri+, so hot request paths (e.g.
+        # completion) do not re-split the whole document once per helper.
+        def document_lines(uri)
+          @document_state_mutex.synchronize do
+            return @line_cache[uri] if @line_cache.key?(uri)
           end
-          nil
+
+          lines = get_content(uri).split("\n", -1)
+          @document_state_mutex.synchronize do
+            @line_cache[uri] = lines
+          end
+          lines
         end
 
         private
 
         # ── Symbol extraction (token-based, no AST position requirement) ────────
+
+        # Lazily build a per-uri map of definition identifier tokens keyed by
+        # name, so repeated definition lookups are O(definitions-with-name)
+        # instead of re-scanning the document's full token stream each time.
+        def definition_token_index(uri)
+          @definition_token_index[uri] ||= begin
+            tokens = get_tokens(uri)
+            index = Hash.new { |hash, key| hash[key] = [] }
+            if tokens
+              tokens.each_cons(2) do |kw_tok, id_tok|
+                next unless DEFINITION_KEYWORDS.include?(kw_tok.type)
+                next unless id_tok.type == :identifier
+
+                index[id_tok.lexeme] << id_tok
+              end
+            end
+            index
+          end
+        end
 
         def extract_symbols_from_tokens(uri)
           tokens = get_tokens(uri)

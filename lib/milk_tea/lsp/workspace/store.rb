@@ -126,13 +126,18 @@ module MilkTea
           total = paths.length
           paths.each_with_index do |path, idx|
             file_uri = path_to_uri(path)
+            content = nil
             @document_state_mutex.synchronize do
-              @indexed_documents[file_uri] ||= begin
+              content = @indexed_documents[file_uri] ||= begin
                 File.read(path)
               rescue StandardError
                 nil
               end
             end
+            # Warm the definition-name index for this file so later global
+            # definition lookups hit Set-membership checks instead of scanning
+            # every indexed document's content.
+            warm_definition_candidates_for_uri(file_uri, content) if content
             if progress && total > 0
               pct = ((idx + 1) * 100 / total).clamp(0, 100)
               progress.call(pct, "#{idx + 1}/#{total} files")

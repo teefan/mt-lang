@@ -284,6 +284,8 @@ module MilkTea
         def invalidate_cache(uri, clear_last_good: false)
           @tokens_cache.delete(uri)
           @ast_cache.delete(uri)
+          @definition_token_index.delete(uri)
+          @line_cache.delete(uri)
           @symbols_cache.delete(uri)
           @doc_comments_cache.delete(uri)
           @facts_cache_mutex.synchronize do

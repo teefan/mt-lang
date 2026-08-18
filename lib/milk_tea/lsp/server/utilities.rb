@@ -295,9 +295,8 @@ module MilkTea
         end
 
         def current_word_prefix(uri, lsp_line, lsp_char)
-          content = @workspace.get_content(uri)
-          lines   = content.split("\n", -1)
-          line    = lines[lsp_line] || ''
+          lines = @workspace.document_lines(uri)
+          line  = lines[lsp_line] || ''
           # Walk backwards from cursor to find start of current word
           char_idx = [lsp_char - 1, line.length - 1].min
           return '' if char_idx < 0

@@ -37,7 +37,7 @@ module MilkTea
       # adjacent tokens, and the inner keyword (e.g. :function) is always followed
       # by the identifier. If the lexer ever merges a compound keyword into a
       # single token type (e.g. :const_function), it must be added here.
-      DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let extending opaque interface event].freeze
+      DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let extending opaque interface event].to_set.freeze
       DOC_COMMENT_PREFIX = '##'
       DOC_TAG_PATTERN = /\A\s*@([A-Za-z_][A-Za-z0-9_-]*)(?:\s+(.*))?\z/
       DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface|event)\s+/m
@@ -55,6 +55,8 @@ module MilkTea
         @tokens_cache = {}   # uri -> [Token]
         @last_good_tokens_cache = {} # uri -> last known-good [Token]
         @ast_cache = {}      # uri -> AST::SourceFile (nil on parse failure)
+        @definition_token_index = {} # uri -> { name => [Token] } definition tokens by name
+        @line_cache = {} # uri -> [String] split lines, refreshed on invalidation
         @facts_cache = {} # uri -> SemanticAnalyzer::Facts (projection of cached tooling snapshot facts)
         @tooling_snapshot_cache = {} # uri -> SemanticAnalyzer::ToolingSnapshot (facts may be nil on structural failure)
         @symbols_cache = {}  # uri -> [{name, kind, line, column}]
@@ -103,6 +105,8 @@ module MilkTea
         @tokens_cache.clear
         @last_good_tokens_cache.clear
         @ast_cache.clear
+        @definition_token_index.clear
+        @line_cache.clear
         @facts_cache.clear
         @tooling_snapshot_cache.clear
         @symbols_cache.clear
