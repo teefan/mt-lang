@@ -556,6 +556,14 @@ function make_buffer[N: int]() -&gt; str_buffer[N]:
     var buf: str_buffer[N]
     return buf
 
+## ── inline if with a compile-time type comparison ───────────────────
+function size_label[T]() -&gt; str:
+    inline if T == int:
+        return "32-bit"
+    inline if T == float:
+        return "float"
+    return "other"
+
 ## ── Error handling with Result[T, E] ────────────────────────────────
 enum LoadError: ubyte
     not_found = 1
@@ -574,6 +582,12 @@ function load_pair() -&gt; Result[bool, LoadError]:
     let second = load_entity(2)?
     io.print_line(f"Loaded #{first.name} and #{second.name}")
     return Result[bool, LoadError].success(value = true)
+
+## ── Foreign FFI: raw external + foreign projection ──────────────────
+external function atoi(input: cstr) -&gt; int
+
+## foreign function projects a raw ABI call into ordinary Milk Tea types
+foreign function parse_int_foreign(input: str as cstr) -&gt; int = atoi
 
 ## ── Events (fixed-capacity pub/sub, zero heap during dispatch) ──────
 struct DamageEvent:
@@ -600,6 +614,19 @@ async function load_scores() -&gt; int:
 
 ## ── Compile-time constants for inline if ─────────────────────────────
 const DEBUG: bool = false
+
+## ── when: compile-time conditional (only the chosen branch is emitted) ──
+enum Backend: ubyte
+    gl     = 1
+    vulkan = 2
+const TARGET_BACKEND: Backend = Backend.gl
+
+function backend_label() -&gt; str:
+    when TARGET_BACKEND:
+        Backend.gl:
+            return "OpenGL"
+        Backend.vulkan:
+            return "Vulkan"
 
 ## ── Main entry point ────────────────────────────────────────────────
 function main() -&gt; int:
@@ -727,11 +754,21 @@ function main() -&gt; int:
         Action.idle:
             pass
 
+    ## is: variant arm membership test
+    if action is Action.attack:
+        io.print_line("action is an attack")
+
     ## match expression
     let label = match player.level:
         1: "beginner"
         2: "novice"
         _: "advanced"
+
+    ## Struct equality: field-wise ==/!=
+    let stats_a = Entity.Stats(attack = 10, defense = 5, speed = 1.0)
+    let stats_b = Entity.Stats(attack = 10, defense = 5, speed = 1.0)
+    if stats_a == stats_b:
+        io.print_line("stats equal")
 
     ## Explicit cast: T&lt;-value
     let raw_kind = ubyte&lt;-player.entity.kind
@@ -795,6 +832,12 @@ function main() -&gt; int:
     inline if DEBUG:
         io.print_line("debug mode")
 
+    ## Foreign FFI, when, and inline-if type dispatch
+    let parsed_int = parse_int_foreign("42")
+    io.print_line(f"FFI parsed: #{parsed_int}")
+    io.print_line(f"Backend: #{backend_label()}")
+    io.print_line(f"int label: #{size_label[int]()}")
+
     ## ── Concurrency ─────────────────────────────────────────────────────
     ## parallel for: data-parallel loop dispatched across CPU cores
     var positions = array[float, 4](0.0, 1.0, 2.0, 3.0)
@@ -829,7 +872,7 @@ function main() -&gt; int:
 </div>
 
   <div class="callout tip">
-    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, concurrency (<code>parallel for</code>, <code>parallel:</code>, <code>detach</code> + <code>gather</code>, <code>atomic[T]</code>), native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, variant membership test (<code>is</code>), parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>own[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>inline for</code>/<code>inline if</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
+    <strong>Tip:</strong> This example covers imports, constants, <code>const function</code>, type aliases, enums, flags, structs (nested, attributed), variants, interfaces, foreign functions (<code>external</code> / <code>foreign function</code>), <code>extending</code> methods, generics with constraints, value parameter generics, <code>Result</code> error handling with <code>?</code> and guard binding, events, closures (<code>proc</code>), <code>async</code>/<code>await</code>, concurrency (<code>parallel for</code>, <code>parallel:</code>, <code>detach</code> + <code>gather</code>, <code>atomic[T]</code>), native vector types, arrays, spans, collections, <code>for</code>/<code>while</code>/<code>match</code>/<code>if</code>, variant membership test (<code>is</code>), parallel <code>for</code>, <code>defer</code>, <code>unsafe</code>, <code>ref[T]</code>, <code>own[T]</code>, <code>dyn[Interface]</code>, format strings, heredocs, <code>str_buffer</code>, compile-time reflection, <code>when</code>, <code>inline for</code>/<code>inline if</code> (including type comparison), struct <code>==</code>/<code>!=</code>, <code>static_assert</code>, and explicit casts. See the sections below for full details on each feature.
   </div>
 </section>
 
