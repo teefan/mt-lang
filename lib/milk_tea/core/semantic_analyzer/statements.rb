@@ -190,7 +190,8 @@ module MilkTea
               "return type mismatch: expected #{return_type}, got #{value_type}",
               expression: statement.value,
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
-              line: statement.line,
+              line: (statement.line unless statement.value),
+              column: (statement.column unless statement.value),
             )
           when AST::DeferStmt
             with_loop_barrier do
