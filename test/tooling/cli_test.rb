@@ -420,10 +420,9 @@ class MilkTeaCliTest < Minitest::Test
 
         function main() -> int:
             let value = layout.default_width()
-            unsafe:
-                let copy = value + 1
+            let copy = value + 1
             return value
-      MT
+    MT
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
         public function default_width() -> int:

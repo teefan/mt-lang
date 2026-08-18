@@ -3458,4 +3458,80 @@ class MilkTeaLinterPreferInlineMethodsTest < Minitest::Test
 
     assert_equal source, fixed
   end
+
+  # ── redundant-unsafe ─────────────────────────────────────────────────
+
+  def test_redundant_unsafe_warns_on_block_with_no_unsafe_operations
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main() -> int:
+          var x: int = 1
+          unsafe:
+              x = x + 1
+          return x
+    MT
+
+    unsafe = warnings.select { |w| w.code == "redundant-unsafe" }
+    assert_equal 1, unsafe.length
+    assert_equal 3, unsafe.first.line
+    assert_equal 5, unsafe.first.column
+    assert_equal 6, unsafe.first.length
+    assert_equal :hint, unsafe.first.severity
+    assert_match(/contains no unsafe operations/, unsafe.first.message)
+  end
+
+  def test_redundant_unsafe_does_not_warn_on_required_unsafe
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main() -> int:
+          var x: int = 1
+          var p: ptr[int] = ptr_of(x)
+          unsafe:
+              p[0] = 1
+          return 0
+    MT
+
+    unsafe = warnings.select { |w| w.code == "redundant-unsafe" }
+    assert_empty unsafe
+  end
+
+  def test_redundant_unsafe_warns_on_safe_expression_form
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main() -> int:
+          var x: int = 1
+          var p: ptr[int] = ptr_of(x)
+          let a = unsafe: p + 1
+          let b = unsafe: x
+          return 0
+    MT
+
+    unsafe = warnings.select { |w| w.code == "redundant-unsafe" }
+    assert_equal 1, unsafe.length
+    assert_equal 5, unsafe.first.line
+  end
+
+  def test_redundant_unsafe_warns_only_on_outer_nested_block
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main() -> int:
+          var x: int = 1
+          var p: ptr[int] = ptr_of(x)
+          unsafe:
+              unsafe:
+                  p[0] = 1
+          return 0
+    MT
+
+    unsafe = warnings.select { |w| w.code == "redundant-unsafe" }
+    assert_equal 1, unsafe.length
+    assert_equal 4, unsafe.first.line
+  end
+
+  def test_redundant_unsafe_warns_on_own_deref
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function use_owned(p: own[int]) -> int:
+          return unsafe: read(p) + 1
+    MT
+
+    unsafe = warnings.select { |w| w.code == "redundant-unsafe" }
+    assert_equal 1, unsafe.length
+    assert_equal 2, unsafe.first.line
+  end
 end

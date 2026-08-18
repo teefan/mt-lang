@@ -209,6 +209,7 @@ module MilkTea
             check_prefer_try(statement.expression, statement.arms)
           end
         when AST::UnsafeStmt
+          check_redundant_unsafe(statement)
           @unsafe_depth += 1
           with_scope { visit_statement_list(statement.body) }
           @unsafe_depth -= 1
@@ -314,6 +315,7 @@ module MilkTea
             check_prefer_or_pattern(expression.arms, body_of: ->(arm) { arm.value })
           end
         when AST::UnsafeExpr
+          check_redundant_unsafe(expression)
           @unsafe_depth += 1
           visit_expression(expression.expression)
           @unsafe_depth -= 1
@@ -362,6 +364,21 @@ module MilkTea
           nil
         end
       end
+      def check_redundant_unsafe(node)
+        return unless @sema_facts
+        return if @sema_facts.required_unsafe_lines.include?(node.line)
+
+        @warnings << Warning.new(
+          path: @path,
+          line: node.line,
+          column: node.column,
+          length: "unsafe".length,
+          code: "redundant-unsafe",
+          message: "unsafe block contains no unsafe operations and can be removed",
+          severity: :hint,
+        )
+      end
+
       def visit_type_argument(argument)
         visit_expression(argument.value) if argument.respond_to?(:value)
       end

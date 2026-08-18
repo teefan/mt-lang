@@ -22,17 +22,17 @@ module MilkTea
       borrow-and-mutate
       constant-condition
       dead-assignment
-      duplicate-if-condition
       directional-ffi-arg
       doc-tag
+      duplicate-if-condition
       event-capacity
       line-too-long
       loop-single-iteration
       missing-return
       noop-compound-assignment
-      platform-api-drift
-      owning-release-leak
       owning-release-double
+      owning-release-leak
+      platform-api-drift
       prefer-conditional-expression
       prefer-inline-if
       prefer-inline-methods
@@ -51,6 +51,7 @@ module MilkTea
       redundant-null-check
       redundant-return
       redundant-type-annotation
+      redundant-unsafe
       reserved-primitive-name
       self-assignment
       self-comparison

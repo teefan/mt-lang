@@ -1553,6 +1553,7 @@ The auto-fix column corresponds to `mtc lint --fix`.
 | `shadow` | warning | — | Local binding shadows an outer binding with the same name |
 | `trailing-list-comma` | hint | yes | Trailing comma in call argument list is redundant |
 | `unreachable-code` | warning | — | Code after a guaranteed terminator cannot execute |
+| `redundant-unsafe` | hint | — | `unsafe` block contains no unsafe operations and can be removed |
 | `unused-import` | warning | yes | Import alias is never referenced |
 | `unused-local` | warning | — | Local binding is never referenced |
 | `unused-param` | warning | — | Parameter is never referenced |
