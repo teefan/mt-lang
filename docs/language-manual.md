@@ -208,7 +208,7 @@ const NEXT_POW2 -> int:
     return n
 ```
 
-The block body is evaluated at compile time. Allowed inside the block: literals, names of other `const` values, arithmetic, control flow (`if`/`else if`/`else`, `while`, `for`), `let` and `var` declarations, calls to other compile-time functions, and calls to whitelisted builtins (`size_of`, `align_of`, `offset_of`, `fields_of`, `members_of`, `attributes_of`).
+The block body is evaluated at compile time. Allowed inside the block: literals (character literals fold to their byte value), names of other `const` values, arithmetic, `str` concatenation (`+`), control flow (`if`/`else if`/`else`, `while`, `for`, with `break` and `continue`), `match` expressions, index and range access (`arr[i]`, `s[i]`, `arr[start..stop]`, `s[start..stop]`), struct member access, `let` and `var` declarations (including tuple/struct destructuring and `else:` / `else as error:` guard forms), assignment (including compound assignment to block-local struct fields and array elements), numeric prefix casts (`T<-value`), calls to other compile-time functions and const methods, and calls to whitelisted builtins (`size_of`, `align_of`, `offset_of`, `fields_of`, `members_of`, `attributes_of`).
 
 Rules:
 
@@ -524,6 +524,8 @@ Kinds:
 - `function` (value receiver)
 - `editable function` (editable receiver)
 - `static function` (no receiver)
+- `const function` (value receiver, compile-time-evaluable)
+- `static const function` (no receiver, compile-time-evaluable)
 
 Names such as `init` and `default` are ordinary static functions. There is no constructor keyword or hidden initializer syntax.
 
@@ -531,6 +533,9 @@ Method capabilities:
 
 - async methods are supported
 - generic methods are supported
+- `const function` and `static const function` methods follow the same compile-time body rules as a block-bodied `const` (§3.2). Called from a compile-time context, the call is constant-folded; they also generate normal runtime functions.
+- `editable const function` and `async const function` are rejected.
+- `const` is not allowed on interface methods.
 
 ### 3.7 Functions
 
@@ -591,10 +596,11 @@ const SQUARE_5: int = square(5)  # folded to 25 at compile time
 
 Rules:
 
-- The body must be evaluable at compile time (literals, `const` values, arithmetic, `if`/`else`, `while`, `for`, `let`/`var`, calls to other `const` functions, and whitelisted builtins).
+- The body follows the same compile-time rules as a block-bodied `const` (§3.2).
 - Generates a normal runtime function as well — callable from ordinary runtime code.
 - Called from `const` initializers, `when` discriminants, `inline for` bodies, and other compile-time contexts.
 - Recursive calls between `const` functions are supported.
+- `const` applies to methods as well: `const function` (value receiver) and `static const function` (no receiver) methods fold when called from compile-time contexts (§3.6).
 
 ### 3.8 External functions
 

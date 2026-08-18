@@ -79,7 +79,7 @@ The intended reductions are deliberate:
 
 If a new feature introduces a second ordinary way to express the same concept, the language should delete one of them instead of documenting both.
 
-The compile-time evaluation surface is described in [Compile-Time Evaluation](compile-time.md).
+The compile-time evaluation surface is described in the [language manual](language-manual.md): block-bodied `const` and `const function` limits in §3.2 and §3.7a, and `when` plus the `inline` statements in §4.7–§4.11.
 
 ## Overall shape
 
@@ -716,7 +716,7 @@ type FileHandle = ptr[libc.FILE]
 
 ### Generics
 
-Generics are useful, but they must stay boring. The compile-time surface is documented in [Compile-Time Evaluation](compile-time.md); generic bodies participate in that surface by using `when`, `inline for`, `inline while`, `inline match`, `inline if`, `type`-returning functions, `const function`, and block-bodied `const` initializers (`const X -> T: ...`) at the lexical positions where the compile-time rules allow them.
+Generics are useful, but they must stay boring. The compile-time surface is documented in the [language manual](language-manual.md); generic bodies participate in that surface by using `when`, `inline for`, `inline while`, `inline match`, `inline if`, `type`-returning functions, `const function`, and block-bodied `const` initializers (`const X -> T: ...`) at the lexical positions where the compile-time rules allow them.
 
 Allowed in v1:
 

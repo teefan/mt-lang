@@ -1221,7 +1221,7 @@ struct NPC implements Damageable:
 </div>
 
   <h3>Methods (extending)</h3>
-  <p>Three kinds: <code>function</code> (value receiver), <code>editable function</code> (editable receiver), <code>static function</code> (no receiver).</p>
+  <p>Method kinds: <code>function</code> (value receiver), <code>editable function</code> (editable receiver), <code>static function</code> (no receiver), plus compile-time-evaluable <code>const function</code> and <code>static const function</code>. <code>editable const function</code>, <code>async const function</code>, and <code>const</code> on interface methods are rejected.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>extending Counter:
@@ -1394,6 +1394,7 @@ function say_hello(name: str):
 
   <h3>const function</h3>
   <p>Evaluable at compile time. Generates both a compile-time constant-folding path and a normal runtime function. Recursive calls between <code>const</code> functions are supported. Use <code>const function</code> for reusable compile-time logic; use a block-bodied <code>const X -&gt; T: ...</code> for one-shot computed constants.</p>
+  <p><code>const</code> also applies to methods: <code>const function</code> (value receiver) and <code>static const function</code> (no receiver) fold when called from a compile-time context. <code>editable const function</code>, <code>async const function</code>, and <code>const</code> on interface methods are rejected.</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>const function square(x: int) -> int:
@@ -1655,6 +1656,31 @@ unsafe:
 <!-- ────────────────────────────────────────────────────────────────────────── -->
 <section id="compile-time">
   <h2>Compile-Time Control Flow</h2>
+
+  <h3>Block-bodied <code>const</code> and <code>const function</code></h3>
+  <p>Block-bodied <code>const</code> initializers and <code>const function</code> bodies are evaluated at compile time, and the result is folded into the emitted C. Supported surface: literals (character literals fold to their byte value), other <code>const</code> values, arithmetic, <code>str</code> concatenation, <code>if</code>/<code>while</code>/<code>for</code> with <code>break</code> and <code>continue</code>, <code>match</code> expressions, index and range access, struct member access, <code>let</code>/<code>var</code> with destructuring and <code>else:</code> / <code>else as error:</code> guards, assignment (including compound), numeric prefix casts, calls to other const functions and const methods, and the reflection builtins.</p>
+<div class="code-wrap">
+<button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><code>## str concatenation folds to a literal
+const GREET: str = "hello" + " " + "world"
+
+## match expressions fold
+const LABEL -&gt; str:
+    return match 2:
+        1: "one"
+        2: "two"
+        _: "other"
+
+## const methods fold too
+struct Rect:
+    w: int
+    h: int
+    const function area() -&gt; int:
+        return this.w * this.h
+
+const R: Rect = Rect(w = 10, h = 20)
+const AREA: int = R.area()   ## folded to 200 at compile time</code></pre>
+</div>
 
   <h3>when</h3>
   <p>Evaluates discriminant at compile time; only the chosen branch is type-checked and emitted. <code>when</code> may also appear at module level to conditionally include declarations, imports, or type definitions.</p>

@@ -364,6 +364,8 @@ Method kinds:
 - `function` -> value receiver
 - `editable function` -> editable receiver
 - `static function` -> no receiver
+- `const function` -> value receiver, compile-time-evaluable
+- `static const function` -> no receiver, compile-time-evaluable
 
 Methods may appear inside a struct body (desugared to an `extending` block) or in a separate
 `extending` declaration:
@@ -423,6 +425,8 @@ const RESULT: int = square(5)   # folded to 25 at compile time
 ```
 
 `const function` also generates a normal runtime function, callable from ordinary runtime code.
+
+`const` applies to methods as well: `const function` (value receiver) and `static const function` (no receiver) methods fold when called from a compile-time context and also generate normal runtime functions. `editable const function`, `async const function`, and `const` on interface methods are rejected.
 
 External functions:
 
