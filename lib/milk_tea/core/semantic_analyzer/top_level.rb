@@ -424,6 +424,17 @@ module MilkTea
             receiver_value = comptime_member_receiver_value(expression.callee.receiver, scopes)
             return comptime_const_method_body(method_binding, expression.arguments, scopes:, receiver_value:)
           end
+
+          if (struct_type = resolve_type_expression(expression.callee)) && struct_type.is_a?(Types::Struct)
+            fields = {}
+            expression.arguments.each do |argument|
+              val = evaluate_compile_time_const_value(argument.value, scopes:)
+              return nil unless val
+
+              fields[argument.name] = val
+            end
+            return fields
+          end
         when AST::Identifier
           if (struct_type = @ctx.types[expression.callee.name]) && struct_type.is_a?(Types::Struct)
             fields = {}

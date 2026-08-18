@@ -116,7 +116,7 @@ module MilkTea
         func && func.respond_to?(:ast) && func.ast.respond_to?(:const) && func.ast.const
       end
 
-      def comptime_const_method_body(binding, arguments, scopes:, receiver_value:)
+      def comptime_const_method_body(binding, arguments, scopes:, receiver_value:, arg_evaluator: nil)
         method = binding.ast
         return nil unless method.respond_to?(:body) && method.body
         return nil if binding.type_params.any?
@@ -130,7 +130,11 @@ module MilkTea
         end
 
         method.params.each_with_index do |param, idx|
-          arg_value = comptime_eval(arguments[idx].value, scopes)
+          arg_value = if arg_evaluator
+            arg_evaluator.call(arguments[idx].value)
+          else
+            comptime_eval(arguments[idx].value, scopes)
+          end
           return nil unless arg_value
 
           initial_vars[param.name] = arg_value

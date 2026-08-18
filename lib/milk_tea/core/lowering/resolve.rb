@@ -1875,6 +1875,10 @@ module MilkTea
           @lowerer.resolve_type_ref(type_ref)
         end
 
+        def resolve_type_expression(expression)
+          @lowerer.resolve_type_expression(expression)
+        end
+
         def comptime_struct_field_names(type_name)
           @lowerer.comptime_struct_field_names(type_name)
         end
@@ -1883,8 +1887,8 @@ module MilkTea
           @lowerer.comptime_method_binding_for_receiver(receiver_type, member)
         end
 
-        def comptime_const_method_body(binding, arguments, scopes: nil, receiver_value: nil)
-          @lowerer.comptime_const_method_body(binding, arguments, scopes:, receiver_value:)
+        def comptime_const_method_body(binding, arguments, scopes: nil, receiver_value: nil, arg_evaluator: nil)
+          @lowerer.comptime_const_method_body(binding, arguments, scopes:, receiver_value:, arg_evaluator:)
         end
 
         def comptime_expression_type(expression, scopes: nil)

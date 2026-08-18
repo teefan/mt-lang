@@ -713,20 +713,31 @@ module MilkTea
         return unless @checker.respond_to?(:comptime_method_binding_for_receiver)
         return unless @checker.respond_to?(:comptime_const_method_body)
 
+        arg_evaluator = ->(expr) { evaluate_expression(expr, scopes:) }
+
         receiver = call_expr.callee.receiver
-        return unless receiver.is_a?(AST::Identifier)
-        return unless @variables.key?(receiver.name)
+        if receiver.is_a?(AST::Identifier) && @variables.key?(receiver.name)
+          receiver_value = @variables[receiver.name]
+          return nil if receiver_value.nil? || receiver_value.is_a?(Types::Base)
 
-        receiver_value = @variables[receiver.name]
-        return nil if receiver_value.nil? || receiver_value.is_a?(Types::Base)
+          receiver_type = @variable_types[receiver.name]
+          return nil unless receiver_type
 
-        receiver_type = @variable_types[receiver.name]
+          binding = @checker.comptime_method_binding_for_receiver(receiver_type, call_expr.callee.member)
+          return nil unless binding
+
+          return @checker.comptime_const_method_body(binding, call_expr.arguments, scopes:, receiver_value:, arg_evaluator:)
+        end
+
+        return nil unless @checker.respond_to?(:resolve_type_expression)
+
+        receiver_type = @checker.resolve_type_expression(receiver)
         return nil unless receiver_type
 
         binding = @checker.comptime_method_binding_for_receiver(receiver_type, call_expr.callee.member)
         return nil unless binding
 
-        @checker.comptime_const_method_body(binding, call_expr.arguments, scopes:, receiver_value:)
+        @checker.comptime_const_method_body(binding, call_expr.arguments, scopes:, receiver_value: nil, arg_evaluator:)
       end
 
       def try_const_function_call(call_expr, scopes:)
@@ -774,9 +785,12 @@ module MilkTea
         elsif call_expr.callee.respond_to?(:name)
           call_expr.callee.name
         end
-        return unless callee_name
 
-        type = types[callee_name]
+        type = if callee_name
+          types[callee_name]
+        elsif call_expr.callee.is_a?(AST::MemberAccess) && @checker.respond_to?(:resolve_type_expression)
+          @checker.resolve_type_expression(call_expr.callee)
+        end
         return unless type.is_a?(Types::Struct)
 
         fields = {}

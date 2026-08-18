@@ -746,4 +746,80 @@ class ComptimeFoldTest < Minitest::Test
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
   end
+
+  def test_comptime_folds_qualified_struct_constructor
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_qualified_ctor
+
+      struct Outer:
+          struct Inner:
+              v: int
+
+      const NESTED_CTOR -> int:
+          let i = Outer.Inner(v = 7)
+          return i.v
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_qualified_ctor_NESTED_CTOR = 7"
+  end
+
+  def test_comptime_folds_type_receiver_const_method_with_block_local_args
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_type_receiver_local
+
+      struct Rect:
+          w: int
+
+      extending Rect:
+          static const function scaled(factor: int) -> int:
+              return factor * 2
+
+      const TYPE_RECEIVER_LOCAL -> int:
+          let local = 5
+          return Rect.scaled(local)
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, "comptime_type_receiver_local_TYPE_RECEIVER_LOCAL = 10"
+  end
+
+  def test_comptime_folds_hex_string_parser
+    c_code = generate_c_from_program_source(<<~MT)
+      # module demo.comptime_hex
+
+      struct Rgb:
+          r: ubyte
+          g: ubyte
+          b: ubyte
+          a: ubyte
+
+      extending Rgb:
+          static const function hex_digit(c: ubyte) -> ubyte:
+              if c >= '0' and c <= '9':
+                  return c - '0'
+              if c >= 'a' and c <= 'f':
+                  return c - 'a' + 10
+              return c - 'A' + 10
+
+          static const function from_hex_str(color: str) -> Rgb:
+              return Rgb(
+                  r = Rgb.hex_digit(color[1]) * 16 + Rgb.hex_digit(color[2]),
+                  g = Rgb.hex_digit(color[3]) * 16 + Rgb.hex_digit(color[4]),
+                  b = Rgb.hex_digit(color[5]) * 16 + Rgb.hex_digit(color[6]),
+                  a = 255,
+              )
+
+      const MIDNIGHT: Rgb = Rgb.from_hex_str("#10121c")
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_includes c_code, ".r = 16, .g = 18, .b = 28, .a = 255"
+  end
 end
