@@ -188,6 +188,7 @@ module MilkTea
         return lower_str_buffer_to_span_expression(lowered, expected_type) if str_buffer_to_span_compatible?(lowered.type, expected_type)
         return lower_array_to_span_expression(lowered, expected_type) if array_to_span_compatible?(lowered.type, expected_type)
         return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, env:, external_numeric:, contextual_int_to_float:)
+        return wrap_nullable_field_value(expected_type, lowered, env) if expected_type.is_a?(Types::Nullable) && lowered.type == expected_type.base
 
         lowered
       end
