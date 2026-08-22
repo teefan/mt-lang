@@ -1,6 +1,8 @@
 # In-language tests for std.vec (migrated from
 # test/std/std_vec_test.rb, run by `mtc test`).
 
+import std.hash
+import std.str
 import std.vec as vec
 
 struct Pair:
@@ -314,3 +316,35 @@ function test_vec_iter_surface() -> void:
             total += read(value)
     expect_eq(total, 65)
     expect(iter.next() == null, "iter exhausted")
+
+
+@[test]
+function test_vec_sort_and_binary_search() -> void:
+    var values = vec.Vec[int].create()
+    defer: values.release()
+    values.push(30)
+    values.push(10)
+    values.push(20)
+    values.sort()
+    expect_eq(values.at(0), Option[int].some(value = 10))
+    expect_eq(values.at(1), Option[int].some(value = 20))
+    expect_eq(values.at(2), Option[int].some(value = 30))
+
+    var target: int = 20
+    let found = values.binary_search(ptr_of(target)) else:
+        fatal(c"binary_search should find 20")
+    expect_eq(found, 1)
+
+    var missing: int = 25
+    expect(values.binary_search(ptr_of(missing)).is_none())
+
+    var words = vec.Vec[str].create()
+    defer: words.release()
+    words.push("parser")
+    words.push("ast")
+    words.push("lexer")
+    var by_text = proc(left: ptr[str], right: ptr[str]) -> int:
+        unsafe: return read(left).compare(read(right))
+    words.sort_by(by_text)
+    expect_eq(words.at(0), Option[str].some(value = "ast"))
+    expect_eq(words.at(2), Option[str].some(value = "parser"))

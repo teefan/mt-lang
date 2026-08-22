@@ -348,6 +348,7 @@ extending Iter[T]:
                 total += 1
 
 
+extending Vec[T]:
     public editable function sort() -> void:
         if this.len <= 1:
             return
