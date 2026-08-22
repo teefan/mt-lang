@@ -10,11 +10,11 @@ module MilkTea
     POINTER_SIZE = Fiddle::SIZEOF_VOIDP
 
     def self.size_of(type)
-      size_and_alignment(type, {})&.first
+      size_and_alignment(type, nil)&.first
     end
 
     def self.alignment_of(type)
-      size_and_alignment(type, {})&.last
+      size_and_alignment(type, nil)&.last
     end
 
     def self.offset_of(type, field_name)
@@ -38,6 +38,14 @@ module MilkTea
       end
     end
 
+    # Computes [size, alignment] for a type.
+    #
+    # `stack` carries the aggregates on the current root-to-leaf path,
+    # pass-down only (never popped). A field whose type reaches any aggregate
+    # on that path participates in a storage cycle, and the C backend embeds
+    # exactly those fields as pointers (see
+    # CBackend#build_cyclic_aggregate_pairs and the cyclic field emission in
+    # type_declaration.rb), so layout sizes back-edge fields as raw pointers.
     def self.size_and_alignment(type, stack)
       case type
       when Types::Primitive
@@ -48,24 +56,24 @@ module MilkTea
         if type.is_a?(Types::Function) || layout_pointer_like_nullable_base?(type.base)
           [POINTER_SIZE, POINTER_SIZE]
         else
-          with_stack(type, stack) do
-            layout = struct_layout(nullable_opt_layout_fields(type.base), packed: false, alignment: nil, stack:)
+          with_stack(type, stack) do |next_stack|
+            layout = struct_layout(nullable_opt_layout_fields(type.base), packed: false, alignment: nil, stack: next_stack)
             [layout[:size], layout[:alignment]]
           end
         end
       when Types::StringView, Types::Span, Types::Task, Types::Struct, Types::StructInstance
-        with_stack(type, stack) do
-          layout = struct_layout(ordered_fields(type), packed: packed_layout?(type), alignment: explicit_alignment(type), stack:)
+        with_stack(type, stack) do |next_stack|
+          layout = struct_layout(ordered_fields(type), packed: packed_layout?(type), alignment: explicit_alignment(type), stack: next_stack)
           [layout[:size], layout[:alignment]]
         end
       when Types::Union
-        with_stack(type, stack) do
-          layout = union_layout(ordered_fields(type), packed: packed_layout?(type), alignment: explicit_alignment(type), stack:)
+        with_stack(type, stack) do |next_stack|
+          layout = union_layout(ordered_fields(type), packed: packed_layout?(type), alignment: explicit_alignment(type), stack: next_stack)
           [layout[:size], layout[:alignment]]
         end
       when Types::Variant, Types::VariantInstance
-        with_stack(type, stack) do
-          layout = variant_layout(type, stack:)
+        with_stack(type, stack) do |next_stack|
+          layout = variant_layout(type, stack: next_stack)
           [layout[:size], layout[:alignment]]
         end
       when Types::GenericInstance
@@ -128,8 +136,8 @@ module MilkTea
       when "str_buffer"
         return unless str_buffer_type?(type)
 
-        with_stack(type, stack) do
-          layout = struct_layout(str_buffer_fields(type), packed: false, alignment: nil, stack:)
+        with_stack(type, stack) do |next_stack|
+          layout = struct_layout(str_buffer_fields(type), packed: false, alignment: nil, stack: next_stack)
           [layout[:size], layout[:alignment]]
         end
       end
@@ -151,7 +159,7 @@ module MilkTea
 
     def self.struct_layout(fields, packed:, alignment:, stack:)
       field_infos = fields.map do |field_name, field_type|
-        field_layout = size_and_alignment(field_type, stack)
+        field_layout = field_size_and_alignment(field_type, stack)
         return nil unless field_layout
 
         [field_name, field_layout.first, field_layout.last]
@@ -162,13 +170,37 @@ module MilkTea
 
     def self.union_layout(fields, packed:, alignment:, stack:)
       field_infos = fields.map do |_field_name, field_type|
-        field_layout = size_and_alignment(field_type, stack)
+        field_layout = field_size_and_alignment(field_type, stack)
         return nil unless field_layout
 
         field_layout
       end
 
       union_layout_from_layouts(field_infos.map { |size, field_alignment| { size:, alignment: field_alignment } }, packed:, alignment:)
+    end
+
+    # A field whose type reaches any aggregate on the current path is a
+    # storage-cycle back edge. The C backend emits such fields as pointers
+    # (element pointer for arrays), so they occupy pointer-size storage here.
+    def self.field_size_and_alignment(field_type, stack)
+      return [POINTER_SIZE, POINTER_SIZE] if cyclic_back_edge?(field_type, stack)
+
+      size_and_alignment(field_type, stack)
+    end
+
+    def self.cyclic_back_edge?(field_type, stack)
+      return false if stack.nil? || stack.empty?
+
+      aggregate_reaches_in_progress?(field_type, stack, {})
+    end
+
+    def self.aggregate_reaches_in_progress?(type, stack, visited)
+      return false if visited.key?(type.object_id)
+
+      visited[type.object_id] = true
+      return true if stack.key?(type)
+
+      reachability_children(type).any? { |child| aggregate_reaches_in_progress?(child, stack, visited) }
     end
 
     def self.struct_layout_from_infos(field_infos, packed:, alignment:)
@@ -253,13 +285,52 @@ module MilkTea
       remainder.zero? ? value : value + alignment - remainder
     end
 
+    # `stack` is the set of aggregates on the current path, pass-down only.
+    # A nil or empty stack means the caller is not inside an aggregate yet.
+    # Yields the extended stack; returns nil when `type` is already in progress
+    # (callers treat that as unreachable while mirroring backend semantics).
     def self.with_stack(type, stack)
-      return if stack[type]
+      next_stack = (stack || {}).dup
+      return nil if next_stack.key?(type)
 
-      stack[type] = true
-      yield
-    ensure
-      stack.delete(type)
+      next_stack[type] = true
+      yield(next_stack)
+    end
+
+    # Structural expansion used for back-edge detection. Mirrors the
+    # CBackend's `aggregate_type_dependencies` so pointer-broken cyclic
+    # fields agree with the emitted C struct layout.
+    def self.reachability_children(type)
+      case type
+      when Types::Nullable
+        [type.base]
+      when Types::GenericInstance
+        if pointer_type?(type)
+          []
+        elsif array_type?(type)
+          [array_element_type(type)]
+        else
+          []
+        end
+      when Types::Span
+        [type.element_type]
+      when Types::Struct, Types::StructInstance, Types::Union
+        type.fields.values
+      when Types::Variant, Types::VariantInstance
+        type.arm_names.flat_map { |name| type.arm(name).values }
+      when Types::VariantArmPayload
+        type.fields.values
+      else
+        []
+      end
+    end
+
+    def self.pointer_type?(type)
+      type.is_a?(Types::GenericInstance) && %w[ptr const_ptr own ref].include?(type.name)
+    end
+
+    def self.array_element_type(type)
+      type.arguments.first
     end
     end
   end
