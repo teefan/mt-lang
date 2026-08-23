@@ -360,7 +360,7 @@ module MilkTea
     # redundant-else,
     # redundant-return, reserved-primitive-name,
     # trailing-list-comma.
-    # Returns the fixed source (may be identical if nothing was fixable).
+    # Returns the fixed source (may be identical to nothing-was-fixable input).
     def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil, max_passes: 5, profile: nil)
       pass_limit = [max_passes.to_i, 1].max
       current_source = source
@@ -448,6 +448,11 @@ module MilkTea
       working_context = sema_facts ? nil : best_effort_lint_context(source, path:)
       working_sema_facts = sema_facts || working_context[:facts]
       unresolved_import_paths = sema_facts ? Set.new : working_context[:unresolved_import_paths]
+      # With unresolved imports the analysis facts are incomplete (receiver
+      # editability, casts, ownership), so hint rules can misfire and fixes
+      # would land on false positives. Leave such sources to the author.
+      return source if unresolved_import_paths.any?
+
       warnings = lint_source(
         source,
         path:,

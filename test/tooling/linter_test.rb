@@ -494,6 +494,46 @@ class MilkTeaLinterTest < Minitest::Test
                    "the inline form would exceed the max line length after indentation"
   end
 
+  def test_prefer_inline_if_not_reported_when_body_spans_multiple_lines
+    source = <<~MT
+      function f(outgoing: Outgoing, conn: Conn) -> void:
+          if outgoing.reliable:
+              let _ = await conn.channel.send_reliable(
+                  outgoing.payload.as_span(),
+                  0
+              )
+          else:
+              let _ = await conn.channel.send(
+                  outgoing.payload.as_span()
+              )
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    refute_includes codes, "prefer-inline-if",
+                   "a multi-line body cannot be joined onto one line"
+  end
+
+  def test_prefer_struct_with_not_reported_across_same_bare_type_names
+    source = <<~MT
+      # module app.sessions
+      import std.chan as chan
+
+      struct Config:
+          max_payload_bytes: int
+          resend_after_frames: int
+
+      function channel_config_for(config: Config) -> chan.Config:
+          return chan.Config(
+              max_payload_bytes = config.max_payload_bytes + 1,
+              resend_after_frames = config.resend_after_frames
+          )
+    MT
+
+    codes = MilkTea::Linter.lint_source(source, path: "demo.mt").map(&:code)
+    refute_includes codes, "prefer-struct-with",
+                   "config.with would build the wrong type; the target is chan.Config"
+  end
+
   def test_prefer_conditional_expression_for_same_target_assignment
     source = <<~MT
       function f(x: int) -> int:
@@ -1544,6 +1584,27 @@ class MilkTeaLinterTest < Minitest::Test
           let _y = x
           x = 2
           return x
+    MT
+
+    assert_equal [], warnings
+  end
+
+  def test_no_dead_assignment_when_value_is_read_inside_cast
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct Buffer:
+          len: uint
+
+      function touch(value: uint) -> uint:
+          return value
+
+      function main(flag: bool) -> uint:
+          var size: uint = 1
+          if flag:
+              size = 2
+          if size == 0:
+              size = 1
+          let storage = ptr[ubyte]<-touch(size)
+          return storage.len + uint<-size
     MT
 
     assert_equal [], warnings
@@ -3292,6 +3353,45 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
     MT
 
     refute warnings.any? { |w| w.code == "owning-release-leak" && w.symbol_name == "p" }
+  end
+
+  def test_no_warn_when_own_pointer_transferred_through_positional_cast
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct State:
+          handle: ptr[uint]?
+
+      function set_data(handle: ptr[uint], data: ptr[void]) -> void:
+          pass
+
+      function attach() -> ptr[uint]:
+          let handle = heap.must_alloc[uint](1)
+          let state = heap.must_alloc[State](1)
+          set_data(handle, ptr[void]<-state)
+          return handle
+    MT
+
+    refute warnings.any? { |w| w.code == "owning-release-leak" && w.symbol_name == "state" },
+           "a cast positional argument is an ownership handoff, not a leak"
+  end
+
+  def test_no_warn_when_binding_cleaned_up_by_release_helper
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct Entry:
+          size: uint
+
+      function release_entries(entries_ref: ref[vec.Vec[Entry]]) -> void:
+          pass
+
+      function collect(flag: bool) -> uint:
+          var values = vec.Vec[Entry].create()
+          if flag:
+              release_entries(ref_of(values))
+              return 0
+          return uint<-values.len()
+    MT
+
+    refute warnings.any? { |w| w.code == "owning-release-leak" && w.symbol_name == "values" },
+           "release_* helpers take ownership via ref_of"
   end
 
   def test_no_warn_on_own_typed_local_returned

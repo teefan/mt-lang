@@ -258,10 +258,28 @@ module MilkTea
         case expr
         when AST::Call
           expr.arguments.any? do |arg|
-            next unless arg.is_a?(AST::Argument)
+            next false unless arg.is_a?(AST::Argument)
 
-            arg.value.is_a?(AST::Identifier) && arg.value.name == name ||
-              own_struct_field_transfer?(arg.value, name)
+            own_transfer_identifier?(arg.value, name)
+          end
+        when AST::PrefixCast
+          own_transfer_identifier?(expr.expression, name)
+        else
+          false
+        end
+      end
+
+      def own_transfer_identifier?(value, name)
+        case value
+        when AST::Identifier
+          value.name == name
+        when AST::PrefixCast
+          own_transfer_identifier?(value.expression, name)
+        when AST::Call
+          value.arguments.any? do |arg|
+            next false unless arg.is_a?(AST::Argument)
+
+            own_transfer_identifier?(arg.value, name)
           end
         else
           false
@@ -426,15 +444,29 @@ module MilkTea
         return false unless expr.is_a?(AST::Call)
 
         expr.arguments.any? do |arg|
-          next false unless arg.is_a?(AST::Argument) && arg.name
+          named = arg.is_a?(AST::Argument) && !arg.name.nil?
+          argument_transfers?(arg.value, name, named)
+        end
+      end
 
-          if arg.value.is_a?(AST::Identifier) && arg.value.name == name
-            true
-          elsif arg.value.is_a?(AST::Call)
-            _expr_contains_transfer?(arg.value, name)
-          else
-            false
+      # An identifier passed as a named argument transfers ownership (struct
+      # field initialization), even when wrapped in a pointer cast
+      # (e.g. handle_set_data(h, ptr[void]<-state)). Nested calls are walked
+      # so `queue.push(Foo(field = x))` recognizes the inner transfer.
+      def argument_transfers?(value, name, named)
+        case value
+        when AST::Identifier
+          named && value.name == name
+        when AST::PrefixCast
+          inner = value.expression
+          inner.is_a?(AST::Identifier) && inner.name == name
+        when AST::Call
+          value.arguments.any? do |arg|
+            nested_named = arg.is_a?(AST::Argument) && !arg.name.nil?
+            argument_transfers?(arg.value, name, nested_named)
           end
+        else
+          false
         end
       end
 
@@ -481,6 +513,9 @@ module MilkTea
         return if expr.nil?
 
         result << expr.callee.receiver.name if release_call_on_binding?(expr)
+        if expr.is_a?(AST::Call) && expr.callee.is_a?(AST::Identifier) && expr.callee.name.start_with?("release_")
+          result.merge(release_helper_binding_names(expr))
+        end
 
         case expr
         when AST::Call
@@ -494,6 +529,26 @@ module MilkTea
         when AST::UnaryOp
           _collect_released_names_in_expr(expr.operand, result)
         end
+      end
+
+      # std convention: `release_*` helper functions take ownership of the
+      # bindings handed to them via ref_of/ptr_of, e.g.
+      # `release_string_values(ref_of(values))`. Treat those bindings as
+      # released so the leak rule understands the cleanup-helper idiom.
+      def release_helper_binding_names(expr)
+        names = Set.new
+        expr.arguments.each do |arg|
+          value = arg.respond_to?(:value) ? arg.value : nil
+          next unless value.is_a?(AST::Call)
+          next unless value.callee.is_a?(AST::Identifier)
+          next unless %w[ref_of ptr_of].include?(value.callee.name)
+
+          value.arguments.each do |inner|
+            binding_name = inner.value
+            names << binding_name.name if binding_name.is_a?(AST::Identifier)
+          end
+        end
+        names
       end
 
       def _any_stmt?(stmts, &pred)
@@ -620,6 +675,9 @@ module MilkTea
         return false unless expr
 
         return true if release_call_on_binding?(expr) && expr.callee.receiver.name == name
+        return true if expr.is_a?(AST::Call) && expr.callee.is_a?(AST::Identifier) &&
+                       expr.callee.name.start_with?("release_") &&
+                       release_helper_binding_names(expr).include?(name)
 
         case expr
         when AST::Call

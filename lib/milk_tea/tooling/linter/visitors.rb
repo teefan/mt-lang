@@ -834,43 +834,64 @@ module MilkTea
         )
       end
 
+      # Simulates the actual one-line join: every branch body must be a single
+      # physical line with balanced delimiters, and the composed line must fit
+      # the column budget. Anything that cannot be joined cleanly is reported
+      # as "too wide" so the hint is suppressed.
       def inline_if_too_wide?(statement, stmts)
         return false if statement.branches.empty?
 
-        text = +""
+        if_line_idx = Integer(statement.line) - 1
+        return true if if_line_idx.negative? || if_line_idx >= @source_lines.length
 
-        statement.branches.each_with_index do |b, i|
-          cond_src = source_line_from(b.line, b.column)
-          return false unless cond_src
+        header = @source_lines[if_line_idx].to_s
+        return true unless header.strip.start_with?("if ")
 
-          stmt_col = stmts[i]&.column
-          stmt_line = stmts[i]&.line
-          body_src = source_line_from(stmt_line, stmt_col)
-          return false unless body_src
+        indent = header[/\A[ \t]*/].to_s
+        segments = []
+        cur_header = header.strip
+        cur_body = nil
+        idx = if_line_idx + 1
+        while idx < @source_lines.length
+          line = @source_lines[idx].to_s.rstrip
+          break if line.empty?
 
-          text << cond_src
-          text << " "
-          text << body_src
-          text << " "
+          line_indent = line[/\A[ \t]*/].to_s
+          if line_indent == indent && (line.strip == "else:" || line.strip.start_with?("else if "))
+            return true if cur_body.nil?
+
+            segments << [cur_header, cur_body]
+            cur_header = line.strip
+            cur_body = nil
+            idx += 1
+            next
+          end
+          break if line_indent.length <= indent.length
+          return true unless cur_body.nil?
+
+          cur_body = line.strip
+          idx += 1
         end
+        return true if cur_body.nil?
+        return true unless cur_header.strip == "else:"
 
-        if statement.else_line
-          else_src = source_line_from(statement.else_line, statement.else_column)
-          return false unless else_src
-          text << else_src
-          text << " "
+        segments << [cur_header, cur_body]
+        joined = indent + segments.map { |h, b| "#{h} #{b}" }.join(" ")
+        joined.length > 120 || !balanced_inline_line?(joined)
+      end
+
+      def balanced_inline_line?(text)
+        depth = 0
+        text.each_char do |ch|
+          case ch
+          when "(", "["
+            depth += 1
+          when ")", "]"
+            depth -= 1
+            return false if depth.negative?
+          end
         end
-
-        stmt_col = stmts.last&.column
-        stmt_line = stmts.last&.line
-        else_body = source_line_from(stmt_line, stmt_col)
-        return false unless else_body
-        text << else_body
-
-        # The inline form would start at the `if` keyword's column, so the real
-        # line width includes the surrounding block's indentation.
-        indent = statement.branches.first.column.to_i - 1
-        (indent + text.strip.length) > 120
+        depth.zero?
       end
 
       def source_line_from(line, column)
@@ -970,7 +991,9 @@ module MilkTea
         struct_type = resolve_expr_type(call)
         return unless struct_type.is_a?(Types::Struct)
         source_type = resolve_expr_type(copied.first.value.receiver)
-        return unless source_type.equal?(struct_type) || (source_type.respond_to?(:name) && source_type.name == struct_type.name)
+        # Compare qualified names: bare names collide across modules
+        # (e.g. net::Config vs chan::Config).
+        return unless source_type.respond_to?(:to_s) && source_type.to_s == struct_type.to_s
 
         field_names = struct_type.fields.keys.map(&:to_s).to_set
         copied_names = copied.map { |arg| arg.name.to_s }.to_set
