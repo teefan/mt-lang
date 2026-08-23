@@ -33,6 +33,7 @@ module MilkTea
       ["bindgen",     "Generate a binding module from a C header"],
       ["cache",       "Inspect and manage the build cache"],
       ["docs",        "Serve the local documentation site"],
+      ["std",         "List standard library modules and print their source"],
       ["snapshot",    "Render a highlighted HTML snapshot"],
       ["lsp",         "Start the Language Server Protocol server"],
       ["dap",         "Start the Debug Adapter Protocol server"],
@@ -127,6 +128,8 @@ module MilkTea
         cache_command
       when "docs"
         docs_command
+      when "std"
+        std_command
       when "snapshot"
         snapshot_command
       when "lsp"
@@ -164,6 +167,7 @@ module MilkTea
     require_relative "cli/commands/bindgen"
     require_relative "cli/commands/cache"
     require_relative "cli/commands/docs"
+    require_relative "cli/commands/std"
     require_relative "cli/commands/snapshot"
     require_relative "cli/commands/lsp"
     require_relative "cli/commands/dap"
@@ -187,6 +191,7 @@ module MilkTea
     include CommandBindgen
     include CommandCache
     include CommandDocs
+    include CommandStd
     include CommandSnapshot
     include CommandLsp
     include CommandDap
@@ -796,6 +801,24 @@ module MilkTea
             --open, -o            Open the docs in your default browser.
             --port, -p PORT       Listen on a specific port (default: random).
         HELP
+      "std"             => <<~HELP,
+        Usage: mtc std list [--json]
+               mtc std show MODULE
+
+          Inspect the Milk Tea standard library shipped in std/.
+
+          list    Print every hand-written standard library module with a short
+                  description and its path on disk, grouped by category.
+                  Generated binding modules (std/c/* and imported-binding
+                  wrappers such as raylib or zstd) are not listed.
+          show    Print the source of a module. Accepts dotted or slashed names
+                  (mem.arena, mem/arena) and resolves platform variants such as
+                  fs to the active platform file. Generated modules stay
+                  viewable here (for example c.cjson or raylib).
+
+          Options:
+            --json    Emit list output as JSON.
+        HELP
       "snapshot"        => <<~HELP,
         Usage: mtc snapshot INPUT.mt [OPTIONS]
 
@@ -891,6 +914,8 @@ module MilkTea
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
       io.puts("       mtc cache purge|status")
       io.puts("       mtc docs [--open] [--port PORT]")
+      io.puts("       mtc std list [--json]")
+      io.puts("       mtc std show MODULE")
       io.puts("       mtc snapshot INPUT.mt [--theme PATH] [-o OUTPUT]")
       io.puts("       mtc lsp [--log-level LEVEL] [--stdio]")
       io.puts("       mtc dap [--backend KIND] [--adapter-path PATH]")
