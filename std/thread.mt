@@ -49,9 +49,8 @@ function thread_entry_void(frame: ptr[void]) -> void:
 public function spawn_raw(entry: fn(arg: ptr[void]) -> void, arg: ptr[void]) -> Result[Thread, Error]:
     let handle = heap.must_alloc_zeroed[NativeThreadHandle](1)
     let state = heap.must_alloc_zeroed[RawStartState](1)
-    unsafe:
-        state.entry = entry
-        state.arg = arg
+    state.entry = entry
+    state.arg = arg
 
     let status_code = libuv.thread_create(handle, thread_entry_raw, unsafe: ptr[void]<-state)
     if status_code != 0:
@@ -65,7 +64,7 @@ public function spawn_raw(entry: fn(arg: ptr[void]) -> void, arg: ptr[void]) -> 
 public function spawn(run: fn() -> void) -> Result[Thread, Error]:
     let handle = heap.must_alloc_zeroed[NativeThreadHandle](1)
     let state = heap.must_alloc_zeroed[VoidStartState](1)
-    unsafe: state.run = run
+    state.run = run
 
     let status_code = libuv.thread_create(handle, thread_entry_void, unsafe: ptr[void]<-state)
     if status_code != 0:

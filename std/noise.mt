@@ -51,8 +51,8 @@ function perlin2d_impl(perm: array[ubyte, 512], x: float, y: float) -> float:
     let iy = int<-y
     let X = ix & 255
     let Y = iy & 255
-    let xf = x - float<-(ix - (ix & ~255))
-    let yf = y - float<-(iy - (iy & ~255))
+    let xf = x - ix - (ix & ~255)
+    let yf = y - iy - (iy & ~255)
 
     let u = fade(if xf < 0.0: xf + 1.0 else: xf)
     let v = fade(if yf < 0.0: yf + 1.0 else: yf)
@@ -77,9 +77,9 @@ function perlin3d_impl(perm: array[ubyte, 512], x: float, y: float, z: float) ->
     let X = ix & 255
     let Y = iy & 255
     let Z = iz & 255
-    let xf = x - float<-(ix - (ix & ~255))
-    let yf = y - float<-(iy - (iy & ~255))
-    let zf = z - float<-(iz - (iz & ~255))
+    let xf = x - ix - (ix & ~255)
+    let yf = y - iy - (iy & ~255)
+    let zf = z - iz - (iz & ~255)
 
     let u = fade(if xf < 0.0: xf + 1.0 else: xf)
     let v = fade(if yf < 0.0: yf + 1.0 else: yf)
@@ -107,7 +107,7 @@ function perlin3d_impl(perm: array[ubyte, 512], x: float, y: float, z: float) ->
 
 function floor_f(x: float) -> int:
     let i = int<-x
-    if x < 0.0 and float<-i != x:
+    if x < 0.0 and i != x:
         return i - 1
     return i
 

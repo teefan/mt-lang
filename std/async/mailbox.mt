@@ -45,8 +45,8 @@ function handle_as_async(handle: ptr[NativeHandle]) -> ptr[NativeAsyncHandle]:
     return unsafe: ptr[NativeAsyncHandle]<-handle
 
 
-function mailbox_async_callback(handle: ptr[NativeAsyncHandle]) -> void:
-    unsafe: handle
+function mailbox_async_callback(_handle: ptr[NativeAsyncHandle]) -> void:
+    pass
 
 
 function mailbox_destroy_state[T](state_frame: ptr[void]) -> void:

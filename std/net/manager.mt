@@ -5,7 +5,6 @@ import std.net as net
 import std.net.clock as clock
 import std.net.mux as mux
 import std.net.session as sess
-import std.string as string
 import std.vec as vec
 
 const channel_system: ubyte = 0

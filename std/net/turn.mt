@@ -387,6 +387,8 @@ public function parse_data_indication(
     if not found_peer or not found_data:
         if found_data:
             payload.release()
+        if found_peer:
+            peer_addr.release()
         return Result[TurnDatagram, Error].failure(
             error = turn_error(err_no_data_attribute, "data indication missing attributes")
         )
@@ -420,7 +422,7 @@ public async function send_data(
                     defer: packet.release()
                     let send_result = await socket.send_to(packet.as_span(), turn_server)
                     match send_result:
-                        Result.failure as sp:
+                        Result.failure:
                             return Result[ptr_uint, Error].failure(
                                 error = turn_error(err_send_failed, "send indication failed")
                             )

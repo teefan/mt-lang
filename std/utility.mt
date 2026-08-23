@@ -64,7 +64,7 @@ function combine_scores(mode: CombineMode, scores: ref[vec.Vec[float]]) -> float
                 return 0.0
             product = product * s
             i += 1
-        let exponent = 1.0 / float<-n
+        let exponent = 1.0 / n
         return float<-math.pow(double<-product, double<-exponent)
 
     if mode == CombineMode.multiplicative:
@@ -88,7 +88,7 @@ function combine_scores(mode: CombineMode, scores: ref[vec.Vec[float]]) -> float
                 break
             sum = sum + unsafe: read(s_ptr)
             i += 1
-        return sum / float<-n
+        return sum / n
 
     if mode == CombineMode.minimum:
         var best: float = 1.0

@@ -47,9 +47,7 @@ public function parse_request_id(data: span[ubyte]) -> Result[uint, Error]:
 
 public function payload_after_header(data: span[ubyte]) -> span[ubyte]:
     if data.len <= header_bytes:
-        let empty = bytes.Bytes.empty()
-        let result = empty.as_span()
-        return result
+        return zero[span[ubyte]]
     unsafe:
         return span[ubyte](data = data.data + header_bytes, len = data.len - header_bytes)
 

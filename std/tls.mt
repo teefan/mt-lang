@@ -115,8 +115,8 @@ function handle_as_poll(handle: ptr[NativeHandle]) -> ptr[NativePollHandle]:
     return unsafe: ptr[NativePollHandle]<-handle
 
 
-function noop_waiter(frame: ptr[void]) -> void:
-    unsafe: frame
+function noop_waiter(_frame: ptr[void]) -> void:
+    pass
 
 
 function poll_task(state: ptr[PollState]) -> Task[Result[int, Error]]:
@@ -271,19 +271,18 @@ function poll_on(runtime: aio.Runtime, fd: int, events: int) -> Task[Result[int,
     let state = heap.must_alloc_zeroed[PollState](1)
     let poll = alloc_poll_handle()
 
-    unsafe:
-        state.ready = false
-        state.status_code = 0
-        state.revents = 0
-        state.error = empty_error()
-        state.error_owned = false
-        state.waiter_frame = null
-        state.waiter = noop_waiter
-        state.waiter_registered = false
-        state.handle = poll
-        state.closing = false
-        state.closed = false
-        state.released = false
+    state.ready = false
+    state.status_code = 0
+    state.revents = 0
+    state.error = empty_error()
+    state.error_owned = false
+    state.waiter_frame = null
+    state.waiter = noop_waiter
+    state.waiter_registered = false
+    state.handle = poll
+    state.closing = false
+    state.closed = false
+    state.released = false
 
     let init_status = libuv.poll_init(loop, poll, fd)
     if init_status != 0:
@@ -416,7 +415,7 @@ async function read_once_on(
     let buffer = heap.must_alloc[ubyte](max_bytes)
     while true:
         let client = unsafe: read(state).client else:
-            unsafe: heap.release(buffer)
+            heap.release(buffer)
             return Result[bytes.Bytes, Error].failure(error = tls_error("tls stream is released"))
 
         var transferred: ptr_uint = 0
@@ -481,10 +480,8 @@ public async function connect_on(runtime: aio.Runtime, host: str, port: int) -> 
             defer: release_socket_addresses(ref_of(addresses))
 
             var last_error = tls_error("tls connect failed")
-            var last_error_owned = true
             defer:
-                if last_error_owned:
-                    last_error.release()
+                last_error.release()
 
             var index: ptr_uint = 0
             while index < addresses.len:
@@ -494,13 +491,10 @@ public async function connect_on(runtime: aio.Runtime, host: str, port: int) -> 
                 let connect_result = await net.connect_on(runtime, unsafe: read(current))
                 match connect_result:
                     Result.failure as connect_error_payload:
-                        if last_error_owned:
-                            last_error.release()
+                        last_error.release()
                         last_error = take_net_error(connect_error_payload.error)
-                        last_error_owned = true
                     Result.success as connect_payload:
-                        if last_error_owned:
-                            last_error.release()
+                        last_error.release()
                         return await client_on(runtime, host, connect_payload.value)
 
                 index += 1
@@ -536,11 +530,10 @@ public async function client_on(runtime: aio.Runtime, host: str, transport: net.
                 return Result[Stream, Error].failure(error = tls_error("tls connect failed"))
 
             let state = heap.must_alloc_zeroed[StreamState](1)
-            unsafe:
-                state.client = live_client
-                state.tcp = owned_transport
-                state.fd = payload.value
-                state.pending_operation = false
+            state.client = live_client
+            state.tcp = owned_transport
+            state.fd = payload.value
+            state.pending_operation = false
 
             var stream = Stream(state = state)
             let handshake_result = await handshake_on(runtime, state)

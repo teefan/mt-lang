@@ -51,7 +51,7 @@ function fmod(x: float, m: float) -> float:
     # x - floor(x / m) * m
     let div = x / m
     let fl = float<-(int<-div)
-    if div < 0.0 and float<-(int<-div) != div:
+    if div < 0.0 and (int<-div) != div:
         return x - (fl - 1.0) * m
     return x - fl * m
 
@@ -143,9 +143,9 @@ extending Color:
 
 
     public function to_hsl() -> (float, float, float):
-        let rf = float<-this.r / 255.0
-        let gf = float<-this.g / 255.0
-        let bf = float<-this.b / 255.0
+        let rf = this.r / 255.0
+        let gf = this.g / 255.0
+        let bf = this.b / 255.0
 
         let mx = fmax(fmax(rf, gf), bf)
         let mn = fmin(fmin(rf, gf), bf)
@@ -171,9 +171,9 @@ extending Color:
 
 
     public function to_hsv() -> (float, float, float):
-        let rf = float<-this.r / 255.0
-        let gf = float<-this.g / 255.0
-        let bf = float<-this.b / 255.0
+        let rf = this.r / 255.0
+        let gf = this.g / 255.0
+        let bf = this.b / 255.0
 
         let mx = fmax(fmax(rf, gf), bf)
         let mn = fmin(fmin(rf, gf), bf)
@@ -198,10 +198,10 @@ extending Color:
 
 
     public function lerp(target: Color, t: float) -> Color:
-        let r = float<-this.r + (float<-target.r - float<-this.r) * t
-        let g = float<-this.g + (float<-target.g - float<-this.g) * t
-        let b = float<-this.b + (float<-target.b - float<-this.b) * t
-        let a = float<-this.a + (float<-target.a - float<-this.a) * t
+        let r = this.r + (float<-target.r - float<-this.r) * t
+        let g = this.g + (float<-target.g - float<-this.g) * t
+        let b = this.b + (float<-target.b - float<-this.b) * t
+        let a = this.a + (float<-target.a - float<-this.a) * t
         return Color(r = ubyte<-r, g = ubyte<-g, b = ubyte<-b, a = ubyte<-a)
 
 
@@ -211,12 +211,12 @@ extending Color:
         if this.a == 255:
             return this
 
-        let sa = float<-this.a / 255.0
-        let da = float<-background.a / 255.0
+        let sa = this.a / 255.0
+        let da = background.a / 255.0
 
-        let r_out = float<-this.r * sa + float<-background.r * da * (1.0 - sa)
-        let g_out = float<-this.g * sa + float<-background.g * da * (1.0 - sa)
-        let b_out = float<-this.b * sa + float<-background.b * da * (1.0 - sa)
+        let r_out = this.r * sa + background.r * da * (1.0 - sa)
+        let g_out = this.g * sa + background.g * da * (1.0 - sa)
+        let b_out = this.b * sa + background.b * da * (1.0 - sa)
         let a_out = sa + da * (1.0 - sa)
 
         return Color(
@@ -228,9 +228,9 @@ extending Color:
 
 
     public function scale(factor: float) -> Color:
-        let r = fmin(fmax(float<-this.r * factor, 0.0), 255.0)
-        let g = fmin(fmax(float<-this.g * factor, 0.0), 255.0)
-        let b = fmin(fmax(float<-this.b * factor, 0.0), 255.0)
+        let r = fmin(fmax(this.r * factor, 0.0), 255.0)
+        let g = fmin(fmax(this.g * factor, 0.0), 255.0)
+        let b = fmin(fmax(this.b * factor, 0.0), 255.0)
         return Color(r = ubyte<-r, g = ubyte<-g, b = ubyte<-b, a = this.a)
 
 

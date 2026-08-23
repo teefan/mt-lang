@@ -267,7 +267,7 @@ extending LinkedMap[K, V]:
                     fatal(c"linked_map.LinkedMap.get_or_insert missing inserted value")
                 unsafe:
                     return ptr_of(read(ptr[Node[K, V]]<-current).value)
-            Option.some as ignored_payload:
+            Option.some:
                 fatal(c"linked_map.LinkedMap.get_or_insert replaced unexpectedly")
 
 

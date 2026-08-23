@@ -801,8 +801,7 @@ function parse_array(parser: ref[Parser]) -> Result[ptr[Array]?, ParseError]:
         return Result[ptr[Array]?, ParseError].failure(error= parse_error(parser, "expected array"))
 
     let array_ptr = heap.must_alloc[Array](1)
-    unsafe:
-        read(array_ptr) = Array.create()
+    read(array_ptr) = Array.create()
 
     parser_skip_inline_space(parser)
     if parser_consume_byte(parser, byte_right_bracket):
@@ -813,13 +812,11 @@ function parse_array(parser: ref[Parser]) -> Result[ptr[Array]?, ParseError]:
         let value_result = parse_value(parser)
         match value_result:
             Result.failure as payload:
-                unsafe:
-                    read(array_ptr).release()
+                read(array_ptr).release()
                 heap.release(array_ptr)
                 return Result[ptr[Array]?, ParseError].failure(error= payload.error)
             Result.success as payload:
-                unsafe:
-                    read(array_ptr).values.push(payload.value)
+                read(array_ptr).values.push(payload.value)
 
         parser_skip_inline_space(parser)
         if parser_consume_byte(parser, byte_comma):
@@ -827,8 +824,7 @@ function parse_array(parser: ref[Parser]) -> Result[ptr[Array]?, ParseError]:
         if parser_consume_byte(parser, byte_right_bracket):
             return Result[ptr[Array]?, ParseError].success(value= array_ptr)
 
-        unsafe:
-            read(array_ptr).release()
+        read(array_ptr).release()
         heap.release(array_ptr)
         return Result[ptr[Array]?, ParseError].failure(error= parse_error(parser, "expected ',' or ']'"))
 
@@ -838,8 +834,7 @@ function parse_inline_object(parser: ref[Parser]) -> Result[ptr[Object]?, ParseE
         return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "expected inline table"))
 
     let object_ptr = heap.must_alloc[Object](1)
-    unsafe:
-        read(object_ptr) = Object.create()
+    read(object_ptr) = Object.create()
 
     parser_skip_inline_space(parser)
     if parser_consume_byte(parser, byte_right_brace):
@@ -850,8 +845,7 @@ function parse_inline_object(parser: ref[Parser]) -> Result[ptr[Object]?, ParseE
         let key_result = parse_key(parser)
         match key_result:
             Result.failure as payload:
-                unsafe:
-                    read(object_ptr).release()
+                read(object_ptr).release()
                 heap.release(object_ptr)
                 return Result[ptr[Object]?, ParseError].failure(error= payload.error)
             Result.success as key_payload:
@@ -859,8 +853,7 @@ function parse_inline_object(parser: ref[Parser]) -> Result[ptr[Object]?, ParseE
                 parser_skip_inline_space(parser)
                 if not parser_consume_byte(parser, byte_equal):
                     key.release()
-                    unsafe:
-                        read(object_ptr).release()
+                    read(object_ptr).release()
                     heap.release(object_ptr)
                     return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "expected '='"))
 
@@ -869,22 +862,19 @@ function parse_inline_object(parser: ref[Parser]) -> Result[ptr[Object]?, ParseE
                 match value_result:
                     Result.failure as payload:
                         key.release()
-                        unsafe:
-                            read(object_ptr).release()
+                        read(object_ptr).release()
                         heap.release(object_ptr)
                         return Result[ptr[Object]?, ParseError].failure(error= payload.error)
                     Result.success as value_payload:
                         let key_text = key.as_str()
-                        if unsafe: read(object_ptr).contains(key_text):
+                        if read(object_ptr).contains(key_text):
                             key.release()
                             release_value(value_payload.value)
-                            unsafe:
-                                read(object_ptr).release()
+                            read(object_ptr).release()
                             heap.release(object_ptr)
                             return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "duplicate key"))
 
-                        unsafe:
-                            read(object_ptr).entries.push(Entry(key = key, value = value_payload.value))
+                        read(object_ptr).entries.push(Entry(key = key, value = value_payload.value))
 
                 parser_skip_inline_space(parser)
                 if parser_consume_byte(parser, byte_comma):
@@ -892,8 +882,7 @@ function parse_inline_object(parser: ref[Parser]) -> Result[ptr[Object]?, ParseE
                 if parser_consume_byte(parser, byte_right_brace):
                     return Result[ptr[Object]?, ParseError].success(value= object_ptr)
 
-                unsafe:
-                    read(object_ptr).release()
+                read(object_ptr).release()
                 heap.release(object_ptr)
                 return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "expected ',' or '}'"))
 

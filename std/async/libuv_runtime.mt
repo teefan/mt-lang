@@ -79,18 +79,17 @@ function work_as_req(work: ptr[NativeWorkRequest]) -> ptr[NativeRequest]:
     return unsafe: ptr[NativeRequest]<-work
 
 
-function close_all_handles_cb(handle: ptr[NativeHandle], arg: ptr[void]) -> void:
+function close_all_handles_cb(handle: ptr[NativeHandle], _arg: ptr[void]) -> void:
     if libuv.is_closing(handle) == 0:
         libuv.close(handle, close_all_handles_close_cb)
-    unsafe: arg
 
 
-function close_all_handles_close_cb(handle: ptr[NativeHandle]) -> void:
-    unsafe: ptr[void]<-handle
+function close_all_handles_close_cb(_handle: ptr[NativeHandle]) -> void:
+    pass
 
 
-function noop_waiter(frame: ptr[void]) -> void:
-    unsafe: frame
+function noop_waiter(_frame: ptr[void]) -> void:
+    pass
 
 
 function require_current_runtime() -> Runtime:
@@ -337,20 +336,19 @@ public function sleep_on(runtime: Runtime, timeout: ptr_uint) -> Task[int]:
     let loop = live_loop(runtime)
 
     let state = heap.must_alloc_zeroed[SleepState](1)
-    unsafe:
-        state.ready = false
-        state.status = 0
-        state.waiter_frame = null
-        state.waiter = noop_waiter
-        state.waiter_registered = false
-        state.timer = null
-        state.closing = false
-        state.closed = false
-        state.released = false
+    state.ready = false
+    state.status = 0
+    state.waiter_frame = null
+    state.waiter = noop_waiter
+    state.waiter_registered = false
+    state.timer = null
+    state.closing = false
+    state.closed = false
+    state.released = false
 
     let timer_size = libuv.handle_size(libuv.uv_handle_type.UV_TIMER)
     let timer = unsafe: ptr[NativeTimerHandle]<-heap.must_alloc_zeroed_bytes(1, timer_size)
-    unsafe: state.timer = timer
+    state.timer = timer
 
     let init_status = libuv.timer_init(loop, timer)
     if init_status != 0:
@@ -367,11 +365,10 @@ public function sleep_on(runtime: Runtime, timeout: ptr_uint) -> Task[int]:
 
     let start_status = libuv.timer_start(timer, sleep_timer_fire, timeout, 0)
     if start_status != 0:
-        unsafe:
-            state.status = start_status
-            state.ready = true
-            state.closing = true
-            libuv.close(timer_as_handle(timer), sleep_timer_close)
+        state.status = start_status
+        state.ready = true
+        state.closing = true
+        libuv.close(timer_as_handle(timer), sleep_timer_close)
 
     return sleep_task(state)
 

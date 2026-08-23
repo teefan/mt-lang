@@ -107,7 +107,7 @@ extending CompressedUshort:
 
 
     public function decode(encoded: ushort) -> float:
-        let ratio = float<-encoded / 65535.0
+        let ratio = encoded / 65535.0
         return this.min + ratio * (this.max - this.min)
 
 public struct CompressedUbyte:
@@ -127,7 +127,7 @@ extending CompressedUbyte:
 
 
     public function decode(encoded: ubyte) -> float:
-        let ratio = float<-encoded / 255.0
+        let ratio = encoded / 255.0
         return this.min + ratio * (this.max - this.min)
 
 public struct TickBuffer[T]:
@@ -138,7 +138,7 @@ public struct TickBuffer[T]:
 extending TickBuffer[T]:
     public editable function push(tick: uint, value: T) -> void:
         let offset: ptr_uint = ptr_uint<-(tick - this.base_tick)
-        while offset >= this.entries.len():
+        if offset >= this.entries.len():
             this.entries.push(value)
             return
         let ptr = this.entries.get(offset) else:

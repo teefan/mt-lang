@@ -89,23 +89,12 @@ public function parent_environment() -> vec.Vec[EnvironmentEntry]:
             if eq_pos == 0 or eq_pos >= len:
                 i += 1
                 continue
-            var nname = string.String.create()
-            nname.reserve(eq_pos)
-            var ni: ptr_uint = 0
-            while ni < eq_pos:
-                nname.push_byte(ubyte<-read(entry_cstr + ni))
-                ni += 1
-            var nvalue = string.String.create()
             let vlen = len - eq_pos - 1
-            if vlen > 0:
-                nvalue.reserve(vlen)
-                var vi: ptr_uint = 0
-                while vi < vlen:
-                    nvalue.push_byte(ubyte<-read(entry_cstr + eq_pos + 1 + vi))
-                    vi += 1
+            let name_view = unsafe: str(data = entry_cstr, len = eq_pos)
+            let value_view = unsafe: str(data = entry_cstr + eq_pos + 1, len = vlen)
             result.push(EnvironmentEntry(
-                name = nname.as_str(),
-                value = nvalue.as_str()
+                name = name_view,
+                value = value_view
             ))
             i += 1
     return result
@@ -263,7 +252,7 @@ function prepare_command(
     let allocated_args = storage.alloc[ptr[char]](command.len + 1) else:
         fatal(c"process args storage exhausted")
 
-    let args_ptr = unsafe: allocated_args
+    let args_ptr = allocated_args
 
     var env_ptr: ptr[ptr[char]]? = null
     var env_storage: ptr[ptr[char]]? = null
@@ -271,7 +260,7 @@ function prepare_command(
         let allocated = storage.alloc[ptr[char]](env.len + 1) else:
             fatal(c"process env pointer storage exhausted")
 
-        let allocated_ptr = unsafe: allocated
+        let allocated_ptr = allocated
         env_ptr = allocated_ptr
         env_storage = allocated_ptr
 
@@ -287,7 +276,7 @@ function prepare_command(
         let allocated_ptr = env_storage else:
             fatal(c"process env pointer storage missing")
 
-        let env_storage_ptr = unsafe: allocated_ptr
+        let env_storage_ptr = allocated_ptr
         index = 0
         while index < env.len:
             let entry = unsafe: read(env.data + index)

@@ -163,18 +163,15 @@ public function decode(text_value: str) -> Result[bytes.Bytes, Error]:
 
         let combined = (ulong<-raw0 << 18) | (ulong<-raw1 << 12) | (ulong<-raw2 << 6) | ulong<-raw3
 
-        unsafe:
-            read(output + out_index) = ubyte<-( (combined >> 16) & 0xFF)
+        read(output + out_index) = ubyte<-( (combined >> 16) & 0xFF)
         out_index += 1
 
         if out_index < output_len:
-            unsafe:
-                read(output + out_index) = ubyte<-( (combined >> 8) & 0xFF)
+            read(output + out_index) = ubyte<-( (combined >> 8) & 0xFF)
             out_index += 1
 
         if out_index < output_len:
-            unsafe:
-                read(output + out_index) = ubyte<-(combined & 0xFF)
+            read(output + out_index) = ubyte<-(combined & 0xFF)
             out_index += 1
 
     return Result[bytes.Bytes, Error].success(value = bytes.Bytes(data = output, len = output_len))

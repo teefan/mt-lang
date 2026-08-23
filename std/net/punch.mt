@@ -125,7 +125,7 @@ public async function punch(
                 break
             let send_result = await socket.send_to(probe.as_span(), unsafe: read(cand_ptr).address)
             match send_result:
-                Result.failure as sp:
+                Result.failure:
                     return Result[PunchResult, Error].failure(
                         error = punch_error(err_send_failed, "burst send failed")
                     )

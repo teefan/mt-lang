@@ -112,15 +112,13 @@ public function object_value(value: ptr[Object]?) -> Value:
 
 public function create_array_value() -> Value:
     let array_ptr = heap.must_alloc[Array](1)
-    unsafe:
-        read(array_ptr) = Array.create()
+    read(array_ptr) = Array.create()
     return array_value(array_ptr)
 
 
 public function create_object_value() -> Value:
     let object_ptr = heap.must_alloc[Object](1)
-    unsafe:
-        read(object_ptr) = Object.create()
+    read(object_ptr) = Object.create()
     return object_value(object_ptr)
 
 
@@ -178,33 +176,28 @@ function value_as_object(value: Value) -> ptr[Object]?:
 
 function convert_raw_array(item: ptr[cjson.JSON]) -> Result[Value, Error]:
     let array_ptr = heap.must_alloc[Array](1)
-    unsafe:
-        read(array_ptr) = Array.create()
+    read(array_ptr) = Array.create()
 
     let count = cjson.get_array_size(item)
     if count < 0:
-        unsafe:
-            read(array_ptr).release()
+        read(array_ptr).release()
         heap.release(array_ptr)
         return Result[Value, Error].failure(error = error_message("json array size failed"))
 
     var index: int = 0
     while index < count:
         let child = cjson.get_array_item(item, index) else:
-            unsafe:
-                read(array_ptr).release()
+            read(array_ptr).release()
             heap.release(array_ptr)
             return Result[Value, Error].failure(error = error_message("json array item missing"))
 
         match convert_raw_value(child):
             Result.failure as payload:
-                unsafe:
-                    read(array_ptr).release()
+                read(array_ptr).release()
                 heap.release(array_ptr)
                 return Result[Value, Error].failure(error = payload.error)
             Result.success as payload:
-                unsafe:
-                    read(array_ptr).values.push(payload.value)
+                read(array_ptr).values.push(payload.value)
 
         index += 1
 
@@ -213,30 +206,26 @@ function convert_raw_array(item: ptr[cjson.JSON]) -> Result[Value, Error]:
 
 function convert_raw_object(item: ptr[cjson.JSON]) -> Result[Value, Error]:
     let object_ptr = heap.must_alloc[Object](1)
-    unsafe:
-        read(object_ptr) = Object.create()
+    read(object_ptr) = Object.create()
 
     var child = unsafe: ptr[cjson.JSON]?<-read(item).child
     while child != null:
-        let current = unsafe: child
+        let current = child
         let key_ptr = unsafe: ptr[char]?<-read(current).string else:
-            unsafe:
-                read(object_ptr).release()
+            read(object_ptr).release()
             heap.release(object_ptr)
             return Result[Value, Error].failure(error = error_message("json object key missing"))
 
         match convert_raw_value(current):
             Result.failure as payload:
-                unsafe:
-                    read(object_ptr).release()
+                read(object_ptr).release()
                 heap.release(object_ptr)
                 return Result[Value, Error].failure(error = payload.error)
             Result.success as payload:
-                unsafe:
-                    read(object_ptr).entries.push(Entry(
-                        key = string.String.from_str(text.chars_as_str(key_ptr)),
-                        value = payload.value
-                    ))
+                read(object_ptr).entries.push(Entry(
+                    key = string.String.from_str(text.chars_as_str(key_ptr)),
+                    value = payload.value
+                ))
 
         child = unsafe: ptr[cjson.JSON]?<-read(current).next
 

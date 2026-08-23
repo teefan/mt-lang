@@ -251,8 +251,6 @@ function tick_node[Context](tree: ref[Tree[Context]], node_id: ptr_uint, context
                     Status.running:
                         return Status.running
 
-    return Status.failure
-
 
 extending Node[Context]:
     static function create(kind: NodeKind) -> Node[Context]:

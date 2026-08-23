@@ -530,12 +530,10 @@ function discard_buffer_prefix(buffer: ref[vec.Vec[ubyte]], count: ptr_uint) -> 
         fatal(c"http.discard_buffer_prefix missing storage")
 
     let remaining = buffer.len - count
-    unsafe:
-        let data_ptr = data
-        var index: ptr_uint = 0
-        while index < remaining:
-            read(data_ptr + index) = read(data_ptr + count + index)
-            index += 1
+    var index: ptr_uint = 0
+    while index < remaining:
+        read(data + index) = read(data + count + index)
+        index += 1
 
     buffer.len = remaining
 
@@ -572,14 +570,14 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
         Option.some as payload:
             status_code = int<-payload.value
 
+    if first_space + 4 < status_line.len and status_line.byte_at(first_space + 4) != 32:
+        return Result[
+            ResponseHead,
+            Error
+        ].failure(error = response_error("status line must separate code and reason with a space"))
+
     var reason = string.String.create()
     if first_space + 4 < status_line.len:
-        if status_line.byte_at(first_space + 4) != 32:
-            return Result[
-                ResponseHead,
-                Error
-            ].failure(error = response_error("status line must separate code and reason with a space"))
-
         let reason_start = first_space + 5
         reason = string.String.from_str(status_line.slice(reason_start, status_line.len - reason_start))
 

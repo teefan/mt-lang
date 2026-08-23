@@ -288,9 +288,8 @@ function read_stdin(timeout_ms: int) -> Result[vec.Vec[ubyte], Error]:
 
     var result = vec.Vec[ubyte].with_capacity(read_count)
     if read_count != 0:
-        unsafe:
-            let read_span = span[ubyte](data = ptr_of(buffer[0]), len = read_count)
-            result.append_span(read_span)
+        let read_span = span[ubyte](data = ptr_of(buffer[0]), len = read_count)
+        result.append_span(read_span)
 
     return Result[vec.Vec[ubyte], Error].success(value= result)
 
@@ -324,10 +323,9 @@ function apply_modifier(key: ref[KeyEvent], modifier: int) -> void:
         return
 
     let modifier_bits = modifier - 1
-    unsafe:
-        read(key).shifted = (modifier_bits & 1) != 0
-        read(key).alt = (modifier_bits & 2) != 0
-        read(key).ctrl = (modifier_bits & 4) != 0
+    read(key).shifted = (modifier_bits & 1) != 0
+    read(key).alt = (modifier_bits & 2) != 0
+    read(key).ctrl = (modifier_bits & 4) != 0
 
 
 function get_byte(buffer: vec.Vec[ubyte], index: ptr_uint) -> Option[ubyte]:
@@ -534,7 +532,7 @@ function parse_mouse_event(buffer: ref[vec.Vec[ubyte]]) -> Option[Event]:
             return Option[Event].none
 
 
-function parse_csi_letter(buffer: ref[vec.Vec[ubyte]], final_byte: ubyte, modifier: int) -> Event:
+function parse_csi_letter(_buffer: ref[vec.Vec[ubyte]], final_byte: ubyte, modifier: int) -> Event:
     var event_ = key_event(KeyCode.unknown, 0, false, false, false, false)
     if final_byte == 65:
         event_ = key_event(KeyCode.up, 0, false, false, false, false)

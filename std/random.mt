@@ -43,12 +43,12 @@ extending Rng:
 
     public editable function next_double() -> double:
         let val = this.next_uint()
-        return double<-val / 4294967296.0
+        return val / 4294967296.0
 
 
     public editable function next_float() -> float:
         let val = this.next_uint()
-        return float<-val / 4294967296.0
+        return val / 4294967296.0
 
 
     public editable function next_ubyte() -> ubyte:

@@ -263,8 +263,7 @@ public async function discover_lobbies_on(
                 Result.success:
                     pass
 
-            let empty = bytes.Bytes.empty()
-            let _ = await conn.mux_send(lobby_channel, type_discover_request, empty.as_span(), mux.flag_reliable)
+            let _ = await conn.mux_send(lobby_channel, type_discover_request, zero[span[ubyte]], mux.flag_reliable)
 
             var frame: uint = 0
             var result = vec.Vec[LobbyInfo].create()

@@ -9,7 +9,7 @@ function run_app_no_args_uninitialized() -> int:
 var run_app_no_args_slot: array[fn() -> int, 1] = array[fn() -> int, 1](run_app_no_args_uninitialized)
 
 
-function run_app_no_args_trampoline(argc: int, argv: ptr[ptr[char]]) -> int:
+function run_app_no_args_trampoline(_argc: int, _argv: ptr[ptr[char]]) -> int:
     let callback = run_app_no_args_slot[0]
     return callback()
 

@@ -268,7 +268,7 @@ extending Reader:
 
     public editable function read_span(count: ptr_uint) -> Result[span[ubyte], Error]:
         if count == 0:
-            let empty = unsafe: span[ubyte](data = this.data.data, len = 0)
+            let empty = span[ubyte](data = this.data.data, len = 0)
             return Result[span[ubyte], Error].success(value = empty)
 
         reader_check_remaining(ref_of(this), count)?

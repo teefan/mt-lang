@@ -46,8 +46,8 @@ function error_from_mailbox(source: aio_mailbox.Error) -> Error:
     return Error(code = source.code, message = source.message)
 
 
-function noop_completion(arg: ptr[void]) -> void:
-    unsafe: arg
+function noop_completion(_arg: ptr[void]) -> void:
+    pass
 
 
 function stop_pool_state(state: ptr[PoolState]) -> void:
@@ -163,14 +163,13 @@ public function create_on(runtime: aio.Runtime, worker_count: ptr_uint) -> Resul
                             return Result[Pool, Error].failure(error = error_from_mailbox(payload.error))
                         Result.success as mailbox_payload:
                             let state = heap.must_alloc_zeroed[PoolState](1)
-                            unsafe:
-                                state.mutex = mutex_payload.value
-                                state.condition = condition_payload.value
-                                state.queue = deque.Deque[WorkItem].create()
-                                state.queued_jobs = 0
-                                state.running_jobs = 0
-                                state.stopping = false
-                                state.completions = mailbox_payload.value
+                            state.mutex = mutex_payload.value
+                            state.condition = condition_payload.value
+                            state.queue = deque.Deque[WorkItem].create()
+                            state.queued_jobs = 0
+                            state.running_jobs = 0
+                            state.stopping = false
+                            state.completions = mailbox_payload.value
 
                             var workers = vec.Vec[thread.Thread].with_capacity(worker_count)
                             var index: ptr_uint = 0

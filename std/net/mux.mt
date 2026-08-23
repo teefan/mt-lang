@@ -728,7 +728,7 @@ function assemble_fragment(
             let buf_data = heap.must_alloc[ubyte](full_size)
             var fill: ptr_uint = 0
             while fill < full_size:
-                unsafe: read(buf_data + fill) = 0
+                read(buf_data + fill) = 0
                 fill += 1
             buf = bytes.Bytes(data = buf_data, len = full_size)
         buffers.push(FragBuffer(
