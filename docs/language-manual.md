@@ -1523,7 +1523,7 @@ mtc lint --ignore shadow file.mt
 
 ### 12.2 Rules
 
-The auto-fix column corresponds to `mtc lint --fix`.
+The auto-fix column corresponds to `mtc lint --fix`. `unused-import` is intentionally not auto-fixable: removing an import has non-local effects (extension methods and canonical hooks) the per-file linter cannot see.
 
 | Code | Severity | Auto-fix | Description |
 |---|---|---|---|
@@ -1538,23 +1538,33 @@ The auto-fix column corresponds to `mtc lint --fix`.
 | `loop-single-iteration` | warning | — | Loop body always exits on the first iteration |
 | `missing-return` | error | — | Function with a non-void return type lacks a guaranteed return on all paths |
 | `noop-compound-assignment` | hint | — | Compound assignment uses an identity value and has no effect |
+| `owning-release-double` | warning | — | Owning binding may be released more than once |
+| `owning-release-leak` | warning | — | Owning binding is never released |
 | `platform-api-drift` | warning | — | Public API differs across sibling platform-specific variants of the same module |
 | `prefer-let` | hint | yes | `var` binding is never mutated; use `let` instead |
 | `prefer-let-else` | hint | yes | Nullable guard can be rewritten as `let ... else:` |
+| `prefer-inline-methods` | hint | yes | Methods on a struct can be written inline inside the struct declaration |
+| `prefer-is-variant` | hint | — | A match that maps one variant arm to a boolean can be `expr is Arm` |
+| `prefer-own-ptr` | hint | — | Pointer binding used only inside `unsafe` could be `own[T]` for auto-deref |
+| `prefer-or-pattern` | hint | — | Adjacent match arms with identical bodies can merge with `\|` |
+| `prefer-struct-with` | hint | — | Field copies from another value can use `.with(...)` |
+| `prefer-try` | hint | — | A match that only propagates the failure branch can use `expr?` |
 | `prefer-var-else` | hint | yes | Nullable guard can be rewritten as `var ... else:` |
 | `redundant-bool-compare` | hint | yes | Comparing a boolean expression to `true`/`false` is redundant |
+| `redundant-cast` | hint | yes | Explicit cast where implicit widening already works |
 | `redundant-else` | warning | yes | `else` block is unnecessary because all prior branches return |
 | `redundant-ignored-match-binding` | hint | yes | Ignored `as _` match binding is redundant |
 | `redundant-null-check` | hint | — | Null check on a value already known to be non-null by flow analysis |
 | `redundant-return` | hint | yes | Final bare `return` in a `void` function is unnecessary |
+| `redundant-type-annotation` | hint | yes | Type annotation is redundant; the type is inferred from the initializer |
+| `redundant-unsafe` | hint | yes | `unsafe` block contains no unsafe operations and can be removed |
 | `reserved-primitive-name` | warning | yes | Binding uses a reserved built-in type name in its active namespace |
 | `self-assignment` | warning | — | Variable is assigned to itself |
 | `self-comparison` | warning | — | Value is compared to itself, making the condition constant |
 | `shadow` | warning | — | Local binding shadows an outer binding with the same name |
 | `trailing-list-comma` | hint | yes | Trailing comma in call argument list is redundant |
 | `unreachable-code` | warning | — | Code after a guaranteed terminator cannot execute |
-| `redundant-unsafe` | hint | — | `unsafe` block contains no unsafe operations and can be removed |
-| `unused-import` | warning | yes | Import alias is never referenced |
+| `unused-import` | warning | — | Import alias is never referenced |
 | `unused-local` | warning | — | Local binding is never referenced |
 | `unused-param` | warning | — | Parameter is never referenced |
 | `useless-expression` | warning | — | Expression statement has no side effects and its result is unused |

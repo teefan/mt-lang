@@ -2469,23 +2469,33 @@ ignore:
       <tr><td><code>loop-single-iteration</code></td><td>warning</td><td>&mdash;</td><td>Loop body always exits on the first iteration</td></tr>
       <tr><td><code>missing-return</code></td><td>error</td><td>&mdash;</td><td>Non-void function lacks a guaranteed return on all paths</td></tr>
       <tr><td><code>noop-compound-assignment</code></td><td>hint</td><td>&mdash;</td><td>Compound assignment uses an identity value and has no effect</td></tr>
+      <tr><td><code>owning-release-double</code></td><td>warning</td><td>&mdash;</td><td>Owning binding may be released more than once</td></tr>
+      <tr><td><code>owning-release-leak</code></td><td>warning</td><td>&mdash;</td><td>Owning binding is never released</td></tr>
       <tr><td><code>platform-api-drift</code></td><td>warning</td><td>&mdash;</td><td>Public API differs across platform-specific variants of the same module</td></tr>
       <tr><td><code>prefer-let</code></td><td>hint</td><td>yes</td><td><code>var</code> binding is never mutated; use <code>let</code></td></tr>
       <tr><td><code>prefer-let-else</code></td><td>hint</td><td>yes</td><td>Nullable guard can be rewritten as <code>let ... else:</code></td></tr>
+      <tr><td><code>prefer-inline-methods</code></td><td>hint</td><td>yes</td><td>Methods on a struct can be written inline inside the struct declaration</td></tr>
+      <tr><td><code>prefer-is-variant</code></td><td>hint</td><td>&mdash;</td><td>A match that maps one variant arm to a boolean can be <code>expr is Arm</code></td></tr>
+      <tr><td><code>prefer-own-ptr</code></td><td>hint</td><td>&mdash;</td><td>Pointer binding used only inside <code>unsafe</code> could be <code>own[T]</code> for auto-deref</td></tr>
+      <tr><td><code>prefer-or-pattern</code></td><td>hint</td><td>&mdash;</td><td>Adjacent match arms with identical bodies can merge with <code>|</code></td></tr>
+      <tr><td><code>prefer-struct-with</code></td><td>hint</td><td>&mdash;</td><td>Field copies from another value can use <code>.with(...)</code></td></tr>
+      <tr><td><code>prefer-try</code></td><td>hint</td><td>&mdash;</td><td>A match that only propagates the failure branch can use <code>expr?</code></td></tr>
       <tr><td><code>prefer-var-else</code></td><td>hint</td><td>yes</td><td>Nullable guard can be rewritten as <code>var ... else:</code></td></tr>
       <tr><td><code>redundant-bool-compare</code></td><td>hint</td><td>yes</td><td>Comparing a boolean expression to <code>true</code>/<code>false</code> is redundant</td></tr>
+      <tr><td><code>redundant-cast</code></td><td>hint</td><td>yes</td><td>Explicit cast where implicit widening already works</td></tr>
       <tr><td><code>redundant-else</code></td><td>warning</td><td>yes</td><td><code>else</code> block is unnecessary because all prior branches return</td></tr>
       <tr><td><code>redundant-ignored-match-binding</code></td><td>hint</td><td>yes</td><td>Ignored <code>as _</code> match binding is redundant</td></tr>
       <tr><td><code>redundant-null-check</code></td><td>hint</td><td>&mdash;</td><td>Null check on a value already known non-null by flow analysis</td></tr>
       <tr><td><code>redundant-return</code></td><td>hint</td><td>yes</td><td>Final bare <code>return</code> in a void function is unnecessary</td></tr>
-      <tr><td><code>redundant-unsafe</code></td><td>hint</td><td>&mdash;</td><td><code>unsafe</code> block contains no unsafe operations and can be removed</td></tr>
+      <tr><td><code>redundant-type-annotation</code></td><td>hint</td><td>yes</td><td>Type annotation is redundant; the type is inferred from the initializer</td></tr>
+      <tr><td><code>redundant-unsafe</code></td><td>hint</td><td>yes</td><td><code>unsafe</code> block contains no unsafe operations and can be removed</td></tr>
       <tr><td><code>reserved-primitive-name</code></td><td>warning</td><td>yes</td><td>Binding uses a reserved built-in type name in its active namespace</td></tr>
       <tr><td><code>self-assignment</code></td><td>warning</td><td>&mdash;</td><td>Variable is assigned to itself</td></tr>
       <tr><td><code>self-comparison</code></td><td>warning</td><td>&mdash;</td><td>Value is compared to itself, making the condition constant</td></tr>
       <tr><td><code>shadow</code></td><td>warning</td><td>&mdash;</td><td>Local binding shadows an outer binding with the same name</td></tr>
       <tr><td><code>trailing-list-comma</code></td><td>hint</td><td>yes</td><td>Trailing comma in call argument list is redundant</td></tr>
       <tr><td><code>unreachable-code</code></td><td>warning</td><td>&mdash;</td><td>Code after a guaranteed terminator cannot execute</td></tr>
-      <tr><td><code>unused-import</code></td><td>warning</td><td>yes</td><td>Import alias is never referenced</td></tr>
+      <tr><td><code>unused-import</code></td><td>warning</td><td>&mdash;</td><td>Import alias is never referenced (intentionally not auto-fixable: removals can drop extension methods or canonical hooks)</td></tr>
       <tr><td><code>unused-local</code></td><td>warning</td><td>&mdash;</td><td>Local binding is never referenced</td></tr>
       <tr><td><code>unused-param</code></td><td>warning</td><td>&mdash;</td><td>Parameter is never referenced</td></tr>
       <tr><td><code>useless-expression</code></td><td>warning</td><td>&mdash;</td><td>Expression statement has no side effects and its result is unused</td></tr>
