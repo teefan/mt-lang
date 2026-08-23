@@ -254,7 +254,7 @@ p + p{margin-top:-.25rem}
     </button>
     <span style="font-size:.75rem">
       <a href="https://github.com/teefan/mt-lang" style="color:inherit;text-decoration:none" title="Source code on GitHub">&#9757; GitHub</a>
-      &nbsp;&middot;&nbsp; v1
+      &nbsp;&middot;&nbsp; v0.4
     </span>
   </div>
 </aside>
@@ -2101,7 +2101,7 @@ async function main() -> int:
 </div>
 
   <h3>Task Helpers</h3>
-  <p>Import <code>std.async</code> for runtime control:</p>
+  <p>Import <code>std.async</code> for runtime control (<code>sleep</code>, <code>work</code>, <code>completed</code>, <code>result</code>, <code>wait</code>, <code>run</code>, plus explicit-runtime variants such as <code>wait_on</code>, <code>work_on</code>, and <code>with_runtime</code>):</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
 <pre><code>import std.async as aio
@@ -2306,7 +2306,7 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>std.mem.arena</code></td><td>Frame/level/scratch arena allocator</td></tr>
       <tr><td><code>std.mem.pool</code></td><td>Fixed-size object pool</td></tr>
       <tr><td><code>std.mem.stack</code></td><td>Explicit temporary allocator</td></tr>
-      <tr><td><code>std.async</code></td><td>Async runtime: <code>sleep</code>, <code>work</code>, <code>completed</code>, <code>result</code>, <code>wait</code>, <code>run</code></td></tr>
+      <tr><td><code>std.async</code></td><td>Async runtime: <code>sleep</code>, <code>work</code>, <code>completed</code>, <code>result</code>, <code>wait</code>, <code>run</code>, plus explicit-runtime variants (<code>wait_on</code>, <code>work_on</code>, <code>with_runtime</code>)</td></tr>
       <tr><td><code>std.option</code></td><td><code>Option[T]</code> — optional value (prelude type; methods always available without import). Methods: <code>is_some</code>, <code>is_none</code>, <code>unwrap</code>, <code>expect</code>, <code>unwrap_or</code>, <code>unwrap_or_else</code></td></tr>
       <tr><td><code>std.result</code></td><td><code>Result[T, E]</code> — fallible computation (prelude type; methods always available without import). Methods: <code>is_success</code>, <code>is_failure</code>, <code>unwrap</code>, <code>unwrap_error</code>, <code>unwrap_or</code>, <code>unwrap_or_else</code>, <code>ok</code>, <code>error</code>, <code>map_error</code></td></tr>
     </table>
@@ -2356,6 +2356,8 @@ function attach(window: ref[Window]) -> Result[void, EventError]:
       <tr><td><code>mtc test &lt;path&gt;</code></td><td>Discover and run <code>@[test]</code> functions</td></tr>
       <tr><td><code>mtc new &lt;name&gt;</code></td><td>Scaffold a new package (<code>package.toml</code> + <code>src/main.mt</code>)</td></tr>
       <tr><td><code>mtc run-module &lt;module&gt;</code></td><td>Resolve a module by name, build it, and run it</td></tr>
+      <tr><td><code>mtc std list [--json]</code></td><td>List hand-written standard library modules grouped by category (<code>--json</code> for machine-readable output)</td></tr>
+      <tr><td><code>mtc std show &lt;module&gt;</code></td><td>Print a standard library module's source (dotted or slashed names; platform variants resolve to the active platform)</td></tr>
       <tr><td><code>mtc completions &lt;shell&gt;</code></td><td>Print a bash/zsh/fish completion script</td></tr>
     </table>
   </div>
@@ -2430,46 +2432,66 @@ mtc lint path/to/file.mt --ignore line-too-long  # skip selected rules</code></p
 </div>
 
   <h3>Inline Suppression</h3>
-  <p>Suppress a rule for the next line with <code># lint: ignore &lt;rule-code&gt;</code>:</p>
+  <p>Suppress all rules on a line with <code># lint: ignore</code>, or specific rules with <code># lint: ignore(rule1, rule2)</code>:</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code># lint: ignore unused-import
-import std.math  # intentionally available for downstream</code></pre>
+<pre><code>var count = 0  # lint: ignore
+var total = 0  # lint: ignore(prefer-let, dead-assignment)</code></pre>
 </div>
 
   <h3>Configuration</h3>
-  <p>Place a <code>.mt-lint.yml</code> file in your package root to customize rule severity:</p>
+  <p>Create a default config with <code>mtc lint --init</code>, or place a <code>.mt-lint.yml</code> file in the project root (or any ancestor directory):</p>
 <div class="code-wrap">
 <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre><code>rules:
-  prefer-let-else: warn
-  unused-import: error
-  line-too-long: off</code></pre>
+<pre><code>max_line_length: 120
+select:
+    - line-too-long
+    - prefer-let
+    - missing-return
+ignore:
+  - shadow
+  - useless-expression</code></pre>
 </div>
+  <p><code>max_line_length</code> defaults to <code>120</code> when omitted. When both <code>select</code> and <code>ignore</code> are present, <code>select</code> takes precedence.</p>
 
   <h3>Rule Reference</h3>
   <div class="table-wrap">
     <table class="attr-table">
-      <tr><th>Category</th><th>Code</th><th>Description</th></tr>
-      <tr><td>Correctness</td><td><code>constant-condition</code></td><td>Always-true or always-false conditions</td></tr>
-      <tr><td>Correctness</td><td><code>dead-assignment</code></td><td>Variable assigned but never read</td></tr>
-      <tr><td>Correctness</td><td><code>unreachable-code</code></td><td>Code after a terminating statement</td></tr>
-      <tr><td>Correctness</td><td><code>redundant-null-check</code></td><td>Null check on already-proven non-null</td></tr>
-      <tr><td>Correctness</td><td><code>loop-single-iteration</code></td><td>Loop with known single iteration</td></tr>
-      <tr><td>Style</td><td><code>prefer-let-else</code></td><td>Var followed by null check; suggest let...else</td></tr>
-      <tr><td>Style</td><td><code>prefer-var-else</code></td><td>Same as above for mutable bindings</td></tr>
-      <tr><td>Style</td><td><code>redundant-cast</code></td><td>Explicit cast where implicit widening already works</td></tr>
-      <tr><td>Style</td><td><code>redundant-return</code></td><td>Unnecessary return at end of void function</td></tr>
-      <tr><td>Style</td><td><code>trailing-list-comma</code></td><td>Multiline lists should end with trailing comma</td></tr>
-      <tr><td>Style</td><td><code>line-too-long</code></td><td>Line exceeds recommended width</td></tr>
-      <tr><td>Style</td><td><code>doc-tag</code></td><td>Documentation comment formatting</td></tr>
-      <tr><td>Convention</td><td><code>unused-import</code></td><td>Imported module never referenced</td></tr>
-      <tr><td>Convention</td><td><code>unused-var</code></td><td>Variable declared but never read</td></tr>
-      <tr><td>Convention</td><td><code>reserved-names</code></td><td>Binding shadows a primitive type or built-in name</td></tr>
-      <tr><td>Convention</td><td><code>event-capacity</code></td><td>Event capacity too large or unbounded</td></tr>
+      <tr><th>Code</th><th>Severity</th><th>Auto-fix</th><th>Description</th></tr>
+      <tr><td><code>borrow-and-mutate</code></td><td>warning</td><td>&mdash;</td><td>Local is borrowed with <code>ref_of</code>/<code>ptr_of</code> and also mutated in the same scope</td></tr>
+      <tr><td><code>constant-condition</code></td><td>warning</td><td>&mdash;</td><td>Branch or loop condition is provably always true or false</td></tr>
+      <tr><td><code>dead-assignment</code></td><td>warning</td><td>&mdash;</td><td>Assigned value is overwritten before any read</td></tr>
+      <tr><td><code>duplicate-if-condition</code></td><td>warning</td><td>&mdash;</td><td><code>if</code>/<code>else if</code> branch repeats a previous condition and is unreachable</td></tr>
+      <tr><td><code>directional-ffi-arg</code></td><td>hint</td><td>&mdash;</td><td>Legacy <code>ptr_of</code>/<code>ref_of</code>/<code>out</code> call-site wrapper is redundant for directional FFI parameters</td></tr>
+      <tr><td><code>doc-tag</code></td><td>hint</td><td>&mdash;</td><td><code>##</code> doc comment tag (<code>@param</code>, <code>@return</code>, <code>@throws</code>, <code>@see</code>) is invalid or inconsistent</td></tr>
+      <tr><td><code>event-capacity</code></td><td>warning</td><td>&mdash;</td><td>Event capacity may copy too many listeners to stack on emit</td></tr>
+      <tr><td><code>line-too-long</code></td><td>warning</td><td>&mdash;</td><td>Source line exceeds configured maximum length</td></tr>
+      <tr><td><code>loop-single-iteration</code></td><td>warning</td><td>&mdash;</td><td>Loop body always exits on the first iteration</td></tr>
+      <tr><td><code>missing-return</code></td><td>error</td><td>&mdash;</td><td>Non-void function lacks a guaranteed return on all paths</td></tr>
+      <tr><td><code>noop-compound-assignment</code></td><td>hint</td><td>&mdash;</td><td>Compound assignment uses an identity value and has no effect</td></tr>
+      <tr><td><code>platform-api-drift</code></td><td>warning</td><td>&mdash;</td><td>Public API differs across platform-specific variants of the same module</td></tr>
+      <tr><td><code>prefer-let</code></td><td>hint</td><td>yes</td><td><code>var</code> binding is never mutated; use <code>let</code></td></tr>
+      <tr><td><code>prefer-let-else</code></td><td>hint</td><td>yes</td><td>Nullable guard can be rewritten as <code>let ... else:</code></td></tr>
+      <tr><td><code>prefer-var-else</code></td><td>hint</td><td>yes</td><td>Nullable guard can be rewritten as <code>var ... else:</code></td></tr>
+      <tr><td><code>redundant-bool-compare</code></td><td>hint</td><td>yes</td><td>Comparing a boolean expression to <code>true</code>/<code>false</code> is redundant</td></tr>
+      <tr><td><code>redundant-else</code></td><td>warning</td><td>yes</td><td><code>else</code> block is unnecessary because all prior branches return</td></tr>
+      <tr><td><code>redundant-ignored-match-binding</code></td><td>hint</td><td>yes</td><td>Ignored <code>as _</code> match binding is redundant</td></tr>
+      <tr><td><code>redundant-null-check</code></td><td>hint</td><td>&mdash;</td><td>Null check on a value already known non-null by flow analysis</td></tr>
+      <tr><td><code>redundant-return</code></td><td>hint</td><td>yes</td><td>Final bare <code>return</code> in a void function is unnecessary</td></tr>
+      <tr><td><code>redundant-unsafe</code></td><td>hint</td><td>&mdash;</td><td><code>unsafe</code> block contains no unsafe operations and can be removed</td></tr>
+      <tr><td><code>reserved-primitive-name</code></td><td>warning</td><td>yes</td><td>Binding uses a reserved built-in type name in its active namespace</td></tr>
+      <tr><td><code>self-assignment</code></td><td>warning</td><td>&mdash;</td><td>Variable is assigned to itself</td></tr>
+      <tr><td><code>self-comparison</code></td><td>warning</td><td>&mdash;</td><td>Value is compared to itself, making the condition constant</td></tr>
+      <tr><td><code>shadow</code></td><td>warning</td><td>&mdash;</td><td>Local binding shadows an outer binding with the same name</td></tr>
+      <tr><td><code>trailing-list-comma</code></td><td>hint</td><td>yes</td><td>Trailing comma in call argument list is redundant</td></tr>
+      <tr><td><code>unreachable-code</code></td><td>warning</td><td>&mdash;</td><td>Code after a guaranteed terminator cannot execute</td></tr>
+      <tr><td><code>unused-import</code></td><td>warning</td><td>yes</td><td>Import alias is never referenced</td></tr>
+      <tr><td><code>unused-local</code></td><td>warning</td><td>&mdash;</td><td>Local binding is never referenced</td></tr>
+      <tr><td><code>unused-param</code></td><td>warning</td><td>&mdash;</td><td>Parameter is never referenced</td></tr>
+      <tr><td><code>useless-expression</code></td><td>warning</td><td>&mdash;</td><td>Expression statement has no side effects and its result is unused</td></tr>
     </table>
   </div>
-  <p>Severity levels: <code>error</code> (fail build), <code>warn</code> (report only), <code>off</code> (disabled). Rules default to <code>warn</code> unless noted in the manual.</p>
+  <p>Severity levels: <code>error</code> (fail build), <code>warning</code>, and <code>hint</code>.</p>
 </section>
 
 <!-- ────────────────────────────────────────────────────────────────────────── -->

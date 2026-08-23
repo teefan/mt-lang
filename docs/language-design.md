@@ -473,12 +473,12 @@ Current implemented shape:
 
 - `async function` lifts its return type to `Task[T]`
 - `await` is only valid inside async functions
-- async entrypoint bootstrapping is compiler-owned, but async helpers stay explicit library surface; import `std.async as aio` when user code needs `sleep`, `work`, `completed`, `result`, `wait`, `run`, or runtime control
+- async entrypoint bootstrapping is compiler-owned, but async helpers stay explicit library surface; import `std.async as aio` when user code needs `sleep`, `work`, `completed`, `result`, `wait`, `run`, `wait_on`, `with_runtime`, or runtime control
 - `aio.wait(...)` and `aio.run(...)` accept direct task expressions as well as zero-arg task roots; the compiler rewrites the direct-task form into the deferred root shape automatically
 - async bodies support ordinary local declarations, including `let ... else:`, assignments, returns, `if`, `while`, single-form and parallel `for`, `match`, `defer`, `unsafe`, and deferred cleanup bodies that `await`
 - await placement is handled by the normalization pass which hoists nested awaits into `let` bindings, so `await` is supported in all expression contexts (call arguments, binary operations, if-expr, match-expr, member access, index access, format strings)
 
-The default async model is a language-integrated entry boundary. `std.async` remains the explicit high-level helper surface for operations such as `sleep`, `work`, `completed`, `result`, `wait`, `wait_on`, and `with_runtime`, while the normal runtime model stays the single integrated libuv-backed runtime.
+The default async model is a language-integrated entry boundary. `std.async` remains the explicit high-level helper surface for operations such as `sleep`, `work`, `completed`, `result`, `wait`, `run`, `wait_on`, and `with_runtime`, while the normal runtime model stays the single integrated libuv-backed runtime.
 
 #### Concurrency: `parallel for` and `parallel:` blocks
 

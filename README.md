@@ -911,6 +911,8 @@ A `field_handle`'s `.type` is usable directly **in type position** within a comp
 
 ### Standard library
 
+The authoritative module catalog is `mtc std list [--json]`; it discovers every hand-written module shipped in `std/` with its category, description, and path. Generated binding modules (`std/c/*` and imported-binding wrappers such as `raylib` or `zstd`) are excluded from `list` but stay viewable with `mtc std show`.
+
 Core modules in `std/`:
 
 - `std.linear_algebra` — extends native vector/matrix/quaternion types with `dot`, `cross`, `length`, `normalized`, `lerp`, `identity`, `transpose`, `conjugate` (pure Mt, no C dependency beyond `std.math` for `sqrt`)
@@ -922,7 +924,7 @@ Core modules in `std/`:
 - `std.encoding` — UTF-8 validation (`is_valid_utf8`, `utf8_codepoint_count`, `decode_utf8_codepoint`, `utf8_overlong_check`)
 - `std.string.String` — growable owned UTF-8 text
 - `std.mem.heap`, `std.mem.arena`, `std.mem.pool`, `std.mem.stack`, `std.mem.tracking`, `std.mem.endian` — allocators and memory utilities
-- `std.async` — task runtime (`sleep`, `work`, `completed`, `result`, `wait`, `run`)
+- `std.async` — task runtime (`sleep`, `work`, `completed`, `result`, `wait`, `run`, plus explicit-runtime variants `wait_on`, `work_on`, `sleep_on`, `run_on`, `pump`, `with_runtime`)
 - `std.option.Option[T]` — optional value with `is_some`, `is_none`, `unwrap`, `expect`, `unwrap_or`, `unwrap_or_else` (auto-imported via prelude)
 - `std.result.Result[T, E]` — fallible computation with `is_success`, `is_failure`, `unwrap`, `unwrap_error`, `unwrap_or`, `unwrap_or_else`, `ok`, `error`, `map_error` (auto-imported via prelude)
 
@@ -1241,6 +1243,13 @@ Resolve a module by name, build it, and run it:
 mtc run-module <module>       # Resolve, build, and run a module by name (e.g. std.http.server)
 ```
 
+Standard library inspection:
+
+```
+mtc std list [--json]         # List hand-written std modules grouped by category
+mtc std show MODULE           # Print a module's source (dotted or slashed names)
+```
+
 Toolchain maintenance:
 
 ```
@@ -1266,14 +1275,13 @@ Global options work with any command (before or after the subcommand, up to a `-
 Diagnostic output uses standard compiler format (file:line:column with source context, error codes, and caret highlighting):
 
 ```
-[E0001] error: unknown type floa
-  --> file.mt:1:16
+error[sema/error]: unknown type floa -- /tmp/diag_probe.mt:2:12
    |
-   1 | type Seconds = floa
-     |                ^~~~
-  note: did you mean 'float'?
+    2 |     let x: floa = 1
+      |            ^~~~
+  = help: did you mean 'float'?
 
-error: could not check due to 1 previous error
+1 error found
 ```
 
 `mtc check` surfaces both errors and linter warnings:
