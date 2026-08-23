@@ -2,7 +2,7 @@
 
 source "https://rubygems.org"
 
-ruby "4.0.3"
+ruby "4.0.6"
 
 gem "rake", "~> 13.4"
 gem "rexml", "~> 3.4"
