@@ -612,7 +612,11 @@ extending DenseGraph[T]:
         return ShortestPaths(dist = dist, prev = prev)
 
 
-    public function astar(source: ptr_uint, target: ptr_uint, heuristic: fn(node: ptr_uint) -> float) -> vec.Vec[ptr_uint]:
+    public function astar(
+        source: ptr_uint,
+        target: ptr_uint,
+        heuristic: fn(node: ptr_uint) -> float
+    ) -> vec.Vec[ptr_uint]:
         var path = vec.Vec[ptr_uint].create()
         let n = this.node_count()
         if n == 0 or source >= n or target >= n:

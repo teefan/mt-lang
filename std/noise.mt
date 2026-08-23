@@ -97,7 +97,11 @@ function perlin3d_impl(perm: array[ubyte, 512], x: float, y: float, z: float) ->
     let y1 = lerp(x1, x2, v)
 
     let x3 = lerp(grad3d(int<-perm[AA + 1], xf, yf, zf - 1.0), grad3d(int<-perm[BA + 1], xf - 1.0, yf, zf - 1.0), u)
-    let x4 = lerp(grad3d(int<-perm[AB + 1], xf, yf - 1.0, zf - 1.0), grad3d(int<-perm[BB + 1], xf - 1.0, yf - 1.0, zf - 1.0), u)
+    let x4 = lerp(
+        grad3d(int<-perm[AB + 1], xf, yf - 1.0, zf - 1.0),
+        grad3d(int<-perm[BB + 1], xf - 1.0, yf - 1.0, zf - 1.0),
+        u
+    )
     let y2 = lerp(x3, x4, v)
 
     return lerp(y1, y2, w)

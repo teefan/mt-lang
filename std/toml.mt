@@ -937,11 +937,15 @@ function parse_value(parser: ref[Parser]) -> Result[Value, ParseError]:
 
 
 function document_find_table_index(document: ref[Document], name: str) -> Option[ptr_uint]:
-    return document.tables.find_index(proc(table_ptr: ptr[Table]) -> bool: unsafe: read(table_ptr).name.as_str().equal(name))
+    return document.tables.find_index(
+        proc(table_ptr: ptr[Table]) -> bool: unsafe: read(table_ptr).name.as_str().equal(name)
+    )
 
 
 function document_find_array_table_index(document: ref[Document], name: str) -> Option[ptr_uint]:
-    return document.array_tables.find_index(proc(table_ptr: ptr[ArrayTable]) -> bool: unsafe: read(table_ptr).name.as_str().equal(name))
+    return document.array_tables.find_index(
+        proc(table_ptr: ptr[ArrayTable]) -> bool: unsafe: read(table_ptr).name.as_str().equal(name)
+    )
 
 
 function current_object_contains(document: ref[Document], cursor: Cursor, key: str) -> bool:
@@ -1166,10 +1170,7 @@ function bare_header_name(text_value: str) -> bool:
 
 
 function append_header_name(output: ref[string.String], name: str) -> void:
-    if bare_header_name(name):
-        output.append(name)
-    else:
-        append_quoted_string(output, name)
+    if bare_header_name(name): output.append(name) else: append_quoted_string(output, name)
 
 
 function append_entry_key(output: ref[string.String], key: str) -> void:

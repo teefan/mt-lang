@@ -105,10 +105,7 @@ extending Vec[T]:
             new_capacity = 4
 
         while new_capacity < min_capacity:
-            if new_capacity > heap.ptr_uint_max / 2:
-                new_capacity = min_capacity
-            else:
-                new_capacity *= 2
+            if new_capacity > heap.ptr_uint_max / 2: new_capacity = min_capacity else: new_capacity *= 2
 
         let resized = heap.resize[T](this.data, new_capacity) else:
             fatal(c"vec.reserve out of memory")
@@ -420,17 +417,15 @@ extending Vec[T]:
             while low < high:
                 let mid = low + (high - low) / 2
                 let cmp = order[T](target, data_ptr + mid)
-                if cmp < 0:
-                    high = mid
-                else if cmp > 0:
-                    low = mid + 1
-                else:
-                    return Option[ptr_uint].some(value = mid)
+                if cmp < 0: high = mid else if cmp > 0: low = mid + 1 else: return Option[ptr_uint].some(value = mid)
 
             return Option[ptr_uint].none
 
 
-    public function binary_search_by(target: ptr[T], comparator: proc(target: ptr[T], element: ptr[T]) -> int) -> Option[ptr_uint]:
+    public function binary_search_by(
+        target: ptr[T],
+        comparator: proc(target: ptr[T], element: ptr[T]) -> int
+    ) -> Option[ptr_uint]:
         let data = this.data else:
             fatal(c"vec.binary_search_by missing storage")
 
@@ -441,11 +436,6 @@ extending Vec[T]:
             while low < high:
                 let mid = low + (high - low) / 2
                 let cmp = comparator(target, data_ptr + mid)
-                if cmp < 0:
-                    high = mid
-                else if cmp > 0:
-                    low = mid + 1
-                else:
-                    return Option[ptr_uint].some(value = mid)
+                if cmp < 0: high = mid else if cmp > 0: low = mid + 1 else: return Option[ptr_uint].some(value = mid)
 
             return Option[ptr_uint].none

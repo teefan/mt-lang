@@ -713,7 +713,8 @@ public function build_beacon_probe() -> bytes.Bytes:
 public function is_beacon_probe(data: span[ubyte]) -> bool:
     if data.len < beacon_probe_len:
         return false
-    return data[0] == beacon_magic[0] and data[1] == beacon_magic[1] and data[2] == beacon_magic[2] and data[3] == beacon_magic[3]
+    return data[0] == beacon_magic[0] and data[1] == beacon_magic[1] and
+        data[2] == beacon_magic[2] and data[3] == beacon_magic[3]
 
 
 public function build_beacon_response(info: ref[LobbyInfo]) -> bytes.Bytes:

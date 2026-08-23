@@ -111,7 +111,8 @@ function ascii_digit(value: ubyte) -> bool:
 
 
 function leading_slash_drive_path(path_text: str) -> bool:
-    return path_text.len >= 3 and path_text.byte_at(0) == 47 and ascii_letter(path_text.byte_at(1)) and path_text.byte_at(2) == 58
+    return path_text.len >= 3 and path_text.byte_at(0) == 47 and
+        ascii_letter(path_text.byte_at(1)) and path_text.byte_at(2) == 58
 
 
 function owned_utf8_view(value: string.String) -> Option[str]:

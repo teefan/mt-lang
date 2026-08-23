@@ -169,7 +169,10 @@ function generate_handshake_key() -> Result[ulong, net.Error]:
 
 function decode_uint_at(data: span[ubyte], offset: ptr_uint) -> uint:
     unsafe:
-        return uint<-read(data.data + offset) | (uint<-read(data.data + offset + 1) << 8) | (uint<-read(data.data + offset + 2) << 16) | (uint<-read(data.data + offset + 3) << 24)
+        return uint<-read(data.data + offset) |
+            (uint<-read(data.data + offset + 1) << 8) |
+            (uint<-read(data.data + offset + 2) << 16) |
+            (uint<-read(data.data + offset + 3) << 24)
 
 
 function channel_config_for(config: Config) -> chan.Config:
@@ -315,9 +318,7 @@ extending Connection:
                 defer: hb.release()
                 let send_result = await this.channel.send(hb.as_span())
                 match send_result:
-                    Result.failure:
-                        pass
-                    Result.success:
+                    Result.failure | Result.success:
                         pass
                 this.last_heartbeat_sent = frame
 
@@ -327,9 +328,7 @@ extending Connection:
 
         let channel_tick_result = await this.channel.tick(frame)
         match channel_tick_result:
-            Result.failure:
-                pass
-            Result.success:
+            Result.failure | Result.success:
                 pass
 
         await aio.sleep(1)
@@ -467,9 +466,7 @@ extending Connection:
         let send_result = await this.channel.send_reliable(d.as_span(), 0)
         this.state = ConnectionState.disconnected
         match send_result:
-            Result.failure:
-                return Result[bool, net.Error].success(value = true)
-            Result.success:
+            Result.failure | Result.success:
                 return Result[bool, net.Error].success(value = true)
 
 
@@ -657,9 +654,7 @@ extending Session:
                             defer: addr.release()
                             let send_result = await this.host.send(addr, hb.as_span())
                             match send_result:
-                                Result.failure:
-                                    pass
-                                Result.success:
+                                Result.failure | Result.success:
                                     pass
                         Result.failure:
                             pass
@@ -680,9 +675,7 @@ extending Session:
 
         let host_tick_result = await this.host.tick(frame)
         match host_tick_result:
-            Result.failure:
-                pass
-            Result.success:
+            Result.failure | Result.success:
                 pass
 
         await aio.sleep(1)
@@ -799,9 +792,7 @@ extending Session:
                 defer: d.release()
                 let send_result = await this.host.send_reliable(address, d.as_span(), 0)
                 match send_result:
-                    Result.failure:
-                        pass
-                    Result.success:
+                    Result.failure | Result.success:
                         pass
                 mark_peer_disconnected(ref_of(this), peer_id)
                 this.event_queue.push_back(PeerEvent(
@@ -1062,9 +1053,7 @@ async function drain_outgoing_session(session: ref[Session]) -> Result[bool, net
                         0
                     )
                     match send_result:
-                        Result.failure:
-                            pass
-                        Result.success:
+                        Result.failure | Result.success:
                             pass
                 else:
                     let send_result = await session.host.send(
@@ -1072,9 +1061,7 @@ async function drain_outgoing_session(session: ref[Session]) -> Result[bool, net
                         outgoing.payload.as_span()
                     )
                     match send_result:
-                        Result.failure:
-                            pass
-                        Result.success:
+                        Result.failure | Result.success:
                             pass
 
 

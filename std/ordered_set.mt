@@ -50,7 +50,8 @@ extending OrderedSet[T]:
             return 0
 
         unsafe:
-            return OrderedSet[T].height(read(ptr[Node[T]]<-node).left) - OrderedSet[T].height(read(ptr[Node[T]]<-node).right)
+            return OrderedSet[T].height(read(ptr[Node[T]]<-node).left) -
+                OrderedSet[T].height(read(ptr[Node[T]]<-node).right)
 
 
     static function minimum(node: ptr[Node[T]]?) -> ptr[Node[T]]?:
@@ -309,10 +310,7 @@ extending OrderedSet[T]:
         else:
             unsafe:
                 let parent_ptr = ptr[Node[T]]<-parent
-                if location.compare < 0:
-                    read(parent_ptr).left = node
-                else:
-                    read(parent_ptr).right = node
+                if location.compare < 0: read(parent_ptr).left = node else: read(parent_ptr).right = node
 
         this.len += 1
         OrderedSet[T].rebalance(this, parent)

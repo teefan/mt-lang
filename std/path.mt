@@ -17,10 +17,7 @@ public function normalize_separators(path: str) -> string.String:
     var index: ptr_uint = 0
     while index < path.len:
         let value = path.byte_at(index)
-        if value == 92:
-            result.push_byte(47)
-        else:
-            result.push_byte(value)
+        if value == 92: result.push_byte(47) else: result.push_byte(value)
         index += 1
 
     return result

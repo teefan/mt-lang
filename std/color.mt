@@ -242,4 +242,4 @@ extending Color:
 
 
     public function with_alpha(a: ubyte) -> Color:
-        return Color(r = this.r, g = this.g, b = this.b, a = a)
+        return this.with(a = a)

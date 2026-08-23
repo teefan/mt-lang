@@ -400,35 +400,24 @@ function parse_ss3_event(buffer: ref[vec.Vec[ubyte]]) -> Option[Event]:
     match get_ref_byte(buffer, 2):
         Option.some as payload:
             consume_bytes(buffer, 3)
-            match payload.value:
-                80:
-                    return Option[Event].some(value = key_event(KeyCode.function_1, 0, false, false, false, false))
-                81:
-                    return Option[Event].some(value = key_event(KeyCode.function_2, 0, false, false, false, false))
-                82:
-                    return Option[Event].some(value = key_event(KeyCode.function_3, 0, false, false, false, false))
-                83:
-                    return Option[Event].some(value = key_event(KeyCode.function_4, 0, false, false, false, false))
-                72:
-                    return Option[Event].some(value = key_event(KeyCode.home, 0, false, false, false, false))
-                70:
-                    return Option[Event].some(value = key_event(KeyCode.end, 0, false, false, false, false))
-                _:
-                    return Option[Event].some(value = key_event(KeyCode.unknown, 0, false, false, false, false))
+            return match payload.value:
+                80: Option[Event].some(value = key_event(KeyCode.function_1, 0, false, false, false, false))
+                81: Option[Event].some(value = key_event(KeyCode.function_2, 0, false, false, false, false))
+                82: Option[Event].some(value = key_event(KeyCode.function_3, 0, false, false, false, false))
+                83: Option[Event].some(value = key_event(KeyCode.function_4, 0, false, false, false, false))
+                72: Option[Event].some(value = key_event(KeyCode.home, 0, false, false, false, false))
+                70: Option[Event].some(value = key_event(KeyCode.end, 0, false, false, false, false))
+                _: Option[Event].some(value = key_event(KeyCode.unknown, 0, false, false, false, false))
         Option.none:
             return Option[Event].none
 
 
 function decode_mouse_button(code: int) -> MouseButton:
-    match code & 3:
-        0:
-            return MouseButton.left
-        1:
-            return MouseButton.middle
-        2:
-            return MouseButton.right
-        _:
-            return MouseButton.none
+    return match code & 3:
+        0: MouseButton.left
+        1: MouseButton.middle
+        2: MouseButton.right
+        _: MouseButton.none
 
 
 function parse_mouse_event(buffer: ref[vec.Vec[ubyte]]) -> Option[Event]:
@@ -810,20 +799,14 @@ public function set_rgb_background(red: int, green: int, blue: int) -> Result[bo
 public function set_bold(enabled: bool) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(6)
     defer: sequence.release()
-    if enabled:
-        append_csi(ref_of(sequence), "1m")
-    else:
-        append_csi(ref_of(sequence), "22m")
+    if enabled: append_csi(ref_of(sequence), "1m") else: append_csi(ref_of(sequence), "22m")
     return write_stdout_sequence(sequence, "terminal bold styling failed")
 
 
 public function set_underline(enabled: bool) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(6)
     defer: sequence.release()
-    if enabled:
-        append_csi(ref_of(sequence), "4m")
-    else:
-        append_csi(ref_of(sequence), "24m")
+    if enabled: append_csi(ref_of(sequence), "4m") else: append_csi(ref_of(sequence), "24m")
     return write_stdout_sequence(sequence, "terminal underline styling failed")
 
 

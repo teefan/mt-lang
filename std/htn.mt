@@ -110,7 +110,15 @@ function plan_task[World, Context](
 
                 for subtask_name_ptr in method.subtasks:
                     let subtask_name = unsafe: read(subtask_name_ptr)
-                    let sub_plan = plan_task(planner, context, current_world, subtask_name, depth + 1, iterations, reason)
+                    let sub_plan = plan_task(
+                        planner,
+                        context,
+                        current_world,
+                        subtask_name,
+                        depth + 1,
+                        iterations,
+                        reason
+                    )
                     match sub_plan:
                         Option.none:
                             success = false

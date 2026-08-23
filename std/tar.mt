@@ -119,10 +119,7 @@ function sort_string_values(values: ref[vec.Vec[string.String]]) -> void:
             var should_swap = false
             unsafe:
                 should_swap = compare_text(read(previous_ptr).as_str(), read(current_ptr).as_str()) > 0
-            if should_swap:
-                values.swap(current - 1, current)
-            else:
-                break
+            if should_swap: values.swap(current - 1, current) else: break
 
             current -= 1
 
@@ -318,10 +315,7 @@ function append_header(
         header[checksum_index] = space_byte
         checksum_index += 1
 
-    if kind == EntryKind.directory:
-        header[156] = directory_type_flag
-    else:
-        header[156] = file_type_flag
+    if kind == EntryKind.directory: header[156] = directory_type_flag else: header[156] = file_type_flag
 
     header[257] = 117
     header[258] = 115
@@ -592,7 +586,9 @@ function checked_destination_path(destination_root: str, relative_path: str) -> 
             var normalized = payload.value
             defer: normalized.release()
             let normalized_path = normalized.as_str()
-            let escapes_parent = normalized_path.len == 2 and normalized_path.byte_at(0) == 46 and normalized_path.byte_at(1) == 46
+            let escapes_parent = normalized_path.len == 2 and
+                normalized_path.byte_at(0) == 46 and
+                normalized_path.byte_at(1) == 46
             if escapes_parent or normalized_path.starts_with("../"):
                 destination_path.release()
                 return Result[

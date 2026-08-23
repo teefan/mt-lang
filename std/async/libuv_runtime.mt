@@ -94,7 +94,7 @@ function noop_waiter(_frame: ptr[void]) -> void:
 
 function require_current_runtime() -> Runtime:
     if not current_runtime_active:
-        fatal(c"async runtime requires an active runtime; use async.wait or async.run, or call the explicit *_on helpers")
+        fatal(c"async runtime requires an active runtime; use async.wait or async.run, or call the *_on helpers")
     return current_runtime
 
 

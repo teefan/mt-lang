@@ -138,10 +138,7 @@ function ascii_lower(text_value: str) -> string.String:
     var index: ptr_uint = 0
     while index < text_value.len:
         let value = text_value.byte_at(index)
-        if value >= 65 and value <= 90:
-            result.push_byte(value + 32)
-        else:
-            result.push_byte(value)
+        if value >= 65 and value <= 90: result.push_byte(value + 32) else: result.push_byte(value)
         index += 1
 
     return result

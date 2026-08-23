@@ -44,7 +44,13 @@ extending vec2:
         return desired_vel - velocity
 
 
-    public static function arrive(position: vec2, velocity: vec2, target: vec2, max_speed: float, slowing_distance: float) -> vec2:
+    public static function arrive(
+        position: vec2,
+        velocity: vec2,
+        target: vec2,
+        max_speed: float,
+        slowing_distance: float
+    ) -> vec2:
         let offset = target - position
         let distance = offset.length()
         if distance < 0.001:
@@ -54,7 +60,13 @@ extending vec2:
         return desired_vel - velocity
 
 
-    public static function pursuit(position: vec2, velocity: vec2, target_pos: vec2, target_vel: vec2, max_speed: float) -> vec2:
+    public static function pursuit(
+        position: vec2,
+        velocity: vec2,
+        target_pos: vec2,
+        target_vel: vec2,
+        max_speed: float
+    ) -> vec2:
         let offset = target_pos - position
         let distance = offset.length()
         let my_speed = velocity.length()
@@ -65,7 +77,13 @@ extending vec2:
         return vec2.seek(position, velocity, future, max_speed)
 
 
-    public static function evade(position: vec2, velocity: vec2, threat_pos: vec2, threat_vel: vec2, max_speed: float) -> vec2:
+    public static function evade(
+        position: vec2,
+        velocity: vec2,
+        threat_pos: vec2,
+        threat_vel: vec2,
+        max_speed: float
+    ) -> vec2:
         let offset = threat_pos - position
         let distance = offset.length()
         let my_speed = velocity.length()
@@ -76,7 +94,12 @@ extending vec2:
         return vec2.flee(position, velocity, future, max_speed)
 
 
-    public static function wander(velocity: vec2, wander_angle: float, wander_distance: float, wander_radius: float) -> vec2:
+    public static function wander(
+        velocity: vec2,
+        wander_angle: float,
+        wander_distance: float,
+        wander_radius: float
+    ) -> vec2:
         if velocity.length() < 0.001:
             return zero[vec2]
         let forward = set_magnitude(velocity, 1.0)

@@ -72,7 +72,8 @@ public function build_punch_probe() -> bytes.Bytes:
 public function is_punch_probe(data: span[ubyte]) -> bool:
     if data.len < 4z:
         return false
-    return data[0] == punch_magic[0] and data[1] == punch_magic[1] and data[2] == punch_magic[2] and data[3] == punch_magic[3]
+    return data[0] == punch_magic[0] and data[1] == punch_magic[1] and
+        data[2] == punch_magic[2] and data[3] == punch_magic[3]
 
 
 function result_from_datagram(

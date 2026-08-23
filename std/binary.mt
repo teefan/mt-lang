@@ -95,10 +95,7 @@ extending Writer:
 
 
     public editable function write_bool(value: bool) -> void:
-        if value:
-            writer_append_byte(ref_of(this), 1)
-        else:
-            writer_append_byte(ref_of(this), 0)
+        if value: writer_append_byte(ref_of(this), 1) else: writer_append_byte(ref_of(this), 0)
 
 
     public editable function write_bytes(data: span[ubyte]) -> void:

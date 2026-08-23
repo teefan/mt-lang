@@ -368,10 +368,7 @@ extending OrderedMap[K, V]:
         else:
             unsafe:
                 let parent_ptr = ptr[Node[K, V]]<-parent
-                if location.compare < 0:
-                    read(parent_ptr).left = node
-                else:
-                    read(parent_ptr).right = node
+                if location.compare < 0: read(parent_ptr).left = node else: read(parent_ptr).right = node
 
         this.len += 1
         OrderedMap[K, V].rebalance(this, parent)
@@ -404,10 +401,7 @@ extending OrderedMap[K, V]:
         else:
             unsafe:
                 let parent_ptr = ptr[Node[K, V]]<-parent
-                if location.compare < 0:
-                    read(parent_ptr).left = node
-                else:
-                    read(parent_ptr).right = node
+                if location.compare < 0: read(parent_ptr).left = node else: read(parent_ptr).right = node
 
         this.len += 1
         OrderedMap[K, V].rebalance(this, parent)

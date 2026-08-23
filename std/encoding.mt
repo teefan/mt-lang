@@ -26,10 +26,7 @@ public function utf8_codepoint_count(text: str) -> ptr_uint:
     while index < text.len:
         let b = text.byte_at(index)
         let len = utf8_codepoint_length(b)
-        if len == 0:
-            index += 1
-        else:
-            index += len
+        if len == 0: index += 1 else: index += len
         count += 1
 
     if index != text.len:

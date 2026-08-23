@@ -233,11 +233,8 @@ function tick_node[Context](tree: ref[Tree[Context]], node_id: ptr_uint, context
                 match child_status:
                     Status.success:
                         return Status.success
-                    Status.failure:
+                    Status.failure | Status.running:
                         return Status.running
-                    Status.running:
-                        return Status.running
-
             NodeKind.until_failure:
                 let child_ptr = read(node).children.first() else:
                     return Status.failure

@@ -121,10 +121,7 @@ extending String:
             new_capacity = 4
 
         while new_capacity < min_capacity:
-            if new_capacity > heap.ptr_uint_max / 2:
-                new_capacity = min_capacity
-            else:
-                new_capacity *= 2
+            if new_capacity > heap.ptr_uint_max / 2: new_capacity = min_capacity else: new_capacity *= 2
 
         let resized = heap.resize[ubyte](this.data, new_capacity) else:
             fatal(c"string.reserve out of memory")

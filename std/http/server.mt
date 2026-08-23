@@ -69,10 +69,7 @@ public function request_query_param(request: Request, key: str) -> Option[str]:
 
                     return Option[str].some(value = decoded.as_str())
 
-        if amp >= query_str.len:
-            start = query_str.len
-        else:
-            start = amp + 1
+        if amp >= query_str.len: start = query_str.len else: start = amp + 1
 
     return Option[str].none
 

@@ -32,10 +32,7 @@ public function append_cstr(output: ref[string.String], c_text: cstr) -> void:
 
 
 public function append_bool(output: ref[string.String], bool_value: bool) -> void:
-    if bool_value:
-        output.append("true")
-    else:
-        output.append("false")
+    if bool_value: output.append("true") else: output.append("false")
 
 
 function append_formatted_float(output: ref[string.String], format: cstr, number: double) -> void:

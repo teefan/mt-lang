@@ -188,10 +188,7 @@ extending LinkedMap[K, V]:
             new_capacity = 8
 
         while new_capacity < min_capacity:
-            if new_capacity > heap.ptr_uint_max / 2:
-                new_capacity = min_capacity
-            else:
-                new_capacity *= 2
+            if new_capacity > heap.ptr_uint_max / 2: new_capacity = min_capacity else: new_capacity *= 2
 
         let new_buckets = heap.must_alloc_zeroed[ptr[Node[K, V]]?](new_capacity)
         let old_buckets = this.buckets
@@ -243,10 +240,7 @@ extending LinkedMap[K, V]:
             )
             read(bucket_ptr + index) = node
 
-            if tail == null:
-                this.head = node
-            else:
-                read(ptr[Node[K, V]]<-tail).order_next = node
+            if tail == null: this.head = node else: read(ptr[Node[K, V]]<-tail).order_next = node
             this.tail = node
 
         this.len += 1

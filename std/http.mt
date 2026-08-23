@@ -639,10 +639,7 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
                 head.release()
                 return Result[ResponseHead, Error].failure(error = response_error("unsupported Transfer-Encoding"))
 
-        if next_line_end == header_text.len:
-            index = header_text.len
-        else:
-            index = next_line_end + 2
+        if next_line_end == header_text.len: index = header_text.len else: index = next_line_end + 2
 
     if head.chunked:
         head.content_length = Option[ptr_uint].none
@@ -842,7 +839,9 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                                         return Result[
                                             bytes.Bytes,
                                             Error
-                                        ].failure(error = response_error("chunked response ended before trailers were complete"))
+                                        ].failure(error = response_error(
+                                            "chunked response ended before trailers were complete"
+                                        ))
 
                                     buffer.append_span(chunk.as_span())
                                     chunk.release()

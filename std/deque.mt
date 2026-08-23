@@ -114,10 +114,7 @@ extending Deque[T]:
             new_capacity = 4
 
         while new_capacity < min_capacity:
-            if new_capacity > heap.ptr_uint_max / 2:
-                new_capacity = min_capacity
-            else:
-                new_capacity *= 2
+            if new_capacity > heap.ptr_uint_max / 2: new_capacity = min_capacity else: new_capacity *= 2
 
         let new_data = heap.must_alloc[T](new_capacity)
         let old_data = this.data
@@ -191,10 +188,7 @@ extending Deque[T]:
         let data = this.data else:
             fatal(c"deque.push_front missing storage")
 
-        if this.len == 0:
-            this.head = 0
-        else:
-            this.head = Deque[T].previous_index(this.head, this.capacity)
+        if this.len == 0: this.head = 0 else: this.head = Deque[T].previous_index(this.head, this.capacity)
 
         unsafe:
             let data_ptr = ptr[T]<-data

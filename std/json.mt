@@ -369,7 +369,7 @@ function render_with_mode(value: Value, pretty: bool) -> Result[string.String, E
     if pretty:
         let rendered_ptr = cjson.print(raw_value) else:
             return Result[string.String, Error].failure(error = error_message("json print failed"))
-        defer: raw.cJSON_free(unsafe: rendered_ptr)
+        defer: raw.cJSON_free(rendered_ptr)
         return Result[
             string.String,
             Error
@@ -377,7 +377,7 @@ function render_with_mode(value: Value, pretty: bool) -> Result[string.String, E
 
     let rendered_ptr = cjson.print_unformatted(raw_value) else:
         return Result[string.String, Error].failure(error = error_message("json print failed"))
-    defer: raw.cJSON_free(unsafe: rendered_ptr)
+    defer: raw.cJSON_free(rendered_ptr)
     return Result[string.String, Error].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
 
 
