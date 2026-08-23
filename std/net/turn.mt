@@ -342,9 +342,11 @@ public function parse_data_indication(
     var attr_len: ptr_uint = read_ushort_be(data, 2z)
     var offset: ptr_uint = turn_header_len
     var found_peer: bool = false
-    var peer_addr: net.SocketAddress = zero[net.SocketAddress]
+    # Ownership is tracked manually here: both bindings are released on the
+    # failure path below and moved into TurnDatagram on success.
+    var peer_addr: net.SocketAddress = zero[net.SocketAddress]  # lint: ignore(owning-release-leak)
     var found_data: bool = false
-    var payload: bytes.Bytes = bytes.Bytes.empty()
+    var payload: bytes.Bytes = bytes.Bytes.empty()  # lint: ignore(owning-release-leak)
 
     while attr_len >= 4z:
         if offset + 4z > data.len:

@@ -622,7 +622,9 @@ public function archive_directory(
     if archive_root_name.len != 0 and path_ops.is_absolute(archive_root_name):
         return Result[bytes.Bytes, Error].failure(error = error_message("tar archive root name must be relative"))
 
-    var output = vec.Vec[ubyte].create()
+    # Consumed by take_vec_bytes below; the flow heuristic cannot see
+    # through the loop above.
+    var output = vec.Vec[ubyte].create()  # lint: ignore(owning-release-leak)
     match append_directory_tree(root_path, archive_root_name, include_hidden, ref_of(output)):
         Result.failure as payload:
             output.release()

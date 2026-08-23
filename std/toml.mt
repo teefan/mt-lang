@@ -634,7 +634,8 @@ function parse_string(parser: ref[Parser]) -> Result[string.String, ParseError]:
     if not parser_consume_byte(parser, byte_quote):
         return Result[string.String, ParseError].failure(error= parse_error(parser, "expected string"))
 
-    var result = string.String.create()
+    # Moved into the success result on every exit path.
+    var result = string.String.create()  # lint: ignore(owning-release-leak)
     while true:
         match parser_peek_byte(parser):
             Option.none:
@@ -1100,7 +1101,8 @@ function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[
 
 public function parse(text_value: str) -> Result[Document, ParseError]:
     var parser = Parser(text_value = text_value, index = 0, line = 1, column = 1)
-    var document = Document.create()
+    # Moved into the success result; released on every failure return.
+    var document = Document.create()  # lint: ignore(owning-release-leak)
     var cursor = Cursor(kind = SectionKind.root, table_index = 0, array_table_index = 0, array_item_index = 0)
 
     while true:
