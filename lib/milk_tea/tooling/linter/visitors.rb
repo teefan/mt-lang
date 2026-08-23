@@ -366,6 +366,10 @@ module MilkTea
       end
       def check_redundant_unsafe(node)
         return unless @sema_facts
+        # Generic bodies are only fully checked once instantiated elsewhere,
+        # so required-unsafe facts are incomplete for them: an unsafe block in
+        # a generic body may be required by concrete instances.
+        return if generic_function_context?
         return if @sema_facts.required_unsafe_lines.include?(node.line)
 
         @warnings << Warning.new(

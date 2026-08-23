@@ -77,6 +77,7 @@ module MilkTea
       redundant-else
       redundant-return
       redundant-type-annotation
+      redundant-unsafe
       reserved-primitive-name
       trailing-list-comma
     ].freeze
@@ -96,6 +97,7 @@ module MilkTea
       "redundant-else" => "Remove redundant else",
       "redundant-return" => "Remove redundant return",
       "redundant-type-annotation" => "Remove redundant type annotation",
+      "redundant-unsafe" => "Remove redundant unsafe",
       "prefer-let-else" => "Rewrite as let-else",
       "prefer-var-else" => "Rewrite as var-else",
       "prefer-inline-methods" => "Inline methods into struct",

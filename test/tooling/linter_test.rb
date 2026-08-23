@@ -3524,6 +3524,23 @@ class MilkTeaLinterPreferInlineMethodsTest < Minitest::Test
     assert_equal 4, unsafe.first.line
   end
 
+  def test_redundant_unsafe_does_not_warn_inside_generic_bodies
+    source = <<~MT
+      struct Holder[T]:
+          value: ptr[T]?
+
+      extending Holder[T]:
+          public function read_at(index: ptr_uint) -> T:
+              let storage = this.value else:
+                  fatal(c"missing storage")
+              unsafe:
+                  return read(storage + index)
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-unsafe" }
+    assert_empty warnings
+  end
+
   def test_redundant_unsafe_warns_on_own_deref
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function use_owned(p: own[int]) -> int:
@@ -3533,5 +3550,98 @@ class MilkTeaLinterPreferInlineMethodsTest < Minitest::Test
     unsafe = warnings.select { |w| w.code == "redundant-unsafe" }
     assert_equal 1, unsafe.length
     assert_equal 2, unsafe.first.line
+  end
+
+  def test_fix_source_removes_redundant_unsafe_block_and_dedents_body
+    source = <<~MT
+      function main() -> int:
+          var x: int = 1
+          unsafe:
+              x = x + 1
+              x = x * 2
+          return x
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-unsafe"])
+
+    assert_equal <<~MT, fixed
+      function main() -> int:
+          var x: int = 1
+          x = x + 1
+          x = x * 2
+          return x
+    MT
+  end
+
+  def test_fix_source_removes_inline_redundant_unsafe_expression
+    source = <<~MT
+      function main() -> int:
+          return unsafe: 41 + 1
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-unsafe"])
+
+    assert_equal <<~MT, fixed
+      function main() -> int:
+          return 41 + 1
+    MT
+  end
+
+  def test_fix_source_removes_trailing_redundant_unsafe_block_at_end_of_file
+    source = <<~MT
+      function main() -> int:
+          var x: int = 3
+          unsafe:
+              x = x + 1
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-unsafe"])
+
+    assert_equal <<~MT, fixed
+      function main() -> int:
+          var x: int = 3
+          x = x + 1
+    MT
+  end
+
+  def test_fix_source_keeps_blank_lines_inside_removed_unsafe_block
+    source = <<~MT
+      function main() -> int:
+          var x: int = 1
+          unsafe:
+              x = x + 1
+
+              x = x * 2
+          return x
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-unsafe"])
+
+    assert_equal <<~MT, fixed
+      function main() -> int:
+          var x: int = 1
+          x = x + 1
+
+          x = x * 2
+          return x
+    MT
+  end
+
+  def test_fix_source_does_not_remove_unsafe_block_containing_unsafe_operations
+    source = <<~MT
+      import std.mem.ptr as mem_ptr
+
+      function main() -> void:
+          var x: int = 1
+          let p: ptr[int] = ptr_of(x)
+          unsafe:
+              p[0] = 7
+    MT
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt").select { |w| w.code == "redundant-unsafe" }
+    assert_empty warnings
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-unsafe"])
+    assert_includes fixed, "unsafe:"
   end
 end

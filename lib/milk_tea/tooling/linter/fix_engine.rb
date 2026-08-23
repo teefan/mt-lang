@@ -17,6 +17,7 @@ module MilkTea
         when "redundant-else"         then redundant_else_edits(lines, warning)
         when "redundant-return"       then redundant_return_edits(lines, warning)
         when "redundant-type-annotation" then redundant_type_annotation_edits(lines, warning)
+        when "redundant-unsafe"       then redundant_unsafe_edits(lines, warning)
         when "prefer-inline-methods"  then prefer_inline_methods_edits(lines, warning)
         when "unused-import"          then unused_import_edits(lines, warning)
         when "trailing-list-comma"    then trailing_list_comma_edits(lines, warning)
@@ -300,6 +301,105 @@ module MilkTea
         end
 
         edits
+      end
+
+      # ── redundant-unsafe ───────────────────────────────────────────────────
+      # Removes an `unsafe:` wrapper that contains no unsafe operations.
+      #
+      # Supported shapes:
+      #   <indent>unsafe:\n<deeper body>   (block statement; body is dedented)
+      #   ... unsafe: expr ...             (inline expression on a single line)
+      def self.redundant_unsafe_edits(lines, warning)
+        return [] unless warning.line
+
+        line_idx = warning.line - 1
+        line = lines[line_idx]
+        return [] unless line
+
+        unsafe_idx = line.index("unsafe:")
+        return [] unless unsafe_idx
+
+        keyword_end = unsafe_idx + "unsafe:".length
+        rest = line[keyword_end..]
+
+        if rest && !rest.strip.empty?
+          # Inline expression form: drop the keyword and the whitespace after
+          # it, but only when the remainder is balanced on this line.
+          remainder = rest.sub(/\A\s+/, "")
+          return [] if remainder.empty? || !balanced_line?(remainder)
+
+          return [FixEdit.new(
+            start_line: line_idx,
+            start_char: unsafe_idx,
+            end_line: line_idx,
+            end_char: keyword_end + (rest.length - remainder.length),
+            new_text: "",
+          )]
+        end
+
+        # Block statement form: `unsafe:` alone, body indented deeper.
+        indent = line[0...unsafe_idx]
+        return [] unless indent.match?(/\A *\z/)
+
+        body_start = line_idx + 1
+        body_indent = nil
+        last_body = nil
+        (body_start...lines.length).each do |i|
+          candidate = lines[i]
+          if candidate.nil? || candidate.strip.empty?
+            last_body = i
+            next
+          end
+
+          break unless candidate.start_with?(indent + " ")
+
+          body_indent ||= candidate[/\A */].length - indent.length
+          last_body = i
+        end
+
+        return [] if last_body.nil? || last_body < body_start
+        return [] if body_indent.nil? || body_indent <= 0
+        return [] unless (body_start..last_body).all? do |i|
+          l = lines[i]
+          l.nil? || l.strip.empty? || l.start_with?(indent + " " * body_indent)
+        end
+
+        replacement = (body_start..last_body).map do |i|
+          l = lines[i]
+          l.nil? || l.strip.empty? ? "" : l[body_indent..].to_s.chomp
+        end
+
+        if last_body + 1 <= lines.length - 1
+          # Consume through the first following line; apply_fix_edits re-emits
+          # it as the suffix of a multi-line replacement.
+          end_line = last_body + 1
+          end_char = 0
+        else
+          end_line = last_body
+          end_char = lines[last_body].to_s.length
+        end
+
+        [FixEdit.new(
+          start_line: line_idx,
+          start_char: 0,
+          end_line:,
+          end_char:,
+          new_text: replacement.join("\n") + "\n",
+        )]
+      end
+
+      def self.balanced_line?(text)
+        depth = 0
+        text.each_char do |char|
+          case char
+          when "(", "["
+            depth += 1
+          when ")", "]"
+            depth -= 1
+            return false if depth.negative?
+          end
+        end
+        depth.zero?
       end
 
       def self.match_paren(line, open_pos)
