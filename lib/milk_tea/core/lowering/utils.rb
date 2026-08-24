@@ -127,6 +127,13 @@ module MilkTea
 
       def infer_value_type(handle_expression, env:)
         handle_type = infer_expression_type(handle_expression, env:)
+        # BUG FIX: nullable pointer handles (ptr[T]?) read through as their
+        # base pointer type; std/net relies on this after flow-unguarded
+        # null checks on storage fields.
+        if handle_type.is_a?(Types::Nullable) &&
+           (ref_type?(handle_type.base) || pointer_type?(handle_type.base))
+          handle_type = handle_type.base
+        end
         return referenced_type(handle_type) if ref_type?(handle_type)
         return pointee_type(handle_type) if pointer_type?(handle_type)
 
@@ -371,7 +378,7 @@ module MilkTea
           elements = value.map { |element| lower_compile_time_literal(element, element_type) }
           return nil if elements.any?(&:nil?)
 
-          IR::ArrayLiteral.new(type:, elements:)
+          return IR::ArrayLiteral.new(type:, elements:)
         when Hash
           return nil unless type.is_a?(Types::Struct)
           fields = value.map do |name, field_value|
