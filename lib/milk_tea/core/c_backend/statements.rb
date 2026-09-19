@@ -31,8 +31,10 @@ module MilkTea
         else
           []
         end
+        debug_guard_receivers = collect_debug_null_guards_for_statement(statement)
         statement_lines = with_checked_index_aliases(aliases) do
-          case statement
+          debug_guard_lines = emit_debug_null_guard_lines(debug_guard_receivers, indent, function)
+          debug_guard_lines + case statement
           when IR::LocalDecl
             if array_type?(statement.type) && statement.value.is_a?(IR::Call)
               lines = ["#{indent}#{c_declaration(statement.type, statement.linkage_name)};"]
@@ -522,6 +524,121 @@ module MilkTea
         end
 
         nil
+      end
+
+      # ── debug null traps ────────────────────────────────────────────────────
+      # Debug builds insert `if (ptr == NULL) mt_fatal(...)` before every
+      # unconditionally-evaluated raw pointer dereference (pointer field
+      # access, pointer indexing, read(ptr)) so a NULL that crosses the type
+      # system's non-null contract — typically from an FFI boundary — fatales
+      # with a function name instead of segfaulting. Receivers are duplicated
+      # into the guard, so only side-effect-free receivers qualify, and
+      # conditional subtrees (and/or right sides, ?: branches) are skipped so
+      # derefs that would never execute are not reported. ref[T] receivers are
+      # excluded: refs are non-null by the type system, so a trap there would
+      # be pure noise.
+
+      def collect_debug_null_guards_for_statement(statement)
+        return [] unless @debug_guards
+
+        expressions = case statement
+        when IR::LocalDecl
+          [statement.value]
+        when IR::Assignment
+          [statement.target, statement.value]
+        when IR::ExpressionStmt
+          [statement.expression]
+        when IR::ReturnStmt
+          statement.value ? [statement.value] : []
+        when IR::IfStmt
+          [statement.condition]
+        when IR::WhileStmt
+          [statement.condition]
+        when IR::ForStmt
+          [statement.init, statement.condition, statement.post].compact
+        when IR::SwitchStmt
+          [statement.expression]
+        else
+          []
+        end
+
+        receivers = []
+        expressions.compact.each do |expression|
+          collect_debug_null_guard_receivers(expression, receivers)
+        end
+        receivers
+      end
+
+      def collect_debug_null_guard_receivers(expression, receivers)
+        case expression
+        when IR::Member
+          collect_debug_null_guard_receivers(expression.receiver, receivers)
+          add_debug_null_guard_receiver(receivers, expression.receiver)
+        when IR::Index
+          collect_debug_null_guard_receivers(expression.receiver, receivers)
+          collect_debug_null_guard_receivers(expression.index, receivers)
+          add_debug_null_guard_receiver(receivers, expression.receiver)
+        when IR::Unary
+          collect_debug_null_guard_receivers(expression.operand, receivers)
+          add_debug_null_guard_receiver(receivers, expression.operand) if expression.operator == "*"
+        when IR::Call
+          collect_debug_null_guard_receivers(expression.callee, receivers) unless expression.callee.is_a?(String)
+          expression.arguments.each { |argument| collect_debug_null_guard_receivers(argument, receivers) }
+        when IR::Binary
+          collect_debug_null_guard_receivers(expression.left, receivers)
+          return if expression.operator == "and" || expression.operator == "or"
+
+          collect_debug_null_guard_receivers(expression.right, receivers)
+        when IR::Conditional
+          collect_debug_null_guard_receivers(expression.condition, receivers)
+        when IR::AddressOf, IR::Cast, IR::ReinterpretExpr
+          collect_debug_null_guard_receivers(expression.expression, receivers)
+        when IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
+          collect_debug_null_guard_receivers(expression.receiver, receivers)
+          collect_debug_null_guard_receivers(expression.index, receivers)
+        when IR::AggregateLiteral
+          expression.fields.each { |field| collect_debug_null_guard_receivers(field.value, receivers) }
+        when IR::ArrayLiteral
+          expression.elements.each { |element| collect_debug_null_guard_receivers(element, receivers) }
+        when IR::VariantLiteral
+          expression.fields.each { |field| collect_debug_null_guard_receivers(field.value, receivers) }
+        when IR::SimdLaneWith
+          collect_debug_null_guard_receivers(expression.src, receivers)
+          collect_debug_null_guard_receivers(expression.value, receivers)
+        when IR::Assignment, IR::LocalDecl
+          collect_debug_null_guard_receivers(expression.target, receivers) if expression.is_a?(IR::Assignment)
+          collect_debug_null_guard_receivers(expression.value, receivers) if expression.value
+        end
+      end
+
+      def add_debug_null_guard_receiver(receivers, receiver_expression)
+        return unless debug_null_guardable_receiver?(receiver_expression)
+        return if receivers.any? { |existing| existing.equal?(receiver_expression) }
+
+        receivers << receiver_expression
+      end
+
+      def debug_null_guardable_receiver?(expression)
+        type = expression.respond_to?(:type) ? expression.type : nil
+        return false if ref_type?(type)
+
+        raw_pointer_type?(type) || nullable_pointer_like_type?(type)
+      end
+
+      def emit_debug_null_guard_lines(receivers, indent, function)
+        return [] if receivers.empty?
+
+        message = "null pointer dereferenced in #{function.linkage_name}"
+        lines = []
+        emitted = Set.new
+        receivers.each do |receiver|
+          receiver_text = emit_expression(receiver)
+          next if emitted.include?(receiver_text)
+
+          emitted << receiver_text
+          lines << "#{indent}if (#{receiver_text} == NULL) mt_fatal(\"#{message}\");"
+        end
+        lines
       end
 
       def statements_require_scope?(statements)

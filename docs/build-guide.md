@@ -351,6 +351,11 @@ Common options:
 - `--bundle` for native package builds when you want a distributable app directory instead of a bare executable
 - `--archive` for native package builds when you also want a `.tar.gz` archive of the bundle; this implies `--bundle`
 
+Debug profile builds enable runtime debug guards:
+
+- Loops get an iteration-limit guard that calls `mt_fatal` when a synchronous loop exceeds 50,000,000 iterations (a hang detector).
+- Every unconditionally-evaluated raw pointer dereference — pointer field access, pointer indexing, and `read(ptr)` in `unsafe` — is preceded by a null trap that calls `mt_fatal("null pointer dereferenced in <function>")` instead of segfaulting. This catches a NULL that crossed a non-nullable FFI declaration at the source line. Derefs guarded only by flow (inside `and`/`or` right sides or `?:` branches) and `ref[T]` receivers are not trapped: conditional derefs may never execute, and refs are non-null by the type system.
+
 The wasm platform also accepts the aliases `web`, `html5`, and `browser`.
 
 For editor tooling, the Milk Tea VS Code extension also accepts `milkTea.lsp.platform = auto|linux|windows|wasm`.

@@ -3,14 +3,14 @@ require_relative "../../test_helper"
 
 module CodegenTestHelpers
 
-  def generate_c_from_source(source)
+  def generate_c_from_source(source, debug_guards: false)
     Dir.mktmpdir("milk-tea-codegen") do |dir|
       root_path = File.join(dir, source_relative_path(source))
       FileUtils.mkdir_p(File.dirname(root_path))
       File.write(root_path, source)
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
-      MilkTea::CBackend.generate_c(MilkTea::Lowering.lower(program))
+      MilkTea::CBackend.generate_c(MilkTea::Lowering.lower(program), debug_guards:)
     end
   end
 
