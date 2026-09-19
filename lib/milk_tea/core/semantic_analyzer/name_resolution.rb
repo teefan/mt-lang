@@ -740,6 +740,12 @@ module MilkTea
       end
 
       def zero_initializable_type?(type, operation: "zero")
+        return true if zero_supported_type?(type)
+
+        raise_sema_error("#{operation} does not support type #{type}")
+      end
+
+      def zero_supported_type?(type)
         return true if type.is_a?(Types::Primitive) && !type.void?
         return true if type.is_a?(Types::Nullable)
         return true if type.is_a?(Types::EnumBase)
@@ -761,7 +767,7 @@ module MilkTea
         return true if simd_type?(type)
         return true if atomic_type?(type)
 
-        raise_sema_error("#{operation} does not support type #{type}")
+        false
       end
 
       def layout_aggregate_type?(type)

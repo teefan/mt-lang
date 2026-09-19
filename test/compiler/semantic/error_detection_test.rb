@@ -3182,4 +3182,154 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/unsupported guard operator/, error.message)
   end
 
+  def test_null_comparison_against_non_nullable_pointer_suggests_nullable_or_zero
+    source = <<~MT
+      # module demo.null_hint_ptr
+
+      function main() -> int:
+          var value: int = 0
+          let p = ptr_of(value)
+          if p == null:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/ptr\[int\] is declared non-null/, error.message)
+    assert_match(/declare it ptr\[int\]\? if null is possible/, error.message)
+    assert_match(/compare against zero\[ptr\[int\]\] for raw zero-pointer storage/, error.message)
+  end
+
+  def test_null_comparison_against_ref_reports_non_null_by_design
+    source = <<~MT
+      # module demo.null_hint_ref
+
+      function main() -> int:
+          var value: int = 0
+          let r = ref_of(value)
+          if r == null:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/ref\[int\] is never null by design; refs cannot be compared against null/, error.message)
+  end
+
+  def test_null_comparison_suggestion_applies_to_reversed_operand_order
+    source = <<~MT
+      # module demo.null_hint_reversed
+
+      function main() -> int:
+          var value: int = 0
+          let p = ptr_of(value)
+          if null == p:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/ptr\[int\] is declared non-null/, error.message)
+  end
+
+  def test_null_comparison_against_external_opaque_suggests_nullable_without_zero
+    source = <<~MT
+      # module demo.null_hint_external_opaque
+
+      import demo.raw_handles as raw
+
+      function main() -> int:
+          let h = raw.grab_handle()
+          if h == null:
+              return 1
+          return 0
+    MT
+
+    raw_source = <<~MT
+      external
+
+      opaque Handle
+
+      external function grab_handle() -> Handle
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_program_source(source, "demo/raw_handles.mt" => raw_source)
+    end
+
+    assert_match(/is declared non-null/, error.message)
+    assert_match(/declare it demo\.raw_handles\.Handle\? if null is possible/, error.message)
+    refute_match(/zero\[/, error.message)
+  end
+
+  def test_null_comparison_after_flow_refinement_is_accepted
+    source = <<~MT
+      # module demo.null_refined_ok
+
+      function take(handle: ptr[int]?) -> int:
+          if handle == null:
+              return -1
+          if handle != null:
+              return 1
+          return 0
+
+      function main() -> int:
+          var value: int = 0
+          let handle: ptr[int]? = ptr_of(value)
+          return take(handle)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("take")
+  end
+
+  def test_typed_null_with_mismatched_target_stays_rejected
+    source = <<~MT
+      # module demo.null_target_mismatch
+
+      function take(handle: ptr[char]?) -> int:
+          if handle == null[ptr[int]]:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemanticError) do
+      check_source(source)
+    end
+
+    assert_match(/operator == requires comparable types, got ptr\[char\]\? and null\[ptr\[int\]\]/, error.message)
+  end
+
+  def test_null_comparison_against_nullable_pointer_type_checks
+    source = <<~MT
+      # module demo.null_ok
+
+      function main() -> int:
+          var value: int = 0
+          let p: ptr[int]? = ptr_of(value)
+          if p == null:
+              return 1
+          if p != null:
+              return 2
+          let q = p else:
+              return 3
+          unsafe:
+              return read(q)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
 end

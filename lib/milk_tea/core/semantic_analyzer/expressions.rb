@@ -721,13 +721,54 @@ module MilkTea
               raise_sema_error("operator #{expression.operator} is not supported for type #{bad_type}")
             end
           end
-          unless common_numeric_type(left_type, right_type) || types_compatible?(left_type, right_type) || types_compatible?(right_type, left_type)
-            raise_sema_error("operator #{expression.operator} requires comparable types, got #{left_type} and #{right_type}")
+          unless common_numeric_type(left_type, right_type) || types_compatible?(left_type, right_type) || types_compatible?(right_type, left_type) || refined_null_comparison?(expression, scopes)
+            message = "operator #{expression.operator} requires comparable types, got #{left_type} and #{right_type}"
+            hint = null_comparison_hint(left_type, right_type)
+            raise_sema_error(hint ? "#{message}; #{hint}" : message)
           end
 
           @ctx.types.fetch("bool")
         else
           raise_sema_error("unsupported binary operator #{expression.operator}")
+        end
+      end
+
+      # A null comparison on a nullable binding stays legal after flow
+      # refinement has narrowed the binding to non-null: the declared storage
+      # is still nullable, and the check is a redundant-but-valid test (the
+      # linter reports it as redundant-null-check). Only bare `null` qualifies;
+      # a typed `null[...]` with a mismatched target stays a type error.
+      def refined_null_comparison?(expression, scopes)
+        if expression.left.is_a?(AST::NullLiteral) && expression.left.type.nil? && expression.right.is_a?(AST::Identifier)
+          identifier_expression = expression.right
+        elsif expression.right.is_a?(AST::NullLiteral) && expression.right.type.nil? && expression.left.is_a?(AST::Identifier)
+          identifier_expression = expression.left
+        else
+          return false
+        end
+
+        binding = lookup_value(identifier_expression.name, scopes)
+        binding&.storage_type.is_a?(Types::Nullable)
+      end
+
+      # A null comparison against a non-nullable operand is a contract mismatch,
+      # not just incompatible operand types: the message should say which fix
+      # applies (nullable declaration, raw zero comparison, or removal).
+      def null_comparison_hint(left_type, right_type)
+        other = if left_type.is_a?(Types::Null) && !right_type.is_a?(Types::Null)
+          right_type
+        elsif right_type.is_a?(Types::Null) && !left_type.is_a?(Types::Null)
+          left_type
+        end
+        return nil unless other
+        return nil if other.is_a?(Types::Nullable) || other.is_a?(Types::Null)
+
+        if ref_type?(other)
+          "#{other} is never null by design; refs cannot be compared against null"
+        elsif pointer_type?(other) || opaque_type?(other) || other == Types::Registry.primitive("cstr")
+          hint = "#{other} is declared non-null; declare it #{other}? if null is possible"
+          hint << ", or compare against zero[#{other}] for raw zero-pointer storage" if zero_supported_type?(other)
+          hint
         end
       end
 

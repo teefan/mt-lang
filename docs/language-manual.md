@@ -1172,7 +1172,9 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 - for pointer-like bases (`ptr[T]`, `const_ptr[T]`, `own[T]`, `cstr`, `fn(...)`, `proc(...)`, opaque), `T?` is a nullable pointer with `null` as the absent value
 - for non-pointer value bases (`int`, `bool`, `float`, structs, ...), `T?` is stored inline by value as a tagged optional (a presence flag plus the value); it copies by value with no hidden heap allocation or pointer aliasing
 - `null` expresses absence in any nullable context; the explicit typed `null[...]` form's target must be pointer-like
+- `null` is only a value of nullable types. Comparing a non-nullable pointer, `cstr`, or opaque handle against `null` is a type error: declare the value `T?` when null is possible, or compare against `zero[ptr[T]]` (also `zero[cstr]`, `zero[own[T]]`) to test the raw C zero pointer at the raw ABI level. Nullable types must use `null`, not `zero[...]`
 - in nullable pointer-like contexts, `zero[ptr[T]]` is rejected; use `null` instead
+- null checks narrow flow: inside the `!= null` branch (and after an `== null` branch exits), the binding is treated as non-null. A further null check on a narrowed binding is still legal; the linter reports it as `redundant-null-check`
 - at an FFI boundary (`external` / `foreign function` parameters and returns), only pointer-like `T?` is allowed; a non-pointer value nullable such as `int?` is rejected — use `ptr[T]?` or pass an explicit struct
 
 ### 6.4 Generics
