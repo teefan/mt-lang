@@ -1270,6 +1270,28 @@ mtc dap                       # Start the Debug Adapter Protocol server
 mtc docs [--open] [--port P]  # Serve the local documentation site
 ```
 
+`mtc bindgen` nullable policy:
+
+C headers usually do not state which functions can return NULL. A nullable policy file lists those symbols so generated raw bindings expose them as `T?` and null checks work downstream. The policy feeds the same override machinery as the checked-in `std.c.*` registries and shows up in `--nullable-report`.
+
+```sh
+mtc bindgen mylib.mt mylib.h --nullable-policy nullable_policy.json --nullable-report report.json
+```
+
+```json
+{
+    "return_types": {
+        "mylib_load": "ptr[ubyte]?",
+        "mylib_get_error": "cstr?"
+    },
+    "parameters": {
+        "mylib_read": { "out_size": "ptr[uint]?" }
+    }
+}
+```
+
+Types must match what bindgen would otherwise emit for the symbol (minus the `?`). Bindgen rejects policy entries for unknown symbols, so a stale policy fails loudly instead of silently drifting.
+
 Build and run commands support `--profile`, `--platform`, `--cc`, `--keep-c`, `--locked`, `--frozen`, and `-I` include paths. Dependency-locked flows support `--locked` (use package.lock) and `--frozen` (require current package.lock).
 
 Global options work with any command (before or after the subcommand, up to a `--` separator): `-h`/`--help` (also `mtc help <command>` for command-specific help), `-V`/`--version`, `-q`/`--quiet` (suppress informational output), `-v`/`--verbose` (per-file progress), and `--color auto|always|never`. Generate shell completions with `mtc completions bash|zsh|fish`. Timing breakdowns use `--timings` (on `format` and `lint`); `lint` reports warnings with per-file progress.

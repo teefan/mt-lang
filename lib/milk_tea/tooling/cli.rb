@@ -776,6 +776,7 @@ module MilkTea
 
           Options:
             -o, --output OUTPUT    Write the generated module to this file.
+            --nullable-policy PATH Apply a JSON nullable policy of symbols documented as returning NULL.
             --nullable-report PATH Write the remaining manual nullable policy report to this file.
             --link LIB             Link against this library (repeatable).
             --include HEADER       Extra #include directive (repeatable).
@@ -911,7 +912,7 @@ module MilkTea
       io.puts("       mtc deps lock [PATH_OR_PACKAGE] [--check]")
       io.puts("       mtc deps publish [PATH_OR_PACKAGE] [--upstream]")
       io.puts("       mtc deps fetch [PATH_OR_PACKAGE]")
-      io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
+      io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-policy PATH] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
       io.puts("       mtc cache purge|status")
       io.puts("       mtc docs [--open] [--port PORT]")
       io.puts("       mtc std list [--json]")

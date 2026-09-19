@@ -155,6 +155,126 @@ class MilkTeaBindingsCliTest < Minitest::Test
     end
   end
 
+  def test_start_applies_nullable_policy_to_generated_overrides
+    Dir.mktmpdir("milk-tea-bindgen-cli-policy") do |dir|
+      header_path = File.join(dir, "sample.h")
+      policy_path = File.join(dir, "nullable_policy.json")
+      File.write(header_path, "int add(int a, int b);\n")
+      File.write(policy_path, JSON.generate({
+        "return_types" => { "find_thing" => "ptr[int]?" },
+        "parameters" => { "fill_thing" => { "out_value" => "ptr[int]?" } },
+      }))
+      out = StringIO.new
+      err = StringIO.new
+      observed = {}
+      generator = lambda do |module_name:, header_path:, **options|
+        observed[:options] = options
+        "external\n"
+      end
+
+      with_singleton_method_override(MilkTea::Bindgen, :generate, generator) do
+        status = MilkTea::BindgenCLI.start(
+          ["std.c.sample", header_path, "--nullable-policy", policy_path],
+          out:,
+          err:,
+          help_printer: ->(io) { io.puts("bindgen help") },
+        )
+
+        assert_equal 0, status
+      end
+
+      assert_equal({ "find_thing" => "ptr[int]?" }, observed[:options][:function_return_type_overrides])
+      assert_equal({ "fill_thing" => { "out_value" => "ptr[int]?" } }, observed[:options][:function_param_type_overrides])
+      assert_equal "", err.string
+    end
+  end
+
+  def test_start_rejects_missing_nullable_policy_file
+    Dir.mktmpdir("milk-tea-bindgen-cli-policy-missing") do |dir|
+      header_path = File.join(dir, "sample.h")
+      File.write(header_path, "int add(int a, int b);\n")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::BindgenCLI.start(
+        ["std.c.sample", header_path, "--nullable-policy", File.join(dir, "absent.json")],
+        out:,
+        err:,
+        help_printer: ->(io) { io.puts("bindgen help") },
+      )
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/nullable policy file not found/, err.string)
+    end
+  end
+
+  def test_start_rejects_malformed_nullable_policy_json
+    Dir.mktmpdir("milk-tea-bindgen-cli-policy-bad-json") do |dir|
+      header_path = File.join(dir, "sample.h")
+      policy_path = File.join(dir, "nullable_policy.json")
+      File.write(header_path, "int add(int a, int b);\n")
+      File.write(policy_path, "{ not json")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::BindgenCLI.start(
+        ["std.c.sample", header_path, "--nullable-policy", policy_path],
+        out:,
+        err:,
+        help_printer: ->(io) { io.puts("bindgen help") },
+      )
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/nullable policy is not valid JSON/, err.string)
+    end
+  end
+
+  def test_start_rejects_nullable_policy_with_unknown_keys
+    Dir.mktmpdir("milk-tea-bindgen-cli-policy-unknown-key") do |dir|
+      header_path = File.join(dir, "sample.h")
+      policy_path = File.join(dir, "nullable_policy.json")
+      File.write(header_path, "int add(int a, int b);\n")
+      File.write(policy_path, JSON.generate({ "return_types" => {}, "fields" => {} }))
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::BindgenCLI.start(
+        ["std.c.sample", header_path, "--nullable-policy", policy_path],
+        out:,
+        err:,
+        help_printer: ->(io) { io.puts("bindgen help") },
+      )
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/nullable policy has unknown keys: fields/, err.string)
+    end
+  end
+
+  def test_start_rejects_nullable_policy_with_bad_value_shapes
+    Dir.mktmpdir("milk-tea-bindgen-cli-policy-bad-shape") do |dir|
+      header_path = File.join(dir, "sample.h")
+      policy_path = File.join(dir, "nullable_policy.json")
+      File.write(header_path, "int add(int a, int b);\n")
+      File.write(policy_path, JSON.generate({ "return_types" => { "find_thing" => 7 } }))
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::BindgenCLI.start(
+        ["std.c.sample", header_path, "--nullable-policy", policy_path],
+        out:,
+        err:,
+        help_printer: ->(io) { io.puts("bindgen help") },
+      )
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/nullable policy must map/, err.string)
+    end
+  end
+
   def test_parse_options_requires_values_for_all_flagged_options
     {
       "-o" => /missing value for -o/,
@@ -163,6 +283,7 @@ class MilkTeaBindingsCliTest < Minitest::Test
       "--clang" => /missing value for --clang/,
       "--clang-arg" => /missing value for --clang-arg/,
       "--nullable-report" => /missing value for --nullable-report/,
+      "--nullable-policy" => /missing value for --nullable-policy/,
     }.each do |option, message|
       out = StringIO.new
       err = StringIO.new

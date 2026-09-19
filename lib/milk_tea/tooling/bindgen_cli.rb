@@ -101,6 +101,11 @@ module MilkTea
           return missing_option_value(option) unless value
 
           options[:nullable_report_path] = value
+        when "--nullable-policy"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:nullable_policy_path] = value
         else
           @err.puts("unknown bindgen option #{option}")
           print_help
@@ -109,7 +114,58 @@ module MilkTea
       end
 
       options[:include_directives] = nil if options[:include_directives].empty?
+      if options[:nullable_policy_path]
+        policy = load_nullable_policy(options.delete(:nullable_policy_path))
+        return nil unless policy
+
+        options[:function_return_type_overrides] = policy[:return_types]
+        options[:function_param_type_overrides] = policy[:parameters]
+      end
       options
+    end
+
+    # A nullable policy lists the symbols a header documents as returning NULL
+    # (or taking NULL-able out-pointers) so generated raw bindings expose them
+    # as nullable `T?` without hand-annotating the C header. Entries feed the
+    # same function_return_type_overrides / function_param_type_overrides
+    # machinery as the raw binding registry and appear in the nullable report.
+    def load_nullable_policy(path)
+      require "json"
+      policy_path = File.expand_path(path)
+      unless File.file?(policy_path)
+        @err.puts("nullable policy file not found: #{path}")
+        return nil
+      end
+
+      document = begin
+        JSON.parse(File.read(policy_path))
+      rescue JSON::ParserError => e
+        @err.puts("nullable policy is not valid JSON: #{e.message}")
+        return nil
+      end
+
+      unless document.is_a?(Hash)
+        @err.puts("nullable policy must be a JSON object")
+        return nil
+      end
+
+      unknown_keys = document.keys - ["return_types", "parameters"]
+      unless unknown_keys.empty?
+        @err.puts("nullable policy has unknown keys: #{unknown_keys.join(', ')} (expected return_types, parameters)")
+        return nil
+      end
+
+      return_types = document["return_types"] || {}
+      parameters = document["parameters"] || {}
+      policy_shape_valid = return_types.is_a?(Hash) && return_types.keys.all?(String) && return_types.values.all?(String) &&
+        parameters.is_a?(Hash) && parameters.keys.all?(String) &&
+        parameters.values.all? { |value| value.is_a?(Hash) && value.keys.all?(String) && value.values.all?(String) }
+      unless policy_shape_valid
+        @err.puts('nullable policy must map {"return_types": {symbol: "type?"}, "parameters": {symbol: {param: "type?"}}}')
+        return nil
+      end
+
+      { return_types:, parameters: }
     end
 
     def missing_option_value(option)

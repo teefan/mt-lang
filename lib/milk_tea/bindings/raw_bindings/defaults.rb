@@ -141,6 +141,27 @@ module MilkTea
         "GuiLoadIcons" => "ptr[ptr[char]]?",
       ).freeze
 
+      # stb_image.h documents these as returning NULL on failure (and
+      # stbi_failure_reason as returning NULL before the first failure), so
+      # the raw binding must expose them as nullable for null checks to work.
+      stb_image_function_return_overrides = {
+        "stbi_failure_reason" => "cstr?",
+        "stbi_load" => "ptr[stbi_uc]?",
+        "stbi_load_16" => "ptr[stbi_us]?",
+        "stbi_load_16_from_callbacks" => "ptr[stbi_us]?",
+        "stbi_load_16_from_memory" => "ptr[stbi_us]?",
+        "stbi_load_from_callbacks" => "ptr[stbi_uc]?",
+        "stbi_load_from_memory" => "ptr[stbi_uc]?",
+        "stbi_load_gif_from_memory" => "ptr[stbi_uc]?",
+        "stbi_loadf" => "ptr[float]?",
+        "stbi_loadf_from_callbacks" => "ptr[float]?",
+        "stbi_loadf_from_memory" => "ptr[float]?",
+        "stbi_zlib_decode_malloc" => "ptr[char]?",
+        "stbi_zlib_decode_malloc_guesssize" => "ptr[char]?",
+        "stbi_zlib_decode_malloc_guesssize_headerflag" => "ptr[char]?",
+        "stbi_zlib_decode_noheader_malloc" => "ptr[char]?",
+      }.freeze
+
       sdl3_documented_function_param_overrides = {
         "SDL_AcquireGPUSwapchainTexture" => {
           "swapchain_texture_width" => "ptr[uint]?",
@@ -1269,6 +1290,7 @@ module MilkTea
           binding_path: root.join("std/c/stb_image.mt"),
           include_directives: ["stb_image.h"],
           declaration_name_prefixes: ["stbi_", "STBI_"],
+          function_return_type_overrides: stb_image_function_return_overrides,
           header_candidates: [
             MilkTea.data_root.join("third_party/stb-upstream/stb_image.h").to_s,
           ],
