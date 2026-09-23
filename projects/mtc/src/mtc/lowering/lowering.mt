@@ -192,6 +192,10 @@ struct LowerCtx:
     pending_event_functions: vec.Vec[ir.Function]
     # Pending generic variant declarations emitted during type qualification.
     pending_generic_variants: vec.Vec[ir.VariantDecl]
+    # Concrete proc value structs (`mt_proc_*`).  The host's C backend collects
+    # these from the proc types in use rather than carrying them in the IR, so
+    # they are routed to `Program.monomorphized_structs`.
+    pending_proc_structs: vec.Vec[ir.StructDecl]
     # Emitted-once guards for shared runtime types.
     subscription_emitted: bool
     event_error_emitted: bool
@@ -436,6 +440,8 @@ public function lower(program: loader.Program) -> ir.Program:
     var seen_structs = map_mod.Map[str, bool].create()
     var seen_variants = map_mod.Map[str, bool].create()
     var seen_functions = map_mod.Map[str, bool].create()
+    var monomorphized_structs = vec.Vec[ir.StructDecl].create()
+    var monomorphized_variants = vec.Vec[ir.VariantDecl].create()
     while i < count:
         let a_ptr = program.analyses.get(i) else:
             i += 1
@@ -445,7 +451,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances))
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants))
         globals.append_span(fragment.globals)
         opaques.append_span(fragment.opaques)
         dedup_append_structs(ref_of(structs), fragment.structs, ref_of(seen_structs))
@@ -522,6 +528,8 @@ public function lower(program: loader.Program) -> ir.Program:
         functions = functions.as_span(),
         type_aliases = type_aliases.as_span(),
         source_path = root.source_path,
+        monomorphized_structs = monomorphized_structs.as_span(),
+        monomorphized_variants = monomorphized_variants.as_span(),
     )
 
 
@@ -810,6 +818,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         pending_event_structs = vec.Vec[ir.StructDecl].create(),
         pending_event_functions = vec.Vec[ir.Function].create(),
         pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
+        pending_proc_structs = vec.Vec[ir.StructDecl].create(),
         subscription_emitted = false,
         event_error_emitted = false,
         inline_for_element = Option[ComptimeElement].none,
@@ -911,7 +920,7 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
         mi += 1
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]]) -> ir.Program:
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]]) -> ir.Program:
     var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)))
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -1126,21 +1135,20 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             _:
                 pass
 
-    # Prepend generic struct declarations so they appear before the module's
-    # own structs that may reference them as by-value fields.
-    var pending_generic_structs = vec.Vec[ir.StructDecl].create()
+    # Concrete generic struct instances are not part of the IR's declaration
+    # sections (host parity: its C backend collects them from the types in
+    # use).  Hand them to the driver, which exposes them to the C backend
+    # through `Program.monomorphized_structs`.
     var gs_iter = ctx.generic_struct_decls.values()
     while true:
         let gs_ptr = gs_iter.next() else:
             break
-        pending_generic_structs.push(unsafe: read(gs_ptr))
-    var pre_gi = pending_generic_structs.len()
-    while pre_gi > 0:
-        pre_gi -= 1
-        let s_ptr = pending_generic_structs.get(pre_gi) else:
-            continue
-        let insert_at: ptr_uint = 0
-        let _inserted = structs.insert(insert_at, unsafe: read(s_ptr))
+        monomorphized.push(unsafe: read(gs_ptr))
+    var ps_iter = ctx.pending_proc_structs.iter()
+    while true:
+        let ps_ptr = ps_iter.next() else:
+            break
+        monomorphized.push(unsafe: read(ps_ptr))
 
     # Append any monomorphized generic functions from the specialization cache.
     var spec_iter = ctx.specialization_cache.values()
@@ -1209,15 +1217,13 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         functions.push(unsafe: read(ef_ptr))
         ev_func_index += 1
 
-    # Prepend pending generic variant declarations so they appear before
-    # structs that embed them as by-value fields.
-    var gv_index = ctx.pending_generic_variants.len()
-    while gv_index > 0:
-        gv_index -= 1
-        let gv_ptr = ctx.pending_generic_variants.get(gv_index) else:
-            continue
-        let insert_at: ptr_uint = 0
-        let _gv_inserted = variants.insert(insert_at, unsafe: read(gv_ptr))
+    # Concrete Option/Result instances are kept outside the IR's `:variants`
+    # section (host parity) and handed to the driver for the C backend.
+    var gv_iter = ctx.pending_generic_variants.iter()
+    while true:
+        let gv_ptr = gv_iter.next() else:
+            break
+        monomorphized_variants.push(unsafe: read(gv_ptr))
 
     return ir.Program(
         module_name = analysis.module_name,
@@ -5293,7 +5299,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
     let lifecycle_ty = proc_lifecycle_fn_type()
     struct_fields.push(ir.Field(name = "release", ty = lifecycle_ty))
     struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
-    ctx.pending_env_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+    ctx.pending_proc_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
     var invoke_c = string.String.create()
     invoke_c.append(proc_prefix)
@@ -11745,7 +11751,7 @@ function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: 
     let lifecycle_ty = proc_lifecycle_fn_type()
     struct_fields.push(ir.Field(name = "release", ty = lifecycle_ty))
     struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
-    ctx.pending_env_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+    ctx.pending_proc_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
     return types.Type.ty_named(module_name = "", name = struct_name)
 
 

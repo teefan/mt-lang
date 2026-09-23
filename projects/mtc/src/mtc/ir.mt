@@ -208,6 +208,14 @@ public struct Program:
     functions: span[Function]
     type_aliases: span[TypeAlias]
     source_path: str
+    # Concrete generic struct instances.  The host does not carry these in the
+    # IR's declaration sections; its C backend collects them from the types in
+    # use.  This compiler keeps the resolved fields here for the C backend,
+    # which merges them into the declaration list it sorts and emits.
+    monomorphized_structs: span[StructDecl]
+    # Concrete Option/Result instances, likewise resolved by lowering but kept
+    # outside the IR's `:variants` section (host parity).
+    monomorphized_variants: span[VariantDecl]
 
 
 public struct TypeAlias:
@@ -230,6 +238,8 @@ public function empty_program(module_name: str, source_path: str) -> Program:
         static_asserts = span[StaticAssert](),
         functions = span[Function](),
         source_path = source_path,
+        monomorphized_structs = span[StructDecl](),
+        monomorphized_variants = span[VariantDecl](),
     )
 
 

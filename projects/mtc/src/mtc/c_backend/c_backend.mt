@@ -96,7 +96,38 @@ public struct OptionStructEntry:
     field_store: vec.Vec[ir.Field]
 
 
-public function generate_c(program: ir.Program, emit_line_directives: bool, debug_guards: bool) -> string.String:
+public function generate_c(input_program: ir.Program, emit_line_directives: bool, debug_guards: bool) -> string.String:
+    var program = input_program
+    # Concrete generic struct instances are carried outside the IR's `:structs`
+    # section (host parity).  Merge them into the declaration list the backend
+    # sorts and emits, so their fields participate in every scan below.
+    if program.monomorphized_structs.len > 0:
+        var merged = vec.Vec[ir.StructDecl].create()
+        var mi: ptr_uint = 0
+        while mi < program.structs.len:
+            merged.push(unsafe: read(program.structs.data + mi))
+            mi += 1
+        mi = 0
+        while mi < program.monomorphized_structs.len:
+            merged.push(unsafe: read(program.monomorphized_structs.data + mi))
+            mi += 1
+        program = ir.Program(
+            module_name = program.module_name,
+            includes = program.includes,
+            constants = program.constants,
+            globals = program.globals,
+            opaques = program.opaques,
+            structs = merged.as_span(),
+            unions = program.unions,
+            enums = program.enums,
+            variants = program.variants,
+            static_asserts = program.static_asserts,
+            functions = program.functions,
+            type_aliases = program.type_aliases,
+            source_path = program.source_path,
+            monomorphized_structs = program.monomorphized_structs,
+            monomorphized_variants = program.monomorphized_variants,
+        )
     var e = Emitter(
         buffer = string.String.create(),
         str_lit_map = map_mod.Map[str, str].create(),
@@ -1368,6 +1399,65 @@ function collect_generic_variants(program: ir.Program) -> vec.Vec[ir.VariantDecl
         unsafe:
             seen.set(read(program.variants.data + si).linkage_name, true)
         si += 1
+    # Concrete Option/Result instances resolved during lowering (kept outside
+    # the IR's `:variants` section).
+    si = 0
+    while si < program.monomorphized_variants.len:
+        unsafe:
+            let mv = read(program.monomorphized_variants.data + si)
+            if not seen.contains(mv.linkage_name):
+                seen.set(mv.linkage_name, true)
+                result.push(mv)
+        si += 1
+    # Concrete instances can be referenced from declarations as well as
+    # function bodies (struct fields, globals, constants, unions, variant arms,
+    # static assertions), so scan every section (host `collect_generic_variant_types`).
+    var di: ptr_uint = 0
+    while di < program.structs.len:
+        var fields = unsafe: read(program.structs.data + di).fields
+        var fi: ptr_uint = 0
+        while fi < fields.len:
+            collect_gv_from_type(unsafe: read(fields.data + fi).ty, ref_of(seen), ref_of(result))
+            fi += 1
+        di += 1
+    di = 0
+    while di < program.unions.len:
+        var ufields = unsafe: read(program.unions.data + di).fields
+        var ufi: ptr_uint = 0
+        while ufi < ufields.len:
+            collect_gv_from_type(unsafe: read(ufields.data + ufi).ty, ref_of(seen), ref_of(result))
+            ufi += 1
+        di += 1
+    di = 0
+    while di < program.variants.len:
+        var arms = unsafe: read(program.variants.data + di).arms
+        var ai: ptr_uint = 0
+        while ai < arms.len:
+            var afields = unsafe: read(arms.data + ai).fields
+            var afi: ptr_uint = 0
+            while afi < afields.len:
+                collect_gv_from_type(unsafe: read(afields.data + afi).ty, ref_of(seen), ref_of(result))
+                afi += 1
+            ai += 1
+        di += 1
+    di = 0
+    while di < program.globals.len:
+        var g = unsafe: read(program.globals.data + di)
+        collect_gv_from_type(g.ty, ref_of(seen), ref_of(result))
+        collect_gv_from_expr(g.value, ref_of(seen), ref_of(result))
+        di += 1
+    di = 0
+    while di < program.constants.len:
+        var c = unsafe: read(program.constants.data + di)
+        collect_gv_from_type(c.ty, ref_of(seen), ref_of(result))
+        collect_gv_from_expr(c.value, ref_of(seen), ref_of(result))
+        di += 1
+    di = 0
+    while di < program.static_asserts.len:
+        var sa = unsafe: read(program.static_asserts.data + di)
+        collect_gv_from_expr(sa.condition, ref_of(seen), ref_of(result))
+        collect_gv_from_expr(sa.message, ref_of(seen), ref_of(result))
+        di += 1
     var i: ptr_uint = 0
     while i < program.functions.len:
         unsafe:
@@ -3275,11 +3365,24 @@ struct TypeNode:
 function by_value_dep_key(ty: types.Type) -> Option[str]:
     match ty:
         types.Type.ty_named as n:
+            if n.module_name.len > 0:
+                return Option[str].some(value = naming.qualified_c_name(n.module_name, n.name))
             return Option[str].some(value = n.name)
         types.Type.ty_imported as im:
+            # The dependency key must equal the C name `c_type` renders, or a
+            # by-value embedder can be ordered before the type it embeds.
+            if im.module_name.starts_with("std.c."):
+                return Option[str].some(value = im.name)
+            var base = naming.qualified_c_name(im.module_name, im.name)
             if im.args.len == 0:
-                return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
-            return Option[str].none
+                return Option[str].some(value = base)
+            var buf = string.String.from_str(base)
+            var ai: ptr_uint = 0
+            while ai < im.args.len:
+                buf.push_byte('_')
+                buf.append(naming.type_c_key(unsafe: read(im.args.data + ai)))
+                ai += 1
+            return Option[str].some(value = buf.as_str())
         types.Type.ty_nullable as nl:
             unsafe:
                 let base = read(nl.base)
@@ -5073,6 +5176,15 @@ function emit_variant_equality_helpers(e: ref[Emitter], program: ir.Program) -> 
             let vd = read(program.variants.data + svi)
             var_lookup.set(vd.linkage_name, vd)
         svi += 1
+    var gen = collect_generic_variants(program)
+    var gvi: ptr_uint = 0
+    while gvi < gen.len():
+        let gv_ptr = gen.get(gvi) else:
+            break
+        unsafe:
+            let vd = read(gv_ptr)
+            var_lookup.set(vd.linkage_name, vd)
+        gvi += 1
     var keys = e.variant_eq_set.keys()
     while true:
         let kp = keys.next() else:
@@ -5204,6 +5316,18 @@ function find_variant_decl_by_c_name(program: ir.Program, cname: str) -> Option[
             if vd.linkage_name == cname:
                 return Option[ir.VariantDecl].some(value = vd)
         i += 1
+    # Concrete Option/Result instances are not in `program.variants`; they are
+    # collected from the types in use.
+    var gen = collect_generic_variants(program)
+    var gi: ptr_uint = 0
+    while gi < gen.len():
+        let gv_ptr = gen.get(gi) else:
+            break
+        unsafe:
+            let vd = read(gv_ptr)
+            if vd.linkage_name == cname:
+                return Option[ir.VariantDecl].some(value = vd)
+        gi += 1
     return Option[ir.VariantDecl].none
 
 
