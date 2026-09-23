@@ -97,4 +97,31 @@ class DebugGuardsTest < Minitest::Test
     assert_match(/if \(head == NULL\) mt_fatal\(/, debug_c)
     assert_match(/if \(head->next == NULL\) mt_fatal\(/, debug_c)
   end
+
+  def test_debug_guards_skip_side_effecting_call_receivers
+    # A pointer-returning call is duplicated by a trap that guards it, so the
+    # call would run twice.  Side-effecting receivers must not be guarded.
+    source = <<~MT
+      # module demo.debug_guards_call_receiver
+
+      struct Item:
+          value: int
+
+      var calls: int = 0
+      var global_item: Item
+
+      function get_item() -> ptr[Item]:
+          calls += 1
+          return ptr_of(global_item)
+
+      function read_value() -> int:
+          unsafe:
+              return read(get_item()).value
+    MT
+
+    debug_c = generate_c_from_source(source, debug_guards: true)
+    refute_match(/if \(demo_debug_guards_call_receiver_get_item\(\) == NULL\)/, debug_c)
+    assert_equal 1, debug_c.scan(/demo_debug_guards_call_receiver_get_item\(\)/).size,
+                 "pointer-returning call must be invoked exactly once"
+  end
 end

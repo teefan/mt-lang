@@ -621,6 +621,10 @@ module MilkTea
       def debug_null_guardable_receiver?(expression)
         type = expression.respond_to?(:type) ? expression.type : nil
         return false if ref_type?(type)
+        # The receiver is duplicated into the guard, so it must be safe to
+        # evaluate twice.  In particular a call that returns a pointer must not
+        # be re-invoked by the trap.
+        return false unless side_effect_free_expression?(expression)
 
         raw_pointer_type?(type) || nullable_pointer_like_type?(type)
       end

@@ -375,4 +375,46 @@ class VariantCodegenTest < Minitest::Test
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
   end
+
+  def test_cyclic_variant_span_field_is_not_pointer_broken
+    # A `span[T]` field never creates a C storage cycle (the span already holds
+    # a pointer), so the C backend embeds it by value.  Field access must not
+    # inject a deref for it, even when the span element reaches the enclosing
+    # variant.
+    source = <<~MT
+      # module demo.cyclic_span_field
+
+      variant TypeNode:
+          generic(args: span[TypeNode])
+          end
+
+      function count_args(args: span[TypeNode]) -> int:
+          return int<-args.len
+
+      function inspect(t: TypeNode) -> int:
+          match t:
+              TypeNode.generic as g:
+                  return count_args(g.args)
+              TypeNode.end:
+                  return 0
+
+      function main() -> int:
+          let leaf = TypeNode.generic(args = span[TypeNode]())
+          return inspect(leaf)
+    MT
+
+    generated = generate_c_from_program_source(source)
+    assert_match(/mt_span_demo_cyclic_span_field_TypeNode args;/, generated,
+                "span field must be embedded by value")
+    refute_match(/count_args\(\*g\.args\)/, generated,
+                 "span field access must not be dereferenced")
+
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    result = run_program_from_source(source, compiler:)
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
 end

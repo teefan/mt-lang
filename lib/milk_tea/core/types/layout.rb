@@ -312,8 +312,6 @@ module MilkTea
         else
           []
         end
-      when Types::Span
-        [type.element_type]
       when Types::Struct, Types::StructInstance, Types::Union
         type.fields.values
       when Types::Variant, Types::VariantInstance
