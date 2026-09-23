@@ -3850,9 +3850,10 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     let iterable_type = index_receiver_type(ctx, iterable)
     let element_type = generic_first_arg(iterable_type)
     let is_arr = is_array_type(iterable_type)
-    # If the iterable is neither array nor span, fall back to the custom
-    # iterator protocol (`iter()` / `next()` / `current()`).
-    if types.is_error(element_type) and not is_arr:
+    # Only arrays and spans are index-driven collections.  Every other iterable
+    # (Vec, Queue, map entries, ...) goes through the iterator protocol
+    # (`iter()` / `next()` / `current()`).
+    if not is_arr and not is_span_type(iterable_type):
         if not ctx.async_cps_active:
             lower_custom_iter_for(ctx, output, binding_name, iterable, body_ptr)
         return
@@ -3945,17 +3946,42 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     ctx.loop_continue_label = saved_continue
 
 
-## Lower `for x in custom_iterable` over the iterator protocol:
-##   { Iter it = iterable.iter(); while (it.next()) { x = it.current(); body } }
+## Lower `for x in custom_iterable` over the iterator protocol.  The `iter()`
+## / `next()` / `current()` calls are synthesized as AST and lowered through the
+## normal call path so generic receivers (a `Vec[int]` collapses to a concrete
+## struct) monomorphize exactly like a source-level method call.  Two shapes
+## are supported, mirroring the host's `iterator_loop_info`:
+##   * nullable item: `Iter it = xs.iter(); while (true) { T* x = it.next();
+##     if (x == null) break; body }`
+##   * ready flag: `Iter it = xs.iter(); while (true) { bool ready = it.next();
+##     if (!ready) break; T x = it.current(); body }`
 function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], binding_name: str, iterable: ptr[ast.Expr], body_ptr: ptr[ast.Stmt]?) -> void:
-    let iterable_type = index_receiver_type(ctx, iterable)
-    let iter_mi = resolve_method_info(ctx, iterable_type, "iter") else:
+    let iter_callee = alloc_ast_expr(ast.Expr.expr_member_access(receiver = iterable, member_name = "iter", line = 0, column = 0))
+    let iter_call = lower_call(ctx, iter_callee, span[ast.Argument](), iter_callee)
+    let iter_ty = ir_expr_type(iter_call)
+    if types.is_error(iter_ty) or types.is_void(iter_ty):
         return
-    let iter_ty = iter_mi.return_type
-    let next_mi = resolve_method_info(ctx, iter_ty, "next") else:
+
+    let it_c = fresh_c_temp_name(ctx, "for_iterator")
+    ctx.locals.push(LocalBinding(name = it_c, c_name = it_c, ty = iter_ty, pointer = false))
+
+    let it_id = alloc_ast_expr(ast.Expr.expr_identifier(name = it_c, line = 0, column = 0))
+    let next_callee = alloc_ast_expr(ast.Expr.expr_member_access(receiver = it_id, member_name = "next", line = 0, column = 0))
+    let next_call = lower_call(ctx, next_callee, span[ast.Argument](), next_callee)
+    let next_ty = ir_expr_type(next_call)
+    if types.is_error(next_ty) or types.is_void(next_ty):
         return
-    let cur_mi = resolve_method_info(ctx, iter_ty, "current") else:
-        return
+    let nullable_item = is_nullable_pointer_like(next_ty)
+
+    var cur_call = next_call
+    var cur_ty = next_ty
+    if not nullable_item:
+        let it_id2 = alloc_ast_expr(ast.Expr.expr_identifier(name = it_c, line = 0, column = 0))
+        let cur_callee = alloc_ast_expr(ast.Expr.expr_member_access(receiver = it_id2, member_name = "current", line = 0, column = 0))
+        cur_call = lower_call(ctx, cur_callee, span[ast.Argument](), cur_callee)
+        cur_ty = ir_expr_type(cur_call)
+        if types.is_error(cur_ty) or types.is_void(cur_ty):
+            return
 
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
@@ -3965,32 +3991,28 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
     ctx.loop_continue_label = cl
 
     let binding_c = utils.c_local_name(binding_name)
-    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = cur_mi.return_type, pointer = false))
+    let binding_ty = if nullable_item: types.unwrap_nullable(next_ty) else: cur_ty
+    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = binding_ty, pointer = false))
     let body_span = lower_block(ctx, body_ptr)
 
-    let it_c = fresh_c_temp_name(ctx, "for_iterator")
-    let it_ref = alloc_expr(ir.Expr.expr_name(name = it_c, ty = iter_ty, pointer = false))
-    var next_args = vec.Vec[ir.Expr].create()
-    match build_receiver_arg(it_ref, next_mi.method_kind):
-        Option.some as ra:
-            unsafe:
-                next_args.push(read(ra.value))
-        Option.none:
-            pass
-    let next_call = alloc_expr(ir.Expr.expr_call(callee = next_mi.c_name, arguments = next_args.as_span(), ty = next_mi.return_type))
-
-    let it_ref2 = alloc_expr(ir.Expr.expr_name(name = it_c, ty = iter_ty, pointer = false))
-    var cur_args = vec.Vec[ir.Expr].create()
-    match build_receiver_arg(it_ref2, cur_mi.method_kind):
-        Option.some as ca:
-            unsafe:
-                cur_args.push(read(ca.value))
-        Option.none:
-            pass
-    let cur_call = alloc_expr(ir.Expr.expr_call(callee = cur_mi.c_name, arguments = cur_args.as_span(), ty = cur_mi.return_type))
+    var break_body = vec.Vec[ir.Stmt].create()
+    break_body.push(ir.Stmt.stmt_break())
 
     var loop_body = vec.Vec[ir.Stmt].create()
-    loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = cur_mi.return_type, value = cur_call, line = 0, source_path = ""))
+    if nullable_item:
+        let item_ref = alloc_expr(ir.Expr.expr_name(name = binding_c, ty = next_ty, pointer = false))
+        loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = next_ty, value = next_call, line = 0, source_path = ""))
+        let null_lit = alloc_expr(ir.Expr.expr_null_literal(ty = next_ty))
+        let is_null = alloc_expr(ir.Expr.expr_binary(operator = "==", left = item_ref, right = null_lit, ty = ctx.bool_ty))
+        loop_body.push(ir.Stmt.stmt_if(condition = is_null, then_body = break_body.as_span(), else_body = span[ir.Stmt]()))
+    else:
+        let ready_c = fresh_c_temp_name(ctx, "for_ready")
+        let ready_ref = alloc_expr(ir.Expr.expr_name(name = ready_c, ty = ctx.bool_ty, pointer = false))
+        loop_body.push(ir.Stmt.stmt_local(name = ready_c, linkage_name = ready_c, ty = ctx.bool_ty, value = next_call, line = 0, source_path = ""))
+        let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = ready_ref, ty = ctx.bool_ty))
+        loop_body.push(ir.Stmt.stmt_if(condition = not_ready, then_body = break_body.as_span(), else_body = span[ir.Stmt]()))
+        loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = cur_ty, value = cur_call, line = 0, source_path = ""))
+
     var bi: ptr_uint = 0
     while bi < body_span.len:
         unsafe:
@@ -3999,9 +4021,9 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
     loop_body.push(ir.Stmt.stmt_label(name = cl))
 
     var block_stmts = vec.Vec[ir.Stmt].create()
-    let init_call = lower_method_resolved(ctx, iter_mi, iterable, span[ast.Argument](), iterable)
-    block_stmts.push(ir.Stmt.stmt_local(name = it_c, linkage_name = it_c, ty = iter_ty, value = init_call, line = 0, source_path = ""))
-    block_stmts.push(ir.Stmt.stmt_while(condition = next_call, body = loop_body.as_span()))
+    block_stmts.push(ir.Stmt.stmt_local(name = it_c, linkage_name = it_c, ty = iter_ty, value = iter_call, line = 0, source_path = ""))
+    let true_lit = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty))
+    block_stmts.push(ir.Stmt.stmt_while(condition = true_lit, body = loop_body.as_span()))
     block_stmts.push(ir.Stmt.stmt_label(name = bl))
     output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
 
