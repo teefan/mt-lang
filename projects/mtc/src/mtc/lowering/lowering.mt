@@ -879,8 +879,13 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
                 d = read(analysis.source_file.declarations.data + di)
             match d:
                 ast.Decl.decl_function as fun:
-                    let ret = resolve_return_type(ref_of(ctx), lookup_fn_sig(ref_of(ctx), fun.name), fun.return_type)
-                    sink.set(naming.qualified_c_name(analysis.module_name, fun.name), ret)
+                    # A generic function's return type still carries type
+                    # parameters; resolving it here (with no substitution
+                    # context) would instantiate bogus concrete types.  Its
+                    # specializations record their own return types.
+                    if fun.type_params.len == 0:
+                        let ret = resolve_return_type(ref_of(ctx), lookup_fn_sig(ref_of(ctx), fun.name), fun.return_type)
+                        sink.set(naming.qualified_c_name(analysis.module_name, fun.name), ret)
                 ast.Decl.decl_extern_function as ext:
                     # External functions use their bare C name as the linkage name
                     # (no module prefix), so a cross-module call `c.func(...)` can
@@ -6671,7 +6676,14 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
                         spi += 1
                     var fi: ptr_uint = 0
                     var saved_type_subst = ctx.type_substitution
+                    var saved_analysis = ctx.analysis
+                    var saved_module = ctx.module_name
                     ctx.type_substitution = sub
+                    # Field types resolve in the struct's OWN module: an
+                    # imported generic struct's field (`values: Vec[T]`) must
+                    # monomorphize against the modules that module imports.
+                    ctx.analysis = module_analysis
+                    ctx.module_name = module_analysis.module_name
                     while fi < s.struct_fields.len:
                         var f: ast.Field
                         unsafe:
@@ -6681,6 +6693,8 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
                         ir_fields.push(ir.Field(name = f.name, ty = qualify_type(ctx, field_ty)))
                         fi += 1
                     ctx.type_substitution = saved_type_subst
+                    ctx.analysis = saved_analysis
+                    ctx.module_name = saved_module
             _:
                 pass
         di += 1
@@ -11106,11 +11120,16 @@ function collect_function_returns(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> 
             d = read(decls.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                var ret = resolve_return_type(ctx, lookup_fn_sig(ctx, fun.name), fun.return_type)
-                if fun.is_async:
-                    ret = make_task_type(ret)
-                ctx.function_returns.set(fun.name, ret)
-                ctx.function_returns.set(naming.qualified_c_name(ctx.module_name, fun.name), ret)
+                # A generic function's return type still carries type
+                # parameters; resolving it without a substitution context would
+                # instantiate bogus concrete types.  Specializations record
+                # their own return types.
+                if fun.type_params.len == 0:
+                    var ret = resolve_return_type(ctx, lookup_fn_sig(ctx, fun.name), fun.return_type)
+                    if fun.is_async:
+                        ret = make_task_type(ret)
+                    ctx.function_returns.set(fun.name, ret)
+                    ctx.function_returns.set(naming.qualified_c_name(ctx.module_name, fun.name), ret)
             _:
                 pass
         i += 1
