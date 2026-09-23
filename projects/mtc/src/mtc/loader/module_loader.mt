@@ -275,7 +275,11 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     var order = vec.Vec[ptr_uint].create()
     var diagnostics = vec.Vec[LoadDiagnostic].create()
 
-    var root_resolved = resolver.resolve_source_path(root_path, platform)
+    # Absolutize the root path so module-name inference can match it against
+    # the normalized (absolute) roots, like Ruby's File.expand_path in load_file.
+    var root_abs = absolute_path(root_path)
+    defer: root_abs.release()
+    var root_resolved = resolver.resolve_source_path(root_abs.as_str(), platform)
 
     # Seed the language prelude modules (std.option, std.result) so their real
     # `extending Option[T]:` / `extending Result[T,E]:` method bodies are parsed,

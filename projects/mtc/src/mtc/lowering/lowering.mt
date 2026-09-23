@@ -16108,15 +16108,28 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
 ## `(a, b, c)` becomes an array literal when the target is `array[T, N]`.
 function try_const_typed_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target_ty: types.Type) -> Option[ptr[ir.Expr]]:
     match target_ty:
+        types.Type.ty_primitive:
+            # A literal initializer takes the constant's declared type.
+            unsafe:
+                match read(ep):
+                    ast.Expr.expr_integer_literal as lit:
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = lit.value, ty = target_ty)))
+                    ast.Expr.expr_float_literal as lit:
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = target_ty)))
+                    ast.Expr.expr_char_literal as ch:
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-ch.value, ty = target_ty)))
+                    _:
+                        pass
         types.Type.ty_generic as tg:
             if tg.name == "array" and tg.args.len == 2:
+                let element_ty = unsafe: read(tg.args.data + 0)
                 unsafe:
                     match read(ep):
                         ast.Expr.expr_expression_list as els:
                             var elements = vec.Vec[ir.Expr].create()
                             var i: ptr_uint = 0
                             while i < els.elements.len:
-                                match try_const_value_ir(ctx, els.elements.data + i, env):
+                                match try_const_typed_value_ir(ctx, els.elements.data + i, env, element_ty):
                                     Option.some as ev:
                                         elements.push(read(ev.value))
                                     Option.none:
