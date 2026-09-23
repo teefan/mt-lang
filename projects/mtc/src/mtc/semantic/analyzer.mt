@@ -1221,7 +1221,13 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
         return wrap_nullable(types.Type.ty_named(module_name = "", name = "dyn"), t.nullable)
 
     if t.is_tuple:
-        return types.Type.ty_error
+        var elems = vec.Vec[types.Type].create()
+        var ti: ptr_uint = 0
+        while ti < t.arguments.len:
+            unsafe:
+                elems.push(resolve_type(ctx, t.arguments.data + ti))
+            ti += 1
+        return types.Type.ty_tuple(elements = elems.as_span(), field_names = Option[span[str]].none)
 
     # An `alias.Type` naming a type exported by an imported module resolves to a
     # concrete imported type (so its members are checkable); otherwise fall back

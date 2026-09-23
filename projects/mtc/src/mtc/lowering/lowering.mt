@@ -650,7 +650,7 @@ function struct_exists_in_imports(ctx: ref[LowerCtx], name: str) -> bool:
 ## Lower a function body with type-parameter substitution applied: every reference
 ## to a type param (e.g. `T`) in locals, expressions, and the return type is
 ## replaced by the corresponding concrete type from `sub`.
-function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]]) -> ir.Function:
+function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, sub: ref[map_mod.Map[str, types.Type]]) -> ir.Function:
     # Reset function-level state
     ctx.locals.clear()
     ctx.temp_counter = 0
@@ -690,6 +690,10 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, params: span[
             ret_ty = qualify_type(ctx, substituted)
         else:
             ret_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, rt_raw), sub))
+    # Register the specialization's return type before lowering its body so a
+    # recursive self-call resolves its type from here instead of the analyzer's
+    # unsubstituted generic-body record.
+    ctx.function_returns.set(spec_key, ret_ty)
     var saved_sub = ctx.type_substitution
     ctx.type_substitution = read(sub)
     let body_ir = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, body))
@@ -2038,6 +2042,24 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if loc.name == "_":
                     let init_val = loc.value
                     if init_val != null:
+                        # `let _ = expr?` still propagates: unwrap and return the
+                        # failure arm, discarding the success value.
+                        var is_propagate = false
+                        unsafe:
+                            match read(init_val):
+                                ast.Expr.expr_unary_op as un:
+                                    if un.operator == "?":
+                                        is_propagate = true
+                                _:
+                                    pass
+                        if is_propagate:
+                            unsafe:
+                                match read(init_val):
+                                    ast.Expr.expr_unary_op as un:
+                                        lower_propagate_let(ctx, output, "_", un.operand)
+                                    _:
+                                        pass
+                            return
                         let discard_ir = lower_expr(ctx, init_val)
                         output.push(ir.Stmt.stmt_expression(expression = discard_ir, line = 0, source_path = ""))
                     return
@@ -3128,6 +3150,15 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
                     return types.Type.ty_imported(module_name = owner.value, name = n.name, args = span[types.Type]())
                 Option.none:
                     pass
+            # The name may be declared in a module the current one does not
+            # import (e.g. a reflected struct type from the caller's module,
+            # reached through `fields_of(T)`): find its defining module
+            # program-wide so it is not mis-attributed to the current module.
+            match find_declaring_module(ctx, n.name):
+                Option.some as owner:
+                    return types.Type.ty_imported(module_name = owner.value, name = n.name, args = span[types.Type]())
+                Option.none:
+                    pass
             # Resolve type aliases to their target type so the C backend sees
             # the concrete type (e.g. IntCallback → fn(...)) rather than an
             # opaque ty_imported.  Aliases targeting std.c.* types are NOT
@@ -3264,6 +3295,34 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
             return types.Type.ty_named(module_name = "", name = concrete_name)
         pai += 1
     return types.Type.ty_error
+
+
+## The module that declares a type named `name`, searching every program
+## analysis (not just the current module's imports).
+function find_declaring_module(ctx: ref[LowerCtx], name: str) -> Option[str]:
+    # A locally-declared type takes precedence: the caller qualifies against
+    # ctx.module_name.  (Same precedence as `imported_type_module`.)
+    if ctx.analysis.type_names.contains(name) or ctx.analysis.structs.contains(name) or type_declared_in_source(ctx.analysis, name):
+        return Option[str].none
+    # Only a unique owner is usable: with the same simple name in several
+    # modules (e.g. `Field` in both mtc.parser.ast and mtc.ir) picking one
+    # would mis-attribute the type.
+    var found: str = ""
+    var ambiguous = false
+    var i: ptr_uint = 0
+    while i < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + i)
+        if a.module_name != ctx.module_name and (a.type_names.contains(name) or a.structs.contains(name)):
+            if found.len == 0:
+                found = a.module_name
+            else if found != a.module_name:
+                ambiguous = true
+        i += 1
+    if found.len > 0 and not ambiguous:
+        return Option[str].some(value = found)
+    return Option[str].none
 
 
 ## The owner module of a bare type `name` when it is defined in an imported
@@ -5508,9 +5567,16 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
                 return lower_range_index_read(ctx, receiver, rng.start_expr, rng.end_expr, ep)
             _:
                 pass
-    let receiver_type = index_receiver_type(ctx, receiver)
+    var receiver_type = index_receiver_type(ctx, receiver)
     let recv = lower_expr(ctx, receiver)
     let index_expr = lower_expr(ctx, index)
+    # The analyzer's recorded type for a member-access chain can carry
+    # unresolved generic parameters (e.g. `Signal[Payload].slots` inside a
+    # monomorphized body); the lowered receiver's type is concrete, so prefer
+    # it for array/span receivers.
+    let recv_ty_pre = ir_expr_type(recv)
+    if is_array_type(recv_ty_pre) or is_span_type(recv_ty_pre):
+        receiver_type = recv_ty_pre
     if is_str_typed(receiver_type) or is_str_typed(ir_expr_type(recv)):
         # str byte read → mt_str_index(text, index) with a bounds check.
         var str_args = vec.Vec[ir.Expr].create()
@@ -5520,6 +5586,12 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
             str_args.push(read(str_idx))
         return alloc_expr(ir.Expr.expr_call(callee = "mt_str_index", arguments = str_args.as_span(), ty = types.primitive("ubyte")))
     var elem_ty = qualify_type(ctx, expr_type(ctx, ep))
+    # Prefer the element type of the lowered receiver: the analyzer's recorded
+    # element type may carry unresolved generic parameters (see above).
+    if is_array_type(recv_ty_pre) or is_span_type(recv_ty_pre):
+        let concrete_elem = qualify_type(ctx, generic_first_arg(recv_ty_pre))
+        if not types.is_error(concrete_elem):
+            elem_ty = concrete_elem
     if types.is_error(elem_ty):
         # The analyzer may not have recorded the type for member-access
         # chains on external structs (e.g. model.skeleton.bindPose[i]).
@@ -5993,7 +6065,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                 sp_info_opt = ptr_specialization_receiver_info(ctx, sp_recv_ty)
                             match sp_info_opt:
                                 Option.some as sp_info:
-                                    match find_generic_method(ctx, sp_info.value.owner_name, spma.member_name):
+                                    match find_generic_method_in_module(ctx, sp_info.value.owner_name, spma.member_name, sp_info.value.owner_module):
                                         Option.some as sp_gm:
                                             if sp_gm.value.method.type_params.len > 0:
                                                 var sp_ext_args = vec.Vec[types.Type].create()
@@ -7236,9 +7308,11 @@ function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types
 
 ## The single (unqualified) name of a type-ref, or "" for a multi-part name.
 function type_ref_simple_name(t: ast.TypeRef) -> str:
-    if t.name.parts.len == 1:
-        return unsafe: read(t.name.parts.data + 0)
-    return ""
+    # The final name part: `T` -> "T", `vec.Vec` -> "Vec" (structural
+    # unification matches the constructor by its simple name).
+    if t.name.parts.len == 0:
+        return ""
+    return unsafe: read(t.name.parts.data + t.name.parts.len - 1)
 
 
 ## True for the pointer-like type constructors whose single element carries the
@@ -7394,7 +7468,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.type_substitution = map_mod.Map[str, types.Type].create()
             ctx.inside_async = false
 
-            var spec_fun = lower_specialized_function(ctx, fun.name, fun.method_params, fun.return_type, fun.body, sub)
+            var spec_fun = lower_specialized_function(ctx, fun.name, spec_key, fun.method_params, fun.return_type, fun.body, sub)
             spec_fun.linkage_name = spec_key
             spec_fun.name = spec_key
 
@@ -8743,29 +8817,63 @@ function find_generic_method(ctx: ref[LowerCtx], owner_name: str, method_name: s
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
-        var di: ptr_uint = 0
-        while di < a.source_file.declarations.len:
-            var d: ast.Decl
-            unsafe:
-                d = read(a.source_file.declarations.data + di)
-            match d:
-                ast.Decl.decl_extending_block as ex:
-                    let type_ref = unsafe: read(ex.type_name)
-                    if qname_last(type_ref.name) == owner_name:
-                        match find_method_in_block(ex.methods, method_name):
-                            Option.some as m:
-                                return Option[GenericMethodMatch].some(value = GenericMethodMatch(
-                                    owner_module = a.module_name,
-                                    struct_param_names = type_param_names_of(type_ref.arguments),
-                                    method = m.value,
-                                ))
-                            Option.none:
-                                pass
-                _:
-                    pass
-            di += 1
+        match find_generic_method_in_analysis(a, owner_name, method_name):
+            Option.some as gm:
+                return Option[GenericMethodMatch].some(value = gm.value)
+            Option.none:
+                pass
         ai += 1
     return Option[GenericMethodMatch].none
+
+
+## Search one module's `extending` blocks for a method.
+function find_generic_method_in_analysis(a: analyzer.Analysis, owner_name: str, method_name: str) -> Option[GenericMethodMatch]:
+    var di: ptr_uint = 0
+    while di < a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_extending_block as ex:
+                let type_ref = unsafe: read(ex.type_name)
+                if qname_last(type_ref.name) == owner_name:
+                    match find_method_in_block(ex.methods, method_name):
+                        Option.some as m:
+                            return Option[GenericMethodMatch].some(value = GenericMethodMatch(
+                                owner_module = a.module_name,
+                                struct_param_names = type_param_names_of(type_ref.arguments),
+                                method = m.value,
+                            ))
+                        Option.none:
+                            pass
+            _:
+                pass
+        di += 1
+    return Option[GenericMethodMatch].none
+
+
+## Resolve a generic method preferring the receiver struct's defining module.
+## Two structs with the same name in different modules (linked_map.Entry vs
+## counter.Entry) each have their own `extending` block; a name-only scan would
+## pick whichever module is loaded first.  Falls back to the program-wide scan
+## when the defining module does not declare the method (an extending block may
+## live in another module, e.g. std.serialize extends std.binary Writer).
+function find_generic_method_in_module(ctx: ref[LowerCtx], owner_name: str, method_name: str, module_name: str) -> Option[GenericMethodMatch]:
+    if module_name.len > 0:
+        var ai: ptr_uint = 0
+        while ai < ctx.program_analyses.len:
+            var a: analyzer.Analysis
+            unsafe:
+                a = read(ctx.program_analyses.data + ai)
+            if a.module_name == module_name:
+                match find_generic_method_in_analysis(a, owner_name, method_name):
+                    Option.some as gm:
+                        return Option[GenericMethodMatch].some(value = gm.value)
+                    Option.none:
+                        pass
+                break
+            ai += 1
+    return find_generic_method(ctx, owner_name, method_name)
 
 
 ## Extract a concrete generic-struct receiver from a specialization receiver
@@ -8846,7 +8954,7 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
             info_opt = generic_receiver_info(ctx, ir_expr_type(lower_expr(ctx, receiver)))
     let info = info_opt else:
         return Option[ptr[ir.Expr]].none
-    let gm = find_generic_method(ctx, info.owner_name, method_name) else:
+    let gm = find_generic_method_in_module(ctx, info.owner_name, method_name, info.owner_module) else:
         return Option[ptr[ir.Expr]].none
     # Async methods are lowered eagerly through the CPS path (lower_async_fn) and
     # resolved via resolve_method_info (which returns their Task[T] type + CPS
@@ -9211,6 +9319,10 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         let resolved_ret = resolve_field_type_ref(ctx, unsafe: read(return_ref))
         ret_ty = qualify_type(ctx, substitute_type_params(ctx, resolved_ret, sub))
 
+    # Register the method's return type before lowering its body so a
+    # recursive self-call resolves its type from here rather than the
+    # analyzer's unsubstituted generic-body record.
+    ctx.function_returns.set(method_c, ret_ty)
     var saved_sub = ctx.type_substitution
     ctx.type_substitution = read(sub)
     var saved_fn_ret = ctx.current_fn_return_type
@@ -10501,6 +10613,7 @@ function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Ar
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_arg_to_ref_param(sig, i, lowered)
+        lowered = coerce_arg_to_span_param(sig, i, lowered)
         lowered = coerce_fn_arg_to_proc(ctx, sig, i, lowered, arg.arg_value)
         unsafe:
             ir_args.push(read(lowered))
@@ -10513,6 +10626,27 @@ function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Ar
     else:
         ret_ty = expr_type(ctx, call_ep)
     return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
+
+
+## Coerce an `array[T, N]` argument passed to a `span[T]` parameter into a span
+## aggregate `{ data = &arr[0], len = N }`, mirroring the analyzer's permitted
+## array-to-span boundary conversion.
+function coerce_arg_to_span_param(sig: Option[analyzer.FnSig], index: ptr_uint, arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    match sig:
+        Option.some as s:
+            if index >= s.value.params.len:
+                return arg
+            var param: analyzer.ParamEntry
+            unsafe:
+                param = read(s.value.params.data + index)
+            if not is_span_type(param.ty):
+                return arg
+            let arg_ty = ir_expr_type(arg)
+            if is_array_type(arg_ty):
+                return array_value_to_span(arg, arg_ty, param.ty)
+            return arg
+        Option.none:
+            return arg
 
 
 ## Implicitly borrow a by-value argument passed to a `ref[T]` parameter: when the
@@ -12465,7 +12599,15 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
     if tref.is_dyn:
         return types.Type.ty_dyn(iface = unsafe: analyzer.qname_to_str(tref.dyn_interface))
     if tref.is_tuple:
-        return types.Type.ty_error
+        var elems = vec.Vec[types.Type].create()
+        var ti: ptr_uint = 0
+        while ti < tref.arguments.len:
+            elems.push(resolve_field_type_ref(ctx, unsafe: read(tref.arguments.data + ti)))
+            ti += 1
+        let tuple_ty = types.Type.ty_tuple(elements = elems.as_span(), field_names = Option[span[str]].none)
+        if tref.nullable:
+            return types.Type.ty_nullable(base = types.alloc_type(tuple_ty))
+        return tuple_ty
     var resolved = types.Type.ty_error
     if tref.arguments.len > 0:
         resolved = resolve_generic_type_ref(ctx, tref)

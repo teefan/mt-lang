@@ -2799,6 +2799,14 @@ function c_declaration(t: types.Type, name: str) -> str:
         # indexing `name[row][col]` and the Ruby backend.
         if is_array_type(elem_t):
             return c_declaration(elem_t, j4(inner_name, "[", long_to_str(array_length(t)), "]"))
+        # Array of function pointers needs the array declarator inside the
+        # parenthesized name: `void (*slots[16])(int32_t)`, not
+        # `void (*)(int32_t) slots[16]`.
+        match elem_t:
+            types.Type.ty_function:
+                return c_fn_ptr_declarator(elem_t, j4(inner_name, "[", long_to_str(array_length(t)), "]"))
+            _:
+                pass
         return j6(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
     # Function-pointer types need declarator syntax: `ret_type (*name)(...)`.
     # Pointer/reference types: `T*` instead of `ptr_T`.
@@ -4020,7 +4028,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 rbuf.append(") }).__t")
                 return rbuf.as_str()
             ir.Expr.expr_array_literal as arr:
-                return render_array_literal_initializer(e, arr.elements)
+                return render_array_literal_expression(e, arr.ty, arr.elements)
             ir.Expr.expr_conditional as cond:
                 return j5(emit_conditional_condition(e, cond.condition), " ? ", render_expression(e, cond.then_expression), " : ", render_expression(e, cond.else_expression))
             ir.Expr.expr_stmt_expr as se:
@@ -4237,14 +4245,44 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
     let name = checked_array_index_helper_name(receiver_type)
     var sig = string.String.create()
     sig.append("static inline ")
-    sig.append(elem_c)
-    sig.append(" *")
-    sig.append(name)
-    sig.append("(")
-    sig.append(elem_c)
-    sig.append(" (*array)[")
-    sig.append(n)
-    sig.append("], uintptr_t index) {")
+    match elem_type:
+        types.Type.ty_function as fnt:
+            # Function-pointer elements need the nested declarator spelled out:
+            #   static inline RET (**name(RET (*array)[N], uintptr_t index))(params)
+            unsafe:
+                sig.append(c_type(read(fnt.return_type)))
+            sig.append(" (**")
+            sig.append(name)
+            sig.append("(")
+            var array_decl = string.String.create()
+            array_decl.append("(*array)[")
+            array_decl.append(n)
+            array_decl.append("]")
+            sig.append(c_fn_ptr_declarator(elem_type, array_decl.as_str()))
+            sig.append(", uintptr_t index))(")
+            var fpi: ptr_uint = 0
+            while fpi < fnt.params.len:
+                if fpi > 0:
+                    sig.append(", ")
+                unsafe:
+                    sig.append(c_type(read(fnt.params.data + fpi)))
+                fpi += 1
+            if fnt.params.len == 0 and not fnt.variadic:
+                sig.append("void")
+            if fnt.variadic:
+                if fnt.params.len > 0:
+                    sig.append(", ")
+                sig.append("...")
+            sig.append(") {")
+        _:
+            sig.append(elem_c)
+            sig.append(" *")
+            sig.append(name)
+            sig.append("(")
+            sig.append(elem_c)
+            sig.append(" (*array)[")
+            sig.append(n)
+            sig.append("], uintptr_t index) {")
     emit_line(e, sig.as_str())
     emit_line(e, j4("  if (index >= ", n, ") mt_fatal(\"array index out of bounds\");", ""))
     emit_line(e, "  return &(*array)[index];")
@@ -4488,7 +4526,12 @@ function render_zero_initializer(t: types.Type) -> str:
 ## The zero value of a type in expression position.
 function render_zero_expression(t: types.Type) -> str:
     match t:
-        types.Type.ty_primitive:
+        types.Type.ty_primitive as p:
+            # vec2/vec3/vec4/mat*/quat are struct-like aggregates: a bare
+            # `{ 0 }` is only valid as an initializer, so expression position
+            # needs a compound literal.
+            if is_vec_math_name(p.name):
+                return j4("(", c_type(t), ")", " { 0 }")
             return render_zero_initializer(t)
         types.Type.ty_str:
             return j4("(", c_type(t), ")", " { 0 }")
@@ -4588,6 +4631,23 @@ function emit_aggregate_with_array_call_fields(e: ref[Emitter], indent: str, dec
 
 ## Render an array literal in initializer position: `{ e0, e1, ... }`.  An empty
 ## array literal degenerates to `{ 0 }`.  Mirrors the aggregate initializer form.
+## An array literal in expression position needs a C compound literal:
+## `(int32_t [3]) { 10, 20, 30 }`.  A bare braced list is only valid as an
+## initializer, e.g. in a local declaration.
+function render_array_literal_expression(e: ref[Emitter], ty: types.Type, elements: span[ir.Expr]) -> str:
+    var length = array_length(ty)
+    if length == 0:
+        length = int<-elements.len
+    var buf = string.String.create()
+    buf.append("(")
+    buf.append(c_type(array_element_type(ty)))
+    buf.append(" [")
+    buf.append(long_to_str(length))
+    buf.append("]) ")
+    buf.append(render_array_literal_initializer(e, elements))
+    return buf.as_str()
+
+
 function render_array_literal_initializer(e: ref[Emitter], elements: span[ir.Expr]) -> str:
     if elements.len == 0:
         return "{ 0 }"
@@ -4667,11 +4727,14 @@ function is_str_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr])
 function is_variant_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], e: ref[Emitter]) -> bool:
     if not (operator == "==" or operator == "!="):
         return false
-    let lt = expr_result_type(left)
-    let rt = expr_result_type(right)
-    if not types.type_to_string(lt) == types.type_to_string(rt):
+    # Compare by C type name, not the IR type: the two operands may carry the
+    # generic form (`Option[int]`) on one side and the collapsed concrete form
+    # (`ty_named("std_option_Option_int")`) on the other.
+    let lc = variant_c_name_for_type(expr_result_type(left))
+    let rc = variant_c_name_for_type(expr_result_type(right))
+    if lc.len == 0 or lc != rc:
         return false
-    return e.variant_eq_set.contains(variant_c_name_for_type(lt))
+    return e.variant_eq_set.contains(lc)
 
 
 ## Return the C struct name for a type if it corresponds to a variant, or the
@@ -5179,11 +5242,13 @@ function emit_eq_field_guard(e: ref[Emitter], left_expr: str, right_expr: str, f
 function is_struct_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], e: ref[Emitter]) -> bool:
     if not (operator == "==" or operator == "!="):
         return false
-    let lt = expr_result_type(left)
-    let rt = expr_result_type(right)
-    if not types.type_to_string(lt) == types.type_to_string(rt):
+    # Compare by C type name; one operand may be the generic form and the other
+    # the collapsed concrete form of the same struct.
+    let lc = variant_c_name_for_type(expr_result_type(left))
+    let rc = variant_c_name_for_type(expr_result_type(right))
+    if lc.len == 0 or lc != rc:
         return false
-    return e.struct_eq_set.contains(c_type(lt))
+    return e.struct_eq_set.contains(lc)
 
 
 ## Render a struct equality expression as a call to the generated helper
