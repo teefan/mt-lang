@@ -10390,7 +10390,15 @@ function lower_str_buffer_method(ctx: ref[LowerCtx], recv: ptr[ir.Expr], recv_ty
             helper_args.push(read(dirty_addr))
         return alloc_expr(ir.Expr.expr_call(callee = helper, arguments = helper_args.as_span(), ty = void_ty))
     if method_name == "as_cstr":
-        return alloc_expr(ir.Expr.expr_null_literal(ty = types.primitive("cstr")))
+        # Validate the buffer (via `mt_str_buffer_len`) and hand back its
+        # inline storage as a C string.
+        var cstr_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            cstr_args.push(read(data_addr))
+            cstr_args.push(read(cap_val))
+            cstr_args.push(read(len_addr))
+            cstr_args.push(read(dirty_addr))
+        return alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_as_cstr", arguments = cstr_args.as_span(), ty = types.primitive("cstr")))
     fatal(c"str_buffer lowering: unknown method")
 
 
@@ -15136,6 +15144,20 @@ function fmt_plan(ctx: ref[LowerCtx], val_ty: types.Type, spec_ptr: ptr[ast.Form
         return FormatPlan(append_helper = "mt_format_append_long", len_helper = "mt_format_long_len", arg_ty = long_ty, len_kind = 0, precision = 0)
     if prim_name == "ulong":
         return FormatPlan(append_helper = "mt_format_append_ulong", len_helper = "mt_format_ulong_len", arg_ty = ulong_ty, len_kind = 0, precision = 0)
+    # Custom format hooks: a struct implementing `format_len() -> ptr_uint` and
+    # `append_format(output: ref[std.string.String]) -> void` renders through
+    # those methods (`len_kind = 3`; the helper fields hold the method C names).
+    if spec_ptr == null:
+        match resolve_method_info(ctx, val_ty, "format_len"):
+            Option.some as lmi:
+                match resolve_method_info(ctx, val_ty, "append_format"):
+                    Option.some as ami:
+                        if lmi.value.method_kind != ast.MethodKind.mk_editable and ami.value.method_kind != ast.MethodKind.mk_editable:
+                            return FormatPlan(append_helper = ami.value.c_name, len_helper = lmi.value.c_name, arg_ty = val_ty, len_kind = 3, precision = 0)
+                    Option.none:
+                        pass
+            Option.none:
+                pass
     # byte/short/int and any integer-like fallback (e.g. an int-backed enum cast
     # to int in C) format as a signed 32-bit integer.
     return FormatPlan(append_helper = "mt_format_append_int", len_helper = "mt_format_int_len", arg_ty = types.primitive("int"), len_kind = 0, precision = 0)
@@ -15179,6 +15201,8 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                 var temp_val: ptr[ir.Expr] = lowered
                 if plan.len_kind == 1:
                     temp_ty = str_ty
+                else if plan.len_kind == 3:
+                    pass
                 else:
                     temp_val = alloc_expr(ir.Expr.expr_cast(target_type = plan.arg_ty, expression = lowered, ty = plan.arg_ty))
                 output.push(ir.Stmt.stmt_local(name = temp_c, linkage_name = temp_c, ty = temp_ty, value = temp_val, line = 0, source_path = ""))
@@ -15221,6 +15245,50 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                 var temp_ty: types.Type = plan.arg_ty
                 if plan.len_kind == 1:
                     temp_ty = str_ty
+                if plan.len_kind == 3:
+                    # Custom hook: build the text in a temporary
+                    # `string.String` via `<Type>.append_format(value, &out)`,
+                    # then append its contents into the result buffer.
+                    let string_ty = types.Type.ty_imported(module_name = "std.string", name = "String", args = span[types.Type]())
+                    let hs_c = fresh_c_temp_name(ctx, "fmt_hook_str")
+                    let hs_ref = alloc_expr(ir.Expr.expr_name(name = hs_c, ty = string_ty, pointer = false))
+                    let ref_string_ty = types.Type.ty_generic(name = "ref", args = sp_type(string_ty))
+                    let hs_addr = alloc_expr(ir.Expr.expr_address_of(expression = hs_ref, ty = ref_string_ty))
+                    match resolve_method_info(ctx, string_ty, "create"):
+                        Option.some as cmi:
+                            let create_call = lower_static_call_args(ctx, cmi.value, span[ast.Argument]())
+                            output.push(ir.Stmt.stmt_local(name = hs_c, linkage_name = hs_c, ty = string_ty, value = create_call, line = 0, source_path = ""))
+                        Option.none:
+                            pass
+                    var hook_args = vec.Vec[ir.Expr].create()
+                    unsafe:
+                        hook_args.push(read(alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = false))))
+                        hook_args.push(read(hs_addr))
+                    output.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = plan.append_helper, arguments = hook_args.as_span(), ty = ctx.void_ty)), line = 0, source_path = ""))
+                    var str_args = vec.Vec[ir.Expr].create()
+                    match resolve_method_info(ctx, string_ty, "as_str"):
+                        Option.some as smi:
+                            var as_args = vec.Vec[ir.Expr].create()
+                            unsafe:
+                                as_args.push(read(hs_ref))
+                            unsafe:
+                                str_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
+                                str_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false))))
+                                str_args.push(read(alloc_expr(ir.Expr.expr_call(callee = smi.value.c_name, arguments = as_args.as_span(), ty = str_ty))))
+                        Option.none:
+                            pass
+                    if str_args.len == 3:
+                        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = str_args.as_span(), ty = ptr_uint_ty))))
+                    match resolve_method_info(ctx, string_ty, "release"):
+                        Option.some as rmi:
+                            var rel_args = vec.Vec[ir.Expr].create()
+                            unsafe:
+                                rel_args.push(read(hs_addr))
+                            output.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = rmi.value.c_name, arguments = rel_args.as_span(), ty = ctx.void_ty)), line = 0, source_path = ""))
+                        Option.none:
+                            pass
+                    pi += 1
+                    continue
                 var append_args = vec.Vec[ir.Expr].create()
                 unsafe:
                     append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
@@ -15238,6 +15306,12 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
 function fmt_len_expr(plan: FormatPlan, temp_ref: ptr[ir.Expr], ptr_uint_ty: types.Type) -> ptr[ir.Expr]:
     if plan.len_kind == 1:
         return alloc_expr(ir.Expr.expr_member(receiver = temp_ref, member = "len", ty = ptr_uint_ty))
+    if plan.len_kind == 3:
+        # Custom hook: `<Type>.format_len(value)` (by-value receiver).
+        var hook_args = vec.Vec[ir.Expr].create()
+        unsafe:
+            hook_args.push(read(temp_ref))
+        return alloc_expr(ir.Expr.expr_call(callee = plan.len_helper, arguments = hook_args.as_span(), ty = ptr_uint_ty))
     var args = vec.Vec[ir.Expr].create()
     unsafe:
         args.push(read(temp_ref))
