@@ -44,13 +44,12 @@ public function parse_int_literal(lexeme: str) -> long:
                     if b == '_':
                         pos += 1
                         continue
-                    value = value * 16
                     if b >= '0' and b <= '9':
-                        value += long<-(b - '0')
+                        value = value * 16 + long<-(b - '0')
                     else if b >= 'a' and b <= 'f':
-                        value += long<-(b - 'a' + 10)
+                        value = value * 16 + long<-(b - 'a' + 10)
                     else if b >= 'A' and b <= 'F':
-                        value += long<-(b - 'A' + 10)
+                        value = value * 16 + long<-(b - 'A' + 10)
                     else:
                         break
                     pos += 1
@@ -190,6 +189,20 @@ public function parse_string_content(lexeme: str, is_cstring: bool) -> str:
             let esc = lexeme.byte_at(i + 1)
             buf.push_byte(decode_string_escape(esc))
             i += 2
+        else if b == '"':
+            # Adjacent string segments concatenate: "a " then "b" gives "a b".
+            var j = i + 1
+            while j < body_stop:
+                let w = lexeme.byte_at(j)
+                if w == ' ' or w == '\t' or w == '\n' or w == '\r':
+                    j += 1
+                else:
+                    break
+            if j < body_stop and lexeme.byte_at(j) == '"':
+                i = j + 1
+            else:
+                buf.push_byte(b)
+                i += 1
         else:
             buf.push_byte(b)
             i += 1
@@ -201,12 +214,8 @@ public function parse_string_content(lexeme: str, is_cstring: bool) -> str:
 function heredoc_prefix_length(lexeme: str) -> ptr_uint:
     if lexeme.len >= 4 and lexeme.byte_at(0) == '<' and lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '-':
         return 3
-    if lexeme.len >= 5:
-        let second = lexeme.byte_at(1)
-        if lexeme.byte_at(0) != '<' or lexeme.byte_at(1) != '<' or lexeme.byte_at(2) != '-':
-            return 0
-        if lexeme.byte_at(0) == 'c' or lexeme.byte_at(0) == 'f':
-            return 4
+    if lexeme.len >= 5 and (lexeme.byte_at(0) == 'c' or lexeme.byte_at(0) == 'f') and lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '<' and lexeme.byte_at(3) == '-':
+        return 4
     return 0
 
 
@@ -396,7 +405,6 @@ public function normalize_format_heredoc(lexeme: str) -> str:
         min_indent = 0
 
     var buf = string.String.create()
-    buf.append("f\"")
     var idx: ptr_uint = 0
     while idx < line_starts.len():
         let a_ptr = line_starts.get(idx) else:
@@ -411,26 +419,10 @@ public function normalize_format_heredoc(lexeme: str) -> str:
             cur += 1
             removed += 1
         while cur < b:
-            let ch = lexeme.byte_at(cur)
-            if ch == 35 and cur + 1 < b and lexeme.byte_at(cur + 1) == 123:
-                buf.push_byte(35)
-                buf.push_byte(123)
-                cur += 2
-                var depth: int = 1
-                while cur < b and depth > 0:
-                    let c2 = lexeme.byte_at(cur)
-                    if c2 == 123:
-                        depth += 1
-                    else if c2 == 125:
-                        depth -= 1
-                    buf.push_byte(c2)
-                    cur += 1
-            else:
-                append_escaped_byte(ref_of(buf), ch)
-                cur += 1
-        buf.append("\\n")
+            buf.push_byte(lexeme.byte_at(cur))
+            cur += 1
+        buf.push_byte('\n')
         idx += 1
-    buf.append("\"")
     return buf.as_str()
 
 

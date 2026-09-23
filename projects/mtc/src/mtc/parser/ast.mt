@@ -56,6 +56,11 @@ public struct TypeRef:
     lifetime: Option[str]
     line: ptr_uint
     column: ptr_uint
+    ## Host `length` (0 => nil): set only by `parse_type_ref`.
+    length: ptr_uint
+    ## Position of an `@lifetime` token (0 when the type has none).
+    lifetime_line: ptr_uint
+    lifetime_column: ptr_uint
     fn_params: span[Param]
     fn_return: ptr[TypeRef]?
     is_proc: bool
@@ -133,6 +138,8 @@ public struct EnumMember:
     value: ptr[Expr]?
     line: ptr_uint
     column: ptr_uint
+    ## False when the value was synthesized (implicit auto-increment).
+    value_explicit: bool
 
 
 public struct VariantArm:
@@ -193,6 +200,9 @@ public struct MatchArm:
     binding_line: ptr_uint
     binding_column: ptr_uint
     body: ptr[Stmt]?
+    ## Position of a `_` wildcard pattern token (0 when not a wildcard).
+    wildcard_line: ptr_uint
+    wildcard_column: ptr_uint
 
 
 public struct MatchExprArm:
@@ -201,6 +211,9 @@ public struct MatchExprArm:
     binding_line: ptr_uint
     binding_column: ptr_uint
     value: ptr[Expr]
+    ## Position of a `_` wildcard pattern token (0 when not a wildcard).
+    wildcard_line: ptr_uint
+    wildcard_column: ptr_uint
 
 
 public struct WhenBranch:
@@ -240,6 +253,7 @@ public struct IfBranch:
     body: ptr[Stmt]
     line: ptr_uint
     column: ptr_uint
+    length: ptr_uint
 
 
 # =============================================================================
@@ -303,7 +317,7 @@ public variant Expr:
     # Control flow
     expr_if(condition: ptr[Expr], then_expr: ptr[Expr], else_expr: ptr[Expr])
     expr_match(scrutinee: ptr[Expr], arms: span[MatchExprArm], line: ptr_uint,
-               column: ptr_uint)
+               column: ptr_uint, length: ptr_uint, desugared_from_is: bool)
     expr_proc(method_params: span[Param], return_type: ptr[TypeRef]?, body: ptr[Stmt])
 
     # Async / concurrency
@@ -335,18 +349,19 @@ public variant Stmt:
     stmt_local(is_let: bool, name: str, stmt_type: ptr[TypeRef]?, value: ptr[Expr]?,
                else_binding: Option[str], else_body: ptr[Stmt]?,
                destructure_bindings: Option[span[str]],
-               destructure_type_name: Option[str], line: ptr_uint, column: ptr_uint)
+               destructure_type_name: Option[str], line: ptr_uint, column: ptr_uint,
+               else_binding_line: ptr_uint, else_binding_column: ptr_uint)
     stmt_assignment(target: ptr[Expr], operator: str, value: ptr[Expr], line: ptr_uint,
                     column: ptr_uint)
     stmt_if(branches: span[IfBranch], else_body: ptr[Stmt]?, is_inline: bool, line: ptr_uint,
             else_line: ptr_uint, else_column: ptr_uint)
     stmt_while(condition: ptr[Expr], body: ptr[Stmt]?, is_inline: bool, line: ptr_uint,
-               column: ptr_uint)
+               column: ptr_uint, length: ptr_uint)
     stmt_for(bindings: span[ForBinding], iterables: span[Expr], body: ptr[Stmt]?,
              is_inline: bool, threaded: bool, line: ptr_uint, column: ptr_uint)
     stmt_match(scrutinee: ptr[Expr], arms: span[MatchArm], is_inline: bool, line: ptr_uint,
                column: ptr_uint)
-    stmt_ret(value: ptr[Expr]?, line: ptr_uint, column: ptr_uint)
+    stmt_ret(value: ptr[Expr]?, line: ptr_uint, column: ptr_uint, length: ptr_uint)
     stmt_break(line: ptr_uint, column: ptr_uint)
     stmt_continue(line: ptr_uint, column: ptr_uint)
     stmt_pass(line: ptr_uint, column: ptr_uint)
@@ -383,7 +398,7 @@ public variant Decl:
                 c_name: Option[str], struct_fields: span[Field],
                 struct_events: span[Decl], nested_types: span[Decl],
                 struct_attrs: span[AttributeApplication], packed: bool, alignment: int,
-                visibility: bool, lifetime_params: span[TypeParam], line: ptr_uint,
+                visibility: bool, lifetime_params: span[str], line: ptr_uint,
                 column: ptr_uint)
     decl_union(name: str, c_name: Option[str], union_fields: span[Field], visibility: bool,
                union_attrs: span[AttributeApplication], line: ptr_uint, column: ptr_uint)
@@ -404,7 +419,7 @@ public variant Decl:
                    interface_methods: span[InterfaceMethod], visibility: bool,
                    line: ptr_uint, column: ptr_uint)
     decl_extending_block(type_name: ptr[TypeRef], methods: span[Method], line: ptr_uint,
-                         column: ptr_uint)
+                         column: ptr_uint, is_inline: bool)
     decl_extern_function(name: str, type_params: span[TypeParam],
                          extern_params: span[ForeignParam], return_type: ptr[TypeRef]?,
                          variadic: bool, attrs: span[AttributeApplication],
@@ -422,7 +437,7 @@ public variant Decl:
     decl_attribute(name: str, targets: span[str], attr_params: span[Param],
                    visibility: bool, line: ptr_uint, column: ptr_uint)
     decl_import(path: QualifiedName, alias_name: Option[str], line: ptr_uint,
-                column: ptr_uint)
+                column: ptr_uint, length: ptr_uint)
     decl_link(value: str, line: ptr_uint, column: ptr_uint)
     decl_include(value: str, line: ptr_uint, column: ptr_uint)
     decl_compiler_flag(value: str, line: ptr_uint, column: ptr_uint)

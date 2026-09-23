@@ -995,3 +995,1719 @@ public function dump_ir(program: ir.Program) -> string.String:
     var buf = string.String.create()
     render_value(ref_of(buf), node("IR::Program", fields.as_span()))
     return buf
+
+
+# =============================================================================
+#  AST serialisation (host AST::* classes)
+# =============================================================================
+
+function fields2(a: SexprField, b: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    return f.as_span()
+
+
+function fields3(a: SexprField, b: SexprField, c: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    return f.as_span()
+
+
+function fields4(a: SexprField, b: SexprField, c: SexprField, d: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    return f.as_span()
+
+
+function fields5(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    return f.as_span()
+
+
+function fields6(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    return f.as_span()
+
+
+function fields7(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    f.push(h)
+    return f.as_span()
+
+
+function fields8(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    f.push(h)
+    f.push(i)
+    return f.as_span()
+
+
+function fields9(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    f.push(h)
+    f.push(i)
+    f.push(j)
+    return f.as_span()
+
+
+function fields10(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    f.push(h)
+    f.push(i)
+    f.push(j)
+    f.push(k)
+    return f.as_span()
+
+
+function fields11(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField, m: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    f.push(h)
+    f.push(i)
+    f.push(j)
+    f.push(k)
+    f.push(m)
+    return f.as_span()
+
+
+function fields12(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField, m: SexprField, n: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    f.push(h)
+    f.push(i)
+    f.push(j)
+    f.push(k)
+    f.push(m)
+    f.push(n)
+    return f.as_span()
+
+
+function fields13(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField, m: SexprField, n: SexprField, o: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    f.push(h)
+    f.push(i)
+    f.push(j)
+    f.push(k)
+    f.push(m)
+    f.push(n)
+    f.push(o)
+    return f.as_span()
+
+
+function fields14(a: SexprField, b: SexprField, c: SexprField, d: SexprField, e: SexprField, g: SexprField, h: SexprField, i: SexprField, j: SexprField, k: SexprField, m: SexprField, n: SexprField, o: SexprField, q: SexprField) -> span[SexprField]:
+    var f = vec.Vec[SexprField].create()
+    f.push(a)
+    f.push(b)
+    f.push(c)
+    f.push(d)
+    f.push(e)
+    f.push(g)
+    f.push(h)
+    f.push(i)
+    f.push(j)
+    f.push(k)
+    f.push(m)
+    f.push(n)
+    f.push(o)
+    f.push(q)
+    return f.as_span()
+
+
+function len_field(name: str, length: ptr_uint) -> SexprField:
+    if length == 0:
+        return field_nil(name)
+    return field_uint(name, length)
+
+
+function opt_type_ref_field(ctx: ref[SexprCtx], name: str, value: ptr[ast.TypeRef]?) -> SexprField:
+    if value == null:
+        return field_nil(name)
+    return field_value(name, type_ref_value(ctx, unsafe: read(ptr[ast.TypeRef]<-value)))
+
+
+function visibility_symbol(visibility: bool) -> str:
+    if visibility:
+        return "public"
+    return "private"
+
+
+function ast_kind_symbol(is_let: bool) -> str:
+    if is_let:
+        return "let"
+    return "var"
+
+
+function method_kind_symbol(kind: ast.MethodKind) -> str:
+    match kind:
+        ast.MethodKind.mk_editable:
+            return "editable"
+        ast.MethodKind.mk_static:
+            return "static"
+        _:
+            return "plain"
+    return "plain"
+
+
+function foreign_mode_symbol(mode: ast.ForeignParamMode) -> str:
+    match mode:
+        ast.ForeignParamMode.fmode_out:
+            return "out"
+        ast.ForeignParamMode.fmode_in:
+            return "in"
+        ast.ForeignParamMode.fmode_inout:
+            return "inout"
+        ast.ForeignParamMode.fmode_consuming:
+            return "consuming"
+        _:
+            return "plain"
+    return "plain"
+
+
+## QualifiedName as the host builds it for `parse_qualified_name` (parts only).
+function qname_bare_value(parts: span[str]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < parts.len:
+        items_out.push(SexprValue.sv_str(value = unsafe: read(parts.data + i)))
+        i += 1
+    return node("AST::QualifiedName", fields4(
+        field_value("parts", list_value(items_out.as_span())),
+        field_value("type_arguments", list_value(span[SexprValue]())),
+        field_nil("line"),
+        field_nil("column"),
+    ))
+
+
+## QualifiedName as built by `parse_qualified_name_with_type_arguments`.
+function qname_full_value(ctx: ref[SexprCtx], qn: ast.QualifiedName) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < qn.parts.len:
+        items_out.push(SexprValue.sv_str(value = unsafe: read(qn.parts.data + i)))
+        i += 1
+    var targs = vec.Vec[SexprValue].create()
+    var ti: ptr_uint = 0
+    while ti < qn.type_arguments.len:
+        targs.push(type_ref_value(ctx, unsafe: read(qn.type_arguments.data + ti)))
+        ti += 1
+    return node("AST::QualifiedName", fields4(
+        field_value("parts", list_value(items_out.as_span())),
+        field_value("type_arguments", list_value(targs.as_span())),
+        field_line(qn.line),
+        len_field("column", qn.column),
+    ))
+
+
+function parse_uint_lexeme(text: str) -> long:
+    var v: long = 0
+    var i: ptr_uint = 0
+    while i < text.len:
+        let c = text.byte_at(i)
+        if c < 48 or c > 57:
+            break
+        v = v * 10 + long<-(c - 48)
+        i += 1
+    return v
+
+
+function lexeme_is_integer(text: str) -> bool:
+    if text.len == 0:
+        return false
+    var i: ptr_uint = 0
+    while i < text.len:
+        let c = text.byte_at(i)
+        if c < 48 or c > 57:
+            return false
+        i += 1
+    return true
+
+
+function lexeme_is_float(text: str) -> bool:
+    if text.len == 0:
+        return false
+    var seen_dot = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        let c = text.byte_at(i)
+        if c == 46:
+            seen_dot = true
+        else if c < 48 or c > 57:
+            return false
+        i += 1
+    return seen_dot
+
+
+function parse_float_lexeme(text: str) -> double:
+    var int_part: long = 0
+    var frac: long = 0
+    var scale: long = 1
+    var seen_dot = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        let c = text.byte_at(i)
+        if c == 46:
+            seen_dot = true
+        else if c >= 48 and c <= 57:
+            if seen_dot:
+                frac = frac * 10 + long<-(c - 48)
+                scale = scale * 10
+            else:
+                int_part = int_part * 10 + long<-(c - 48)
+        i += 1
+    return double<-int_part + double<-frac / double<-scale
+
+
+## A type argument's value: numeric literals are synthetic single-part
+## TypeRefs in the self-hosted AST; the host stores them as literal nodes.
+function type_argument_value_of(ctx: ref[SexprCtx], tr: ast.TypeRef) -> SexprValue:
+    if tr.line == 0 and tr.column == 0 and tr.name.parts.len == 1 and tr.arguments.len == 0 and not tr.nullable and not tr.is_fn and not tr.is_proc and not tr.is_dyn and not tr.is_tuple:
+        let lexeme = unsafe: read(tr.name.parts.data + 0)
+        if lexeme_is_integer(lexeme):
+            return node("AST::IntegerLiteral", fields4(
+                field_str("lexeme", lexeme),
+                field_int("value", parse_uint_lexeme(lexeme)),
+                field_nil("line"),
+                field_nil("column"),
+            ))
+        if lexeme_is_float(lexeme):
+            return node("AST::FloatLiteral", fields4(
+                field_str("lexeme", lexeme),
+                field_value("value", SexprValue.sv_float(value = parse_float_lexeme(lexeme))),
+                field_nil("line"),
+                field_nil("column"),
+            ))
+    return type_ref_value(ctx, tr)
+
+
+function type_argument_value(ctx: ref[SexprCtx], ta: ast.TypeArgument) -> SexprValue:
+    let tr = unsafe: read(ta.value)
+    return node("AST::TypeArgument", fields3(
+        field_value("value", type_argument_value_of(ctx, tr)),
+        field_nil("line"),
+        field_nil("column"),
+    ))
+
+
+function type_ref_value(ctx: ref[SexprCtx], tr: ast.TypeRef) -> SexprValue:
+    if tr.is_fn or tr.is_proc:
+        let class_name = if tr.is_proc: "AST::ProcType" else: "AST::FunctionType"
+        return node(class_name, fields4(
+            field_value("params", params_value(ctx, tr.fn_params)),
+            opt_type_ref_field(ctx, "return_type", tr.fn_return),
+            field_nil("line"),
+            field_nil("column"),
+        ))
+    if tr.is_dyn:
+        return node("AST::DynType", fields5(
+            field_value("interface", qname_full_value(ctx, tr.dyn_interface)),
+            field_bool("nullable", tr.nullable),
+            field_line(tr.line),
+            len_field("column", tr.column),
+            field_uint("length", 3),
+        ))
+    if tr.is_tuple:
+        return node("AST::TupleType", fields4(
+            field_value("element_types", type_refs_value(ctx, tr.arguments)),
+            field_bool("nullable", tr.nullable),
+            field_nil("line"),
+            field_nil("column"),
+        ))
+    var first_part = ""
+    if tr.name.parts.len > 0:
+        first_part = unsafe: read(tr.name.parts.data + 0)
+    var lifetime_name = ""
+    var has_lifetime = false
+    match tr.lifetime:
+        Option.some as lt:
+            lifetime_name = lt.value
+            has_lifetime = true
+        Option.none:
+            pass
+    if has_lifetime and tr.name.parts.len == 0:
+        # Bare `@a` type (host: a TypeRef named `@a` with no lifetime field).
+        var lt_parts = vec.Vec[str].create()
+        lt_parts.push("@" + lifetime_name)
+        return node("AST::TypeRef", fields7(
+            field_value("name", qname_bare_value(lt_parts.as_span())),
+            field_value("arguments", list_value(span[SexprValue]())),
+            field_bool("nullable", tr.nullable),
+            field_nil("lifetime"),
+            field_line(tr.line),
+            len_field("column", tr.column),
+            len_field("length", tr.length),
+        ))
+    var lifetime_field = field_nil("lifetime")
+    if has_lifetime:
+        lifetime_field = field_str("lifetime", "@" + lifetime_name)
+    var arguments_field = field_value("arguments", type_refs_as_arguments_value(ctx, tr.arguments))
+    if has_lifetime and first_part != "ref":
+        # `Foo[@a, ...]`: the host parses `@a` as the first type argument.
+        var lt_parts = vec.Vec[str].create()
+        lt_parts.push("@" + lifetime_name)
+        var args_out = vec.Vec[SexprValue].create()
+        args_out.push(node("AST::TypeArgument", fields3(
+            field_value("value", node("AST::TypeRef", fields7(
+                field_value("name", qname_bare_value(lt_parts.as_span())),
+                field_value("arguments", list_value(span[SexprValue]())),
+                field_bool("nullable", false),
+                field_nil("lifetime"),
+                field_line(tr.lifetime_line),
+                len_field("column", tr.lifetime_column),
+                field_uint("length", lifetime_name.len + 1),
+            ))),
+            field_nil("line"),
+            field_nil("column"),
+        )))
+        var ai: ptr_uint = 0
+        while ai < tr.arguments.len:
+            let inner = unsafe: read(tr.arguments.data + ai)
+            args_out.push(node("AST::TypeArgument", fields3(
+                field_value("value", type_argument_value_of(ctx, inner)),
+                field_nil("line"),
+                field_nil("column"),
+            )))
+            ai += 1
+        arguments_field = field_value("arguments", list_value(args_out.as_span()))
+        lifetime_field = field_nil("lifetime")
+    return node("AST::TypeRef", fields7(
+        field_value("name", qname_bare_value(tr.name.parts)),
+        arguments_field,
+        field_bool("nullable", tr.nullable),
+        lifetime_field,
+        field_line(tr.line),
+        len_field("column", tr.column),
+        len_field("length", tr.length),
+    ))
+
+
+## TypeRef arguments as the host stores them: each wrapped in `AST::TypeArgument`.
+function type_refs_as_arguments_value(ctx: ref[SexprCtx], items: span[ast.TypeRef]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(node("AST::TypeArgument", fields3(
+            field_value("value", type_argument_value_of(ctx, unsafe: read(items.data + i))),
+            field_nil("line"),
+            field_nil("column"),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function type_refs_value(ctx: ref[SexprCtx], items: span[ast.TypeRef]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(type_ref_value(ctx, unsafe: read(items.data + i)))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function params_value(ctx: ref[SexprCtx], params: span[ast.Param]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < params.len:
+        items_out.push(param_value(ctx, unsafe: read(params.data + i)))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function param_default_field(ctx: ref[SexprCtx], p: ast.Param) -> SexprField:
+    if p.default_value == null:
+        return field_nil("default_value")
+    return field_value("default_value", expr_value(ctx, unsafe: ptr[ast.Expr]<-p.default_value))
+
+
+function param_value(ctx: ref[SexprCtx], p: ast.Param) -> SexprValue:
+    return node("AST::Param", fields5(
+        field_str("name", p.name),
+        field_value("type", type_ref_value(ctx, p.param_type)),
+        field_line(p.line),
+        len_field("column", p.column),
+        param_default_field(ctx, p),
+    ))
+
+
+function attributes_value(ctx: ref[SexprCtx], attrs: span[ast.AttributeApplication]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < attrs.len:
+        let a = unsafe: read(attrs.data + i)
+        items_out.push(node("AST::AttributeApplication", fields4(
+            field_value("name", qname_bare_value(a.name.parts)),
+            field_value("arguments", arguments_value(ctx, a.arguments)),
+            field_line(a.line),
+            len_field("column", a.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function arguments_value(ctx: ref[SexprCtx], args: span[ast.Argument]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        let a = unsafe: read(args.data + i)
+        items_out.push(node("AST::Argument", fields4(
+            field_opt_str("name", a.arg_name),
+            field_value("value", expr_value(ctx, a.arg_value)),
+            field_nil("line"),
+            field_nil("column"),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function fields_value(ctx: ref[SexprCtx], items: span[ast.Field]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let fd = unsafe: read(items.data + i)
+        items_out.push(node("AST::Field", fields5(
+            field_str("name", fd.name),
+            field_value("type", type_ref_value(ctx, fd.field_type)),
+            field_value("attributes", attributes_value(ctx, fd.attributes)),
+            field_line(fd.line),
+            len_field("column", fd.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function enum_members_value(ctx: ref[SexprCtx], items: span[ast.EnumMember]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let m = unsafe: read(items.data + i)
+        var value_field = field_nil("value")
+        if m.value != null and m.value_explicit:
+            value_field = field_value("value", expr_value(ctx, unsafe: ptr[ast.Expr]<-m.value))
+        items_out.push(node("AST::EnumMember", fields4(
+            field_str("name", m.name),
+            value_field,
+            field_line(m.line),
+            len_field("column", m.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function variant_fields_value(ctx: ref[SexprCtx], items: span[ast.Field]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let fd = unsafe: read(items.data + i)
+        items_out.push(node("AST::Field", fields5(
+            field_str("name", fd.name),
+            field_value("type", type_ref_value(ctx, fd.field_type)),
+            field_value("attributes", attributes_value(ctx, fd.attributes)),
+            field_nil("line"),
+            field_nil("column"),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function union_fields_value(ctx: ref[SexprCtx], items: span[ast.Field]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let fd = unsafe: read(items.data + i)
+        items_out.push(node("AST::Field", fields5(
+            field_str("name", fd.name),
+            field_value("type", type_ref_value(ctx, fd.field_type)),
+            field_value("attributes", attributes_value(ctx, fd.attributes)),
+            field_nil("line"),
+            field_nil("column"),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function sym_list_value(items: span[str]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(SexprValue.sv_sym(value = unsafe: read(items.data + i)))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function variant_arms_value(ctx: ref[SexprCtx], items: span[ast.VariantArm]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let arm = unsafe: read(items.data + i)
+        items_out.push(node("AST::VariantArm", fields4(
+            field_str("name", arm.name),
+            field_value("fields", variant_fields_value(ctx, arm.arm_fields)),
+            field_nil("line"),
+            field_nil("column"),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function foreign_params_value(ctx: ref[SexprCtx], items: span[ast.ForeignParam]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let p = unsafe: read(items.data + i)
+        var boundary = field_nil("boundary_type")
+        match p.boundary_type:
+            Option.some as bt:
+                boundary = field_value("boundary_type", type_ref_value(ctx, bt.value))
+            Option.none:
+                pass
+        items_out.push(node("AST::ForeignParam", fields6(
+            field_str("name", p.name),
+            field_value("type", type_ref_value(ctx, p.param_type)),
+            field_sym("mode", foreign_mode_symbol(p.param_mode)),
+            boundary,
+            field_nil("line"),
+            field_nil("column"),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function for_bindings_value(ctx: ref[SexprCtx], items: span[ast.ForBinding]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let b = unsafe: read(items.data + i)
+        items_out.push(node("AST::ForBinding", fields3(
+            field_str("name", b.name),
+            field_line(b.line),
+            len_field("column", b.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function constraints_value(ctx: ref[SexprCtx], items: span[ast.TypeParamConstraint]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let c = unsafe: read(items.data + i)
+        items_out.push(node("AST::TypeParamConstraint", fields4(
+            field_sym("kind", "interface"),
+            field_value("interface_ref", qname_full_value(ctx, c.interface_ref)),
+            field_nil("line"),
+            field_nil("column"),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function type_params_value(ctx: ref[SexprCtx], items: span[ast.TypeParam]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let p = unsafe: read(items.data + i)
+        if p.is_value:
+            items_out.push(node("AST::ValueTypeParam", fields5(
+                field_str("name", p.name),
+                field_value("type", type_ref_value(ctx, unsafe: read(ptr[ast.TypeRef]<-p.value_type))),
+                field_line(p.line),
+                len_field("column", p.column),
+                field_uint("length", p.name.len),
+            )))
+        else:
+            items_out.push(node("AST::TypeParam", fields5(
+                field_str("name", p.name),
+                field_value("constraints", constraints_value(ctx, p.constraints)),
+                field_line(p.line),
+                len_field("column", p.column),
+                field_uint("length", p.name.len),
+            )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function interface_methods_value(ctx: ref[SexprCtx], items: span[ast.InterfaceMethod]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let m = unsafe: read(items.data + i)
+        items_out.push(node("AST::InterfaceMethodDecl", fields8(
+            field_str("name", m.name),
+            field_value("params", params_value(ctx, m.method_params)),
+            opt_type_ref_field(ctx, "return_type", m.return_type),
+            field_sym("kind", method_kind_symbol(m.method_kind)),
+            field_bool("async", m.is_async),
+            field_value("attributes", attributes_value(ctx, m.attributes)),
+            field_line(m.line),
+            len_field("column", m.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function method_value(ctx: ref[SexprCtx], m: ast.Method) -> SexprValue:
+    let body_field = field_value("body", stmts_of_ptr(ctx, m.body))
+    return node("AST::MethodDef", fields12(
+        field_str("name", m.name),
+        field_value("type_params", type_params_value(ctx, m.type_params)),
+        field_value("params", params_value(ctx, m.method_params)),
+        opt_type_ref_field(ctx, "return_type", m.return_type),
+        body_field,
+        field_sym("kind", method_kind_symbol(m.method_kind)),
+        field_sym("visibility", visibility_symbol(m.visibility)),
+        field_bool("async", m.is_async),
+        field_bool("const", m.is_const),
+        field_value("attributes", attributes_value(ctx, m.attributes)),
+        field_line(m.line),
+        len_field("column", m.column),
+    ))
+
+
+function methods_value(ctx: ref[SexprCtx], items: span[ast.Method]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(method_value(ctx, unsafe: read(items.data + i)))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function match_expr_arms_value(ctx: ref[SexprCtx], items: span[ast.MatchExprArm]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let a = unsafe: read(items.data + i)
+        var pattern_field = field_nil("pattern")
+        var pos = AstPos(line = 0, column = 0)
+        if a.pattern != null:
+            let pat = unsafe: ptr[ast.Expr]<-a.pattern
+            pattern_field = field_value("pattern", expr_value(ctx, pat))
+            pos = expr_position(pat)
+        else if a.wildcard_line != 0 or a.wildcard_column != 0:
+            pattern_field = field_value("pattern", node("AST::Identifier", fields3(
+                field_str("name", "_"),
+                field_line(a.wildcard_line),
+                len_field("column", a.wildcard_column),
+            )))
+            pos = AstPos(line = a.wildcard_line, column = a.wildcard_column)
+        else if a.wildcard_line != 0 or a.wildcard_column != 0:
+            pattern_field = field_value("pattern", node("AST::Identifier", fields3(
+                field_str("name", "_"),
+                field_line(a.wildcard_line),
+                len_field("column", a.wildcard_column),
+            )))
+            pos = AstPos(line = a.wildcard_line, column = a.wildcard_column)
+        items_out.push(node("AST::MatchExprArm", fields7(
+            pattern_field,
+            field_opt_str("binding_name", a.binding_name),
+            len_field("binding_line", a.binding_line),
+            len_field("binding_column", a.binding_column),
+            field_value("value", expr_value(ctx, a.value)),
+            field_line(pos.line),
+            len_field("column", pos.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function match_arms_value(ctx: ref[SexprCtx], items: span[ast.MatchArm]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let a = unsafe: read(items.data + i)
+        var pattern_field = field_nil("pattern")
+        var pos = AstPos(line = 0, column = 0)
+        if a.pattern != null:
+            let pat = unsafe: ptr[ast.Expr]<-a.pattern
+            pattern_field = field_value("pattern", expr_value(ctx, pat))
+            pos = expr_position(pat)
+        else if a.wildcard_line != 0 or a.wildcard_column != 0:
+            pattern_field = field_value("pattern", node("AST::Identifier", fields3(
+                field_str("name", "_"),
+                field_line(a.wildcard_line),
+                len_field("column", a.wildcard_column),
+            )))
+            pos = AstPos(line = a.wildcard_line, column = a.wildcard_column)
+        else if a.wildcard_line != 0 or a.wildcard_column != 0:
+            pattern_field = field_value("pattern", node("AST::Identifier", fields3(
+                field_str("name", "_"),
+                field_line(a.wildcard_line),
+                len_field("column", a.wildcard_column),
+            )))
+            pos = AstPos(line = a.wildcard_line, column = a.wildcard_column)
+        var body_field = field_nil("body")
+        if a.body != null:
+            body_field = field_value("body", stmts_of_ptr(ctx, a.body))
+        items_out.push(node("AST::MatchArm", fields7(
+            pattern_field,
+            field_opt_str("binding_name", a.binding_name),
+            len_field("binding_line", a.binding_line),
+            len_field("binding_column", a.binding_column),
+            body_field,
+            field_line(pos.line),
+            len_field("column", pos.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function when_branches_value(ctx: ref[SexprCtx], items: span[ast.WhenBranch]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let a = unsafe: read(items.data + i)
+        let pat = a.pattern
+        let pos = expr_position(pat)
+        items_out.push(node("AST::MatchArm", fields7(
+            field_value("pattern", expr_value(ctx, pat)),
+            field_opt_str("binding_name", a.binding_name),
+            len_field("binding_line", a.binding_line),
+            len_field("binding_column", a.binding_column),
+            field_value("body", ast_stmts_list(ctx, a.body)),
+            field_line(pos.line),
+            len_field("column", pos.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function when_decl_branches_value(ctx: ref[SexprCtx], items: span[ast.WhenDeclBranch]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let a = unsafe: read(items.data + i)
+        let pat = a.pattern
+        let pos = expr_position(pat)
+        items_out.push(node("AST::WhenBranch", fields7(
+            field_value("pattern", expr_value(ctx, pat)),
+            field_opt_str("binding_name", a.binding_name),
+            len_field("binding_line", a.binding_line),
+            len_field("binding_column", a.binding_column),
+            field_value("body", decls_value(ctx, a.body)),
+            field_line(pos.line),
+            len_field("column", pos.column),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function if_branches_value(ctx: ref[SexprCtx], items: span[ast.IfBranch]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        let b = unsafe: read(items.data + i)
+        items_out.push(node("AST::IfBranch", fields5(
+            field_value("condition", expr_value(ctx, b.condition)),
+            field_value("body", stmts_of_ptr(ctx, b.body)),
+            field_line(b.line),
+            len_field("column", b.column),
+            len_field("length", b.length),
+        )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+public struct AstPos:
+    line: ptr_uint
+    column: ptr_uint
+
+
+function expr_position(ep: ptr[ast.Expr]) -> AstPos:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_char_literal as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_null_literal as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_member_access as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_match as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_detach as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_expression_list as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_range as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_prefix_cast as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_unsafe as x:
+                return AstPos(line = x.line, column = x.column)
+            ast.Expr.expr_error as x:
+                return AstPos(line = x.line, column = x.column)
+            _:
+                pass
+    return AstPos(line = 0, column = 0)
+
+
+function format_parts_value(ctx: ref[SexprCtx], parts: span[ast.FormatStringPart]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < parts.len:
+        var p: ast.FormatStringPart
+        unsafe:
+            p = read(parts.data + i)
+        match p:
+            ast.FormatStringPart.fmt_text as t:
+                items_out.push(node("AST::FormatTextPart", fields3(
+                    field_str("value", t.value),
+                    field_nil("line"),
+                    field_nil("column"),
+                )))
+            ast.FormatStringPart.fmt_expr as x:
+                if x.format_spec == null:
+                    items_out.push(node("AST::FormatExprPart", fields4(
+                        field_value("expression", expr_value(ctx, x.expression)),
+                        field_nil("format_spec"),
+                        field_nil("line"),
+                        field_nil("column"),
+                    )))
+                else:
+                    items_out.push(node("AST::FormatExprPart", fields3(
+                        field_value("expression", expr_value(ctx, x.expression)),
+                        field_nil("line"),
+                        field_nil("column"),
+                    )))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function expr_value(ctx: ref[SexprCtx], ep: ptr[ast.Expr]) -> SexprValue:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as x:
+                return node("AST::Identifier", fields3(
+                    field_str("name", x.name),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Expr.expr_integer_literal as x:
+                return node("AST::IntegerLiteral", fields4(
+                    field_str("lexeme", x.lexeme),
+                    field_int("value", x.value),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_float_literal as x:
+                return node("AST::FloatLiteral", fields4(
+                    field_str("lexeme", x.lexeme),
+                    field_value("value", SexprValue.sv_float(value = x.value)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_string_literal as x:
+                return node("AST::StringLiteral", fields5(
+                    field_str("lexeme", x.lexeme),
+                    field_str("value", x.value),
+                    field_bool("cstring", x.is_cstring),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_char_literal as x:
+                return node("AST::CharLiteral", fields4(
+                    field_str("lexeme", x.lexeme),
+                    field_uint("value", ptr_uint<-x.value),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Expr.expr_bool_literal as x:
+                return node("AST::BooleanLiteral", fields3(
+                    field_bool("value", x.value),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_null_literal as x:
+                return node("AST::NullLiteral", fields3(
+                    opt_type_ref_field(ctx, "type", x.target_type),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Expr.expr_format_string as x:
+                return node("AST::FormatString", fields3(
+                    field_value("parts", format_parts_value(ctx, x.parts)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_binary_op as x:
+                return node("AST::BinaryOp", fields5(
+                    field_str("operator", x.operator),
+                    field_value("left", expr_value(ctx, x.left)),
+                    field_value("right", expr_value(ctx, x.right)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_unary_op as x:
+                return node("AST::UnaryOp", fields4(
+                    field_str("operator", x.operator),
+                    field_value("operand", expr_value(ctx, x.operand)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_member_access as x:
+                return node("AST::MemberAccess", fields4(
+                    field_value("receiver", expr_value(ctx, x.receiver)),
+                    field_str("member", x.member_name),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Expr.expr_call as x:
+                return node("AST::Call", fields4(
+                    field_value("callee", expr_value(ctx, x.callee)),
+                    field_value("arguments", arguments_value(ctx, x.args)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_index_access as x:
+                return node("AST::IndexAccess", fields4(
+                    field_value("receiver", expr_value(ctx, x.receiver)),
+                    field_value("index", expr_value(ctx, x.index)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_specialization as x:
+                return node("AST::Specialization", fields4(
+                    field_value("callee", expr_value(ctx, x.callee)),
+                    field_value("arguments", type_arguments_value(ctx, x.arguments)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_if as x:
+                return node("AST::IfExpr", fields5(
+                    field_value("condition", expr_value(ctx, x.condition)),
+                    field_value("then_expression", expr_value(ctx, x.then_expr)),
+                    field_value("else_expression", expr_value(ctx, x.else_expr)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_match as x:
+                return node("AST::MatchExpr", fields6(
+                    field_value("expression", expr_value(ctx, x.scrutinee)),
+                    field_value("arms", match_expr_arms_value(ctx, x.arms)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    len_field("length", x.length),
+                    field_bool("desugared_from_is", x.desugared_from_is),
+                ))
+            ast.Expr.expr_proc as x:
+                return node("AST::ProcExpr", fields5(
+                    field_value("params", params_value(ctx, x.method_params)),
+                    opt_type_ref_field(ctx, "return_type", x.return_type),
+                    field_value("body", stmts_of_ptr(ctx, x.body)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_await as x:
+                return node("AST::AwaitExpr", fields3(
+                    field_value("expression", expr_value(ctx, x.expression)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_detach as x:
+                var stmt_items = vec.Vec[SexprValue].create()
+                stmt_items.push(node("AST::ExpressionStmt", fields3(
+                    field_value("expression", expr_value(ctx, x.expression)),
+                    field_nil("line"),
+                    field_nil("column"),
+                )))
+                return node("AST::DetachExpr", fields3(
+                    field_value("body", list_value(stmt_items.as_span())),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Expr.expr_expression_list as x:
+                return node("AST::ExpressionList", fields3(
+                    field_value("elements", expr_list_value(ctx, x.elements)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Expr.expr_named as x:
+                return node("AST::Argument", fields4(
+                    field_str("name", x.name),
+                    field_value("value", expr_value(ctx, x.value)),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_range as x:
+                return node("AST::RangeExpr", fields4(
+                    field_value("start_expr", expr_value(ctx, x.start_expr)),
+                    field_value("end_expr", expr_value(ctx, x.end_expr)),
+                    field_line(x.line),
+                    field_uint("column", x.column),
+                ))
+            ast.Expr.expr_prefix_cast as x:
+                return node("AST::PrefixCast", fields5(
+                    field_value("target_type", type_ref_value(ctx, unsafe: read(x.target_type))),
+                    field_value("expression", expr_value(ctx, x.expression)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_nil("length"),
+                ))
+            ast.Expr.expr_unsafe as x:
+                return node("AST::UnsafeExpr", fields4(
+                    field_value("expression", expr_value(ctx, x.expression)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 6),
+                ))
+            ast.Expr.expr_sizeof as x:
+                return node("AST::SizeofExpr", fields3(
+                    field_value("type", type_ref_value(ctx, unsafe: read(x.target_type))),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_alignof as x:
+                return node("AST::AlignofExpr", fields3(
+                    field_value("type", type_ref_value(ctx, unsafe: read(x.target_type))),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_offsetof as x:
+                return node("AST::OffsetofExpr", fields4(
+                    field_value("type", type_ref_value(ctx, unsafe: read(x.target_type))),
+                    field_str("field", x.field),
+                    field_nil("line"),
+                    field_nil("column"),
+                ))
+            ast.Expr.expr_error as x:
+                return node("AST::ErrorExpr", fields4(
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_nil("length"),
+                    field_str("message", x.message),
+                ))
+    return node("AST::ErrorExpr", fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", "")))
+
+
+function type_arguments_value(ctx: ref[SexprCtx], items: span[ast.TypeArgument]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(type_argument_value(ctx, unsafe: read(items.data + i)))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function expr_list_value(ctx: ref[SexprCtx], items: span[ast.Expr]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(expr_value(ctx, unsafe: items.data + i))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function ast_stmts_list(ctx: ref[SexprCtx], body: span[ast.Stmt]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < body.len:
+        var st: ast.Stmt
+        unsafe:
+            st = read(body.data + i)
+        match st:
+            ast.Stmt.stmt_block as blk:
+                var j: ptr_uint = 0
+                while j < blk.statements.len:
+                    items_out.push(stmt_value(ctx, unsafe: blk.statements.data + j))
+                    j += 1
+            _:
+                items_out.push(stmt_value(ctx, unsafe: body.data + i))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function stmts_of_ptr(ctx: ref[SexprCtx], body: ptr[ast.Stmt]?) -> SexprValue:
+    if body == null:
+        return list_value(span[SexprValue]())
+    var items_out = vec.Vec[SexprValue].create()
+    unsafe:
+        var st = read(ptr[ast.Stmt]<-body)
+        match st:
+            ast.Stmt.stmt_block as blk:
+                var j: ptr_uint = 0
+                while j < blk.statements.len:
+                    items_out.push(stmt_value(ctx, unsafe: blk.statements.data + j))
+                    j += 1
+            _:
+                items_out.push(stmt_value(ctx, ptr[ast.Stmt]<-body))
+    return list_value(items_out.as_span())
+
+
+function body_field_or_nil(ctx: ref[SexprCtx], name: str, body: ptr[ast.Stmt]?) -> SexprField:
+    if body == null:
+        return field_nil(name)
+    return field_value(name, stmts_of_ptr(ctx, body))
+
+
+## `else as x` binding: the host stores an `AST::Identifier` node.
+function else_binding_field(ctx: ref[SexprCtx], value: Option[str], line: ptr_uint, column: ptr_uint) -> SexprField:
+    match value:
+        Option.some as v:
+            return field_value("else_binding", node("AST::Identifier", fields3(
+                field_str("name", v.value),
+                field_line(line),
+                len_field("column", column),
+            )))
+        Option.none:
+            return field_nil("else_binding")
+    return field_nil("else_binding")
+
+
+function destructure_bindings_field(name: str, value: Option[span[str]]) -> SexprField:
+    match value:
+        Option.some as names:
+            var items_out = vec.Vec[SexprValue].create()
+            var i: ptr_uint = 0
+            while i < names.value.len:
+                items_out.push(SexprValue.sv_str(value = unsafe: read(names.value.data + i)))
+                i += 1
+            return field_value(name, list_value(items_out.as_span()))
+        Option.none:
+            return field_nil(name)
+    return field_nil(name)
+
+
+function stmt_value(ctx: ref[SexprCtx], sp: ptr[ast.Stmt]) -> SexprValue:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as x:
+                var name_field = field_str("name", x.name)
+                match x.destructure_bindings:
+                    Option.some:
+                        name_field = field_nil("name")
+                    Option.none:
+                        pass
+                return node("AST::LocalDecl", fields11(
+                    field_sym("kind", ast_kind_symbol(x.is_let)),
+                    name_field,
+                    opt_type_ref_field(ctx, "type", x.stmt_type),
+                    opt_expr_field(ctx, "value", x.value),
+                    else_binding_field(ctx, x.else_binding, x.else_binding_line, x.else_binding_column),
+                    body_field_or_nil(ctx, "else_body", x.else_body),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_bool("recovered_else", false),
+                    destructure_bindings_field("destructure_bindings", x.destructure_bindings),
+                    field_opt_str("destructure_type_name", x.destructure_type_name),
+                ))
+            ast.Stmt.stmt_assignment as x:
+                return node("AST::Assignment", fields5(
+                    field_value("target", expr_value(ctx, x.target)),
+                    field_str("operator", x.operator),
+                    field_value("value", expr_value(ctx, x.value)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Stmt.stmt_if as x:
+                var else_body_field = field_nil("else_body")
+                if x.else_body != null:
+                    else_body_field = field_value("else_body", stmts_of_ptr(ctx, x.else_body))
+                return node("AST::IfStmt", fields7(
+                    field_value("branches", if_branches_value(ctx, x.branches)),
+                    else_body_field,
+                    field_bool("inline", x.is_inline),
+                    field_line(x.line),
+                    field_nil("column"),
+                    len_field("else_line", x.else_line),
+                    len_field("else_column", x.else_column),
+                ))
+            ast.Stmt.stmt_while as x:
+                return node("AST::WhileStmt", fields6(
+                    field_value("condition", expr_value(ctx, x.condition)),
+                    body_field_or_nil(ctx, "body", x.body),
+                    field_bool("inline", x.is_inline),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    len_field("length", x.length),
+                ))
+            ast.Stmt.stmt_for as x:
+                return node("AST::ForStmt", fields7(
+                    field_value("bindings", for_bindings_value(ctx, x.bindings)),
+                    field_value("iterables", expr_list_value(ctx, x.iterables)),
+                    body_field_or_nil(ctx, "body", x.body),
+                    field_bool("inline", x.is_inline),
+                    field_bool("threaded", x.threaded),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Stmt.stmt_match as x:
+                return node("AST::MatchStmt", fields6(
+                    field_value("expression", expr_value(ctx, x.scrutinee)),
+                    field_value("arms", match_arms_value(ctx, x.arms)),
+                    field_bool("inline", x.is_inline),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 5),
+                ))
+            ast.Stmt.stmt_ret as x:
+                return node("AST::ReturnStmt", fields4(
+                    opt_expr_field(ctx, "value", x.value),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    len_field("length", x.length),
+                ))
+            ast.Stmt.stmt_break as x:
+                return node("AST::BreakStmt", fields3(
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 5),
+                ))
+            ast.Stmt.stmt_continue as x:
+                return node("AST::ContinueStmt", fields3(
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 8),
+                ))
+            ast.Stmt.stmt_pass as x:
+                return node("AST::PassStmt", fields3(
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 4),
+                ))
+            ast.Stmt.stmt_defer as x:
+                var defer_body = field_nil("body")
+                if x.body != null:
+                    defer_body = field_value("body", stmts_of_ptr(ctx, x.body))
+                else if x.expression != null:
+                    var stmt_items = vec.Vec[SexprValue].create()
+                    stmt_items.push(node("AST::ExpressionStmt", fields3(
+                        field_value("expression", expr_value(ctx, unsafe: ptr[ast.Expr]<-x.expression)),
+                        field_nil("line"),
+                        field_nil("column"),
+                    )))
+                    defer_body = field_value("body", list_value(stmt_items.as_span()))
+                return node("AST::DeferStmt", fields4(
+                    defer_body,
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 5),
+                ))
+            ast.Stmt.stmt_unsafe as x:
+                return node("AST::UnsafeStmt", fields4(
+                    body_field_or_nil(ctx, "body", x.body),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 6),
+                ))
+            ast.Stmt.stmt_expression as x:
+                return node("AST::ExpressionStmt", fields3(
+                    field_value("expression", expr_value(ctx, x.expression)),
+                    field_line(x.line),
+                    field_nil("column"),
+                ))
+            ast.Stmt.stmt_static_assert as x:
+                return node("AST::StaticAssert", fields4(
+                    field_value("condition", expr_value(ctx, x.condition)),
+                    opt_expr_field(ctx, "message", x.message),
+                    field_line(x.line),
+                    field_nil("column"),
+                ))
+            ast.Stmt.stmt_emit as x:
+                var decl_field = field_nil("declaration")
+                if x.declaration != null:
+                    decl_field = field_value("declaration", decl_value(ctx, unsafe: ptr[ast.Decl]<-x.declaration))
+                return node("AST::EmitStmt", fields3(
+                    decl_field,
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Stmt.stmt_when as x:
+                var when_else = field_nil("else_body")
+                if x.else_body != null:
+                    when_else = field_value("else_body", stmts_of_ptr(ctx, x.else_body))
+                return node("AST::WhenStmt", fields6(
+                    field_value("discriminant", expr_value(ctx, x.discriminant)),
+                    field_value("branches", when_branches_value(ctx, x.branches)),
+                    when_else,
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 4),
+                ))
+            ast.Stmt.stmt_parallel_block as x:
+                var bodies_out = vec.Vec[SexprValue].create()
+                var bi: ptr_uint = 0
+                while bi < x.bodies.len:
+                    var single = vec.Vec[SexprValue].create()
+                    single.push(stmt_value(ctx, unsafe: x.bodies.data + bi))
+                    bodies_out.push(list_value(single.as_span()))
+                    bi += 1
+                return node("AST::ParallelBlockStmt", fields3(
+                    field_value("bodies", list_value(bodies_out.as_span())),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Stmt.stmt_gather as x:
+                return node("AST::GatherStmt", fields3(
+                    field_value("handles", expr_list_value(ctx, x.handles)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Stmt.stmt_error as x:
+                return node("AST::ErrorStmt", fields4(
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_nil("length"),
+                    field_str("message", x.message),
+                ))
+            ast.Stmt.stmt_error_block as x:
+                return node("AST::ErrorBlockStmt", fields9(
+                    field_value("body", stmts_of_ptr(ctx, x.body)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_nil("length"),
+                    field_str("message", x.message),
+                    field_nil("header_type"),
+                    field_nil("header_expression"),
+                    field_nil("header_bindings"),
+                    field_nil("header_iterables"),
+                ))
+            ast.Stmt.stmt_block as x:
+                return ast_stmts_list(ctx, x.statements)
+    return node("AST::ErrorStmt", fields4(field_nil("line"), field_nil("column"), field_nil("length"), field_str("message", "")))
+
+
+function opt_expr_field(ctx: ref[SexprCtx], name: str, value: ptr[ast.Expr]?) -> SexprField:
+    if value == null:
+        return field_nil(name)
+    return field_value(name, expr_value(ctx, unsafe: ptr[ast.Expr]<-value))
+
+
+function qname_list_value(ctx: ref[SexprCtx], items: span[ast.QualifiedName]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(qname_full_value(ctx, unsafe: read(items.data + i)))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function str_list_value(items: span[str]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(SexprValue.sv_str(value = unsafe: read(items.data + i)))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function decls_value(ctx: ref[SexprCtx], items: span[ast.Decl]) -> SexprValue:
+    var items_out = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < items.len:
+        items_out.push(decl_value(ctx, unsafe: items.data + i))
+        i += 1
+    return list_value(items_out.as_span())
+
+
+function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
+    unsafe:
+        match read(dp):
+            ast.Decl.decl_const as x:
+                var block_field = field_nil("block_body")
+                if x.block_body != null:
+                    block_field = field_value("block_body", stmts_of_ptr(ctx, x.block_body))
+                return node("AST::ConstDecl", fields8(
+                    field_str("name", x.name),
+                    field_value("type", type_ref_value(ctx, read(x.const_type))),
+                    opt_expr_field(ctx, "value", x.value),
+                    block_field,
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_value("attributes", attributes_value(ctx, x.attributes)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_var as x:
+                return node("AST::VarDecl", fields6(
+                    field_str("name", x.name),
+                    opt_type_ref_field(ctx, "type", x.var_type),
+                    opt_expr_field(ctx, "value", x.value),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_function as x:
+                var body_field = field_nil("body")
+                if x.body != null:
+                    body_field = field_value("body", stmts_of_ptr(ctx, x.body))
+                return node("AST::FunctionDef", fields11(
+                    field_str("name", x.name),
+                    field_value("type_params", type_params_value(ctx, x.type_params)),
+                    field_value("params", params_value(ctx, x.method_params)),
+                    opt_type_ref_field(ctx, "return_type", x.return_type),
+                    body_field,
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_bool("async", x.is_async),
+                    field_bool("const", x.is_const),
+                    field_value("attributes", attributes_value(ctx, x.attributes)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_struct as x:
+                return node("AST::StructDecl", fields14(
+                    field_str("name", x.name),
+                    field_value("type_params", type_params_value(ctx, x.type_params)),
+                    field_value("implements", qname_list_value(ctx, x.impl_list)),
+                    field_opt_str("c_name", x.c_name),
+                    field_value("fields", fields_value(ctx, x.struct_fields)),
+                    field_value("events", decls_value(ctx, x.struct_events)),
+                    field_value("nested_types", decls_value(ctx, x.nested_types)),
+                    field_value("attributes", attributes_value(ctx, x.struct_attrs)),
+                    field_bool("packed", x.packed),
+                    field_zero_nil_int("alignment", x.alignment),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_value("lifetime_params", str_list_value(x.lifetime_params)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_union as x:
+                return node("AST::UnionDecl", fields7(
+                    field_str("name", x.name),
+                    field_opt_str("c_name", x.c_name),
+                    field_value("fields", union_fields_value(ctx, x.union_fields)),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_value("attributes", attributes_value(ctx, x.union_attrs)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_enum as x:
+                return node("AST::EnumDecl", fields7(
+                    field_str("name", x.name),
+                    opt_type_ref_field(ctx, "backing_type", x.backing_type),
+                    field_value("members", enum_members_value(ctx, x.enum_members)),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_value("attributes", attributes_value(ctx, x.enum_attrs)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_flags as x:
+                return node("AST::FlagsDecl", fields7(
+                    field_str("name", x.name),
+                    opt_type_ref_field(ctx, "backing_type", x.backing_type),
+                    field_value("members", enum_members_value(ctx, x.flags_members)),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_value("attributes", attributes_value(ctx, x.flags_attrs)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_variant as x:
+                return node("AST::VariantDecl", fields7(
+                    field_str("name", x.name),
+                    field_value("type_params", type_params_value(ctx, x.type_params)),
+                    field_value("arms", variant_arms_value(ctx, x.variant_arms)),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_value("attributes", attributes_value(ctx, x.variant_attrs)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_opaque as x:
+                return node("AST::OpaqueDecl", fields6(
+                    field_str("name", x.name),
+                    field_value("implements", qname_list_value(ctx, x.opaque_implements)),
+                    field_opt_str("c_name", x.c_name),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_type_alias as x:
+                return node("AST::TypeAliasDecl", fields5(
+                    field_str("name", x.name),
+                    field_value("target", type_ref_value(ctx, read(x.target))),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_interface as x:
+                return node("AST::InterfaceDecl", fields6(
+                    field_str("name", x.name),
+                    field_value("type_params", type_params_value(ctx, x.type_params)),
+                    field_value("methods", interface_methods_value(ctx, x.interface_methods)),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_extending_block as x:
+                return node("AST::ExtendingBlock", fields5(
+                    field_value("type_name", type_ref_value(ctx, read(x.type_name))),
+                    field_value("methods", methods_value(ctx, x.methods)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_bool("inline", x.is_inline),
+                ))
+            ast.Decl.decl_extern_function as x:
+                return node("AST::ExternFunctionDecl", fields9(
+                    field_str("name", x.name),
+                    field_value("type_params", type_params_value(ctx, x.type_params)),
+                    field_value("params", foreign_params_value(ctx, x.extern_params)),
+                    opt_type_ref_field(ctx, "return_type", x.return_type),
+                    field_bool("variadic", x.variadic),
+                    field_value("attributes", attributes_value(ctx, x.attrs)),
+                    field_line(x.line),
+                    field_nil("column"),
+                    opt_expr_field(ctx, "mapping", x.mapping),
+                ))
+            ast.Decl.decl_foreign_function as x:
+                return node("AST::ForeignFunctionDecl", fields10(
+                    field_str("name", x.name),
+                    field_value("type_params", type_params_value(ctx, x.type_params)),
+                    field_value("params", foreign_params_value(ctx, x.foreign_params)),
+                    opt_type_ref_field(ctx, "return_type", x.return_type),
+                    field_bool("variadic", x.variadic),
+                    opt_expr_field(ctx, "mapping", x.mapping),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_value("attributes", attributes_value(ctx, x.attrs)),
+                    field_line(x.line),
+                    field_nil("column"),
+                ))
+            ast.Decl.decl_event as x:
+                return node("AST::EventDecl", fields7(
+                    field_str("name", x.name),
+                    field_int("capacity", long<-x.capacity),
+                    opt_type_ref_field(ctx, "payload_type", x.payload_type),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_value("attributes", attributes_value(ctx, x.attrs)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_static_assert as x:
+                return node("AST::StaticAssert", fields4(
+                    field_value("condition", expr_value(ctx, x.condition)),
+                    opt_expr_field(ctx, "message", x.message),
+                    field_line(x.line),
+                    field_nil("column"),
+                ))
+            ast.Decl.decl_when as x:
+                var when_else = field_nil("else_body")
+                if x.has_else:
+                    when_else = field_value("else_body", decls_value(ctx, x.else_body))
+                return node("AST::WhenStmt", fields6(
+                    field_value("discriminant", expr_value(ctx, x.discriminant)),
+                    field_value("branches", when_decl_branches_value(ctx, x.branches)),
+                    when_else,
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    field_uint("length", 4),
+                ))
+            ast.Decl.decl_attribute as x:
+                return node("AST::AttributeDecl", fields6(
+                    field_str("name", x.name),
+                    field_value("targets", sym_list_value(x.targets)),
+                    field_value("params", params_value(ctx, x.attr_params)),
+                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_import as x:
+                return node("AST::Import", fields5(
+                    field_value("path", qname_bare_value(x.path.parts)),
+                    field_opt_str("alias_name", x.alias_name),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                    len_field("length", x.length),
+                ))
+            ast.Decl.decl_link as x:
+                return node("AST::LinkDirective", fields3(
+                    field_str("value", x.value),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_include as x:
+                return node("AST::IncludeDirective", fields3(
+                    field_str("value", x.value),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+            ast.Decl.decl_compiler_flag as x:
+                return node("AST::CompilerFlagDirective", fields3(
+                    field_str("value", x.value),
+                    field_line(x.line),
+                    len_field("column", x.column),
+                ))
+    return node("AST::VarDecl", fields6(field_str("name", ""), field_nil("type"), field_nil("value"), field_sym("visibility", "private"), field_nil("line"), field_nil("column")))
+
+
+public function dump_ast(file: ast.SourceFile, module_name: str) -> string.String:
+    var ctx = new_sexpr_ctx(module_name)
+    var buf = string.String.create()
+    var module_field = field_nil("module_name")
+    if module_name.len > 0:
+        var parts = vec.Vec[str].create()
+        var part_start: ptr_uint = 0
+        var pi: ptr_uint = 0
+        while pi <= module_name.len:
+            if pi == module_name.len or module_name.byte_at(pi) == 46:
+                if pi > part_start:
+                    parts.push(module_name.slice(part_start, pi - part_start))
+                part_start = pi + 1
+            pi += 1
+        module_field = field_value("module_name", qname_bare_value(parts.as_span()))
+    var kind_sym = "module"
+    if file.module_kind == ast.ModuleKind.module_raw:
+        kind_sym = "raw_module"
+    var value = node("AST::SourceFile", fields7(
+        module_field,
+        field_sym("module_kind", kind_sym),
+        field_value("imports", decls_value(ref_of(ctx), file.imports)),
+        field_value("directives", decls_value(ref_of(ctx), file.directives)),
+        field_value("declarations", decls_value(ref_of(ctx), file.declarations)),
+        field_nil("line"),
+        field_nil("column"),
+    ))
+    render_value(ref_of(buf), value)
+    return buf

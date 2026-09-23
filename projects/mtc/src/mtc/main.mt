@@ -145,10 +145,31 @@ function dispatch_cli(raw_args: span[str]) -> int:
         return lex_command(lf, machine, sexpr)
 
     if cmd == "parse":
-        if args.len < 2:
+        var parse_file: Option[str] = Option[str].none
+        var parse_sexpr = false
+        var pi: ptr_uint = 1
+        while pi < args.len:
+            let a = args[pi]
+            if a == "--":
+                pi += 1
+                continue
+            if a == "--sexpr":
+                parse_sexpr = true
+            else if a.starts_with("-"):
+                stdio.print_format(c"unknown option: %.*s\n", int<-(a.len), a.data)
+                return 1
+            else:
+                match parse_file:
+                    Option.some:
+                        stdio.print_format(c"unknown option: %.*s\n", int<-(a.len), a.data)
+                        return 1
+                    Option.none:
+                        parse_file = Option[str].some(value = a)
+            pi += 1
+        let pf = parse_file else:
             print_help()
             return 1
-        return parse_command(args[1])
+        return parse_command(pf, parse_sexpr)
 
     if cmd == "check":
         if args.len < 2:
@@ -274,7 +295,49 @@ function print_unknown(cmd: str) -> void:
     stdio.print_format(c"mtc: unknown command '%.*s'\n", int<-(cmd.len), cmd.data)
 
 
-function parse_command(file_path: str) -> int:
+## Ambient module roots for `parse`: the host resolves a file's module name
+## against its package source root (nearest `package.toml`) or the nearest
+## ancestor containing `std/`, falling back to the basename.
+function parse_module_name(file_path: str) -> string.String:
+    var abs_owner = loader.absolute_path(file_path)
+    defer: abs_owner.release()
+    let abs_path = abs_owner.as_str()
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var package_root_owner = string.String.create()
+    defer: package_root_owner.release()
+    match fs.find_ancestor_containing(abs_path, "package.toml"):
+        Option.some as pkg_dir:
+            var manifest_path = path_ops.join(pkg_dir.value.as_str(), "package.toml")
+            defer: manifest_path.release()
+            var source_root_owner = string.String.create()
+            defer: source_root_owner.release()
+            source_root_owner.append("src")
+            match fs.read_text(manifest_path.as_str()):
+                Result.success as payload:
+                    var manifest_text = payload.value
+                    defer: manifest_text.release()
+                    match read_toml_str(manifest_text.as_str(), "package", "source_root"):
+                        Option.some as sr:
+                            source_root_owner.release()
+                            source_root_owner = string.String.from_str(sr.value.as_str())
+                        Option.none:
+                            pass
+                Result.failure:
+                    pass
+            package_root_owner.release()
+            package_root_owner = path_ops.join(pkg_dir.value.as_str(), source_root_owner.as_str())
+            roots.push(package_root_owner.as_str())
+        Option.none:
+            match fs.find_ancestor_containing(abs_path, "std"):
+                Option.some as project_dir:
+                    roots.push(project_dir.value.as_str())
+                Option.none:
+                    pass
+    return resolver.infer_module_name(abs_path, roots.as_span())
+
+
+function parse_command(file_path: str, sexpr: bool) -> int:
     match fs.read_text(file_path):
         Result.failure:
             stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
@@ -305,6 +368,14 @@ function parse_command(file_path: str) -> int:
                         )
                     di += 1
                 return 1
+
+            if sexpr:
+                var module_owner = parse_module_name(file_path)
+                defer: module_owner.release()
+                var dumped = sexpr_mod.dump_ast(file, module_owner.as_str())
+                defer: dumped.release()
+                stdio.print_format(c"%.*s\n", int<-(dumped.as_str().len), dumped.as_str().data)
+                return 0
 
             var rendered = ast_formatter.format_source_file(file)
             defer: rendered.release()
