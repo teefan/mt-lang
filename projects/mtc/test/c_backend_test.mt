@@ -12,7 +12,6 @@
 ## `main.mt` is `main`, so user symbols carry the `main_` C prefix and the C
 ## entrypoint is the bare `int32_t main(void)`.
 
-import std.testing as t
 import std.fs as fs
 import std.path as path_ops
 import std.str
@@ -79,8 +78,8 @@ function compile_to_c(source: str) -> string.String:
 
 
 ## Assert `text` contains `needle`; the failure message names the missing text.
-function expect_contains(text: str, needle: str) -> t.Check:
-    return t.expect(text.contains_substring(needle), needle)
+function expect_contains(text: str, needle: str) -> void:
+    expect(text.contains_substring(needle), needle)
 
 
 # =============================================================================
@@ -88,7 +87,7 @@ function expect_contains(text: str, needle: str) -> t.Check:
 # =============================================================================
 
 @[test]
-function test_emits_c_stdint_header() -> t.Check:
+function test_emits_c_stdint_header() -> void:
     var source = <<-SRC
         function main() -> int:
             return 0
@@ -96,9 +95,9 @@ function test_emits_c_stdint_header() -> t.Check:
     var c = compile_to_c(source)
     defer: c.release()
     let text = c.as_str()
-    expect_contains(text, "#include <stdint.h>")?
-    expect_contains(text, "#include <stdbool.h>")?
-    return t.ok()
+    expect_contains(text, "#include <stdint.h>")
+    expect_contains(text, "#include <stdbool.h>")
+    return
 
 
 # =============================================================================
@@ -106,7 +105,7 @@ function test_emits_c_stdint_header() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_struct_typedef_and_definition() -> t.Check:
+function test_struct_typedef_and_definition() -> void:
     var source = <<-SRC
         struct Point:
             x: int
@@ -119,15 +118,15 @@ function test_struct_typedef_and_definition() -> t.Check:
     var c = compile_to_c(source)
     defer: c.release()
     let text = c.as_str()
-    expect_contains(text, "typedef struct main_Point main_Point;")?
-    expect_contains(text, "struct main_Point {")?
-    expect_contains(text, "int32_t x;")?
-    expect_contains(text, "int32_t y;")?
-    return t.ok()
+    expect_contains(text, "typedef struct main_Point main_Point;")
+    expect_contains(text, "struct main_Point {")
+    expect_contains(text, "int32_t x;")
+    expect_contains(text, "int32_t y;")
+    return
 
 
 @[test]
-function test_struct_aggregate_initializer() -> t.Check:
+function test_struct_aggregate_initializer() -> void:
     var source = <<-SRC
         struct Point:
             x: int
@@ -141,9 +140,9 @@ function test_struct_aggregate_initializer() -> t.Check:
     defer: c.release()
     let text = c.as_str()
     ## Designated-initializer form for the struct literal.
-    expect_contains(text, ".x = 1")?
-    expect_contains(text, ".y = 2")?
-    return t.ok()
+    expect_contains(text, ".x = 1")
+    expect_contains(text, ".y = 2")
+    return
 
 
 # =============================================================================
@@ -151,7 +150,7 @@ function test_struct_aggregate_initializer() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_enum_typedef_and_constants() -> t.Check:
+function test_enum_typedef_and_constants() -> void:
     var source = <<-SRC
         enum Color: ubyte
             red = 0
@@ -164,10 +163,10 @@ function test_enum_typedef_and_constants() -> t.Check:
     var c = compile_to_c(source)
     defer: c.release()
     let text = c.as_str()
-    expect_contains(text, "typedef uint8_t main_Color;")?
-    expect_contains(text, "main_Color_red = 0")?
-    expect_contains(text, "main_Color_green = 1")?
-    return t.ok()
+    expect_contains(text, "typedef uint8_t main_Color;")
+    expect_contains(text, "main_Color_red = 0")
+    expect_contains(text, "main_Color_green = 1")
+    return
 
 
 # =============================================================================
@@ -175,7 +174,7 @@ function test_enum_typedef_and_constants() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_function_signature_and_body() -> t.Check:
+function test_function_signature_and_body() -> void:
     var source = <<-SRC
         function add(a: int, b: int) -> int:
             return a + b
@@ -187,13 +186,13 @@ function test_function_signature_and_body() -> t.Check:
     defer: c.release()
     let text = c.as_str()
     ## User functions are `static` and carry the module prefix.
-    expect_contains(text, "static int32_t main_add(int32_t a, int32_t b)")?
-    expect_contains(text, "return a + b;")?
-    return t.ok()
+    expect_contains(text, "static int32_t main_add(int32_t a, int32_t b)")
+    expect_contains(text, "return a + b;")
+    return
 
 
 @[test]
-function test_real_main_entrypoint_wraps_user_main() -> t.Check:
+function test_real_main_entrypoint_wraps_user_main() -> void:
     var source = <<-SRC
         function main() -> int:
             return 7
@@ -202,13 +201,13 @@ function test_real_main_entrypoint_wraps_user_main() -> t.Check:
     defer: c.release()
     let text = c.as_str()
     ## A bare C `int32_t main(void)` calls the prefixed user main.
-    expect_contains(text, "int32_t main(void)")?
-    expect_contains(text, "main_main()")?
-    return t.ok()
+    expect_contains(text, "int32_t main(void)")
+    expect_contains(text, "main_main()")
+    return
 
 
 @[test]
-function test_dead_function_is_not_emitted() -> t.Check:
+function test_dead_function_is_not_emitted() -> void:
     var source = <<-SRC
         function unused_helper() -> int:
             return 99
@@ -220,7 +219,7 @@ function test_dead_function_is_not_emitted() -> t.Check:
     defer: c.release()
     let text = c.as_str()
     ## Reachability-based emission drops functions not reached from main.
-    return t.expect_false(text.contains_substring("main_unused_helper"))
+    expect(not text.contains_substring("main_unused_helper"))
 
 
 # =============================================================================
@@ -228,7 +227,7 @@ function test_dead_function_is_not_emitted() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_enum_match_lowers_to_switch() -> t.Check:
+function test_enum_match_lowers_to_switch() -> void:
     var source = <<-SRC
         enum Color: ubyte
             red = 0
@@ -247,10 +246,10 @@ function test_enum_match_lowers_to_switch() -> t.Check:
     var c = compile_to_c(source)
     defer: c.release()
     let text = c.as_str()
-    expect_contains(text, "switch (c)")?
-    expect_contains(text, "case main_Color_red:")?
-    expect_contains(text, "case main_Color_green:")?
-    return t.ok()
+    expect_contains(text, "switch (c)")
+    expect_contains(text, "case main_Color_red:")
+    expect_contains(text, "case main_Color_green:")
+    return
 
 
 # =============================================================================
@@ -258,7 +257,7 @@ function test_enum_match_lowers_to_switch() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_variant_lowers_to_tagged_union() -> t.Check:
+function test_variant_lowers_to_tagged_union() -> void:
     var source = <<-SRC
         variant Shape:
             circle(radius: int)
@@ -276,10 +275,10 @@ function test_variant_lowers_to_tagged_union() -> t.Check:
     defer: c.release()
     let text = c.as_str()
     ## A tag enum, a payload union, and a struct carrying both.
-    expect_contains(text, "main_Shape_kind")?
-    expect_contains(text, "union main_Shape__data")?
-    expect_contains(text, "struct main_Shape {")?
-    return t.ok()
+    expect_contains(text, "main_Shape_kind")
+    expect_contains(text, "union main_Shape__data")
+    expect_contains(text, "struct main_Shape {")
+    return
 
 
 # =============================================================================
@@ -287,7 +286,7 @@ function test_variant_lowers_to_tagged_union() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_generic_function_is_monomorphized() -> t.Check:
+function test_generic_function_is_monomorphized() -> void:
     var source = <<-SRC
         function identity[T](x: T) -> T:
             return x
@@ -299,8 +298,8 @@ function test_generic_function_is_monomorphized() -> t.Check:
     defer: c.release()
     let text = c.as_str()
     ## The `int` specialization is emitted with a type-suffixed C name.
-    expect_contains(text, "main_identity_int(int32_t x)")?
-    return t.ok()
+    expect_contains(text, "main_identity_int(int32_t x)")
+    return
 
 
 # =============================================================================
@@ -308,7 +307,7 @@ function test_generic_function_is_monomorphized() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_inline_while_literal_unrolled_no_c_while() -> t.Check:
+function test_inline_while_literal_unrolled_no_c_while() -> void:
     var source = <<-SRC
         function main() -> int:
             inline while 5 > 0:
@@ -320,13 +319,13 @@ function test_inline_while_literal_unrolled_no_c_while() -> t.Check:
     let text = c.as_str()
     # Unrolled: no C while loop keyword in the output.
     if text.contains_substring("while") or text.contains_substring("While"):
-        return t.fail("inline while should be unrolled, but C output contains 'while'")
-    expect_contains(text, "return 42")?
-    return t.ok()
+        expect(false, "inline while should be unrolled, but C output contains 'while'")
+    expect_contains(text, "return 42")
+    return
 
 
 @[test]
-function test_inline_while_const_condition_unrolled() -> t.Check:
+function test_inline_while_const_condition_unrolled() -> void:
     var source = <<-SRC
         const N: int = 3
         function main() -> int:
@@ -339,8 +338,8 @@ function test_inline_while_const_condition_unrolled() -> t.Check:
     defer: c.release()
     let text = c.as_str()
     if text.contains_substring("while") or text.contains_substring("While"):
-        return t.fail("inline while with const condition should be unrolled")
-    return t.ok()
+        expect(false, "inline while with const condition should be unrolled")
+    return
 
 
 # =============================================================================
@@ -348,7 +347,7 @@ function test_inline_while_const_condition_unrolled() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_stateful_event_listener_receives_state_pointer() -> t.Check:
+function test_stateful_event_listener_receives_state_pointer() -> void:
     var source = <<-SRC
         event stateful_probe[4]
 
@@ -373,5 +372,5 @@ function test_stateful_event_listener_receives_state_pointer() -> t.Check:
     let text = c.as_str()
     # The emit dispatch for stateful slots must include the state argument.
     # Self-host emits: ((void (*)(void*)) event->slots[i].listener)(event->slots[i].state)
-    expect_contains(text, "listener)(event->slots")?
-    return t.ok()
+    expect_contains(text, "listener)(event->slots")
+    return

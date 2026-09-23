@@ -4563,6 +4563,29 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
         return Option[types.Type].some(value = types.primitive("ptr_uint"))
     if callee_name == "fatal":
         return Option[types.Type].some(value = types.Type.ty_error)
+    if callee_name == "assert" or callee_name == "expect":
+        if args.len < 1 or args.len > 2:
+            return Option[types.Type].none
+        let cond_ty = infer_expr(ctx, scope, unsafe: read(args.data + 0).arg_value)
+        if not types.is_error(cond_ty) and types.type_to_string(cond_ty) != "bool":
+            var cond_msg = string.String.from_str(callee_name)
+            cond_msg.append(" condition must be bool")
+            report(ctx, line, column, cond_msg.as_str())
+        if args.len == 2:
+            let _msg_ty = infer_expr(ctx, scope, unsafe: read(args.data + 1).arg_value)
+        return Option[types.Type].some(value = types.primitive("void"))
+    if callee_name == "expect_eq" or callee_name == "expect_ne":
+        if args.len < 2 or args.len > 3:
+            return Option[types.Type].none
+        let left_ty = infer_expr(ctx, scope, unsafe: read(args.data + 0).arg_value)
+        let right_ty = infer_expr(ctx, scope, unsafe: read(args.data + 1).arg_value)
+        if incompatible_value(left_ty, right_ty, unsafe: read(args.data + 1).arg_value) and incompatible_value(right_ty, left_ty, unsafe: read(args.data + 0).arg_value):
+            var cmp_msg = string.String.from_str(callee_name)
+            cmp_msg.append(" operands are not comparable")
+            report(ctx, line, column, cmp_msg.as_str())
+        if args.len == 3:
+            let _msg_ty = infer_expr(ctx, scope, unsafe: read(args.data + 2).arg_value)
+        return Option[types.Type].some(value = types.primitive("void"))
     return Option[types.Type].none
 
 

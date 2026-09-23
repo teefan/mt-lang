@@ -7,7 +7,6 @@
 ## and checks it through the module loader, lowers to IR, formats the IR, and
 ## asserts on the formatted output.
 
-import std.testing as t
 import std.fs as fs
 import std.path as path_ops
 import std.str
@@ -80,7 +79,7 @@ function lower_source(source: str) -> string.String:
 # =============================================================================
 
 @[test]
-function test_defer_cleanup_not_at_declaration_site() -> t.Check:
+function test_defer_cleanup_not_at_declaration_site() -> void:
     ## The defer cleanup must appear at scope exit — AFTER later statements —
     ## not immediately after the defer declaration.  Using two distinct module
     ## vars lets us assert the exact emission order in the IR.
@@ -103,14 +102,14 @@ function test_defer_cleanup_not_at_declaration_site() -> t.Check:
     ## deferred `first = x`, proving the defer runs at scope exit rather than
     ## at its declaration site.
     let second_pos = text.find_substring("second = y") else:
-        return t.fail("missing 'second = y' assignment in IR")
+        expect(false, "missing 'second = y' assignment in IR")
     let first_pos = text.find_substring("first = x") else:
-        return t.fail("missing deferred 'first = x' assignment in IR")
-    return t.expect_true(first_pos > second_pos)
+        expect(false, "missing deferred 'first = x' assignment in IR")
+    expect(first_pos > second_pos)
 
 
 @[test]
-function test_defer_cleanup_before_return() -> t.Check:
+function test_defer_cleanup_before_return() -> void:
     ## When a defer is active and a function has multiple return paths, the
     ## defer cleanup must be duplicated before EACH return.
     var source2 = <<-SRC
@@ -129,14 +128,14 @@ function test_defer_cleanup_before_return() -> t.Check:
     ## The `counter = counter + 1` cleanup must appear before both `return 1`
     ## and `return 2`.  Verify at least the first occurrence precedes `return 1`.
     let cleanup_pos = text.find_substring("counter + 1") else:
-        return t.fail("missing deferred counter increment")
+        expect(false, "missing deferred counter increment")
     let return1_pos = text.find_substring("return 1") else:
-        return t.fail("missing return 1")
-    return t.expect_true(cleanup_pos < return1_pos)
+        expect(false, "missing return 1")
+    expect(cleanup_pos < return1_pos)
 
 
 @[test]
-function test_defer_with_block_body_form() -> t.Check:
+function test_defer_with_block_body_form() -> void:
     ## A `defer:` block must be lowered as well.
     var source = <<-SRC
         var counter: int = 0
@@ -150,7 +149,7 @@ function test_defer_with_block_body_form() -> t.Check:
     defer: ir.release()
     let text = ir.as_str()
     ## counter must appear in the IR (defer body was lowered).
-    return t.expect_true(text.contains_substring("counter"))
+    expect(text.contains_substring("counter"))
 
 
 # =============================================================================
@@ -160,7 +159,7 @@ function test_defer_with_block_body_form() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_string_match_expr_has_else_if_chain() -> t.Check:
+function test_string_match_expr_has_else_if_chain() -> void:
     ## The expression-form `return match lexeme:` must lower to a nested
     ## else-if chain where each subsequent comparison lives inside the preceding
     ## `else:` branch, so exactly one arm runs.  The pre-fix bug emitted
@@ -182,18 +181,18 @@ function test_string_match_expr_has_else_if_chain() -> t.Check:
     ## The first comparison must precede an `else:` which precedes the second
     ## comparison (nested chain), and the wildcard default comes last.
     let first_cmp = text.find_substring("lexeme == \"a\"") else:
-        return t.fail("missing first arm comparison")
+        expect(false, "missing first arm comparison")
     let else_pos = text.find_substring("else:") else:
-        return t.fail("missing else branch (chain not nested)")
+        expect(false, "missing else branch (chain not nested)")
     let second_cmp = text.find_substring("lexeme == \"b\"") else:
-        return t.fail("missing second arm comparison")
+        expect(false, "missing second arm comparison")
     ## Nested chain order: first == "a", then else:, then == "b".
-    t.expect_true(first_cmp < else_pos)?
-    return t.expect_true(else_pos < second_cmp)
+    expect(first_cmp < else_pos)
+    expect(else_pos < second_cmp)
 
 
 @[test]
-function test_string_match_expr_with_only_wildcard() -> t.Check:
+function test_string_match_expr_with_only_wildcard() -> void:
     ## A match expr with ONLY a wildcard arm must still lower correctly
     ## (edge case: the old code was buggy for the no-pattern-arms case).
     var source = <<-SRC
@@ -204,7 +203,7 @@ function test_string_match_expr_with_only_wildcard() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    return t.expect_true(text.contains_substring("default"))
+    expect(text.contains_substring("default"))
 
 
 # =============================================================================
@@ -214,7 +213,7 @@ function test_string_match_expr_with_only_wildcard() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_return_with_active_defer_lowers_cleanly() -> t.Check:
+function test_return_with_active_defer_lowers_cleanly() -> void:
     ## A return expression that is NOT a trivial literal, in the presence of
     ## an active defer, must be lowered without error (no value clobber).
     var source = <<-SRC
@@ -227,7 +226,7 @@ function test_return_with_active_defer_lowers_cleanly() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    return t.expect_true(text.contains_substring("return"))
+    expect(text.contains_substring("return"))
 
 
 # =============================================================================
@@ -237,7 +236,7 @@ function test_return_with_active_defer_lowers_cleanly() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_struct_aggregate_lowering_does_not_crash() -> t.Check:
+function test_struct_aggregate_lowering_does_not_crash() -> void:
     ## Constructing a struct that is defined in an imported module must work.
     ## A minimal test: Vec[int].create() in a function body exercises the
     ## aggregate literal path.
@@ -250,7 +249,7 @@ function test_struct_aggregate_lowering_does_not_crash() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    return t.expect_true(text.contains_substring("Vec_int"))
+    expect(text.contains_substring("Vec_int"))
 
 
 # =============================================================================
@@ -258,7 +257,7 @@ function test_struct_aggregate_lowering_does_not_crash() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_lower_function_with_defer_and_while_and_match() -> t.Check:
+function test_lower_function_with_defer_and_while_and_match() -> void:
     ## A realistic function that combines defer, while loop (not break-in-
     ## match), and a match expression.  Exercises the full defer stack model.
     var source = <<-SRC
@@ -281,13 +280,13 @@ function test_lower_function_with_defer_and_while_and_match() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    t.expect_true(text.contains_substring("while"))?
-    t.expect_true(text.contains_substring("return"))?
-    return t.ok()
+    expect(text.contains_substring("while"))
+    expect(text.contains_substring("return"))
+    return
 
 
 @[test]
-function test_lower_match_with_variant_arms() -> t.Check:
+function test_lower_match_with_variant_arms() -> void:
     ## A match over a variant with payload arms must lower.
     var source = <<-SRC
         variant Token:
@@ -303,7 +302,7 @@ function test_lower_match_with_variant_arms() -> t.Check:
     SRC
     var ir = lower_source(source)
     defer: ir.release()
-    return t.ok()
+    return
 
 
 # =============================================================================
@@ -312,7 +311,7 @@ function test_lower_match_with_variant_arms() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_atomic_methods_lower_to_builtins() -> t.Check:
+function test_atomic_methods_lower_to_builtins() -> void:
     ## load/store/add must lower to __atomic_load_n / __atomic_store_n /
     ## __atomic_fetch_add, each threading the receiver address and the seq-cst
     ## memory-order constant (5).  store returns void; add/load return the
@@ -328,16 +327,16 @@ function test_atomic_methods_lower_to_builtins() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    t.expect_true(text.contains_substring("__atomic_store_n(&counter, 0, 5)"))?
-    t.expect_true(text.contains_substring("__atomic_fetch_add(&counter, 1, 5)"))?
-    t.expect_true(text.contains_substring("__atomic_load_n(&counter, 5)"))?
+    expect(text.contains_substring("__atomic_store_n(&counter, 0, 5)"))
+    expect(text.contains_substring("__atomic_fetch_add(&counter, 1, 5)"))
+    expect(text.contains_substring("__atomic_load_n(&counter, 5)"))
     ## add/load must be typed as the element type, not void.
-    t.expect_true(text.contains_substring("let prev: int ="))?
-    return t.expect_true(text.contains_substring("let value: int ="))
+    expect(text.contains_substring("let prev: int ="))
+    expect(text.contains_substring("let value: int ="))
 
 
 @[test]
-function test_atomic_sub_and_exchange_lower_to_builtins() -> t.Check:
+function test_atomic_sub_and_exchange_lower_to_builtins() -> void:
     ## sub and exchange round out the read-modify-write surface.
     var source = <<-SRC
         function rmw_demo() -> int:
@@ -349,8 +348,8 @@ function test_atomic_sub_and_exchange_lower_to_builtins() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    t.expect_true(text.contains_substring("__atomic_fetch_sub(&counter, 2, 5)"))?
-    return t.expect_true(text.contains_substring("__atomic_exchange_n(&counter, 9, 5)"))
+    expect(text.contains_substring("__atomic_fetch_sub(&counter, 2, 5)"))
+    expect(text.contains_substring("__atomic_exchange_n(&counter, 9, 5)"))
 
 
 # =============================================================================
@@ -360,7 +359,7 @@ function test_atomic_sub_and_exchange_lower_to_builtins() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_mixed_width_integer_arithmetic_widens_narrow_operand() -> t.Check:
+function test_mixed_width_integer_arithmetic_widens_narrow_operand() -> void:
     ## `int + long` casts the int operand to long; the long operand is left
     ## alone, and the result type is long.
     var source = <<-SRC
@@ -370,11 +369,11 @@ function test_mixed_width_integer_arithmetic_widens_narrow_operand() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    return t.expect_true(text.contains_substring("long<-a + b"))
+    expect(text.contains_substring("long<-a + b"))
 
 
 @[test]
-function test_same_type_arithmetic_is_not_cast() -> t.Check:
+function test_same_type_arithmetic_is_not_cast() -> void:
     ## Two operands of the same type need no balancing cast.
     var source = <<-SRC
         function f(a: int, b: int) -> int:
@@ -383,12 +382,12 @@ function test_same_type_arithmetic_is_not_cast() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    t.expect_true(text.contains_substring("return a + b"))?
-    return t.expect_true(not text.contains_substring("int<-a"))
+    expect(text.contains_substring("return a + b"))
+    expect(not text.contains_substring("int<-a"))
 
 
 @[test]
-function test_comparison_widens_operand_but_yields_bool() -> t.Check:
+function test_comparison_widens_operand_but_yields_bool() -> void:
     ## A comparison across widths still balances the operands, but the binary's
     ## own result type stays bool (so the arithmetic-result-type widening does
     ## not apply to comparisons).
@@ -399,7 +398,7 @@ function test_comparison_widens_operand_but_yields_bool() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    return t.expect_true(text.contains_substring("long<-a < b"))
+    expect(text.contains_substring("long<-a < b"))
 
 
 # =============================================================================
@@ -408,7 +407,7 @@ function test_comparison_widens_operand_but_yields_bool() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_enum_comparison_casts_to_backing() -> t.Check:
+function test_enum_comparison_casts_to_backing() -> void:
     ## `State.running > State.idle` casts both enum operands to the ubyte
     ## backing type before comparing.
     var source = <<-SRC
@@ -422,12 +421,12 @@ function test_enum_comparison_casts_to_backing() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    t.expect_true(text.contains_substring("ubyte<-"))?
-    return t.expect_true(text.contains_substring("> ubyte<-"))
+    expect(text.contains_substring("ubyte<-"))
+    expect(text.contains_substring("> ubyte<-"))
 
 
 @[test]
-function test_flags_comparison_casts_but_bitwise_does_not() -> t.Check:
+function test_flags_comparison_casts_but_bitwise_does_not() -> void:
     ## A flags comparison casts to the uint backing; a bitwise `|` does not
     ## balance (so no cast is inserted around its operands).
     var source = <<-SRC
@@ -444,9 +443,9 @@ function test_flags_comparison_casts_but_bitwise_does_not() -> t.Check:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    t.expect_true(text.contains_substring("uint<-m == uint<-"))?
+    expect(text.contains_substring("uint<-m == uint<-"))
     ## The bitwise-or operands are left un-cast.
-    return t.expect_true(text.contains_substring("Mask_a | "))
+    expect(text.contains_substring("Mask_a | "))
 
 
 # =============================================================================
@@ -455,7 +454,7 @@ function test_flags_comparison_casts_but_bitwise_does_not() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_emit_function_becomes_top_level() -> t.Check:
+function test_emit_function_becomes_top_level() -> void:
     ## The emitted functions appear as top-level `fn`s (so they are declared,
     ## checked, and lowered like any other), and a normal function can call one.
     var source = <<-SRC
@@ -472,7 +471,7 @@ function test_emit_function_becomes_top_level() -> t.Check:
     defer: ir.release()
     let text = ir.as_str()
     ## Both emitted functions are spliced in as top-level declarations.
-    t.expect_true(text.contains_substring("fn zero_meaning"))?
-    t.expect_true(text.contains_substring("fn hex_prefix"))?
+    expect(text.contains_substring("fn zero_meaning"))
+    expect(text.contains_substring("fn hex_prefix"))
     ## The call resolves to the emitted function's linkage name.
-    return t.expect_true(text.contains_substring("return main_zero_meaning()"))
+    expect(text.contains_substring("return main_zero_meaning()"))

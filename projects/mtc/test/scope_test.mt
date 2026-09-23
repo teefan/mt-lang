@@ -1,4 +1,3 @@
-import std.testing as t
 import std.vec as vec
 
 import mtc.parser.parser as parser
@@ -7,7 +6,7 @@ import mtc.lsp.scope as scope_mod
 
 
 @[test]
-function test_scope_shadow_separate_functions() -> t.Check:
+function test_scope_shadow_separate_functions() -> void:
     var source = "function foo() -> int:\n    var x: int = 1\n    return x\n\nfunction bar() -> int:\n    var x: int = 2\n    return x\n"
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
@@ -16,22 +15,22 @@ function test_scope_shadow_separate_functions() -> t.Check:
     defer: bindings.release()
 
     if scope_mod.is_in_same_scope(ref_of(bindings), "x", 2z, 6z):
-        return t.fail("foo.x (line 2) should not rename bar.x (line 6)")
+        expect(false, "foo.x (line 2) should not rename bar.x (line 6)")
 
     if not scope_mod.is_in_same_scope(ref_of(bindings), "x", 2z, 2z):
-        return t.fail("foo.x should rename its own occurrence")
+        expect(false, "foo.x should rename its own occurrence")
 
     if not scope_mod.is_in_same_scope(ref_of(bindings), "x", 2z, 4z):
-        return t.fail("x at line 4 should be in foo.x scope")
+        expect(false, "x at line 4 should be in foo.x scope")
 
     if not scope_mod.is_in_same_scope(ref_of(bindings), "foo", 1z, 1z):
-        return t.fail("module-level foo should rename globally")
+        expect(false, "module-level foo should rename globally")
 
-    return t.ok()
+    return
 
 
 @[test]
-function test_scope_nested_shadow() -> t.Check:
+function test_scope_nested_shadow() -> void:
     var source = "function main() -> int:\n    var x: int = 10\n    if true:\n        var x: int = 20\n        return x\n    return x\n"
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
@@ -40,15 +39,15 @@ function test_scope_nested_shadow() -> t.Check:
     defer: bindings.release()
 
     if not scope_mod.is_in_same_scope(ref_of(bindings), "x", 2z, 6z):
-        return t.fail("outer x should match return at line 6")
+        expect(false, "outer x should match return at line 6")
 
     if scope_mod.is_in_same_scope(ref_of(bindings), "x", 2z, 4z):
-        return t.fail("outer x should NOT rename inner x (line 4)")
+        expect(false, "outer x should NOT rename inner x (line 4)")
 
     if scope_mod.is_in_same_scope(ref_of(bindings), "x", 4z, 2z):
-        return t.fail("inner x should NOT rename outer x (line 2)")
+        expect(false, "inner x should NOT rename outer x (line 2)")
 
     if not scope_mod.is_in_same_scope(ref_of(bindings), "main", 1z, 1z):
-        return t.fail("module-level main should rename globally")
+        expect(false, "module-level main should rename globally")
 
-    return t.ok()
+    return

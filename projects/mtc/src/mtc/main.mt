@@ -3306,28 +3306,12 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
             if test_names.len() == 0 and death_names.len() == 0:
                 return (0, 0)
 
-            var testing_alias = "t"
-            var vi: ptr_uint = 0
-            while vi < file.imports.len:
-                unsafe:
-                    match read(file.imports.data + vi):
-                        ast.Decl.decl_import as imp:
-                            if imp.path.parts.len >= 2:
-                                let fp = read(imp.path.parts.data + 0)
-                                let sp = read(imp.path.parts.data + 1)
-                                if fp == "std" and sp == "testing":
-                                    if imp.alias_name.is_some():
-                                        testing_alias = imp.alias_name.unwrap()
-                        _:
-                            pass
-                vi += 1
-
             if not machine:
                 stdio.print_format(c"# %.*s\n", int<-(file_path.len), file_path.data)
 
             var file_failed = 0
             if test_names.len() > 0:
-                if run_normal_test_runner(file_path, source_text, ref_of(test_names), testing_alias, roots, counter, timeout_seconds, memory_mb, machine, results) != 0:
+                if run_normal_test_runner(file_path, source_text, ref_of(test_names), roots, counter, timeout_seconds, memory_mb, machine, results) != 0:
                     file_failed = 1
 
             var dj: ptr_uint = 0
@@ -3347,7 +3331,7 @@ function run_test_file(file_path: str, roots: ref[vec.Vec[str]], counter: ref[pt
 ## exec "$@"'`, capturing output.  `timeout` reports exit 124 on expiry and the
 ## `ulimit -v` cap bounds virtual memory so a hung/runaway binary cannot stall
 ## or exhaust the host.
-function run_sandboxed(binary_path: str, timeout_seconds: ptr_uint, memory_mb: ptr_uint) -> Result[process.CaptureResult, process.ProcessError]:
+function run_sandboxed(binary_path: str, timeout_seconds: ptr_uint, memory_mb: ptr_uint, extra_arg: Option[str]) -> Result[process.CaptureResult, process.ProcessError]:
     var ulimit_cmd = string.String.create()
     defer: ulimit_cmd.release()
     ulimit_cmd.append("ulimit -v ")
@@ -3363,6 +3347,11 @@ function run_sandboxed(binary_path: str, timeout_seconds: ptr_uint, memory_mb: p
     run_cmd.push(ulimit_cmd.as_str())
     run_cmd.push("mt")
     run_cmd.push(binary_path)
+    match extra_arg:
+        Option.some as extra:
+            run_cmd.push(extra.value)
+        Option.none:
+            pass
     return process.capture(run_cmd.as_span())
 
 
@@ -3417,33 +3406,30 @@ function find_project_src_root(source_path: str) -> Option[str]:
     return Option[str].none
 
 
-## Synthesize, build, and run the std.testing runner for a file's normal
-## @[test] functions.  Returns 1 when the runner fails to build, times out,
-## crashes, or exits non-zero; 0 otherwise.
-function run_normal_test_runner(file_path: str, source_text: str, test_names: ref[vec.Vec[str]], testing_alias: str, roots: ref[vec.Vec[str]], counter: ref[ptr_uint], timeout_seconds: ptr_uint, memory_mb: ptr_uint, machine: bool, results: ref[vec.Vec[TestResult]]) -> int:
+## Build one runner binary whose `main(args)` dispatches to a single @[test]
+## function selected by `args[1]`, then run it once per test in its own process
+## so an aborting assertion is isolated to that test.  Returns 1 when the runner
+## fails to build or any test fails.
+function run_normal_test_runner(file_path: str, source_text: str, test_names: ref[vec.Vec[str]], roots: ref[vec.Vec[str]], counter: ref[ptr_uint], timeout_seconds: ptr_uint, memory_mb: ptr_uint, machine: bool, results: ref[vec.Vec[TestResult]]) -> int:
     var runner_source = string.String.create()
     defer: runner_source.release()
     runner_source.append(source_text)
-    runner_source.append("\n\nfunction main() -> int:\n")
-    runner_source.append("    var __mt_test_stats = ")
-    runner_source.append(testing_alias)
-    runner_source.append(".Stats.create()\n")
+    runner_source.append("\n\nfunction main(args: span[str]) -> int:\n")
+    runner_source.append("    let __mt_test_which = if args.len > 1: args[1] else: \"\"\n")
+    runner_source.append("    match __mt_test_which:\n")
     var ti: ptr_uint = 0
     while ti < test_names.len():
         let tn_ptr = test_names.get(ti) else:
             break
         let tn = unsafe: read(tn_ptr)
-        runner_source.append("    __mt_test_stats = ")
-        runner_source.append(testing_alias)
-        runner_source.append(".record(__mt_test_stats, \"")
+        runner_source.append("        \"")
         runner_source.append(tn)
-        runner_source.append("\", ")
+        runner_source.append("\":\n            ")
         runner_source.append(tn)
-        runner_source.append("())\n")
+        runner_source.append("()\n")
         ti += 1
-    runner_source.append("    return ")
-    runner_source.append(testing_alias)
-    runner_source.append(".summarize(__mt_test_stats)\n")
+    runner_source.append("        _:\n            return 1\n")
+    runner_source.append("    return 0\n")
 
     let dirname = path_ops.dirname(file_path)
     let counter_val = read(counter)
@@ -3495,45 +3481,54 @@ function run_normal_test_runner(file_path: str, source_text: str, test_names: re
         let _rb = fs.remove(runner_path_str.as_str())
         return 1
 
-    var run_failed = false
-    match run_sandboxed(runner_bin_str.as_str(), timeout_seconds, memory_mb):
-        Result.success as run_result:
-            var capture_result = run_result.value
-            defer: capture_result.release()
-            let run_stdout = capture_result.stdout_text()
-            if run_stdout.is_some():
-                if machine:
-                    collect_runner_results(run_stdout.unwrap(), results)
+    var any_failed = false
+    var ti2: ptr_uint = 0
+    while ti2 < test_names.len():
+        let tn_ptr = test_names.get(ti2) else:
+            break
+        let tn = unsafe: read(tn_ptr)
+        match run_sandboxed(runner_bin_str.as_str(), timeout_seconds, memory_mb, Option[str].some(value = tn)):
+            Result.success as run_result:
+                var capture_result = run_result.value
+                let code = capture_result.status.normalized_code()
+                if code == 0:
+                    if machine:
+                        results.push(TestResult(name = string.String.from_str(tn), status = TestStatus.ok, detail = string.String.create(), has_detail = false))
+                    else:
+                        stdio.print_format(c"ok   - %.*s\n", int<-(tn.len), tn.data)
                 else:
-                    stdio.print_format(c"%.*s", int<-(run_stdout.unwrap().len), run_stdout.unwrap().data)
-            if not machine:
-                let run_stderr = capture_result.stderr_text()
-                if run_stderr.is_some():
-                    stdio.print_format(c"%.*s", int<-(run_stderr.unwrap().len), run_stderr.unwrap().data)
-            let code = capture_result.status.normalized_code()
-            if code == 124:
+                    any_failed = true
+                    var detail = string.String.create()
+                    if code == 124:
+                        detail.append("timed out")
+                    else:
+                        let err_text = capture_result.stderr_text()
+                        match err_text:
+                            Option.some as et:
+                                if et.value.len > 0:
+                                    detail.append(et.value)
+                            Option.none:
+                                pass
+                        if detail.len() == 0:
+                            detail.append("test aborted")
+                    if machine:
+                        results.push(TestResult(name = string.String.from_str(tn), status = TestStatus.fail, detail = detail, has_detail = true))
+                    else:
+                        let detail_text = detail.as_str()
+                        stdio.print_format(c"FAIL - %.*s: %.*s\n", int<-(tn.len), tn.data, int<-(detail_text.len), detail_text.data)
+                        detail.release()
+                capture_result.release()
+            Result.failure:
+                any_failed = true
                 if machine:
-                    var to_name = string.String.from_str(file_path)
-                    to_name.append(" (timed out)")
-                    results.push(TestResult(
-                        name = to_name,
-                        status = TestStatus.fail,
-                        detail = string.String.from_str("timed out"),
-                        has_detail = true,
-                    ))
+                    results.push(TestResult(name = string.String.from_str(tn), status = TestStatus.fail, detail = string.String.from_str("runner crashed"), has_detail = true))
                 else:
-                    stdio.print_format(c"test run timed out after %ds\n", int<-timeout_seconds)
-                run_failed = true
-            else if code != 0:
-                run_failed = true
-        Result.failure:
-            if not machine:
-                stdio.print_line("FAILED - runner crashed")
-            run_failed = true
+                    stdio.print_format(c"FAIL - %.*s: runner crashed\n", int<-(tn.len), tn.data)
+        ti2 += 1
 
     let _r1 = fs.remove(runner_path_str.as_str())
     let _r2 = fs.remove(runner_bin_str.as_str())
-    if run_failed:
+    if any_failed:
         return 1
     return 0
 
@@ -3589,7 +3584,7 @@ function run_death_test(file_path: str, source_text: str, test_name: str, roots:
     if not build_ok:
         reason = "build error"
     else:
-        match run_sandboxed(runner_bin_str.as_str(), timeout_seconds, memory_mb):
+        match run_sandboxed(runner_bin_str.as_str(), timeout_seconds, memory_mb, Option[str].none):
             Result.success as run_result:
                 var capture_result = run_result.value
                 defer: capture_result.release()

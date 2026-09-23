@@ -7,7 +7,6 @@
 ## (formatting already-formatted source is a no-op), which is the core contract
 ## of a formatter.
 
-import std.testing as t
 import std.vec as vec
 import std.str
 import std.string as string
@@ -28,8 +27,8 @@ function format_source(source: str) -> string.String:
 
 
 ## Assert `text` contains `needle`; the failure message names the missing text.
-function expect_contains(text: str, needle: str) -> t.Check:
-    return t.expect(text.contains_substring(needle), needle)
+function expect_contains(text: str, needle: str) -> void:
+    expect(text.contains_substring(needle), needle)
 
 
 # =============================================================================
@@ -37,7 +36,7 @@ function expect_contains(text: str, needle: str) -> t.Check:
 # =============================================================================
 
 @[test]
-function test_formatting_is_idempotent() -> t.Check:
+function test_formatting_is_idempotent() -> void:
     var source = <<-SRC
         function  add(a:int,b:int)->int:
             return a+b
@@ -51,11 +50,11 @@ function test_formatting_is_idempotent() -> t.Check:
     defer: once.release()
     var twice = format_source(once.as_str())
     defer: twice.release()
-    return t.expect_equal_str(twice.as_str(), once.as_str())
+    expect_eq(twice.as_str(), once.as_str())
 
 
 @[test]
-function test_already_formatted_is_stable() -> t.Check:
+function test_already_formatted_is_stable() -> void:
     ## Canonical input should round-trip unchanged.
     var source = <<-SRC
         function main() -> int:
@@ -65,7 +64,7 @@ function test_already_formatted_is_stable() -> t.Check:
     defer: once.release()
     var twice = format_source(once.as_str())
     defer: twice.release()
-    return t.expect_equal_str(once.as_str(), twice.as_str())
+    expect_eq(once.as_str(), twice.as_str())
 
 
 # =============================================================================
@@ -73,7 +72,7 @@ function test_already_formatted_is_stable() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_normalizes_param_and_operator_spacing() -> t.Check:
+function test_normalizes_param_and_operator_spacing() -> void:
     var source = <<-SRC
         function add(a:int,b:int)->int:
             return a+b
@@ -81,13 +80,13 @@ function test_normalizes_param_and_operator_spacing() -> t.Check:
     var formatted = format_source(source)
     defer: formatted.release()
     let text = formatted.as_str()
-    expect_contains(text, "function add(a: int, b: int) -> int:")?
-    expect_contains(text, "return a + b")?
-    return t.ok()
+    expect_contains(text, "function add(a: int, b: int) -> int:")
+    expect_contains(text, "return a + b")
+    return
 
 
 @[test]
-function test_collapses_extra_blank_lines() -> t.Check:
+function test_collapses_extra_blank_lines() -> void:
     ## Multiple consecutive blank lines between declarations collapse to the
     ## canonical single separator; there must be no triple newline.
     var source = <<-SRC
@@ -103,13 +102,13 @@ function test_collapses_extra_blank_lines() -> t.Check:
     var formatted = format_source(source)
     defer: formatted.release()
     let text = formatted.as_str()
-    expect_contains(text, "function a() -> int:")?
-    expect_contains(text, "function b() -> int:")?
-    return t.expect_false(text.contains_substring("\n\n\n"))
+    expect_contains(text, "function a() -> int:")
+    expect_contains(text, "function b() -> int:")
+    expect(not text.contains_substring("\n\n\n"))
 
 
 @[test]
-function test_preserves_struct_fields() -> t.Check:
+function test_preserves_struct_fields() -> void:
     var source = <<-SRC
         struct Vec2:
             x: float
@@ -118,14 +117,14 @@ function test_preserves_struct_fields() -> t.Check:
     var formatted = format_source(source)
     defer: formatted.release()
     let text = formatted.as_str()
-    expect_contains(text, "struct Vec2:")?
-    expect_contains(text, "    x: float")?
-    expect_contains(text, "    y: float")?
-    return t.ok()
+    expect_contains(text, "struct Vec2:")
+    expect_contains(text, "    x: float")
+    expect_contains(text, "    y: float")
+    return
 
 
 @[test]
-function test_preserves_enum_members() -> t.Check:
+function test_preserves_enum_members() -> void:
     var source = <<-SRC
         enum Color: ubyte
             red = 0
@@ -134,14 +133,14 @@ function test_preserves_enum_members() -> t.Check:
     var formatted = format_source(source)
     defer: formatted.release()
     let text = formatted.as_str()
-    expect_contains(text, "enum Color: ubyte")?
-    expect_contains(text, "red = 0")?
-    expect_contains(text, "green = 1")?
-    return t.ok()
+    expect_contains(text, "enum Color: ubyte")
+    expect_contains(text, "red = 0")
+    expect_contains(text, "green = 1")
+    return
 
 
 @[test]
-function test_formats_match_statement() -> t.Check:
+function test_formats_match_statement() -> void:
     var source = <<-SRC
         enum State: ubyte
             idle = 0
@@ -157,7 +156,7 @@ function test_formats_match_statement() -> t.Check:
     var formatted = format_source(source)
     defer: formatted.release()
     let text = formatted.as_str()
-    expect_contains(text, "match s:")?
-    expect_contains(text, "State.idle:")?
-    expect_contains(text, "State.busy:")?
-    return t.ok()
+    expect_contains(text, "match s:")
+    expect_contains(text, "State.idle:")
+    expect_contains(text, "State.busy:")
+    return

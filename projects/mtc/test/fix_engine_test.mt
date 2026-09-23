@@ -2,7 +2,6 @@
 ## `.mt-lint.yml` configuration parser.
 ## Run with: mtc test projects/mtc
 
-import std.testing as t
 import std.str
 import std.string as string
 import std.vec as vec
@@ -20,10 +19,10 @@ function fix_all(source: str) -> string.String:
     return fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore))
 
 
-function expect_fixed(source: str, expected: str) -> t.Check:
+function expect_fixed(source: str, expected: str) -> void:
     var fixed = fix_all(source)
     defer: fixed.release()
-    return t.expect_equal_str(fixed.as_str(), expected)
+    expect_eq(fixed.as_str(), expected)
 
 
 # =============================================================================
@@ -31,7 +30,7 @@ function expect_fixed(source: str, expected: str) -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_prefer_let() -> t.Check:
+function test_fix_prefer_let() -> void:
     let source = <<-SRC
         function demo(a: int) -> int:
             var x = a
@@ -42,18 +41,18 @@ function test_fix_prefer_let() -> t.Check:
             let x = a
             return x
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 @[test]
-function test_fix_prefer_let_keeps_reassigned_var() -> t.Check:
+function test_fix_prefer_let_keeps_reassigned_var() -> void:
     let source = <<-SRC
         function demo(a: int) -> int:
             var x = a
             x = x + 1
             return x
     SRC
-    return expect_fixed(source, source)
+    expect_fixed(source, source)
 
 
 # =============================================================================
@@ -61,7 +60,7 @@ function test_fix_prefer_let_keeps_reassigned_var() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_redundant_return() -> t.Check:
+function test_fix_redundant_return() -> void:
     let source = <<-SRC
         function demo() -> void:
             let _x = 1
@@ -71,7 +70,7 @@ function test_fix_redundant_return() -> t.Check:
         function demo() -> void:
             let _x = 1
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 # =============================================================================
@@ -79,7 +78,7 @@ function test_fix_redundant_return() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_redundant_else() -> t.Check:
+function test_fix_redundant_else() -> void:
     let source = <<-SRC
         function demo(flag: bool) -> int:
             if flag:
@@ -93,7 +92,7 @@ function test_fix_redundant_else() -> t.Check:
                 return 1
             return 2
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 # =============================================================================
@@ -101,7 +100,7 @@ function test_fix_redundant_else() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_trailing_comma() -> t.Check:
+function test_fix_trailing_comma() -> void:
     let source = <<-SRC
         function add(a: int, b: int) -> int:
             return a + b
@@ -116,7 +115,7 @@ function test_fix_trailing_comma() -> t.Check:
         function demo() -> int:
             return add(1, 2)
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 # =============================================================================
@@ -124,7 +123,7 @@ function test_fix_trailing_comma() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_redundant_cast() -> t.Check:
+function test_fix_redundant_cast() -> void:
     let source = <<-SRC
         function demo(n: int) -> int:
             var total: int = n
@@ -137,11 +136,11 @@ function test_fix_redundant_cast() -> t.Check:
             total = total
             return total
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 @[test]
-function test_fix_redundant_cast_unwraps_unsafe() -> t.Check:
+function test_fix_redundant_cast_unwraps_unsafe() -> void:
     let source = <<-SRC
         function demo(n: int) -> int:
             var total: int = n
@@ -155,7 +154,7 @@ function test_fix_redundant_cast_unwraps_unsafe() -> t.Check:
             let mirrored = total
             return mirrored
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 # =============================================================================
@@ -163,7 +162,7 @@ function test_fix_redundant_cast_unwraps_unsafe() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_bool_compare_true() -> t.Check:
+function test_fix_bool_compare_true() -> void:
     let source = <<-SRC
         function demo(flag: bool) -> int:
             if flag == true:
@@ -176,11 +175,11 @@ function test_fix_bool_compare_true() -> t.Check:
                 return 1
             return 0
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 @[test]
-function test_fix_bool_compare_false_inverts() -> t.Check:
+function test_fix_bool_compare_false_inverts() -> void:
     let source = <<-SRC
         function demo(flag: bool) -> int:
             if flag == false:
@@ -193,18 +192,18 @@ function test_fix_bool_compare_false_inverts() -> t.Check:
                 return 1
             return 0
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 @[test]
-function test_fix_bool_compare_literal_first_untouched() -> t.Check:
+function test_fix_bool_compare_literal_first_untouched() -> void:
     let source = <<-SRC
         function demo(flag: bool) -> int:
             if true == flag:
                 return 1
             return 0
     SRC
-    return expect_fixed(source, source)
+    expect_fixed(source, source)
 
 
 # =============================================================================
@@ -212,7 +211,7 @@ function test_fix_bool_compare_literal_first_untouched() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_redundant_type_annotation() -> t.Check:
+function test_fix_redundant_type_annotation() -> void:
     let source = <<-SRC
         function demo() -> int:
             let count: int = 5
@@ -223,7 +222,7 @@ function test_fix_redundant_type_annotation() -> t.Check:
             let count = 5
             return count
     SRC
-    return expect_fixed(source, expected)
+    expect_fixed(source, expected)
 
 
 # =============================================================================
@@ -231,14 +230,14 @@ function test_fix_redundant_type_annotation() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_keeps_unused_import() -> t.Check:
+function test_fix_keeps_unused_import() -> void:
     let source = <<-SRC
         import std.hash
 
         function demo() -> int:
             return 1
     SRC
-    return expect_fixed(source, source)
+    expect_fixed(source, source)
 
 
 # =============================================================================
@@ -246,7 +245,7 @@ function test_fix_keeps_unused_import() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_fix_respects_ignore() -> t.Check:
+function test_fix_respects_ignore() -> void:
     let source = <<-SRC
         function demo(a: int) -> int:
             var x = a
@@ -259,11 +258,11 @@ function test_fix_respects_ignore() -> t.Check:
     ignore.push("prefer-let")
     var fixed = fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore))
     defer: fixed.release()
-    return t.expect_equal_str(fixed.as_str(), source)
+    expect_eq(fixed.as_str(), source)
 
 
 @[test]
-function test_fix_respects_select() -> t.Check:
+function test_fix_respects_select() -> void:
     let source = <<-SRC
         function demo(a: int) -> void:
             var _x = a
@@ -280,7 +279,7 @@ function test_fix_respects_select() -> t.Check:
     defer: ignore.release()
     var fixed = fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore))
     defer: fixed.release()
-    return t.expect_equal_str(fixed.as_str(), expected)
+    expect_eq(fixed.as_str(), expected)
 
 
 # =============================================================================
@@ -288,12 +287,12 @@ function test_fix_respects_select() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_is_fixable_codes() -> t.Check:
+function test_is_fixable_codes() -> void:
     if not fix_engine.is_fixable("prefer-let"):
-        return t.expect_true(false)
+        expect(false)
     if fix_engine.is_fixable("unused-import"):
-        return t.expect_true(false)
-    return t.expect_true(fix_engine.is_fixable("trailing-list-comma"))
+        expect(false)
+    expect(fix_engine.is_fixable("trailing-list-comma"))
 
 
 # =============================================================================
@@ -301,7 +300,7 @@ function test_is_fixable_codes() -> t.Check:
 # =============================================================================
 
 @[test]
-function test_config_block_lists() -> t.Check:
+function test_config_block_lists() -> void:
     let source = <<-CFG
         # comment
         select:
@@ -312,36 +311,36 @@ function test_config_block_lists() -> t.Check:
     var cfg = lint_config.parse_config(source)
     defer: cfg.release()
     if not cfg.has_select:
-        return t.expect_true(false)
+        expect(false)
     if cfg.select.len() != 2:
-        return t.expect_equal_int(int<-(cfg.select.len()), 2)
+        expect_eq(int<-(cfg.select.len()), 2)
     let first = cfg.select.get(0) else:
-        return t.expect_true(false)
+        expect(false)
     unsafe:
         if not read(first).as_str().equal("prefer-let"):
-            return t.expect_true(false)
-    return t.expect_equal_int(int<-(cfg.max_line_length), 100)
+            expect(false)
+    expect_eq(int<-(cfg.max_line_length), 100)
 
 
 @[test]
-function test_config_inline_list() -> t.Check:
+function test_config_inline_list() -> void:
     let source = "ignore: [line-too-long, doc-tag]\n"
     var cfg = lint_config.parse_config(source)
     defer: cfg.release()
     if not cfg.has_ignore:
-        return t.expect_true(false)
+        expect(false)
     if cfg.ignore.len() != 2:
-        return t.expect_equal_int(int<-(cfg.ignore.len()), 2)
+        expect_eq(int<-(cfg.ignore.len()), 2)
     let second = cfg.ignore.get(1) else:
-        return t.expect_true(false)
+        expect(false)
     unsafe:
-        return t.expect_equal_str(read(second).as_str(), "doc-tag")
+        expect_eq(read(second).as_str(), "doc-tag")
 
 
 @[test]
-function test_config_empty_when_missing_keys() -> t.Check:
+function test_config_empty_when_missing_keys() -> void:
     var cfg = lint_config.parse_config("other_key: value\n")
     defer: cfg.release()
     if cfg.has_select or cfg.has_ignore:
-        return t.expect_true(false)
-    return t.expect_equal_int(int<-(cfg.max_line_length), 0)
+        expect(false)
+    expect_eq(int<-(cfg.max_line_length), 0)

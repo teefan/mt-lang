@@ -1,4 +1,3 @@
-import std.testing as t
 import std.vec as vec
 import std.str as str_ops
 import std.string as string_mod
@@ -10,7 +9,7 @@ import mtc.lsp.completion as comp
 
 
 @[test]
-function test_receiver_type_resolution() -> t.Check:
+function test_receiver_type_resolution() -> void:
     var source = <<-SRC
         struct Vec:
             x: float
@@ -24,5 +23,5 @@ function test_receiver_type_resolution() -> t.Check:
     var analysis = analyzer.check_source_file(ast_file)
     let name = comp.resolve_receiver_type_name(ref_of(analysis), "Vec")
     if not name.equal("Vec"):
-        return t.fail("Vec type not resolved")
-    return t.ok()
+        expect(false, "Vec type not resolved")
+    return

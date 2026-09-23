@@ -2287,6 +2287,20 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 return
                         _:
                             pass
+                # Assertion intrinsics are statement-only: lower to
+                # `if (!condition) fatal(message)`.
+                unsafe:
+                    match read(ex.expression):
+                        ast.Expr.expr_call as call:
+                            match read(call.callee):
+                                ast.Expr.expr_identifier as id:
+                                    if id.name == "assert" or id.name == "expect" or id.name == "expect_eq" or id.name == "expect_ne":
+                                        lower_assert_stmt(ctx, output, id.name, call.args, id.line, id.column)
+                                        return
+                                _:
+                                    pass
+                        _:
+                            pass
                 let lowered = lower_expr(ctx, ex.expression)
                 output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ""))
             ast.Stmt.stmt_when as wn:
@@ -5358,6 +5372,49 @@ function tuple_element_type(t: types.Type, index: ptr_uint) -> types.Type:
             return types.Type.ty_error
         _:
             return types.Type.ty_error
+
+
+## Lower an `assert`/`expect`/`expect_eq`/`expect_ne` expression statement to
+## `if (!condition) fatal(message)`.  The message is evaluated only on the
+## failing path.
+function lower_assert_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], kind: str, args: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> void:
+    var cond: ptr[ir.Expr]
+    var msg_index: ptr_uint = 1
+    if kind == "expect_eq" or kind == "expect_ne":
+        msg_index = 2
+        let left = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+        let right = lower_expr(ctx, unsafe: read(args.data + 1).arg_value)
+        let op = if kind == "expect_eq": "!=" else: "=="
+        cond = alloc_expr(ir.Expr.expr_binary(operator = op, left = left, right = right, ty = ctx.bool_ty))
+    else:
+        let inner = lower_expr(ctx, unsafe: read(args.data + 0).arg_value)
+        cond = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = inner, ty = ctx.bool_ty))
+    var fatal_callee = "mt_fatal_str"
+    var msg: ptr[ir.Expr]
+    if args.len > msg_index:
+        let msg_ast = unsafe: read(args.data + msg_index).arg_value
+        if fatal_arg_is_cstr(ctx, msg_ast):
+            fatal_callee = "mt_fatal"
+        msg = lower_expr(ctx, msg_ast)
+    else:
+        msg = alloc_expr(ir.Expr.expr_string_literal(value = assert_default_message(kind), ty = types.Type.ty_str, cstring = false))
+    var fatal_args = vec.Vec[ir.Expr].create()
+    unsafe:
+        fatal_args.push(read(msg))
+    let fatal_call = alloc_expr(ir.Expr.expr_call(callee = fatal_callee, arguments = fatal_args.as_span(), ty = ctx.void_ty))
+    var then_body = vec.Vec[ir.Stmt].create()
+    then_body.push(ir.Stmt.stmt_expression(expression = fatal_call, line = line, source_path = ""))
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = span[ir.Stmt]()))
+
+
+function assert_default_message(kind: str) -> str:
+    if kind == "assert":
+        return "assertion failed"
+    if kind == "expect":
+        return "expectation failed"
+    if kind == "expect_eq":
+        return "expect_eq failed: values are not equal"
+    return "expect_ne failed: values are equal"
 
 
 ## Lower `receiver[index]`: array receivers use a bounds-checked index, span
