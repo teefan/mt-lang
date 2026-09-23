@@ -3248,6 +3248,21 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
                     return types.Type.ty_named(module_name = "", name = concrete_name)
             Option.none:
                 pass
+    # Fall back to a program-wide search: a concrete type argument may be
+    # defined in a module neither the caller nor the container's module imports
+    # (e.g. `Vec[StateHooks[...]]` where std.vec has no reason to import
+    # std.fsm).
+    var pai: ptr_uint = 0
+    while pai < ctx.program_analyses.len:
+        var pa: analyzer.Analysis
+        unsafe:
+            pa = read(ctx.program_analyses.data + pai)
+        if pa.structs.contains(name) or struct_in_source(pa, name):
+            let concrete_name = naming.qualified_c_name(pa.module_name, generic_struct_c_name(name, args))
+            ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
+            generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = pa.module_name))
+            return types.Type.ty_named(module_name = "", name = concrete_name)
+        pai += 1
     return types.Type.ty_error
 
 
@@ -3545,7 +3560,14 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                     resolved = types.Type.ty_imported(module_name = ctx.module_name, name = last_part, args = span[types.Type]())
         else if t.name.parts.len == 1:
             let name = read(t.name.parts.data + 0)
-            if name == "str":
+            # A name bound by the enclosing generic's substitution is a type
+            # parameter and must be substituted even when the current module
+            # declares a same-named type (e.g. `StateHooks[State, Context]`
+            # inside `extending StateMachine[State, Event, Context]`).
+            let subst_ptr = ctx.type_substitution.get(name)
+            if subst_ptr != null:
+                resolved = unsafe: read(subst_ptr)
+            else if name == "str":
                 resolved = types.Type.ty_str
             else if name == "type":
                 resolved = types.Type.ty_type_meta
@@ -4908,6 +4930,39 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                         return lower_static_call_args(ctx, smi.value, empty_args)
                                 Option.none:
                                     pass
+                        # A generic function reference used as a value:
+                        # `always_allow_transition[State, Event, Context]` passed
+                        # as an `fn(...)` argument.  Monomorphize it explicitly and
+                        # refer to the specialized C function.
+                        match find_generic_function(ctx, id.name):
+                            Option.some as vgm:
+                                match vgm.value.decl:
+                                    ast.Decl.decl_function as vfun:
+                                        if vfun.type_params.len > 0 and vfun.type_params.len == spec.arguments.len:
+                                            let vspec_key = specialization_key(ctx, vgm.value.module_name, id.name, spec.arguments)
+                                            if not ctx.specialization_cache.contains(vspec_key) and not ctx.spec_in_progress.contains(vspec_key):
+                                                lower_and_cache_specialization(ctx, vgm.value, spec.arguments, vspec_key)
+                                            var fn_ty = expr_type(ctx, ep)
+                                            let vcached = ctx.specialization_cache.get(vspec_key)
+                                            if vcached != null:
+                                                let sf = unsafe: read(vcached)
+                                                var ptypes = vec.Vec[types.Type].create()
+                                                var vpi: ptr_uint = 0
+                                                while vpi < sf.params.len:
+                                                    unsafe:
+                                                        ptypes.push(read(sf.params.data + vpi).ty)
+                                                    vpi += 1
+                                                fn_ty = types.Type.ty_function(
+                                                    params = ptypes.as_span(),
+                                                    return_type = types.alloc_type(sf.return_type),
+                                                    variadic = false,
+                                                    is_proc = false,
+                                                )
+                                            return alloc_expr(ir.Expr.expr_name(name = vspec_key, ty = fn_ty, pointer = false))
+                                    _:
+                                        pass
+                            Option.none:
+                                pass
                     _:
                         pass
                 return alloc_expr(ir.Expr.expr_name(name = "spec", ty = types.Type.ty_error, pointer = false))
@@ -5755,8 +5810,25 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         # Mirrors Ruby's ref_of/ptr_of/const_ptr_of handling.
                         match read(inner):
                             ir.Expr.expr_name as nm:
-                                if nm.pointer:
-                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = result_ty, pointer = true))
+                                if nm.pointer or types.is_raw_pointer(nm.ty) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
+                                    # The operand is already a pointer, so the
+                                    # builtin returns it directly.  Rebuild the
+                                    # result type from the lowered pointer's
+                                    # element type: a monomorphized `this` is a
+                                    # concrete collapsed struct, whereas the
+                                    # analyzer recorded the bare generic-body
+                                    # type (`ref[StateMachine]`), which would
+                                    # break type-parameter inference at call sites.
+                                    var direct_ty = result_ty
+                                    if types.is_raw_pointer(nm.ty) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
+                                        let elem = types.pointer_element(nm.ty)
+                                        var kind = "ref"
+                                        if id.name == "ptr_of":
+                                            kind = "ptr"
+                                        if id.name == "const_ptr_of":
+                                            kind = "const_ptr"
+                                        direct_ty = types.Type.ty_generic(name = kind, args = sp_type(elem))
+                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = direct_ty, pointer = true))
                                 # ref[T] is already a pointer in C, so ptr_of/const_ptr_of
                                 # on a ref variable returns the variable directly as a raw
                                 # pointer to the referent; ref_of returns it as-is.
@@ -6661,6 +6733,23 @@ function ensure_generic_struct_decl_named(ctx: ref[LowerCtx], struct_name: str, 
                         found_module = target_module
                 Option.none:
                     pass
+    if fields_opt.is_none():
+        # Last resort: search every program analysis.  See the matching
+        # fallback in `try_monomorphize_generic`.
+        var pai: ptr_uint = 0
+        while pai < ctx.program_analyses.len:
+            if fields_opt.is_some():
+                break
+            var pa: analyzer.Analysis
+            unsafe:
+                pa = read(ctx.program_analyses.data + pai)
+            match extract_generic_struct_fields(ctx, pa, struct_name, concrete_args):
+                Option.some as pf:
+                    fields_opt = Option[span[ir.Field]].some(value = pf.value)
+                    found_module = pa.module_name
+                Option.none:
+                    pass
+            pai += 1
     match fields_opt:
         Option.some as f:
             ctx.generic_struct_decls.set(decl_name, ir.StructDecl(
@@ -6993,6 +7082,42 @@ function try_inferred_generic_call(ctx: ref[LowerCtx], module_name: Option[str],
 ## Handles the shapes that appear in the self-host's inferred generic calls: a
 ## bare `T`, and `T` under `ptr`/`const_ptr`/`ref`/`span`/nullable, by peeling the
 ## same constructor off the argument type.
+## Re-expand a collapsed generic instance type (`ty_named("std_vec_Vec_int")`)
+## back into its generic form (`Vec[int]`) so structural type-parameter
+## inference can match it against a declared `Vec[T]` parameter.  Recurses
+## through pointer/span/nullable wrappers and nested type arguments.
+function expand_generic_arg_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_named as n:
+            if n.module_name.len == 0:
+                match generic_receiver_info(ctx, t):
+                    Option.some as info:
+                        return types.Type.ty_generic(name = info.value.owner_name, args = info.value.concrete_args)
+                    Option.none:
+                        pass
+            return t
+        types.Type.ty_nullable as nl:
+            return types.Type.ty_nullable(base = types.alloc_type(expand_generic_arg_type(ctx, unsafe: read(nl.base))))
+        types.Type.ty_generic as g:
+            var args = vec.Vec[types.Type].create()
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                unsafe:
+                    args.push(expand_generic_arg_type(ctx, read(g.args.data + i)))
+                i += 1
+            return types.Type.ty_generic(name = g.name, args = args.as_span())
+        types.Type.ty_imported as im:
+            var args = vec.Vec[types.Type].create()
+            var i: ptr_uint = 0
+            while i < im.args.len:
+                unsafe:
+                    args.push(expand_generic_arg_type(ctx, read(im.args.data + i)))
+                i += 1
+            return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = args.as_span())
+        _:
+            return t
+
+
 function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params: span[ast.Param], args: span[ast.Argument]) -> Option[types.Type]:
     var i: ptr_uint = 0
     while i < params.len and i < args.len:
@@ -7010,6 +7135,11 @@ function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params:
                 arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
         else:
             arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
+        # The analyzer records argument types from the *generic* body, so
+        # substitute the active specialization's bindings before matching, then
+        # re-expand collapsed generic instances.
+        arg_ty = substitute_type_params(ctx, arg_ty, ref_of(ctx.type_substitution))
+        arg_ty = expand_generic_arg_type(ctx, arg_ty)
         match unify_type_param(param_name, p.param_type, arg_ty):
             Option.some as found:
                 return Option[types.Type].some(value = found.value)
@@ -7055,6 +7185,19 @@ function unify_type_param(param_name: str, param_ref: ast.TypeRef, arg_ty: types
                             Option.none:
                                 pass
                         mi += 1
+            types.Type.ty_imported as im:
+                if im.name == simple_name and im.args.len == param_ref.arguments.len:
+                    var mi2: ptr_uint = 0
+                    while mi2 < im.args.len and mi2 < param_ref.arguments.len:
+                        var inner_ref2: ast.TypeRef
+                        unsafe:
+                            inner_ref2 = read(param_ref.arguments.data + mi2)
+                        match unify_type_param(param_name, inner_ref2, unsafe: read(im.args.data + mi2)):
+                            Option.some as found:
+                                return Option[types.Type].some(value = found.value)
+                            Option.none:
+                                pass
+                        mi2 += 1
             _:
                 pass
     # `proc(...) -> T`: peel the proc layer (fn_params/fn_return fields, not
@@ -8868,6 +9011,11 @@ function coerce_arg_to_param(cached: ptr[ir.Function]?, param_index: ptr_uint, a
     if is_pointer_or_ref_type(arg_ty) and not is_pointer_or_ref_type(param.ty):
         # `*arg`: dereference the pointer argument to match the value parameter.
         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = arg, ty = param.ty))
+    if is_pointer_or_ref_type(param.ty) and not is_pointer_or_ref_type(arg_ty) and ir_is_addressable(arg):
+        # Implicit ref bridge: a by-value argument passed to a `ref[T]`
+        # parameter (editable-method struct parameters) is addressable storage,
+        # so pass its address (`&arg`).
+        return alloc_expr(ir.Expr.expr_address_of(expression = arg, ty = param.ty))
     return arg
 
 
