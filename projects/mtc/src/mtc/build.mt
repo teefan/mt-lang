@@ -26,7 +26,7 @@ import mtc.parser.ast as ast
 ## When `sanitize` is true, the binary is compiled with AddressSanitizer and UBSan.
 ## On success the success value is the output path; on failure the error is a
 ## human-readable message.
-public function build(program: loader.Program, ir_program: ir.Program, output_path: str, c_compiler: str, roots: span[str], sanitize: bool) -> Result[string.String, string.String]:
+public function build(program: loader.Program, ir_program: ir.Program, output_path: str, c_compiler: str, roots: span[str], sanitize: bool, profile: str, debug_guards: Option[bool]) -> Result[string.String, string.String]:
     # Vendored static libraries (GLFW, the Tracy client) must exist before the
     # link step; build them on demand for raw bindings that require them.
     match prepare_vendored_libraries(program, roots):
@@ -35,7 +35,19 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
         Result.success:
             pass
 
-    var c_source = c_backend.generate_c(ir_program)
+    # Debug profile: `-g -O0`, `#line` directives, and per-loop iteration
+    # guards; release: `-O3 -DNDEBUG`.  `--debug-guards`/`--no-debug-guards`
+    # override the guard default (mirrors Ruby's Build#profile_compiler_flags /
+    # #debug_guards_enabled?).
+    let is_debug = profile == "debug"
+    var guards = is_debug
+    match debug_guards:
+        Option.some as override:
+            guards = override.value
+        Option.none:
+            pass
+
+    var c_source = c_backend.generate_c(ir_program, is_debug, guards)
     defer: c_source.release()
 
     # A unique temporary C path: concurrent builds (e.g. a parallel example
@@ -68,6 +80,12 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
         command.push("-fsanitize=address,undefined")
         command.push("-fno-sanitize-recover=all")
         command.push("-fno-omit-frame-pointer")
+    if is_debug:
+        command.push("-g")
+        command.push("-O0")
+    else:
+        command.push("-O3")
+        command.push("-DNDEBUG")
 
     # C ABI struct definitions (`fs_support.h`, etc.) live under `<root>/std/c`;
     # add the include path from whichever root contains that directory.

@@ -60,6 +60,16 @@ struct Emitter:
     # `render_expression` substitutes the temp instead of re-emitting the call.
     array_call_temps: map_mod.Map[ptr_uint, str]
     array_call_temp_counter: ptr_uint
+    # Debug profile: emit `#line <n> "<path>"` before line-carrying statements
+    # (mirrors Ruby's `emit_line_directives`).
+    emit_line_directives: bool
+    # Debug profile: inject a per-loop iteration counter that aborts after
+    # `LOOP_GUARD_MAX_ITERATIONS` iterations (mirrors Ruby's `debug_guards`).
+    debug_guards: bool
+    loop_guard_id: ptr_uint
+    # The linkage name of the function currently being emitted, used in the
+    # loop-guard abort message.
+    current_fn_linkage: str
 
 
 ## Local variant-arm metadata for prelude type collection (mirrors lowering's
@@ -73,6 +83,12 @@ struct GenericVariantInfo:
     arms: span[GenericVariantArmInfo]
 
 
+## std.c.* struct backing C names (`timespec` -> `struct timespec`), populated by
+## `generate_c` from the program's type aliases so function signatures and field
+## declarations use the declared C spelling (mirrors Ruby's std_c_backing).
+var std_c_backing_names: ptr[map_mod.Map[str, str]]? = null
+
+
 ## Opt types that need synthetic StructDecl entries for topological ordering.
 ## `decl` is the StructDecl; `field_store` keeps the field spans alive.
 public struct OptionStructEntry:
@@ -80,7 +96,7 @@ public struct OptionStructEntry:
     field_store: vec.Vec[ir.Field]
 
 
-public function generate_c(program: ir.Program) -> string.String:
+public function generate_c(program: ir.Program, emit_line_directives: bool, debug_guards: bool) -> string.String:
     var e = Emitter(
         buffer = string.String.create(),
         str_lit_map = map_mod.Map[str, str].create(),
@@ -90,7 +106,16 @@ public function generate_c(program: ir.Program) -> string.String:
         opt_type_set = map_mod.Map[str, types.Type].create(),
         std_c_backing = map_mod.Map[str, str].create(),
     )
+    var backing_map = collect_std_c_backing(program)
+    let backing_map_ptr = heap.must_alloc[map_mod.Map[str, str]](1)
+    unsafe:
+        read(backing_map_ptr) = backing_map
+    std_c_backing_names = backing_map_ptr
     e.current_fn_return_type = types.primitive("void")
+    e.emit_line_directives = emit_line_directives
+    e.debug_guards = debug_guards
+    e.loop_guard_id = 0
+    e.current_fn_linkage = ""
     e.array_call_temps = map_mod.Map[ptr_uint, str].create()
     e.array_call_temp_counter = 0
 
@@ -138,7 +163,7 @@ public function generate_c(program: ir.Program) -> string.String:
     var opt_structs = collect_opt_struct_decls(program, ref_of(opaques))
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
-    let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs) or slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0
+    let use_fatal = e.debug_guards or uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs) or slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0
     let use_fatal_str = uses_fatal_str_helper(funcs)
     let use_entry_argv = uses_entry_argv(program)
     let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv or slice_has_str or slice_has_str_index or slice_has_str_concat
@@ -1911,6 +1936,11 @@ function c_type(t: types.Type) -> str:
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_imported as im:
             if im.module_name.starts_with("std.c."):
+                if std_c_backing_names != null:
+                    let map_val = unsafe: read(ptr[map_mod.Map[str, str]]<-std_c_backing_names)
+                    let backing_ptr = map_val.get(im.name)
+                    if backing_ptr != null:
+                        return unsafe: read(backing_ptr)
                 if im.name == "sockaddr" or im.name == "sockaddr_storage" or im.name == "sockaddr_in" or im.name == "sockaddr_in6" or im.name == "tm":
                     return j2("struct ", im.name)
                 return im.name
@@ -1927,6 +1957,11 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_named as n:
             if n.module_name.len > 0:
                 if n.module_name.starts_with("std.c."):
+                    if std_c_backing_names != null:
+                        let map_val2 = unsafe: read(ptr[map_mod.Map[str, str]]<-std_c_backing_names)
+                        let backing_ptr2 = map_val2.get(n.name)
+                        if backing_ptr2 != null:
+                            return unsafe: read(backing_ptr2)
                     return n.name
                 return naming.qualified_c_name(n.module_name, n.name)
             return n.name
@@ -3519,11 +3554,13 @@ function emit_function(e: ref[Emitter], func: ir.Function) -> void:
     e.used_labels.clear()
     collect_used_labels(func.body, ref_of(e.used_labels))
     e.current_fn_return_type = func.return_type
+    e.current_fn_linkage = func.linkage_name
     e.array_call_temps = map_mod.Map[ptr_uint, str].create()
     emit_line(e, j2(function_signature(func), " {"))
     emit_stmts(e, func.body, 1)
     emit_line(e, "}")
     e.current_fn_return_type = types.primitive("void")
+    e.current_fn_linkage = ""
 
 
 ## Collect every label targeted by a `goto` anywhere in a statement body, so an
@@ -3565,6 +3602,42 @@ function emit_stmts(e: ref[Emitter], body: span[ir.Stmt], level: ptr_uint) -> vo
         unsafe:
             emit_statement(e, body.data + i, level)
         i += 1
+
+
+## Emit a `#line <n> "<path>"` directive for a line-carrying statement (debug
+## builds only).  Mirrors Ruby's per-statement line directive.
+function emit_stmt_line_directive(e: ref[Emitter], line: ptr_uint, source_path: str) -> void:
+    if line == 0 or source_path.len == 0:
+        return
+    var buf = string.String.create()
+    buf.append("#line ")
+    buf.append(long_to_str(long<-line))
+    buf.append(" \"")
+    buf.append(source_path)
+    buf.append("\"")
+    emit_line(e, buf.as_str())
+
+
+## The next `__mt_loop_N` guard counter name (program-global, like Ruby's
+## `@loop_guard_id`).
+function next_loop_guard_name(e: ref[Emitter]) -> str:
+    e.loop_guard_id += 1
+    var buf = string.String.create()
+    buf.append("__mt_loop_")
+    buf.append(long_to_str(long<-e.loop_guard_id))
+    return buf.as_str()
+
+
+## Emit the per-iteration guard line for a debug-guarded loop.
+function emit_loop_guard(e: ref[Emitter], guard_name: str, level: ptr_uint) -> void:
+    var buf = string.String.create()
+    buf.append(indent_c(level))
+    buf.append("if (++")
+    buf.append(guard_name)
+    buf.append(" > 50000000) mt_fatal(\"loop iteration limit exceeded in ")
+    buf.append(e.current_fn_linkage)
+    buf.append("\");")
+    emit_line(e, buf.as_str())
 
 
 ## Hoist every array-returning call nested inside `sp`'s expressions (except a
@@ -3669,6 +3742,19 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
     # call as a value/argument).  Records substitutions consumed by
     # render_expression.
     materialize_stmt_array_calls(e, sp, level)
+    # Debug profile: map the statement back to its source location so gdb
+    # reports the .mt line rather than the generated C line.
+    if e.emit_line_directives:
+        unsafe:
+            match read(sp):
+                ir.Stmt.stmt_local as loc:
+                    emit_stmt_line_directive(e, loc.line, loc.source_path)
+                ir.Stmt.stmt_return as r:
+                    emit_stmt_line_directive(e, r.line, r.source_path)
+                ir.Stmt.stmt_expression as ex:
+                    emit_stmt_line_directive(e, ex.line, ex.source_path)
+                _:
+                    pass
     unsafe:
         match read(sp):
             ir.Stmt.stmt_static_assert as sa:
@@ -3761,22 +3847,49 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
             ir.Stmt.stmt_if as iff:
                 emit_if(e, iff.condition, iff.then_body, iff.else_body, level)
             ir.Stmt.stmt_while as w:
-                emit_line(e, j4(indent, "while (", render_expression(e, w.condition), ") {"))
-                emit_stmts(e, w.body, level + 1)
-                emit_line(e, j2(indent, "}"))
+                if e.debug_guards:
+                    let guard_name = next_loop_guard_name(e)
+                    emit_line(e, j4(indent, "{ uintptr_t ", guard_name, " = 0;"))
+                    emit_line(e, j4(indent, "while (", render_expression(e, w.condition), ") {"))
+                    emit_loop_guard(e, guard_name, level + 1)
+                    emit_stmts(e, w.body, level + 1)
+                    emit_line(e, j2(indent, "}"))
+                    emit_line(e, j2(indent, "}"))
+                else:
+                    emit_line(e, j4(indent, "while (", render_expression(e, w.condition), ") {"))
+                    emit_stmts(e, w.body, level + 1)
+                    emit_line(e, j2(indent, "}"))
             ir.Stmt.stmt_for as f:
-                var header = string.String.create()
-                header.append(indent)
-                header.append("for (")
-                header.append(render_for_clause(e, f.init))
-                header.append("; ")
-                header.append(render_expression(e, f.condition))
-                header.append("; ")
-                header.append(render_for_clause(e, f.post))
-                header.append(") {")
-                emit_line(e, header.as_str())
-                emit_stmts(e, f.body, level + 1)
-                emit_line(e, j2(indent, "}"))
+                if e.debug_guards:
+                    let guard_name = next_loop_guard_name(e)
+                    emit_line(e, j4(indent, "{ uintptr_t ", guard_name, " = 0;"))
+                    var for_header = string.String.create()
+                    for_header.append(indent)
+                    for_header.append("for (")
+                    for_header.append(render_for_clause(e, f.init))
+                    for_header.append("; ")
+                    for_header.append(render_expression(e, f.condition))
+                    for_header.append("; ")
+                    for_header.append(render_for_clause(e, f.post))
+                    for_header.append(") {")
+                    emit_line(e, for_header.as_str())
+                    emit_loop_guard(e, guard_name, level + 1)
+                    emit_stmts(e, f.body, level + 1)
+                    emit_line(e, j2(indent, "}"))
+                    emit_line(e, j2(indent, "}"))
+                else:
+                    var header = string.String.create()
+                    header.append(indent)
+                    header.append("for (")
+                    header.append(render_for_clause(e, f.init))
+                    header.append("; ")
+                    header.append(render_expression(e, f.condition))
+                    header.append("; ")
+                    header.append(render_for_clause(e, f.post))
+                    header.append(") {")
+                    emit_line(e, header.as_str())
+                    emit_stmts(e, f.body, level + 1)
+                    emit_line(e, j2(indent, "}"))
             ir.Stmt.stmt_switch as sw:
                 emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
             ir.Stmt.stmt_goto as g:

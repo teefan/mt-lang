@@ -74,7 +74,7 @@ function compile_to_c(source: str) -> string.String:
     defer: program.release()
 
     var ir_program = lowering.lower(program)
-    return c_backend.generate_c(ir_program)
+    return c_backend.generate_c(ir_program, false, false)
 
 
 ## Assert `text` contains `needle`; the failure message names the missing text.

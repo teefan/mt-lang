@@ -167,16 +167,19 @@ public struct Analysis:
     attribute_applications: map_mod.Map[str, span[ast.AttributeApplication]]
     events: map_mod.Map[str, EventInfo]
     type_alias_types: map_mod.Map[str, types.Type]
+    # The module's source file path, propagated so lowering can emit `#line`
+    # directives that map generated C back to the .mt source (debug builds).
+    source_path: str
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
-    return check_module(file, null, "")
+    return check_module(file, null, "", "")
 
 
 ## Semantically check a module, resolving cross-module references against the
 ## given import bindings (keyed by module name; may be null for single-file
 ## checks).  `imported_modules` is borrowed, not owned.
-public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str) -> Analysis:
+public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str) -> Analysis:
     var ctx = Context(
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
@@ -260,6 +263,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         attribute_applications = build_attr_app_spans(ref_of(ctx)),
         events = ctx.event_types,
         type_alias_types = ctx.type_alias_types,
+        source_path = source_path,
     )
 
 

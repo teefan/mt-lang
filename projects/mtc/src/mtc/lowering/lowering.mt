@@ -1962,7 +1962,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     if ctx.inside_async:
                         let void_ret_val = alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
                         let wrapped = make_task_literal(void_ret_val)
-                        output.push(ir.Stmt.stmt_return(value = wrapped, line = r.line, source_path = ""))
+                        output.push(ir.Stmt.stmt_return(value = wrapped, line = r.line, source_path = ctx.analysis.source_path))
                     else:
                         output.push(ir.Stmt.stmt_return(value = null, line = r.line, source_path = ""))
                     return
@@ -2018,10 +2018,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     output.push(ir.Stmt.stmt_local(name = rtemp, linkage_name = rc, ty = ret_ty, value = wrapped, line = 0, source_path = ""))
                     flush_all_defers(ctx, output)
                     let rref = alloc_expr(ir.Expr.expr_name(name = rc, ty = ret_ty, pointer = false))
-                    output.push(ir.Stmt.stmt_return(value = rref, line = r.line, source_path = ""))
+                    output.push(ir.Stmt.stmt_return(value = rref, line = r.line, source_path = ctx.analysis.source_path))
                     return
                 flush_all_defers(ctx, output)
-                output.push(ir.Stmt.stmt_return(value = wrapped, line = r.line, source_path = ""))
+                output.push(ir.Stmt.stmt_return(value = wrapped, line = r.line, source_path = ctx.analysis.source_path))
             ast.Stmt.stmt_local as loc:
                 # Async CPS: spill every `let`/`var` to a frame field and, when the
                 # initializer is a direct `await`, split into suspend/resume.
@@ -2165,7 +2165,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     ty = ty,
                     value = value_expr,
                     line = loc.line,
-                    source_path = "",
+                    source_path = ctx.analysis.source_path,
                 ))
                 ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
             ast.Stmt.stmt_assignment as asg:
@@ -2334,7 +2334,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         _:
                             pass
                 let lowered = lower_expr(ctx, ex.expression)
-                output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ""))
+                output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ctx.analysis.source_path))
             ast.Stmt.stmt_when as wn:
                 lower_when_stmt(ctx, output, wn.discriminant, wn.branches, wn.else_body)
             ast.Stmt.stmt_parallel_block as pb:
