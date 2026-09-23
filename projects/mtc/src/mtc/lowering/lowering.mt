@@ -1019,8 +1019,8 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 else if val_ptr == null:
                     var bv = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
                     if c.block_body != null:
-                        var empty_vars = map_mod.Map[str, long].create()
-                        match try_evaluate_const_body(ctx, ref_of(empty_vars), c.block_body):
+                        var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                        match try_const_value_body(ctx, c.block_body, ref_of(empty_env)):
                             Option.some as body_val:
                                 bv = body_val.value
                             Option.none:
@@ -1042,7 +1042,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                             constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty))))
                         Option.none:
                             var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                            match try_const_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env)):
+                            match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
                                 Option.some as cv2:
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = cv2.value))
                                 Option.none:
@@ -1108,10 +1108,15 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 if not is_type_meta:
                     var cv = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
                     if c.value != null:
-                        cv = lower_expr(ctx, unsafe: ptr[ast.Expr]<-c.value)
+                        var when_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                        match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-c.value, ref_of(when_env), c_ty):
+                            Option.some as cvf:
+                                cv = cvf.value
+                            Option.none:
+                                cv = lower_expr(ctx, unsafe: ptr[ast.Expr]<-c.value)
                     else if c.block_body != null:
-                        var empty_vars = map_mod.Map[str, long].create()
-                        match try_evaluate_const_body(ctx, ref_of(empty_vars), c.block_body):
+                        var when_body_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                        match try_const_value_body(ctx, c.block_body, ref_of(when_body_env)):
                             Option.some as body_val:
                                 cv = body_val.value
                             Option.none:
@@ -8725,22 +8730,27 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
             owner_name = g.name
             raw_args = g.args
         types.Type.ty_named as n:
-            # Collapsed prelude-variant instance (`Option_str`): recover owner +
-            # args from the pending generic-variant registry so prelude methods
-            # monomorphize instead of falling to the module-qualified fallback.
-            if is_prelude_variant_name(n.name):
+            # A registered generic instance carries its true owner: a user
+            # variant whose type arguments mention Option/Result (e.g.
+            # `Foo[Option[int]]`) would otherwise be misread as the prelude
+            # variant by the fallback below.
+            let instance_ptr = generic_instance_get(ctx, n.name)
+            if instance_ptr != null:
+                let inst = unsafe: read(instance_ptr)
+                owner_name = inst.owner_name
+                raw_args = inst.concrete_args
+                owner_module = inst.owner_module
+            else:
+                # Collapsed prelude-variant instance (`Option_str`): recover owner +
+                # args from the pending generic-variant registry so prelude methods
+                # monomorphize instead of falling to the module-qualified fallback.
+                if not is_prelude_variant_name(n.name):
+                    return Option[GenericReceiver].none
                 match prelude_instance_args(ctx, n.name):
                     Option.some as rec:
                         return Option[GenericReceiver].some(value = rec.value)
                     Option.none:
                         return Option[GenericReceiver].none
-            let instance_ptr = generic_instance_get(ctx, n.name)
-            if instance_ptr == null:
-                return Option[GenericReceiver].none
-            let inst = unsafe: read(instance_ptr)
-            owner_name = inst.owner_name
-            raw_args = inst.concrete_args
-            owner_module = inst.owner_module
         _:
             return Option[GenericReceiver].none
     var resolved = vec.Vec[types.Type].create()
@@ -14318,10 +14328,31 @@ function variant_match_allowed(ctx: ref[LowerCtx], name: str) -> bool:
 ## "std_map_Option_std_map_RemovedEntry_ptr_uint_bool" → Some("Option").
 ## "Option_str" → Some("Option").  Non-prelude names return none.
 function prelude_variant_base(name: str) -> Option[str]:
-    if name.contains_substring("_Option_"):
-        return Option[str].some(value = "Option")
-    if name.contains_substring("_Result_"):
-        return Option[str].some(value = "Result")
+    if name == "Option" or name == "Result":
+        return Option[str].some(value = name)
+    # The base variant is the *outermost* Option/Result segment.  In a nested
+    # concrete name like `std_result_Result_std_option_Option_int` the type
+    # argument key mentions Option, but the variant itself is Result.
+    var best: ptr_uint = 0
+    var found = false
+    var base = ""
+    match name.find_substring("_Option_"):
+        Option.some as idx:
+            best = idx.value
+            found = true
+            base = "Option"
+        Option.none:
+            pass
+    match name.find_substring("_Result_"):
+        Option.some as idx:
+            if not found or idx.value < best:
+                best = idx.value
+                found = true
+                base = "Result"
+        Option.none:
+            pass
+    if found:
+        return Option[str].some(value = base)
     if name.starts_with("Option_"):
         return Option[str].some(value = "Option")
     if name.starts_with("Result_"):
@@ -15995,6 +16026,11 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
                     return Option[ptr[ir.Expr]].some(value = unsafe: read(entry))
                 let decl_val = find_const_value_ast(ctx, id.name)
                 if decl_val != null:
+                    match const_decl_type(ctx, id.name):
+                        Option.some as dt:
+                            return try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-decl_val, env, dt.value)
+                        Option.none:
+                            pass
                     return try_const_value_ir(ctx, unsafe: ptr[ast.Expr]<-decl_val, env)
                 if id.name == "true":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty)))
@@ -16029,8 +16065,192 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
                 return Option[ptr[ir.Expr]].none
             ast.Expr.expr_call as call:
                 return try_const_call_ir(ctx, call.callee, call.args, env)
+            ast.Expr.expr_index_access as ia:
+                return try_const_index_ir(ctx, ia.receiver, ia.index, env)
+            ast.Expr.expr_member_access as ma:
+                return try_const_member_ir(ctx, ma.receiver, ma.member_name, env)
+            ast.Expr.expr_expression_list as els:
+                return try_const_tuple_ir(ctx, els.elements, env)
+            ast.Expr.expr_if as iff:
+                match const_env_eval_bool(ctx, env, iff.condition):
+                    Option.some as cv:
+                        if cv.value:
+                            return try_const_value_ir(ctx, iff.then_expr, env)
+                        return try_const_value_ir(ctx, iff.else_expr, env)
+                    Option.none:
+                        return Option[ptr[ir.Expr]].none
+            ast.Expr.expr_match as m:
+                match try_const_value_ir(ctx, m.scrutinee, env):
+                    Option.some as sv:
+                        var ai: ptr_uint = 0
+                        while ai < m.arms.len:
+                            var arm: ast.MatchExprArm
+                            unsafe:
+                                arm = read(m.arms.data + ai)
+                            match const_match_pattern(ctx, env, arm.pattern, sv.value):
+                                Option.some as matched:
+                                    if matched.value:
+                                        return try_const_value_ir(ctx, arm.value, env)
+                                Option.none:
+                                    return Option[ptr[ir.Expr]].none
+                            ai += 1
+                        return Option[ptr[ir.Expr]].none
+                    Option.none:
+                        return Option[ptr[ir.Expr]].none
             _:
                 return Option[ptr[ir.Expr]].none
+    return Option[ptr[ir.Expr]].none
+
+
+## Constant-fold an expression whose declared type is known: an expression list
+## `(a, b, c)` becomes an array literal when the target is `array[T, N]`.
+function try_const_typed_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target_ty: types.Type) -> Option[ptr[ir.Expr]]:
+    match target_ty:
+        types.Type.ty_generic as tg:
+            if tg.name == "array" and tg.args.len == 2:
+                unsafe:
+                    match read(ep):
+                        ast.Expr.expr_expression_list as els:
+                            var elements = vec.Vec[ir.Expr].create()
+                            var i: ptr_uint = 0
+                            while i < els.elements.len:
+                                match try_const_value_ir(ctx, els.elements.data + i, env):
+                                    Option.some as ev:
+                                        elements.push(read(ev.value))
+                                    Option.none:
+                                        return Option[ptr[ir.Expr]].none
+                                i += 1
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_array_literal(ty = target_ty, elements = elements.as_span())))
+                        _:
+                            pass
+        _:
+            pass
+    return try_const_value_ir(ctx, ep, env)
+
+
+## The declared type of a module-level constant, used to give expression-list
+## initializers their declared array type when folding a reference to it.
+function const_decl_type(ctx: ref[LowerCtx], name: str) -> Option[types.Type]:
+    let decls = ctx.analysis.source_file.declarations
+    var i: ptr_uint = 0
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_const as c:
+                    if c.name == name:
+                        return Option[types.Type].some(value = resolve_type_ref(ctx, c.const_type))
+                _:
+                    pass
+        i += 1
+    return Option[types.Type].none
+
+
+function try_const_tuple_ir(ctx: ref[LowerCtx], elements: span[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+    var values = vec.Vec[ir.Expr].create()
+    var tys = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < elements.len:
+        match try_const_value_ir(ctx, unsafe: elements.data + i, env):
+            Option.some as ev:
+                values.push(unsafe: read(ev.value))
+                tys.push(ir_expr_type(ev.value))
+            Option.none:
+                return Option[ptr[ir.Expr]].none
+        i += 1
+    var fields = vec.Vec[ir.AggregateField].create()
+    var fi: ptr_uint = 0
+    while fi < values.len():
+        var name = string.String.create()
+        name.append(int_to_str(int<-fi))
+        let vp = values.get(fi) else:
+            return Option[ptr[ir.Expr]].none
+        fields.push(ir.AggregateField(name = name.as_str(), value = vp))
+        fi += 1
+    let tup_ty = types.Type.ty_tuple(elements = tys.as_span(), field_names = Option[span[str]].none)
+    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = tup_ty, fields = fields.as_span())))
+
+
+## Constant-fold `arr[i]`, `arr[a..b]`, `str[i]`, and `str[a..b]`.
+function try_const_index_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+    match try_const_value_ir(ctx, receiver, env):
+        Option.some as rv:
+            unsafe:
+                match read(index):
+                    ast.Expr.expr_range as r:
+                        let s_opt = const_env_eval_int(ctx, env, r.start_expr) else:
+                            return Option[ptr[ir.Expr]].none
+                        let e_opt = const_env_eval_int(ctx, env, r.end_expr) else:
+                            return Option[ptr[ir.Expr]].none
+                        match read(rv.value):
+                            ir.Expr.expr_array_literal as al:
+                                if s_opt < 0 or e_opt > long<-al.elements.len or s_opt > e_opt:
+                                    return Option[ptr[ir.Expr]].none
+                                var elements = vec.Vec[ir.Expr].create()
+                                var i = s_opt
+                                while i < e_opt:
+                                    elements.push(read(al.elements.data + ptr_uint<-i))
+                                    i += 1
+                                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_array_literal(ty = al.ty, elements = elements.as_span())))
+                            ir.Expr.expr_string_literal as sl:
+                                if s_opt < 0 or e_opt > long<-sl.value.len or s_opt > e_opt:
+                                    return Option[ptr[ir.Expr]].none
+                                let start = ptr_uint<-s_opt
+                                let n = ptr_uint<-(e_opt - s_opt)
+                                let sliced = str(data = sl.value.data + start, len = n)
+                                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = sliced, ty = types.Type.ty_str, cstring = false)))
+                            _:
+                                return Option[ptr[ir.Expr]].none
+                    _:
+                        pass
+            let idx_opt = const_env_eval_int(ctx, env, index) else:
+                return Option[ptr[ir.Expr]].none
+            unsafe:
+                match read(rv.value):
+                    ir.Expr.expr_array_literal as al:
+                        if idx_opt < 0 or idx_opt >= long<-al.elements.len:
+                            return Option[ptr[ir.Expr]].none
+                        return Option[ptr[ir.Expr]].some(value = al.elements.data + ptr_uint<-idx_opt)
+                    ir.Expr.expr_string_literal as sl:
+                        if idx_opt < 0 or idx_opt >= long<-sl.value.len:
+                            return Option[ptr[ir.Expr]].none
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-sl.value.byte_at(ptr_uint<-idx_opt), ty = types.primitive("ubyte"))))
+                    _:
+                        return Option[ptr[ir.Expr]].none
+        Option.none:
+            return Option[ptr[ir.Expr]].none
+    return Option[ptr[ir.Expr]].none
+
+
+## Constant-fold member access: struct fields, `len` on strings/arrays, and
+## parenthesized-less variant arms (`Option[int].none`).
+function try_const_member_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_specialization as spec:
+                match read(spec.callee):
+                    ast.Expr.expr_identifier as sid:
+                        if ctx.variants.contains(sid.name):
+                            return try_const_variant_literal_ir(ctx, sid.name, member, span[ast.Argument](), env)
+                    _:
+                        pass
+            _:
+                pass
+    match try_const_value_ir(ctx, receiver, env):
+        Option.some as rv:
+            unsafe:
+                match read(rv.value):
+                    ir.Expr.expr_aggregate_literal as ag:
+                        return const_field_value(ag.fields, member)
+                    ir.Expr.expr_string_literal as sl:
+                        if member == "len":
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-sl.value.len, ty = types.primitive("int"))))
+                    ir.Expr.expr_array_literal as al:
+                        if member == "len":
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-al.elements.len, ty = types.primitive("int"))))
+                    _:
+                        pass
+        Option.none:
+            pass
     return Option[ptr[ir.Expr]].none
 
 
@@ -16056,6 +16276,20 @@ function const_fold_binary_ir(ctx: ref[LowerCtx], op: str, l: ptr[ir.Expr], r: p
                         return const_fold_float_ir(ctx, op, lf.value, rf.value)
                     ir.Expr.expr_integer_literal as ri:
                         return const_fold_float_ir(ctx, op, lf.value, double<-ri.value)
+                    _:
+                        return Option[ptr[ir.Expr]].none
+            ir.Expr.expr_string_literal as ls:
+                match read(r):
+                    ir.Expr.expr_string_literal as rs:
+                        if op == "+":
+                            var buf = string.String.create()
+                            buf.append(ls.value)
+                            buf.append(rs.value)
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = buf.as_str(), ty = types.Type.ty_str, cstring = false)))
+                        if op == "==":
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = ls.value == rs.value, ty = ctx.bool_ty)))
+                        if op == "!=":
+                            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = ls.value != rs.value, ty = ctx.bool_ty)))
                     _:
                         return Option[ptr[ir.Expr]].none
             ir.Expr.expr_boolean_literal as lb:
@@ -16124,7 +16358,7 @@ function const_fold_unary_ir(ctx: ref[LowerCtx], op: str, operand: ptr[ir.Expr])
 
 
 ## Evaluate a call in constant position: struct literals, variant-arm literals,
-## and `const function` calls.
+## `const function` calls, and `const` methods (static and instance).
 function try_const_call_ir(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(callee):
@@ -16132,17 +16366,118 @@ function try_const_call_ir(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span
                 if ctx.analysis.structs.contains(id.name):
                     return try_const_struct_literal_ir(ctx, id.name, args, env)
                 return try_const_function_value(ctx, id.name, args, env)
+            ast.Expr.expr_specialization as bare_spec:
+                match read(bare_spec.callee):
+                    ast.Expr.expr_identifier as bsid:
+                        if bsid.name == "array":
+                            return try_const_array_literal_ir(ctx, bare_spec.arguments, args, env)
+                    _:
+                        pass
+                return Option[ptr[ir.Expr]].none
             ast.Expr.expr_member_access as ma:
                 match read(ma.receiver):
                     ast.Expr.expr_identifier as rid:
                         if ctx.variants.contains(rid.name):
                             return try_const_variant_literal_ir(ctx, rid.name, ma.member_name, args, env)
+                        if ctx.analysis.structs.contains(rid.name):
+                            return try_const_method_value(ctx, env, rid.name, ma.member_name, Option[ptr[ir.Expr]].none, args)
+                    ast.Expr.expr_specialization as spec:
+                        match read(spec.callee):
+                            ast.Expr.expr_identifier as sid:
+                                if ctx.variants.contains(sid.name):
+                                    return try_const_variant_literal_ir(ctx, sid.name, ma.member_name, args, env)
+                                if sid.name == "array":
+                                    return try_const_array_literal_ir(ctx, spec.arguments, args, env)
+                            _:
+                                pass
                     _:
+                        pass
+                # Instance method on a compile-time value (`RECT.area()`,
+                # `this.area()` inside a const method body).
+                match try_const_value_ir(ctx, ma.receiver, env):
+                    Option.some as rv:
+                        match const_receiver_struct_name(rv.value):
+                            Option.some as sn:
+                                return try_const_method_value(ctx, env, sn.value, ma.member_name, Option[ptr[ir.Expr]].some(value = rv.value), args)
+                            Option.none:
+                                pass
+                    Option.none:
                         pass
                 return Option[ptr[ir.Expr]].none
             _:
                 return Option[ptr[ir.Expr]].none
     return Option[ptr[ir.Expr]].none
+
+
+## The struct name of a compile-time receiver value (its IR type's simple name).
+function const_receiver_struct_name(value: ptr[ir.Expr]) -> Option[str]:
+    match ir_expr_type(value):
+        types.Type.ty_named as n:
+            return Option[str].some(value = n.name)
+        types.Type.ty_imported as im:
+            return Option[str].some(value = im.name)
+        _:
+            return Option[str].none
+    return Option[str].none
+
+
+## Evaluate a `const` method call by binding `this` (for instance methods) and
+## the parameters, then interpreting the method body.
+function try_const_method_value(ctx: ref[LowerCtx], caller_env: ref[map_mod.Map[str, ptr[ir.Expr]]], struct_name: str, method_name: str, receiver: Option[ptr[ir.Expr]], args: span[ast.Argument]) -> Option[ptr[ir.Expr]]:
+    let decls = ctx.analysis.source_file.declarations
+    var i: ptr_uint = 0
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_extending_block as ex:
+                    let type_ref = read(ex.type_name)
+                    if qname_last(type_ref.name) == struct_name:
+                        var mi: ptr_uint = 0
+                        while mi < ex.methods.len:
+                            var m: ast.Method
+                            m = read(ex.methods.data + mi)
+                            if m.name == method_name and m.is_const and m.method_params.len == args.len:
+                                var env = map_mod.Map[str, ptr[ir.Expr]].create()
+                                match receiver:
+                                    Option.some as rv:
+                                        env.set("this", rv.value)
+                                    Option.none:
+                                        pass
+                                var j: ptr_uint = 0
+                                while j < args.len:
+                                    match try_const_value_ir(ctx, read(args.data + j).arg_value, caller_env):
+                                        Option.some as av:
+                                            env.set(read(m.method_params.data + j).name, av.value)
+                                        Option.none:
+                                            return Option[ptr[ir.Expr]].none
+                                    j += 1
+                                return try_const_value_body(ctx, m.body, ref_of(env))
+                            mi += 1
+                _:
+                    pass
+        i += 1
+    return Option[ptr[ir.Expr]].none
+
+
+## Evaluate an `array[T, N](a, b, ...)` constructor to an array literal.
+function try_const_array_literal_ir(ctx: ref[LowerCtx], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+    if type_args.len != 2:
+        return Option[ptr[ir.Expr]].none
+    var array_args = vec.Vec[types.Type].create()
+    unsafe:
+        array_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
+        array_args.push(resolve_array_length_type(ctx, read(type_args.data + 1).value))
+    let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
+    var elements = vec.Vec[ir.Expr].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        match try_const_value_ir(ctx, unsafe: read(args.data + i).arg_value, env):
+            Option.some as ev:
+                elements.push(unsafe: read(ev.value))
+            Option.none:
+                return Option[ptr[ir.Expr]].none
+        i += 1
+    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span())))
 
 
 function try_const_struct_literal_ir(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
@@ -16217,45 +16552,524 @@ function try_const_function_value(ctx: ref[LowerCtx], func_name: str, args: span
     return try_const_value_body(ctx, body_ptr, ref_of(env))
 
 
+## Control-flow outcome of executing compile-time statements.
+variant ConstFlow:
+    cf_value(value: ptr[ir.Expr])
+    cf_break
+    cf_continue
+    cf_fallthrough
+    cf_stuck
+
+
+## Evaluate a const block body to its `return` value.  Returns none when the
+## body cannot be folded or completes without returning.
 function try_const_value_body(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
-    let b = body else:
-        return Option[ptr[ir.Expr]].none
-    unsafe:
-        match read(b):
-            ast.Stmt.stmt_block as blk:
-                var i: ptr_uint = 0
-                while i < blk.statements.len:
-                    match try_const_value_stmt(ctx, env, blk.statements.data + i):
-                        Option.some as result:
-                            return Option[ptr[ir.Expr]].some(value = result.value)
-                        Option.none:
-                            pass
-                    i += 1
-                return Option[ptr[ir.Expr]].none
-            _:
-                return try_const_value_stmt(ctx, env, b)
+    match const_flow_body(ctx, env, body):
+        ConstFlow.cf_value as v:
+            return Option[ptr[ir.Expr]].some(value = v.value)
+        ConstFlow.cf_break:
+            return Option[ptr[ir.Expr]].none
+        ConstFlow.cf_continue:
+            return Option[ptr[ir.Expr]].none
+        ConstFlow.cf_fallthrough:
+            return Option[ptr[ir.Expr]].none
+        ConstFlow.cf_stuck:
+            return Option[ptr[ir.Expr]].none
     return Option[ptr[ir.Expr]].none
 
 
-function try_const_value_stmt(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], sp: ptr[ast.Stmt]) -> Option[ptr[ir.Expr]]:
+function const_flow_body(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], body: ptr[ast.Stmt]?) -> ConstFlow:
+    let b = body else:
+        return ConstFlow.cf_fallthrough
+    return const_flow_stmt(ctx, env, b)
+
+
+function const_flow_stmts(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], stmts: span[ast.Stmt]) -> ConstFlow:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        match const_flow_stmt(ctx, env, unsafe: ptr[ast.Stmt]<-(stmts.data + i)):
+            ConstFlow.cf_fallthrough:
+                pass
+            ConstFlow.cf_stuck:
+                return ConstFlow.cf_stuck
+            ConstFlow.cf_break:
+                return ConstFlow.cf_break
+            ConstFlow.cf_continue:
+                return ConstFlow.cf_continue
+            ConstFlow.cf_value as v:
+                return ConstFlow.cf_value(value = v.value)
+        i += 1
+    return ConstFlow.cf_fallthrough
+
+
+function const_flow_stmt(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], sp: ptr[ast.Stmt]) -> ConstFlow:
     unsafe:
         match read(sp):
+            ast.Stmt.stmt_block as blk:
+                return const_flow_stmts(ctx, env, blk.statements)
             ast.Stmt.stmt_ret as r:
                 let val_ptr = r.value else:
-                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty)))
-                return try_const_value_ir(ctx, val_ptr, env)
+                    return ConstFlow.cf_value(value = alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty)))
+                match try_const_value_ir(ctx, val_ptr, env):
+                    Option.some as v:
+                        return ConstFlow.cf_value(value = v.value)
+                    Option.none:
+                        return ConstFlow.cf_stuck
+            ast.Stmt.stmt_break:
+                return ConstFlow.cf_break
+            ast.Stmt.stmt_continue:
+                return ConstFlow.cf_continue
+            ast.Stmt.stmt_pass:
+                return ConstFlow.cf_fallthrough
             ast.Stmt.stmt_local as loc:
-                let init_ptr = loc.value
-                if init_ptr != null:
-                    match try_const_value_ir(ctx, init_ptr, env):
-                        Option.some as lv:
-                            env.set(loc.name, lv.value)
-                        Option.none:
-                            pass
-                return Option[ptr[ir.Expr]].none
+                let init_ptr = loc.value else:
+                    return ConstFlow.cf_fallthrough
+                match try_const_value_ir(ctx, init_ptr, env):
+                    Option.some as lv:
+                        return const_bind_local(ctx, env, loc.name, loc.destructure_bindings, loc.else_binding, loc.else_body, lv.value)
+                    Option.none:
+                        return ConstFlow.cf_stuck
+            ast.Stmt.stmt_assignment as asg:
+                match try_const_value_ir(ctx, asg.value, env):
+                    Option.some as rv:
+                        match const_assign_target(ctx, env, asg.target, asg.operator, rv.value):
+                            Option.some:
+                                return ConstFlow.cf_fallthrough
+                            Option.none:
+                                return ConstFlow.cf_stuck
+                    Option.none:
+                        return ConstFlow.cf_stuck
+            ast.Stmt.stmt_expression as ex:
+                match try_const_value_ir(ctx, ex.expression, env):
+                    Option.some:
+                        return ConstFlow.cf_fallthrough
+                    Option.none:
+                        return ConstFlow.cf_stuck
+            ast.Stmt.stmt_if as ifs:
+                return const_flow_if(ctx, env, ifs.branches, ifs.else_body)
+            ast.Stmt.stmt_while as ws:
+                return const_flow_while(ctx, env, ws.condition, ws.body)
+            ast.Stmt.stmt_for as fs:
+                return const_flow_for(ctx, env, fs.bindings, fs.iterables, fs.body)
+            ast.Stmt.stmt_match as ms:
+                return const_flow_match_stmt(ctx, env, ms.scrutinee, ms.arms)
+            ast.Stmt.stmt_unsafe as us:
+                return const_flow_body(ctx, env, us.body)
             _:
-                return Option[ptr[ir.Expr]].none
+                return ConstFlow.cf_stuck
+    return ConstFlow.cf_stuck
+
+
+function const_bind_local(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], name: str, destructure_bindings: Option[span[str]], else_binding: Option[str], else_body: ptr[ast.Stmt]?, value: ptr[ir.Expr]) -> ConstFlow:
+    match destructure_bindings:
+        Option.some as names:
+            match const_bind_destructure(env, names.value, value):
+                Option.some:
+                    return ConstFlow.cf_fallthrough
+                Option.none:
+                    return ConstFlow.cf_stuck
+        Option.none:
+            pass
+    # `let x = present else: ...` unwraps the payload; a `none`/`failure` arm
+    # (or a plain nullable value) takes the else branch, binding `else as e`
+    # to the failure error when present.
+    if else_body != null:
+        var failed = false
+        var payload: ptr[ir.Expr]? = null
+        unsafe:
+            match read(value):
+                ir.Expr.expr_variant_literal as vl:
+                    if vl.arm_name == "none" or vl.arm_name == "failure":
+                        failed = true
+                        match else_binding:
+                            Option.some as eb:
+                                match const_field_value(vl.fields, "error"):
+                                    Option.some as ef:
+                                        env.set(eb.value, ef.value)
+                                    Option.none:
+                                        pass
+                            Option.none:
+                                pass
+                    else:
+                        match const_field_value(vl.fields, "value"):
+                            Option.some as vf:
+                                payload = vf.value
+                            Option.none:
+                                pass
+                _:
+                    payload = value
+        if failed:
+            return const_flow_body(ctx, env, else_body)
+        let pv = payload else:
+            return ConstFlow.cf_stuck
+        if name != "_":
+            env.set(name, pv)
+        return ConstFlow.cf_fallthrough
+    if name != "_":
+        env.set(name, value)
+    return ConstFlow.cf_fallthrough
+
+
+## Bind a destructuring pattern (`let (a, b) = ...`, `let Pt(x, y) = ...`) by
+## positional order of the value's fields/elements.
+function const_bind_destructure(env: ref[map_mod.Map[str, ptr[ir.Expr]]], names: span[str], value: ptr[ir.Expr]) -> Option[bool]:
+    unsafe:
+        match read(value):
+            ir.Expr.expr_aggregate_literal as ag:
+                if ag.fields.len != names.len:
+                    return Option[bool].none
+                var i: ptr_uint = 0
+                while i < names.len:
+                    env.set(read(names.data + i), read(ag.fields.data + i).value)
+                    i += 1
+                return Option[bool].some(value = true)
+            ir.Expr.expr_array_literal as al:
+                if al.elements.len != names.len:
+                    return Option[bool].none
+                var ai: ptr_uint = 0
+                while ai < names.len:
+                    env.set(read(names.data + ai), al.elements.data + ai)
+                    ai += 1
+                return Option[bool].some(value = true)
+            _:
+                return Option[bool].none
+    return Option[bool].none
+
+
+function const_field_value(fields: span[ir.AggregateField], name: str) -> Option[ptr[ir.Expr]]:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        var f: ir.AggregateField
+        unsafe:
+            f = read(fields.data + i)
+        if f.name == name:
+            return Option[ptr[ir.Expr]].some(value = f.value)
+        i += 1
     return Option[ptr[ir.Expr]].none
+
+
+function const_assign_target(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+    unsafe:
+        match read(target):
+            ast.Expr.expr_identifier as id:
+                if operator == "=":
+                    env.set(id.name, new_value)
+                    return Option[bool].some(value = true)
+                let old_ptr = env.get(id.name) else:
+                    return Option[bool].none
+                match const_apply_binop(ctx, operator, read(old_ptr), new_value):
+                    Option.some as folded:
+                        env.set(id.name, folded.value)
+                        return Option[bool].some(value = true)
+                    Option.none:
+                        return Option[bool].none
+            ast.Expr.expr_member_access as ma:
+                return const_assign_member(ctx, env, ma.receiver, ma.member_name, operator, new_value)
+            ast.Expr.expr_index_access as ia:
+                return const_assign_index(ctx, env, ia.receiver, ia.index, operator, new_value)
+            _:
+                return Option[bool].none
+    return Option[bool].none
+
+
+## Apply a compound assignment (`+=`) or plain `=` to a compile-time value.
+function const_apply_binop(ctx: ref[LowerCtx], operator: str, old: ptr[ir.Expr], new_value: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+    if operator == "=":
+        return Option[ptr[ir.Expr]].some(value = new_value)
+    if operator.len < 2:
+        return Option[ptr[ir.Expr]].none
+    let op = operator.slice(0, operator.len - 1)
+    return const_fold_binary_ir(ctx, op, old, new_value)
+
+
+function const_assign_member(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], member: str, operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as rid:
+                let old_ptr = env.get(rid.name) else:
+                    return Option[bool].none
+                match read(read(old_ptr)):
+                    ir.Expr.expr_aggregate_literal as ag:
+                        var fields = vec.Vec[ir.AggregateField].create()
+                        var i: ptr_uint = 0
+                        var replaced = false
+                        while i < ag.fields.len:
+                            var f: ir.AggregateField
+                            f = read(ag.fields.data + i)
+                            if f.name == member:
+                                match const_apply_binop(ctx, operator, f.value, new_value):
+                                    Option.some as folded:
+                                        fields.push(ir.AggregateField(name = f.name, value = folded.value))
+                                        replaced = true
+                                    Option.none:
+                                        return Option[bool].none
+                            else:
+                                fields.push(f)
+                            i += 1
+                        if not replaced:
+                            return Option[bool].none
+                        env.set(rid.name, alloc_expr(ir.Expr.expr_aggregate_literal(ty = ag.ty, fields = fields.as_span())))
+                        return Option[bool].some(value = true)
+                    _:
+                        return Option[bool].none
+            _:
+                return Option[bool].none
+    return Option[bool].none
+
+
+function const_assign_index(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], receiver: ptr[ast.Expr], index: ptr[ast.Expr], operator: str, new_value: ptr[ir.Expr]) -> Option[bool]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as rid:
+                let idx_opt = const_env_eval_int(ctx, env, index) else:
+                    return Option[bool].none
+                let old_ptr = env.get(rid.name) else:
+                    return Option[bool].none
+                match read(read(old_ptr)):
+                    ir.Expr.expr_array_literal as al:
+                        if idx_opt < 0 or idx_opt >= long<-al.elements.len:
+                            return Option[bool].none
+                        var elements = vec.Vec[ir.Expr].create()
+                        var i: ptr_uint = 0
+                        while i < al.elements.len:
+                            if long<-i == idx_opt:
+                                match const_apply_binop(ctx, operator, al.elements.data + i, new_value):
+                                    Option.some as folded:
+                                        elements.push(read(folded.value))
+                                    Option.none:
+                                        return Option[bool].none
+                            else:
+                                elements.push(read(al.elements.data + i))
+                            i += 1
+                        env.set(rid.name, alloc_expr(ir.Expr.expr_array_literal(ty = al.ty, elements = elements.as_span())))
+                        return Option[bool].some(value = true)
+                    _:
+                        return Option[bool].none
+            _:
+                return Option[bool].none
+    return Option[bool].none
+
+
+function const_flow_if(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?) -> ConstFlow:
+    var bi: ptr_uint = 0
+    while bi < branches.len:
+        var br: ast.IfBranch
+        unsafe:
+            br = read(branches.data + bi)
+        match const_env_eval_bool(ctx, env, br.condition):
+            Option.some as cv:
+                if cv.value:
+                    return const_flow_body(ctx, env, br.body)
+            Option.none:
+                return ConstFlow.cf_stuck
+        bi += 1
+    if else_body != null:
+        return const_flow_body(ctx, env, else_body)
+    return ConstFlow.cf_fallthrough
+
+
+function const_flow_while(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], condition: ptr[ast.Expr], body: ptr[ast.Stmt]?) -> ConstFlow:
+    var iteration: ptr_uint = 0
+    while iteration < 100000:
+        match const_env_eval_bool(ctx, env, condition):
+            Option.some as cv:
+                if not cv.value:
+                    return ConstFlow.cf_fallthrough
+            Option.none:
+                return ConstFlow.cf_stuck
+        match const_flow_body(ctx, env, body):
+            ConstFlow.cf_fallthrough:
+                pass
+            ConstFlow.cf_continue:
+                pass
+            ConstFlow.cf_break:
+                return ConstFlow.cf_fallthrough
+            ConstFlow.cf_value as v:
+                return ConstFlow.cf_value(value = v.value)
+            ConstFlow.cf_stuck:
+                return ConstFlow.cf_stuck
+        iteration += 1
+    return ConstFlow.cf_stuck
+
+
+function const_flow_for(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], bindings: span[ast.ForBinding], iterables: span[ast.Expr], body: ptr[ast.Stmt]?) -> ConstFlow:
+    if bindings.len != 1 or iterables.len != 1:
+        return ConstFlow.cf_stuck
+    var binding: ast.ForBinding
+    var iterable: ast.Expr
+    unsafe:
+        binding = read(bindings.data + 0)
+        iterable = read(iterables.data + 0)
+    match const_iterable_values(ctx, env, ptr_of(iterable)):
+        Option.some as vals:
+            var vi: ptr_uint = 0
+            while vi < vals.value.len:
+                unsafe:
+                    env.set(binding.name, read(vals.value.data + vi))
+                match const_flow_body(ctx, env, body):
+                    ConstFlow.cf_fallthrough:
+                        pass
+                    ConstFlow.cf_continue:
+                        pass
+                    ConstFlow.cf_break:
+                        return ConstFlow.cf_fallthrough
+                    ConstFlow.cf_value as v:
+                        return ConstFlow.cf_value(value = v.value)
+                    ConstFlow.cf_stuck:
+                        return ConstFlow.cf_stuck
+                vi += 1
+            return ConstFlow.cf_fallthrough
+        Option.none:
+            return ConstFlow.cf_stuck
+    return ConstFlow.cf_stuck
+
+
+## The element values of a compile-time iterable: an integer range, an array or
+## string value, or a slice `arr[a..b]` / `str[a..b]`.
+function const_iterable_values(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[span[ptr[ir.Expr]]]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_range as r:
+                let s_opt = const_env_eval_int(ctx, env, r.start_expr) else:
+                    return Option[span[ptr[ir.Expr]]].none
+                let e_opt = const_env_eval_int(ctx, env, r.end_expr) else:
+                    return Option[span[ptr[ir.Expr]]].none
+                var range_vals = vec.Vec[ptr[ir.Expr]].create()
+                var v = s_opt
+                while v < e_opt:
+                    range_vals.push(alloc_expr(ir.Expr.expr_integer_literal(value = v, ty = types.primitive("int"))))
+                    v += 1
+                    if range_vals.len() > 100000:
+                        return Option[span[ptr[ir.Expr]]].none
+                return Option[span[ptr[ir.Expr]]].some(value = range_vals.as_span())
+            ast.Expr.expr_index_access:
+                pass
+            _:
+                pass
+    match try_const_value_ir(ctx, ep, env):
+        Option.some as v:
+            unsafe:
+                match read(v.value):
+                    ir.Expr.expr_array_literal as al:
+                        var elems = vec.Vec[ptr[ir.Expr]].create()
+                        var i: ptr_uint = 0
+                        while i < al.elements.len:
+                            elems.push(al.elements.data + i)
+                            i += 1
+                        return Option[span[ptr[ir.Expr]]].some(value = elems.as_span())
+                    ir.Expr.expr_string_literal as sl:
+                        var chars = vec.Vec[ptr[ir.Expr]].create()
+                        var ci: ptr_uint = 0
+                        while ci < sl.value.len:
+                            chars.push(alloc_expr(ir.Expr.expr_integer_literal(value = long<-sl.value.byte_at(ci), ty = types.primitive("ubyte"))))
+                            ci += 1
+                        return Option[span[ptr[ir.Expr]]].some(value = chars.as_span())
+                    _:
+                        return Option[span[ptr[ir.Expr]]].none
+        Option.none:
+            return Option[span[ptr[ir.Expr]]].none
+    return Option[span[ptr[ir.Expr]]].none
+
+
+function const_flow_match_stmt(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> ConstFlow:
+    match try_const_value_ir(ctx, scrutinee, env):
+        Option.some as sv:
+            var ai: ptr_uint = 0
+            while ai < arms.len:
+                var arm: ast.MatchArm
+                unsafe:
+                    arm = read(arms.data + ai)
+                match const_match_pattern(ctx, env, arm.pattern, sv.value):
+                    Option.some as matched:
+                        if matched.value:
+                            return const_flow_body(ctx, env, arm.body)
+                    Option.none:
+                        return ConstFlow.cf_stuck
+                ai += 1
+            return ConstFlow.cf_stuck
+        Option.none:
+            return ConstFlow.cf_stuck
+    return ConstFlow.cf_stuck
+
+
+## True when a match pattern matches the scrutinee value: literals compare by
+## value and `_` (or a missing pattern) is the wildcard.
+function const_match_pattern(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], pattern: ptr[ast.Expr]?, value: ptr[ir.Expr]) -> Option[bool]:
+    let pp = pattern else:
+        return Option[bool].some(value = true)
+    unsafe:
+        match read(pp):
+            ast.Expr.expr_identifier as pid:
+                if pid.name == "_":
+                    return Option[bool].some(value = true)
+            _:
+                pass
+    match try_const_value_ir(ctx, pp, env):
+        Option.some as pv:
+            return const_value_eq_ir(pv.value, value)
+        Option.none:
+            return Option[bool].none
+    return Option[bool].none
+
+
+function const_value_eq_ir(a: ptr[ir.Expr], b: ptr[ir.Expr]) -> Option[bool]:
+    unsafe:
+        match read(a):
+            ir.Expr.expr_integer_literal as ai:
+                match read(b):
+                    ir.Expr.expr_integer_literal as bi:
+                        return Option[bool].some(value = ai.value == bi.value)
+                    _:
+                        return Option[bool].none
+            ir.Expr.expr_string_literal as as_:
+                match read(b):
+                    ir.Expr.expr_string_literal as bs:
+                        return Option[bool].some(value = as_.value == bs.value)
+                    _:
+                        return Option[bool].none
+            ir.Expr.expr_boolean_literal as ab:
+                match read(b):
+                    ir.Expr.expr_boolean_literal as bb:
+                        return Option[bool].some(value = ab.value == bb.value)
+                    _:
+                        return Option[bool].none
+            _:
+                return Option[bool].none
+    return Option[bool].none
+
+
+function const_env_eval_int(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[long]:
+    match try_const_value_ir(ctx, ep, env):
+        Option.some as v:
+            unsafe:
+                match read(v.value):
+                    ir.Expr.expr_integer_literal as il:
+                        return Option[long].some(value = il.value)
+                    ir.Expr.expr_boolean_literal as bl:
+                        if bl.value:
+                            return Option[long].some(value = 1)
+                        return Option[long].some(value = 0)
+                    _:
+                        return Option[long].none
+        Option.none:
+            return Option[long].none
+    return Option[long].none
+
+
+function const_env_eval_bool(ctx: ref[LowerCtx], env: ref[map_mod.Map[str, ptr[ir.Expr]]], ep: ptr[ast.Expr]) -> Option[bool]:
+    match try_const_value_ir(ctx, ep, env):
+        Option.some as v:
+            unsafe:
+                match read(v.value):
+                    ir.Expr.expr_boolean_literal as bl:
+                        return Option[bool].some(value = bl.value)
+                    ir.Expr.expr_integer_literal as il:
+                        return Option[bool].some(value = il.value != 0)
+                    _:
+                        return Option[bool].none
+        Option.none:
+            return Option[bool].none
+    return Option[bool].none
 
 
 ## Compile-time evaluation of `==` / `!=` over constant operands, used to fold
