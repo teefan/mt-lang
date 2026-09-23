@@ -280,6 +280,8 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     var root_abs = absolute_path(root_path)
     defer: root_abs.release()
     var root_resolved = resolver.resolve_source_path(root_abs.as_str(), platform)
+    var root_name_owner = resolver.infer_module_name(root_resolved.as_str(), norm_roots)
+    defer: root_name_owner.release()
 
     # Seed the language prelude modules (std.option, std.result) so their real
     # `extending Option[T]:` / `extending Result[T,E]:` method bodies are parsed,
@@ -287,8 +289,13 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     # PreludeInstaller.  Parsing them first also makes them dependency-first in
     # `order`, so they are checked before any consumer.  A prelude that cannot be
     # resolved is skipped silently (the analyzer still synthesizes the types).
-    seed_prelude_module("std.option", norm_roots, platform, ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
-    seed_prelude_module("std.result", norm_roots, platform, ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
+    seed_prelude_module("std.option", norm_roots, platform, root_name_owner.as_str(), ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
+    seed_prelude_module("std.result", norm_roots, platform, root_name_owner.as_str(), ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
+
+    # `parse_all` takes ownership of the resolved path, so keep a copy for the
+    # post-parse root reordering below.
+    var root_key_owner = string.String.from_str(root_resolved.as_str())
+    defer: root_key_owner.release()
 
     parse_all(
         root_resolved,
@@ -300,6 +307,31 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
         ref_of(order),
         ref_of(diagnostics),
     )
+
+    # When the requested root was already parsed as a prelude dependency
+    # (e.g. lowering std/option.mt), move it to the end of `order` so it is
+    # still the program root — the last analysis.
+    let root_index_ptr = visited.get(root_key_owner.as_str())
+    if root_index_ptr != null:
+        let root_index = unsafe: read(ptr[ptr_uint]<-root_index_ptr)
+        var root_is_last = false
+        let last_ptr = order.last()
+        if last_ptr != null:
+            unsafe:
+                root_is_last = read(last_ptr) == root_index
+        if not root_is_last:
+            var reordered = vec.Vec[ptr_uint].create()
+            var ri: ptr_uint = 0
+            while ri < order.len():
+                let vp = order.get(ri) else:
+                    break
+                unsafe:
+                    if read(vp) != root_index:
+                        reordered.push(read(vp))
+                ri += 1
+            reordered.push(root_index)
+            order.release()
+            order = reordered
 
     on_stack.release()
     visited.release()
@@ -371,6 +403,7 @@ function seed_prelude_module(
     module_name: str,
     roots: span[str],
     platform: resolver.Platform,
+    skip_path: str,
     modules: ref[vec.Vec[LoadedModule]],
     visited: ref[map_mod.Map[str, ptr_uint]],
     on_stack: ref[map_mod.Map[str, bool]],
@@ -379,6 +412,13 @@ function seed_prelude_module(
 ) -> void:
     match resolver.resolve_module_path(module_name, roots, platform):
         Result.success as resolved_ok:
+            # When the requested root *is* the prelude module, leave it to
+            # parse_all so it stays the program root (last in `order`).  The
+            # module name is compared because the resolved paths can differ in
+            # composition (variant/platform forms).
+            if module_name == skip_path:
+                resolved_ok.value.release()
+                return
             parse_all(resolved_ok.value, roots, platform, modules, visited, on_stack, order, diagnostics)
         Result.failure as failure:
             var error = failure.error

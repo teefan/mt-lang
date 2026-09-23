@@ -521,7 +521,7 @@ public function lower(program: loader.Program) -> ir.Program:
         static_asserts = static_asserts.as_span(),
         functions = functions.as_span(),
         type_aliases = type_aliases.as_span(),
-        source_path = "",
+        source_path = root.source_path,
     )
 
 
