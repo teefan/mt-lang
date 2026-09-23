@@ -98,10 +98,12 @@ public function parse_float_literal(lexeme: str) -> double:
     var pos: ptr_uint = 0
     var negative = false
     var exp_negative = false
-    var int_part: int = 0
-    var dec_part: int = 0
-    var dec_div: int = 1
-    var exp_part: int = 0
+    # 64-bit accumulators: a fractional part like 141592653589793 overflows a
+    # 32-bit int and silently truncates the literal's precision.
+    var int_part: long = 0
+    var dec_part: long = 0
+    var dec_div: long = 1
+    var exp_part: long = 0
     var in_dec = false
     var in_exp = false
 
@@ -132,7 +134,7 @@ public function parse_float_literal(lexeme: str) -> double:
                         pos += 1
                 continue
             if b >= '0' and b <= '9':
-                let d = int<-(b - '0')
+                let d = long<-(b - '0')
                 if in_exp:
                     exp_part = exp_part * 10 + d
                 else if in_dec:

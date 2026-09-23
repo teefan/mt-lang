@@ -935,7 +935,9 @@ function long_to_str(value: long) -> str:
 
 function double_to_str(value: double) -> str:
     var buf = string.String.create()
-    fmt.append_double(ref_of(buf), value)
+    # 17 significant digits: `%g`'s default 6 would round constants like PI to
+    # 3.14159 and lose the double's precision in emitted C literals.
+    fmt.append_double_full(ref_of(buf), value)
     return buf.as_str()
 
 

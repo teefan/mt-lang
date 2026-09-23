@@ -52,6 +52,12 @@ public function append_double(output: ref[string.String], number: double) -> voi
     append_formatted_float(output, c"%g", number)
 
 
+## Full-precision `%g` rendering (17 significant digits round-trips an IEEE
+## double), used by the compiler when emitting C floating-point literals.
+public function append_double_full(output: ref[string.String], number: double) -> void:
+    append_formatted_float(output, c"%.17g", number)
+
+
 public function append_double_precision(output: ref[string.String], number: double, precision: int) -> void:
     var buffer = zero[array[char, 64]]
     let written = c.snprintf(ptr_of(buffer[0]), float_buffer_capacity, c"%.*f", precision, number)
