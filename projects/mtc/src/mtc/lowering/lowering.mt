@@ -1022,7 +1022,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                         var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
                         match try_const_value_body(ctx, c.block_body, ref_of(empty_env)):
                             Option.some as body_val:
-                                bv = body_val.value
+                                bv = alloc_expr(coerce_const_value(ctx, unsafe: read(body_val.value), c_ty))
                             Option.none:
                                 pass
                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv, line = c.line, path = ctx.analysis.source_path))
@@ -1044,7 +1044,8 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                             var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
                             match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
                                 Option.some as cv2:
-                                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = cv2.value, line = c.line, path = ctx.analysis.source_path))
+                                    let coerced = alloc_expr(coerce_const_value(ctx, unsafe: read(cv2.value), c_ty))
+                                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
                                 Option.none:
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
             ast.Decl.decl_event as ev:
@@ -1295,20 +1296,219 @@ function collect_opaque_decls(program: loader.Program) -> span[ir.OpaqueDecl]:
     return opaques.as_span()
 
 
+## Which built-in the include scan looks for (host scans.rb).
+const SCAN_FATAL: int = 0
+const SCAN_OFFSETOF: int = 1
+
+
+## True when an expression is a `fatal(...)` call (mode 0) or an `offsetof`
+## expression (mode 1).
+function expr_matches_scan(ep: ptr[ast.Expr], mode: int) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as c:
+                if mode == SCAN_FATAL:
+                    match read(c.callee):
+                        ast.Expr.expr_identifier as id:
+                            if id.name == "fatal":
+                                return true
+                        _:
+                            pass
+            ast.Expr.expr_offsetof:
+                if mode == SCAN_OFFSETOF:
+                    return true
+            _:
+                pass
+    return false
+
+
+function expr_args_use_scan(args: span[ast.Argument], mode: int) -> bool:
+    var i: ptr_uint = 0
+    while i < args.len:
+        let a = unsafe: read(args.data + i)
+        if expr_uses_scan(a.arg_value, mode):
+            return true
+        i += 1
+    return false
+
+
+function match_arms_use_scan(arms: span[ast.MatchArm], mode: int) -> bool:
+    var i: ptr_uint = 0
+    while i < arms.len:
+        let a = unsafe: read(arms.data + i)
+        if expr_uses_scan(a.pattern, mode):
+            return true
+        if stmt_uses_scan(a.body, mode):
+            return true
+        i += 1
+    return false
+
+
+function match_expr_arms_use_scan(arms: span[ast.MatchExprArm], mode: int) -> bool:
+    var i: ptr_uint = 0
+    while i < arms.len:
+        let a = unsafe: read(arms.data + i)
+        if expr_uses_scan(a.pattern, mode):
+            return true
+        if expr_uses_scan(a.value, mode):
+            return true
+        i += 1
+    return false
+
+
+function if_branches_use_scan(branches: span[ast.IfBranch], mode: int) -> bool:
+    var i: ptr_uint = 0
+    while i < branches.len:
+        let b = unsafe: read(branches.data + i)
+        if expr_uses_scan(b.condition, mode):
+            return true
+        if stmt_uses_scan(b.body, mode):
+            return true
+        i += 1
+    return false
+
+
+function expr_list_uses_scan(items: span[ast.Expr], mode: int) -> bool:
+    var i: ptr_uint = 0
+    while i < items.len:
+        if expr_uses_scan(unsafe: items.data + i, mode):
+            return true
+        i += 1
+    return false
+
+
+## Walk an expression tree for `fatal`/`offsetof` (host
+## `expression_uses_pattern?`).
+function expr_uses_scan(ep: ptr[ast.Expr]?, mode: int) -> bool:
+    if ep == null:
+        return false
+    let p = ptr[ast.Expr]<-ep
+    if expr_matches_scan(p, mode):
+        return true
+    unsafe:
+        match read(p):
+            ast.Expr.expr_await as x:
+                return expr_uses_scan(x.expression, mode)
+            ast.Expr.expr_call as x:
+                return expr_uses_scan(x.callee, mode) or expr_args_use_scan(x.args, mode)
+            ast.Expr.expr_binary_op as x:
+                return expr_uses_scan(x.left, mode) or expr_uses_scan(x.right, mode)
+            ast.Expr.expr_range as x:
+                return expr_uses_scan(x.start_expr, mode) or expr_uses_scan(x.end_expr, mode)
+            ast.Expr.expr_if as x:
+                return expr_uses_scan(x.condition, mode) or expr_uses_scan(x.then_expr, mode) or expr_uses_scan(x.else_expr, mode)
+            ast.Expr.expr_match as x:
+                return expr_uses_scan(x.scrutinee, mode) or match_expr_arms_use_scan(x.arms, mode)
+            ast.Expr.expr_unsafe as x:
+                return expr_uses_scan(x.expression, mode)
+            ast.Expr.expr_prefix_cast as x:
+                return expr_uses_scan(x.expression, mode)
+            ast.Expr.expr_unary_op as x:
+                return expr_uses_scan(x.operand, mode)
+            ast.Expr.expr_member_access as x:
+                return expr_uses_scan(x.receiver, mode)
+            ast.Expr.expr_index_access as x:
+                return expr_uses_scan(x.receiver, mode) or expr_uses_scan(x.index, mode)
+            ast.Expr.expr_specialization as x:
+                return expr_uses_scan(x.callee, mode)
+            _:
+                pass
+    return false
+
+
+## Walk a statement tree for `fatal`/`offsetof` (host
+## `statement_uses_expression_pattern?`; unhandled kinds are false there too).
+function stmt_uses_scan(sp: ptr[ast.Stmt]?, mode: int) -> bool:
+    if sp == null:
+        return false
+    let p = ptr[ast.Stmt]<-sp
+    unsafe:
+        match read(p):
+            ast.Stmt.stmt_local as x:
+                return expr_uses_scan(x.value, mode)
+            ast.Stmt.stmt_assignment as x:
+                return expr_uses_scan(x.target, mode) or expr_uses_scan(x.value, mode)
+            ast.Stmt.stmt_if as x:
+                return if_branches_use_scan(x.branches, mode) or stmt_uses_scan(x.else_body, mode)
+            ast.Stmt.stmt_match as x:
+                return expr_uses_scan(x.scrutinee, mode) or match_arms_use_scan(x.arms, mode)
+            ast.Stmt.stmt_static_assert as x:
+                return expr_uses_scan(x.condition, mode) or expr_uses_scan(x.message, mode)
+            ast.Stmt.stmt_for as x:
+                return expr_list_uses_scan(x.iterables, mode) or stmt_uses_scan(x.body, mode)
+            ast.Stmt.stmt_unsafe as x:
+                return stmt_uses_scan(x.body, mode)
+            ast.Stmt.stmt_while as x:
+                return expr_uses_scan(x.condition, mode) or stmt_uses_scan(x.body, mode)
+            ast.Stmt.stmt_ret as x:
+                return expr_uses_scan(x.value, mode)
+            ast.Stmt.stmt_expression as x:
+                return expr_uses_scan(x.expression, mode)
+            ast.Stmt.stmt_defer as x:
+                return stmt_uses_scan(x.body, mode) or expr_uses_scan(x.expression, mode)
+            ast.Stmt.stmt_block as x:
+                var bi: ptr_uint = 0
+                while bi < x.statements.len:
+                    if stmt_uses_scan(unsafe: x.statements.data + bi, mode):
+                        return true
+                    bi += 1
+            _:
+                pass
+    return false
+
+
+## True when any non-raw module's functions or extending methods use the
+## scanned construct (host `program_uses_fatal?` / `program_uses_offsetof?`).
+function program_uses_scan(program: loader.Program, mode: int) -> bool:
+    var ai: ptr_uint = 0
+    while ai < program.analyses.len():
+        let a_ptr = program.analyses.get(ai) else:
+            break
+        var analysis = unsafe: read(a_ptr)
+        if not is_raw_module(analysis.module_kind):
+            var di: ptr_uint = 0
+            while di < analysis.source_file.declarations.len:
+                var decl: ast.Decl
+                unsafe:
+                    decl = read(analysis.source_file.declarations.data + di)
+                match decl:
+                    ast.Decl.decl_function as f:
+                        if stmt_uses_scan(f.body, mode):
+                            return true
+                    ast.Decl.decl_extending_block as e:
+                        var mi: ptr_uint = 0
+                        while mi < e.methods.len:
+                            let m = unsafe: read(e.methods.data + mi)
+                            if stmt_uses_scan(m.body, mode):
+                                return true
+                            mi += 1
+                    _:
+                        pass
+                di += 1
+        ai += 1
+    return false
+
+
 function collect_includes(program: loader.Program) -> span[ir.Include]:
     var includes = vec.Vec[ir.Include].create()
     var seen = map_mod.Map[str, bool].create()
     includes.push(ir.Include(header = "<stdbool.h>"))
     includes.push(ir.Include(header = "<stdint.h>"))
     includes.push(ir.Include(header = "<string.h>"))
-    includes.push(ir.Include(header = "<stdio.h>"))
     seen.set("<stdbool.h>", true)
     seen.set("<stdint.h>", true)
     seen.set("<string.h>", true)
-    seen.set("<stdio.h>", true)
 
+    if program_uses_scan(program, SCAN_OFFSETOF):
+        includes.push(ir.Include(header = "<stddef.h>"))
+        seen.set("<stddef.h>", true)
+    if program_uses_scan(program, SCAN_FATAL):
+        includes.push(ir.Include(header = "<stdio.h>"))
+        seen.set("<stdio.h>", true)
+
+    # External-binding headers follow in module (dependency) order; the host
+    # does not sort them (imports already order base headers before extensions).
     var mi: ptr_uint = 0
-    var raw_headers = vec.Vec[str].create()
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
             mi += 1
@@ -1327,24 +1527,11 @@ function collect_includes(program: loader.Program) -> span[ir.Include]:
                     let header = normalized_include_header(inc.value)
                     if not seen.contains(header):
                         seen.set(header, true)
-                        raw_headers.push(header)
+                        includes.push(ir.Include(header = header))
                 _:
                     pass
             di += 1
         mi += 1
-
-    # Emit the external-binding headers in a deterministic sorted order so that
-    # base headers precede the extension headers that depend on them regardless
-    # of module import order — e.g. `raylib.h` before `rlgl.h` (rlgl.h guards
-    # `struct Matrix` on raylib.h having defined it first).  Module order alone
-    # can place `rlgl.h` first (a direct `import std.c.rlgl`), which C rejects.
-    sort_str_vec(ref_of(raw_headers))
-    var ri: ptr_uint = 0
-    while ri < raw_headers.len():
-        let h_ptr = raw_headers.get(ri) else:
-            break
-        includes.push(ir.Include(header = unsafe: read(h_ptr)))
-        ri += 1
 
     return includes.as_span()
 
@@ -1503,7 +1690,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     ctx.current_fn_return_type = saved_fn_ret
 
     return ir.Function(
-        name = c_name,
+        name = m.name,
         linkage_name = c_name,
         params = ir_params.as_span(),
         return_type = ret_ty,
@@ -11908,9 +12095,17 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                         pointer = false,
                     ))
                 if ctx.analysis.static_member_types.contains(id.name):
+                    var member_ty = expr_type(ctx, ep)
+                    match member_ty:
+                        types.Type.ty_error:
+                            # Const initializers can miss the analyzer's type map;
+                            # a static member's type is its declaring type.
+                            member_ty = types.Type.ty_named(module_name = ctx.module_name, name = id.name)
+                        _:
+                            pass
                     return alloc_expr(ir.Expr.expr_name(
                         name = naming.qualified_member_c_name(ctx.module_name, id.name, member),
-                        ty = expr_type(ctx, ep),
+                        ty = member_ty,
                         pointer = false,
                     ))
                 # Resolve `import_alias.member` through the imported module.
@@ -12272,7 +12467,7 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignmen
         fields = ir_fields.as_span(),
         packed = packed,
         alignment = alignment,
-        source_module = Option[str].none,
+        source_module = Option[str].some(value = ctx.module_name),
     ))
 
 
@@ -12311,7 +12506,7 @@ function lower_union_decl(ctx: ref[LowerCtx], name: str, fields: span[ast.Field]
         name = name,
         linkage_name = naming.qualified_c_name(ctx.module_name, name),
         fields = ir_fields.as_span(),
-        source_module = Option[str].none,
+        source_module = Option[str].some(value = ctx.module_name),
     )
 
 
@@ -12549,7 +12744,7 @@ function lower_variant_decl(ctx: ref[LowerCtx], name: str, arms: span[ast.Varian
             fi += 1
         ir_arms.push(ir.VariantArm(name = arm.name, linkage_name = variant_arm_c_name(outer_c, arm.name), fields = fields.as_span()))
         i += 1
-    return ir.VariantDecl(name = name, linkage_name = outer_c, arms = ir_arms.as_span(), source_module = Option[str].none)
+    return ir.VariantDecl(name = name, linkage_name = outer_c, arms = ir_arms.as_span(), source_module = Option[str].some(value = ctx.module_name))
 
 
 
@@ -12734,7 +12929,8 @@ function lower_enum_decl(ctx: ref[LowerCtx], name: str, backing_type: ptr[ast.Ty
         var value_expr: ptr[ir.Expr]
         let explicit = m.value
         if explicit != null:
-            value_expr = lower_expr(ctx, explicit)
+            let lowered = lower_expr(ctx, explicit)
+            value_expr = alloc_expr(coerce_const_value(ctx, unsafe: read(lowered), backing))
             next_auto = const_eval_int(ctx, explicit) + 1
         else:
             value_expr = alloc_expr(ir.Expr.expr_integer_literal(value = next_auto, ty = backing))
@@ -16061,6 +16257,48 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
                 match try_const_value_ir(ctx, pc.expression, env):
                     Option.some as ov:
                         let target = resolve_type_ref(ctx, pc.target_type)
+                        var target_name = ""
+                        var target_is_prim = false
+                        match target:
+                            types.Type.ty_primitive as tp:
+                                target_is_prim = true
+                                target_name = tp.name
+                            _:
+                                pass
+                        if target_is_prim:
+                            # Host `evaluate_prefix_cast`: numeric operands fold
+                            # to the target type; anything else is not foldable.
+                            var numeric = false
+                            var value: long = 0
+                            var fvalue: double = 0.0
+                            var is_float_operand = false
+                            match read(ov.value):
+                                ir.Expr.expr_integer_literal as lit:
+                                    numeric = true
+                                    value = lit.value
+                                ir.Expr.expr_float_literal as fl:
+                                    numeric = true
+                                    is_float_operand = true
+                                    fvalue = fl.value
+                                ir.Expr.expr_boolean_literal as b:
+                                    numeric = true
+                                    value = if b.value: 1 else: 0
+                                _:
+                                    pass
+                            if numeric:
+                                if target_name == "bool":
+                                    let truth = if is_float_operand: fvalue != 0.0 else: value != 0
+                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = truth, ty = target)))
+                                let width = types.integer_width(target_name)
+                                if width > 0:
+                                    var iv = if is_float_operand: long<-fvalue else: value
+                                    iv = wrap_int_value(iv, width, types.is_signed_integer_name(target_name))
+                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = iv, ty = target)))
+                                if target_name == "float" or target_name == "double":
+                                    let dv = if is_float_operand: fvalue else: double<-value
+                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = dv, ty = target)))
+                                return Option[ptr[ir.Expr]].none
+                            return Option[ptr[ir.Expr]].none
                         return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_cast(target_type = target, expression = ov.value, ty = target)))
                     Option.none:
                         pass
@@ -16102,6 +16340,70 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
             _:
                 return Option[ptr[ir.Expr]].none
     return Option[ptr[ir.Expr]].none
+
+
+## Mask/sign-extend an integer to a fixed width (host `wrap_integer`).
+function wrap_int_value(value: long, width: int, signed: bool) -> long:
+    var mask: long = 0
+    if width == 8:
+        mask = 255
+    else if width == 16:
+        mask = 65535
+    else if width == 32:
+        mask = 4294967295
+    else:
+        return value
+    var wrapped = value & mask
+    if signed:
+        if width == 8:
+            if wrapped >= 128:
+                wrapped = wrapped - 256
+        else if width == 16:
+            if wrapped >= 32768:
+                wrapped = wrapped - 65536
+        else:
+            if wrapped >= 2147483648:
+                wrapped = wrapped - 4294967296
+    return wrapped
+
+
+## Apply the host's declared-type coercion to a folded constant value
+## (`lower_const_value_literal`): mask integers to the type's width,
+## sign-extend signed types, and recurse into array elements.
+function coerce_const_value(ctx: ref[LowerCtx], v: ir.Expr, target_ty: types.Type) -> ir.Expr:
+    match target_ty:
+        types.Type.ty_primitive as tp:
+            let width = types.integer_width(tp.name)
+            if width > 0 and width < 64:
+                match v:
+                    ir.Expr.expr_integer_literal as lit:
+                        let masked = wrap_int_value(lit.value, width, types.is_signed_integer_name(tp.name))
+                        return ir.Expr.expr_integer_literal(value = masked, ty = target_ty)
+                    _:
+                        pass
+            match v:
+                ir.Expr.expr_integer_literal as lit:
+                    return ir.Expr.expr_integer_literal(value = lit.value, ty = target_ty)
+                ir.Expr.expr_float_literal as fl:
+                    return ir.Expr.expr_float_literal(value = fl.value, ty = target_ty)
+                _:
+                    pass
+        types.Type.ty_generic as tg:
+            if tg.name == "array" and tg.args.len == 2:
+                let element_ty = unsafe: read(tg.args.data + 0)
+                match v:
+                    ir.Expr.expr_array_literal as al:
+                        var elements = vec.Vec[ir.Expr].create()
+                        var i: ptr_uint = 0
+                        while i < al.elements.len:
+                            elements.push(coerce_const_value(ctx, unsafe: read(al.elements.data + i), element_ty))
+                            i += 1
+                        return ir.Expr.expr_array_literal(ty = target_ty, elements = elements.as_span())
+                    _:
+                        pass
+        _:
+            pass
+    return v
 
 
 ## Constant-fold an expression whose declared type is known: an expression list

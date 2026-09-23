@@ -531,7 +531,20 @@ public function generate_c(program: ir.Program, emit_line_directives: bool, debu
             emit_line(ref_of(e), "")
         i += 1
 
-    return e.buffer
+    # Ruby joins the lines and rstrips, then appends a single newline.
+    let text = e.buffer.as_str()
+    var end = text.len
+    while end > 0:
+        let b = text.byte_at(end - 1)
+        if b == 10 or b == 32 or b == 9 or b == 13:
+            end -= 1
+        else:
+            break
+    var trimmed = string.String.with_capacity(end + 1)
+    trimmed.append(text.slice(0, end))
+    trimmed.push_byte('\n')
+    e.buffer.release()
+    return trimmed
 
 
 # =============================================================================
@@ -6582,40 +6595,52 @@ function emit_builtin_type_defs(e: ref[Emitter], program: ir.Program) -> void:
 
         ti += 1
 
-    if needed.contains("vec2"):
+    # Constants, globals, unions and variants can carry vector/matrix types
+    # without any function referencing them (host feature detection).
+    var ci: ptr_uint = 0
+    while ci < program.constants.len:
+        collect_builtin_types(ref_of(needed), unsafe: read(program.constants.data + ci).ty)
+        ci += 1
+    var gi: ptr_uint = 0
+    while gi < program.globals.len:
+        collect_builtin_types(ref_of(needed), unsafe: read(program.globals.data + gi).ty)
+        gi += 1
+    var ui: ptr_uint = 0
+    while ui < program.unions.len:
+        let u = unsafe: read(program.unions.data + ui)
+        var ufi: ptr_uint = 0
+        while ufi < u.fields.len:
+            collect_builtin_types(ref_of(needed), unsafe: read(u.fields.data + ufi).ty)
+            ufi += 1
+        ui += 1
+    var vi: ptr_uint = 0
+    while vi < program.variants.len:
+        let v = unsafe: read(program.variants.data + vi)
+        var ai: ptr_uint = 0
+        while ai < v.arms.len:
+            let arm = unsafe: read(v.arms.data + ai)
+            var afi: ptr_uint = 0
+            while afi < arm.fields.len:
+                collect_builtin_types(ref_of(needed), unsafe: read(arm.fields.data + afi).ty)
+                afi += 1
+            ai += 1
+        vi += 1
 
-        emit_line(e, "typedef struct mt_vec2 { float x; float y; } mt_vec2;")
+    # Host parity: the whole vector/matrix typedef set is emitted whenever any
+    # vector-math type is used, and no blank line is emitted when none are.
+    if needed.is_empty():
+        return
 
-        emit_line(e, "typedef struct mt_ivec2 { int32_t x; int32_t y; } mt_ivec2;")
-
-    if needed.contains("vec3") or needed.contains("mat3"):
-
-        emit_line(e, "typedef struct mt_vec3 { float x; float y; float z; } mt_vec3;")
-
-        emit_line(e, "typedef struct mt_ivec3 { int32_t x; int32_t y; int32_t z; } mt_ivec3;")
-
-    if needed.contains("vec4") or needed.contains("mat4"):
-
-        emit_line(e, "typedef struct mt_vec4 { float x; float y; float z; float w; } mt_vec4;")
-
-        emit_line(e, "typedef struct mt_ivec4 { int32_t x; int32_t y; int32_t z; int32_t w; } mt_ivec4;")
-
-    if needed.contains("mat3"):
-
-        emit_line(e, "typedef struct mt_mat3 { mt_vec3 col0; mt_vec3 col1; mt_vec3 col2; } mt_mat3;")
-
-    if needed.contains("mat4"):
-
-        emit_line(e, "typedef struct mt_mat4 { mt_vec4 col0; mt_vec4 col1; mt_vec4 col2; mt_vec4 col3; } mt_mat4;")
-
-    if needed.contains("quat"):
-
-        emit_line(e, "typedef struct mt_quat { float x; float y; float z; float w; } mt_quat;")
-
-    if needed.contains("vec2") or needed.contains("vec3") or needed.contains("vec4"):
-
-        emit_line(e, "")
-
+    emit_line(e, "typedef struct mt_vec2 { float x; float y; } mt_vec2;")
+    emit_line(e, "typedef struct mt_vec3 { float x; float y; float z; } mt_vec3;")
+    emit_line(e, "typedef struct mt_vec4 { float x; float y; float z; float w; } mt_vec4;")
+    emit_line(e, "typedef struct mt_ivec2 { int32_t x; int32_t y; } mt_ivec2;")
+    emit_line(e, "typedef struct mt_ivec3 { int32_t x; int32_t y; int32_t z; } mt_ivec3;")
+    emit_line(e, "typedef struct mt_ivec4 { int32_t x; int32_t y; int32_t z; int32_t w; } mt_ivec4;")
+    emit_line(e, "")
+    emit_line(e, "typedef struct mt_mat3 { mt_vec3 col0; mt_vec3 col1; mt_vec3 col2; } mt_mat3;")
+    emit_line(e, "typedef struct mt_mat4 { mt_vec4 col0; mt_vec4 col1; mt_vec4 col2; mt_vec4 col3; } mt_mat4;")
+    emit_line(e, "typedef struct mt_quat { float x; float y; float z; float w; } mt_quat;")
     emit_line(e, "")
 
 
