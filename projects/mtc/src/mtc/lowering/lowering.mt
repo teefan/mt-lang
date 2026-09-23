@@ -3282,18 +3282,17 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
     # Fall back to a program-wide search: a concrete type argument may be
     # defined in a module neither the caller nor the container's module imports
     # (e.g. `Vec[StateHooks[...]]` where std.vec has no reason to import
-    # std.fsm).
-    var pai: ptr_uint = 0
-    while pai < ctx.program_analyses.len:
-        var pa: analyzer.Analysis
-        unsafe:
-            pa = read(ctx.program_analyses.data + pai)
-        if pa.structs.contains(name) or struct_in_source(pa, name):
-            let concrete_name = naming.qualified_c_name(pa.module_name, generic_struct_c_name(name, args))
+    # std.fsm).  Only a unique owner is usable: an ambiguous simple name
+    # (Node in both std.map and std.linked_map) must not be guessed.
+    match find_declaring_module(ctx, name):
+        Option.some as owner:
+            let owner_mod = owner.value
+            let concrete_name = naming.qualified_c_name(owner_mod, generic_struct_c_name(name, args))
             ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
-            generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = pa.module_name))
+            generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = owner_mod))
             return types.Type.ty_named(module_name = "", name = concrete_name)
-        pai += 1
+        Option.none:
+            pass
     return types.Type.ty_error
 
 
@@ -3690,6 +3689,14 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
             args.push(resolve_type_ref(ctx, t.arguments.data + 0))
         args.push(resolve_array_length_type(ctx, unsafe: t.arguments.data + 1))
         return types.Type.ty_generic(name = "array", args = args.as_span())
+    # simd[T, N]: the lane count resolves like an array length (a literal, a
+    # bound type parameter, or a module constant), never as a type name.
+    if name == "simd" and t.arguments.len == 2:
+        var simd_args = vec.Vec[types.Type].create()
+        unsafe:
+            simd_args.push(resolve_type_ref(ctx, t.arguments.data + 0))
+        simd_args.push(resolve_array_length_type(ctx, unsafe: t.arguments.data + 1))
+        return types.Type.ty_generic(name = "simd", args = simd_args.as_span())
     # str_buffer[N]: ensure the struct type exists and return the resolved type.
     if name == "str_buffer" and t.arguments.len == 1:
         var sb_args = vec.Vec[types.Type].create()
@@ -7164,6 +7171,11 @@ function expand_generic_arg_type(ctx: ref[LowerCtx], t: types.Type) -> types.Typ
             if n.module_name.len == 0:
                 match generic_receiver_info(ctx, t):
                     Option.some as info:
+                        # Preserve the owning module: without it a same-named
+                        # struct from another module (map.Node vs linked_map.Node)
+                        # could be picked during monomorphization.
+                        if info.value.owner_module.len > 0:
+                            return types.Type.ty_imported(module_name = info.value.owner_module, name = info.value.owner_name, args = info.value.concrete_args)
                         return types.Type.ty_generic(name = info.value.owner_name, args = info.value.concrete_args)
                     Option.none:
                         pass
@@ -8924,12 +8936,14 @@ function spec_callee_name(callee: ptr[ast.Expr]) -> Option[str]:
 function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method_name: str, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> Option[ptr[ir.Expr]]:
     var info_opt = spec_receiver_info(ctx, receiver)
     if info_opt.is_none():
-        info_opt = generic_receiver_info(ctx, recv_ty)
-    if info_opt.is_none():
         # Raw pointer receivers (`ptr[T].load()`, `p.store(v)`) auto-dereference
         # in the general path, but their extending-block methods still need to
-        # monomorphize against the pointer type.
+        # monomorphize against the pointer type.  Tried before the generic
+        # receiver path so `ptr[simd].load()` is not mis-attributed to an
+        # `extending simd` block.
         info_opt = ptr_specialization_receiver_info(ctx, recv_ty)
+    if info_opt.is_none():
+        info_opt = generic_receiver_info(ctx, recv_ty)
     if info_opt.is_none():
         # The collapsed IR type is a concrete `ty_named` whose generic-instance
         # entry was registered in the defining module's context, not this one
@@ -8952,9 +8966,23 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
                     pass
         if is_identifier:
             info_opt = generic_receiver_info(ctx, ir_expr_type(lower_expr(ctx, receiver)))
-    let info = info_opt else:
+    var info = info_opt else:
         return Option[ptr[ir.Expr]].none
-    let gm = find_generic_method_in_module(ctx, info.owner_name, method_name, info.owner_module) else:
+    var gm_opt = find_generic_method_in_module(ctx, info.owner_name, method_name, info.owner_module)
+    if gm_opt.is_none() and (types.is_raw_pointer(recv_ty) or types.is_ref_type(recv_ty)):
+        # A raw-pointer receiver also dispatches to methods on its pointee
+        # (auto-deref): retry against the dereferenced generic receiver.
+        match generic_receiver_info(ctx, recv_ty):
+            Option.some as alt:
+                match find_generic_method_in_module(ctx, alt.value.owner_name, method_name, alt.value.owner_module):
+                    Option.some as alt_gm:
+                        info = alt.value
+                        gm_opt = Option[GenericMethodMatch].some(value = alt_gm.value)
+                    Option.none:
+                        pass
+            Option.none:
+                pass
+    let gm = gm_opt else:
         return Option[ptr[ir.Expr]].none
     # Async methods are lowered eagerly through the CPS path (lower_async_fn) and
     # resolved via resolve_method_info (which returns their Task[T] type + CPS

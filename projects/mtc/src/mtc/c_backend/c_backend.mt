@@ -4862,7 +4862,11 @@ function scan_expr_for_variant_eq(e: ref[Emitter], ep: ptr[ir.Expr], program: ir
     unsafe:
         match read(ep):
             ir.Expr.expr_binary as bin:
-                if bin.operator == "==" or bin.operator == "!=":
+                # A null check (`x == null`) is not a value comparison: the
+                # null-literal branch handles it, so registering the nullable
+                # type here would emit a spurious (and, for recursive variants,
+                # uncompilable) equality helper.
+                if (bin.operator == "==" or bin.operator == "!=") and not is_null_literal_expr(bin.left) and not is_null_literal_expr(bin.right):
                     register_equality_type(e, expr_result_type(bin.left), program)
                 scan_expr_for_variant_eq(e, bin.left, program)
                 scan_expr_for_variant_eq(e, bin.right, program)
@@ -4996,27 +5000,9 @@ function emit_variant_eq_helper(e: ref[Emitter], vd: ir.VariantDecl) -> void:
 ## Emit a comparison check for one variant payload field.  Recursively handles
 ## nested variant types by calling their own equality helpers.
 function emit_variant_field_compare(e: ref[Emitter], left_expr: str, right_expr: str, field_ty: types.Type) -> void:
-    # Compute a temporary variable name for the condition
-    if is_str_type(field_ty):
-        e.buffer.append(j5("      if (!mt_str_equal(", left_expr, ", ", right_expr, ")) return false;"))
-    else:
-        match field_ty:
-            types.Type.ty_primitive:
-                e.buffer.append(j5("      if (", left_expr, " != ", right_expr, ") return false;"))
-            types.Type.ty_named:
-                let cname = c_type(field_ty)
-                if e.variant_eq_set.contains(cname):
-                    let helper = variant_equality_helper_name(cname)
-                    e.buffer.append(j3("      if (!", helper, "("))
-                    e.buffer.append(left_expr)
-                    e.buffer.append(", ")
-                    e.buffer.append(right_expr)
-                    e.buffer.append(")) return false;")
-                else:
-                    e.buffer.append(j5("      if (", left_expr, " != ", right_expr, ") return false;"))
-            _:
-                e.buffer.append(j5("      if (", left_expr, " != ", right_expr, ") return false;"))
-        e.buffer.push_byte(10)
+    # Variant-arm fields use the same guard logic as struct fields (str,
+    # nested struct/variant helpers, value nullables, arrays).
+    emit_eq_field_guard(e, left_expr, right_expr, field_ty, 3)
 
 
 ## Register the equality helper required to compare values of `ty`.  Structs
