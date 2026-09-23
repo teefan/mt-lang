@@ -439,6 +439,14 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             var nl_fields = vec.Vec[SexprField].create()
             nl_fields.push(field_value("base", types_value(ctx, unsafe: read(nl.base))))
             return node("Types::Nullable", nl_fields.as_span())
+        types.Type.ty_null as nt:
+            var nt_fields = vec.Vec[SexprField].create()
+            let target = nt.target
+            if target == null:
+                nt_fields.push(field_nil("target_type"))
+            else:
+                nt_fields.push(field_value("target_type", types_value(ctx, unsafe: read(target))))
+            return node("Types::Null", nt_fields.as_span())
         types.Type.ty_named as n:
             var nf = vec.Vec[SexprField].create()
             nf.push(field_str("name", n.name))

@@ -20,6 +20,7 @@ public variant Type:
     ty_error
     ty_type_meta
     ty_nullable(base: ptr[Type])
+    ty_null(target: ptr[Type]?)
     ty_named(name: str, module_name: str)
     ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
@@ -168,6 +169,15 @@ public function type_to_string(t: Type) -> str:
                 buf.append(type_to_string(read(nl.base)))
             buf.append("?")
             return buf.as_str()
+        Type.ty_null as nt:
+            let target = nt.target else:
+                return "null"
+            var buf = string.String.create()
+            buf.append("null[")
+            unsafe:
+                buf.append(type_to_string(read(target)))
+            buf.append("]")
+            return buf.as_str()
         Type.ty_generic as g:
             var buf = string.String.create()
             buf.append(g.name)
@@ -304,6 +314,18 @@ public function type_equals(a: Type, b: Type) -> bool:
             match b:
                 Type.ty_nullable as nb:
                     return type_equals(unsafe: read(na.base), unsafe: read(nb.base))
+                _:
+                    return false
+        Type.ty_null as na:
+            match b:
+                Type.ty_null as nb:
+                    let ta = na.target
+                    let tb = nb.target
+                    if ta == null:
+                        return tb == null
+                    if tb == null:
+                        return false
+                    return type_equals(unsafe: read(ta), unsafe: read(tb))
                 _:
                     return false
         Type.ty_named as na:

@@ -49,14 +49,17 @@ public struct LoadDiagnostic:
 
 ## The result of loading and checking a program: every parsed module, a
 ## dependency-first ordering (indices into `modules`), the per-module semantic
-## `Analysis` values (retained in dependency-first order — the root module is the
-## last entry, consumed by the Lowering stage), and all diagnostics.
+## `Analysis` values (retained in canonical lowering order — see
+## `canonical_analysis_order`), and all diagnostics.  `root_index` locates the
+## requested root module inside `analyses` (it is not necessarily the last
+## entry; the canonical order follows the Ruby host).
 public struct Program:
     modules: vec.Vec[LoadedModule]
     order: vec.Vec[ptr_uint]
     analyses: vec.Vec[analyzer.Analysis]
     diagnostics: vec.Vec[LoadDiagnostic]
     owning_type_names: vec.Vec[str]
+    root_index: ptr_uint
 
 
 extending LoadedModule:
@@ -87,10 +90,10 @@ extending Program:
         return this.diagnostics.len()
 
 
-    ## The module name of the root program (the last analysis, in
-    ## dependency-first order), or "" when there are no analyses.
+    ## The module name of the root program (`root_index` into the canonical
+    ## analysis order), or "" when there are no analyses.
     public function root_module_name() -> str:
-        let root = this.analyses.last() else:
+        let root = this.analyses.get(this.root_index) else:
             return ""
         return unsafe: read(root).module_name
 
@@ -100,7 +103,7 @@ extending Program:
     ## module logic), so build/lower/emit-c reject it — mirroring Ruby's
     ## LoweringError for `:raw_module`.
     public function root_is_raw_module() -> bool:
-        let root = this.analyses.last() else:
+        let root = this.analyses.get(this.root_index) else:
             return false
         return unsafe: read(root).module_kind == ast.ModuleKind.module_raw
 
@@ -109,7 +112,7 @@ extending Program:
     ## signature validity).  Distinguishes "no main at all" from "main with an
     ## unsupported signature" when reporting a missing executable entrypoint.
     public function root_has_main() -> bool:
-        let root = this.analyses.last() else:
+        let root = this.analyses.get(this.root_index) else:
             return false
         return unsafe: read(root).functions.contains("main")
 
@@ -360,7 +363,143 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
 
     var owning_type_names = build_owning_type_names(ref_of(analyses))
 
-    return Program(modules = modules, order = order, analyses = analyses, diagnostics = diagnostics, owning_type_names = owning_type_names)
+    # Reorder the analyses into the canonical module order the Ruby host uses
+    # for lowering (`Lowering#compute_ordered_analysis_pairs`): depth-first
+    # post-order over module names sorted lexicographically, with each module's
+    # imported module names sorted lexicographically as well.  The IR fragment
+    # order — and therefore the emitted C — depends on this order.
+    var canonical_analyses = canonical_analysis_order(analyses.as_span())
+    var root_index: ptr_uint = 0
+    if canonical_analyses.len() > 0:
+        root_index = canonical_analyses.len() - 1
+    var ci: ptr_uint = 0
+    while ci < canonical_analyses.len():
+        let cap = canonical_analyses.get(ci) else:
+            break
+        unsafe:
+            if read(cap).module_name == root_name_owner.as_str():
+                root_index = ci
+        ci += 1
+    analyses.release()
+
+    return Program(modules = modules, order = order, analyses = canonical_analyses, diagnostics = diagnostics, owning_type_names = owning_type_names, root_index = root_index)
+
+
+## Canonical module order: depth-first post-order over the module names sorted
+## lexicographically, visiting each module's imported module names in
+## lexicographic order (host `canonical_module_names`).  A module already on the
+## current DFS path is skipped, which breaks import cycles like
+## `std.option` <-> `std.result`.
+function canonical_analysis_order(analyses: span[analyzer.Analysis]) -> vec.Vec[analyzer.Analysis]:
+    var by_name = map_mod.Map[str, ptr_uint].create()
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(analyses.data + i)
+        if not by_name.contains(a.module_name):
+            by_name.set(a.module_name, i)
+            names.push(a.module_name)
+        i += 1
+    sort_module_names(ref_of(names))
+    var visited = map_mod.Map[str, bool].create()
+    var on_stack = map_mod.Map[str, bool].create()
+    var ordered_names = vec.Vec[str].create()
+    var ni: ptr_uint = 0
+    while ni < names.len():
+        let name_ptr = names.get(ni) else:
+            break
+        visit_analysis_name(analyses, ref_of(by_name), ref_of(visited), ref_of(on_stack), ref_of(ordered_names), unsafe: read(name_ptr))
+        ni += 1
+    var result = vec.Vec[analyzer.Analysis].create()
+    var oi: ptr_uint = 0
+    while oi < ordered_names.len():
+        let name_ptr = ordered_names.get(oi) else:
+            break
+        let name = unsafe: read(name_ptr)
+        let idx_ptr = by_name.get(name) else:
+            oi += 1
+            continue
+        let idx = unsafe: read(idx_ptr)
+        result.push(unsafe: read(analyses.data + idx))
+        oi += 1
+    return result
+
+
+function visit_analysis_name(analyses: span[analyzer.Analysis], by_name: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], on_stack: ref[map_mod.Map[str, bool]], ordered: ref[vec.Vec[str]], name: str) -> void:
+    if visited.contains(name) or on_stack.contains(name):
+        return
+    let idx_ptr = by_name.get(name) else:
+        return
+    let idx = unsafe: read(idx_ptr)
+    on_stack.set(name, true)
+    var deps = vec.Vec[str].create()
+    var imports_iter = unsafe: read(analyses.data + idx).imports.values()
+    while true:
+        let dep_ptr = imports_iter.next() else:
+            break
+        var dep: str
+        unsafe:
+            dep = read(dep_ptr)
+        if dep != name and by_name.contains(dep) and not str_vec_contains(deps.as_span(), dep):
+            deps.push(dep)
+    sort_module_names(ref_of(deps))
+    var di: ptr_uint = 0
+    while di < deps.len():
+        let dep_ptr = deps.get(di) else:
+            break
+        visit_analysis_name(analyses, by_name, visited, on_stack, ordered, unsafe: read(dep_ptr))
+        di += 1
+    on_stack.set(name, false)
+    visited.set(name, true)
+    ordered.push(name)
+
+
+function str_vec_contains(items: span[str], value: str) -> bool:
+    var i: ptr_uint = 0
+    while i < items.len:
+        unsafe:
+            if read(items.data + i) == value:
+                return true
+        i += 1
+    return false
+
+
+## Insertion sort in byte order (host sorts module names lexicographically).
+function sort_module_names(items: ref[vec.Vec[str]]) -> void:
+    var i: ptr_uint = 1
+    while i < items.len():
+        var j = i
+        while j > 0:
+            let a_ptr = items.get(j - 1) else:
+                break
+            let b_ptr = items.get(j) else:
+                break
+            var a: str
+            var b: str
+            unsafe:
+                a = read(a_ptr)
+                b = read(b_ptr)
+            if module_name_less(a, b):
+                break
+            items.swap(j - 1, j)
+            j -= 1
+        i += 1
+
+
+function module_name_less(left: str, right: str) -> bool:
+    var index: ptr_uint = 0
+    let shared = if left.len < right.len: left.len else: right.len
+    while index < shared:
+        let lb = left.byte_at(index)
+        let rb = right.byte_at(index)
+        if lb < rb:
+            return true
+        if lb > rb:
+            return false
+        index += 1
+    return left.len < right.len
 
 
 ## Scan all loaded module analyses' method_keys for entries ending with ".release"

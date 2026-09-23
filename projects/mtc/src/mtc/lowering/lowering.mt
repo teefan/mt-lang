@@ -401,7 +401,7 @@ public function lower(program: loader.Program) -> ir.Program:
     let count = program.analyses.len()
     if count == 0:
         return ir.empty_program("(anonymous)", "")
-    let root_ptr = program.analyses.get(count - 1) else:
+    let root_ptr = program.analyses.get(program.root_index) else:
         return ir.empty_program("(anonymous)", "")
     var root = unsafe: read(root_ptr)
     let root_name = root.module_name
@@ -444,7 +444,7 @@ public function lower(program: loader.Program) -> ir.Program:
         if is_raw_module(analysis.module_kind):
             i += 1
             continue
-        let is_root = i == count - 1
+        let is_root = i == program.root_index
         var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances))
         globals.append_span(fragment.globals)
         opaques.append_span(fragment.opaques)
@@ -12995,15 +12995,36 @@ function const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> long:
                 if bin.operator == "^":
                     return l ^ r
                 return 0
+            ast.Expr.expr_sizeof as sz:
+                let target = resolve_type_ref(ctx, sz.target_type)
+                match layout_size(ctx, target):
+                    Option.some as v:
+                        return v.value
+                    Option.none:
+                        return 0
+            ast.Expr.expr_alignof as al:
+                let target = resolve_type_ref(ctx, al.target_type)
+                match layout_alignment(ctx, target):
+                    Option.some as v:
+                        return v.value
+                    Option.none:
+                        return 0
+            ast.Expr.expr_offsetof as off:
+                let target = resolve_type_ref(ctx, off.target_type)
+                match layout_offset_of(ctx, target, off.field):
+                    Option.some as v:
+                        return v.value
+                    Option.none:
+                        return 0
             _:
                 return 0
 
 
 ## Option-returning compile-time integer evaluation for static_assert folding:
 ## literals, module-level constants by name, and arithmetic/bitwise operators.
-## Unlike `const_eval_int`, an unfoldable expression (a `size_of(Struct)` call,
-## a runtime name) yields none instead of 0, so the caller can keep it as a
-## C-evaluable expression rather than mis-folding it.
+## Unlike `const_eval_int`, an unfoldable expression (a runtime name) yields
+## none instead of 0, so the caller can keep it as a C-evaluable expression
+## rather than mis-folding it.
 function try_const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[long]:
     unsafe:
         match read(ep):
@@ -13054,15 +13075,23 @@ function try_const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[lon
                 if bin.operator == "^":
                     return Option[long].some(value = l ^ r)
                 return Option[long].none
+            ast.Expr.expr_sizeof as sz:
+                let target = resolve_type_ref(ctx, sz.target_type)
+                return layout_size(ctx, target)
+            ast.Expr.expr_alignof as al:
+                let target = resolve_type_ref(ctx, al.target_type)
+                return layout_alignment(ctx, target)
+            ast.Expr.expr_offsetof as off:
+                let target = resolve_type_ref(ctx, off.target_type)
+                return layout_offset_of(ctx, target, off.field)
             _:
                 return Option[long].none
 
 
 ## Compile-time boolean evaluation for a static_assert condition: boolean
 ## literals, `not`, `and`/`or`, and integer comparisons over foldable operands.
-## Yields none when any operand cannot be folded (e.g. contains `size_of` over a
-## struct), in which case the condition is emitted as a C constant expression
-## for the C compiler to evaluate.
+## Yields none when any operand cannot be folded, in which case the condition
+## is emitted as a C constant expression for the C compiler to evaluate.
 function try_const_eval_bool(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[bool]:
     unsafe:
         match read(ep):
@@ -16213,11 +16242,11 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
             ast.Expr.expr_char_literal as c:
                 return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-c.value, ty = types.primitive("ubyte"))))
             ast.Expr.expr_null_literal as nl:
-                var null_ty = ctx.void_ty
                 let tr = nl.target_type
                 if tr != null:
-                    null_ty = resolve_type_ref(ctx, tr)
-                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_null_literal(ty = null_ty)))
+                    let target = resolve_type_ref(ctx, tr)
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_null_literal(ty = types.Type.ty_null(target = types.alloc_type(target)))))
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_null_literal(ty = ctx.void_ty)))
             ast.Expr.expr_identifier as id:
                 let entry = env.get(id.name)
                 if entry != null:
@@ -16289,13 +16318,15 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
                                 if target_name == "bool":
                                     let truth = if is_float_operand: fvalue != 0.0 else: value != 0
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = truth, ty = target)))
-                                let width = types.integer_width(target_name)
+                                let width = const_integer_width(target_name)
                                 if width > 0:
                                     var iv = if is_float_operand: long<-fvalue else: value
                                     iv = wrap_int_value(iv, width, types.is_signed_integer_name(target_name))
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = iv, ty = target)))
                                 if target_name == "float" or target_name == "double":
-                                    let dv = if is_float_operand: fvalue else: double<-value
+                                    var dv = if is_float_operand: fvalue else: double<-value
+                                    if target_name == "float":
+                                        dv = float32_round(dv)
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = dv, ty = target)))
                                 return Option[ptr[ir.Expr]].none
                             return Option[ptr[ir.Expr]].none
@@ -16337,9 +16368,44 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
                         return Option[ptr[ir.Expr]].none
                     Option.none:
                         return Option[ptr[ir.Expr]].none
+            ast.Expr.expr_sizeof as sz:
+                let target = resolve_type_ref(ctx, sz.target_type)
+                match layout_size(ctx, target):
+                    Option.some as v:
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
+                    Option.none:
+                        return Option[ptr[ir.Expr]].none
+            ast.Expr.expr_alignof as al:
+                let target = resolve_type_ref(ctx, al.target_type)
+                match layout_alignment(ctx, target):
+                    Option.some as v:
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
+                    Option.none:
+                        return Option[ptr[ir.Expr]].none
+            ast.Expr.expr_offsetof as off:
+                let target = resolve_type_ref(ctx, off.target_type)
+                match layout_offset_of(ctx, target, off.field):
+                    Option.some as v:
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = v.value, ty = types.primitive("ptr_uint"))))
+                    Option.none:
+                        return Option[ptr[ir.Expr]].none
             _:
                 return Option[ptr[ir.Expr]].none
     return Option[ptr[ir.Expr]].none
+
+
+## Integer width used when folding a prefix cast: the fixed-width primitives
+## plus the pointer-sized integers (host `POINTER_INTEGER_WIDTH`).
+function const_integer_width(name: str) -> int:
+    if name == "ptr_int" or name == "ptr_uint":
+        return 64
+    return types.integer_width(name)
+
+
+## Round a double to the nearest 32-bit float value (host `float32_round`).
+function float32_round(value: double) -> double:
+    let rounded = float<-value
+    return double<-rounded
 
 
 ## Mask/sign-extend an integer to a fixed width (host `wrap_integer`).
@@ -16406,12 +16472,301 @@ function coerce_const_value(ctx: ref[LowerCtx], v: ir.Expr, target_ty: types.Typ
     return v
 
 
+## Compile-time layout of a type, mirroring Ruby's `Types::Layout` for the
+## shapes this compiler models.  Used to fold `size_of` / `align_of` /
+## `offset_of` in constant initializers exactly where the host does.
+public struct LayoutInfo:
+    size: long
+    alignment: long
+
+
+struct StructMeta:
+    packed: bool
+    alignment: long
+
+
+function layout_align_up(value: long, alignment: long) -> long:
+    if alignment <= 1:
+        return value
+    let remainder = value % alignment
+    if remainder == 0:
+        return value
+    return value + alignment - remainder
+
+
+## True when the host's `layout_pointer_like_nullable_base?` treats the base as
+## a raw pointer for nullable layout purposes.
+function layout_pointer_like(base: types.Type) -> bool:
+    match base:
+        types.Type.ty_function:
+            return true
+        types.Type.ty_opaque:
+            return true
+        types.Type.ty_primitive as tp:
+            return tp.name == "cstr"
+        types.Type.ty_generic as g:
+            return g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref"
+        _:
+            return false
+
+
+function layout_info(ctx: ref[LowerCtx], ty: types.Type) -> Option[LayoutInfo]:
+    match ty:
+        types.Type.ty_primitive as tp:
+            if tp.name == "bool" or tp.name == "byte" or tp.name == "ubyte" or tp.name == "char":
+                return Option[LayoutInfo].some(value = LayoutInfo(size = 1, alignment = 1))
+            if tp.name == "short" or tp.name == "ushort":
+                return Option[LayoutInfo].some(value = LayoutInfo(size = 2, alignment = 2))
+            if tp.name == "int" or tp.name == "uint" or tp.name == "float":
+                return Option[LayoutInfo].some(value = LayoutInfo(size = 4, alignment = 4))
+            if tp.name == "long" or tp.name == "ulong" or tp.name == "double":
+                return Option[LayoutInfo].some(value = LayoutInfo(size = 8, alignment = 8))
+            if tp.name == "ptr_int" or tp.name == "ptr_uint" or tp.name == "cstr":
+                return Option[LayoutInfo].some(value = LayoutInfo(size = 8, alignment = 8))
+            return Option[LayoutInfo].none
+        types.Type.ty_str:
+            # `Types::StringView`: { ptr[char] data; ptr_uint len; }
+            return Option[LayoutInfo].some(value = LayoutInfo(size = 16, alignment = 8))
+        types.Type.ty_function:
+            return Option[LayoutInfo].some(value = LayoutInfo(size = 8, alignment = 8))
+        types.Type.ty_nullable as nl:
+            let base = unsafe: read(nl.base)
+            if layout_pointer_like(base):
+                return Option[LayoutInfo].some(value = LayoutInfo(size = 8, alignment = 8))
+            let inner = layout_info(ctx, base) else:
+                return Option[LayoutInfo].none
+            # struct { bool has_value; base value; }
+            let value_offset = layout_align_up(1, inner.alignment)
+            let overall = if inner.alignment > 1: inner.alignment else: 1
+            return Option[LayoutInfo].some(value = LayoutInfo(
+                size = layout_align_up(value_offset + inner.size, overall),
+                alignment = overall,
+            ))
+        types.Type.ty_generic as g:
+            if g.name == "ptr" or g.name == "const_ptr" or g.name == "own" or g.name == "ref":
+                return Option[LayoutInfo].some(value = LayoutInfo(size = 8, alignment = 8))
+            if g.name == "span" and g.args.len == 1:
+                # `Types::Span`: { ptr[T] data; ptr_uint len; }
+                return Option[LayoutInfo].some(value = LayoutInfo(size = 16, alignment = 8))
+            if g.name == "array" and g.args.len == 2:
+                let element = unsafe: read(g.args.data + 0)
+                var count: long = 0
+                match unsafe: read(g.args.data + 1):
+                    types.Type.ty_literal_int as lit:
+                        count = lit.value
+                    _:
+                        return Option[LayoutInfo].none
+                let element_info = layout_info(ctx, element) else:
+                    return Option[LayoutInfo].none
+                return Option[LayoutInfo].some(value = LayoutInfo(
+                    size = element_info.size * count,
+                    alignment = element_info.alignment,
+                ))
+            if g.name == "str_buffer" and g.args.len == 1:
+                var capacity: long = 0
+                match unsafe: read(g.args.data + 0):
+                    types.Type.ty_literal_int as lit:
+                        capacity = lit.value + 1
+                    _:
+                        return Option[LayoutInfo].none
+                # struct { char data[cap]; ptr_uint len; bool dirty; }
+                var offset = capacity
+                offset = layout_align_up(offset, 8)
+                offset += 8
+                offset += 1
+                return Option[LayoutInfo].some(value = LayoutInfo(size = layout_align_up(offset, 8), alignment = 8))
+            return Option[LayoutInfo].none
+        types.Type.ty_imported as im:
+            if im.args.len > 0:
+                return Option[LayoutInfo].none
+            match layout_struct_fields(ctx, im.module_name, im.name):
+                Option.some as fields:
+                    let meta = layout_struct_meta(ctx, im.module_name, im.name)
+                    return layout_aggregate_info(ctx, fields.value, meta.packed, meta.alignment)
+                Option.none:
+                    return Option[LayoutInfo].none
+        types.Type.ty_named as na:
+            match layout_struct_fields(ctx, na.module_name, na.name):
+                Option.some as fields:
+                    let meta = layout_struct_meta(ctx, na.module_name, na.name)
+                    return layout_aggregate_info(ctx, fields.value, meta.packed, meta.alignment)
+                Option.none:
+                    return Option[LayoutInfo].none
+        _:
+            return Option[LayoutInfo].none
+
+
+## Field entries for a named struct: the current module first, then the
+## declaring module of an imported type.
+function layout_struct_fields(ctx: ref[LowerCtx], module_name: str, name: str) -> Option[span[analyzer.FieldEntry]]:
+    if module_name.len == 0 or module_name == ctx.module_name:
+        let local = ctx.analysis.structs.get(name)
+        if local != null:
+            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(local))
+    match find_imported_analysis(ctx, module_name):
+        Option.some as ia:
+            let imported = ia.value.structs.get(name)
+            if imported != null:
+                return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(imported))
+        Option.none:
+            pass
+    return Option[span[analyzer.FieldEntry]].none
+
+
+## `packed` / `alignment` of a named struct's declaration (defaults when the
+## declaration is not found in the module's source file).
+function layout_struct_meta(ctx: ref[LowerCtx], module_name: str, name: str) -> StructMeta:
+    if module_name.len == 0 or module_name == ctx.module_name:
+        return layout_struct_meta_of(ctx.analysis.source_file, name)
+    match find_imported_analysis(ctx, module_name):
+        Option.some as ia:
+            return layout_struct_meta_of(ia.value.source_file, name)
+        Option.none:
+            return StructMeta(packed = false, alignment = 0)
+
+
+function layout_struct_meta_of(sf: ast.SourceFile, name: str) -> StructMeta:
+    var i: ptr_uint = 0
+    while i < sf.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(sf.declarations.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                if s.name == name:
+                    return StructMeta(packed = s.packed, alignment = s.alignment)
+            _:
+                pass
+        i += 1
+    return StructMeta(packed = false, alignment = 0)
+
+
+## C struct layout for an ordered field list (host `struct_layout_from_infos`).
+function layout_aggregate_info(ctx: ref[LowerCtx], fields: span[analyzer.FieldEntry], packed: bool, explicit_alignment: long) -> Option[LayoutInfo]:
+    var offset: long = 0
+    var natural_alignment: long = 1
+    var i: ptr_uint = 0
+    while i < fields.len:
+        var f: analyzer.FieldEntry
+        unsafe:
+            f = read(fields.data + i)
+        let info = layout_info(ctx, f.ty) else:
+            return Option[LayoutInfo].none
+        let effective = if packed: 1 else: info.alignment
+        if effective > natural_alignment:
+            natural_alignment = effective
+        if not packed:
+            offset = layout_align_up(offset, effective)
+        offset += info.size
+        i += 1
+    let overall = if natural_alignment > explicit_alignment: natural_alignment else: explicit_alignment
+    return Option[LayoutInfo].some(value = LayoutInfo(
+        size = layout_align_up(offset, overall),
+        alignment = overall,
+    ))
+
+
+function layout_size(ctx: ref[LowerCtx], ty: types.Type) -> Option[long]:
+    match layout_info(ctx, ty):
+        Option.some as info:
+            return Option[long].some(value = info.value.size)
+        Option.none:
+            return Option[long].none
+
+
+function layout_alignment(ctx: ref[LowerCtx], ty: types.Type) -> Option[long]:
+    match layout_info(ctx, ty):
+        Option.some as info:
+            return Option[long].some(value = info.value.alignment)
+        Option.none:
+            return Option[long].none
+
+
+## Byte offset of a field (host `Layout.offset_of`) for structs, spans, and
+## str_buffers; unions and other shapes are not modelled.
+function layout_offset_of(ctx: ref[LowerCtx], ty: types.Type, field: str) -> Option[long]:
+    match ty:
+        types.Type.ty_generic as g:
+            if g.name == "span" and g.args.len == 1:
+                if field == "data":
+                    return Option[long].some(value = 0)
+                if field == "len":
+                    return Option[long].some(value = 8)
+                return Option[long].none
+            if g.name == "str_buffer" and g.args.len == 1:
+                var capacity: long = 0
+                match unsafe: read(g.args.data + 0):
+                    types.Type.ty_literal_int as lit:
+                        capacity = lit.value + 1
+                    _:
+                        return Option[long].none
+                if field == "data":
+                    return Option[long].some(value = 0)
+                let len_offset = layout_align_up(capacity, 8)
+                if field == "len":
+                    return Option[long].some(value = len_offset)
+                if field == "dirty":
+                    return Option[long].some(value = len_offset + 8)
+                return Option[long].none
+            return Option[long].none
+        types.Type.ty_imported as im:
+            if im.args.len > 0:
+                return Option[long].none
+            match layout_struct_fields(ctx, im.module_name, im.name):
+                Option.some as fields:
+                    let meta = layout_struct_meta(ctx, im.module_name, im.name)
+                    return layout_struct_field_offset(ctx, fields.value, meta.packed, field)
+                Option.none:
+                    return Option[long].none
+        types.Type.ty_named as na:
+            match layout_struct_fields(ctx, na.module_name, na.name):
+                Option.some as fields:
+                    let meta = layout_struct_meta(ctx, na.module_name, na.name)
+                    return layout_struct_field_offset(ctx, fields.value, meta.packed, field)
+                Option.none:
+                    return Option[long].none
+        _:
+            return Option[long].none
+
+
+function layout_struct_field_offset(ctx: ref[LowerCtx], fields: span[analyzer.FieldEntry], packed: bool, field: str) -> Option[long]:
+    var offset: long = 0
+    var i: ptr_uint = 0
+    while i < fields.len:
+        var f: analyzer.FieldEntry
+        unsafe:
+            f = read(fields.data + i)
+        let info = layout_info(ctx, f.ty) else:
+            return Option[long].none
+        let effective = if packed: 1 else: info.alignment
+        if not packed:
+            offset = layout_align_up(offset, effective)
+        if f.name == field:
+            return Option[long].some(value = offset)
+        offset += info.size
+        i += 1
+    return Option[long].none
+
+
 ## Constant-fold an expression whose declared type is known: an expression list
 ## `(a, b, c)` becomes an array literal when the target is `array[T, N]`.
 function try_const_typed_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_mod.Map[str, ptr[ir.Expr]]], target_ty: types.Type) -> Option[ptr[ir.Expr]]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_null_literal as nl:
+                # `null[T]` carries `Types::Null :target_type T`; a bare `null`
+                # takes the constant's declared type (host expression lowering).
+                let tr = nl.target_type
+                if tr != null:
+                    let target = resolve_type_ref(ctx, tr)
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_null_literal(ty = types.Type.ty_null(target = types.alloc_type(target)))))
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_null_literal(ty = target_ty)))
+            _:
+                pass
     match target_ty:
-        types.Type.ty_primitive:
-            # A literal initializer takes the constant's declared type.
+        types.Type.ty_primitive as tp:
+            # A literal initializer takes the constant's declared type.  A
+            # string literal declared as `cstr` becomes a C string literal.
             unsafe:
                 match read(ep):
                     ast.Expr.expr_integer_literal as lit:
@@ -16420,6 +16775,9 @@ function try_const_typed_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: re
                         return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = target_ty)))
                     ast.Expr.expr_char_literal as ch:
                         return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-ch.value, ty = target_ty)))
+                    ast.Expr.expr_string_literal as sl:
+                        let cs = sl.is_cstring or tp.name == "cstr"
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = sl.value, ty = target_ty, cstring = cs)))
                     _:
                         pass
         types.Type.ty_generic as tg:
@@ -16540,7 +16898,48 @@ function try_const_index_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
 
 ## Constant-fold member access: struct fields, `len` on strings/arrays, and
 ## parenthesized-less variant arms (`Option[int].none`).
+## Resolve `alias.MEMBER` where `alias` is an import and `MEMBER` is a constant
+## declared in the imported module (e.g. `c.EOF` in `std/stdio.mt`).  The
+## initializer is evaluated in the imported module's own context, mirroring the
+## host's cross-module constant resolution.
+function imported_const_value_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+    var alias: str
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as rid:
+                alias = rid.name
+            _:
+                return Option[ptr[ir.Expr]].none
+    let target_ptr = ctx.analysis.imports.get(alias)
+    if target_ptr == null:
+        return Option[ptr[ir.Expr]].none
+    let target_module = unsafe: read(target_ptr)
+    let owner_a = find_imported_analysis(ctx, target_module) else:
+        return Option[ptr[ir.Expr]].none
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    ctx.module_name = owner_a.module_name
+    ctx.analysis = owner_a
+    var result = Option[ptr[ir.Expr]].none
+    let decl_val = find_const_value_ast(ctx, member)
+    if decl_val != null:
+        var empty_env = map_mod.Map[str, ptr[ir.Expr]].create()
+        match const_decl_type(ctx, member):
+            Option.some as dt:
+                result = try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-decl_val, ref_of(empty_env), dt.value)
+            Option.none:
+                result = try_const_value_ir(ctx, unsafe: ptr[ast.Expr]<-decl_val, ref_of(empty_env))
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    return result
+
+
 function try_const_member_ir(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member: str, env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+    match imported_const_value_ir(ctx, receiver, member, env):
+        Option.some as imported:
+            return Option[ptr[ir.Expr]].some(value = imported.value)
+        Option.none:
+            pass
     unsafe:
         match read(receiver):
             ast.Expr.expr_specialization as spec:

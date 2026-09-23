@@ -57,7 +57,7 @@ public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Va
     # DFS pre-order, so the root MODULE is found through the order vector
     # (order.last() indexes the root), not modules.last().
     if program.analyses.len() > 0 and program.modules.len() > 0 and program.order.len() > 0:
-        let last_analysis_ptr = program.analyses.last() else:
+        let last_analysis_ptr = program.analyses.get(program.root_index) else:
             program.release()
             return diag_array
         let root_index_ptr = program.order.last() else:

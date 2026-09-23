@@ -3066,7 +3066,7 @@ function debug_command(args: span[str]) -> int:
     stdio.print_line("")
 
     # Root analysis facts
-    let root_analysis_ptr = program.analyses.last() else:
+    let root_analysis_ptr = program.analyses.get(program.root_index) else:
         stdio.print_line("── Facts  (no analyses) ──")
         entry_path_owner.release()
         source_root_owner.release()
