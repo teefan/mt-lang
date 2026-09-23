@@ -41,6 +41,7 @@ import mtc.dap.server as dap
 import mtc.bindgen as bindgen
 import mtc.imported_bindings.registry as ib_registry
 import mtc.imported_bindings.main as ib_main
+import mtc.sexpr as sexpr_mod
 import mtc.std_catalog as std_catalog
 import mtc.version_info as ver
 
@@ -115,14 +116,33 @@ function dispatch_cli(raw_args: span[str]) -> int:
 
     if cmd == "lex":
         var machine = false
-        var file_index: ptr_uint = 1
-        if args.len >= 2 and args[1] == "--machine":
-            machine = true
-            file_index = 2
-        if args.len <= file_index:
+        var sexpr = false
+        var lex_file: Option[str] = Option[str].none
+        var li: ptr_uint = 1
+        while li < args.len:
+            let a = args[li]
+            if a == "--":
+                li += 1
+                continue
+            if a == "--machine":
+                machine = true
+            else if a == "--sexpr":
+                sexpr = true
+            else if a.starts_with("-"):
+                stdio.print_format(c"unknown option: %.*s\n", int<-(a.len), a.data)
+                return 1
+            else:
+                match lex_file:
+                    Option.some:
+                        stdio.print_format(c"unknown option: %.*s\n", int<-(a.len), a.data)
+                        return 1
+                    Option.none:
+                        lex_file = Option[str].some(value = a)
+            li += 1
+        let lf = lex_file else:
             print_help()
             return 1
-        return lex_command(args[file_index], machine)
+        return lex_command(lf, machine, sexpr)
 
     if cmd == "parse":
         if args.len < 2:
@@ -227,11 +247,11 @@ function print_help() -> void:
     stdio.print_line("global options: -v|--verbose  -q|--quiet  --color always|never|auto")
     stdio.print_line("")
     stdio.print_line("commands:")
-    stdio.print_line("  lex   <file> [--machine]                           print the lexer token stream")
+    stdio.print_line("  lex   <file> [--machine|--sexpr]                    print the lexer token stream")
     stdio.print_line("  parse <file>                                       parse source and print AST")
     stdio.print_line("  check <file|dir>... [-I DIR]... [--platform NAME] [-Werror] [--locked] [--frozen]  type-check files/package and imports")
     stdio.print_line("  lint  <file|dir>... [--fix] [--select RULES] [--ignore RULES] [--ignore-generated] [--timings]  report style/correctness warnings")
-    stdio.print_line("  lower <file|dir> [-I DIR]... [--platform NAME]     lower to IR and print it")
+    stdio.print_line("  lower <file|dir> [-I DIR]... [--platform NAME] [--sexpr]  lower to IR and print it")
     stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
     stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--sanitize] [--no-cache] [--clean]")
     stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--keep-c PATH] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--sanitize] [--no-cache] [-- ARGS...]")
@@ -981,7 +1001,18 @@ function lower_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
     var platform = resolver.Platform.linux
-    let path = parse_source_operand(args, ref_of(roots), ref_of(platform)) else:
+    var sexpr = false
+    var filtered = vec.Vec[str].create()
+    defer: filtered.release()
+    filtered.push("lower")
+    var fi: ptr_uint = 1
+    while fi < args.len:
+        if args[fi] == "--sexpr":
+            sexpr = true
+        else:
+            filtered.push(args[fi])
+        fi += 1
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -1004,6 +1035,13 @@ function lower_command(args: span[str]) -> int:
         return 1
 
     let ir_program = lowering.lower(program)
+    if sexpr:
+        var dumped = sexpr_mod.dump_ir(ir_program)
+        defer: dumped.release()
+        stdio.print_format(c"%.*s\n", int<-(dumped.as_str().len), dumped.as_str().data)
+        entry_path_owner.release()
+        source_root_owner.release()
+        return 0
     var rendered = ir_formatter.format_program(ir_program)
     defer: rendered.release()
     let text = rendered.as_str()
@@ -3306,7 +3344,7 @@ function ptr_uint_to_str(value: ptr_uint) -> str:
     return buf.as_str()
 
 
-function lex_command(file_path: str, machine: bool) -> int:
+function lex_command(file_path: str, machine: bool, sexpr: bool) -> int:
     match fs.read_text(file_path):
         Result.failure:
             stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
@@ -3334,6 +3372,13 @@ function lex_command(file_path: str, machine: bool) -> int:
                             rd.message,
                         )
                     di += 1
+
+            if sexpr:
+                var dumped = sexpr_mod.dump_tokens(tokens.as_span(), source)
+                defer: dumped.release()
+                stdio.print_format(c"%.*s\n", int<-(dumped.as_str().len), dumped.as_str().data)
+                diags.release()
+                return 0
 
             stdio.print_format(c"── Tokens  %d  ──\n", int<-(tokens.len()))
 

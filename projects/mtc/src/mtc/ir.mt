@@ -124,6 +124,10 @@ public struct Constant:
     linkage_name: str
     ty: types.Type
     value: ptr[Expr]
+    # Source location (const declaration line + module path), surfaced by the
+    # `--sexpr` IR dump.
+    line: ptr_uint
+    path: str
 
 
 public struct Global:

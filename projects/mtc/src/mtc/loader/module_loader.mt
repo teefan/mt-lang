@@ -11,6 +11,7 @@
 
 import std.fs as fs
 import std.map as map_mod
+import std.path as path_ops
 import std.str as text
 import std.string as string
 import std.vec as vec
@@ -201,7 +202,73 @@ extending Program:
 
 ## Load and check the program rooted at `root_path`, resolving imports against
 ## `roots` for the active `platform`.
+## Absolute, normalized form of `path` (mirrors Ruby's File.expand_path):
+## relative paths resolve against the current directory and `.`/`..` segments
+## collapse.  Module paths feed diagnostics, `#line` directives, and `--sexpr`
+## dumps, all of which the Ruby compiler renders absolute.
+public function absolute_path(path: str) -> string.String:
+    var full = string.String.create()
+    defer: full.release()
+    if path_ops.is_absolute(path):
+        full.append(path)
+    else:
+        match fs.current_directory():
+            Result.success as cwd_payload:
+                var cwd = cwd_payload.value
+                defer: cwd.release()
+                full.append(cwd.as_str())
+                full.push_byte('/')
+                full.append(path)
+            Result.failure:
+                full.append(path)
+    var segments = vec.Vec[string.String].create()
+    defer: segments.release()
+    let text_path = full.as_str()
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i <= text_path.len:
+        if i == text_path.len or text_path.byte_at(i) == 47:
+            if i > start:
+                let seg = text_path.slice(start, i - start)
+                if seg == "..":
+                    match segments.pop():
+                        Option.some as p:
+                            var owned = p.value
+                            owned.release()
+                        Option.none:
+                            pass
+                else if seg != ".":
+                    segments.push(string.String.from_str(seg))
+            start = i + 1
+        i += 1
+    var result = string.String.create()
+    result.push_byte('/')
+    var si: ptr_uint = 0
+    while si < segments.len():
+        if si > 0:
+            result.push_byte('/')
+        let sp = segments.get(si) else:
+            break
+        result.append(unsafe: read(sp).as_str())
+        si += 1
+    return result
+
+
 public function check_program(root_path: str, roots: span[str], platform: resolver.Platform) -> Program:
+    # Normalize the module roots to absolute paths once so every resolved
+    # module path is absolute and consistent with the Ruby loader.
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
+    var abs_roots = vec.Vec[str].create()
+    defer: abs_roots.release()
+    var ri: ptr_uint = 0
+    while ri < roots.len:
+        var abs = absolute_path(unsafe: read(roots.data + ri))
+        abs_roots.push(abs.as_str())
+        owned_roots.push(abs)
+        ri += 1
+    let norm_roots = abs_roots.as_span()
+
     var modules = vec.Vec[LoadedModule].create()
     var visited = map_mod.Map[str, ptr_uint].create()
     var on_stack = map_mod.Map[str, bool].create()
@@ -216,12 +283,12 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     # PreludeInstaller.  Parsing them first also makes them dependency-first in
     # `order`, so they are checked before any consumer.  A prelude that cannot be
     # resolved is skipped silently (the analyzer still synthesizes the types).
-    seed_prelude_module("std.option", roots, platform, ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
-    seed_prelude_module("std.result", roots, platform, ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
+    seed_prelude_module("std.option", norm_roots, platform, ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
+    seed_prelude_module("std.result", norm_roots, platform, ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
 
     parse_all(
         root_resolved,
-        roots,
+        norm_roots,
         platform,
         ref_of(modules),
         ref_of(visited),

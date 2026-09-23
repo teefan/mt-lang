@@ -1025,7 +1025,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                 bv = body_val.value
                             Option.none:
                                 pass
-                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv))
+                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = bv, line = c.line, path = ctx.analysis.source_path))
                 else:
                     # `const EQ: bool = A == B` over constant aggregates folds
                     # at compile time; a C function call is not a constant
@@ -1039,14 +1039,14 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                             pass
                     match folded:
                         Option.some as fb:
-                            constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty))))
+                            constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = alloc_expr(ir.Expr.expr_boolean_literal(value = fb.value, ty = c_ty)), line = c.line, path = ctx.analysis.source_path))
                         Option.none:
                             var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
                             match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
                                 Option.some as cv2:
-                                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = cv2.value))
+                                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = cv2.value, line = c.line, path = ctx.analysis.source_path))
                                 Option.none:
-                                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr)))
+                                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
             ast.Decl.decl_event as ev:
                 var info = ensure_event_runtime(ctx, ev.name)
                 let ev_ty = types.Type.ty_named(module_name = "", name = info.event_c_name)
@@ -1121,7 +1121,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                 cv = body_val.value
                             Option.none:
                                 pass
-                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = cv))
+                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = cv, line = c.line, path = ctx.analysis.source_path))
             _:
                 pass
 
@@ -8123,6 +8123,8 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
         linkage_name = vtable_c_name,
         ty = const_ty,
         value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = const_ty, fields = fields.as_span())),
+        line = 0,
+        path = "",
     ))
 
 
@@ -16343,6 +16345,8 @@ function const_fold_unary_ir(ctx: ref[LowerCtx], op: str, operand: ptr[ir.Expr])
             ir.Expr.expr_integer_literal as li:
                 if op == "-":
                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = -li.value, ty = li.ty)))
+                if op == "~":
+                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = ~li.value, ty = li.ty)))
                 return Option[ptr[ir.Expr]].none
             ir.Expr.expr_float_literal as lf:
                 if op == "-":
