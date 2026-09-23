@@ -355,12 +355,21 @@ function lex_lines(session: ref[LexSession]) -> void:
             actual_end = next_end
             rem -= 1
 
-        # The last line consumed
+        # The last line consumed.  A line without a trailing newline (the last
+        # line of a file) produces a zero-width newline token, like the host.
         let last_nl_start = if consumed_lines > 1: line_start_cached(source, actual_end - 1) else: line_start
-        let last_nl_content_len = actual_end - last_nl_start - 1
+        var last_has_nl = false
+        if actual_end > 0:
+            unsafe:
+                last_has_nl = ubyte<-read(source.data + actual_end - 1) == 10
 
-        let newline_offset = last_nl_start + last_nl_content_len
-        let newline_end_offset = actual_end
+        var newline_offset: ptr_uint = actual_end
+        var newline_end_offset: ptr_uint = actual_end
+        var nl_column: ptr_uint = actual_end - last_nl_start + 1
+        if last_has_nl:
+            let last_nl_content_len = actual_end - last_nl_start - 1
+            newline_offset = last_nl_start + last_nl_content_len
+            nl_column = last_nl_content_len + 1
 
         if session.grouping_depth == 0:
             if is_line_continuation(session):
@@ -371,7 +380,7 @@ function lex_lines(session: ref[LexSession]) -> void:
                     start_offset = newline_offset,
                     end_offset = newline_end_offset,
                     line = line_number + consumed_lines - 1,
-                    column = ptr_uint<-(last_nl_content_len) + 1,
+                    column = nl_column,
                 )
                 session.tokens.push(nl)
 
@@ -383,13 +392,20 @@ function emit_eof(session: ref[LexSession]) -> vec.Vec[tok.Token]:
     if session.grouping_depth > 0:
         session_fatal(session, c"unclosed grouping delimiter", 0, 0)
 
-    # Ruby uses @line_count (total source lines) for dedent, @line_count+1 for eof.
+    # Ruby uses @line_count (`source.lines.count`) for dedent, +1 for eof.
     var total_lines: ptr_uint = 1
-    if session.tokens.len() > 0:
-        let last_ptr = session.tokens.last()
+    if session.src_len > 0:
+        var nl_count: ptr_uint = 0
+        var li: ptr_uint = 0
+        while li < session.src_len:
+            unsafe:
+                if ubyte<-read(session.source.data + li) == 10:
+                    nl_count += 1
+            li += 1
+        total_lines = nl_count
         unsafe:
-            if last_ptr != null:
-                total_lines = read(last_ptr).line
+            if ubyte<-read(session.source.data + session.src_len - 1) != 10:
+                total_lines += 1
 
     while session.indent_stack.len > 1:
         session.indent_stack.pop()

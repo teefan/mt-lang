@@ -43,6 +43,8 @@ public variant SexprValue:
     sv_sym(value: str)
     sv_list(items: span[SexprValue])
     sv_node(name: str, fields: span[SexprField])
+    ## Renders as nothing (host Hash/Set values are elided by the dumper).
+    sv_void
 
 
 # =============================================================================
@@ -124,6 +126,8 @@ public function render_value(buf: ref[string.String], value: SexprValue) -> void
                 render_value(buf, unsafe: read(list.items.data + li))
                 li += 1
             buf.push_byte(')')
+        SexprValue.sv_void:
+            pass
         SexprValue.sv_node as node:
             buf.push_byte('(')
             buf.append(node.name)
@@ -187,8 +191,74 @@ function token_literal_value(token: token_mod.Token, lexeme: str) -> SexprValue:
             return SexprValue.sv_bool(value = true)
         tk.TokenKind.tk_false:
             return SexprValue.sv_bool(value = false)
+        tk.TokenKind.fstring:
+            return fstring_literal_value(lexeme)
         _:
             return SexprValue.sv_nil
+
+
+## The host lexer stores an fstring token's literal as an array of part Hashes,
+## which the dumper elides (printing only the separators).  Reproduce the
+## observable shape by counting parts the same way the host splits them:
+## non-empty text runs plus one entry per interpolation.
+function fstring_literal_value(lexeme: str) -> SexprValue:
+    let count = format_part_count(lexeme)
+    var items = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < count:
+        items.push(SexprValue.sv_void)
+        i += 1
+    return list_value(items.as_span())
+
+
+function format_part_count(lexeme: str) -> ptr_uint:
+    var content: str = ""
+    if lexeme.len >= 4 and lexeme.byte_at(0) == 'f' and lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '<' and lexeme.byte_at(3) == '-':
+        content = lparse.normalize_format_heredoc(lexeme)
+    else if lexeme.len >= 3 and lexeme.byte_at(0) == 'f' and lexeme.byte_at(1) == '"':
+        content = lexeme.slice(2, lexeme.len - 3)
+    else:
+        return 0
+
+    var count: ptr_uint = 0
+    var text_len: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < content.len:
+        let b = content.byte_at(i)
+        if b == '#' and i + 1 < content.len and content.byte_at(i + 1) == '{':
+            if text_len > 0:
+                count += 1
+                text_len = 0
+            var depth: int = 1
+            var j = i + 2
+            while j < content.len and depth > 0:
+                let c = content.byte_at(j)
+                if c == '"':
+                    j += 1
+                    while j < content.len and content.byte_at(j) != '"':
+                        if content.byte_at(j) == '\\':
+                            j += 1
+                        j += 1
+                    j += 1
+                else if c == '{':
+                    depth += 1
+                    j += 1
+                else if c == '}':
+                    depth -= 1
+                    j += 1
+                else:
+                    j += 1
+            count += 1
+            i = j
+        else if b == '\\' and i + 1 < content.len:
+            text_len += 1
+            i += 2
+        else:
+            text_len += 1
+            i += 1
+    if text_len > 0:
+        count += 1
+    return count
 
 
 ## `(token :type :<type> :lexeme "<text>" :literal <value> :line N :column N
@@ -202,22 +272,12 @@ function render_token(buf: ref[string.String], token: token_mod.Token, source: s
     buf.append(" :literal ")
     # Floats render their raw lexeme; other literals go through the value
     # renderer.
-    match token_literal_value(token, lexeme):
+    let literal = token_literal_value(token, lexeme)
+    match literal:
         SexprValue.sv_sym as raw:
             buf.append(raw.value)
-        SexprValue.sv_nil:
-            buf.append("nil")
-        SexprValue.sv_bool as b:
-            if b.value:
-                buf.append("true")
-            else:
-                buf.append("false")
-        SexprValue.sv_int as i:
-            fmt.append_long(buf, i.value)
-        SexprValue.sv_str as s:
-            append_quoted(buf, s.value)
         _:
-            buf.append("nil")
+            render_value(buf, literal)
     buf.append(" :line ")
     fmt.append_ptr_uint(buf, token.line)
     buf.append(" :column ")

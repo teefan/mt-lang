@@ -18,6 +18,10 @@ public struct LexDiagnostic:
 ## This reconstructs the lexeme from byte offsets — the token does not
 ## own its lexeme; the caller must ensure `source` is still alive.
 public function token_lexeme(token: Token, source: str) -> str:
+    # Synthetic zero-width newlines (a file's last line without a trailing
+    # newline) carry the explicit lexeme "\n" in the host lexer.
+    if token.kind == tk.TokenKind.newline and token.start_offset == token.end_offset:
+        return "\n"
     return unsafe: str(data = source.data + token.start_offset, len = token.end_offset - token.start_offset)
 
 
