@@ -5,9 +5,11 @@
 ##   mtc help             Print help
 
 import std.fs as fs
+import std.fmt as fmt_mod
 import std.path as path_ops
 import std.str
 import std.string as string
+import std.time as time
 import std.vec as vec
 import std.stdio as stdio
 import std.process as process
@@ -847,7 +849,12 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], platfor
     match file_path:
         Option.some as p:
             if roots.is_empty():
-                roots.push(path_ops.dirname(p.value))
+                # Only the discovered project root (the nearest ancestor
+                # containing `std/`) is a module root, matching Ruby's
+                # ModuleRoots.roots_for_path.  Adding the source's own
+                # directory would shadow it (roots are matched longest-first)
+                # and derive a basename-only module name (e.g. the invalid C
+                # identifier `2d_camera_mouse_zoom_main`).
                 discover_project_root(p.value, roots)
             return Option[str].some(value = p.value)
         Option.none:
@@ -1450,7 +1457,15 @@ function run_command(args: span[str]) -> int:
     if output_override.is_some():
         output_path = string.String.from_str(output_override.unwrap())
     else:
-        output_path = default_output_path(effective)
+        # Ruby's `run` builds into a temporary directory; use a unique /tmp
+        # path so running an example does not drop a binary next to its source
+        # (and parallel runs stay independent).
+        var default_out = default_output_path(effective)
+        defer: default_out.release()
+        output_path = string.String.from_str("/tmp/mtc_run_")
+        output_path.append(path_ops.basename(default_out.as_str()))
+        output_path.push_byte('_')
+        fmt_mod.append_long(ref_of(output_path), long<-time.now())
 
     # Binary cache: reuse the previously built binary when nothing changed.
     var cache_key = string.String.create()

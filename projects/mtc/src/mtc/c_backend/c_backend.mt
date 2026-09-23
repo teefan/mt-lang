@@ -4642,12 +4642,29 @@ function render_array_literal_expression(e: ref[Emitter], ty: types.Type, elemen
         length = int<-elements.len
     var buf = string.String.create()
     buf.append("(")
-    buf.append(c_type(array_element_type(ty)))
-    buf.append(" [")
-    buf.append(long_to_str(length))
-    buf.append("]) ")
+    buf.append(array_literal_cast_type(ty, length))
+    buf.append(") ")
     buf.append(render_array_literal_initializer(e, elements))
     return buf.as_str()
+
+
+## The C type for an array literal's compound-literal cast, e.g.
+## `array[array[float, 2], 6]` -> `float[6][2]`.  `c_type` alone emits
+## `float[2][6]` (inner dimensions first), which is invalid in a cast.
+function array_literal_cast_type(ty: types.Type, length: long) -> str:
+    var dims = string.String.create()
+    dims.append(long_to_str(length))
+    var base = array_element_type(ty)
+    while is_array_type(base):
+        dims.append("][")
+        dims.append(long_to_str(array_length(base)))
+        base = array_element_type(base)
+    var result = string.String.create()
+    result.append(c_type(base))
+    result.append("[")
+    result.append(dims.as_str())
+    result.append("]")
+    return result.as_str()
 
 
 function render_array_literal_initializer(e: ref[Emitter], elements: span[ir.Expr]) -> str:

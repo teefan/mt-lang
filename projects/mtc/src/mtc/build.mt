@@ -5,10 +5,12 @@
 ## (main.mt).
 
 import std.fs as fs
+import std.fmt as fmt
 import std.path as path_ops
 import std.process as process
 import std.string as string
 import std.str
+import std.time as time
 import std.vec as vec
 
 import mtc.loader.module_loader as loader
@@ -36,7 +38,15 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
     var c_source = c_backend.generate_c(ir_program)
     defer: c_source.release()
 
-    var c_path = string.String.from_str("/tmp/mtc_build.c")
+    # A unique temporary C path: concurrent builds (e.g. a parallel example
+    # sweep) must not clobber each other's generated source.  A fixed
+    # `/tmp/mtc_build.c` made one process compile another's C — spurious
+    # "invalid initializer" / missing-header errors under `xargs -P`.
+    var c_path = string.String.from_str("/tmp/mtc_build_")
+    c_path.append(path_ops.basename(output_path))
+    c_path.push_byte('_')
+    fmt.append_long(ref_of(c_path), long<-time.now())
+    c_path.append(".c")
     defer: c_path.release()
 
     match fs.write_text(c_path.as_str(), c_source.as_str()):
@@ -116,6 +126,14 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
             defer: result.stdout.release()
             defer: result.stderr.release()
             if result.status.exit_code == 0:
+                # The generated C is no longer needed; a failed compile keeps
+                # it on disk so the reported path stays inspectable.
+                match fs.remove(c_path.as_str()):
+                    Result.success:
+                        pass
+                    Result.failure as rm_failure:
+                        var rm_err = rm_failure.error
+                        rm_err.release()
                 return Result[string.String, string.String].success(value = string.String.from_str(output_path))
             var message = string.String.from_str("C compiler exited with an error:\n")
             message.append(result.stderr.as_str())
