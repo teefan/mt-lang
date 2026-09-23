@@ -1389,8 +1389,8 @@ function is_reserved_name(name: str) -> bool:
 function is_generic_constructor_name(name: str) -> bool:
     return (
         name == "ptr" or name == "const_ptr" or name == "own" or name == "ref" or name == "span"
-        or name == "array" or name == "str_buffer" or name == "atomic" or name == "Task"
-        or name == "Option" or name == "Result" or name == "SoA"
+        or         name == "array" or name == "str_buffer" or name == "atomic" or name == "Task"
+        or name == "Option" or name == "Result" or name == "SoA" or name == "simd"
     )
 
 
@@ -2969,6 +2969,23 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 let _ix = infer_expr(ctx, scope, ix.index)
                 if types.is_raw_pointer(rt) and ctx.unsafe_depth == 0:
                     report(ctx, 0, 0, "pointer indexing requires unsafe")
+                # Range slicing: `str[start..stop]` yields `str`;
+                # `array[T,N][a..b]` / `span[T][a..b]` yield `span[T]`.
+                unsafe:
+                    match read(ix.index):
+                        ast.Expr.expr_range:
+                            if types.type_to_string(rt) == "str":
+                                return types.Type.ty_str
+                            match rt:
+                                types.Type.ty_generic as g:
+                                    if g.name == "array" or g.name == "span":
+                                        var span_args = vec.Vec[types.Type].create()
+                                        span_args.push(types.pointer_element(rt))
+                                        return types.Type.ty_generic(name = "span", args = span_args.as_span())
+                                _:
+                                    pass
+                        _:
+                            pass
                 let elem = types.pointer_element(rt)
                 if not types.is_error(elem):
                     return elem
@@ -2983,7 +3000,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 record_call_kind(ctx, ep, call_expr_kind(ctx, call.callee))
                 return ty
             ast.Expr.expr_specialization as spec:
-                let ty = check_specialization_call(ctx, scope, spec.callee, spec.arguments, span[types.Type]())
+                let ty = check_specialization_call(ctx, scope, spec.callee, spec.arguments, span[types.Type](), span[ast.Argument]())
                 record_call_kind(ctx, ep, specialization_kind(ctx, spec.callee, spec.arguments))
                 return ty
             ast.Expr.expr_await as aw:
@@ -3163,6 +3180,18 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
     let rt = infer_expr(ctx, scope, right)
     if is_comparison_op(op) or op == "and" or op == "or":
         return types.primitive("bool")
+    # SIMD arithmetic: vector ⊕ vector (same element and lane count) yields the
+    # vector; vector * scalar and scalar * vector broadcast the scalar.
+    if types.is_simd_type(lt) or types.is_simd_type(rt):
+        if types.is_simd_type(lt) and types.is_simd_type(rt):
+            if types.type_equals(lt, rt) and (op == "+" or op == "-" or op == "*" or op == "/"):
+                return lt
+        if types.is_simd_type(lt) and types.is_numeric(rt) and types.type_equals(types.simd_element_type(lt), rt):
+            if op == "*" or op == "/":
+                return lt
+        if types.is_simd_type(rt) and types.is_numeric(lt) and types.type_equals(types.simd_element_type(rt), lt):
+            if op == "*":
+                return rt
     if (types.is_raw_pointer(lt) or types.is_raw_pointer(rt)) and ctx.unsafe_depth == 0:
         report(ctx, 0, 0, "pointer arithmetic requires unsafe")
     if types.is_numeric(lt) and types.is_numeric(rt):
@@ -3298,7 +3327,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
                     ast.Expr.expr_member_access as ma:
                         return check_member_call(ctx, scope, ma.receiver, ma.member_name, args, arg_span, any_named, ma.line, ma.column)
                     ast.Expr.expr_specialization as spec:
-                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments, arg_span)
+                        return check_specialization_call(ctx, scope, spec.callee, spec.arguments, arg_span, args)
                     ast.Expr.expr_identifier:
                         return check_call(ctx, scope, callee, args, arg_span, any_named)
                     _:
@@ -3311,7 +3340,7 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
 ## is a fully-known local struct, the required hook must exist.  Everything else
 ## (primitives, imported types, type variables, user generic functions) stays
 ## permissive.
-function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], arg_types: span[types.Type]) -> types.Type:
+function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], spec_callee: ptr[ast.Expr], type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument]) -> types.Type:
     unsafe:
         match read(spec_callee):
             ast.Expr.expr_identifier as id:
@@ -3323,6 +3352,8 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                     return check_hook_call(ctx, id.name, type_args, id.line, id.column)
                 if id.name == "adapt" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
                     return check_adapt_call(ctx, type_args)
+                if id.name == "simd" and not ctx.functions.contains(id.name) and scope_get(scope, id.name) == null:
+                    return check_simd_call(ctx, type_args, arg_types, arg_exprs, id.line, id.column)
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null and scope_get(scope, id.name) == null:
                     var subs = map_mod.Map[str, types.Type].create()
@@ -3428,6 +3459,76 @@ function check_adapt_call(ctx: ref[Context], type_args: span[ast.TypeArgument]) 
         arg_ref = read(type_args.data + 0).value
     let iface_name = unsafe: qname_to_str(read(arg_ref).name)
     return types.Type.ty_dyn(iface = iface_name)
+
+
+## `simd[E, N](v0, ..., vN-1)` constructs a SIMD vector.  Requires exactly two
+## type arguments (element type and lane count) and exactly N positional lane
+## values assignable to E.
+function check_simd_call(ctx: ref[Context], type_args: span[ast.TypeArgument], arg_types: span[types.Type], arg_exprs: span[ast.Argument], line: ptr_uint, column: ptr_uint) -> types.Type:
+    if type_args.len != 2:
+        report(ctx, line, column, "simd requires exactly two type arguments")
+        return types.Type.ty_error
+    var elem_ref: ptr[ast.TypeRef]
+    var lane_ref: ptr[ast.TypeRef]
+    unsafe:
+        elem_ref = read(type_args.data + 0).value
+        lane_ref = read(type_args.data + 1).value
+    let elem_ty = resolve_type(ctx, elem_ref)
+    let lane_ty = resolve_type(ctx, lane_ref)
+    var lanes: long = 0
+    match lane_ty:
+        types.Type.ty_literal_int as lit:
+            lanes = lit.value
+        _:
+            report(ctx, line, column, "simd lane count must be an integer literal")
+            return types.Type.ty_error
+    if lanes <= 0:
+        report(ctx, line, column, "simd lane count must be positive")
+        return types.Type.ty_error
+    if long<-arg_types.len != lanes:
+        report(ctx, line, column, "simd construction requires exactly N positional lane values")
+        return types.Type.ty_error
+    var i: ptr_uint = 0
+    while i < arg_types.len:
+        var at: types.Type
+        var arg_expr: ptr[ast.Expr]? = null
+        unsafe:
+            at = read(arg_types.data + i)
+            if i < arg_exprs.len:
+                arg_expr = read(arg_exprs.data + i).arg_value
+        if incompatible_value(elem_ty, at, arg_expr):
+            report(ctx, line, column, "simd lane value type does not match the element type")
+            return types.Type.ty_error
+        i += 1
+    var simd_args = vec.Vec[types.Type].create()
+    simd_args.push(elem_ty)
+    simd_args.push(types.literal_int(lanes))
+    return types.Type.ty_generic(name = "simd", args = simd_args.as_span())
+
+
+## `v.with(lane, value)` returns a copy of `v` with one lane replaced.  The
+## lane index must be an integer and the value assignable to the element type.
+function check_simd_with_call(ctx: ref[Context], simd_ty: types.Type, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> void:
+    if any_named:
+        report(ctx, line, column, "simd.with does not accept named arguments")
+        return
+    if arg_types.len != 2:
+        report(ctx, line, column, "simd.with expects exactly two arguments")
+        return
+    var index_ty: types.Type
+    var value_ty: types.Type
+    unsafe:
+        index_ty = read(arg_types.data + 0)
+        value_ty = read(arg_types.data + 1)
+    if not types.is_integer_type(index_ty):
+        report(ctx, line, column, "simd.with lane index must be an integer")
+    let elem_ty = types.simd_element_type(simd_ty)
+    var value_expr: ptr[ast.Expr]? = null
+    unsafe:
+        if args.len >= 2:
+            value_expr = read(args.data + 1).arg_value
+    if incompatible_value(elem_ty, value_ty, value_expr):
+        report(ctx, line, column, "simd.with lane value type does not match the element type")
 
 
 ## Validate the constraints of an explicit `foo[A, B](...)` call: resolve each
@@ -3808,6 +3909,12 @@ function unwrap_ref(t: types.Type) -> types.Type:
 ## imported): argument-check the signature and flow its return type, or fall back
 ## to a member-existence check when no signature is known.
 function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, method_name: str, args: span[ast.Argument], arg_types: span[types.Type], any_named: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    if types.is_simd_type(receiver_type):
+        if method_name == "with":
+            check_simd_with_call(ctx, receiver_type, args, arg_types, any_named, line, column)
+            return receiver_type
+        report(ctx, line, column, unknown_member_message("method", types.type_to_string(receiver_type), method_name))
+        return types.Type.ty_error
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
             check_signature_call(ctx, method_name, sig.value, args, arg_types, any_named, line, column)

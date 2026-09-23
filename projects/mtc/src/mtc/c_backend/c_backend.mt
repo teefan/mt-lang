@@ -43,6 +43,8 @@ struct Emitter:
     used_labels: map_mod.Map[str, bool]
     # Variant C struct names whose equality helpers must be emitted.
     variant_eq_set: map_mod.Map[str, bool]
+    # Struct C struct names whose equality helpers must be emitted.
+    struct_eq_set: map_mod.Map[str, bool]
     # Nullable value type C trivially emitted as mt_opt_* typedefs.
     opt_type_set: map_mod.Map[str, types.Type]
     # std.c.* backing C names for type aliases, keyed by the internal name
@@ -84,6 +86,7 @@ public function generate_c(program: ir.Program) -> string.String:
         str_lit_map = map_mod.Map[str, str].create(),
         used_labels = map_mod.Map[str, bool].create(),
         variant_eq_set = map_mod.Map[str, bool].create(),
+        struct_eq_set = map_mod.Map[str, bool].create(),
         opt_type_set = map_mod.Map[str, types.Type].create(),
         std_c_backing = map_mod.Map[str, str].create(),
     )
@@ -107,6 +110,17 @@ public function generate_c(program: ir.Program) -> string.String:
     var emitted = emitted_functions(program)
     let funcs = emitted.as_span()
 
+    # Pre-scan functions for aggregate equality to know which helpers to emit
+    # and whether the str-equality helper is required by a helper body.
+    scan_variant_equality(ref_of(e), funcs, program)
+
+    # Slice helpers (`mt_str_slice`, `mt_span_slice_<T>`) used by the program.
+    var slice_has_str = false
+    var slice_has_str_index = false
+    var slice_has_str_concat = false
+    var slice_span_types = vec.Vec[types.Type].create()
+    collect_slice_helpers(funcs, ref_of(slice_has_str), ref_of(slice_has_str_index), ref_of(slice_has_str_concat), ref_of(slice_span_types))
+
     var str_lits = collect_str_literals(funcs)
     var li: ptr_uint = 0
     while li < str_lits.len():
@@ -119,16 +133,17 @@ public function generate_c(program: ir.Program) -> string.String:
     let has_str_literals = str_lits.len() > 0
     var checked_index_types = collect_checked_index_types(funcs)
     var checked_span_index_types = collect_checked_span_index_types(funcs)
-    var tuple_types = collect_tuple_types(funcs)
     var gen_variants = collect_generic_variants(program)
+    var tuple_types = collect_tuple_types(funcs, program, ref_of(gen_variants))
     var opt_structs = collect_opt_struct_decls(program, ref_of(opaques))
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
-    let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs)
+    let use_fatal = uses_fatal_helper(funcs, program) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs) or slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0
     let use_fatal_str = uses_fatal_str_helper(funcs)
     let use_entry_argv = uses_entry_argv(program)
-    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv
-    let use_str_equality = uses_str_equality(funcs)
+    let use_string_view = uses_string_view(funcs, has_str_literals) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv or slice_has_str or slice_has_str_index or slice_has_str_concat
+    let use_str_equality = uses_str_equality(funcs) or equality_helpers_need_str(ref_of(e), program)
+    var simd_types = collect_simd_types(funcs, program)
 
     # Feature-test macros required by the fs/tls support headers and the
     # parallel/detach runtime (mirrors Ruby's _GNU_SOURCE / _POSIX_C_SOURCE
@@ -166,7 +181,7 @@ public function generate_c(program: ir.Program) -> string.String:
     if (use_fatal or use_fatal_str or uses_format_helpers(program)) and not seen_headers.contains("<stdio.h>"):
         seen_headers.set("<stdio.h>", true)
         emit_line(ref_of(e), "#include <stdio.h>")
-    if use_entry_argv and not seen_headers.contains("<string.h>"):
+    if (use_entry_argv or slice_has_str_concat) and not seen_headers.contains("<string.h>"):
         seen_headers.set("<string.h>", true)
         emit_line(ref_of(e), "#include <string.h>")
     if uses_parallel_runtime(program) and not seen_headers.contains("\"uv.h\""):
@@ -188,6 +203,10 @@ public function generate_c(program: ir.Program) -> string.String:
     # are used, independently of the string view — emit only what the program
     # references (the function is a no-op when none are used).
     emit_builtin_type_defs(ref_of(e), program)
+
+    if simd_types.len() > 0:
+        emit_simd_typedefs(ref_of(e), simd_types)
+        emit_line(ref_of(e), "")
 
     if use_fatal:
         emit_fatal_helper(ref_of(e))
@@ -321,7 +340,7 @@ public function generate_c(program: ir.Program) -> string.String:
         # since structs and variants can embed each other by value.  Task structs
         # are included in the sort so that Option[Task[X]] (with value: Task[X])
         # is ordered after the Task struct definition.
-        var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants, ref_of(opt_structs), ref_of(task_seen), ref_of(task_elements))
+        var type_order = topo_sort_types(program.structs, ref_of(gen_variants), program.variants, ref_of(opt_structs), ref_of(task_seen), ref_of(task_elements), tuple_types)
         var toi: ptr_uint = 0
         while toi < type_order.len():
             let node_ptr = type_order.get(toi) else:
@@ -342,13 +361,19 @@ public function generate_c(program: ir.Program) -> string.String:
                         toi += 1
                         continue
                     emit_struct(ref_of(e), read(os_ptr).decl)
-                else:
+                else if node.kind == 4:
                     # kind 4: Task struct
                     var elem = types.primitive("void")
                     let te_ptr = task_elements.get(node.key)
                     if te_ptr != null:
                         elem = unsafe: read(te_ptr)
                     emit_task_struct_type(ref_of(e), node.key, elem)
+                else:
+                    # kind 5: tuple struct
+                    let tuple_ptr = tuple_types.get(node.index) else:
+                        toi += 1
+                        continue
+                    emit_tuple_type_def(ref_of(e), unsafe: read(tuple_ptr))
             emit_line(ref_of(e), "")
             toi += 1
         i = 0
@@ -361,15 +386,6 @@ public function generate_c(program: ir.Program) -> string.String:
         # Emit SoA struct definitions after regular structs (they reference
         # element struct fields by C name).
         emit_soa_types(ref_of(e), funcs, program)
-
-        i = 0
-        while i < tuple_types.len():
-            let ty_ptr = tuple_types.get(i) else:
-                break
-            unsafe:
-                emit_tuple_type_def(ref_of(e), read(ty_ptr))
-            emit_line(ref_of(e), "")
-            i += 1
 
     else:
         # No structs/unions/variants — but span types may still be needed.
@@ -434,12 +450,22 @@ public function generate_c(program: ir.Program) -> string.String:
             i += 1
         emit_line(ref_of(e), "")
 
+    if e.variant_eq_set.len() > 0 or e.struct_eq_set.len() > 0:
+        emit_equality_forward_decls(ref_of(e), program)
+        emit_variant_equality_helpers(ref_of(e), program)
+        emit_struct_equality_helpers(ref_of(e), program)
+
+    if slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0:
+        emit_slice_helpers(ref_of(e), slice_has_str, slice_has_str_index, slice_has_str_concat, slice_span_types)
+
     if program.constants.len > 0:
+        var emitted_consts = emitted_constants(program, funcs)
         var ci: ptr_uint = 0
-        while ci < program.constants.len:
+        while ci < emitted_consts.len():
+            let c_ptr = emitted_consts.get(ci) else:
+                break
             unsafe:
-                let c = read(program.constants.data + ci)
-                emit_line(ref_of(e), render_constant(ref_of(e), c))
+                emit_line(ref_of(e), render_constant(ref_of(e), read(c_ptr)))
             ci += 1
         emit_line(ref_of(e), "")
 
@@ -467,10 +493,6 @@ public function generate_c(program: ir.Program) -> string.String:
     if has_str_buffer_structs(program):
         emit_str_buffer_helpers(ref_of(e))
 
-    # Pre-scan functions for variant equality to know which helpers to emit.
-    scan_variant_equality(ref_of(e), funcs, program)
-    if e.variant_eq_set.len() > 0:
-        emit_variant_equality_helpers(ref_of(e), program)
 
     # Emit the argv → span[str] entry bridge helpers when the entry point uses them.
     if use_entry_argv:
@@ -490,6 +512,192 @@ public function generate_c(program: ir.Program) -> string.String:
 # =============================================================================
 #  Reachability (mirrors c_backend/reachability.rb emitted_functions)
 # =============================================================================
+
+## Constants reachable from the root module, globals, static asserts, and the
+## emitted functions (mirrors Ruby's emitted_constants).  Unreferenced imported
+## constants are pruned; in particular foreign C macros such as libuv's
+## UV__EFTYPE, whose helper macro `UV__ERR` is undefined by the end of uv.h.
+function emitted_constants(program: ir.Program, funcs: span[ir.Function]) -> vec.Vec[ir.Constant]:
+    var by_name = map_mod.Map[str, ptr_uint].create()
+    var i: ptr_uint = 0
+    while i < program.constants.len:
+        unsafe:
+            by_name.set(read(program.constants.data + i).linkage_name, i)
+        i += 1
+    var referenced = map_mod.Map[str, bool].create()
+    var root_prefix = string.String.create()
+    root_prefix.append(naming.module_c_prefix(program.module_name))
+    root_prefix.append("_")
+    i = 0
+    while i < program.constants.len:
+        unsafe:
+            let c = read(program.constants.data + i)
+            if c.linkage_name.starts_with(root_prefix.as_str()):
+                add_constant_ref(c.linkage_name, ref_of(by_name), ref_of(referenced), program)
+        i += 1
+    i = 0
+    while i < program.globals.len:
+        unsafe:
+            collect_constant_refs_expr(read(program.globals.data + i).value, ref_of(by_name), ref_of(referenced), program)
+        i += 1
+    i = 0
+    while i < program.static_asserts.len:
+        unsafe:
+            let sa = read(program.static_asserts.data + i)
+            collect_constant_refs_expr(sa.condition, ref_of(by_name), ref_of(referenced), program)
+            collect_constant_refs_expr(sa.message, ref_of(by_name), ref_of(referenced), program)
+        i += 1
+    i = 0
+    while i < funcs.len:
+        unsafe:
+            collect_constant_refs_stmts(read(funcs.data + i).body, ref_of(by_name), ref_of(referenced), program)
+        i += 1
+    var result = vec.Vec[ir.Constant].create()
+    i = 0
+    while i < program.constants.len:
+        unsafe:
+            let c = read(program.constants.data + i)
+            if referenced.contains(c.linkage_name):
+                result.push(c)
+        i += 1
+    return result
+
+
+## Mark `name` as a referenced constant and recursively scan its value, so
+## constant-to-constant references pull in their dependencies.
+function add_constant_ref(name: str, by_name: ref[map_mod.Map[str, ptr_uint]], referenced: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+    if referenced.contains(name):
+        return
+    let idx_ptr = by_name.get(name) else:
+        return
+    referenced.set(name, true)
+    let idx = unsafe: read(idx_ptr)
+    if idx < program.constants.len:
+        collect_constant_refs_expr(unsafe: read(program.constants.data + idx).value, by_name, referenced, program)
+
+
+function collect_constant_refs_stmts(body: span[ir.Stmt], by_name: ref[map_mod.Map[str, ptr_uint]], referenced: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            collect_constant_refs_stmt(body.data + i, by_name, referenced, program)
+        i += 1
+
+
+function collect_constant_refs_stmt(sp: ptr[ir.Stmt], by_name: ref[map_mod.Map[str, ptr_uint]], referenced: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_local as loc:
+                collect_constant_refs_expr(loc.value, by_name, referenced, program)
+            ir.Stmt.stmt_assignment as asg:
+                collect_constant_refs_expr(asg.target, by_name, referenced, program)
+                collect_constant_refs_expr(asg.value, by_name, referenced, program)
+            ir.Stmt.stmt_expression as ex:
+                collect_constant_refs_expr(ex.expression, by_name, referenced, program)
+            ir.Stmt.stmt_return as r:
+                let rv = r.value
+                if rv != null:
+                    collect_constant_refs_expr(rv, by_name, referenced, program)
+            ir.Stmt.stmt_block as blk:
+                collect_constant_refs_stmts(blk.body, by_name, referenced, program)
+            ir.Stmt.stmt_if as iff:
+                collect_constant_refs_expr(iff.condition, by_name, referenced, program)
+                collect_constant_refs_stmts(iff.then_body, by_name, referenced, program)
+                collect_constant_refs_stmts(iff.else_body, by_name, referenced, program)
+            ir.Stmt.stmt_while as w:
+                collect_constant_refs_expr(w.condition, by_name, referenced, program)
+                collect_constant_refs_stmts(w.body, by_name, referenced, program)
+            ir.Stmt.stmt_for as f:
+                collect_constant_refs_stmt(f.init, by_name, referenced, program)
+                collect_constant_refs_expr(f.condition, by_name, referenced, program)
+                collect_constant_refs_stmts(f.body, by_name, referenced, program)
+                collect_constant_refs_stmt(f.post, by_name, referenced, program)
+            ir.Stmt.stmt_switch as sw:
+                collect_constant_refs_expr(sw.expression, by_name, referenced, program)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    let sc = read(sw.cases.data + ci)
+                    let cv = sc.value
+                    if cv != null:
+                        collect_constant_refs_expr(cv, by_name, referenced, program)
+                    collect_constant_refs_stmts(sc.body, by_name, referenced, program)
+                    ci += 1
+            ir.Stmt.stmt_static_assert as sa:
+                collect_constant_refs_expr(sa.condition, by_name, referenced, program)
+                collect_constant_refs_expr(sa.message, by_name, referenced, program)
+            _:
+                pass
+
+
+function collect_constant_refs_expr(ep: ptr[ir.Expr], by_name: ref[map_mod.Map[str, ptr_uint]], referenced: ref[map_mod.Map[str, bool]], program: ir.Program) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name as n:
+                add_constant_ref(n.name, by_name, referenced, program)
+            ir.Expr.expr_member as m:
+                collect_constant_refs_expr(m.receiver, by_name, referenced, program)
+            ir.Expr.expr_index as ix:
+                collect_constant_refs_expr(ix.receiver, by_name, referenced, program)
+                collect_constant_refs_expr(ix.index, by_name, referenced, program)
+            ir.Expr.expr_checked_index as ix:
+                collect_constant_refs_expr(ix.receiver, by_name, referenced, program)
+                collect_constant_refs_expr(ix.index, by_name, referenced, program)
+            ir.Expr.expr_checked_span_index as ix:
+                collect_constant_refs_expr(ix.receiver, by_name, referenced, program)
+                collect_constant_refs_expr(ix.index, by_name, referenced, program)
+            ir.Expr.expr_nullable_index as ix:
+                collect_constant_refs_expr(ix.receiver, by_name, referenced, program)
+                collect_constant_refs_expr(ix.index, by_name, referenced, program)
+            ir.Expr.expr_nullable_span_index as ix:
+                collect_constant_refs_expr(ix.receiver, by_name, referenced, program)
+                collect_constant_refs_expr(ix.index, by_name, referenced, program)
+            ir.Expr.expr_call as call:
+                var ai: ptr_uint = 0
+                while ai < call.arguments.len:
+                    collect_constant_refs_expr(call.arguments.data + ai, by_name, referenced, program)
+                    ai += 1
+            ir.Expr.expr_call_indirect as call:
+                collect_constant_refs_expr(call.callee, by_name, referenced, program)
+                var bi: ptr_uint = 0
+                while bi < call.arguments.len:
+                    collect_constant_refs_expr(call.arguments.data + bi, by_name, referenced, program)
+                    bi += 1
+            ir.Expr.expr_unary as un:
+                collect_constant_refs_expr(un.operand, by_name, referenced, program)
+            ir.Expr.expr_binary as bin:
+                collect_constant_refs_expr(bin.left, by_name, referenced, program)
+                collect_constant_refs_expr(bin.right, by_name, referenced, program)
+            ir.Expr.expr_conditional as cond:
+                collect_constant_refs_expr(cond.condition, by_name, referenced, program)
+                collect_constant_refs_expr(cond.then_expression, by_name, referenced, program)
+                collect_constant_refs_expr(cond.else_expression, by_name, referenced, program)
+            ir.Expr.expr_reinterpret as rin:
+                collect_constant_refs_expr(rin.expression, by_name, referenced, program)
+            ir.Expr.expr_address_of as addr:
+                collect_constant_refs_expr(addr.expression, by_name, referenced, program)
+            ir.Expr.expr_cast as cast:
+                collect_constant_refs_expr(cast.expression, by_name, referenced, program)
+            ir.Expr.expr_aggregate_literal as agg:
+                var fi: ptr_uint = 0
+                while fi < agg.fields.len:
+                    collect_constant_refs_expr(read(agg.fields.data + fi).value, by_name, referenced, program)
+                    fi += 1
+            ir.Expr.expr_variant_literal as vl:
+                var vi: ptr_uint = 0
+                while vi < vl.fields.len:
+                    collect_constant_refs_expr(read(vl.fields.data + vi).value, by_name, referenced, program)
+                    vi += 1
+            ir.Expr.expr_array_literal as arr:
+                var ei: ptr_uint = 0
+                while ei < arr.elements.len:
+                    collect_constant_refs_expr(arr.elements.data + ei, by_name, referenced, program)
+                    ei += 1
+            ir.Expr.expr_stmt_expr as se:
+                collect_constant_refs_stmts(se.setup, by_name, referenced, program)
+                collect_constant_refs_expr(se.result, by_name, referenced, program)
+            _:
+                pass
+
 
 ## Functions reachable from the entry points (or, absent entry points, from the
 ## root module's own functions), returned in source order.  Prunes unused
@@ -768,6 +976,206 @@ function emit_string_type(e: ref[Emitter]) -> void:
     emit_line(e, "  char* data;")
     emit_line(e, "  uintptr_t len;")
     emit_line(e, "} mt_str;")
+
+
+## True when any emitted function calls `mt_str_slice`; also collects the span
+## result types whose `mt_span_slice_<T>` helpers must be emitted.
+function collect_slice_helpers(funcs: span[ir.Function], has_str: ref[bool], has_str_index: ref[bool], has_str_concat: ref[bool], span_types: ref[vec.Vec[types.Type]]) -> void:
+    var seen = map_mod.Map[str, bool].create()
+    var i: ptr_uint = 0
+    while i < funcs.len:
+        unsafe:
+            collect_slice_from_stmts(read(funcs.data + i).body, has_str, has_str_index, has_str_concat, span_types, ref_of(seen))
+        i += 1
+
+
+function collect_slice_from_stmts(body: span[ir.Stmt], has_str: ref[bool], has_str_index: ref[bool], has_str_concat: ref[bool], span_types: ref[vec.Vec[types.Type]], seen: ref[map_mod.Map[str, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            collect_slice_from_stmt(body.data + i, has_str, has_str_index, has_str_concat, span_types, seen)
+        i += 1
+
+
+function collect_slice_from_stmt(sp: ptr[ir.Stmt], has_str: ref[bool], has_str_index: ref[bool], has_str_concat: ref[bool], span_types: ref[vec.Vec[types.Type]], seen: ref[map_mod.Map[str, bool]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_local as loc:
+                collect_slice_from_expr(loc.value, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Stmt.stmt_assignment as asg:
+                collect_slice_from_expr(asg.target, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(asg.value, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Stmt.stmt_expression as ex:
+                collect_slice_from_expr(ex.expression, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Stmt.stmt_return as r:
+                let rv = r.value
+                if rv != null:
+                    collect_slice_from_expr(rv, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Stmt.stmt_block as blk:
+                collect_slice_from_stmts(blk.body, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Stmt.stmt_if as iff:
+                collect_slice_from_expr(iff.condition, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_stmts(iff.then_body, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_stmts(iff.else_body, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Stmt.stmt_while as w:
+                collect_slice_from_expr(w.condition, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_stmts(w.body, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Stmt.stmt_for as f:
+                collect_slice_from_stmt(f.init, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(f.condition, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_stmts(f.body, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_stmt(f.post, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Stmt.stmt_switch as sw:
+                collect_slice_from_expr(sw.expression, has_str, has_str_index, has_str_concat, span_types, seen)
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    collect_slice_from_stmts(read(sw.cases.data + ci).body, has_str, has_str_index, has_str_concat, span_types, seen)
+                    ci += 1
+            _:
+                pass
+
+
+function collect_slice_from_expr(ep: ptr[ir.Expr], has_str: ref[bool], has_str_index: ref[bool], has_str_concat: ref[bool], span_types: ref[vec.Vec[types.Type]], seen: ref[map_mod.Map[str, bool]]) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call as call:
+                if call.callee == "mt_str_slice":
+                    read(has_str) = true
+                else if call.callee == "mt_str_index":
+                    read(has_str_index) = true
+                else if call.callee == "mt_str_concat":
+                    read(has_str_concat) = true
+                else if call.callee.starts_with("mt_span_slice_"):
+                    let ty = call.ty
+                    if is_span_type(ty):
+                        let name = span_type_name(array_element_type(ty))
+                        if not seen.contains(name):
+                            seen.set(name, true)
+                            span_types.push(ty)
+                var ai: ptr_uint = 0
+                while ai < call.arguments.len:
+                    collect_slice_from_expr(call.arguments.data + ai, has_str, has_str_index, has_str_concat, span_types, seen)
+                    ai += 1
+            ir.Expr.expr_call_indirect as call:
+                collect_slice_from_expr(call.callee, has_str, has_str_index, has_str_concat, span_types, seen)
+                var bi: ptr_uint = 0
+                while bi < call.arguments.len:
+                    collect_slice_from_expr(call.arguments.data + bi, has_str, has_str_index, has_str_concat, span_types, seen)
+                    bi += 1
+            ir.Expr.expr_unary as un:
+                collect_slice_from_expr(un.operand, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_binary as bin:
+                collect_slice_from_expr(bin.left, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(bin.right, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_conditional as cond:
+                collect_slice_from_expr(cond.condition, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(cond.then_expression, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(cond.else_expression, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_member as m:
+                collect_slice_from_expr(m.receiver, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_index as ix:
+                collect_slice_from_expr(ix.receiver, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(ix.index, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_checked_index as ix:
+                collect_slice_from_expr(ix.receiver, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(ix.index, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_checked_span_index as ix:
+                collect_slice_from_expr(ix.receiver, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(ix.index, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_cast as cast:
+                collect_slice_from_expr(cast.expression, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_address_of as addr:
+                collect_slice_from_expr(addr.expression, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_reinterpret as rin:
+                collect_slice_from_expr(rin.expression, has_str, has_str_index, has_str_concat, span_types, seen)
+            ir.Expr.expr_aggregate_literal as agg:
+                var fi: ptr_uint = 0
+                while fi < agg.fields.len:
+                    collect_slice_from_expr(read(agg.fields.data + fi).value, has_str, has_str_index, has_str_concat, span_types, seen)
+                    fi += 1
+            ir.Expr.expr_variant_literal as vl:
+                var vi: ptr_uint = 0
+                while vi < vl.fields.len:
+                    collect_slice_from_expr(read(vl.fields.data + vi).value, has_str, has_str_index, has_str_concat, span_types, seen)
+                    vi += 1
+            ir.Expr.expr_array_literal as arr:
+                var ei: ptr_uint = 0
+                while ei < arr.elements.len:
+                    collect_slice_from_expr(arr.elements.data + ei, has_str, has_str_index, has_str_concat, span_types, seen)
+                    ei += 1
+            ir.Expr.expr_stmt_expr as se:
+                collect_slice_from_stmts(se.setup, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_expr(se.result, has_str, has_str_index, has_str_concat, span_types, seen)
+            _:
+                pass
+
+
+function emit_slice_helpers(e: ref[Emitter], has_str: bool, has_str_index: bool, has_str_concat: bool, span_types: vec.Vec[types.Type]) -> void:
+    if has_str:
+        emit_str_slice_helper(e)
+    if has_str_index:
+        emit_str_index_helper(e)
+    if has_str_concat:
+        emit_str_concat_helper(e)
+    var i: ptr_uint = 0
+    while i < span_types.len():
+        let ty_ptr = span_types.get(i) else:
+            break
+        emit_span_slice_helper(e, unsafe: read(ty_ptr))
+        i += 1
+
+
+function emit_str_concat_helper(e: ref[Emitter]) -> void:
+    emit_line(e, "#define MT_STR_CONCAT_BUF_SIZE 65536")
+    emit_line(e, "")
+    emit_line(e, "static _Thread_local char mt_str_concat_buf[MT_STR_CONCAT_BUF_SIZE];")
+    emit_line(e, "static _Thread_local uintptr_t mt_str_concat_offset = 0;")
+    emit_line(e, "")
+    emit_line(e, "static mt_str mt_str_concat(mt_str a, mt_str b) {")
+    emit_line(e, "  uintptr_t total = a.len + b.len;")
+    emit_line(e, "  if (total > MT_STR_CONCAT_BUF_SIZE) mt_fatal(\"str concatenation exceeds the scratch buffer budget\");")
+    emit_line(e, "  if (mt_str_concat_offset + total > MT_STR_CONCAT_BUF_SIZE) {")
+    emit_line(e, "    mt_str_concat_offset = 0;")
+    emit_line(e, "  }")
+    emit_line(e, "  char* buf = mt_str_concat_buf + mt_str_concat_offset;")
+    emit_line(e, "  if (a.len > 0) memcpy(buf, a.data, a.len);")
+    emit_line(e, "  if (b.len > 0) memcpy(buf + a.len, b.data, b.len);")
+    emit_line(e, "  mt_str_concat_offset += total;")
+    emit_line(e, "  return (mt_str){ .data = buf, .len = total };")
+    emit_line(e, "}")
+    emit_line(e, "")
+
+
+function emit_str_index_helper(e: ref[Emitter]) -> void:
+    emit_line(e, "static uint8_t mt_str_index(mt_str text, uintptr_t index) {")
+    emit_line(e, "  if (index >= text.len) mt_fatal(\"str index out of bounds\");")
+    emit_line(e, "  return (uint8_t)text.data[index];")
+    emit_line(e, "}")
+    emit_line(e, "")
+
+
+function emit_str_slice_helper(e: ref[Emitter]) -> void:
+    emit_line(e, "static bool mt_str_utf8_boundary(mt_str text, uintptr_t index) {")
+    emit_line(e, "  if (index == 0 || index == text.len) return true;")
+    emit_line(e, "  return ((uint8_t)text.data[index] & 0xC0) != 0x80;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static mt_str mt_str_slice(mt_str text, uintptr_t start, uintptr_t stop) {")
+    emit_line(e, "  if (start > stop || stop > text.len) mt_fatal(\"str slice out of bounds\");")
+    emit_line(e, "  if (!mt_str_utf8_boundary(text, start) || !mt_str_utf8_boundary(text, stop)) mt_fatal(\"str slice bounds must be UTF-8 code-unit boundaries\");")
+    emit_line(e, "  return (mt_str){ .data = text.data + start, .len = stop - start };")
+    emit_line(e, "}")
+    emit_line(e, "")
+
+
+function emit_span_slice_helper(e: ref[Emitter], span_ty: types.Type) -> void:
+    let span_name = span_type_name(array_element_type(span_ty))
+    let helper = j2("mt_span_slice_", naming.type_c_key(array_element_type(span_ty)))
+    emit_line(e, j5("static inline ", span_name, " ", helper, j3("(", span_name, " span, uintptr_t start, uintptr_t stop) {")))
+    emit_line(e, "  if (start > stop || stop > span.len) mt_fatal(\"span slice out of bounds\");")
+    emit_line(e, j5("  return (", span_name, "){ .data = span.data + start, .len = stop - start };", "", ""))
+    emit_line(e, "}")
+    emit_line(e, "")
 
 
 function emit_str_equality_helper(e: ref[Emitter]) -> void:
@@ -1626,6 +2034,9 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
         let elem_name = c_type(unsafe: read(args.data + 0))
         let count_str = naming.type_c_key(unsafe: read(args.data + 1))
         return j4("mt_soa_", elem_name, "_", count_str)
+    # simd[T, N] → mt_simd_<T>xN (a GCC vector typedef)
+    if name == "simd" and args.len >= 2:
+        return j4("mt_simd_", naming.type_c_key(unsafe: read(args.data + 0)), "x", naming.type_c_key(unsafe: read(args.data + 1)))
     # array[T, N] in type position (e.g. sizeof) → <elem>[<N>]
     if name == "array" and args.len >= 2:
         return j3(c_type(unsafe: read(args.data + 0)), "[", j2(naming.type_c_key(unsafe: read(args.data + 1)), "]"))
@@ -1652,6 +2063,141 @@ function generic_c_type(name: str, args: span[types.Type]) -> str:
 
 function span_type_name(element: types.Type) -> str:
     return j2("mt_span_", naming.type_c_key(element))
+
+
+# =============================================================================
+#  SIMD type collection + emission
+# =============================================================================
+
+## The C typedef name for a simd[E, N] type.
+function simd_type_name(t: types.Type) -> str:
+    return j4("mt_simd_", naming.type_c_key(types.simd_element_type(t)), "x", long_to_str(types.simd_lane_count(t)))
+
+
+## The byte size of a primitive C scalar type, or 0 when it is not a scalar.
+function primitive_byte_size(name: str) -> long:
+    if name == "bool" or name == "byte" or name == "ubyte" or name == "char":
+        return 1
+    if name == "short" or name == "ushort":
+        return 2
+    if name == "int" or name == "uint" or name == "float":
+        return 4
+    if name == "long" or name == "ulong" or name == "double" or name == "ptr_int" or name == "ptr_uint":
+        return 8
+    return 0
+
+
+## Distinct SIMD types used across the emitted functions and aggregate
+## declarations, deduplicated by C typedef name.
+function collect_simd_types(functions: span[ir.Function], program: ir.Program) -> vec.Vec[types.Type]:
+    var seen = map_mod.Map[str, bool].create()
+    var collected = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < functions.len:
+        unsafe:
+            let f = read(functions.data + i)
+            maybe_add_simd(f.return_type, ref_of(seen), ref_of(collected))
+            var j: ptr_uint = 0
+            while j < f.params.len:
+                maybe_add_simd(read(f.params.data + j).ty, ref_of(seen), ref_of(collected))
+                j += 1
+            simd_from_stmts(f.body, ref_of(seen), ref_of(collected))
+        i += 1
+    i = 0
+    while i < program.structs.len:
+        unsafe:
+            simd_from_fields(read(program.structs.data + i).fields, ref_of(seen), ref_of(collected))
+        i += 1
+    i = 0
+    while i < program.unions.len:
+        unsafe:
+            simd_from_fields(read(program.unions.data + i).fields, ref_of(seen), ref_of(collected))
+        i += 1
+    i = 0
+    while i < program.variants.len:
+        unsafe:
+            let vd = read(program.variants.data + i)
+            var ai: ptr_uint = 0
+            while ai < vd.arms.len:
+                simd_from_fields(read(vd.arms.data + ai).fields, ref_of(seen), ref_of(collected))
+                ai += 1
+        i += 1
+    return collected
+
+
+function maybe_add_simd(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    if not types.is_simd_type(t):
+        return
+    match types.simd_element_type(t):
+        types.Type.ty_primitive as p:
+            if primitive_byte_size(p.name) == 0:
+                return
+        _:
+            return
+    let name = simd_type_name(t)
+    if not seen.contains(name):
+        seen.set(name, true)
+        collected.push(t)
+
+
+function simd_from_fields(fields: span[ir.Field], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            maybe_add_simd(read(fields.data + i).ty, seen, collected)
+        i += 1
+
+
+function simd_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            simd_from_stmt(body.data + i, seen, collected)
+        i += 1
+
+
+function simd_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    unsafe:
+        match read(sp):
+            ir.Stmt.stmt_local as loc:
+                maybe_add_simd(loc.ty, seen, collected)
+            ir.Stmt.stmt_block as blk:
+                simd_from_stmts(blk.body, seen, collected)
+            ir.Stmt.stmt_if as iff:
+                simd_from_stmts(iff.then_body, seen, collected)
+                simd_from_stmts(iff.else_body, seen, collected)
+            ir.Stmt.stmt_while as w:
+                simd_from_stmts(w.body, seen, collected)
+            ir.Stmt.stmt_for as f:
+                simd_from_stmt(f.init, seen, collected)
+                simd_from_stmts(f.body, seen, collected)
+            ir.Stmt.stmt_switch as sw:
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    simd_from_stmts(read(sw.cases.data + ci).body, seen, collected)
+                    ci += 1
+            _:
+                pass
+
+
+function emit_simd_typedefs(e: ref[Emitter], simd_types: vec.Vec[types.Type]) -> void:
+    var i: ptr_uint = 0
+    while i < simd_types.len():
+        let ty_ptr = simd_types.get(i) else:
+            break
+        let t = unsafe: read(ty_ptr)
+        var elem_c = "float"
+        var elem_size: long = 0
+        match types.simd_element_type(t):
+            types.Type.ty_primitive as p:
+                elem_c = primitive_c_type(p.name)
+                elem_size = primitive_byte_size(p.name)
+            _:
+                pass
+        if elem_size > 0:
+            let width = types.simd_lane_count(t) * elem_size
+            emit_line(e, j5("typedef ", elem_c, " ", simd_type_name(t), j3(" __attribute__((__vector_size__(", long_to_str(width), ")));")))
+        i += 1
 
 
 # =============================================================================
@@ -1874,7 +2420,7 @@ function is_tuple_type(t: types.Type) -> bool:
 
 
 ## Distinct tuple types across the emitted functions (params, returns, locals).
-function collect_tuple_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
+function collect_tuple_types(functions: span[ir.Function], program: ir.Program, gen_variants: ref[vec.Vec[ir.VariantDecl]]) -> vec.Vec[types.Type]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -1888,7 +2434,45 @@ function collect_tuple_types(functions: span[ir.Function]) -> vec.Vec[types.Type
                 j += 1
             tuple_from_stmts(f.body, ref_of(seen), ref_of(collected))
         i += 1
+    i = 0
+    while i < program.structs.len:
+        unsafe:
+            tuple_from_fields(read(program.structs.data + i).fields, ref_of(seen), ref_of(collected))
+        i += 1
+    i = 0
+    while i < program.unions.len:
+        unsafe:
+            tuple_from_fields(read(program.unions.data + i).fields, ref_of(seen), ref_of(collected))
+        i += 1
+    i = 0
+    while i < program.variants.len:
+        unsafe:
+            let vd = read(program.variants.data + i)
+            var ai: ptr_uint = 0
+            while ai < vd.arms.len:
+                tuple_from_fields(read(vd.arms.data + ai).fields, ref_of(seen), ref_of(collected))
+                ai += 1
+        i += 1
+    i = 0
+    while i < gen_variants.len():
+        let gv_ptr = gen_variants.get(i) else:
+            break
+        unsafe:
+            let gvd = read(gv_ptr)
+            var gai: ptr_uint = 0
+            while gai < gvd.arms.len:
+                tuple_from_fields(read(gvd.arms.data + gai).fields, ref_of(seen), ref_of(collected))
+                gai += 1
+        i += 1
     return collected
+
+
+function tuple_from_fields(fields: span[ir.Field], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        unsafe:
+            maybe_add_tuple(read(fields.data + i).ty, seen, collected)
+        i += 1
 
 
 function maybe_add_tuple(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
@@ -1913,6 +2497,15 @@ function tuple_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], co
         match read(sp):
             ir.Stmt.stmt_local as loc:
                 maybe_add_tuple(loc.ty, seen, collected)
+                tuple_from_expr(loc.value, seen, collected)
+            ir.Stmt.stmt_assignment as asg:
+                tuple_from_expr(asg.value, seen, collected)
+            ir.Stmt.stmt_expression as ex:
+                tuple_from_expr(ex.expression, seen, collected)
+            ir.Stmt.stmt_return as r:
+                let rv = r.value
+                if rv != null:
+                    tuple_from_expr(rv, seen, collected)
             ir.Stmt.stmt_block as blk:
                 tuple_from_stmts(blk.body, seen, collected)
             ir.Stmt.stmt_if as iff:
@@ -1928,6 +2521,58 @@ function tuple_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], co
                 while ci < sw.cases.len:
                     tuple_from_stmts(read(sw.cases.data + ci).body, seen, collected)
                     ci += 1
+            _:
+                pass
+
+
+## Walk an expression for tuple-typed aggregate literals (e.g. the tuple
+## literal `(10, 20, 30, 40)` coerced into an array local).
+function tuple_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_aggregate_literal as agg:
+                maybe_add_tuple(agg.ty, seen, collected)
+                var fi: ptr_uint = 0
+                while fi < agg.fields.len:
+                    tuple_from_expr(read(agg.fields.data + fi).value, seen, collected)
+                    fi += 1
+            ir.Expr.expr_binary as bin:
+                tuple_from_expr(bin.left, seen, collected)
+                tuple_from_expr(bin.right, seen, collected)
+            ir.Expr.expr_unary as un:
+                tuple_from_expr(un.operand, seen, collected)
+            ir.Expr.expr_conditional as cond:
+                tuple_from_expr(cond.condition, seen, collected)
+                tuple_from_expr(cond.then_expression, seen, collected)
+                tuple_from_expr(cond.else_expression, seen, collected)
+            ir.Expr.expr_call as call:
+                var ai: ptr_uint = 0
+                while ai < call.arguments.len:
+                    tuple_from_expr(call.arguments.data + ai, seen, collected)
+                    ai += 1
+            ir.Expr.expr_call_indirect as call:
+                tuple_from_expr(call.callee, seen, collected)
+                var bi: ptr_uint = 0
+                while bi < call.arguments.len:
+                    tuple_from_expr(call.arguments.data + bi, seen, collected)
+                    bi += 1
+            ir.Expr.expr_cast as cast:
+                tuple_from_expr(cast.expression, seen, collected)
+            ir.Expr.expr_member as m:
+                tuple_from_expr(m.receiver, seen, collected)
+            ir.Expr.expr_index as ix:
+                tuple_from_expr(ix.receiver, seen, collected)
+                tuple_from_expr(ix.index, seen, collected)
+            ir.Expr.expr_address_of as addr:
+                tuple_from_expr(addr.expression, seen, collected)
+            ir.Expr.expr_array_literal as arr:
+                var ei: ptr_uint = 0
+                while ei < arr.elements.len:
+                    tuple_from_expr(arr.elements.data + ei, seen, collected)
+                    ei += 1
+            ir.Expr.expr_stmt_expr as se:
+                tuple_from_stmts(se.setup, seen, collected)
+                tuple_from_expr(se.result, seen, collected)
             _:
                 pass
 
@@ -2612,6 +3257,8 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             if g.args.len > 0:
                 return Option[str].some(value = generic_c_type(g.name, g.args))
             return Option[str].none
+        types.Type.ty_tuple:
+            return Option[str].some(value = tuple_type_name(ty))
         _:
             return Option[str].none
 
@@ -2656,7 +3303,7 @@ function register_variant_arm_aliases(vd: ir.VariantDecl, by_key: ref[map_mod.Ma
         i += 1
 
 
-function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[str]:
+function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]], tuple_types: vec.Vec[types.Type]) -> vec.Vec[str]:
     var deps = vec.Vec[str].create()
     if node.kind == 0:
         unsafe:
@@ -2683,10 +3330,26 @@ function type_node_deps(node: TypeNode, structs: span[ir.StructDecl], gen_varian
                     deps.push(dep.value)
                 Option.none:
                     pass
+    else if node.kind == 5:
+        # A tuple struct embeds its element types by value.
+        let tuple_ptr = tuple_types.get(node.index) else:
+            return deps
+        match unsafe: read(tuple_ptr):
+            types.Type.ty_tuple as tup:
+                var ti: ptr_uint = 0
+                while ti < tup.elements.len:
+                    match by_value_dep_key(unsafe: read(tup.elements.data + ti)):
+                        Option.some as dep:
+                            deps.push(dep.value)
+                        Option.none:
+                            pass
+                    ti += 1
+            _:
+                pass
     return deps
 
 
-function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]]) -> vec.Vec[TypeNode]:
+function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_seen: ref[map_mod.Map[str, bool]], task_elements: ref[map_mod.Map[str, types.Type]], tuple_types: vec.Vec[types.Type]) -> vec.Vec[TypeNode]:
     var nodes = vec.Vec[TypeNode].create()
     var by_key = map_mod.Map[str, ptr_uint].create()
     var i: ptr_uint = 0
@@ -2716,6 +3379,17 @@ function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec
         let key = unsafe: read(os_ptr).decl.linkage_name
         by_key.set(key, nodes.len())
         nodes.push(TypeNode(key = key, kind = 3, index = i))
+        i += 1
+
+    # Tuple struct nodes (kind 5) so a variant/struct that embeds a tuple by
+    # value (e.g. `Option[(str, str)]`) is ordered behind the tuple definition.
+    i = 0
+    while i < tuple_types.len():
+        let t_ptr = tuple_types.get(i) else:
+            break
+        let key = tuple_type_name(unsafe: read(t_ptr))
+        by_key.set(key, nodes.len())
+        nodes.push(TypeNode(key = key, kind = 5, index = i))
         i += 1
 
     # Register each variant's per-arm payload struct name as an alias pointing
@@ -2756,12 +3430,12 @@ function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec
     var result = vec.Vec[TypeNode].create()
     i = 0
     while i < nodes.len():
-        topo_visit_type(ref_of(nodes), i, structs, gen_variants, program_variants, opt_structs, task_elements, ref_of(by_key), ref_of(visited), ref_of(result))
+        topo_visit_type(ref_of(nodes), i, structs, gen_variants, program_variants, opt_structs, task_elements, tuple_types, ref_of(by_key), ref_of(visited), ref_of(result))
         i += 1
     return result
 
 
-function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
+function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs: span[ir.StructDecl], gen_variants: ref[vec.Vec[ir.VariantDecl]], program_variants: span[ir.VariantDecl], opt_structs: ref[vec.Vec[OptionStructEntry]], task_elements: ref[map_mod.Map[str, types.Type]], tuple_types: vec.Vec[types.Type], by_key: ref[map_mod.Map[str, ptr_uint]], visited: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[TypeNode]]) -> void:
     var node: TypeNode
     let node_ptr = nodes.get(index) else:
         return
@@ -2770,7 +3444,7 @@ function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs
     if visited.contains(node.key):
         return
     visited.set(node.key, true)
-    var deps = type_node_deps(node, structs, gen_variants, program_variants, opt_structs, task_elements)
+    var deps = type_node_deps(node, structs, gen_variants, program_variants, opt_structs, task_elements, tuple_types)
     var di: ptr_uint = 0
     while di < deps.len():
         let dep_ptr = deps.get(di) else:
@@ -2778,7 +3452,7 @@ function topo_visit_type(nodes: ref[vec.Vec[TypeNode]], index: ptr_uint, structs
         unsafe:
             let dep_idx = by_key.get(read(dep_ptr))
             if dep_idx != null:
-                topo_visit_type(nodes, read(dep_idx), structs, gen_variants, program_variants, opt_structs, task_elements, by_key, visited, result)
+                topo_visit_type(nodes, read(dep_idx), structs, gen_variants, program_variants, opt_structs, task_elements, tuple_types, by_key, visited, result)
         di += 1
     result.push(node)
 
@@ -3263,6 +3937,8 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                     return call
                 if is_variant_equality(bin.operator, bin.left, bin.right, e):
                     return render_variant_equality(e, bin.operator, bin.left, bin.right)
+                if is_struct_equality(bin.operator, bin.left, bin.right, e):
+                    return render_struct_equality(e, bin.operator, bin.left, bin.right)
                 if is_nullable_null_comparison(bin.operator, bin.left, bin.right):
                     return render_nullable_null_comparison(e, bin.operator, bin.left, bin.right)
                 return render_binary(e, bin.operator, bin.left, bin.right)
@@ -4066,58 +4742,50 @@ function variant_equality_helper_name(variant_c_name: str) -> str:
 ## `e.variant_eq_set` before function emission so helper generation can run
 ## first.
 function scan_variant_equality(e: ref[Emitter], funcs: span[ir.Function], program: ir.Program) -> void:
-    var var_lookup = map_mod.Map[str, ir.VariantDecl].create()
-    # Build lookup: variant linkage_name → VariantDecl
-    var svi: ptr_uint = 0
-    while svi < program.variants.len:
-        unsafe:
-            let vd = read(program.variants.data + svi)
-            var_lookup.set(vd.linkage_name, vd)
-        svi += 1
-    # Register each variant type found in equality comparisons.
+    # Register each aggregate type found in equality comparisons.
     var fi: ptr_uint = 0
     while fi < funcs.len:
         unsafe:
-            scan_stmts_for_variant_eq(e, read(funcs.data + fi).body, ref_of(var_lookup))
+            scan_stmts_for_variant_eq(e, read(funcs.data + fi).body, program)
         fi += 1
 
 
-function scan_stmts_for_variant_eq(e: ref[Emitter], body: span[ir.Stmt], var_lookup: ref[map_mod.Map[str, ir.VariantDecl]]) -> void:
+function scan_stmts_for_variant_eq(e: ref[Emitter], body: span[ir.Stmt], program: ir.Program) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
             let stmt_ptr = body.data + i
             match read(stmt_ptr):
                 ir.Stmt.stmt_local as loc:
-                    scan_expr_for_variant_eq(e, loc.value, var_lookup)
+                    scan_expr_for_variant_eq(e, loc.value, program)
                 ir.Stmt.stmt_expression as es:
-                    scan_expr_for_variant_eq(e, es.expression, var_lookup)
+                    scan_expr_for_variant_eq(e, es.expression, program)
                 ir.Stmt.stmt_assignment as a:
-                    scan_expr_for_variant_eq(e, a.target, var_lookup)
-                    scan_expr_for_variant_eq(e, a.value, var_lookup)
+                    scan_expr_for_variant_eq(e, a.target, program)
+                    scan_expr_for_variant_eq(e, a.value, program)
                 ir.Stmt.stmt_return as r:
                     let v = r.value else:
                         i += 1
                         continue
-                    scan_expr_for_variant_eq(e, v, var_lookup)
+                    scan_expr_for_variant_eq(e, v, program)
                 ir.Stmt.stmt_if as ifs:
-                    scan_expr_for_variant_eq(e, ifs.condition, var_lookup)
-                    scan_stmts_for_variant_eq(e, ifs.then_body, var_lookup)
+                    scan_expr_for_variant_eq(e, ifs.condition, program)
+                    scan_stmts_for_variant_eq(e, ifs.then_body, program)
                     let eb = ifs.else_body
                     if eb.len > 0:
-                        scan_stmts_for_variant_eq(e, eb, var_lookup)
+                        scan_stmts_for_variant_eq(e, eb, program)
                 ir.Stmt.stmt_switch as sw:
-                    scan_expr_for_variant_eq(e, sw.expression, var_lookup)
+                    scan_expr_for_variant_eq(e, sw.expression, program)
                     var ci: ptr_uint = 0
                     while ci < sw.cases.len:
-                        scan_stmts_for_variant_eq(e, unsafe: read(sw.cases.data + ci).body, var_lookup)
+                        scan_stmts_for_variant_eq(e, unsafe: read(sw.cases.data + ci).body, program)
                         ci += 1
                 ir.Stmt.stmt_while as w:
-                    scan_expr_for_variant_eq(e, w.condition, var_lookup)
-                    scan_stmts_for_variant_eq(e, w.body, var_lookup)
+                    scan_expr_for_variant_eq(e, w.condition, program)
+                    scan_stmts_for_variant_eq(e, w.body, program)
                 ir.Stmt.stmt_for as fs:
-                    scan_expr_for_variant_eq(e, fs.condition, var_lookup)
-                    scan_stmts_for_variant_eq(e, fs.body, var_lookup)
+                    scan_expr_for_variant_eq(e, fs.condition, program)
+                    scan_stmts_for_variant_eq(e, fs.body, program)
                 ir.Stmt.stmt_label:
                     pass
                 _:
@@ -4125,61 +4793,58 @@ function scan_stmts_for_variant_eq(e: ref[Emitter], body: span[ir.Stmt], var_loo
         i += 1
 
 
-function scan_expr_for_variant_eq(e: ref[Emitter], ep: ptr[ir.Expr], var_lookup: ref[map_mod.Map[str, ir.VariantDecl]]) -> void:
+function scan_expr_for_variant_eq(e: ref[Emitter], ep: ptr[ir.Expr], program: ir.Program) -> void:
     unsafe:
         match read(ep):
             ir.Expr.expr_binary as bin:
                 if bin.operator == "==" or bin.operator == "!=":
-                    let lt = expr_result_type(bin.left)
-                    let name = variant_c_name_for_type(lt)
-                    if name.len > 0 and var_lookup.contains(name):
-                        e.variant_eq_set.set(name, true)
-                scan_expr_for_variant_eq(e, bin.left, var_lookup)
-                scan_expr_for_variant_eq(e, bin.right, var_lookup)
+                    register_equality_type(e, expr_result_type(bin.left), program)
+                scan_expr_for_variant_eq(e, bin.left, program)
+                scan_expr_for_variant_eq(e, bin.right, program)
             ir.Expr.expr_unary as un:
-                scan_expr_for_variant_eq(e, un.operand, var_lookup)
+                scan_expr_for_variant_eq(e, un.operand, program)
             ir.Expr.expr_call as call:
                 var ci: ptr_uint = 0
                 while ci < call.arguments.len:
                     unsafe:
-                        scan_expr_for_variant_eq(e, call.arguments.data + ci, var_lookup)
+                        scan_expr_for_variant_eq(e, call.arguments.data + ci, program)
                     ci += 1
             ir.Expr.expr_call_indirect as ci:
-                scan_expr_for_variant_eq(e, ci.callee, var_lookup)
+                scan_expr_for_variant_eq(e, ci.callee, program)
                 var ai: ptr_uint = 0
                 while ai < ci.arguments.len:
                     unsafe:
-                        scan_expr_for_variant_eq(e, ci.arguments.data + ai, var_lookup)
+                        scan_expr_for_variant_eq(e, ci.arguments.data + ai, program)
                     ai += 1
             ir.Expr.expr_member as m:
-                scan_expr_for_variant_eq(e, m.receiver, var_lookup)
+                scan_expr_for_variant_eq(e, m.receiver, program)
             ir.Expr.expr_cast as c:
-                scan_expr_for_variant_eq(e, c.expression, var_lookup)
+                scan_expr_for_variant_eq(e, c.expression, program)
             ir.Expr.expr_conditional as cond:
-                scan_expr_for_variant_eq(e, cond.condition, var_lookup)
-                scan_expr_for_variant_eq(e, cond.then_expression, var_lookup)
-                scan_expr_for_variant_eq(e, cond.else_expression, var_lookup)
+                scan_expr_for_variant_eq(e, cond.condition, program)
+                scan_expr_for_variant_eq(e, cond.then_expression, program)
+                scan_expr_for_variant_eq(e, cond.else_expression, program)
             ir.Expr.expr_index as ix:
-                scan_expr_for_variant_eq(e, ix.receiver, var_lookup)
-                scan_expr_for_variant_eq(e, ix.index, var_lookup)
+                scan_expr_for_variant_eq(e, ix.receiver, program)
+                scan_expr_for_variant_eq(e, ix.index, program)
             ir.Expr.expr_address_of as a:
-                scan_expr_for_variant_eq(e, a.expression, var_lookup)
+                scan_expr_for_variant_eq(e, a.expression, program)
             ir.Expr.expr_checked_index as ci:
-                scan_expr_for_variant_eq(e, ci.receiver, var_lookup)
-                scan_expr_for_variant_eq(e, ci.index, var_lookup)
+                scan_expr_for_variant_eq(e, ci.receiver, program)
+                scan_expr_for_variant_eq(e, ci.index, program)
             ir.Expr.expr_checked_span_index as cs:
-                scan_expr_for_variant_eq(e, cs.receiver, var_lookup)
-                scan_expr_for_variant_eq(e, cs.index, var_lookup)
+                scan_expr_for_variant_eq(e, cs.receiver, program)
+                scan_expr_for_variant_eq(e, cs.index, program)
             ir.Expr.expr_aggregate_literal as agg:
                 var fi: ptr_uint = 0
                 while fi < agg.fields.len:
-                    scan_expr_for_variant_eq(e, unsafe: read(agg.fields.data + fi).value, var_lookup)
+                    scan_expr_for_variant_eq(e, unsafe: read(agg.fields.data + fi).value, program)
                     fi += 1
             ir.Expr.expr_array_literal as arr:
                 var ei: ptr_uint = 0
                 while ei < arr.elements.len:
                     unsafe:
-                        scan_expr_for_variant_eq(e, arr.elements.data + ei, var_lookup)
+                        scan_expr_for_variant_eq(e, arr.elements.data + ei, program)
                     ei += 1
             _:
                 pass
@@ -4287,6 +4952,249 @@ function emit_variant_field_compare(e: ref[Emitter], left_expr: str, right_expr:
             _:
                 e.buffer.append(j5("      if (", left_expr, " != ", right_expr, ") return false;"))
         e.buffer.push_byte(10)
+
+
+## Register the equality helper required to compare values of `ty`.  Structs
+## and variants register their helper and recursively register the helpers
+## their fields need; arrays and value nullables recurse into their element and
+## base types.  Primitive, str, and pointer-like types need no helper.
+function register_equality_type(e: ref[Emitter], ty: types.Type, program: ir.Program) -> void:
+    var base = ty
+    if types.is_nullable_type(base):
+        let inner = types.unwrap_nullable(base)
+        if is_pointer_like_for_nullable(inner):
+            return
+        register_equality_type(e, inner, program)
+        return
+    if is_array_type(base):
+        register_equality_type(e, array_element_type(base), program)
+        return
+    let cname = c_type(base)
+    if cname.len == 0 or cname == "void" or cname == "mt_str":
+        return
+    match find_variant_decl_by_c_name(program, cname):
+        Option.some as vd:
+            if not e.variant_eq_set.contains(cname):
+                e.variant_eq_set.set(cname, true)
+                var ai: ptr_uint = 0
+                while ai < vd.value.arms.len:
+                    var arm: ir.VariantArm
+                    unsafe:
+                        arm = read(vd.value.arms.data + ai)
+                    var fi: ptr_uint = 0
+                    while fi < arm.fields.len:
+                        register_equality_type(e, unsafe: read(arm.fields.data + fi).ty, program)
+                        fi += 1
+                    ai += 1
+            return
+        Option.none:
+            pass
+    match find_struct_decl_by_c_name(program, cname):
+        Option.some as sd:
+            if not e.struct_eq_set.contains(cname):
+                e.struct_eq_set.set(cname, true)
+                var sfi: ptr_uint = 0
+                while sfi < sd.value.fields.len:
+                    register_equality_type(e, unsafe: read(sd.value.fields.data + sfi).ty, program)
+                    sfi += 1
+            return
+        Option.none:
+            pass
+
+
+function find_variant_decl_by_c_name(program: ir.Program, cname: str) -> Option[ir.VariantDecl]:
+    var i: ptr_uint = 0
+    while i < program.variants.len:
+        unsafe:
+            let vd = read(program.variants.data + i)
+            if vd.linkage_name == cname:
+                return Option[ir.VariantDecl].some(value = vd)
+        i += 1
+    return Option[ir.VariantDecl].none
+
+
+function find_struct_decl_by_c_name(program: ir.Program, cname: str) -> Option[ir.StructDecl]:
+    var i: ptr_uint = 0
+    while i < program.structs.len:
+        unsafe:
+            let sd = read(program.structs.data + i)
+            if sd.linkage_name == cname:
+                return Option[ir.StructDecl].some(value = sd)
+        i += 1
+    return Option[ir.StructDecl].none
+
+
+## True when any registered aggregate equality helper compares a `str` field
+## (directly, in an array element, or through a value nullable), so the
+## `mt_str_equal` helper must be emitted.
+function equality_helpers_need_str(e: ref[Emitter], program: ir.Program) -> bool:
+    var keys = e.variant_eq_set.keys()
+    while true:
+        let kp = keys.next() else:
+            break
+        let name = unsafe: read(kp)
+        match find_variant_decl_by_c_name(program, name):
+            Option.some as vd:
+                var ai: ptr_uint = 0
+                while ai < vd.value.arms.len:
+                    var arm: ir.VariantArm
+                    unsafe:
+                        arm = read(vd.value.arms.data + ai)
+                    var fi: ptr_uint = 0
+                    while fi < arm.fields.len:
+                        if equality_type_needs_str(unsafe: read(arm.fields.data + fi).ty):
+                            return true
+                        fi += 1
+                    ai += 1
+            Option.none:
+                pass
+    keys = e.struct_eq_set.keys()
+    while true:
+        let kp = keys.next() else:
+            break
+        let name = unsafe: read(kp)
+        match find_struct_decl_by_c_name(program, name):
+            Option.some as sd:
+                var sfi: ptr_uint = 0
+                while sfi < sd.value.fields.len:
+                    if equality_type_needs_str(unsafe: read(sd.value.fields.data + sfi).ty):
+                        return true
+                    sfi += 1
+            Option.none:
+                pass
+    return false
+
+
+function equality_type_needs_str(ty: types.Type) -> bool:
+    if is_str_type(ty):
+        return true
+    if types.is_nullable_type(ty):
+        return equality_type_needs_str(types.unwrap_nullable(ty))
+    if is_array_type(ty):
+        return equality_type_needs_str(array_element_type(ty))
+    return false
+
+
+## Forward declarations for every aggregate equality helper, so helpers can
+## call one another regardless of definition order.
+function emit_equality_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
+    var keys = e.variant_eq_set.keys()
+    while true:
+        let kp = keys.next() else:
+            break
+        let name = unsafe: read(kp)
+        let struct_ty = j3("struct ", name, "")
+        emit_line(e, j6("static bool ", variant_equality_helper_name(name), "(", struct_ty, " left, ", j3(struct_ty, " right);", "")))
+    keys = e.struct_eq_set.keys()
+    while true:
+        let kp = keys.next() else:
+            break
+        let name = unsafe: read(kp)
+        let struct_ty = j3("struct ", name, "")
+        emit_line(e, j6("static bool ", struct_equality_helper_name(name), "(", struct_ty, " left, ", j3(struct_ty, " right);", "")))
+    emit_line(e, "")
+
+
+function struct_equality_helper_name(struct_c_name: str) -> str:
+    return j3("mt_struct_eq_", struct_c_name, "")
+
+
+## Emit one `mt_struct_eq_<name>` helper per registered struct type.
+function emit_struct_equality_helpers(e: ref[Emitter], program: ir.Program) -> void:
+    var keys = e.struct_eq_set.keys()
+    while true:
+        let kp = keys.next() else:
+            break
+        let name = unsafe: read(kp)
+        match find_struct_decl_by_c_name(program, name):
+            Option.some as sd:
+                emit_struct_eq_helper(e, sd.value)
+                emit_line(e, "")
+            Option.none:
+                pass
+
+
+function emit_struct_eq_helper(e: ref[Emitter], sd: ir.StructDecl) -> void:
+    let outer_c = sd.linkage_name
+    let fn_name = struct_equality_helper_name(outer_c)
+    let struct_ty = j3("struct ", outer_c, "")
+    e.buffer.append(j5("static bool ", fn_name, "(", struct_ty, " left, "))
+    e.buffer.append(struct_ty)
+    e.buffer.append(" right) {")
+    e.buffer.push_byte(10)
+    var fi: ptr_uint = 0
+    while fi < sd.fields.len:
+        var field: ir.Field
+        unsafe:
+            field = read(sd.fields.data + fi)
+        if not is_void_type(field.ty):
+            emit_eq_field_guard(e, j3("left.", field.name, ""), j3("right.", field.name, ""), field.ty, 1)
+        fi += 1
+    e.buffer.append("  return true;")
+    e.buffer.push_byte(10)
+    e.buffer.append("}")
+    e.buffer.push_byte(10)
+
+
+## Emit the C guard comparing one field (or nested element) by type:
+##   str                 → mt_str_equal
+##   struct / variant    → the corresponding helper
+##   value nullable      → has_value flag, then the wrapped value
+##   array               → element-wise loop
+##   anything else       → `!=`
+function emit_eq_field_guard(e: ref[Emitter], left_expr: str, right_expr: str, field_ty: types.Type, indent: ptr_uint) -> void:
+    let pad = indent_c(indent)
+    if is_str_type(field_ty):
+        e.buffer.append(j5(pad, "if (!mt_str_equal(", left_expr, ", ", j5(right_expr, ")) return false;", "", "", "")))
+    else if types.is_nullable_type(field_ty) and not is_pointer_like_for_nullable(types.unwrap_nullable(field_ty)):
+        let base = types.unwrap_nullable(field_ty)
+        e.buffer.append(j6(pad, "if (", left_expr, ".has_value != ", right_expr, j3(".has_value) return false;", "", "")))
+        e.buffer.push_byte(10)
+        e.buffer.append(j4(pad, "if (", left_expr, ".has_value) {"))
+        e.buffer.push_byte(10)
+        emit_eq_field_guard(e, j3(left_expr, ".value", ""), j3(right_expr, ".value", ""), base, indent + 1)
+        e.buffer.append(j2(pad, "}"))
+        e.buffer.push_byte(10)
+    else if is_array_type(field_ty):
+        let elem_ty = array_element_type(field_ty)
+        let count = array_length(field_ty)
+        e.buffer.append(j4(pad, "for (uintptr_t index = 0; index < ", long_to_str(count), "; index++) {"))
+        e.buffer.push_byte(10)
+        emit_eq_field_guard(e, j5(left_expr, "[index]", "", "", ""), j5(right_expr, "[index]", "", "", ""), elem_ty, indent + 1)
+        e.buffer.append(j2(pad, "}"))
+        e.buffer.push_byte(10)
+    else:
+        let cname = c_type(field_ty)
+        if e.variant_eq_set.contains(cname):
+            e.buffer.append(j6(pad, "if (!", variant_equality_helper_name(cname), "(", left_expr, j5(", ", right_expr, ")) return false;", "", "")))
+        else if e.struct_eq_set.contains(cname):
+            e.buffer.append(j6(pad, "if (!", struct_equality_helper_name(cname), "(", left_expr, j5(", ", right_expr, ")) return false;", "", "")))
+        else:
+            e.buffer.append(j6(pad, "if (", left_expr, " != ", right_expr, j3(") return false;", "", "")))
+        e.buffer.push_byte(10)
+
+
+## True when the binary expression is a struct `==` / `!=` comparison whose
+## struct type has a registered equality helper.
+function is_struct_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr], e: ref[Emitter]) -> bool:
+    if not (operator == "==" or operator == "!="):
+        return false
+    let lt = expr_result_type(left)
+    let rt = expr_result_type(right)
+    if not types.type_to_string(lt) == types.type_to_string(rt):
+        return false
+    return e.struct_eq_set.contains(c_type(lt))
+
+
+## Render a struct equality expression as a call to the generated helper
+## (`mt_struct_eq_<c_name>(left, right)`); `!=` is negated by the caller.
+function render_struct_equality(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
+    let cname = c_type(expr_result_type(left))
+    let fn_name = struct_equality_helper_name(cname)
+    let call = j5(j2(fn_name, "("), render_expression(e, left), ", ", render_expression(e, right), ")")
+    if operator == "!=":
+        return j2("!", call)
+    return call
 
 
 ## True when `name` is a known primitive type name (mirrors types.mt

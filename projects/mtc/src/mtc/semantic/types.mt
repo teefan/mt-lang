@@ -453,6 +453,41 @@ public function is_ref_type(t: Type) -> bool:
             return false
 
 
+## True when `t` is a SIMD vector type (simd[E, N]).
+public function is_simd_type(t: Type) -> bool:
+    match t:
+        Type.ty_generic as g:
+            return g.name == "simd" and g.args.len == 2
+        _:
+            return false
+
+
+## The lane element type of a simd[E, N] type, or ty_error.
+public function simd_element_type(t: Type) -> Type:
+    match t:
+        Type.ty_generic as g:
+            if g.name == "simd" and g.args.len >= 1:
+                return unsafe: read(g.args.data + 0)
+            return Type.ty_error
+        _:
+            return Type.ty_error
+
+
+## The lane count of a simd[E, N] type, or 0 when unknown.
+public function simd_lane_count(t: Type) -> long:
+    match t:
+        Type.ty_generic as g:
+            if g.name == "simd" and g.args.len >= 2:
+                match unsafe: read(g.args.data + 1):
+                    Type.ty_literal_int as lit:
+                        return lit.value
+                    _:
+                        return 0
+            return 0
+        _:
+            return 0
+
+
 ## True when `t` is a primitive integer (fixed-width or pointer-sized).
 public function is_integer_type(t: Type) -> bool:
     match t:
