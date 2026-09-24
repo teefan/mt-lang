@@ -31,7 +31,76 @@ Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (r
 ~~`docs`, `snapshot`~~ **`snapshot` DONE (§5.8a).  `debug` DONE (§5.8a).**
 Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-Last updated: 2026-07-22 (LSP/linter parity session — 14 rules at parity, semantic tokens fixed)
+**`--sexpr` parity: lex 692/692 and parse 683/692 byte-identical vs Ruby** (was
+~99% lex / ~86% parse); sweep with `tools/sexpr_parity.rb` (§5.9). `lower
+--sexpr` still diverges on the type model (see §0i).
+
+Last updated: 2026-09-24 (`--sexpr` lex/parse parity + `tools/sexpr_parity.rb`)
+
+---
+
+## 0i. 2026-09-24 session — `--sexpr` lex/parse parity + sweep tool
+
+Goal: make the self-host `lex|parse|lower --sexpr` output byte-identical to
+Ruby's. `lex` and `parse` are now effectively at parity; `lower` still has the
+type-model gaps listed below.
+
+### Fixed
+- **Unsigned 64-bit integer literals** render unsigned (`18446744073709551615`,
+  not `-1`); hex/binary literals accept `_` separators (`0xff_ff_00_00`).
+- **Float literals** use correctly-rounded `strtod` (the host's `.to_f`), fixing
+  e.g. `3.14159265358979323846` → `3.14159`.
+- **External files**: directives carry nil positions, declarations render nil
+  visibility, and the raw module line is the `external` line.
+- **Parser**: block-form `if` expressions (`let x = if c:` newline body `else:`)
+  and `event`/`struct` used as struct field names.
+- **`parse` module names** follow the host's package-source-root + project-root
+  fallback; `parse` resolves active-platform variants.
+- **Variant arm payloads** are tagged `Types::VariantArmPayload` and absent IR
+  node types are modelled as nil, matching the host.
+
+### Tooling
+`tools/sexpr_parity.rb` + `rake "sexpr:parity[mode]"` load the Ruby compiler
+once and fork workers, so full-repo sweeps are lex ~4s, parse ~7s, lower ~3min
+(vs ~6–30min per-file). Host-side rejections are reported, not counted as
+failures; the tool warns when `--self` is stale.
+
+### Baseline
+- **lex: 692/692 byte-identical.**
+- **parse: 683/692** — remaining: module-qualified struct destructuring
+  (`let types.Transform(x, y) = t`); 8 host-side rejections (platform-pinned
+  files, empty match arms).
+- **lower: still divergent** (see roadmap).
+
+### Remaining `lower` gaps (roadmap)
+1. **`ref[T]` / lifetime representation** — host keeps the lifetime arg
+   (`Types::Generic "ref" :arguments ["@a", T]`, `:pointer false`); self drops
+   `@a` and/or flips `:pointer`. Editable receiver `this` is host
+   `Types::Struct :pointer true` vs self `Types::Generic ptr[Struct]`.
+2. **Proc / closure lowering** — host `Types::Proc` + `__proc_N__env` struct +
+   `__proc_N__invoke/release/retain/setup_env`; self `Types::Struct mt_proc_T`
+   with inlined setup.
+3. **Dyn interface vtables** — host `Types::DynVtable`, struct `vtable_<Iface>`,
+   method `__dyn_<mod>_<Type>_<method>`; self `Types::Struct`, `mt_dyn_<Iface>`,
+   `__dyn_<mod>_<Type>_<Iface>_<method>`.
+4. **`let … else:` guard binding** — host names the guard temp after the user
+   binding (`value`); self uses `__mt_guard_N`.
+5. **Nested struct C names** — host `<Parent>_<Child>`; self drops the parent
+   path (`<Child>`).
+6. **Opaque/enum declarations missing** — host emits `:opaques` (`RawHandle`,
+   `CFile`) and e.g. `EventError`; self emits none.
+7. **Const folding** — string constants lower to `IR::ZeroInit` (e.g.
+   `RENAME_ARG`); enum/global scalar types default wrong (`short`/`byte`/
+   `ptr_int` vs `int`).
+8. **Generic-instance ordering** — host lists generic base functions
+   (`load`/`store`) before their specializations; self emits specializations
+   first; constant ordering differs.
+9. **Parallel-for / detach naming** — host `mt_pfor_cap_<mod>_pfor_N`,
+   `mt_pfor_work_…`, `mt_spawn_work_…`; self `mt_pcap_…`, `mt_p_work_…`.
+10. **For-loop lowering** — host hoists `__mt_for_stop_N`; self differs.
+11. **Integer-promotion casts** in bit ops differ.
+
+Priority: 1–3 are pervasive (highest leverage); 4–6 localized; 7–11 mechanical.
 
 ---
 
@@ -1109,6 +1178,31 @@ what caught all three §2.5 bugs and all three §2.9 gaps:
 #     (catches unpaired allocs — leaks)
 build/stage2/mtc emit-c FILE -I . | grep -oE '[A-Za-z_][A-Za-z0-9_]*\(' | sort | uniq -c
 ```
+
+For **`--sexpr` output parity** (lex/parse/lower), use the dedicated sweep tool
+`tools/sexpr_parity.rb`. It loads the Ruby compiler once and runs both compilers
+in parallel, so a full-repo sweep takes seconds instead of minutes (Ruby process
+startup, ~0.5s, otherwise dominates). Build a fresh self-host binary first —
+stale binaries give false results (the tool warns when `--self` is older than the
+newest self-host source):
+
+```sh
+ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
+
+ruby tools/sexpr_parity.rb lex   -q            # repo-wide, ~4s
+ruby tools/sexpr_parity.rb parse -q            # repo-wide, ~7s
+ruby tools/sexpr_parity.rb lower -q            # repo-wide, ~3min (nproc jobs)
+ruby tools/sexpr_parity.rb all examples/*.mt   # lex+parse+lower on a subset
+rake "sexpr:parity[lex]"                       # same via Rake
+```
+
+Exit status is 0 only when every comparable file matches; host-side rejections
+(e.g. platform-pinned files, empty match arms) are reported but not counted as
+failures. Current baseline: **lex 692/692, parse 683/692 byte-identical**; the
+remaining `parse` gap is module-qualified struct destructuring
+(`let types.Transform(x, y) = t`); `lower` still diverges on the type model
+(`ref`/pointer representation, proc closures, dyn vtables, guard binding names,
+nested-struct C names, const folding, generic-instance ordering).
 
 ---
 

@@ -266,6 +266,20 @@ namespace :tools do
   end
 end
 
+namespace :sexpr do
+  desc 'Compare self-host vs Ruby host --sexpr output (args: mode, target; env: SELF, JOBS, QUIET)'
+  task :parity, [:mode, :target] do |_t, args|
+    mode = args[:mode] || ENV['MODE'] || 'all'
+    cmd = ['ruby', 'tools/sexpr_parity.rb', mode]
+    target = args[:target] || ENV['TARGET']
+    cmd << target if target && !target.empty?
+    cmd.concat(['--self', ENV['SELF']]) if ENV['SELF']
+    cmd.concat(['--jobs', ENV['JOBS']]) if ENV['JOBS']
+    cmd << '--quiet' if ENV['QUIET']
+    sh(*cmd)
+  end
+end
+
 namespace :imported_bindings do
   desc 'Regenerate all checked-in imported binding modules'
   task all: IMPORTED_BINDINGS.task_names
