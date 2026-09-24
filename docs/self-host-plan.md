@@ -73,16 +73,22 @@ failures; the tool warns when `--self` is stale.
 - **lower: still divergent** (see roadmap).
 
 ### Remaining `lower` gaps (roadmap)
-1. **`ref[T]` / lifetime representation** — host keeps the lifetime arg
-   (`Types::Generic "ref" :arguments ["@a", T]`, `:pointer false`); self drops
-   `@a` and/or flips `:pointer`. Editable receiver `this` is host
-   `Types::Struct :pointer true` vs self `Types::Generic ptr[Struct]`.
+1. **`ref[T]` / pointer representation** — **core DONE** (commit "Encode pointer
+   receivers and args like the host"): a pointer-lowered receiver is now its
+   base type with `:pointer true` (C adds the `*`), params are never
+   pointer-lowered, and the implicit method borrow/coercions recognize
+   pointer-flagged names. **Remaining:** explicit lifetime args
+   (`Types::Generic "ref" :arguments ["@a", T]`) are still dropped.
 2. **Proc / closure lowering** — host `Types::Proc` + `__proc_N__env` struct +
    `__proc_N__invoke/release/retain/setup_env`; self `Types::Struct mt_proc_T`
-   with inlined setup.
-3. **Dyn interface vtables** — host `Types::DynVtable`, struct `vtable_<Iface>`,
-   method `__dyn_<mod>_<Type>_<method>`; self `Types::Struct`, `mt_dyn_<Iface>`,
-   `__dyn_<mod>_<Type>_<Iface>_<method>`.
+   with inlined setup. **Not started** (largest remaining item; 27 corpus files
+   use proc literals).
+3. **Dyn interface vtables** — **PARTIAL DONE** (commit "Type and name dyn
+   vtables like the host"): added `Types::DynVtable` (ty_dyn_vtable), vtable
+   struct name `vtable_<Iface>`, wrapper name `__dyn_<Concrete>_<method>`.
+   **Remaining:** the `mt_dyn_<Iface>` value struct is still emitted as a
+   synthetic IR struct (host derives it in the C backend); `vtable` field
+   const-ness differs.
 4. **`let … else:` guard binding** — host names the guard temp after the user
    binding (`value`); self uses `__mt_guard_N`.
 5. **Nested struct C names** — host `<Parent>_<Child>`; self drops the parent
