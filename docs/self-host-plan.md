@@ -31,11 +31,14 @@ Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (r
 ~~`docs`, `snapshot`~~ **`snapshot` DONE (§5.8a).  `debug` DONE (§5.8a).**
 Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-**`--sexpr` parity: lex 692/692 and parse 683/692 byte-identical vs Ruby** (was
-~99% lex / ~86% parse); sweep with `tools/sexpr_parity.rb` (§5.9). `lower
---sexpr` still diverges on the type model (see §0i).
+**`--sexpr` parity: lex 692/692 and parse 683 comparable files byte-identical vs
+Ruby** (1 self-side gap remains: module-qualified struct destructuring; 8
+host-side rejections); sweep with `tools/sexpr_parity.rb` (§5.9). `lower
+--sexpr` still diverges, but the two pervasive type-model categories
+(ref/lifetime, dyn vtables) are now closed — overwhelmingly proc/closure
+lowering remains (§0i).
 
-Last updated: 2026-09-24 (`--sexpr` lex/parse parity + `tools/sexpr_parity.rb`)
+Last updated: 2026-09-24 (closed the ref/lifetime and dyn `lower` categories)
 
 ---
 
@@ -73,26 +76,26 @@ failures; the tool warns when `--self` is stale.
 - **lower: still divergent** (see roadmap).
 
 ### Remaining `lower` gaps (roadmap)
-1. **`ref[T]` / pointer representation** — **core DONE** (commit "Encode pointer
-   receivers and args like the host"): a pointer-lowered receiver is now its
-   base type with `:pointer true` (C adds the `*`), params are never
-   pointer-lowered, and the implicit method borrow/coercions recognize
-   pointer-flagged names. **Remaining:** explicit lifetime args
-   (`Types::Generic "ref" :arguments ["@a", T]`) are still dropped.
+1. **`ref[T]` / pointer representation** — **DONE**: a pointer-lowered receiver
+   is its base type with `:pointer true` (C adds the `*`), params are never
+   pointer-lowered, implicit method borrow/coercions recognize pointer-flagged
+   names, and explicit lifetime args render like the host (`ref[@a, T]`) with
+   the referent taken from the last argument at every extraction site.
 2. **Proc / closure lowering** — host `Types::Proc` + `__proc_N__env` struct +
    `__proc_N__invoke/release/retain/setup_env`; self `Types::Struct mt_proc_T`
    with inlined setup. **Not started** (largest remaining item; 27 corpus files
    use proc literals).
-3. **Dyn interface vtables** — **PARTIAL DONE** (commit "Type and name dyn
-   vtables like the host"): added `Types::DynVtable` (ty_dyn_vtable), vtable
-   struct name `vtable_<Iface>`, wrapper name `__dyn_<Concrete>_<method>`.
-   **Remaining:** the `mt_dyn_<Iface>` value struct is still emitted as a
-   synthetic IR struct (host derives it in the C backend); `vtable` field
-   const-ness differs.
+3. **Dyn interface vtables** — **DONE**: `Types::DynVtable`, vtable struct
+   `vtable_<Iface>`, wrapper `__dyn_<Concrete>_<method>`, the
+   `mt_dyn_<Iface>` value struct routed to `Program.monomorphized_structs`
+   (host parity), vtable field `void*`/`data`-named, adapt-call cast
+   `ptr[DynVtable] → void*`, method slot typed with the vtable's
+   `Types::Function`.
 4. **`let … else:` guard binding** — host names the guard temp after the user
    binding (`value`); self uses `__mt_guard_N`.
 5. **Nested struct C names** — host `<Parent>_<Child>`; self drops the parent
-   path (`<Child>`).
+   path (`<Child>`); C only (host also names the union
+   `<Variant>_data`, self `<Variant>__data`).
 6. **Opaque/enum declarations missing** — host emits `:opaques` (`RawHandle`,
    `CFile`) and e.g. `EventError`; self emits none.
 7. **Const folding** — string constants lower to `IR::ZeroInit` (e.g.
@@ -105,8 +108,13 @@ failures; the tool warns when `--self` is stale.
    `mt_pfor_work_…`, `mt_spawn_work_…`; self `mt_pcap_…`, `mt_p_work_…`.
 10. **For-loop lowering** — host hoists `__mt_for_stop_N`; self differs.
 11. **Integer-promotion casts** in bit ops differ.
+12. **Contextual integer-literal typing** — host types an integer literal used
+    where a `ptr_uint`/`ubyte` field is expected (e.g. `len = 64`) with the
+    field's type; self types it `int`.
+13. **Variant-match goto** — host emits an explicit `IR::GotoStmt` to the match
+    end after each no-fallthrough arm body; self omits it.
 
-Priority: 1–3 are pervasive (highest leverage); 4–6 localized; 7–11 mechanical.
+Priority: 2 is the last pervasive item; 4–13 are localized/mechanical.
 
 ---
 

@@ -575,6 +575,10 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             return node("Types::LiteralTypeArg", fields1(field_int("value", lit.value)))
         types.Type.ty_var as v:
             return node("Types::TypeVar", fields1(field_str("name", v.name)))
+        types.Type.ty_lifetime as lt:
+            # The host stores the raw lifetime name as a generic argument and
+            # renders it as a bare quoted string, not a tagged node.
+            return SexprValue.sv_str(value = lt.name)
         types.Type.ty_opaque as op:
             var of = vec.Vec[SexprField].create()
             of.push(field_str("name", op.name))

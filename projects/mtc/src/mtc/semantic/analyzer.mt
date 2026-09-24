@@ -1248,7 +1248,7 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
             pass
 
     let name = qname_to_str(t.name)
-    let base = resolve_named(ctx, name, t.arguments, depth, t.line, t.column)
+    let base = resolve_named(ctx, name, t.arguments, t.lifetime, depth, t.line, t.column)
     return wrap_nullable(base, t.nullable)
 
 
@@ -1303,7 +1303,7 @@ function wrap_nullable(base: types.Type, nullable: bool) -> types.Type:
     return base
 
 
-function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], depth: int, line: ptr_uint, column: ptr_uint) -> types.Type:
+function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef], lifetime: Option[str], depth: int, line: ptr_uint, column: ptr_uint) -> types.Type:
     # An in-scope generic type parameter is a type variable, carrying whatever
     # `implements` constraints its declaration gave it.
     if ctx.type_params.contains(name):
@@ -1319,6 +1319,18 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
         return types.Type.ty_type_meta
     if is_generic_constructor_name(name):
         var args = vec.Vec[types.Type].create()
+        # The host keeps an explicit lifetime as the first `ref` argument
+        # (`ref[@a, T]`); the AST stores the name without its sigil, so add it
+        # back here.  Extraction takes the last argument as the referent.
+        if name == "ref":
+            match lifetime:
+                Option.some as lt:
+                    var lt_buf = string.String.create()
+                    lt_buf.append("@")
+                    lt_buf.append(lt.value)
+                    args.push(types.Type.ty_lifetime(name = lt_buf.as_str()))
+                Option.none:
+                    pass
         var i: ptr_uint = 0
         while i < arguments.len:
             var a: ast.TypeRef
@@ -3935,12 +3947,14 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
 
 
 ## See through a `ref[T]` receiver to `T` for member access and method calls,
-## matching the language's auto-dereference of `ref` receivers.
+## matching the language's auto-dereference of `ref` receivers.  An explicit
+## lifetime (`ref[@a, T]`) occupies the first argument, so the referent is the
+## last one.
 function unwrap_ref(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
-            if g.name == "ref" and g.args.len == 1:
-                return unsafe: read(g.args.data + 0)
+            if g.name == "ref" and g.args.len >= 1:
+                return unsafe: read(g.args.data + (g.args.len - 1))
             return t
         _:
             return t

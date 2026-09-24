@@ -36,6 +36,10 @@ public variant Type:
     ty_variant_arm_payload(variant_name: str, name: str, module_name: str, c_name: str)
     ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
+    # An explicit lifetime argument on a `ref` type (`ref[@a, T]`).  The host
+    # keeps the raw lifetime name (`"@a"`) as the first generic argument; it
+    # renders as a bare quoted string and the referent is the last argument.
+    ty_lifetime(name: str)
     ty_dyn(iface: str)
     # A `dyn` interface vtable type.  Mirrors Ruby's `Types::DynVtable`
     # (`interface_name` + generated `mt_vtable_<Iface>` linkage name); its field
@@ -195,6 +199,8 @@ public function type_to_string(t: Type) -> str:
             return type_to_string(Type.ty_generic(name = im.name, args = im.args))
         Type.ty_var as v:
             return v.name
+        Type.ty_lifetime as lt:
+            return lt.name
         Type.ty_dyn as d:
             return d.iface
         Type.ty_dyn_vtable as dv:
@@ -426,6 +432,12 @@ public function type_equals(a: Type, b: Type) -> bool:
                     return va.name == vb.name
                 _:
                     return false
+        Type.ty_lifetime as la:
+            match b:
+                Type.ty_lifetime as lb:
+                    return la.name == lb.name
+                _:
+                    return false
         Type.ty_dyn as da:
             match b:
                 Type.ty_dyn as db:
@@ -527,11 +539,15 @@ public function is_own_type(t: Type) -> bool:
 
 
 ## The element type of a pointer or array-like type.  Returns ty_error for
-## anything that is not ptr / const_ptr / ref / span / array.
+## anything that is not ptr / const_ptr / ref / span / array.  A `ref` may carry
+## an explicit lifetime as its first argument (`ref[@a, T]`), so its referent is
+## the last argument (mirrors the host's `referenced_type`).
 public function pointer_element(t: Type) -> Type:
     match t:
         Type.ty_generic as g:
             if g.args.len >= 1:
+                if g.name == "ref":
+                    return unsafe: read(g.args.data + (g.args.len - 1))
                 return unsafe: read(g.args.data + 0)
             return Type.ty_error
         _:

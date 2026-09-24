@@ -4967,7 +4967,11 @@ function pointer_member_receiver(ep: ptr[ir.Expr]) -> bool:
 function is_ptr_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
-            return (g.name == "ptr" or g.name == "own" or g.name == "ref") and g.args.len == 1
+            # A `ref` may carry an explicit lifetime (`ref[@a, T]`), so it is not
+            # restricted to one argument (mirrors the host's `ref_type?`).
+            if g.name == "ref":
+                return g.args.len >= 1
+            return (g.name == "ptr" or g.name == "own") and g.args.len == 1
         _:
             return false
 

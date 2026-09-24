@@ -177,7 +177,10 @@ struct LowerCtx:
     pending_synthetic_functions: vec.Vec[ir.Function]
     # Pending capture-env structs for capturing procs.
     pending_env_structs: vec.Vec[ir.StructDecl]
-    # Pending dyn struct types (mt_dyn_{iface}) and vtable artifacts.
+    # Pending dyn struct types (`mt_dyn_<Iface>`) and vtable artifacts.  The host's
+    # C backend derives the `Types::Dyn` value structs from the dyn types in use
+    # rather than carrying them in the IR, so they are routed to
+    # `Program.monomorphized_structs` (see below).
     pending_dyn_structs: vec.Vec[ir.StructDecl]
     pending_dyn_vtable_structs: vec.Vec[ir.StructDecl]
     pending_dyn_wrappers: vec.Vec[ir.Function]
@@ -1352,7 +1355,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
     while true:
         let ds_ptr = ds_iter.next() else:
             break
-        structs.push(unsafe: read(ds_ptr))
+        monomorphized.push(unsafe: read(ds_ptr))
     var dvs_iter = ctx.pending_dyn_vtable_structs.iter()
     while true:
         let dvs_ptr = dvs_iter.next() else:
@@ -2773,9 +2776,19 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     # in an IR block, so its locals get a distinct C scope (`{ }`).
                     # Without this, sibling `unsafe:` blocks that each declare the
                     # same local name (e.g. `let t = read(tok)`) collide in the flat
-                    # function scope ("redefinition of 't'").
+                    # function scope ("redefinition of 't'").  The parser wraps an
+                    # indented body in a `stmt_block`, which must be unwrapped here
+                    # so the result is a single block (matching the host).
                     var body_stmts = vec.Vec[ir.Stmt].create()
-                    lower_stmt(ctx, ref_of(body_stmts), ptr[ast.Stmt]<-u.body)
+                    unsafe:
+                        match read(ptr[ast.Stmt]<-u.body):
+                            ast.Stmt.stmt_block as blk:
+                                var bi: ptr_uint = 0
+                                while bi < blk.statements.len:
+                                    lower_stmt(ctx, ref_of(body_stmts), blk.statements.data + bi)
+                                    bi += 1
+                            _:
+                                lower_stmt(ctx, ref_of(body_stmts), ptr[ast.Stmt]<-u.body)
                     output.push(ir.Stmt.stmt_block(body = body_stmts.as_span()))
                 return
             ast.Stmt.stmt_block as blk:
@@ -8268,18 +8281,21 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
             let concrete_name = canonical_type_name(ctx.module_name, concrete_type)
             let vtable_name = ensure_dyn_vtable(ctx, concrete_name, concrete_type, iface_name, methods, ia.value.module_name, type_args.as_span(), ia.value.type_params)
             var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
-            var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(ctx.void_ty))
+            # The vtable constant has the `DynVtable` type; its address is a
+            # `ptr[DynVtable]`, then cast to `void*` for the fat-pointer field.
+            let vtable_ty = types.Type.ty_dyn_vtable(interface_name = iface_name, linkage_name = j2("mt_vtable_", iface_name))
+            let vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(vtable_ty))
             return alloc_expr(ir.Expr.expr_aggregate_literal(
                 ty = types.Type.ty_dyn(iface = iface_name),
                 fields = sp_fields2(
                     ir.AggregateField(name = "data", value = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = arg_value, ty = void_ptr))),
                     ir.AggregateField(name = "vtable", value = alloc_expr(ir.Expr.expr_cast(
-                        target_type = const_void_ptr,
+                        target_type = void_ptr,
                         expression = alloc_expr(ir.Expr.expr_address_of(
-                            expression = alloc_expr(ir.Expr.expr_name(name = vtable_name, ty = void_ptr, pointer = false)),
-                            ty = void_ptr,
+                            expression = alloc_expr(ir.Expr.expr_name(name = vtable_name, ty = vtable_ty, pointer = false)),
+                            ty = vtable_ptr_ty,
                         )),
-                        ty = const_void_ptr,
+                        ty = void_ptr,
                     ))),
                 ),
             ))
@@ -8433,10 +8449,9 @@ function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
         if unsafe: read(s_ptr).linkage_name == name:
             return
     var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
-    var const_void_ptr = types.Type.ty_generic(name = "const_ptr", args = sp_type(ctx.void_ty))
     var fields = vec.Vec[ir.Field].create()
     fields.push(ir.Field(name = "data", ty = void_ptr))
-    fields.push(ir.Field(name = "vtable", ty = const_void_ptr))
+    fields.push(ir.Field(name = "vtable", ty = void_ptr))
     ctx.pending_dyn_structs.push(ir.StructDecl(name = name, linkage_name = name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
 
@@ -8460,7 +8475,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], iface_name: str, methods: 
         var fn_params = vec.Vec[types.Type].create()
         var fn_param_names = vec.Vec[str].create()
         fn_params.push(void_ptr)
-        fn_param_names.push("this")
+        fn_param_names.push("data")
         var pi: ptr_uint = 0
         while pi < m.method_params.len:
             var p: ast.Param
@@ -8649,7 +8664,7 @@ function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_na
     let vtable_ty = types.Type.ty_dyn_vtable(interface_name = dyn_vtable_iface_name(recv_ty), linkage_name = vtable_c_type)
     var vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(vtable_ty))
     let vtable_cast = alloc_expr(ir.Expr.expr_cast(target_type = vtable_ptr_ty, expression = vtable_raw, ty = vtable_ptr_ty))
-    let method_fn = alloc_expr(ir.Expr.expr_member(receiver = vtable_cast, member = method_name, ty = void_ptr))
+    let method_fn = alloc_expr(ir.Expr.expr_member(receiver = vtable_cast, member = method_name, ty = dyn_vtable_method_fn_type(ctx, dyn_vtable_iface_name(recv_ty), method_name)))
     var call_args = vec.Vec[ir.Expr].create()
     unsafe:
         call_args.push(read(data))
@@ -8708,6 +8723,27 @@ function dyn_vtable_iface_name(t: types.Type) -> str:
             return d.iface
         _:
             return "unknown"
+
+
+## The `Types::Function` type of an interface method's vtable slot, looked up in
+## the generated `mt_vtable_<Iface>` struct declaration.  The method-call site
+## types the function pointer member with it (matching the host); falls back to
+## `ptr[void]` when the vtable has not been generated yet.
+function dyn_vtable_method_fn_type(ctx: ref[LowerCtx], iface_name: str, method_name: str) -> types.Type:
+    let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
+    var iter = ctx.pending_dyn_vtable_structs.iter()
+    while true:
+        let s_ptr = iter.next() else:
+            break
+        let decl = unsafe: read(s_ptr)
+        if decl.linkage_name == vtable_type_c_name:
+            var fi: ptr_uint = 0
+            while fi < decl.fields.len:
+                let f = unsafe: read(decl.fields.data + fi)
+                if f.name == method_name:
+                    return f.ty
+                fi += 1
+    return types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
 
 
 ## Resolved method call info: the C function name and the method kind (needed to
@@ -12641,23 +12677,29 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
     let recv = lower_expr(ctx, receiver)
     var member_ty = expr_type(ctx, ep)
     let recv_ty = ir_expr_type(recv)
+    # A `ref` receiver auto-dereferences for member access (matching the host's
+    # `unwrap_ref`), so `.data`/`.len` on `ref[span[T]]` must be typed against
+    # the referent `span[T]`.
+    var member_recv_ty = recv_ty
+    if types.is_ref_type(member_recv_ty):
+        member_recv_ty = types.pointer_element(member_recv_ty)
     # span synthetic fields: `.data` is ptr[element], `.len` is ptr_uint.  The
     # analyzer records these as ty_error (permissive), so type them here.
-    if is_span_type(recv_ty) and member == "data":
-        member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.pointer_element(recv_ty)))
-    else if is_span_type(recv_ty) and member == "len":
+    if is_span_type(member_recv_ty) and member == "data":
+        member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.pointer_element(member_recv_ty)))
+    else if is_span_type(member_recv_ty) and member == "len":
         member_ty = types.primitive("ptr_uint")
     # str synthetic fields: `.data` is ptr[char], `.len` is ptr_uint.  Like span,
     # the analyzer does not type these reliably (a `var n = text.len` would
     # otherwise be mis-typed as str).
-    else if is_str_typed(recv_ty) and member == "data":
+    else if is_str_typed(member_recv_ty) and member == "data":
         member_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))
-    else if is_str_typed(recv_ty) and member == "len":
+    else if is_str_typed(member_recv_ty) and member == "len":
         member_ty = types.primitive("ptr_uint")
     # vec/mat/quat field types: the analyzer doesn't record these reliably
     # since these are builtin types, not declared structs.
-    else if is_vec_math_name(nominal_type_name(recv_ty)):
-        let vname = nominal_type_name(recv_ty)
+    else if is_vec_math_name(nominal_type_name(member_recv_ty)):
+        let vname = nominal_type_name(member_recv_ty)
         var field_names = vec.Vec[str].create()
         var field_types = vec.Vec[types.Type].create()
         vec_math_fields(vname, ref_of(field_names), ref_of(field_types))
@@ -13671,8 +13713,9 @@ function lower_static_assert(ctx: ref[LowerCtx], condition: ptr[ast.Expr], messa
 # =============================================================================
 
 ## Lower a `match` over an enum/flags scrutinee into an IR `stmt_switch`.  Each
-## `EnumType.member` arm becomes a `case`; a `_` arm becomes the `default`.  With
-## no `_` arm the switch is exhaustive (the backend adds `__builtin_unreachable`).
+## `EnumType.member` arm becomes a `case`; a `_` arm becomes the `default`.  The
+## switch is marked exhaustive (the host does so for every match switch; the
+## backend adds `__builtin_unreachable` only when there is no default).
 ## Integer, string, variant, and tuple scrutinees are handled by the
 ## type-dispatch branches within `lower_match`.
 function enum_source_module(ctx: ref[LowerCtx], ty: types.Type, default_module: str) -> str:
@@ -13748,7 +13791,6 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
     let scrutinee_expr = lower_expr(ctx, scrutinee)
     var enum_module = enum_source_module(ctx, scrutinee_ty, ctx.module_name)
     var cases = vec.Vec[ir.SwitchCase].create()
-    var has_wildcard = false
     var i: ptr_uint = 0
     while i < arms.len:
         var arm: ast.MatchArm
@@ -13757,7 +13799,6 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
         let body = lower_block(ctx, arm.body)
         let pattern = arm.pattern
         if pattern == null:
-            has_wildcard = true
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body))
         else:
             let member = match_member_name(pattern) else:
@@ -13770,7 +13811,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
             cases.push(ir.SwitchCase(is_default = false, value = value, body = body))
         i += 1
 
-    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = true))
     ctx.locals = saved_locals
 
 
@@ -13811,8 +13852,9 @@ function is_str_scrutinee(ty: types.Type) -> bool:
 
 
 ## Lower an integer match to a `switch`, using each arm's integer / char literal
-## pattern as the case value.  A `_` arm becomes `default`.  Integer matches
-## always require a wildcard, so the switch is never marked exhaustive.
+## pattern as the case value.  A `_` arm becomes `default` (marked exhaustive,
+## matching the host; the backend only emits `__builtin_unreachable` when the
+## switch has no default).
 function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
     # A range pattern cannot be a `switch` case, so a match containing one is
     # lowered to an if / else-if chain (mirrors Ruby's lower_range_match_stmt).
@@ -13846,7 +13888,7 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
         else:
             cases.push(ir.SwitchCase(is_default = false, value = lower_expr(ctx, ptr[ast.Expr]<-pattern), body = body))
         i += 1
-    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = false))
+    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = true))
 
 
 ## Lower an integer match containing range patterns to an if / else-if chain.
@@ -14228,7 +14270,6 @@ function expr_is_wildcard(e: ast.Expr) -> bool:
 ## assign the result and break, plus a default case for the wildcard arm.
 function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee_expr: ptr[ir.Expr], type_name: Option[str], arms: span[ast.MatchExprArm], result_ref: ptr[ir.Expr]) -> void:
     var cases = vec.Vec[ir.SwitchCase].create()
-    var has_wildcard = false
     var enum_module = enum_source_module(ctx, ir_expr_type(scrutinee_expr), ctx.module_name)
     var i: ptr_uint = 0
     while i < arms.len:
@@ -14240,7 +14281,6 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
         body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = lowered_val))
         let pattern = arm.pattern
         if pattern == null:
-            has_wildcard = true
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body.as_span()))
         else:
             let member = match_member_name(pattern) else:
@@ -14261,7 +14301,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
                     fatal(c"lowering: match expression on non-enum scrutinee")
         i += 1
 
-    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+    output.push(ir.Stmt.stmt_switch(expression = scrutinee_expr, cases = cases.as_span(), exhaustive = true))
 
 
 ## Lower a match expression over a variant scrutinee: emit a switch on the variant
@@ -14275,7 +14315,6 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
     let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "kind", ty = int_ty))
 
     var cases = vec.Vec[ir.SwitchCase].create()
-    var has_wildcard = false
     var i: ptr_uint = 0
     while i < arms.len:
         var arm: ast.MatchExprArm
@@ -14283,9 +14322,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             arm = read(arms.data + i)
         var body = vec.Vec[ir.Stmt].create()
         let pattern = arm.pattern
-        if pattern == null:
-            has_wildcard = true
-        else:
+        if pattern != null:
             match arm.binding_name:
                 Option.some as bn:
                     let arm_name = variant_match_arm_name_from_pattern(pattern) else:
@@ -14324,7 +14361,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             cases.push(ir.SwitchCase(is_default = false, value = kind_const, body = body.as_span()))
         i += 1
 
-    output.push(ir.Stmt.stmt_switch(expression = kind_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+    output.push(ir.Stmt.stmt_switch(expression = kind_expr, cases = cases.as_span(), exhaustive = true))
 
 
 ## Lower a `match` over a variant scrutinee into a `switch (scrut.kind)`.  Each
@@ -14386,7 +14423,6 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
 
     let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
     var cases = vec.Vec[ir.SwitchCase].create()
-    var has_wildcard = false
     var i: ptr_uint = 0
     while i < arms.len:
         var arm: ast.MatchArm
@@ -14394,7 +14430,6 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             arm = read(arms.data + i)
         let pattern = arm.pattern
         if pattern == null:
-            has_wildcard = true
             cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_block(ctx, arm.body)))
         else:
             let arm_name = match_member_name(pattern) else:
@@ -14437,7 +14472,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             cases.push(ir.SwitchCase(is_default = false, value = kind_const, body = stmts.as_span()))
         i += 1
 
-    output.push(ir.Stmt.stmt_switch(expression = kind_expr, cases = cases.as_span(), exhaustive = not has_wildcard))
+    output.push(ir.Stmt.stmt_switch(expression = kind_expr, cases = cases.as_span(), exhaustive = true))
 
 
 ## Lower a variant match with struct-pattern arms into an if/goto chain: each arm
