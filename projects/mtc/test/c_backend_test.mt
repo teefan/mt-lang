@@ -297,8 +297,9 @@ function test_generic_function_is_monomorphized() -> void:
     var c = compile_to_c(source)
     defer: c.release()
     let text = c.as_str()
-    ## The `int` specialization is emitted with a type-suffixed C name.
-    expect_contains(text, "main_identity_int(int32_t x)")
+    ## The `int` specialization is emitted with a type-suffixed C name
+    ## (host scheme: a double underscore before the arguments).
+    expect_contains(text, "main_identity__int(int32_t x)")
     return
 
 

@@ -151,6 +151,7 @@ struct LowerCtx:
     # (e.g. `Vec[Server]` when qualifying a cross-module return type) is visible
     # to every other module's method resolution.
     generic_struct_instances: ptr[map_mod.Map[str, GenericReceiver]]
+    spec_infos: ptr[map_mod.Map[str, SpecInfo]]
     # Map from a variant arm payload struct's C name (the `ty_named` given to a
     # match-arm binding, e.g. `mtc_parser_ast_Expr_expr_unary_op`) to that arm's
     # field info, so member access on the binding resolves field types.
@@ -442,6 +443,9 @@ public function lower(program: loader.Program) -> ir.Program:
     var seen_functions = map_mod.Map[str, bool].create()
     var monomorphized_structs = vec.Vec[ir.StructDecl].create()
     var monomorphized_variants = vec.Vec[ir.VariantDecl].create()
+    var spec_infos = map_mod.Map[str, SpecInfo].create()
+    var module_fragments = vec.Vec[ir.Program].create()
+    var module_analyses = vec.Vec[analyzer.Analysis].create()
     while i < count:
         let a_ptr = program.analyses.get(i) else:
             i += 1
@@ -451,7 +455,9 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants))
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(spec_infos))
+        module_fragments.push(fragment)
+        module_analyses.push(analysis)
         globals.append_span(fragment.globals)
         opaques.append_span(fragment.opaques)
         dedup_append_structs(ref_of(structs), fragment.structs, ref_of(seen_structs))
@@ -460,8 +466,37 @@ public function lower(program: loader.Program) -> ir.Program:
         dedup_append_variants(ref_of(variants), fragment.variants, ref_of(seen_variants))
         static_asserts.append_span(fragment.static_asserts)
         constants.append_span(fragment.constants)
-        dedup_append_functions(ref_of(functions), fragment.functions, ref_of(seen_functions))
+        # Functions are appended after the loop, reordered per module.
         i += 1
+
+    # Place each module's functions in the host's order (`lower_functions`):
+    # declaration order, with a generic function's or method's instances grouped
+    # under its declaration and sorted by type arguments, then any synthetic
+    # functions in creation order.
+    var all_by_linkage = map_mod.Map[str, ir.Function].create()
+    var fi: ptr_uint = 0
+    while fi < module_fragments.len():
+        let frag_ptr = module_fragments.get(fi) else:
+            break
+        let frag = unsafe: read(frag_ptr)
+        var ffi: ptr_uint = 0
+        while ffi < frag.functions.len:
+            var f: ir.Function
+            unsafe:
+                f = read(frag.functions.data + ffi)
+            if not all_by_linkage.contains(f.linkage_name):
+                all_by_linkage.set(f.linkage_name, f)
+            ffi += 1
+        fi += 1
+    fi = 0
+    while fi < module_fragments.len():
+        let frag_ptr = module_fragments.get(fi) else:
+            break
+        let ana_ptr = module_analyses.get(fi) else:
+            break
+        var ordered = ordered_module_functions(unsafe: read(ana_ptr), unsafe: read(frag_ptr).functions, ref_of(all_by_linkage), ref_of(spec_infos))
+        dedup_append_functions(ref_of(functions), ordered.as_span(), ref_of(seen_functions))
+        fi += 1
 
     # Collect type aliases from all non-raw modules. Raw (external) modules
     # define C-level types that already exist — we never emit typedefs for
@@ -783,7 +818,7 @@ function generic_instance_contains(ctx: ref[LowerCtx], name: str) -> bool:
 
 ## Create a fully initialised LowerCtx for a single module.  Every field is
 ## set explicitly so all code paths start from a known clean state.
-function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, GenericReceiver]]) -> LowerCtx:
+function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map_mod.Map[str, types.Type]], pl_field_types: ptr[map_mod.Map[str, types.Type]], prog_analyses: span[analyzer.Analysis], lod_modules: span[loader.LoadedModule], gen_instances: ptr[map_mod.Map[str, GenericReceiver]], spec_infos: ptr[map_mod.Map[str, SpecInfo]]) -> LowerCtx:
     return LowerCtx(
         module_name = analysis.module_name,
         analysis = analysis,
@@ -800,6 +835,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         specialization_cache = map_mod.Map[str, ir.Function].create(),
         generic_struct_decls = map_mod.Map[str, ir.StructDecl].create(),
         generic_struct_instances = gen_instances,
+        spec_infos = spec_infos,
         arm_payload_fields = map_mod.Map[str, VariantArmInfo].create(),
         program_analyses = prog_analyses,
         loaded_modules = lod_modules,
@@ -878,13 +914,16 @@ function collect_opaque_keys(prog_analyses: span[analyzer.Analysis]) -> map_mod.
 ## return type keyed by its C linkage name, so cross-module calls can look them
 ## up regardless of lowering order.
 function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], gen_instances: ref[map_mod.Map[str, GenericReceiver]]) -> void:
+    # Specialization metadata is only meaningful for the module fragments the
+    # driver assembles; this pass discards it.
+    var discarded_spec_infos = map_mod.Map[str, SpecInfo].create()
     var mi: ptr_uint = 0
     while mi < program.analyses.len():
         let a_ptr = program.analyses.get(mi) else:
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        var ctx = new_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)))
+        var ctx = new_lowering_context(analysis, ptr_of(read(sink)), ptr_of(read(prelude_arm_field_types)), program.analyses.as_span(), program.modules.as_span(), ptr_of(read(gen_instances)), ptr_of(discarded_spec_infos))
         var di: ptr_uint = 0
         while di < analysis.source_file.declarations.len:
             var d: ast.Decl
@@ -920,8 +959,137 @@ function collect_program_returns(program: loader.Program, sink: ref[map_mod.Map[
         mi += 1
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]]) -> ir.Program:
-    var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)))
+## The last component of a type reference's name (`Vec[T]` -> "Vec",
+## `vec.Vec[T]` -> "Vec").
+function type_ref_last_name(tref_ptr: ptr[ast.TypeRef]) -> str:
+    let tref = unsafe: read(tref_ptr)
+    if tref.name.parts.len == 0:
+        return ""
+    unsafe:
+        return read(tref.name.parts.data + (tref.name.parts.len - 1))
+
+
+## Append the function with the given linkage name, once, from the global pool.
+function emit_fragment_function_linkage(linkage: str, all_by_linkage: ref[map_mod.Map[str, ir.Function]], emitted: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.Function]]) -> void:
+    if emitted.contains(linkage):
+        return
+    let fp = all_by_linkage.get(linkage) else:
+        return
+    emitted.set(linkage, true)
+    result.push(unsafe: read(fp))
+
+
+## Append a module-qualified function by source name.
+function emit_fragment_function_named(module_name: str, name: str, all_by_linkage: ref[map_mod.Map[str, ir.Function]], emitted: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.Function]]) -> void:
+    emit_fragment_function_linkage(naming.qualified_c_name(module_name, name), all_by_linkage, emitted, result)
+
+
+## Append a generic declaration's instances (owner module + declaration key),
+## sorted by their recorded type-argument key (host `sort_by { ... }`).
+function emit_specializations(decl_key: str, owner_module: str, all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]], emitted: ref[map_mod.Map[str, bool]], result: ref[vec.Vec[ir.Function]]) -> void:
+    var picked = vec.Vec[ir.Function].create()
+    var keys = vec.Vec[str].create()
+    var values = all_by_linkage.values()
+    while true:
+        let fp = values.next() else:
+            break
+        var f = unsafe: read(fp)
+        if not emitted.contains(f.linkage_name):
+            let info_ptr = spec_infos.get(f.linkage_name)
+            if info_ptr != null:
+                let info = unsafe: read(info_ptr)
+                if info.owner_module == owner_module and info.decl_key == decl_key:
+                    picked.push(f)
+                    keys.push(info.args_key)
+    # Insertion sort by the type-argument key.
+    var si: ptr_uint = 1
+    while si < picked.len():
+        var j = si
+        while j > 0:
+            let a_ptr = keys.get(j - 1) else:
+                break
+            let b_ptr = keys.get(j) else:
+                break
+            var a: str
+            var b: str
+            unsafe:
+                a = read(a_ptr)
+                b = read(b_ptr)
+            if str_less_than(a, b):
+                break
+            picked.swap(j - 1, j)
+            keys.swap(j - 1, j)
+            j -= 1
+        si += 1
+    var pi: ptr_uint = 0
+    while pi < picked.len():
+        let fp = picked.get(pi) else:
+            break
+        var f = unsafe: read(fp)
+        if not emitted.contains(f.linkage_name):
+            emitted.set(f.linkage_name, true)
+            result.push(f)
+        pi += 1
+
+
+## Order one module's functions like the host: walk its declarations, emitting
+## each function/method (or its sorted instances) in source order, then append
+## any remaining synthetic functions in creation order.
+function ordered_module_functions(analysis: analyzer.Analysis, fragment_functions: span[ir.Function], all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> vec.Vec[ir.Function]:
+    var result = vec.Vec[ir.Function].create()
+    var emitted = map_mod.Map[str, bool].create()
+    let module_name = analysis.module_name
+    var di: ptr_uint = 0
+    while di < analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_function as fun:
+                if fun.type_params.len == 0:
+                    emit_fragment_function_named(module_name, fun.name, all_by_linkage, ref_of(emitted), ref_of(result))
+                    if fun.name == "main":
+                        # The root entrypoint wrapper has linkage `main`.
+                        emit_fragment_function_linkage("main", all_by_linkage, ref_of(emitted), ref_of(result))
+                else:
+                    emit_specializations(j2("fn:", fun.name), module_name, all_by_linkage, spec_infos, ref_of(emitted), ref_of(result))
+            ast.Decl.decl_extending_block as ex:
+                let bare = unsafe: type_ref_last_name(ex.type_name)
+                var mi: ptr_uint = 0
+                while mi < ex.methods.len:
+                    var m: ast.Method
+                    unsafe:
+                        m = read(ex.methods.data + mi)
+                    if m.type_params.len > 0 or unsafe: ex.type_name.arguments.len > 0:
+                        var dk = string.String.create()
+                        dk.append("method:")
+                        dk.append(bare)
+                        dk.append(".")
+                        dk.append(m.name)
+                        emit_specializations(dk.as_str(), module_name, all_by_linkage, spec_infos, ref_of(emitted), ref_of(result))
+                    else:
+                        let lk = method_link_name(module_name, bare, m.name, m.method_kind == ast.MethodKind.mk_static)
+                        emit_fragment_function_linkage(lk, all_by_linkage, ref_of(emitted), ref_of(result))
+                    mi += 1
+            _:
+                pass
+        di += 1
+    # Leftovers: synthetic functions, event runtime, dyn wrappers, and
+    # functions from `when`-expanded declarations.
+    var lfi: ptr_uint = 0
+    while lfi < fragment_functions.len:
+        var f: ir.Function
+        unsafe:
+            f = read(fragment_functions.data + lfi)
+        if not emitted.contains(f.linkage_name):
+            emitted.set(f.linkage_name, true)
+            result.push(f)
+        lfi += 1
+    return result
+
+
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
+    var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
     collect_variants(ref_of(ctx), analysis.source_file.declarations)
@@ -7755,11 +7923,32 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.inside_async = false
 
             var spec_fun = lower_specialized_function(ctx, fun.name, spec_key, fun.method_params, fun.return_type, fun.body, sub)
+            # Host parity: the instance's `name` is the declaration name; only
+            # the linkage name carries the specialization suffix.
             spec_fun.linkage_name = spec_key
-            spec_fun.name = spec_key
 
             ctx.specialization_cache.set(spec_key, spec_fun)
             saved_returns.set(spec_key, spec_fun.return_type)
+            # Record owner/declaration/arguments so the driver can place this
+            # instance in its owner module's function list (host ordering).
+            var fn_args_key = string.String.create()
+            var fai: ptr_uint = 0
+            while fai < fun.type_params.len:
+                if fai > 0:
+                    fn_args_key.append("_")
+                var ftp: ast.TypeParam
+                unsafe:
+                    ftp = read(fun.type_params.data + fai)
+                let fcv = sub.get(ftp.name)
+                if fcv != null:
+                    fn_args_key.append(naming.type_c_key(unsafe: read(fcv)))
+                fai += 1
+            unsafe:
+                read(ctx.spec_infos).set(spec_key, SpecInfo(
+                    owner_module = gm.module_name,
+                    decl_key = j2("fn:", fun.name),
+                    args_key = fn_args_key.as_str(),
+                ))
 
             # Restore the caller context.
             ctx.module_name = saved_module
@@ -7906,9 +8095,15 @@ function specialization_key(ctx: ref[LowerCtx], module_name: str, callee_name: s
     buf.append(naming.module_c_prefix(module_name))
     buf.append("_")
     buf.append(callee_name)
+    # Host `module_function_c_name`: a generic instance's type arguments follow
+    # a double underscore so they cannot collide with a regular function whose
+    # name ends in the same text (`expect_equal[str]` vs `expect_equal_str`).
+    if type_args.len > 0:
+        buf.append("__")
     var i: ptr_uint = 0
     while i < type_args.len:
-        buf.append("_")
+        if i > 0:
+            buf.append("_")
         let ty = resolve_type_ref(ctx, unsafe: read(type_args.data + i).value)
         buf.append(spec_type_key(ctx, ty))
         i += 1
@@ -8910,6 +9105,17 @@ function build_receiver_arg(recv: ptr[ir.Expr], method_kind: ast.MethodKind) -> 
 ## A concrete generic receiver: the struct name and its resolved type arguments
 ## (e.g. `Vec` + `[int]`).  Type-parameter arguments are resolved through the
 ## active substitution so nested method calls inside monomorphized bodies work.
+## Metadata recorded for each monomorphized function/method so the driver can
+## attribute it to its owner module and order it like the host
+## (`lower_functions`: declaration order, instances sorted by type arguments).
+struct SpecInfo:
+    owner_module: str
+    ## "fn:<name>" or "method:<Type>.<name>".
+    decl_key: str
+    ## Type arguments joined with "_" (host `type_arguments.map(&:to_s).join`).
+    args_key: str
+
+
 struct GenericReceiver:
     owner_name: str
     concrete_args: span[types.Type]
@@ -9030,6 +9236,9 @@ function generic_receiver_info(ctx: ref[LowerCtx], recv_ty: types.Type) -> Optio
                         return Option[GenericReceiver].none
         _:
             return Option[GenericReceiver].none
+    if owner_module.len == 0 and is_prelude_variant_name(owner_name):
+        # A prelude receiver (`Option[T]`) belongs to its prelude module.
+        owner_module = if owner_name == "Option": "std.option" else: "std.result"
     var resolved = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
     while i < raw_args.len:
@@ -9099,7 +9308,10 @@ function prelude_instance_args(ctx: ref[LowerCtx], c_name: str) -> Option[Generi
                         args.push(read(arm.fields.data + 0).ty)
                 ai += 1
             if args.len() > 0:
-                return Option[GenericReceiver].some(value = GenericReceiver(owner_name = base, concrete_args = args.as_span(), owner_module = ""))
+                # Prelude instances belong to their prelude module, so the driver
+                # can place them in that module's function list.
+                let owner_mod = if base == "Option": "std.option" else: "std.result"
+                return Option[GenericReceiver].some(value = GenericReceiver(owner_name = base, concrete_args = args.as_span(), owner_module = owner_mod))
         si += 1
     return Option[GenericReceiver].none
 
@@ -9314,29 +9526,30 @@ function try_generic_method_call(ctx: ref[LowerCtx], recv_ty: types.Type, method
 ## stays stable: `std_binary_Reader_unpack_CompactHeader`.
 function monomorphized_method_c_name(owner_module: str, info: GenericReceiver, gm: GenericMethodMatch, method_name: str) -> str:
     var buf = string.String.create()
-    # Only use struct-level args in the struct prefix; method-level args go after
-    # the method name.
-    var struct_args = vec.Vec[types.Type].create()
-    var si: ptr_uint = 0
-    while si < gm.struct_param_names.len and si < info.concrete_args.len:
-        unsafe:
-            struct_args.push(read(info.concrete_args.data + si))
-        si += 1
+    # Host `function_binding_c_name`: the receiver prefix is the *unspecialized*
+    # type name (`std_vec_Vec`), the method name follows (with `_static` for
+    # static methods), and every type argument — struct-level and method-level —
+    # follows a double underscore (`std_vec_Vec_push__int`).
     if is_prelude_variant_name(info.owner_name):
-        buf.append(generic_struct_c_name(info.owner_name, struct_args.as_span()))
+        if info.owner_name == "Option":
+            buf.append("std_option_Option")
+        else:
+            buf.append("std_result_Result")
     else:
-        let struct_c = naming.qualified_c_name(owner_module, generic_struct_c_name(info.owner_name, struct_args.as_span()))
-        buf.append(struct_c)
+        buf.append(naming.qualified_c_name(owner_module, info.owner_name))
     buf.append("_")
     buf.append(method_name)
-    # Append method-level type args after the method name, skipping the
-    # struct-level args that were already included in the struct prefix.
-    var mi: ptr_uint = gm.struct_param_names.len
-    while mi < info.concrete_args.len:
-        buf.append("_")
-        unsafe:
-            buf.append(naming.type_c_key(read(info.concrete_args.data + mi)))
-        mi += 1
+    if gm.method.method_kind == ast.MethodKind.mk_static:
+        buf.append("_static")
+    if info.concrete_args.len > 0:
+        buf.append("__")
+        var ai: ptr_uint = 0
+        while ai < info.concrete_args.len:
+            if ai > 0:
+                buf.append("_")
+            unsafe:
+                buf.append(naming.type_c_key(read(info.concrete_args.data + ai)))
+            ai += 1
     return buf.as_str()
 
 
@@ -9549,6 +9762,26 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     let spec_fun = lower_specialized_method(ctx, method_c, info, gm, ref_of(sub))
     ctx.specialization_cache.set(method_c, spec_fun)
     saved_returns.set(method_c, spec_fun.return_type)
+    # Record owner/declaration/arguments for host-style ordering.
+    var m_args_key = string.String.create()
+    var mai: ptr_uint = 0
+    while mai < info.concrete_args.len:
+        if mai > 0:
+            m_args_key.append("_")
+        unsafe:
+            m_args_key.append(naming.type_c_key(read(info.concrete_args.data + mai)))
+        mai += 1
+    var m_decl_key = string.String.create()
+    m_decl_key.append("method:")
+    m_decl_key.append(info.owner_name)
+    m_decl_key.append(".")
+    m_decl_key.append(gm.method.name)
+    unsafe:
+        read(ctx.spec_infos).set(method_c, SpecInfo(
+            owner_module = info.owner_module,
+            decl_key = m_decl_key.as_str(),
+            args_key = m_args_key.as_str(),
+        ))
 
     ctx.module_name = saved_module
     ctx.analysis = saved_analysis
@@ -9647,7 +9880,9 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     ctx.type_substitution = saved_sub
 
     return ir.Function(
-        name = method_c,
+        # Host parity: the instance's `name` is the method name; the linkage
+        # name carries the receiver and type-argument suffix.
+        name = m.name,
         linkage_name = method_c,
         params = ir_params.as_span(),
         return_type = ret_ty,
