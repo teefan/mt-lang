@@ -8383,7 +8383,7 @@ function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type
 
     # Ensure the vtable struct type exists (once per interface), with type subsitution.
     let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
-    ensure_dyn_vtable_struct(ctx, vtable_type_c_name, methods, type_args, type_params)
+    ensure_dyn_vtable_struct(ctx, iface_name, methods, type_args, type_params)
 
     # Generate wrapper functions and vtable constant.
     var wrappers = gen_dyn_vtable_wrappers(ctx, concrete_name, concrete_type, iface_name, methods, iface_module_name, type_args, type_params)
@@ -8442,7 +8442,8 @@ function ensure_dyn_struct_type(ctx: ref[LowerCtx], iface_name: str) -> void:
 
 ## Ensure the vtable struct type `mt_vtable_{iface}` exists.  Fields are function
 ## pointer types so the C backend can render calls through them directly.
-function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
+function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
+    let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
     var iter = ctx.pending_dyn_vtable_structs.iter()
     while true:
         let s_ptr = iter.next() else:
@@ -8475,7 +8476,7 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
         let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
         fields.push(ir.Field(name = m.name, ty = fn_ty))
         mi += 1
-    ctx.pending_dyn_vtable_structs.push(ir.StructDecl(name = vtable_type_c_name, linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+    ctx.pending_dyn_vtable_structs.push(ir.StructDecl(name = j2("vtable_", iface_name), linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
 
 ## Generate wrapper functions for each interface method, calling through to the
@@ -8492,7 +8493,7 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
         var m: ast.InterfaceMethod
         unsafe:
             m = read(methods.data + mi)
-        let wrapper_c_name = j5("__dyn_", concrete_name, "_", iface_name, j2("_", m.name))
+        let wrapper_c_name = j3("__dyn_", concrete_name, j2("_", m.name))
         var wrapper_params = vec.Vec[ir.Param].create()
         wrapper_params.push(ir.Param(name = "data", linkage_name = "data", ty = void_ptr, pointer = false))
         var pi: ptr_uint = 0
@@ -8595,7 +8596,9 @@ function find_dyn_method(ctx: ref[LowerCtx], type_name: str, method_name: str, c
 ## Generate a vtable global constant of type `mt_vtable_{iface}`, holding pointers
 ## to the wrapper functions.
 function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_type_name: str, vtable_c_name: str, wrappers: ref[map_mod.Map[str, str]], methods: span[ast.InterfaceMethod]) -> void:
-    let const_ty = types.Type.ty_named(module_name = "", name = vtable_type_name)
+    # The vtable constant's type is the `DynVtable` type (`mt_vtable_<Iface>` in
+    # C), matching the host.
+    let const_ty = types.Type.ty_dyn_vtable(interface_name = iface_name, linkage_name = vtable_type_name)
     var fields = vec.Vec[ir.AggregateField].create()
     var mi: ptr_uint = 0
     while mi < methods.len:
@@ -8643,7 +8646,8 @@ function lower_dyn_method_call(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_na
     # The iface name is embedded in the ty_dyn type: use ty_named to match c_type.
     let recv_ty = ir_expr_type(recv)
     let vtable_c_type = dyn_vtable_c_type(recv_ty)
-    var vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = vtable_c_type)))
+    let vtable_ty = types.Type.ty_dyn_vtable(interface_name = dyn_vtable_iface_name(recv_ty), linkage_name = vtable_c_type)
+    var vtable_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(vtable_ty))
     let vtable_cast = alloc_expr(ir.Expr.expr_cast(target_type = vtable_ptr_ty, expression = vtable_raw, ty = vtable_ptr_ty))
     let method_fn = alloc_expr(ir.Expr.expr_member(receiver = vtable_cast, member = method_name, ty = void_ptr))
     var call_args = vec.Vec[ir.Expr].create()
@@ -8695,6 +8699,15 @@ function dyn_vtable_c_type(t: types.Type) -> str:
     if ts == "dyn":
         return "mt_vtable_unknown"
     return j3("mt_vtable_", ts, "")
+
+
+## The interface name of a `dyn[I]` receiver, for the `DynVtable` type.
+function dyn_vtable_iface_name(t: types.Type) -> str:
+    match t:
+        types.Type.ty_dyn as d:
+            return d.iface
+        _:
+            return "unknown"
 
 
 ## Resolved method call info: the C function name and the method kind (needed to

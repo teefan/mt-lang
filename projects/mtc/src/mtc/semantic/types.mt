@@ -37,6 +37,10 @@ public variant Type:
     ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
     ty_dyn(iface: str)
+    # A `dyn` interface vtable type.  Mirrors Ruby's `Types::DynVtable`
+    # (`interface_name` + generated `mt_vtable_<Iface>` linkage name); its field
+    # map is not rendered by the sexpr dumper.
+    ty_dyn_vtable(interface_name: str, linkage_name: str)
     ty_opaque(module_name: str, name: str)
     ty_generic(name: str, args: span[Type])
     ty_function(params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool, param_names: span[str])
@@ -193,6 +197,8 @@ public function type_to_string(t: Type) -> str:
             return v.name
         Type.ty_dyn as d:
             return d.iface
+        Type.ty_dyn_vtable as dv:
+            return dv.linkage_name
         Type.ty_opaque as o:
             return o.name
         Type.ty_nullable as nl:
@@ -424,6 +430,12 @@ public function type_equals(a: Type, b: Type) -> bool:
             match b:
                 Type.ty_dyn as db:
                     return da.iface == db.iface
+                _:
+                    return false
+        Type.ty_dyn_vtable as dva:
+            match b:
+                Type.ty_dyn_vtable as dvb:
+                    return dva.linkage_name == dvb.linkage_name
                 _:
                     return false
         Type.ty_opaque as oa:

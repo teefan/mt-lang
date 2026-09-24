@@ -585,6 +585,11 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             df.push(field_str("interface_name", d.iface))
             df.push(field_value("type_arguments", list_value(span[SexprValue]())))
             return node("Types::Dyn", df.as_span())
+        types.Type.ty_dyn_vtable as dv:
+            var dvf = vec.Vec[SexprField].create()
+            dvf.push(field_str("interface_name", dv.interface_name))
+            dvf.push(field_str("linkage_name", dv.linkage_name))
+            return node("Types::DynVtable", dvf.as_span())
         _:
             return node("Types::Error", span[SexprField]())
     return node("Types::Error", span[SexprField]())

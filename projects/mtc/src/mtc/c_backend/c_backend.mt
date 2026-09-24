@@ -2031,6 +2031,8 @@ function c_type(t: types.Type) -> str:
             return "mt_str"
         types.Type.ty_dyn as d:
             return j3("mt_dyn_", d.iface, "")
+        types.Type.ty_dyn_vtable as dv:
+            return dv.linkage_name
         types.Type.ty_opaque as op:
             if op.module_name.starts_with("std.c."):
                 return op.name
