@@ -1091,6 +1091,30 @@ function ordered_module_functions(analysis: analyzer.Analysis, fragment_function
     return result
 
 
+## Append the declarations of a module-level `when`'s selected branch to `out`.
+function append_selected_when_decls(ctx: ref[LowerCtx], discriminant: ptr[ast.Expr], branches: span[ast.WhenDeclBranch], dest: ref[vec.Vec[ast.Decl]]) -> void:
+    match try_evaluate_const_expr(ctx, discriminant):
+        Option.some as dv:
+            var bi: ptr_uint = 0
+            var found = false
+            while bi < branches.len and not found:
+                let br = unsafe: read(branches.data + bi)
+                match try_evaluate_const_expr(ctx, br.pattern):
+                    Option.some as pv:
+                        if const_values_eq(dv.value, pv.value):
+                            var ddi: ptr_uint = 0
+                            while ddi < br.body.len:
+                                unsafe:
+                                    dest.push(read(br.body.data + ddi))
+                                ddi += 1
+                            found = true
+                    Option.none:
+                        pass
+                bi += 1
+        Option.none:
+            pass
+
+
 function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
     var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
@@ -1105,13 +1129,29 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
     var globals = vec.Vec[ir.Global].create()
     var constants = vec.Vec[ir.Constant].create()
     var module_static_asserts = vec.Vec[ir.StaticAssert].create()
-    var pending_decls = vec.Vec[ast.Decl].create()
+    # Module-level `when` blocks expand in place to the declarations of their
+    # selected branch, so those declarations keep their source order (the host
+    # emits them inline rather than deferring them to the end of the module).
+    var decls = vec.Vec[ast.Decl].create()
+    var wi: ptr_uint = 0
+    while wi < analysis.source_file.declarations.len:
+        var wd: ast.Decl
+        unsafe:
+            wd = read(analysis.source_file.declarations.data + wi)
+        match wd:
+            ast.Decl.decl_when as w:
+                append_selected_when_decls(ctx, w.discriminant, w.branches, ref_of(decls))
+            _:
+                decls.push(wd)
+        wi += 1
 
     var i: ptr_uint = 0
-    while i < analysis.source_file.declarations.len:
+    while i < decls.len():
         var d: ast.Decl
+        let d_ptr = decls.get(i) else:
+            break
         unsafe:
-            d = read(analysis.source_file.declarations.data + i)
+            d = read(d_ptr)
         match d:
             ast.Decl.decl_function as fun:
                 if fun.is_async:
@@ -1245,77 +1285,11 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 let ev_zero = alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
                 globals.push(ir.Global(name = ev.name, linkage_name = naming.qualified_c_name(ctx.module_name, ev.name), ty = ev_ty, value = ev_zero))
             ast.Decl.decl_when as w:
-                match try_evaluate_const_expr(ctx, w.discriminant):
-                    Option.some as dv:
-                        var bi: ptr_uint = 0
-                        var found = false
-                        while bi < w.branches.len and not found:
-                            let br = unsafe: read(w.branches.data + bi)
-                            match try_evaluate_const_expr(ctx, br.pattern):
-                                Option.some as pv:
-                                    if const_values_eq(dv.value, pv.value):
-                                        var ddi: ptr_uint = 0
-                                        while ddi < br.body.len:
-                                            unsafe:
-                                                pending_decls.push(read(br.body.data + ddi))
-                                            ddi += 1
-                                        found = true
-                                Option.none:
-                                    pass
-                            bi += 1
-                        if not found:
-                            pass
-                    Option.none:
-                        pass
+                # Expanded by the pre-pass above; unreachable here.
+                pass
             _:
                 pass
         i += 1
-
-    # Lower declarations collected from module-level `when` branches.
-    var w_iter = pending_decls.iter()
-    while true:
-        let w_ptr = w_iter.next() else:
-            break
-        var dd: ast.Decl
-        unsafe:
-            dd = read(w_ptr)
-        match dd:
-            ast.Decl.decl_function as fun:
-                if lowerable_function(fun.type_params, fun.body):
-                    functions.push(lower_function(ref_of(ctx), fun.name, fun.method_params, fun.return_type, fun.body, false))
-                    if is_root and fun.name == "main":
-                        match build_root_main_entrypoint(ref_of(ctx), fun.name, fun.method_params):
-                            Option.some as entry:
-                                functions.push(entry.value)
-                            Option.none:
-                                pass
-            ast.Decl.decl_const as c:
-                var c_ty = resolve_type_ref(ctx, c.const_type)
-                var is_type_meta = false
-                match c_ty:
-                    types.Type.ty_type_meta:
-                        is_type_meta = true
-                    _:
-                        pass
-                if not is_type_meta:
-                    var cv = alloc_expr(ir.Expr.expr_zero_init(ty = c_ty))
-                    if c.value != null:
-                        var when_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                        match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-c.value, ref_of(when_env), c_ty):
-                            Option.some as cvf:
-                                cv = cvf.value
-                            Option.none:
-                                cv = lower_expr(ctx, unsafe: ptr[ast.Expr]<-c.value)
-                    else if c.block_body != null:
-                        var when_body_env = map_mod.Map[str, ptr[ir.Expr]].create()
-                        match try_const_value_body(ctx, c.block_body, ref_of(when_body_env)):
-                            Option.some as body_val:
-                                cv = body_val.value
-                            Option.none:
-                                pass
-                    constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = cv, line = c.line, path = ctx.analysis.source_path))
-            _:
-                pass
 
     # Concrete generic struct instances are not part of the IR's declaration
     # sections (host parity: its C backend collects them from the types in
