@@ -18,11 +18,22 @@ public variant Type:
     ty_primitive(name: str)
     ty_str
     ty_error
+    # An absent/unresolved IR node type.  The host's `IR::Node#type` is nil for
+    # nodes whose type the C backend infers from context (e.g. the intermediate
+    # `x.data` member of a variant access); the sexpr dumper renders it `nil`.
+    ty_nil
     ty_type_meta
     ty_nullable(base: ptr[Type])
     ty_null(target: ptr[Type]?)
     ty_event(name: str, capacity: ptr_uint, payload_type: ptr[Type]?, linkage_name: str)
     ty_named(name: str, module_name: str)
+    # The binding type of an `as name` variant match arm.  `variant_name` and
+    # `module_name` identify the owning variant (`Option`, `std.option`); `name`
+    # is the rendered payload name (`Option_some`); `c_name` is the payload
+    # struct's C linkage name (`std_option_Option_some`).  Mirrors Ruby's
+    # `Types::VariantArmPayload`, which the sexpr dumper tags distinctly but
+    # whose fields it renders like a `Types::Struct` (`:name`, `:module_name`).
+    ty_variant_arm_payload(variant_name: str, name: str, module_name: str, c_name: str)
     ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
     ty_dyn(iface: str)
@@ -48,6 +59,22 @@ public function primitive(name: str) -> Type:
 ## `array[T, N]` / `str_buffer[N]`).  Mirrors Ruby's Types::LiteralTypeArg.
 public function literal_int(value: long) -> Type:
     return Type.ty_literal_int(value = value)
+
+
+## The binding type of an `as name` variant match arm.  `variant_name` is the
+## owning variant's declared name (`Option`), `module_name` its module
+## (`std.option`), and `c_name` the payload struct's C linkage name.
+public function variant_arm_payload(variant_name: str, module_name: str, c_name: str, arm_name: str) -> Type:
+    var buf = string.String.create()
+    buf.append(variant_name)
+    buf.append("_")
+    buf.append(arm_name)
+    return Type.ty_variant_arm_payload(
+        variant_name = variant_name,
+        name = buf.as_str(),
+        module_name = module_name,
+        c_name = c_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -150,10 +177,14 @@ public function type_to_string(t: Type) -> str:
             return "str"
         Type.ty_error:
             return "<error>"
+        Type.ty_nil:
+            return "nil"
         Type.ty_type_meta:
             return "type"
         Type.ty_named as n:
             return n.name
+        Type.ty_variant_arm_payload as ap:
+            return ap.name
         Type.ty_imported as im:
             if im.args.len == 0:
                 return im.name
@@ -301,6 +332,12 @@ public function type_equals(a: Type, b: Type) -> bool:
                     return true
                 _:
                     return false
+        Type.ty_nil:
+            match b:
+                Type.ty_nil:
+                    return true
+                _:
+                    return false
         Type.ty_type_meta:
             match b:
                 Type.ty_type_meta:
@@ -351,6 +388,12 @@ public function type_equals(a: Type, b: Type) -> bool:
                     return na.name == nb.name
                 Type.ty_imported as ib:
                     return na.name == ib.name
+                _:
+                    return false
+        Type.ty_variant_arm_payload as apa:
+            match b:
+                Type.ty_variant_arm_payload as apb:
+                    return apa.c_name == apb.c_name
                 _:
                     return false
         Type.ty_imported as ia:

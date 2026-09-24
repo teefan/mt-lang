@@ -38,6 +38,10 @@ public variant SexprValue:
     sv_nil
     sv_bool(value: bool)
     sv_int(value: long)
+    ## An unsigned integer atom.  The host renders a Ruby Integer, which for
+    ## values >= 2^63 (e.g. `18446744073709551615`) is a positive number that
+    ## does not fit a signed `long`.
+    sv_uint(value: ptr_uint)
     sv_float(value: double)
     sv_str(value: str)
     sv_sym(value: str)
@@ -111,6 +115,8 @@ public function render_value(buf: ref[string.String], value: SexprValue) -> void
                 buf.append("false")
         SexprValue.sv_int as i:
             fmt.append_long(buf, i.value)
+        SexprValue.sv_uint as u:
+            fmt.append_ulong(buf, ulong<-u.value)
         SexprValue.sv_float as f:
             append_float_atom(buf, f.value)
         SexprValue.sv_str as s:
@@ -176,7 +182,7 @@ function token_kind_symbol(kind: tk.TokenKind) -> str:
 function token_literal_value(token: token_mod.Token, lexeme: str) -> SexprValue:
     match token.kind:
         tk.TokenKind.integer:
-            return SexprValue.sv_int(value = lparse.parse_int_literal(lexeme))
+            return SexprValue.sv_uint(value = lparse.parse_int_literal_unsigned(lexeme))
         tk.TokenKind.float_literal:
             # Ruby appends the lexeme raw for floats; represent it as a symbol
             # so the renderer emits it unquoted.
@@ -341,7 +347,7 @@ function field_int(name: str, value: long) -> SexprField:
 
 
 function field_uint(name: str, value: ptr_uint) -> SexprField:
-    return SexprField(name = name, value = SexprValue.sv_int(value = long<-value))
+    return SexprField(name = name, value = SexprValue.sv_uint(value = value))
 
 
 function field_bool(name: str, value: bool) -> SexprField:
@@ -453,6 +459,8 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             return node("Types::StringView", span[SexprField]())
         types.Type.ty_error:
             return node("Types::Error", span[SexprField]())
+        types.Type.ty_nil:
+            return SexprValue.sv_nil
         types.Type.ty_type_meta:
             return node("Types::TypeType", span[SexprField]())
         types.Type.ty_nullable as nl:
@@ -482,6 +490,13 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             nf.push(field_str("name", n.name))
             nf.push(field_str("module_name", n.module_name))
             return node(j2("Types::", named_type_class(ctx, n.name)), nf.as_span())
+        types.Type.ty_variant_arm_payload as ap:
+            # The host tags the payload distinctly but renders its fields through
+            # the `Types::Struct` branch (`:name`, `:module_name`).
+            var apf = vec.Vec[SexprField].create()
+            apf.push(field_str("name", ap.name))
+            apf.push(field_str("module_name", ap.module_name))
+            return node("Types::VariantArmPayload", apf.as_span())
         types.Type.ty_imported as im:
             var imf = vec.Vec[SexprField].create()
             imf.push(field_str("name", im.name))
@@ -1956,7 +1971,7 @@ function when_decl_branches_value(ctx: ref[SexprCtx], items: span[ast.WhenDeclBr
             field_opt_str("binding_name", a.binding_name),
             len_field("binding_line", a.binding_line),
             len_field("binding_column", a.binding_column),
-            field_value("body", decls_value(ctx, a.body)),
+            field_value("body", decls_value(ctx, a.body, false)),
             field_line(pos.line),
             len_field("column", pos.column),
         )))
@@ -2059,7 +2074,7 @@ function expr_value(ctx: ref[SexprCtx], ep: ptr[ast.Expr]) -> SexprValue:
             ast.Expr.expr_integer_literal as x:
                 return node("AST::IntegerLiteral", fields4(
                     field_str("lexeme", x.lexeme),
-                    field_int("value", x.value),
+                    field_uint("value", lparse.parse_int_literal_unsigned(x.lexeme)),
                     field_nil("line"),
                     field_nil("column"),
                 ))
@@ -2479,7 +2494,7 @@ function stmt_value(ctx: ref[SexprCtx], sp: ptr[ast.Stmt]) -> SexprValue:
             ast.Stmt.stmt_emit as x:
                 var decl_field = field_nil("declaration")
                 if x.declaration != null:
-                    decl_field = field_value("declaration", decl_value(ctx, unsafe: ptr[ast.Decl]<-x.declaration))
+                    decl_field = field_value("declaration", decl_value(ctx, unsafe: ptr[ast.Decl]<-x.declaration, false))
                 return node("AST::EmitStmt", fields3(
                     decl_field,
                     field_line(x.line),
@@ -2564,16 +2579,25 @@ function str_list_value(items: span[str]) -> SexprValue:
     return list_value(items_out.as_span())
 
 
-function decls_value(ctx: ref[SexprCtx], items: span[ast.Decl]) -> SexprValue:
+function decls_value(ctx: ref[SexprCtx], items: span[ast.Decl], raw: bool) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
     while i < items.len:
-        items_out.push(decl_value(ctx, unsafe: items.data + i))
+        items_out.push(decl_value(ctx, unsafe: items.data + i, raw))
         i += 1
     return list_value(items_out.as_span())
 
 
-function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
+## Render a declaration's visibility.  External-file declarations are implicitly
+## exported, so the host stores (and renders) `nil`; nested/ordinary
+## declarations carry an explicit `:private`/`:public`.
+function visibility_field(raw: bool, visibility: bool) -> SexprField:
+    if raw:
+        return field_nil("visibility")
+    return field_sym("visibility", visibility_symbol(visibility))
+
+
+function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl], raw: bool) -> SexprValue:
     unsafe:
         match read(dp):
             ast.Decl.decl_const as x:
@@ -2585,7 +2609,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_value("type", type_ref_value(ctx, read(x.const_type))),
                     opt_expr_field(ctx, "value", x.value),
                     block_field,
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_value("attributes", attributes_value(ctx, x.attributes)),
                     field_line(x.line),
                     len_field("column", x.column),
@@ -2595,7 +2619,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     opt_type_ref_field(ctx, "type", x.var_type),
                     opt_expr_field(ctx, "value", x.value),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_line(x.line),
                     len_field("column", x.column),
                 ))
@@ -2609,7 +2633,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_value("params", params_value(ctx, x.method_params)),
                     opt_type_ref_field(ctx, "return_type", x.return_type),
                     body_field,
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_bool("async", x.is_async),
                     field_bool("const", x.is_const),
                     field_value("attributes", attributes_value(ctx, x.attributes)),
@@ -2623,12 +2647,12 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_value("implements", qname_list_value(ctx, x.impl_list)),
                     field_opt_str("c_name", x.c_name),
                     field_value("fields", fields_value(ctx, x.struct_fields)),
-                    field_value("events", decls_value(ctx, x.struct_events)),
-                    field_value("nested_types", decls_value(ctx, x.nested_types)),
+                    field_value("events", decls_value(ctx, x.struct_events, false)),
+                    field_value("nested_types", decls_value(ctx, x.nested_types, false)),
                     field_value("attributes", attributes_value(ctx, x.struct_attrs)),
                     field_bool("packed", x.packed),
                     field_zero_nil_int("alignment", x.alignment),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_value("lifetime_params", str_list_value(x.lifetime_params)),
                     field_line(x.line),
                     len_field("column", x.column),
@@ -2638,7 +2662,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     field_opt_str("c_name", x.c_name),
                     field_value("fields", union_fields_value(ctx, x.union_fields)),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_value("attributes", attributes_value(ctx, x.union_attrs)),
                     field_line(x.line),
                     len_field("column", x.column),
@@ -2648,7 +2672,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     opt_type_ref_field(ctx, "backing_type", x.backing_type),
                     field_value("members", enum_members_value(ctx, x.enum_members)),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_value("attributes", attributes_value(ctx, x.enum_attrs)),
                     field_line(x.line),
                     len_field("column", x.column),
@@ -2658,7 +2682,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     opt_type_ref_field(ctx, "backing_type", x.backing_type),
                     field_value("members", enum_members_value(ctx, x.flags_members)),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_value("attributes", attributes_value(ctx, x.flags_attrs)),
                     field_line(x.line),
                     len_field("column", x.column),
@@ -2668,7 +2692,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     field_value("type_params", type_params_value(ctx, x.type_params)),
                     field_value("arms", variant_arms_value(ctx, x.variant_arms)),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_value("attributes", attributes_value(ctx, x.variant_attrs)),
                     field_line(x.line),
                     len_field("column", x.column),
@@ -2678,7 +2702,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     field_value("implements", qname_list_value(ctx, x.opaque_implements)),
                     field_opt_str("c_name", x.c_name),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_line(x.line),
                     len_field("column", x.column),
                 ))
@@ -2686,7 +2710,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                 return node("AST::TypeAliasDecl", fields5(
                     field_str("name", x.name),
                     field_value("target", type_ref_value(ctx, read(x.target))),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_line(x.line),
                     len_field("column", x.column),
                 ))
@@ -2695,7 +2719,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     field_value("type_params", type_params_value(ctx, x.type_params)),
                     field_value("methods", interface_methods_value(ctx, x.interface_methods)),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_line(x.line),
                     len_field("column", x.column),
                 ))
@@ -2727,7 +2751,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     opt_type_ref_field(ctx, "return_type", x.return_type),
                     field_bool("variadic", x.variadic),
                     opt_expr_field(ctx, "mapping", x.mapping),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_value("attributes", attributes_value(ctx, x.attrs)),
                     field_line(x.line),
                     field_nil("column"),
@@ -2737,7 +2761,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     field_int("capacity", long<-x.capacity),
                     opt_type_ref_field(ctx, "payload_type", x.payload_type),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_value("attributes", attributes_value(ctx, x.attrs)),
                     field_line(x.line),
                     len_field("column", x.column),
@@ -2752,7 +2776,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
             ast.Decl.decl_when as x:
                 var when_else = field_nil("else_body")
                 if x.has_else:
-                    when_else = field_value("else_body", decls_value(ctx, x.else_body))
+                    when_else = field_value("else_body", decls_value(ctx, x.else_body, false))
                 return node("AST::WhenStmt", fields6(
                     field_value("discriminant", expr_value(ctx, x.discriminant)),
                     field_value("branches", when_decl_branches_value(ctx, x.branches)),
@@ -2766,7 +2790,7 @@ function decl_value(ctx: ref[SexprCtx], dp: ptr[ast.Decl]) -> SexprValue:
                     field_str("name", x.name),
                     field_value("targets", sym_list_value(x.targets)),
                     field_value("params", params_value(ctx, x.attr_params)),
-                    field_sym("visibility", visibility_symbol(x.visibility)),
+                    visibility_field(raw, x.visibility),
                     field_line(x.line),
                     len_field("column", x.column),
                 ))
@@ -2815,15 +2839,21 @@ public function dump_ast(file: ast.SourceFile, module_name: str) -> string.Strin
             pi += 1
         module_field = field_value("module_name", qname_bare_value(parts.as_span()))
     var kind_sym = "module"
-    if file.module_kind == ast.ModuleKind.module_raw:
+    var is_raw = file.module_kind == ast.ModuleKind.module_raw
+    if is_raw:
         kind_sym = "raw_module"
+    # External files record the `external` keyword's line; ordinary files have
+    # no module line (host `module_line = nil`).
+    var line_field = field_nil("line")
+    if is_raw:
+        line_field = field_line(file.line)
     var value = node("AST::SourceFile", fields7(
         module_field,
         field_sym("module_kind", kind_sym),
-        field_value("imports", decls_value(ref_of(ctx), file.imports)),
-        field_value("directives", decls_value(ref_of(ctx), file.directives)),
-        field_value("declarations", decls_value(ref_of(ctx), file.declarations)),
-        field_nil("line"),
+        field_value("imports", decls_value(ref_of(ctx), file.imports, false)),
+        field_value("directives", decls_value(ref_of(ctx), file.directives, false)),
+        field_value("declarations", decls_value(ref_of(ctx), file.declarations, is_raw)),
+        line_field,
         field_nil("column"),
     ))
     render_value(ref_of(buf), value)

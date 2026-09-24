@@ -127,10 +127,10 @@ function is_digit_byte(b: ubyte) -> bool:
     return b >= '0' and b <= '9'
 
 function is_hex_digit_byte(b: ubyte) -> bool:
-    return is_digit_byte(b) or (b >= 'a' and b <= 'f') or (b >= 'A' and b <= 'F')
+    return is_digit_byte(b) or (b >= 'a' and b <= 'f') or (b >= 'A' and b <= 'F') or b == '_'
 
 function is_bin_digit_byte(b: ubyte) -> bool:
-    return b == '0' or b == '1'
+    return b == '0' or b == '1' or b == '_'
 
 function is_numeric_part_byte(b: ubyte) -> bool:
     return is_digit_byte(b) or b == '_'

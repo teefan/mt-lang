@@ -3330,8 +3330,9 @@ function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: typ
         return storage_ref
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
     let success_arm = if kind == "result": "success" else: "some"
-    let payload_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, success_arm))
-    let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = payload_ty))
+    let (decl_name, decl_module) = variant_declared_identity(storage_ty, ctx.module_name)
+    let payload_ty = variant_arm_payload_binding(decl_name, decl_module, outer_c, success_arm)
+    let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = types.Type.ty_nil))
     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = success_arm, ty = payload_ty))
     return alloc_expr(ir.Expr.expr_member(receiver = arm_data, member = "value", ty = success_ty))
 
@@ -3341,7 +3342,8 @@ function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: typ
 ## the else body resolves the name.
 function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec[ir.Stmt]], storage_ty: types.Type, storage_ref: ptr[ir.Expr], error_name: str) -> void:
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
-    let payload_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, "failure"))
+    let (decl_name, decl_module) = variant_declared_identity(storage_ty, ctx.module_name)
+    let payload_ty = variant_arm_payload_binding(decl_name, decl_module, outer_c, "failure")
     var error_ty = ctx.void_ty
     let args = variant_type_args(storage_ty)
     if args.len >= 2:
@@ -3355,7 +3357,7 @@ function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec
                 error_ty = ft.value
             Option.none:
                 pass
-    let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = payload_ty))
+    let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = types.Type.ty_nil))
     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = "failure", ty = payload_ty))
     let error_val = alloc_expr(ir.Expr.expr_member(receiver = arm_data, member = "error", ty = error_ty))
     let bc = utils.c_local_name(error_name)
@@ -14212,9 +14214,9 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                 Option.some as bn:
                     let arm_name = variant_match_arm_name_from_pattern(pattern) else:
                         fatal(c"lowering: unsupported variant match expression pattern")
-                    let binding_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, arm_name))
+                    let binding_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
-                    let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = binding_ty))
+                    let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrutinee_expr, member = "data", ty = types.Type.ty_nil))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
                     if ctx.async_cps_active:
@@ -14324,9 +14326,9 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             var stmts = vec.Vec[ir.Stmt].create()
             match arm.binding_name:
                 Option.some as bn:
-                    let binding_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, arm_name))
+                    let binding_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
                     register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
-                    let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = binding_ty))
+                    let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = types.Type.ty_nil))
                     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = binding_ty))
                     let bc = utils.c_local_name(bn.value)
                     if ctx.async_cps_active:
@@ -14414,13 +14416,13 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             output.push(ir.Stmt.stmt_if(condition = tag_check, then_body = then_body.as_span(), else_body = span[ir.Stmt]()))
 
             var blk = vec.Vec[ir.Stmt].create()
-            let payload_ty = types.Type.ty_named(module_name = "", name = variant_arm_type_name(outer_c, arm_name))
+            let payload_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
             register_arm_payload_fields(ctx, variant_arm_type_name(outer_c, arm_name), info, arm_name, scrutinee_ty)
             match variant_arm_info(info, arm_name):
                 Option.some as ai:
                     if ai.value.field_names.len > 0:
                         let payload_c = fresh_c_temp_name(ctx, "match_payload")
-                        let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = payload_ty))
+                        let data_member = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "data", ty = types.Type.ty_nil))
                         let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = sanitize_arm_field(arm_name), ty = payload_ty))
                         if ctx.async_cps_active:
                             # Spill the match arm's payload struct to a frame
@@ -14621,6 +14623,50 @@ function variant_arm_type_name(outer_c: str, arm_name: str) -> str:
     buf.append("_")
     buf.append(arm_name)
     return buf.as_str()
+
+
+## The module that owns a prelude variant's arm-payload binding type.  A local
+## variant's `VariantInfo.module_name` is authoritative; a prelude variant is
+## registered module-less, so fall back to its standard module.
+function variant_arm_owner_module(variant_name: str, owner_module: str) -> str:
+    if owner_module.len > 0:
+        return owner_module
+    if variant_name == "Option":
+        return "std.option"
+    if variant_name == "Result":
+        return "std.result"
+    return ""
+
+
+## The `as name` binding type of a variant match arm, tagged `VariantArmPayload`
+## (base variant name + module for rendering, payload C name for codegen).
+function variant_arm_payload_binding(variant_name: str, owner_module: str, outer_c: str, arm_name: str) -> types.Type:
+    return types.variant_arm_payload(
+        variant_name = variant_name,
+        module_name = variant_arm_owner_module(variant_name, owner_module),
+        c_name = variant_arm_type_name(outer_c, arm_name),
+        arm_name = arm_name,
+    )
+
+
+## The declared name and owning module of a variant-typed storage
+## (`Option[int]` -> ("Option", "std.option")), used to tag guard projections.
+function variant_declared_identity(ty: types.Type, fallback_module: str) -> (str, str):
+    match ty:
+        types.Type.ty_generic as g:
+            return (g.name, variant_arm_owner_module(g.name, ""))
+        types.Type.ty_imported as im:
+            if is_prelude_variant_name(im.name):
+                return (im.name, variant_arm_owner_module(im.name, ""))
+            return (im.name, im.module_name)
+        types.Type.ty_named as n:
+            if is_prelude_variant_name(n.name):
+                return (n.name, variant_arm_owner_module(n.name, ""))
+            return (n.name, if n.module_name.len > 0: n.module_name else: fallback_module)
+        _:
+            return ("", fallback_module)
+
+
 
 
 ## Record a match-arm payload binding's field info under its payload struct C
@@ -14855,6 +14901,9 @@ function arm_payload_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member:
     match recv_ty:
         types.Type.ty_named as n:
             name = n.name
+        types.Type.ty_variant_arm_payload as ap:
+            # The registry is keyed by the payload struct's C name.
+            name = ap.c_name
         _:
             return Option[types.Type].none
     let arm_ptr = ctx.arm_payload_fields.get(name)

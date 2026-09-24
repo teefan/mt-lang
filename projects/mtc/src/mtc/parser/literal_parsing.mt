@@ -4,6 +4,7 @@
 ##
 ## Mirrors `lib/milk_tea/core/parser/literal_parsing.rb` in the Ruby compiler.
 
+import std.libc as libc
 import std.string as string
 import std.str
 import std.vec as vec
@@ -15,23 +16,22 @@ const LOWER_X_V: ubyte = 'x'
 const UPPER_X_V: ubyte = 'X'
 const LOWER_B_V: ubyte = 'b'
 const UPPER_B_V: ubyte = 'B'
-const LOWER_E_V: ubyte = 'e'
-const UPPER_E_V: ubyte = 'E'
-const PLUS_BYTE_V: ubyte = '+'
 const MINUS_BYTE_V: ubyte = '-'
 
 
-public function parse_int_literal(lexeme: str) -> long:
+## Parse an integer literal into its unsigned 64-bit magnitude, ignoring any
+## leading `-`.  The host lexer stores a Ruby Integer, which for unsigned
+## literals such as `18446744073709551615` is a positive value that does not
+## fit a signed `long`; accumulating in `ptr_uint` keeps the full range.
+public function parse_int_literal_unsigned(lexeme: str) -> ptr_uint:
     if lexeme.len == 0:
         return 0
     var pos: ptr_uint = 0
-    var negative = false
-    var value: long = 0
+    var value: ptr_uint = 0
 
     unsafe:
         let first = ubyte<-read(lexeme.data)
         if first == MINUS_BYTE_V:
-            negative = true
             pos = 1
 
         if pos + 2 < lexeme.len:
@@ -45,16 +45,14 @@ public function parse_int_literal(lexeme: str) -> long:
                         pos += 1
                         continue
                     if b >= '0' and b <= '9':
-                        value = value * 16 + long<-(b - '0')
+                        value = value * 16 + ptr_uint<-(b - '0')
                     else if b >= 'a' and b <= 'f':
-                        value = value * 16 + long<-(b - 'a' + 10)
+                        value = value * 16 + ptr_uint<-(b - 'a' + 10)
                     else if b >= 'A' and b <= 'F':
-                        value = value * 16 + long<-(b - 'A' + 10)
+                        value = value * 16 + ptr_uint<-(b - 'A' + 10)
                     else:
                         break
                     pos += 1
-                if negative:
-                    return -value
                 return value
 
             if second == ZERO_BYTE_V and (third == LOWER_B_V or third == UPPER_B_V):
@@ -71,8 +69,6 @@ public function parse_int_literal(lexeme: str) -> long:
                     else:
                         break
                     pos += 1
-                if negative:
-                    return -value
                 return value
 
         while pos < lexeme.len:
@@ -81,86 +77,37 @@ public function parse_int_literal(lexeme: str) -> long:
                 pos += 1
                 continue
             if b >= '0' and b <= '9':
-                value = value * 10 + long<-(b - '0')
+                value = value * 10 + ptr_uint<-(b - '0')
             else:
                 break
             pos += 1
 
-    if negative:
-        return -value
     return value
+
+
+public function parse_int_literal(lexeme: str) -> long:
+    let magnitude = parse_int_literal_unsigned(lexeme)
+    if lexeme.len > 0 and lexeme.byte_at(0) == MINUS_BYTE_V:
+        return -long<-magnitude
+    return long<-magnitude
 
 
 public function parse_float_literal(lexeme: str) -> double:
     if lexeme.len == 0:
         return 0.0
-    var pos: ptr_uint = 0
-    var negative = false
-    var exp_negative = false
-    # 64-bit accumulators: a fractional part like 141592653589793 overflows a
-    # 32-bit int and silently truncates the literal's precision.
-    var int_part: long = 0
-    var dec_part: long = 0
-    var dec_div: long = 1
-    var exp_part: long = 0
-    var in_dec = false
-    var in_exp = false
-
-    unsafe:
-        let first = ubyte<-read(lexeme.data)
-        if first == MINUS_BYTE_V:
-            negative = true
-            pos = 1
-
-        while pos < lexeme.len:
-            let b = ubyte<-read(lexeme.data + pos)
-            if b == '_':
-                pos += 1
-                continue
-            if b == '.':
-                in_dec = true
-                pos += 1
-                continue
-            if b == LOWER_E_V or b == UPPER_E_V:
-                in_exp = true
-                pos += 1
-                if pos < lexeme.len:
-                    let sign = ubyte<-read(lexeme.data + pos)
-                    if sign == MINUS_BYTE_V:
-                        exp_negative = true
-                        pos += 1
-                    else if sign == PLUS_BYTE_V:
-                        pos += 1
-                continue
-            if b >= '0' and b <= '9':
-                let d = long<-(b - '0')
-                if in_exp:
-                    exp_part = exp_part * 10 + d
-                else if in_dec:
-                    dec_part = dec_part * 10 + d
-                    dec_div *= 10
-                else:
-                    int_part = int_part * 10 + d
-            else:
-                break
-            pos += 1
-
-    var result: double = double<-(int_part)
-    if dec_div > 1:
-        result += double<-(dec_part) / double<-(dec_div)
-    if exp_part != 0:
-        var remaining = exp_part
-        if exp_negative:
-            while remaining > 0:
-                result /= 10.0
-                remaining -= 1
-        else:
-            while remaining > 0:
-                result *= 10.0
-                remaining -= 1
-    if negative:
-        return -result
-    return result
+    # The host does `lexeme.delete("_").delete_suffix("f").delete_suffix("d").to_f`,
+    # a correctly-rounded decimal->double conversion.  `strtod` is the matching
+    # primitive: it rounds identically and stops at the `f`/`d` suffix itself,
+    # so only `_` separators need stripping first (strtod stops at them).
+    var cleaned = string.String.create()
+    defer: cleaned.release()
+    var i: ptr_uint = 0
+    while i < lexeme.len:
+        let b = lexeme.byte_at(i)
+        if b != '_':
+            cleaned.push_byte(b)
+        i += 1
+    return libc.parse_double_to_end(cleaned.as_str(), null)
 
 
 public function parse_string_content(lexeme: str, is_cstring: bool) -> str:

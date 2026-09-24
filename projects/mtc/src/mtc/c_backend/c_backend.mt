@@ -2070,6 +2070,8 @@ function c_type(t: types.Type) -> str:
                     return n.name
                 return naming.qualified_c_name(n.module_name, n.name)
             return n.name
+        types.Type.ty_variant_arm_payload as ap:
+            return ap.c_name
         types.Type.ty_var as v:
             # Unresolved type parameter — should have been substituted during
             # monomorphization.  Emit the raw name; if it reaches C it will
@@ -2082,6 +2084,8 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_type_meta:
             return "void"
         types.Type.ty_error:
+            return "void"
+        types.Type.ty_nil:
             return "void"
         types.Type.ty_nullable as nl:
             unsafe:

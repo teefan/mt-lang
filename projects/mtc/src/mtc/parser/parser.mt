@@ -326,7 +326,7 @@ function block_expression(expr: ptr[ast.Expr]?) -> bool:
         return false
     unsafe:
         let e = read(expr)
-        return e is ast.Expr.expr_proc or e is ast.Expr.expr_match
+        return e is ast.Expr.expr_proc or e is ast.Expr.expr_match or e is ast.Expr.expr_if
 
 
 function matching_rbracket_index(s: ref[pstate.ParserState], start_index: ptr_uint) -> Option[ptr_uint]:
@@ -849,9 +849,15 @@ function parse_source_file(s: ref[pstate.ParserState]) -> ast.SourceFile:
     skip_newlines(s)
 
     if check(s, tk.TokenKind.tk_external) and not check_next(s, tk.TokenKind.tk_function):
+        # The host records the `external` keyword's line as the module line.
+        var external_line: ptr_uint = 0
+        let etok = peek(s)
+        if etok != null:
+            unsafe:
+                external_line = read(etok).line
         advance(s)
         skip_newlines(s)
-        return parse_raw_module_body(s)
+        return parse_raw_module_body(s, external_line)
 
     var imports = vec.Vec[ast.Decl].create()
     var declarations = vec.Vec[ast.Decl].create()
@@ -879,7 +885,7 @@ function parse_source_file(s: ref[pstate.ParserState]) -> ast.SourceFile:
     )
 
 
-function parse_raw_module_body(s: ref[pstate.ParserState]) -> ast.SourceFile:
+function parse_raw_module_body(s: ref[pstate.ParserState], module_line: ptr_uint) -> ast.SourceFile:
     var imports = vec.Vec[ast.Decl].create()
     var directives = vec.Vec[ast.Decl].create()
     var declarations = vec.Vec[ast.Decl].create()
@@ -906,7 +912,7 @@ function parse_raw_module_body(s: ref[pstate.ParserState]) -> ast.SourceFile:
         imports = imports.as_span(),
         directives = directives.as_span(),
         declarations = declarations.as_span(),
-        line = 1,
+        line = module_line,
     )
 
 
@@ -1054,33 +1060,29 @@ function external_file_header(s: ref[pstate.ParserState]) -> bool:
 
 
 function parse_raw_module_directive(s: ref[pstate.ParserState]) -> ptr[ast.Decl]:
-    let tok = peek(s)
-    var ln: ptr_uint = 0
-    var cn: ptr_uint = 0
-    if tok != null:
-        unsafe:
-            ln = read(tok).line
-            cn = read(tok).column
+    # The host constructs directive nodes with only `value:` (Ruby
+    # `AST::LinkDirective.new(value:)`), leaving `line`/`column` nil.  `0` is
+    # the self-host nil sentinel, rendered as `nil` by the sexpr dumper.
     if match_kind(s, tk.TokenKind.tk_link):
         consume(s, tk.TokenKind.string, c"expected string after link")
         let value = parse_string_content(previous_lexeme(s), false)
         consume_end_of_statement(s)
         var node = alloc_decl(s)
-        read(node) = ast.Decl.decl_link(value = value, line = ln, column = cn)
+        read(node) = ast.Decl.decl_link(value = value, line = 0, column = 0)
         return node
     else if match_kind(s, tk.TokenKind.tk_include):
         consume(s, tk.TokenKind.string, c"expected string after include")
         let value = parse_string_content(previous_lexeme(s), false)
         consume_end_of_statement(s)
         var node = alloc_decl(s)
-        read(node) = ast.Decl.decl_include(value = value, line = ln, column = cn)
+        read(node) = ast.Decl.decl_include(value = value, line = 0, column = 0)
         return node
     else if match_kind(s, tk.TokenKind.tk_compiler_flag):
         consume(s, tk.TokenKind.string, c"expected string after compiler_flag")
         let value = parse_string_content(previous_lexeme(s), false)
         consume_end_of_statement(s)
         var node = alloc_decl(s)
-        read(node) = ast.Decl.decl_compiler_flag(value = value, line = ln, column = cn)
+        read(node) = ast.Decl.decl_compiler_flag(value = value, line = 0, column = 0)
         return node
     return decl_error_sentinel(s)
 
@@ -3371,10 +3373,27 @@ function parse_primary(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
 function parse_if_expression(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
     var condition = parse_expression(s)
     consume(s, tk.TokenKind.colon, c"expected ':' after if condition")
-    var then_expr = parse_expression(s)
-    consume(s, tk.TokenKind.tk_else, c"expected 'else' in if expression")
-    consume(s, tk.TokenKind.colon, c"expected ':' after else")
-    var else_expr = parse_expression(s)
+    var then_expr: ptr[ast.Expr]
+    var else_expr: ptr[ast.Expr]
+    if check(s, tk.TokenKind.newline):
+        # Block form: `if cond:` newline-indented expression, `else:` likewise.
+        consume(s, tk.TokenKind.newline, c"expected newline after if condition")
+        consume(s, tk.TokenKind.indent, c"expected indented if expression body")
+        then_expr = parse_expression(s)
+        consume_end_of_statement(s)
+        consume(s, tk.TokenKind.dedent, c"expected end of if expression body")
+        consume(s, tk.TokenKind.tk_else, c"expected 'else' in if expression")
+        consume(s, tk.TokenKind.colon, c"expected ':' after else")
+        consume(s, tk.TokenKind.newline, c"expected newline after else:")
+        consume(s, tk.TokenKind.indent, c"expected indented else expression body")
+        else_expr = parse_expression(s)
+        consume_end_of_statement(s)
+        consume(s, tk.TokenKind.dedent, c"expected end of else expression body")
+    else:
+        then_expr = parse_expression(s)
+        consume(s, tk.TokenKind.tk_else, c"expected 'else' in if expression")
+        consume(s, tk.TokenKind.colon, c"expected ':' after else")
+        else_expr = parse_expression(s)
     var node = alloc_expr(s)
     read(node) = ast.Expr.expr_if(condition = condition, then_expr = then_expr, else_expr = else_expr)
     return node
@@ -3672,10 +3691,15 @@ function parse_struct_decl(s: ref[pstate.ParserState], attrs: span[ast.Attribute
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         let member_attrs = parse_attribute_applications(s)
         let member_vis = match_kind(s, tk.TokenKind.tk_public)
-        if match_kind(s, tk.TokenKind.tk_event):
+        # `event`/`struct` are keywords, but they are also valid field names.
+        # The host disambiguates with `!check_next(:colon)`: `event: T` is a
+        # field, while `event name` / `struct name` start declarations.
+        if check(s, tk.TokenKind.tk_event) and not check_next(s, tk.TokenKind.colon):
+            match_kind(s, tk.TokenKind.tk_event)
             unsafe:
                 events.push(read(parse_event_decl(s, member_attrs, member_vis)))
-        else if match_kind(s, tk.TokenKind.tk_struct):
+        else if check(s, tk.TokenKind.tk_struct) and not check_next(s, tk.TokenKind.colon):
+            match_kind(s, tk.TokenKind.tk_struct)
             unsafe:
                 nested.push(read(parse_struct_decl(s, member_attrs, member_vis)))
         else if struct_member_is_method(s):

@@ -329,16 +329,28 @@ function parse_module_name(file_path: str) -> string.String:
             package_root_owner = path_ops.join(pkg_dir.value.as_str(), source_root_owner.as_str())
             roots.push(package_root_owner.as_str())
         Option.none:
-            match fs.find_ancestor_containing(abs_path, "std"):
-                Option.some as project_dir:
-                    roots.push(project_dir.value.as_str())
-                Option.none:
-                    pass
+            pass
+    # Project-root fallback (nearest ancestor containing `std`), mirroring the
+    # host's `project_root_for_path`.  This is needed when a file lies outside
+    # its package's source root (e.g. `projects/mtc/test/...`), where the host
+    # falls back to the repo root rather than the bare file name.
+    match fs.find_ancestor_containing(abs_path, "std"):
+        Option.some as project_dir:
+            roots.push(project_dir.value.as_str())
+        Option.none:
+            pass
     return resolver.infer_module_name(abs_path, roots.as_span())
 
 
 function parse_command(file_path: str, sexpr: bool) -> int:
-    match fs.read_text(file_path):
+    # Resolve to the active-platform variant (`name.mt` -> `name.linux.mt` when
+    # a sibling exists), matching the Ruby loader's `load_file`.
+    var abs_owner = loader.absolute_path(file_path)
+    defer: abs_owner.release()
+    var resolved = resolver.resolve_source_path(abs_owner.as_str(), resolver.Platform.linux)
+    defer: resolved.release()
+
+    match fs.read_text(resolved.as_str()):
         Result.failure:
             stdio.print_format(c"error: cannot read '%.*s'\n", int<-(file_path.len), file_path.data)
             return 1
@@ -370,7 +382,7 @@ function parse_command(file_path: str, sexpr: bool) -> int:
                 return 1
 
             if sexpr:
-                var module_owner = parse_module_name(file_path)
+                var module_owner = parse_module_name(resolved.as_str())
                 defer: module_owner.release()
                 var dumped = sexpr_mod.dump_ast(file, module_owner.as_str())
                 defer: dumped.release()
