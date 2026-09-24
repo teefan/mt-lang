@@ -7143,6 +7143,15 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                     or id.name == "attributes_of" or id.name == "has_attribute"
                     or id.name == "adapt"
                 ) and type_args.len >= 1:
+                    # `attribute_arg[T](attribute_of(field_of(Type, field), attr),
+                    # name)` folds to the attribute's argument literal.
+                    if id.name == "attribute_arg":
+                        var attr_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                        match try_const_attribute_arg_ir(ctx, type_args, call_args, ref_of(attr_env)):
+                            Option.some as attr_val:
+                                return attr_val.value
+                            Option.none:
+                                pass
                     let z_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
                     return alloc_expr(ir.Expr.expr_zero_init(ty = z_ty))
                 # Generic struct constructor, e.g. `Pair[int, int](first = 42, ...)`.
@@ -17819,6 +17828,8 @@ function try_const_call_ir(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span
                     ast.Expr.expr_identifier as bsid:
                         if bsid.name == "array":
                             return try_const_array_literal_ir(ctx, bare_spec.arguments, args, env)
+                        if bsid.name == "attribute_arg":
+                            return try_const_attribute_arg_ir(ctx, bare_spec.arguments, args, env)
                     _:
                         pass
                 return Option[ptr[ir.Expr]].none
@@ -17926,6 +17937,177 @@ function try_const_array_literal_ir(ctx: ref[LowerCtx], type_args: span[ast.Type
                 return Option[ptr[ir.Expr]].none
         i += 1
     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span())))
+
+
+## Fold `attribute_arg[T](attribute_of(field_of(Type, field), attr), name)`.  The
+## attribute application is read from the field's AST and its argument named
+## `name` is returned.  (The self-host reflection is limited to this pattern,
+## matching the corpus usage.)
+function try_const_attribute_arg_ir(ctx: ref[LowerCtx], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+    if type_args.len != 1 or args.len != 2:
+        return Option[ptr[ir.Expr]].none
+    let type_ty = resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
+    let arg_name = comptime_arg_name(unsafe: args.data + 1)
+    if arg_name.len == 0:
+        return Option[ptr[ir.Expr]].none
+    # Unwrap `attribute_of(field_of(Type, field), attr)` to (type, field, attr).
+    let attr_call = unsafe: read(args.data + 0).arg_value
+    let attr_ident = comptime_inner_arg_name(attr_call, "attribute_of", 1)
+    if attr_ident.len == 0:
+        return Option[ptr[ir.Expr]].none
+    let field_call = comptime_inner_arg_expr(attr_call, "attribute_of", 0)
+    if field_call == null:
+        return Option[ptr[ir.Expr]].none
+    let field_call_ptr = ptr[ast.Expr]<-field_call
+    let type_name = comptime_inner_arg_name(field_call_ptr, "field_of", 0)
+    let field_name = comptime_inner_arg_name(field_call_ptr, "field_of", 1)
+    if type_name.len == 0 or field_name.len == 0:
+        return Option[ptr[ir.Expr]].none
+    return lookup_attribute_arg_literal(ctx, type_name, field_name, attr_ident, arg_name, type_ty)
+
+
+## The name of argument `index` of a call expression `callee_name(...)`, or "".
+## The argument's value must be an identifier or string literal.
+function comptime_inner_arg_name(ep: ptr[ast.Expr], callee_name: str, index: ptr_uint) -> str:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as ac:
+                match read(ac.callee):
+                    ast.Expr.expr_identifier as acid:
+                        if acid.name == callee_name and ac.args.len > index:
+                            let val = read(ac.args.data + index).arg_value
+                            match read(val):
+                                ast.Expr.expr_identifier as v:
+                                    return v.name
+                                ast.Expr.expr_string_literal as s:
+                                    return s.value
+                                _:
+                                    pass
+                    _:
+                        pass
+            _:
+                pass
+    return ""
+
+
+## The expression of argument `index` of a call `callee_name(...)`, or null.
+function comptime_inner_arg_expr(ep: ptr[ast.Expr], callee_name: str, index: ptr_uint) -> ptr[ast.Expr]?:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as ac:
+                match read(ac.callee):
+                    ast.Expr.expr_identifier as acid:
+                        if acid.name == callee_name and ac.args.len > index:
+                            return read(ac.args.data + index).arg_value
+                    _:
+                        pass
+            _:
+                pass
+    return null
+
+
+## The IR literal for attribute argument `arg_name` of `@[attr(...)]` applied to
+## `Type.field`, if present.
+function lookup_attribute_arg_literal(ctx: ref[LowerCtx], type_name: str, field_name: str, attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
+    var di: ptr_uint = 0
+    while di < ctx.analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(ctx.analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_struct as s:
+                if s.name == type_name:
+                    var fi: ptr_uint = 0
+                    while fi < s.struct_fields.len:
+                        var f: ast.Field
+                        unsafe:
+                            f = read(s.struct_fields.data + fi)
+                        if f.name == field_name:
+                            let found = attribute_apps_arg_literal(ctx, f.attributes, attr_name, arg_name, ty)
+                            if found.is_some():
+                                return found
+                        fi += 1
+            _:
+                pass
+        di += 1
+    return Option[ptr[ir.Expr]].none
+
+
+## Search a field's attribute applications for `@[attr_name(...)]` and return the
+## IR literal for its argument `arg_name`.
+function attribute_apps_arg_literal(ctx: ref[LowerCtx], apps: span[ast.AttributeApplication], attr_name: str, arg_name: str, ty: types.Type) -> Option[ptr[ir.Expr]]:
+    var ai: ptr_uint = 0
+    while ai < apps.len:
+        var app: ast.AttributeApplication
+        unsafe:
+            app = read(apps.data + ai)
+        if app.name.parts.len == 1:
+            let app_name = unsafe: read(app.name.parts.data + 0)
+            if app_name == attr_name:
+                # Explicitly named arguments take precedence.
+                var argi: ptr_uint = 0
+                while argi < app.arguments.len:
+                    var app_arg: ast.Argument
+                    unsafe:
+                        app_arg = read(app.arguments.data + argi)
+                    match app_arg.arg_name:
+                        Option.some as an:
+                            if an.value == arg_name:
+                                return attribute_arg_value_to_ir(ctx, app_arg.arg_value, ty)
+                        Option.none:
+                            pass
+                    argi += 1
+                # Positional argument: match against the attribute declaration's
+                # parameter list to find the parameter named `arg_name`.
+                match attribute_param_index(ctx, attr_name, arg_name):
+                    Option.some as idx:
+                        if idx.value < app.arguments.len:
+                            let app_arg = unsafe: read(app.arguments.data + idx.value)
+                            return attribute_arg_value_to_ir(ctx, app_arg.arg_value, ty)
+                    Option.none:
+                        pass
+        ai += 1
+    return Option[ptr[ir.Expr]].none
+
+
+## The positional index of parameter `param_name` in the attribute declaration
+## `attribute[...] <attr_name>(<params>)`, or none.
+function attribute_param_index(ctx: ref[LowerCtx], attr_name: str, param_name: str) -> Option[ptr_uint]:
+    var di: ptr_uint = 0
+    while di < ctx.analysis.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(ctx.analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_attribute as a:
+                if a.name == attr_name:
+                    var pi: ptr_uint = 0
+                    while pi < a.attr_params.len:
+                        var p: ast.Param
+                        unsafe:
+                            p = read(a.attr_params.data + pi)
+                        if p.name == param_name:
+                            return Option[ptr_uint].some(value = pi)
+                        pi += 1
+            _:
+                pass
+        di += 1
+    return Option[ptr_uint].none
+
+
+function attribute_arg_value_to_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], ty: types.Type) -> Option[ptr[ir.Expr]]:
+    let result_ty = if types.is_error(ty): types.Type.ty_str else: ty
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_string_literal as s:
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = s.value, ty = result_ty, cstring = s.is_cstring)))
+            ast.Expr.expr_integer_literal as lit:
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = lit.value, ty = result_ty)))
+            ast.Expr.expr_bool_literal as b:
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = result_ty)))
+            _:
+                pass
+    return Option[ptr[ir.Expr]].none
 
 
 function try_const_struct_literal_ir(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
