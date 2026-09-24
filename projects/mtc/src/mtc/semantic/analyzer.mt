@@ -1206,19 +1206,21 @@ function resolve_type_at(ctx: ref[Context], t: ast.TypeRef, depth: int) -> types
         return types.Type.ty_error
     if t.is_fn or t.is_proc:
         var param_types = vec.Vec[types.Type].create()
+        var param_names = vec.Vec[str].create()
         var i: ptr_uint = 0
         while i < t.fn_params.len:
             var p: ast.Param
             unsafe:
                 p = read(t.fn_params.data + i)
             param_types.push(resolve_type_at(ctx, p.param_type, depth + 1))
+            param_names.push(p.name)
             i += 1
         var ret = types.primitive("void")
         let fr = t.fn_return
         if fr != null:
             unsafe:
                 ret = resolve_type_at(ctx, read(fr), depth + 1)
-        let base = types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = t.is_proc)
+        let base = types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = t.is_proc, param_names = param_names.as_span())
         return wrap_nullable(base, t.nullable)
 
     if t.is_dyn:
@@ -3037,15 +3039,17 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_proc as pr:
                 var param_types = vec.Vec[types.Type].create()
                 var pi: ptr_uint = 0
+                var param_names = vec.Vec[str].create()
                 while pi < pr.method_params.len:
                     var p: ast.Param = read(pr.method_params.data + pi)
                     param_types.push(resolve_type_value(ctx, p.param_type))
+                    param_names.push(p.name)
                     pi += 1
                 var ret = types.primitive("void")
                 let rt = pr.return_type
                 if rt != null:
                     ret = resolve_type(ctx, rt)
-                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true)
+                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = param_names.as_span())
             ast.Expr.expr_if as ife:
                 let then_ty = infer_expr(ctx, scope, ife.then_expr)
                 let else_ty = infer_expr(ctx, scope, ife.else_expr)
@@ -3589,7 +3593,7 @@ function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]])
                     new_params.push(substitute_type(read(f.params.data + pi2), subs))
                 pi2 += 1
             let new_ret = substitute_type(unsafe: read(f.return_type), subs)
-            return types.Type.ty_function(params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f.variadic, is_proc = f.is_proc)
+            return types.Type.ty_function(params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f.variadic, is_proc = f.is_proc, param_names = f.param_names)
         _:
             return t
 

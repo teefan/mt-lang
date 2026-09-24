@@ -28,7 +28,7 @@ public variant Type:
     ty_dyn(iface: str)
     ty_opaque(module_name: str, name: str)
     ty_generic(name: str, args: span[Type])
-    ty_function(params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool)
+    ty_function(params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool, param_names: span[str])
     ty_literal_int(value: long)
     ty_tuple(elements: span[Type], field_names: Option[span[str]])
 

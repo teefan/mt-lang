@@ -762,7 +762,7 @@ function substitute_type_params(ctx: ref[LowerCtx], ty: types.Type, sub: ref[map
                 unsafe:
                     fn_params.push(substitute_type_params(ctx, read(fnt.params.data + pi), sub))
                 pi += 1
-            return types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(substitute_type_params(ctx, unsafe: read(fnt.return_type), sub)), variadic = fnt.variadic, is_proc = fnt.is_proc)
+            return types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(substitute_type_params(ctx, unsafe: read(fnt.return_type), sub)), variadic = fnt.variadic, is_proc = fnt.is_proc, param_names = fnt.param_names)
         _:
             return ty
 
@@ -3944,6 +3944,7 @@ function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.T
 function resolve_function_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Type:
     let t = unsafe: read(tp)
     var param_types = vec.Vec[types.Type].create()
+    var param_names = vec.Vec[str].create()
     var i: ptr_uint = 0
     while i < t.fn_params.len:
         var p: ast.Param
@@ -3951,6 +3952,7 @@ function resolve_function_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> 
             p = read(t.fn_params.data + i)
         let pty = resolve_type_ref(ctx, ptr_of(p.param_type))
         param_types.push(pty)
+        param_names.push(p.name)
         i += 1
     var ret = ctx.void_ty
     let fr = t.fn_return
@@ -3962,6 +3964,7 @@ function resolve_function_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> 
         return_type = types.alloc_type(ret),
         variadic = false,
         is_proc = t.is_proc,
+        param_names = param_names.as_span(),
     )
 
 
@@ -5234,16 +5237,19 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                             if vcached != null:
                                                 let sf = unsafe: read(vcached)
                                                 var ptypes = vec.Vec[types.Type].create()
+                                                var pnames = vec.Vec[str].create()
                                                 var vpi: ptr_uint = 0
                                                 while vpi < sf.params.len:
                                                     unsafe:
                                                         ptypes.push(read(sf.params.data + vpi).ty)
+                                                        pnames.push(read(sf.params.data + vpi).name)
                                                     vpi += 1
                                                 fn_ty = types.Type.ty_function(
                                                     params = ptypes.as_span(),
                                                     return_type = types.alloc_type(sf.return_type),
                                                     variadic = false,
                                                     is_proc = false,
+                                                    param_names = pnames.as_span(),
                                                 )
                                             return alloc_expr(ir.Expr.expr_name(name = vspec_key, ty = fn_ty, pointer = false))
                                     _:
@@ -5680,7 +5686,7 @@ function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
                 unsafe:
                     all_params.push(read(fn_ty.params.data + i))
                 i += 1
-            return types.Type.ty_function(params = all_params.as_span(), return_type = fn_ty.return_type, variadic = false, is_proc = true)
+            return types.Type.ty_function(params = all_params.as_span(), return_type = fn_ty.return_type, variadic = false, is_proc = true, param_names = span[str]())
         _:
             return types.Type.ty_error
 
@@ -5689,7 +5695,7 @@ function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
 function proc_lifecycle_fn_type() -> types.Type:
     var params = vec.Vec[types.Type].create()
     params.push(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
-    return types.Type.ty_function(params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    return types.Type.ty_function(params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = span[str]())
 ## fields `_0`, `_1`, ... and a `ty_tuple` type.  (Named tuples arrive later.)
 function lower_tuple_literal_with_names(ctx: ref[LowerCtx], elements: span[ast.Expr]) -> ptr[ir.Expr]:
     var fields = vec.Vec[ir.AggregateField].create()
@@ -6614,6 +6620,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         return_type = types.alloc_type(task_ret_ty),
                         variadic = false,
                         is_proc = false,
+                        param_names = sp_str("frame"),
                     )
                 match found_ft:
                     types.Type.ty_function as field_fn:
@@ -8175,7 +8182,9 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
         unsafe:
             m = read(methods.data + mi)
         var fn_params = vec.Vec[types.Type].create()
+        var fn_param_names = vec.Vec[str].create()
         fn_params.push(void_ptr)
+        fn_param_names.push("this")
         var pi: ptr_uint = 0
         while pi < m.method_params.len:
             var p: ast.Param
@@ -8184,10 +8193,11 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], vtable_type_c_name: str, m
             var param_ty = resolve_field_type_ref(ctx, p.param_type)
             param_ty = substitute_interface_type_params(param_ty, type_args, type_params)
             fn_params.push(param_ty)
+            fn_param_names.push(p.name)
             pi += 1
         var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
         ret = substitute_interface_type_params(ret, type_args, type_params)
-        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false)
+        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
         fields.push(ir.Field(name = m.name, ty = fn_ty))
         mi += 1
     ctx.pending_dyn_vtable_structs.push(ir.StructDecl(name = vtable_type_c_name, linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
@@ -8322,16 +8332,19 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
         let wrapper_c_name = unsafe: read(wrapper_ptr)
         # Use the function type for the field so the constant matches the struct decl.
         var fn_params = vec.Vec[types.Type].create()
+        var fn_names = vec.Vec[str].create()
         fn_params.push(types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)))
+        fn_names.push("data")
         var pi: ptr_uint = 0
         while pi < m.method_params.len:
             var p: ast.Param
             unsafe:
                 p = read(m.method_params.data + pi)
             fn_params.push(resolve_field_type_ref(ctx, p.param_type))
+            fn_names.push(p.name)
             pi += 1
         let ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
-        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false)
+        let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_names.as_span())
         fields.push(ir.AggregateField(name = m.name, value = alloc_expr(ir.Expr.expr_name(name = wrapper_c_name, ty = fn_ty, pointer = false))))
         mi += 1
     ctx.pending_dyn_constants.push(ir.Constant(
@@ -9922,7 +9935,7 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         wait_result_args.push(ctx.void_ty)
     wait_result_args.push(event_error_ty)
     let wait_result_ty = ensure_generic_variant(ctx, "Result", wait_result_args.as_span())
-    let wake_fn_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false)
+    let wake_fn_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     let wait_frame_cn = j2(linkage, "__wait_frame")
     ctx.pending_event_structs.push(ir.StructDecl(
         name = wait_frame_cn, linkage_name = wait_frame_cn,
@@ -10264,7 +10277,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     let has_waiter = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = waiter_frame_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
     var wake_body = vec.Vec[ir.Stmt].create()
     let wf_waiter_ref = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "waiter", ty = void_ptr_ty))
-    let wake_fn_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    let wake_fn_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
     let wake_fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(wake_fn_ty))
     let cast_waiter = alloc_expr(ir.Expr.expr_cast(target_type = wake_fn_ptr_ty, expression = wf_waiter_ref, ty = wake_fn_ptr_ty))
     wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_waiter, arguments = single_expr_span(waiter_frame_ref), ty = types.primitive("void"))), line = 0, source_path = ""))
@@ -10288,10 +10301,13 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
         unsafe:
             stateful_call_args.push(read(payload_ref2))
     var stateful_fn_params = vec.Vec[types.Type].create()
+    var stateful_fn_names = vec.Vec[str].create()
     stateful_fn_params.push(void_ptr_ty)
+    stateful_fn_names.push("state")
     if info.has_payload:
         stateful_fn_params.push(info.payload_type)
-    let stateful_fn_ty = types.Type.ty_function(params = stateful_fn_params.as_span(), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false)
+        stateful_fn_names.push("payload")
+    let stateful_fn_ty = types.Type.ty_function(params = stateful_fn_params.as_span(), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = stateful_fn_names.as_span())
     let stateful_fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(stateful_fn_ty))
     let stateful_cast = alloc_expr(ir.Expr.expr_cast(target_type = stateful_fn_ptr_ty, expression = slot_listener, ty = stateful_fn_ptr_ty))
     stateful_call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = stateful_cast, arguments = stateful_call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
@@ -10304,9 +10320,11 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
         unsafe:
             call_args.push(read(payload_ref))
     var listener_fn_params = vec.Vec[types.Type].create()
+    var listener_fn_names = vec.Vec[str].create()
     if info.has_payload:
         listener_fn_params.push(info.payload_type)
-    let void_fn_ty = types.Type.ty_function(params = listener_fn_params.as_span(), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false)
+        listener_fn_names.push("payload")
+    let void_fn_ty = types.Type.ty_function(params = listener_fn_params.as_span(), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = listener_fn_names.as_span())
     let fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_fn_ty))
     let cast_listener = alloc_expr(ir.Expr.expr_cast(target_type = fn_ptr_ty, expression = slot_listener, ty = fn_ptr_ty))
     call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_listener, arguments = call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
@@ -10358,7 +10376,7 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = false))
     let null_check = alloc_expr(ir.Expr.expr_binary(operator = "==", left = raw_expr, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
     var null_then = vec.Vec[ir.Stmt].create()
-    let wake_fn_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    let wake_fn_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
     let wake_fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(wake_fn_ty))
     let waiter_arg = alloc_expr(ir.Expr.expr_name(name = "waiter", ty = void_ptr_ty, pointer = false))
     let cast_waiter = alloc_expr(ir.Expr.expr_cast(target_type = wake_fn_ptr_ty, expression = waiter_arg, ty = wake_fn_ptr_ty))
@@ -10378,7 +10396,7 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = false))
     params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = void_ptr_ty, pointer = false))
-    let waiter_cb_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false)
+    let waiter_cb_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
     params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = waiter_cb_ty, pointer = true))
     return ir.Function(name = info.wait_set_waiter_c_name, linkage_name = info.wait_set_waiter_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
@@ -10566,7 +10584,7 @@ function lower_listener_arg(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> ptr[ir.Ex
                 if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                     let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
                     let void_ty = ctx.void_ty
-                    let void_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false)
+                    let void_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str]())
                     return alloc_expr(ir.Expr.expr_cast(
                         target_type = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)),
                         expression = alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = void_fn_ty, pointer = false)),
@@ -14836,12 +14854,14 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                                 if not s.value.has_return_type:
                                     ret = ctx.void_ty
                                 var param_types = vec.Vec[types.Type].create()
+                                var param_names = vec.Vec[str].create()
                                 var pi: ptr_uint = 0
                                 while pi < s.value.params.len:
                                     unsafe:
                                         param_types.push(read(s.value.params.data + pi).ty)
+                                        param_names.push(read(s.value.params.data + pi).name)
                                     pi += 1
-                                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false)
+                                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = param_names.as_span())
                             Option.none:
                                 pass
                         return types.Type.ty_error
@@ -14912,10 +14932,12 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
             ast.Expr.expr_proc as pr:
                 var param_types = vec.Vec[types.Type].create()
                 var pi: ptr_uint = 0
+                var proc_param_names = vec.Vec[str].create()
                 while pi < pr.method_params.len:
                     unsafe:
                         let p = read(pr.method_params.data + pi)
                         param_types.push(resolve_field_type_ref(ctx, p.param_type))
+                        proc_param_names.push(p.name)
                     pi += 1
                 var ret = ctx.void_ty
                 let rt = pr.return_type
@@ -14925,7 +14947,7 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                     # type-param inference (e.g. `map_error[F]`'s F from the proc's
                     # return type).
                     ret = resolve_field_type_ref(ctx, unsafe: read(rt))
-                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true)
+                return types.Type.ty_function(params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = proc_param_names.as_span())
             _:
                 return types.Type.ty_error
 
@@ -18945,7 +18967,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_ty))
 
     # Common vtable param: void* __mt_frame_raw
-    var waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false)
+    var waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     var vparams = vec.Vec[ir.Param].create()
     vparams.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
     let vparam_s = vparams.as_span()
@@ -19178,7 +19200,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     var sw_params = vec.Vec[ir.Param].create()
     sw_params.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
     sw_params.push(ir.Param(name = "__mt_waiter_frame", linkage_name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = true))
-    var waiter_cb_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false)
+    var waiter_cb_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     sw_params.push(ir.Param(name = "__mt_waiter_fn", linkage_name = "__mt_waiter_fn", ty = waiter_cb_ty, pointer = true))
     functions.push(ir.Function(name = j2(name, "_set_waiter"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
 
@@ -19543,7 +19565,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
     # Root proc: `proc() -> Task[inner]` wrapping the async main constructor.
     # `lower_fn_to_proc` registers the invoke/release/retain wrappers and the
     # proc struct decl, and returns the aggregate-literal initializer.
-    let proc_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(task_ret), variadic = false, is_proc = true)
+    let proc_fn_ty = types.Type.ty_function(params = span[types.Type](), return_type = types.alloc_type(task_ret), variadic = false, is_proc = true, param_names = span[str]())
     let proc_expr = lower_fn_to_proc(ctx, main_cname, proc_fn_ty)
     let proc_named_ty = ir_expr_type(proc_expr)
 
@@ -19641,7 +19663,7 @@ function int_to_str(v: int) -> str:
 
 ## Emit waiter wake: if frame->waiter is non-NULL, call it and null it.
 function async_waiter_wake(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], frame_exp: ptr[ir.Expr], bool_ty: types.Type, ptr_void_ty: types.Type) -> void:
-    let waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false)
+    let waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     let waiter_field = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = waiter_fn_ty))
     let null_void = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_void_ty))
     let has_waiter = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = waiter_field, right = null_void, ty = bool_ty))

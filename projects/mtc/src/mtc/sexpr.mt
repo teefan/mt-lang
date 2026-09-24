@@ -416,6 +416,26 @@ function named_type_class(ctx: ref[SexprCtx], name: str) -> str:
     return "Struct"
 
 
+## Render a function/proc parameter list as the host's `Types::Parameter` nodes
+## (`:name`, `:type`); `names` may be shorter than `params` for synthetic types.
+function param_list_value(ctx: ref[SexprCtx], params: span[types.Type], names: span[str]) -> SexprValue:
+    var items = vec.Vec[SexprValue].create()
+    var i: ptr_uint = 0
+    while i < params.len:
+        var name = ""
+        if i < names.len:
+            name = unsafe: read(names.data + i)
+        var pf = vec.Vec[SexprField].create()
+        pf.push(field_str("name", name))
+        pf.push(field_value("type", types_value(ctx, unsafe: read(params.data + i))))
+        pf.push(field_bool("mutable", false))
+        pf.push(field_value("passing_mode", SexprValue.sv_sym(value = "plain")))
+        pf.push(field_nil("boundary_type"))
+        items.push(node("Types::Parameter", pf.as_span()))
+        i += 1
+    return list_value(items.as_span())
+
+
 function types_list_value(ctx: ref[SexprCtx], items: span[types.Type]) -> SexprValue:
     var items_out = vec.Vec[SexprValue].create()
     var i: ptr_uint = 0
@@ -491,15 +511,15 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
         types.Type.ty_function as fnt:
             if fnt.is_proc:
                 var pf = vec.Vec[SexprField].create()
-                pf.push(field_value("params", types_list_value(ctx, fnt.params)))
+                pf.push(field_value("params", param_list_value(ctx, fnt.params, fnt.param_names)))
                 pf.push(field_value("return_type", types_value(ctx, unsafe: read(fnt.return_type))))
                 return node("Types::Proc", pf.as_span())
             var ff = vec.Vec[SexprField].create()
-            ff.push(field_nil("name"))
-            ff.push(field_value("params", types_list_value(ctx, fnt.params)))
+            ff.push(field_str("name", ""))
+            ff.push(field_value("params", param_list_value(ctx, fnt.params, fnt.param_names)))
             ff.push(field_value("return_type", types_value(ctx, unsafe: read(fnt.return_type))))
             ff.push(field_nil("receiver_type"))
-            ff.push(field_nil("receiver_editable"))
+            ff.push(field_bool("receiver_editable", false))
             ff.push(field_bool("variadic", fnt.variadic))
             ff.push(field_bool("external", false))
             return node("Types::Function", ff.as_span())
