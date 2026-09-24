@@ -1059,9 +1059,20 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
             ast.Decl.decl_event as ev:
                 var info = ensure_event_runtime(ctx, ev.name)
-                let ev_ty = types.Type.ty_named(module_name = "", name = info.event_c_name)
+                # The global's declared type is the event itself (`Types::Event`),
+                # whose C name is the runtime struct; the linkage name is the
+                # module-qualified event name.
+                var ev_payload: ptr[types.Type]? = null
+                if info.has_payload:
+                    ev_payload = types.alloc_type(info.payload_type)
+                let ev_ty = types.Type.ty_event(
+                    name = ev.name,
+                    capacity = info.capacity,
+                    payload_type = ev_payload,
+                    linkage_name = info.event_c_name,
+                )
                 let ev_zero = alloc_expr(ir.Expr.expr_zero_init(ty = ev_ty))
-                globals.push(ir.Global(name = ev.name, linkage_name = ev.name, ty = ev_ty, value = ev_zero))
+                globals.push(ir.Global(name = ev.name, linkage_name = naming.qualified_c_name(ctx.module_name, ev.name), ty = ev_ty, value = ev_zero))
             ast.Decl.decl_when as w:
                 match try_evaluate_const_expr(ctx, w.discriminant):
                     Option.some as dv:
@@ -3796,12 +3807,15 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 # If the imported module re-exports the type as an alias
                 # (e.g. `type CameraMode = c.CameraMode`), follow the chain
                 # so the C name comes from the originating `std.c.*` module.
-                let opt_alias = resolve_single_imported_type(ctx, target_module, type_name)
-                match opt_alias:
-                    Option.some as alias_ty:
-                        resolved = alias_ty.value
-                    Option.none:
-                        resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
+                if find_imported_opaque_decl(ctx, target_module, type_name):
+                    resolved = types.Type.ty_opaque(module_name = target_module, name = type_name)
+                else:
+                    let opt_alias = resolve_single_imported_type(ctx, target_module, type_name)
+                    match opt_alias:
+                        Option.some as alias_ty:
+                            resolved = alias_ty.value
+                        Option.none:
+                            resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
             else:
                 # Not an import alias: may be a nested struct, e.g.
                 # `Rectangle.Edge`.  The bare name is stored in structs and
@@ -3830,6 +3844,13 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
             else if is_builtin_type_name(name):
                 resolved = types.primitive(name)
             else if ctx.analysis.type_names.contains(name):
+                if find_imported_opaque_decl(ctx, ctx.module_name, name):
+                    # A declared `opaque X` (optionally with a C backing name) is
+                    # `Types::Opaque`, not a struct.
+                    resolved = types.Type.ty_opaque(module_name = ctx.module_name, name = name)
+                    if t.nullable:
+                        return types.Type.ty_nullable(base = types.alloc_type(resolved))
+                    return resolved
                 # Follow the type alias chain so that type aliases pointing to
                 # imported types (e.g. `type Color = c.Color`) resolve to the
                 # originating module's C name rather than the re-exporting
@@ -5068,7 +5089,9 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                     pass
                             return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = false))
                         if ctx.analysis.events.contains(id.name):
-                            return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = false))
+                            # The event's global is emitted under its
+                            # module-qualified linkage name.
+                            return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = expr_type(ctx, ep), pointer = false))
                         match lookup_qualified_constant(ctx, id.name):
                             Option.some as qc:
                                 return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = expr_type(ctx, ep), pointer = false))
@@ -12437,6 +12460,43 @@ function is_tuple_type(t: types.Type) -> bool:
 ## Lower a struct declaration to an IR StructDecl, resolving its fields from the
 ## analyzer's struct table (which carries resolved field types) and qualifying
 ## named field types with the current module for backend C-naming.
+## Map raw-module opaque named types (declared `opaque X`) to `Types::Opaque`
+## so the IR matches the host, recursing through generic arguments and nullable
+## bases.  The analyzer resolves such names as ordinary imported types.
+function opaqueify_type(ctx: ref[LowerCtx], ty: types.Type) -> types.Type:
+    match ty:
+        types.Type.ty_imported as im:
+            if im.args.len == 0:
+                if find_imported_opaque_decl(ctx, im.module_name, im.name):
+                    return types.Type.ty_opaque(module_name = im.module_name, name = im.name)
+                return ty
+            var iargs = vec.Vec[types.Type].create()
+            var ii: ptr_uint = 0
+            while ii < im.args.len:
+                iargs.push(opaqueify_type(ctx, unsafe: read(im.args.data + ii)))
+                ii += 1
+            return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = iargs.as_span())
+        types.Type.ty_named as n:
+            let owner = if n.module_name.len > 0: n.module_name else: ctx.module_name
+            if find_imported_opaque_decl(ctx, owner, n.name):
+                return types.Type.ty_opaque(module_name = owner, name = n.name)
+            return ty
+        types.Type.ty_generic as g:
+            if g.args.len == 0:
+                return ty
+            var gargs = vec.Vec[types.Type].create()
+            var gi: ptr_uint = 0
+            while gi < g.args.len:
+                gargs.push(opaqueify_type(ctx, unsafe: read(g.args.data + gi)))
+                gi += 1
+            return types.Type.ty_generic(name = g.name, args = gargs.as_span())
+        types.Type.ty_nullable as nl:
+            let base = opaqueify_type(ctx, unsafe: read(nl.base))
+            return types.Type.ty_nullable(base = types.alloc_type(base))
+        _:
+            return ty
+
+
 function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignment: int) -> Option[ir.StructDecl]:
     let fields_ptr = ctx.analysis.structs.get(name) else:
         return Option[ir.StructDecl].none
@@ -12465,7 +12525,7 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignmen
                     ensure_str_buffer_struct(ctx, fty)
             _:
                 pass
-        ir_fields.push(ir.Field(name = entry.name, ty = qualify_type(ctx, fty)))
+        ir_fields.push(ir.Field(name = entry.name, ty = qualify_type(ctx, opaqueify_type(ctx, fty))))
         i += 1
     return Option[ir.StructDecl].some(value = ir.StructDecl(
         name = name,

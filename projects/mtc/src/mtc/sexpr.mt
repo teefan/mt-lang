@@ -447,6 +447,16 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             else:
                 nt_fields.push(field_value("target_type", types_value(ctx, unsafe: read(target))))
             return node("Types::Null", nt_fields.as_span())
+        types.Type.ty_event as ev:
+            var ev_fields = vec.Vec[SexprField].create()
+            ev_fields.push(field_str("name", ev.name))
+            ev_fields.push(field_int("capacity", long<-ev.capacity))
+            let ev_payload = ev.payload_type
+            if ev_payload == null:
+                ev_fields.push(field_nil("payload_type"))
+            else:
+                ev_fields.push(field_value("payload_type", types_value(ctx, unsafe: read(ev_payload))))
+            return node("Types::Event", ev_fields.as_span())
         types.Type.ty_named as n:
             var nf = vec.Vec[SexprField].create()
             nf.push(field_str("name", n.name))

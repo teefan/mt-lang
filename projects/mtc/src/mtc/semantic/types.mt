@@ -21,6 +21,7 @@ public variant Type:
     ty_type_meta
     ty_nullable(base: ptr[Type])
     ty_null(target: ptr[Type]?)
+    ty_event(name: str, capacity: ptr_uint, payload_type: ptr[Type]?, linkage_name: str)
     ty_named(name: str, module_name: str)
     ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
@@ -178,6 +179,8 @@ public function type_to_string(t: Type) -> str:
                 buf.append(type_to_string(read(target)))
             buf.append("]")
             return buf.as_str()
+        Type.ty_event as ev:
+            return ev.name
         Type.ty_generic as g:
             var buf = string.String.create()
             buf.append(g.name)
@@ -326,6 +329,20 @@ public function type_equals(a: Type, b: Type) -> bool:
                     if tb == null:
                         return false
                     return type_equals(unsafe: read(ta), unsafe: read(tb))
+                _:
+                    return false
+        Type.ty_event as ea:
+            match b:
+                Type.ty_event as eb:
+                    if ea.name != eb.name or ea.capacity != eb.capacity or ea.linkage_name != eb.linkage_name:
+                        return false
+                    let pa = ea.payload_type
+                    let pb = eb.payload_type
+                    if pa == null:
+                        return pb == null
+                    if pb == null:
+                        return false
+                    return type_equals(unsafe: read(pa), unsafe: read(pb))
                 _:
                     return false
         Type.ty_named as na:

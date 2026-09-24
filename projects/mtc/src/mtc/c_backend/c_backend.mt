@@ -2037,6 +2037,8 @@ function c_type(t: types.Type) -> str:
             return naming.qualified_c_name(op.module_name, op.name)
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, "")
+        types.Type.ty_event as ev:
+            return ev.linkage_name
         types.Type.ty_imported as im:
             if im.module_name.starts_with("std.c."):
                 if std_c_backing_names != null:
