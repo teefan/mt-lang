@@ -3650,7 +3650,12 @@ function function_params(func: ir.Function) -> str:
     while i < func.params.len:
         unsafe:
             let p = read(func.params.data + i)
-            parts.push(c_declaration(p.ty, p.linkage_name))
+            # A pointer-lowered parameter (e.g. an editable method receiver)
+            # carries its base type with `pointer = true`; the `*` is added
+            # here.  Mirrors Ruby's
+            # `c_declaration(param.pointer ? pointer_to(param.type) : param.type, ...)`.
+            let pty = if p.pointer: types.Type.ty_generic(name = "ptr", args = sp_elem(p.ty)) else: p.ty
+            parts.push(c_declaration(pty, p.linkage_name))
         i += 1
     if parts.len() == 0:
         return "void"

@@ -719,7 +719,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
         else:
             p_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, fn_tref), sub))
         let p_c = utils.c_local_name(p.name)
-        let p_ptr = is_pointer_or_ref_type(p_ty)
+        let p_ptr = false
         let p_link = array_param_input_name(p_ty, p_c, ref_of(param_setup))
         ir_params.push(ir.Param(name = p.name, linkage_name = p_link, ty = p_ty, pointer = p_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = p_ptr))
@@ -1851,10 +1851,13 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     var ir_params = vec.Vec[ir.Param].create()
     var param_setup = vec.Vec[ir.Stmt].create()
     if m.method_kind != ast.MethodKind.mk_static:
-        let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(receiver_ty)) else: receiver_ty
-        let recv_is_ptr = is_pointer_or_ref_type(recv_ty)
-        ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = recv_ty, pointer = recv_is_ptr))
-        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = recv_ty, pointer = recv_is_ptr))
+        # A pointer-lowered receiver (editable method) carries its base type
+        # with `pointer = true`; the C `*` is added by the backend.  Ordinary
+        # and static methods take `this` by value.  Mirrors the host's
+        # `pointer_lowered_sync_method_receiver?`.
+        let recv_is_ptr = m.method_kind == ast.MethodKind.mk_editable
+        ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = receiver_ty, pointer = recv_is_ptr))
+        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = receiver_ty, pointer = recv_is_ptr))
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
         var p: ast.Param
@@ -1862,7 +1865,9 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
             p = read(m.method_params.data + pi)
         let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
         let c_pname = utils.c_local_name(p.name)
-        let is_ptr = is_pointer_or_ref_type(param_ty)
+        # Params are never pointer-lowered: `ptr`/`ref`/`own` types already
+        # render as C pointers.  Matches the host (always `pointer: false`).
+        let is_ptr = false
         let link_name = array_param_input_name(param_ty, c_pname, ref_of(param_setup))
         ir_params.push(ir.Param(name = p.name, linkage_name = link_name, ty = param_ty, pointer = is_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = param_ty, pointer = is_ptr))
@@ -2007,7 +2012,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
             p = read(params.data + pi)
         let param_ty = resolve_param_type(ctx, sig, pi, p.param_type)
         let c_name = utils.c_local_name(p.name)
-        let f_ptr = is_pointer_or_ref_type(param_ty)
+        let f_ptr = false
         let link_name = array_param_input_name(param_ty, c_name, ref_of(param_setup))
         ir_params.push(ir.Param(name = p.name, linkage_name = link_name, ty = param_ty, pointer = f_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = f_ptr))
@@ -6309,7 +6314,10 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     if args.len == 1:
                         let inner = lower_expr(ctx, read(args.data + 0).arg_value)
                         let inner_ty = ir_expr_type(inner)
-                        var result_ty = expr_type(ctx, call_ep)
+                        # The analyzer may record the referent type unqualified
+                        # (e.g. `ref[Counter]` with `Counter` module-less);
+                        # qualify it so the element matches the host.
+                        var result_ty = qualify_type(ctx, expr_type(ctx, call_ep))
                         # When expr_type returns void or error (e.g. the analyzer
                         # did not record a type for the builtin), compute the
                         # correct result type from the argument's type.  Also
@@ -7027,7 +7035,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         # The hooks take `const_ptr[T]`: implicitly borrow a value
                         # argument (`&value`); pass a pointer/ref argument through.
                         let arg_ty = ir_expr_type(lowered)
-                        if is_pointer_or_ref_type(arg_ty):
+                        if ir_expr_is_pointer(lowered):
                             unsafe:
                                 ir_args.push(read(lowered))
                         else:
@@ -7345,6 +7353,30 @@ function is_pointer_or_ref_type(t: types.Type) -> bool:
             return is_pointer_or_ref_type(unsafe: read(nl.base))
         _:
             return false
+
+
+## True when an IR expression denotes a pointer value.  Besides pointer-like
+## types, a `pointer`-flagged name can hold a base-typed pointer (e.g. `this` in
+## an editable method, or a pointer-lowered receiver) — the C `*` is implied.
+function ir_expr_is_pointer(e: ptr[ir.Expr]) -> bool:
+    if is_pointer_or_ref_type(ir_expr_type(e)):
+        return true
+    unsafe:
+        match read(e):
+            ir.Expr.expr_name as n:
+                return n.pointer
+            _:
+                return false
+
+
+## The value type produced by dereferencing an IR pointer expression: the
+## element type for pointer-like types, or the expression's own (base) type for
+## a `pointer`-flagged name.
+function ir_expr_deref_type(e: ptr[ir.Expr]) -> types.Type:
+    let t = ir_expr_type(e)
+    if is_pointer_or_ref_type(t):
+        return types.pointer_element(t)
+    return t
 
 
 ## The type-constructor name ("ref", "ptr", "const_ptr") for a builtin
@@ -9010,9 +9042,8 @@ function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[a
             var declared: types.Type
             unsafe:
                 declared = read(mi.params.data + i).ty
-            let arg_ty = ir_expr_type(lowered)
-            if is_pointer_or_ref_type(arg_ty) and not is_pointer_or_ref_type(declared):
-                lowered = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = lowered, ty = types.pointer_element(arg_ty)))
+            if ir_expr_is_pointer(lowered) and not is_pointer_or_ref_type(declared):
+                lowered = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = lowered, ty = ir_expr_deref_type(lowered)))
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -9070,15 +9101,48 @@ function build_receiver_arg(recv: ptr[ir.Expr], method_kind: ast.MethodKind) -> 
         return Option[ptr[ir.Expr]].none
     let recv_ty = ir_expr_type(recv)
     let recv_is_pointer = is_pointer_or_ref_type(recv_ty)
+    # A pointer-lowered receiver can also be a `pointer`-flagged name whose
+    # static type is the base struct (e.g. `this` in an editable method), or a
+    # dereference result.  Mirror the host's expression-level checks.
+    var recv_is_ptr_expr = false
+    var recv_deref: Option[ptr[ir.Expr]] = Option[ptr[ir.Expr]].none
+    unsafe:
+        match read(recv):
+            ir.Expr.expr_name as n:
+                recv_is_ptr_expr = n.pointer
+            ir.Expr.expr_unary as u:
+                if u.operator == "*":
+                    recv_deref = Option[ptr[ir.Expr]].some(value = u.operand)
+            _:
+                pass
     if method_kind == ast.MethodKind.mk_editable:
-        if recv_is_pointer:
+        if recv_is_pointer or recv_is_ptr_expr:
             return Option[ptr[ir.Expr]].some(value = recv)
+        match recv_deref:
+            Option.some as operand:
+                return Option[ptr[ir.Expr]].some(value = operand.value)
+            Option.none:
+                pass
+        # The host types the auto-borrow as the receiver's base type (the `*`
+        # is implied by the address-of), not `ptr[T]`.
         return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_address_of(
             expression = recv,
-            ty = types.Type.ty_generic(name = "ptr", args = sp_type(recv_ty)),
+            ty = recv_ty,
         )))
     # Plain value receiver.
-    if recv_is_pointer:
+    if types.is_ref_type(recv_ty):
+        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_unary(
+            operator = "*",
+            operand = recv,
+            ty = types.pointer_element(recv_ty),
+        )))
+    if recv_is_ptr_expr:
+        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_unary(
+            operator = "*",
+            operand = recv,
+            ty = recv_ty,
+        )))
+    if is_pointer_or_ref_type(recv_ty):
         return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_unary(
             operator = "*",
             operand = recv,
@@ -9596,7 +9660,7 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
         # ptr[T]`): pass it through (address-of for editable) rather than
         # auto-dereferencing as a value receiver.
         var ptr_recv = recv
-        if gm.method.method_kind == ast.MethodKind.mk_editable and not is_pointer_or_ref_type(ir_expr_type(recv)):
+        if gm.method.method_kind == ast.MethodKind.mk_editable and not ir_expr_is_pointer(recv):
             ptr_recv = alloc_expr(ir.Expr.expr_address_of(
                 expression = recv,
                 ty = types.Type.ty_generic(name = "ptr", args = sp_type(ir_expr_type(recv))),
@@ -9646,10 +9710,10 @@ function coerce_arg_to_param(cached: ptr[ir.Function]?, param_index: ptr_uint, a
     # coercion the analyzer permits).
     if is_span_type(param.ty) and is_array_type(arg_ty):
         return array_value_to_span(arg, arg_ty, param.ty)
-    if is_pointer_or_ref_type(arg_ty) and not is_pointer_or_ref_type(param.ty):
+    if ir_expr_is_pointer(arg) and not is_pointer_or_ref_type(param.ty):
         # `*arg`: dereference the pointer argument to match the value parameter.
         return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = arg, ty = param.ty))
-    if is_pointer_or_ref_type(param.ty) and not is_pointer_or_ref_type(arg_ty) and ir_is_addressable(arg):
+    if is_pointer_or_ref_type(param.ty) and not ir_expr_is_pointer(arg) and ir_is_addressable(arg):
         # Implicit ref bridge: a by-value argument passed to a `ref[T]`
         # parameter (editable-method struct parameters) is addressable storage,
         # so pass its address (`&arg`).
@@ -9847,9 +9911,9 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
 
     var ir_params = vec.Vec[ir.Param].create()
     if m.method_kind != ast.MethodKind.mk_static:
-        let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(recv_struct_ty)) else: recv_struct_ty
-        ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = recv_ty, pointer = false))
-        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = recv_ty, pointer = false))
+        let recv_is_ptr = m.method_kind == ast.MethodKind.mk_editable
+        ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = recv_struct_ty, pointer = recv_is_ptr))
+        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = recv_struct_ty, pointer = recv_is_ptr))
 
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
@@ -9858,7 +9922,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
             p = read(m.method_params.data + pi)
         let p_ty = qualify_type(ctx, substitute_type_params(ctx, resolve_field_type_ref(ctx, p.param_type), sub))
         let c_pname = utils.c_local_name(p.name)
-        let is_ptr = is_pointer_or_ref_type(p_ty)
+        let is_ptr = false
         ir_params.push(ir.Param(name = p.name, linkage_name = c_pname, ty = p_ty, pointer = is_ptr))
         ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = p_ty, pointer = is_ptr))
         pi += 1
@@ -10680,7 +10744,7 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = false))
     params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = void_ptr_ty, pointer = false))
     let waiter_cb_ty = types.Type.ty_function(params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = waiter_cb_ty, pointer = true))
+    params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = waiter_cb_ty, pointer = false))
     return ir.Function(name = info.wait_set_waiter_c_name, linkage_name = info.wait_set_waiter_c_name, params = params.as_span(), return_type = void_ty, body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
@@ -11229,12 +11293,11 @@ function coerce_arg_to_ref_param(sig: Option[analyzer.FnSig], index: ptr_uint, a
                 param = read(s.value.params.data + index)
             if not types.is_ref_type(param.ty):
                 return arg
-            let arg_ty = ir_expr_type(arg)
-            if is_pointer_or_ref_type(arg_ty):
+            if ir_expr_is_pointer(arg):
                 return arg
             return alloc_expr(ir.Expr.expr_address_of(
                 expression = arg,
-                ty = types.Type.ty_generic(name = "ref", args = sp_type(arg_ty)),
+                ty = types.Type.ty_generic(name = "ref", args = sp_type(ir_expr_type(arg))),
             ))
         Option.none:
             return arg
@@ -19339,7 +19402,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # Common vtable param: void* __mt_frame_raw
     var waiter_fn_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     var vparams = vec.Vec[ir.Param].create()
-    vparams.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
+    vparams.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = false))
     let vparam_s = vparams.as_span()
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
 
@@ -19568,10 +19631,10 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_fn))
     vsw.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var sw_params = vec.Vec[ir.Param].create()
-    sw_params.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = true))
-    sw_params.push(ir.Param(name = "__mt_waiter_frame", linkage_name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = true))
+    sw_params.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = false))
+    sw_params.push(ir.Param(name = "__mt_waiter_frame", linkage_name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = false))
     var waiter_cb_ty = types.Type.ty_function(params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    sw_params.push(ir.Param(name = "__mt_waiter_fn", linkage_name = "__mt_waiter_fn", ty = waiter_cb_ty, pointer = true))
+    sw_params.push(ir.Param(name = "__mt_waiter_fn", linkage_name = "__mt_waiter_fn", ty = waiter_cb_ty, pointer = false))
     functions.push(ir.Function(name = j2(name, "_set_waiter"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: take_result (fresh vec) --
@@ -19650,7 +19713,11 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             if rawt == null:
                 fatal(c"lowering: async ctor params missing storage")
             pty = read(ptr[types.Type]<-rawt + pi4)
-        ctor_params.push(ir.Param(name = pname, linkage_name = pname, ty = pty, pointer = is_pointer_or_ref_type(pty)))
+        # Async constructor params are never pointer-lowered: `ptr`/`ref`/`own`
+        # types already render as C pointers.  The constructor's receiver, when
+        # pointer-lowered, is passed as its base type by the host; the self-host
+        # still types it as `ptr[base]` here, which renders to the same C.
+        ctor_params.push(ir.Param(name = pname, linkage_name = pname, ty = pty, pointer = false))
         pi4 += 1
     functions.push(ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false))
 
