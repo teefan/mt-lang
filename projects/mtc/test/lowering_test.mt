@@ -249,7 +249,9 @@ function test_struct_aggregate_lowering_does_not_crash() -> void:
     var ir = lower_source(source)
     defer: ir.release()
     let text = ir.as_str()
-    expect(text.contains_substring("Vec_int"))
+    # Concrete instances print as the generic form with their arguments
+    # (`Vec[int]`), not a mangled `Vec_int` C name.
+    expect(text.contains_substring("Vec[int]"))
 
 
 # =============================================================================

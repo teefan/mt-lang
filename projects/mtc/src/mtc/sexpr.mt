@@ -486,8 +486,9 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             var imf = vec.Vec[SexprField].create()
             imf.push(field_str("name", im.name))
             imf.push(field_str("module_name", im.module_name))
+            # The host dumper matches `Types::Struct`/`Types::Variant` before the
+            # instance subclasses, so instance arguments are never printed.
             if im.args.len > 0:
-                imf.push(field_value("arguments", types_list_value(ctx, im.args)))
                 let cls = if im.name == "Option" or im.name == "Result": "VariantInstance" else: "StructInstance"
                 return node(j2("Types::", cls), imf.as_span())
             return node(j2("Types::", named_type_class(ctx, im.name)), imf.as_span())
@@ -496,8 +497,26 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
                 var vf = vec.Vec[SexprField].create()
                 vf.push(field_str("name", g.name))
                 vf.push(field_str("module_name", if g.name == "Option": "std.option" else: "std.result"))
-                vf.push(field_value("arguments", types_list_value(ctx, g.args)))
+                # Instance arguments are not printed (see the ty_imported case).
                 return node("Types::VariantInstance", vf.as_span())
+            if g.name == "span" and g.args.len == 1:
+                var spf = vec.Vec[SexprField].create()
+                spf.push(field_value("element_type", types_value(ctx, unsafe: read(g.args.data + 0))))
+                return node("Types::Span", spf.as_span())
+            if g.name == "Task" and g.args.len == 1:
+                var tkf = vec.Vec[SexprField].create()
+                tkf.push(field_value("result_type", types_value(ctx, unsafe: read(g.args.data + 0))))
+                return node("Types::Task", tkf.as_span())
+            if g.name == "SoA" and g.args.len == 2:
+                var soaf = vec.Vec[SexprField].create()
+                soaf.push(field_value("element_type", types_value(ctx, unsafe: read(g.args.data + 0))))
+                soaf.push(field_value("count", types_value(ctx, unsafe: read(g.args.data + 1))))
+                return node("Types::SoA", soaf.as_span())
+            if g.name == "simd" and g.args.len == 2:
+                var simdf = vec.Vec[SexprField].create()
+                simdf.push(field_value("element_type", types_value(ctx, unsafe: read(g.args.data + 0))))
+                simdf.push(field_value("lane_count", types_value(ctx, unsafe: read(g.args.data + 1))))
+                return node("Types::Simd", simdf.as_span())
             if is_builtin_generic_name(g.name):
                 var gf = vec.Vec[SexprField].create()
                 gf.push(field_str("name", g.name))

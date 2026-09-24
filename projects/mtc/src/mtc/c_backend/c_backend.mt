@@ -4712,7 +4712,12 @@ function render_variant_initializer(e: ref[Emitter], ty: types.Type, arm_name: s
                 i += 1
             outer_c = buf.as_str()
         types.Type.ty_imported as im:
-            outer_c = naming.qualified_c_name(im.module_name, im.name)
+            if im.args.len > 0:
+                # A concrete instance (`Result[int, str]`): the C name carries
+                # the argument suffix.
+                outer_c = c_type(ty)
+            else:
+                outer_c = naming.qualified_c_name(im.module_name, im.name)
         _:
             outer_c = c_type(ty)
 

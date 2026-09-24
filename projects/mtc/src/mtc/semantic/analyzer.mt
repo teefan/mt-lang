@@ -529,9 +529,10 @@ function collect_struct_fields_extra(ctx: ref[Context], extra: span[ast.Decl]) -
             d = read(extra.data + i)
         match d:
             ast.Decl.decl_struct as s:
-                enter_suppressed_type_params(ctx, s.type_params)
+                enter_type_params(ctx, s.type_params)
                 ctx.structs.set(s.name, resolve_field_entries(ctx, s.struct_fields))
                 collect_nested_struct_fields(ctx, s.nested_types, s.name)
+                ctx.type_params.clear()
                 ctx.suppressed_type_names.clear()
             _:
                 pass
@@ -834,11 +835,13 @@ function collect_struct_fields(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_struct as s:
                 # A generic struct's fields reference its type parameters
-                # (`data: own[T]?`); suppress unknown-type reports for `[T, ...]`
-                # while resolving field types (types still resolve to ty_error).
-                enter_suppressed_type_params(ctx, s.type_params)
+                # (`data: own[T]?`); register them as type variables so nested
+                # references like `Vec[Node[Context]]` keep their arguments and
+                # can be substituted during monomorphization.
+                enter_type_params(ctx, s.type_params)
                 ctx.structs.set(s.name, resolve_field_entries_with_events(ctx, s.struct_fields, s.struct_events))
                 collect_nested_struct_fields(ctx, s.nested_types, s.name)
+                ctx.type_params.clear()
                 ctx.suppressed_type_names.clear()
             _:
                 pass
@@ -1325,6 +1328,30 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
             i += 1
         return types.Type.ty_generic(name = name, args = args.as_span())
     if ctx.type_names.contains(name):
+        # Built-in registered types (e.g. `EventError`, `Subscription`) carry no
+        # owning module and must stay unqualified.
+        let registered_ptr = ctx.types.get(name)
+        if registered_ptr != null:
+            let registered = unsafe: read(registered_ptr)
+            match registered:
+                types.Type.ty_named as rn:
+                    if rn.module_name.len == 0 and arguments.len == 0:
+                        return registered
+                _:
+                    pass
+        # A local generic struct/variant with explicit arguments keeps them:
+        # dropping the arguments would leave an unspecialized name in inferred
+        # expression types (`Node[Context]` -> bare `Node`).
+        if arguments.len > 0:
+            var args = vec.Vec[types.Type].create()
+            var ai: ptr_uint = 0
+            while ai < arguments.len:
+                var a: ast.TypeRef
+                unsafe:
+                    a = read(arguments.data + ai)
+                args.push(resolve_type_at(ctx, a, depth + 1))
+                ai += 1
+            return types.Type.ty_imported(module_name = ctx.module_name, name = name, args = args.as_span())
         return types.Type.ty_named(module_name = ctx.module_name, name = name)
     # An integer literal in type-argument position (`array[ubyte, 256]`) is
     # resolved directly to a `ty_literal_int` so that the lowering and C

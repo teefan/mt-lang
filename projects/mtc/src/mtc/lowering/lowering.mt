@@ -1750,6 +1750,10 @@ function canonical_type_name(module_name: str, t: types.Type) -> str:
             buf.append(n.name)
             return buf.as_str()
         types.Type.ty_imported as im:
+            if im.args.len > 0:
+                # A monomorphized instance's canonical name is its C name
+                # (`std_vec_Vec_int`), matching `generic_struct_c_name` keys.
+                return naming.qualified_c_name(im.module_name, generic_c_type_raw(im.name, im.args))
             var buf = string.String.create()
             buf.append(naming.module_c_prefix(im.module_name))
             buf.append("_")
@@ -3334,6 +3338,18 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
         types.Type.ty_named as n:
             if is_raw_type_param_name(n.name):
                 return ctx.void_ty
+            # Built-in registered types (`EventError`, `Subscription`) carry no
+            # owning module and must not be module-qualified.
+            if n.module_name.len == 0:
+                let registered_ptr = ctx.analysis.types.get(n.name)
+                if registered_ptr != null:
+                    unsafe:
+                        match read(registered_ptr):
+                            types.Type.ty_named as rn:
+                                if rn.module_name.len == 0:
+                                    return t
+                            _:
+                                pass
             # Already-monomorphized concrete names (e.g. std_map_Node_str_bool)
             # are fully qualified: pass them through so re-qualifying in a
             # different module context does not double-prefix them.
@@ -3411,10 +3427,19 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             if is_prelude_variant_name(im.name):
                 return types.Type.ty_generic(name = im.name, args = resolved_args)
             if resolved_args.len > 0:
+                var has_unresolved = false
+                var ui: ptr_uint = 0
+                while ui < resolved_args.len:
+                    unsafe:
+                        if type_contains_type_var(read(resolved_args.data + ui)):
+                            has_unresolved = true
+                    ui += 1
+                if has_unresolved:
+                    return t
                 let concrete_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, resolved_args))
                 ensure_generic_struct_decl_named(ctx, im.name, span[ast.TypeArgument](), resolved_args, concrete_name)
                 generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args, owner_module = im.module_name))
-                return types.Type.ty_named(module_name = "", name = concrete_name)
+                return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = resolved_args)
             return t
         types.Type.ty_generic as g:
             var args = vec.Vec[types.Type].create()
@@ -3461,14 +3486,26 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
 function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[types.Type]) -> types.Type:
     if is_builtin_pointer_generic(name):
         return types.Type.ty_error
+    # Inside a generic body the arguments may still be type variables; such a
+    # reference stays generic until substitution binds them.
+    var gi: ptr_uint = 0
+    while gi < args.len:
+        unsafe:
+            if type_contains_type_var(read(args.data + gi)):
+                return types.Type.ty_error
+        gi += 1
     if name == "Option" or name == "Result":
+        # A bare `Option`/`Result` reference (no arguments) is the generic form,
+        # not an instance; monomorphizing it would register an empty-arm variant.
+        if (name == "Option" and args.len < 1) or (name == "Result" and args.len < 2):
+            return types.Type.ty_error
         return ensure_generic_variant(ctx, name, args)
     # Try current module first.
     if ctx.analysis.structs.contains(name):
         let concrete_name = naming.qualified_c_name(ctx.module_name, generic_struct_c_name(name, args))
         ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
         generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = ctx.module_name))
-        return types.Type.ty_named(module_name = "", name = concrete_name)
+        return types.Type.ty_imported(module_name = ctx.module_name, name = name, args = args)
     # Try imported modules — search both public and private structs,
     # and fall back to extracting from the AST directly.
     var import_values = ctx.analysis.imports.values()
@@ -3485,7 +3522,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
                     let concrete_name = naming.qualified_c_name(target_module, generic_struct_c_name(name, args))
                     ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
                     generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = target_module))
-                    return types.Type.ty_named(module_name = "", name = concrete_name)
+                    return types.Type.ty_imported(module_name = target_module, name = name, args = args)
             Option.none:
                 pass
     # Fall back to a program-wide search: a concrete type argument may be
@@ -3499,7 +3536,7 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
             let concrete_name = naming.qualified_c_name(owner_mod, generic_struct_c_name(name, args))
             ensure_generic_struct_decl_named(ctx, name, span[ast.TypeArgument](), args, concrete_name)
             generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = name, concrete_args = args, owner_module = owner_mod))
-            return types.Type.ty_named(module_name = "", name = concrete_name)
+            return types.Type.ty_imported(module_name = owner_mod, name = name, args = args)
         Option.none:
             pass
     return types.Type.ty_error
@@ -3627,6 +3664,15 @@ function variant_in_source(module_analysis: analyzer.Analysis, name: str) -> boo
         di += 1
     return false
 
+## The IR type of a concrete Option/Result instance: the host models these as
+## `Types::VariantInstance` (base name + module + arguments), not a mangled
+## named type.
+function prelude_variant_instance_type(name: str, args: span[types.Type]) -> types.Type:
+    if name == "Option":
+        return types.Type.ty_imported(module_name = "std.option", name = "Option", args = args)
+    return types.Type.ty_imported(module_name = "std.result", name = "Result", args = args)
+
+
 ## Ensure a concrete variant declaration exists for `Option[T]` or `Result[T,E]`.
 function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.Type]) -> types.Type:
     var base_name = name
@@ -3641,7 +3687,7 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
             break
         unsafe:
             if read(vp).linkage_name == c_name:
-                return types.Type.ty_named(module_name = "", name = c_name)
+                return prelude_variant_instance_type(name, args)
         si += 1
     var arms = vec.Vec[ir.VariantArm].create()
     if name == "Option" and args.len >= 1:
@@ -3666,7 +3712,7 @@ function ensure_generic_variant(ctx: ref[LowerCtx], name: str, args: span[types.
         name = c_name, linkage_name = c_name,
         arms = arms.as_span(), source_module = Option[str].none,
     ))
-    return types.Type.ty_named(module_name = "", name = c_name)
+    return prelude_variant_instance_type(name, args)
 
 
 ## True when `ty` is a `ty_generic` whose name refers to a user-defined generic
@@ -7442,7 +7488,7 @@ function infer_type_param_from_args(ctx: ref[LowerCtx], param_name: str, params:
         # parsed back for multi-component return types (e.g. an imported struct).
         var arg_ty: types.Type
         if p.param_type.is_proc or p.param_type.is_fn:
-            arg_ty = fallback_type(ctx, unsafe: read(args.data + i).arg_value)
+            arg_ty = fallback_type_raw(ctx, unsafe: read(args.data + i).arg_value)
             if not is_proc_type(arg_ty) and not is_fn_type(arg_ty):
                 arg_ty = ir_expr_type(lower_expr(ctx, unsafe: read(args.data + i).arg_value))
         else:
@@ -11832,6 +11878,14 @@ function type_contains_type_var(t: types.Type) -> bool:
                         return true
                 i += 1
             return false
+        types.Type.ty_imported as im:
+            var i: ptr_uint = 0
+            while i < im.args.len:
+                unsafe:
+                    if type_contains_type_var(read(im.args.data + i)):
+                        return true
+                i += 1
+            return false
         types.Type.ty_nullable as nl:
             return unsafe: type_contains_type_var(read(nl.base))
         _:
@@ -12379,15 +12433,23 @@ function concrete_field_type(ctx: ref[LowerCtx], recv_ty: types.Type, member: st
         base = types.pointer_element(base)
     var struct_name: str
     var owner_module: str = ""
+    # `generic_struct_decls` is keyed by the concrete C name, so a generic
+    # instance receiver (`Vec[int]`) must be looked up under its mangled name.
+    var lookup_name: str = ""
     match base:
         types.Type.ty_named as n:
             struct_name = n.name
+            lookup_name = n.name
         types.Type.ty_imported as im:
             struct_name = im.name
             owner_module = im.module_name
+            if im.args.len > 0:
+                lookup_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, im.args))
+            else:
+                lookup_name = im.name
         _:
             return Option[types.Type].none
-    let decl_ptr = ctx.generic_struct_decls.get(struct_name)
+    let decl_ptr = ctx.generic_struct_decls.get(lookup_name)
     if decl_ptr != null:
         unsafe:
             let decl = read(decl_ptr)
@@ -12880,7 +12942,20 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
             result = buf.as_str()
         types.Type.ty_imported as im:
             if is_prelude_variant_name(im.name):
-                result = im.name
+                # A concrete instance (`Option[int]`) keeps its argument suffix.
+                var buf = string.String.create()
+                if im.name == "Option":
+                    buf.append("std_option_")
+                else:
+                    buf.append("std_result_")
+                buf.append(im.name)
+                var i: ptr_uint = 0
+                while i < im.args.len:
+                    buf.append("_")
+                    unsafe:
+                        buf.append(naming.type_c_key(read(im.args.data + i)))
+                    i += 1
+                result = buf.as_str()
             else:
                 result = naming.qualified_c_name(im.module_name, im.name)
         types.Type.ty_named as n:
@@ -14763,7 +14838,11 @@ function expr_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
     if tp != null:
         let recorded = unsafe: read(tp)
         if not types.is_error(recorded):
-            return recorded
+            # Inside a generic specialization the analyzer's recorded type may
+            # still mention type parameters (e.g. `Vec[T].data` is `ptr[T]`);
+            # apply the active substitution so locals and member accesses carry
+            # the concrete type.
+            return substitute_type_params(ctx, recorded, ref_of(ctx.type_substitution))
     return fallback_type(ctx, ep)
 
 
@@ -14828,7 +14907,14 @@ function imported_call_return_type(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], 
                 return types.Type.ty_error
 
 
+## Like `fallback_type_raw`, but applies the active generic substitution so a
+## recovered field/local type (`ptr[T]`) becomes concrete inside a
+## specialization.
 function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
+    return substitute_type_params(ctx, fallback_type_raw(ctx, ep), ref_of(ctx.type_substitution))
+
+
+function fallback_type_raw(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal:
@@ -14868,9 +14954,9 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
             ast.Expr.expr_binary_op as bin:
                 if is_comparison_operator(bin.operator):
                     return ctx.bool_ty
-                return fallback_type(ctx, bin.left)
+                return fallback_type_raw(ctx, bin.left)
             ast.Expr.expr_unary_op as un:
-                return fallback_type(ctx, un.operand)
+                return fallback_type_raw(ctx, un.operand)
             ast.Expr.expr_call as call:
                 match read(call.callee):
                     ast.Expr.expr_identifier as id:
@@ -14881,7 +14967,7 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                             let inner_kind = id.name
                             let inner_type_name = builtin_addr_type_name(inner_kind)
                             if inner_type_name.len > 0:
-                                let inner_ty = fallback_type(ctx, unsafe: read(call.args.data + 0).arg_value)
+                                let inner_ty = fallback_type_raw(ctx, unsafe: read(call.args.data + 0).arg_value)
                                 if not types.is_error(inner_ty) and not types.is_void(inner_ty):
                                     return types.Type.ty_generic(name = inner_type_name, args = sp_type(inner_ty))
                         let foreign_ptr = ctx.foreign_map.get(id.name)
@@ -14908,7 +14994,7 @@ function fallback_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                 # the field's type, not the receiver's type.  Recover the
                 # receiver's type and look the field up; fall back to the
                 # receiver type only when the field cannot be resolved.
-                let recv_fallback = fallback_type(ctx, ma.receiver)
+                let recv_fallback = fallback_type_raw(ctx, ma.receiver)
                 match concrete_field_type(ctx, recv_fallback, ma.member_name):
                     Option.some as ft:
                         return ft.value
