@@ -2394,7 +2394,11 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # defers cannot invalidate it (mirrors Ruby's return-value hoist +
                 # cleanup preamble).
                 let lowered = coerce_return_literal_to_cstr(ctx, value, lower_expr(ctx, value))
-                let wrapped = if ctx.inside_async: make_task_literal(lowered) else: lowered
+                # Re-type an integer literal return value against the function's
+                # return type (e.g. `return 0` in a `ptr_uint` function), matching
+                # the host's contextual numeric literal inference.
+                let ret_lit = int_literal_to_context_type(value, ctx.current_fn_return_type, lowered)
+                let wrapped = if ctx.inside_async: make_task_literal(ret_lit) else: ret_lit
                 if has_pending_defers(ctx) and not cleanup_safe_return_expr(value):
                     let ret_ty = ir_expr_type(wrapped)
                     let rtemp = fresh_c_temp_name(ctx, "return_value")
@@ -2643,8 +2647,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     # correct enclosing loop.
                     let saved_break = ctx.loop_break_label
                     let saved_continue = ctx.loop_continue_label
-                    let bl = fresh_c_temp_name(ctx, "while_break")
-                    let cl = fresh_c_temp_name(ctx, "while_continue")
+                    let cl = fresh_c_temp_name(ctx, "loop_continue")
+                    let bl = fresh_c_temp_name(ctx, "loop_break")
                     ctx.loop_break_label = bl
                     ctx.loop_continue_label = cl
                     var brk = vec.Vec[ir.Stmt].create()
@@ -2655,10 +2659,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     while ii < inner.len:
                         wbody.push(unsafe: read(inner.data + ii))
                         ii += 1
-                    wbody.push(ir.Stmt.stmt_label(name = cl))
+                    if contains_label_target(wbody.as_span(), cl):
+                        wbody.push(ir.Stmt.stmt_label(name = cl))
                     var wrap = vec.Vec[ir.Stmt].create()
                     wrap.push(ir.Stmt.stmt_while(condition = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty)), body = wbody.as_span()))
-                    wrap.push(ir.Stmt.stmt_label(name = bl))
+                    if contains_label_target(wbody.as_span(), bl):
+                        wrap.push(ir.Stmt.stmt_label(name = bl))
                     output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
                     ctx.loop_break_label = saved_break
                     ctx.loop_continue_label = saved_continue
@@ -2666,17 +2672,19 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let cond = lower_expr(ctx, w.condition)
                 let saved_break = ctx.loop_break_label
                 let saved_continue = ctx.loop_continue_label
-                let bl = fresh_c_temp_name(ctx, "while_break")
-                let cl = fresh_c_temp_name(ctx, "while_continue")
+                let cl = fresh_c_temp_name(ctx, "loop_continue")
+                let bl = fresh_c_temp_name(ctx, "loop_break")
                 ctx.loop_break_label = bl
                 ctx.loop_continue_label = cl
                 let body_span = lower_block(ctx, w.body)
                 var body = vec.Vec[ir.Stmt].create()
                 append_span_stmts(ref_of(body), body_span)
-                body.push(ir.Stmt.stmt_label(name = cl))
+                if contains_label_target(body.as_span(), cl):
+                    body.push(ir.Stmt.stmt_label(name = cl))
                 var wrap = vec.Vec[ir.Stmt].create()
                 wrap.push(ir.Stmt.stmt_while(condition = cond, body = body.as_span()))
-                wrap.push(ir.Stmt.stmt_label(name = bl))
+                if contains_label_target(body.as_span(), bl):
+                    wrap.push(ir.Stmt.stmt_label(name = bl))
                 output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
                 ctx.loop_break_label = saved_break
                 ctx.loop_continue_label = saved_continue
@@ -4311,8 +4319,8 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
 
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
-    let bl = fresh_c_temp_name(ctx, "for_break")
-    let cl = fresh_c_temp_name(ctx, "for_continue")
+    let cl = fresh_c_temp_name(ctx, "loop_continue")
+    let bl = fresh_c_temp_name(ctx, "loop_break")
     ctx.loop_break_label = bl
     ctx.loop_continue_label = cl
 
@@ -4334,7 +4342,8 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     let body_span = lower_block(ctx, body_ptr)
     var body = vec.Vec[ir.Stmt].create()
     append_span_stmts(ref_of(body), body_span)
-    body.push(ir.Stmt.stmt_label(name = cl))
+    if contains_label_target(body.as_span(), cl):
+        body.push(ir.Stmt.stmt_label(name = cl))
 
     let index_ref = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = false))
     var init: ptr[ir.Stmt]
@@ -4370,7 +4379,8 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
                 source_path = "",
             ))
     block_stmts.push(for_stmt)
-    block_stmts.push(ir.Stmt.stmt_label(name = bl))
+    if contains_label_target(body.as_span(), bl):
+        block_stmts.push(ir.Stmt.stmt_label(name = bl))
     output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
 
     ctx.loop_break_label = saved_break
@@ -4409,8 +4419,8 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     let binding_c = utils.c_local_name(binding_name)
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
-    let bl = fresh_c_temp_name(ctx, "for_break")
-    let cl = fresh_c_temp_name(ctx, "for_continue")
+    let cl = fresh_c_temp_name(ctx, "loop_continue")
+    let bl = fresh_c_temp_name(ctx, "loop_break")
     ctx.loop_break_label = bl
     ctx.loop_continue_label = cl
 
@@ -4464,7 +4474,8 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         unsafe:
             loop_body.push(read(body_span.data + bi))
         bi += 1
-    loop_body.push(ir.Stmt.stmt_label(name = cl))
+    if contains_label_target(loop_body.as_span(), cl):
+        loop_body.push(ir.Stmt.stmt_label(name = cl))
 
     var init: ptr[ir.Stmt]
     if ctx.async_cps_active:
@@ -4483,7 +4494,8 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     else:
         block_stmts.push(ir.Stmt.stmt_local(name = items_c, linkage_name = items_c, ty = iterable_type, value = lower_expr(ctx, iterable), line = 0, source_path = ""))
     block_stmts.push(for_stmt)
-    block_stmts.push(ir.Stmt.stmt_label(name = bl))
+    if contains_label_target(loop_body.as_span(), bl):
+        block_stmts.push(ir.Stmt.stmt_label(name = bl))
     output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
 
     ctx.loop_break_label = saved_break
@@ -4529,8 +4541,8 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
     let saved_break = ctx.loop_break_label
     let saved_continue = ctx.loop_continue_label
-    let bl = fresh_c_temp_name(ctx, "for_break")
-    let cl = fresh_c_temp_name(ctx, "for_continue")
+    let cl = fresh_c_temp_name(ctx, "loop_continue")
+    let bl = fresh_c_temp_name(ctx, "loop_break")
     ctx.loop_break_label = bl
     ctx.loop_continue_label = cl
 
@@ -4562,13 +4574,15 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
         unsafe:
             loop_body.push(read(body_span.data + bi))
         bi += 1
-    loop_body.push(ir.Stmt.stmt_label(name = cl))
+    if contains_label_target(loop_body.as_span(), cl):
+        loop_body.push(ir.Stmt.stmt_label(name = cl))
 
     var block_stmts = vec.Vec[ir.Stmt].create()
     block_stmts.push(ir.Stmt.stmt_local(name = it_c, linkage_name = it_c, ty = iter_ty, value = iter_call, line = 0, source_path = ""))
     let true_lit = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = ctx.bool_ty))
     block_stmts.push(ir.Stmt.stmt_while(condition = true_lit, body = loop_body.as_span()))
-    block_stmts.push(ir.Stmt.stmt_label(name = bl))
+    if contains_label_target(loop_body.as_span(), bl):
+        block_stmts.push(ir.Stmt.stmt_label(name = bl))
     output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
 
     ctx.loop_break_label = saved_break
@@ -5385,6 +5399,19 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                         result_ty = lt
                     else if is_integer_scrutinee(rt) and types.type_to_string(lt) == "int":
                         result_ty = rt
+                # Re-type an integer literal against the other operand's integer
+                # type (e.g. `b == 0` where `b: ubyte`, `p + 1` where `p: ptr_uint`),
+                # mirroring the host's `harmonize_binary_integer_literal_types`.
+                let harm_lt = ir_expr_type(left)
+                let harm_rt = ir_expr_type(right)
+                if types.is_integer_type(harm_rt) and types.type_to_string(harm_lt) == "int":
+                    let hl = int_literal_to_context_type(bin.left, harm_rt, left)
+                    if hl != left:
+                        left = hl
+                if types.is_integer_type(harm_lt) and types.type_to_string(harm_rt) == "int":
+                    let hr = int_literal_to_context_type(bin.right, harm_lt, right)
+                    if hr != right:
+                        right = hr
                 # Balance mixed-width integer and int/float operands: cast the
                 # narrower operand up to the common type, matching Ruby's
                 # usual-arithmetic-conversion casts (redundant casts are elided
@@ -7001,7 +7028,12 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         let arg = read(call_args.data + i)
                         let field_name = arg.arg_name else:
                             fatal(c"lowering: span construction requires named fields")
-                        fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
+                        var field_value = lower_expr(ctx, arg.arg_value)
+                        # `.len` is a ptr_uint field, so an integer literal is
+                        # re-typed to ptr_uint (matching the host).
+                        if field_name == "len":
+                            field_value = int_literal_to_context_type(arg.arg_value, types.primitive("ptr_uint"), field_value)
+                        fields.push(ir.AggregateField(name = field_name, value = field_value))
                         i += 1
                     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = span_ty, fields = fields.as_span()))
                 if id.name == "adapt" and type_args.len == 1:
@@ -7214,6 +7246,34 @@ function expr_type_for_spec(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr], type
 
 ## Lower a generic struct constructor `Name[TypeArgs](field = value, ...)` to an IR
 ## aggregate literal with the concrete type arguments resolved.
+## The resolved field type of a generic struct instance (e.g. the `index` field
+## of `Indexed[int]` is `ptr_uint`).  `concrete_args` are the instance's type
+## arguments; returns none when the struct or field is unknown.
+function generic_struct_field_type(ctx: ref[LowerCtx], struct_name: str, concrete_args: span[types.Type], field_name: str) -> Option[types.Type]:
+    let unqualified = generic_struct_c_name(struct_name, concrete_args)
+    let decl_ptr = ctx.generic_struct_decls.get(unqualified)
+    if decl_ptr != null:
+        unsafe:
+            let decl = read(decl_ptr)
+            var fi: ptr_uint = 0
+            while fi < decl.fields.len:
+                let f = read(decl.fields.data + fi)
+                if f.name == field_name:
+                    return Option[types.Type].some(value = f.ty)
+                fi += 1
+    let q_ptr = ctx.generic_struct_decls.get(naming.qualified_c_name(ctx.module_name, unqualified))
+    if q_ptr != null:
+        unsafe:
+            let decl = read(q_ptr)
+            var fi: ptr_uint = 0
+            while fi < decl.fields.len:
+                let f = read(decl.fields.data + fi)
+                if f.name == field_name:
+                    return Option[types.Type].some(value = f.ty)
+                fi += 1
+    return Option[types.Type].none
+
+
 function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, type_args: span[ast.TypeArgument], call_args: span[ast.Argument]) -> ptr[ir.Expr]:
     var concrete_args = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -7222,6 +7282,19 @@ function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, t
             concrete_args.push(resolve_type_ref(ctx, read(type_args.data + i).value))
         i += 1
     let ty = types.Type.ty_generic(name = struct_name, args = concrete_args.as_span())
+    # Qualify the constructed type so its C name is module-prefixed
+    # (`std_vec_Vec_int`), matching the type produced by `qualify_type` for the
+    # same instance elsewhere; this also emits the concrete struct declaration.
+    let result_ty = qualify_type(ctx, types.Type.ty_generic(name = struct_name, args = concrete_args.as_span()))
+    # Ensure the concrete struct declaration exists before looking up field
+    # types (the constructor may be the first use of the instance).
+    var qualified_args = concrete_args.as_span()
+    match result_ty:
+        types.Type.ty_imported as rim:
+            if rim.args.len > 0:
+                qualified_args = rim.args
+        _:
+            pass
     var fields = vec.Vec[ir.AggregateField].create()
     i = 0
     while i < call_args.len:
@@ -7230,12 +7303,16 @@ function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, t
             arg = read(call_args.data + i)
         let field_name = arg.arg_name else:
             fatal(c"lowering: generic struct construction requires named fields")
-        fields.push(ir.AggregateField(name = field_name, value = lower_expr(ctx, arg.arg_value)))
+        var field_value = lower_expr(ctx, arg.arg_value)
+        # Re-type an integer literal whose value fits the field type (matching
+        # the host's contextual numeric literal inference).
+        match generic_struct_field_type(ctx, struct_name, qualified_args, field_name):
+            Option.some as field_ty:
+                field_value = int_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
+            Option.none:
+                pass
+        fields.push(ir.AggregateField(name = field_name, value = field_value))
         i += 1
-    # Qualify the constructed type so its C name is module-prefixed
-    # (`std_vec_Vec_int`), matching the type produced by `qualify_type` for the
-    # same instance elsewhere; this also emits the concrete struct declaration.
-    let result_ty = qualify_type(ctx, types.Type.ty_generic(name = struct_name, args = concrete_args.as_span()))
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
 
 
@@ -8198,10 +8275,14 @@ function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args
         let field_name = arg.arg_name else:
             fatal(c"lowering: struct construction requires named fields")
         var value = lower_expr(ctx, arg.arg_value)
-        # Wrap non-nullable values into value-type nullable fields.
+        # Re-type an integer literal whose value fits the field type, mirroring
+        # the host: an integer literal passed to a `ptr_uint`/`ubyte` field is
+        # lowered with the field's type rather than the analyzer's default `int`.
         match find_struct_field_type(ctx, struct_name, source_module, field_name):
             Option.some as field_ty:
                 let fty = field_ty.value
+                value = int_literal_to_context_type(arg.arg_value, fty, value)
+                # Wrap non-nullable values into value-type nullable fields.
                 if types.is_nullable_type(fty) and not is_nullable_pointer_like(fty):
                     let value_ty = ir_expr_type(value)
                     if not types.is_nullable_type(value_ty):
@@ -11304,6 +11385,48 @@ function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Ar
     else:
         ret_ty = expr_type(ctx, call_ep)
     return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
+
+
+## Re-type an integer literal whose value fits `context_ty` (a numeric primitive)
+## to that type, preserving the literal value.  A non-literal, a too-wide value,
+## or a non-numeric context returns `value` unchanged.  Mirrors the host's
+## contextual numeric literal inference.
+function int_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    if not types.is_integer_type(context_ty):
+        return value
+    var literal_value: long
+    unsafe:
+        match read(arg_ast):
+            ast.Expr.expr_integer_literal as lit:
+                literal_value = long<-lit.value
+            _:
+                return value
+    if not int_value_fits_type(literal_value, context_ty):
+        return value
+    return alloc_expr(ir.Expr.expr_integer_literal(value = literal_value, ty = context_ty))
+
+
+## True when the (non-negative) literal value fits the integer primitive `t`.
+function int_value_fits_type(v: long, t: types.Type) -> bool:
+    match t:
+        types.Type.ty_primitive as p:
+            match p.name:
+                "byte":
+                    return v <= 127
+                "ubyte":
+                    return v <= 255
+                "short":
+                    return v <= 32767
+                "ushort":
+                    return v <= 65535
+                "int":
+                    return v <= 2147483647
+                "uint":
+                    return v <= 4294967295
+                _:
+                    return true
+        _:
+            return true
 
 
 ## Coerce an `array[T, N]` argument passed to a `span[T]` parameter into a span
@@ -14511,8 +14634,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
         if pattern == null:
             var blk = vec.Vec[ir.Stmt].create()
             append_span_stmts(ref_of(blk), lower_block(ctx, arm.body))
-            if not stmts_terminate(blk.as_span()):
-                blk.push(ir.Stmt.stmt_goto(label = end_label))
+            blk.push(ir.Stmt.stmt_goto(label = end_label))
             output.push(ir.Stmt.stmt_block(body = blk.as_span()))
         else:
             let arm_name = variant_match_arm_name_from_pattern(pattern) else:
@@ -14564,8 +14686,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                 Option.none:
                     pass
             append_span_stmts(ref_of(blk), lower_block(ctx, arm.body))
-            if not stmts_terminate(blk.as_span()):
-                blk.push(ir.Stmt.stmt_goto(label = end_label))
+            blk.push(ir.Stmt.stmt_goto(label = end_label))
             output.push(ir.Stmt.stmt_block(body = blk.as_span()))
         arm_index += 1
 
@@ -14715,6 +14836,46 @@ function stmts_terminate(stmts: span[ir.Stmt]) -> bool:
                 return true
             _:
                 return false
+
+
+## True when any statement (recursively) transfers control to `label`.  A loop
+## emits its continue/break label only when its body actually targets it
+## (mirrors Ruby's `contains_label_target?`).
+function contains_label_target(stmts: span[ir.Stmt], label: str) -> bool:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        var s: ir.Stmt
+        unsafe:
+            s = read(stmts.data + i)
+        match s:
+            ir.Stmt.stmt_goto as g:
+                if g.label == label:
+                    return true
+            ir.Stmt.stmt_block as b:
+                if contains_label_target(b.body, label):
+                    return true
+            ir.Stmt.stmt_while as w:
+                if contains_label_target(w.body, label):
+                    return true
+            ir.Stmt.stmt_for as f:
+                if contains_label_target(f.body, label):
+                    return true
+            ir.Stmt.stmt_if as ifs:
+                if contains_label_target(ifs.then_body, label) or contains_label_target(ifs.else_body, label):
+                    return true
+            ir.Stmt.stmt_switch as sw:
+                var ci: ptr_uint = 0
+                while ci < sw.cases.len:
+                    var c: ir.SwitchCase
+                    unsafe:
+                        c = read(sw.cases.data + ci)
+                    if contains_label_target(c.body, label):
+                        return true
+                    ci += 1
+            _:
+                pass
+        i += 1
+    return false
 
 
 ## Append every statement of a lowered block span into an output vector.
