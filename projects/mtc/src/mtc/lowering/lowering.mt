@@ -8466,7 +8466,15 @@ function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[
                 let rest = iface_name.slice(idx + 1, iface_name.len - idx - 1)
                 if not rest.is_valid_utf8():
                     break
-                match find_imported_analysis(ctx, mod_name):
+                # `mod_name` is what the use site wrote, which may be an import
+                # alias (`ifaces.Identifiable` for `engine.interfaces`).  Look the
+                # analysis up under the real module name, but keep the interface's
+                # recorded module as written.
+                var target_module = mod_name
+                let alias_ptr = ctx.analysis.imports.get(mod_name)
+                if alias_ptr != null:
+                    target_module = unsafe: read(alias_ptr)
+                match find_imported_analysis(ctx, target_module):
                     Option.some as imported:
                         let m_ptr = imported.value.interfaces.get(rest)
                         if m_ptr != null:
