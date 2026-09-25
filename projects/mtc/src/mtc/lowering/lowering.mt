@@ -2781,6 +2781,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     # indented body in a `stmt_block`, which must be unwrapped here
                     # so the result is a single block (matching the host).
                     var body_stmts = vec.Vec[ir.Stmt].create()
+                    # The wrapped body is its own C `{ }` scope, so it needs its
+                    # own defer group: a `defer` declared inside must replay
+                    # inside the block, not after it (where its locals are gone).
+                    push_defer_scope(ctx)
                     unsafe:
                         match read(ptr[ast.Stmt]<-u.body):
                             ast.Stmt.stmt_block as blk:
@@ -2790,15 +2794,22 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                     bi += 1
                             _:
                                 lower_stmt(ctx, ref_of(body_stmts), ptr[ast.Stmt]<-u.body)
+                    if not stmts_terminate(body_stmts.as_span()):
+                        flush_top_defers(ctx, ref_of(body_stmts))
+                    pop_defer_scope(ctx)
                     output.push(ir.Stmt.stmt_block(body = body_stmts.as_span()))
                 return
             ast.Stmt.stmt_block as blk:
                 var block_stmts = vec.Vec[ir.Stmt].create()
+                push_defer_scope(ctx)
                 var i: ptr_uint = 0
                 while i < blk.statements.len:
                     unsafe:
                         lower_stmt(ctx, ref_of(block_stmts), ptr[ast.Stmt]<-(blk.statements.data + i))
                     i += 1
+                if not stmts_terminate(block_stmts.as_span()):
+                    flush_top_defers(ctx, ref_of(block_stmts))
+                pop_defer_scope(ctx)
                 output.push(ir.Stmt.stmt_block(body = block_stmts.as_span()))
             ast.Stmt.stmt_defer as d:
                 # A `defer` does not emit at its declaration site.  Lower its
