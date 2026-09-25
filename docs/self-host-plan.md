@@ -1,5 +1,10 @@
 # Self-Host Plan
 
+> **Workstream status (self-host vs `projects/stress`)**: the remaining
+> blockers for building `projects/stress` with the self-host compiler, with
+> reproduction, verified root causes and fix locations, are tracked in
+> [self-host-stress-todo.md](./self-host-stress-todo.md).
+
 Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**
 Stage2 == stage3 byte-identical. 177 self-tests pass across 12 test files.
 **Linter parity: 14/16 common rules byte-identical with Ruby on language_baseline.mt.**
