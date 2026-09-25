@@ -4058,7 +4058,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 return types.Type.ty_nullable(base = types.alloc_type(fun))
             return fun
         if t.is_dyn:
-            return types.Type.ty_dyn(iface = unsafe: analyzer.qname_to_str(t.dyn_interface))
+            return types.Type.ty_dyn(iface = naming.sanitize_identifier(unsafe: analyzer.qname_to_str(t.dyn_interface)))
         if t.is_tuple:
             var elems = vec.Vec[types.Type].create()
             var i: ptr_uint = 0
@@ -8410,14 +8410,19 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
     let arg_type = expr_type(ctx, arg.arg_value)
     let concrete_type = if types.is_ref_type(arg_type): types.pointer_element(arg_type) else: arg_type
     let iface_type_ref_val = unsafe: read(iface_type_ref)
-    let iface_name = unsafe: analyzer.qname_to_str(iface_type_ref_val.name)
+    let iface_use_name = unsafe: analyzer.qname_to_str(iface_type_ref_val.name)
+    # The use-site name may be a dotted import alias (`ifaces.Identifiable`),
+    # which is not a C identifier: the interface lookup wants it as written,
+    # while every symbol built from it (`mt_dyn_*`, `mt_vtable_*`) must be the
+    # sanitized form.
+    let iface_name = naming.sanitize_identifier(iface_use_name)
     # Resolve type arguments from the dyn[...] type (e.g. dyn[Mapper[int]] → [int]).
     var type_args = vec.Vec[types.Type].create()
     var tgi: ptr_uint = 0
     while tgi < iface_type_ref_val.arguments.len:
         type_args.push(resolve_type_ref(ctx, unsafe: ptr[ast.TypeRef]<-iface_type_ref_val.arguments.data + tgi))
         tgi += 1
-    match find_interface_analysis(ctx, iface_name):
+    match find_interface_analysis(ctx, iface_use_name):
         Option.some as ia:
             let methods = ia.value.methods
             let concrete_name = canonical_type_name(ctx.module_name, concrete_type)
@@ -13583,7 +13588,7 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
             return types.Type.ty_nullable(base = types.alloc_type(fun))
         return fun
     if tref.is_dyn:
-        return types.Type.ty_dyn(iface = unsafe: analyzer.qname_to_str(tref.dyn_interface))
+        return types.Type.ty_dyn(iface = naming.sanitize_identifier(unsafe: analyzer.qname_to_str(tref.dyn_interface)))
     if tref.is_tuple:
         var elems = vec.Vec[types.Type].create()
         var ti: ptr_uint = 0
@@ -16145,7 +16150,7 @@ function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(declared)
         if t.is_dyn:
-            return types.Type.ty_dyn(iface = unsafe: analyzer.qname_to_str(t.dyn_interface))
+            return types.Type.ty_dyn(iface = naming.sanitize_identifier(unsafe: analyzer.qname_to_str(t.dyn_interface)))
         if t.is_fn or t.is_proc or t.is_tuple or t.nullable:
             return types.Type.ty_error
         if t.arguments.len > 0:
