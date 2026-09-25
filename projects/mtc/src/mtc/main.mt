@@ -599,12 +599,14 @@ function check_command(args: span[str]) -> int:
         let warnings = program.diagnostic_warning_count()
 
         if errors == 0 and warnings == 0:
-            let module_name = program.root_module_name()
-            stdio.print_format(
-                c"checked %.*s as %.*s\n",
-                int<-(effective.len), effective.data,
-                int<-(module_name.len), module_name.data,
-            )
+            # The host's `info` line is verbose-only; default runs stay silent.
+            if cli_verbose:
+                let module_name = program.root_module_name()
+                stdio.print_format(
+                    c"checked %.*s as %.*s\n",
+                    int<-(effective.len), effective.data,
+                    int<-(module_name.len), module_name.data,
+                )
         else:
             print_program_diagnostics(ref_of(program))
             file_count += 1
@@ -674,8 +676,7 @@ function rjust_line_number(line: ptr_uint) -> string.String:
 ## Render a program's diagnostics in the shared Milk Tea format (matching the
 ## Ruby `ErrorFormatter`, no color):
 ##
-##     error[sema/error]: <message>
-##       --> <path>:<line>:<column>
+##     error[sema/error]: <message> -- <path>:<line>:<column>
 ##        |
 ##         2 | <source line>
 ##           | <caret>
@@ -690,7 +691,7 @@ function print_program_diagnostics(program: ref[loader.Program]) -> void:
             let location = rd.path.as_str()
             let prefix = if rd.severity == "warning": "warning" else: "error"
             stdio.print_format(
-                c"%.*s[%.*s]: %.*s\n  --> %.*s:%d:%d\n",
+                c"%.*s[%.*s]: %.*s -- %.*s:%d:%d\n",
                 int<-(prefix.len), prefix.data,
                 int<-(rd.code.len), rd.code.data,
                 int<-(message.len), message.data,
