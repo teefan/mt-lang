@@ -777,6 +777,13 @@ function record_attr_apps(ctx: ref[Context], name: str, attrs: span[ast.Attribut
             ctx.attribute_apps.set(name, v)
 
 
+## Attributes the compiler itself defines, valid wherever a declared attribute
+## name is (e.g. as a `has_attribute(...)` reflection argument).  Mirrors the
+## host's `BUILTIN_ATTRIBUTE_NAMES`.
+function is_builtin_attribute_name(name: str) -> bool:
+    return name == "packed" or name == "align" or name == "deprecated" or name == "test" or name == "expect_fatal"
+
+
 function is_valid_attr_target(attr_name: str, target: str) -> bool:
     if attr_name == "packed" or attr_name == "align":
         return target == "struct"
@@ -3153,7 +3160,7 @@ function is_known_value_identifier(ctx: ref[Context], name: str) -> bool:
     # Compile-time reflection builtins (`field_of(Labeled, value)`) pass bare
     # field and attribute names as arguments — these are declared names even
     # though they have no value-type entry.
-    if ctx.declared_attributes.contains(name):
+    if ctx.declared_attributes.contains(name) or is_builtin_attribute_name(name):
         return true
     var keys = ctx.structs.keys()
     while true:

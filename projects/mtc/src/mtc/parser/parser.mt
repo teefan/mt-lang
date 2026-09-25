@@ -1828,12 +1828,17 @@ function parse_local_decl(s: ref[pstate.ParserState], is_let: bool) -> ptr[ast.S
         destructure_type_name = Option[str].some(value = previous_lexeme(s))
         destructure_bindings = parse_destructure_bindings(s)
     else if check_name(s) and check_next(s, tk.TokenKind.dot):
+        # Module-qualified destructure (`let types.Transform(x, y) = t`): keep the
+        # whole dotted name, and let `parse_destructure_bindings` consume the `(`
+        # exactly once, like the bare `let Transform(x, y)` branch above.
         advance(s)
-        let first_part_name = previous_lexeme(s)
+        var qualified = string.String.create()
+        qualified.append(previous_lexeme(s))
         while match_kind(s, tk.TokenKind.dot):
             consume_name(s, c"expected type name after '.'")
-        consume(s, tk.TokenKind.lparen, c"expected '(' after destructure type name")
-        destructure_type_name = Option[str].some(value = first_part_name)
+            qualified.append(".")
+            qualified.append(previous_lexeme(s))
+        destructure_type_name = Option[str].some(value = qualified.as_str())
         destructure_bindings = parse_destructure_bindings(s)
     else:
         consume_name(s, c"expected variable name")
