@@ -9,10 +9,9 @@ build projects/stress -I . --no-cache --keep-c /tmp/stress_host_ref.c -o
 self-host build matches that.
 
 Status: the front end is clear and codegen is nearly there. The self-host build
-now produces C that fails only **22** `cc -fsyntax-only` diagnostics (down from
-70), all in five clusters listed below. Every change on this path was verified
-against the fixed-point gate (`tools/bootstrap.sh`), which has held at every
-step.
+now produces C that fails only **7** `cc -fsyntax-only` diagnostics (down from
+70), in the two clusters below. Every change on this path was verified against
+the fixed-point gate (`tools/bootstrap.sh`), which has held at every step.
 
 ## How to reproduce and localize
 
@@ -41,74 +40,33 @@ tools/bootstrap.sh -j 16     # must print: stage2.c == stage3.c (fixed point hol
 
 ## TODO
 
-### 1. Proc-typed array elements render as bare function pointers
-
-* **Symptom**: 10 errors in `projects/stress/src/engine/closures.mt`:
-  `incompatible types when assigning to type 'int32_t (*)(int32_t)' from type
-  'mt_proc_int_int'` (x5), `type name declared as function returning an array`
-  (x3), `expected expression before '{'` (x2).
-* **Cause**: `var ops: array[types.Callback, 3]` — `Callback` is an imported
-  type alias for `proc(int) -> int` — declares as
-  `int32_t (*ops[3])(int32_t)` while the assigned values are the proc struct
-  `mt_proc_int_int`.  A *qualified* alias reference does not resolve to the
-  shared proc struct, so `c_declaration`'s array-of-function-pointer branch
-  takes it.  The unqualified alias case is already handled in
-  `resolve_type_ref` (~line 4238: "A `type Gen = proc(...) -> T` alias resolves
-  to its closure struct"); the qualified/imported path is not.
-* **Verify**: the local declares as `mt_proc_int_int ops[3]`, the errors vanish,
-  and the fixed point holds.
-
-### 2. Calls through a proc-typed member lower to a plain function call
-
-* **Symptom**: 3 errors: `implicit declaration of function
-  'engine_systems_PipelineStep_handler'` (systems.mt), `'engine_closures_mt_cb'`
-  (closures.mt), and — from the same call site in `run_pipeline` — `incompatible
-  types when assigning to type 'engine_types_Outcome_int_engine_types_EngineError'
-  from type 'int'` (the call's result comes back as `int`).
-* **Cause**: `step.handler(input)` and `s.cb()` (proc-typed struct field /
-  variant-arm field) lower to `engine_systems_PipelineStep_handler(step,
-  input)` — a module-qualified *associated function* call.  The host emits
-  `step.handler.invoke(step.handler.env, input)` (with the retain/release pair
-  around it).  Fixing the call shape should also fix the result type, since the
-  invoke slot's signature carries the real return type.
-* **Verify**: the call goes through `.invoke`/`.env`; all three errors disappear;
-  the fixed point holds.
-
-### 3. Result type of a call through a proc value is `void`
-
-* **Symptom**: 2 errors: `variable or field '_s' declared void` /
-  `'_a' declared void` in `main_closure_stress`.
-* **Cause**: `let _s = scaler(10.0)` where `scaler` is a `proc(double) ->
-  double` local emits `void _s = scaler.invoke(scaler.env, 10.0);`.  The call
-  itself is right; the *declared type* came out `void` instead of the proc's
-  return type.
-* **Verify**: `double _s = ...`; the errors vanish; the fixed point holds.
-
-### 4. `math.mt`: operators on structs and format-string arguments
-
-* **Symptom**: 3 errors — `conversion to non-scalar type requested` at
-  `let reversed = 3.0 * v3` (an `extending`-block operator on a struct) and
-  `aggregate value used where an integer was expected` (x2) in
-  `format_strings_demo`.
-* **Verify**: the errors vanish; the fixed point holds.
-
-### 5. `await` / `wait` typing
+### 1. `await` / `wait` typing
 
 * **Symptom**: 4 errors — `incompatible type for argument 1 of
   'std_async_wait__int'` (x3, main.mt) and `incompatible types when returning
   type 'mt_task_int' but 'int32_t' was expected` (async_tasks.mt).
 * **Cause**: task values are typed `mt_task_*` on one side of the call and the
-  awaited/bare type on the other.
-* **Verify**: the errors vanish; the fixed point holds, and the async output
-  still matches the host.
+  awaited/bare type on the other.  Note `std_async_libuv_runtime_wait_on__int`
+  already calls `root.invoke(root.env)` correctly, so the fault is in how the
+  *argument* to `wait` is typed, not in the call shape.
+* **Verify**: the errors vanish; the async output still matches the host, and the
+  fixed point holds.
 
-### 6. End-to-end verification and gates
+### 2. `math.mt`: operator on a struct, and format-string arguments
+
+* **Symptom**: 3 errors — `conversion to non-scalar type requested` at
+  `let reversed = 3.0 * v3` (an `extending`-block operator taking a struct on the
+  right) and `aggregate value used where an integer was expected` (x2) in
+  `format_strings_demo`.
+* **Verify**: the errors vanish; the fixed point holds.
+
+### 3. End-to-end verification and gates
 
 * `build/stage2/mtc build projects/stress` succeeds; run the binary and compare
   stdout + exit status against the Ruby host's build (expected: exit 242, empty
   stdout).
-* Then: `tools/bootstrap.sh` (fixed point), the self-test suite
-  (`build/stage2/mtc test test/mt -I .`) and `rake "cli:parity"`.
+* Then: the self-test suite (`build/stage2/mtc test test/mt -I .`) and
+  `rake "cli:parity"`.
 
 ## Already fixed on this path (do not re-investigate)
 
@@ -120,14 +78,13 @@ tools/bootstrap.sh -j 16     # must print: stage2.c == stage3.c (fixed point hol
 | `47684ed8` | type-parameter method fallback (`entity_killed.emit(entity.id_value())`) |
 | `18886806` | `dyn[alias.Interface]` lookup resolved through the import alias (`dyn lowering: interface not found`) |
 | `ea010947` | dyn interface names sanitized for C (dotted alias leaked into symbols) |
-| this commit | proc-typed type aliases: `proc_struct_decl` factors the field shape out of `proc_ensure_struct_decl` so the program-level alias pass can declare the `mt_proc_*` struct an alias-only proc typedef points at |
-| this commit | dyn symbols canonicalized on the declared interface name (`c_naming.dyn_iface_declared_name`), so `ifaces.Identifiable` and `Identifiable` emit one `mt_dyn_*` / `mt_vtable_*`; the dead `InterfaceAnalysis.module_name` / `iface_module_name` threading removed |
-| this commit | user-defined generic variants: `ensure_generic_variant_decl` collects concrete instances into `Program.monomorphized_variants`, registers their arm payload fields, and `match` routes to the kind-switch path; arm constructors accept a module-qualified receiver and no-payload arms resolve (the prelude `Option`/`Result` `_phantom` pipeline is excluded — registering those generically breaks the bootstrap) |
-| this commit | async proc captures: the synthetic `*__setup_env` parameter is a real C identifier (was `int32_t __mt_frame->local_offset`) and its body reads that parameter |
-| this commit | proc bodies no longer inherit the enclosing async function's CPS return state (`__mt_frame->result` stores / `goto <caller>_resume_complete`) |
-| this commit | qualified struct destructuring resolves field names/types in the value's declaring module (emitted `void x = <temp>.;` before) |
-| this commit | dyn wrapper casts use the concrete type's own module (`(main_Enemy*)` → `(engine_types_Enemy*)`) |
+| `a9eb5ec4` | proc-typed type aliases declare their shared `mt_proc_*` struct (`proc_struct_decl`); dyn symbols canonicalized on the declared interface name (`c_naming.dyn_iface_declared_name`) and the dead `InterfaceAnalysis.module_name` threading removed; user-defined generic variants collected into `Program.monomorphized_variants` with arm payload fields, module-qualified arm constructors, no-payload arms and kind-switch `match` routing (prelude `Option`/`Result` excluded — registering those generically breaks the bootstrap); async proc captures get a real C parameter instead of `int32_t __mt_frame->local_offset`; proc bodies no longer inherit the enclosing async function's CPS return state; qualified destructuring resolves fields in the value's declaring module; dyn wrapper casts use the concrete type's own module |
+| this commit | a proc-typed alias resolves to its closure struct on the *qualified* path too (`proc_alias_struct_type`, shared with the local-alias path) — `var ops: array[types.Callback, 3]` declared as `int32_t (*ops[3])(int32_t)` before |
+| this commit | calls through a proc-typed member go through `.invoke`/`.env` (`step.handler(x)`, `s.cb()` previously lowered to a nonexistent `<module>_<Struct>_<field>` function); variant-arm bindings resolve their payload field types from `arm_payload_fields` |
+| this commit | a call through a proc value/field takes its type from the closure's own signature when the analyzer recorded none (`let _s = scaler(10.0)` declared `void`) |
+| this commit | calling a proc held in an array element (`ops[selector](10)`) lowered to a zero-init `{ 0 }` — the `lower_call` default for an unhandled callee shape; an `expr_index_access` callee of proc type now calls through the element |
 
 Regression tests are still owed for the `defer`-scope and dyn-alias fixes (both
 produced crashes rather than diagnostics) and for qualified destructuring, the
-type-parameter fallback, and the changes above. Test location: `test/mt/`.
+type-parameter fallback, and the proc/variant/dyn changes above. Test location:
+`test/mt/`.

@@ -4193,7 +4193,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                     let opt_alias = resolve_single_imported_type(ctx, target_module, type_name)
                     match opt_alias:
                         Option.some as alias_ty:
-                            resolved = alias_ty.value
+                            resolved = proc_alias_struct_type(ctx, alias_ty.value)
                         Option.none:
                             resolved = types.Type.ty_imported(module_name = target_module, name = type_name, args = span[types.Type]())
             else:
@@ -4237,17 +4237,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 # module's qualified name.
                 var alias_target = ctx.analysis.type_alias_types.get(name)
                 if alias_target != null:
-                    resolved = unsafe: read(alias_target)
-                    # A `type Gen = proc(...) -> T` alias resolves to its closure
-                    # struct (`mt_proc_...`), not a bare function pointer, so it
-                    # matches direct `proc(...)` syntax when used as an array
-                    # element, field, or parameter.
-                    match resolved:
-                        types.Type.ty_function as fnt:
-                            if fnt.is_proc:
-                                resolved = proc_ensure_struct_decl(ctx, proc_type_name_from_signature(resolved), resolved)
-                        _:
-                            pass
+                    resolved = proc_alias_struct_type(ctx, unsafe: read(alias_target))
                 else:
                     resolved = types.Type.ty_imported(module_name = ctx.module_name, name = name, args = span[types.Type]())
             else:
@@ -4259,6 +4249,21 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
         if t.nullable and not types.is_error(resolved):
             return types.Type.ty_nullable(base = types.alloc_type(resolved))
         return resolved
+
+
+## The type a type alias denotes.  A `type Callback = proc(int) -> int` alias
+## denotes its closure struct (`mt_proc_...`), not a bare function pointer, so a
+## proc-typed alias matches direct `proc(...)` syntax wherever it is used — as an
+## array element, a field, a parameter, or a local annotation.  Any other alias
+## target passes through.
+function proc_alias_struct_type(ctx: ref[LowerCtx], target: types.Type) -> types.Type:
+    match target:
+        types.Type.ty_function as fnt:
+            if fnt.is_proc:
+                return proc_ensure_struct_decl(ctx, proc_type_name_from_signature(target), target)
+        _:
+            pass
+    return target
 
 
 function resolve_generic_type_ref(ctx: ref[LowerCtx], t: ast.TypeRef) -> types.Type:
@@ -7006,6 +7011,19 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 # lower as a direct field access call instead of a method call.
                 var is_fn_proc_field = false
                 var found_ft: types.Type = ctx.void_ty
+                # A variant arm binding's payload fields are registered in
+                # `arm_payload_fields` (keyed by the payload struct's C name), not
+                # in a struct table, so `s.cb()` on an arm binding needs them from
+                # there.
+                match recv_ty:
+                    types.Type.ty_variant_arm_payload:
+                        match arm_payload_field_type(ctx, recv_ty, ma.member_name):
+                            Option.some as arm_ft:
+                                found_ft = arm_ft.value
+                            Option.none:
+                                pass
+                    _:
+                        pass
                 match concrete_field_type(ctx, recv_ty, ma.member_name):
                     Option.some as ft:
                         found_ft = ft.value
@@ -7087,16 +7105,19 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         is_proc = false,
                         param_names = sp_str("frame"),
                     )
+                # A proc-typed field may be typed either as a `ty_function` with
+                # `is_proc` or as the shared proc struct it resolves to, so test
+                # the type rather than the variant: both must call through the
+                # closure's `invoke`/`env` rather than a same-named method.
+                if is_proc_type(found_ft):
+                    let recv_ir = lower_expr(ctx, ma.receiver)
+                    let field_expr = alloc_expr(ir.Expr.expr_member(receiver = recv_ir, member = ma.member_name, ty = found_ft))
+                    return lower_proc_field_call(ctx, field_expr, args, call_ep)
                 match found_ft:
-                    types.Type.ty_function as field_fn:
-                        if field_fn.is_proc:
-                            let recv_ir = lower_expr(ctx, ma.receiver)
-                            let field_expr = alloc_expr(ir.Expr.expr_member(receiver = recv_ir, member = ma.member_name, ty = found_ft))
-                            return lower_proc_field_call(ctx, field_expr, args, call_ep)
-                        else:
-                            let recv_ir = lower_expr(ctx, ma.receiver)
-                            let field_expr = alloc_expr(ir.Expr.expr_member(receiver = recv_ir, member = ma.member_name, ty = found_ft))
-                            return lower_fn_field_call(ctx, field_expr, args, call_ep)
+                    types.Type.ty_function:
+                        let recv_ir = lower_expr(ctx, ma.receiver)
+                        let field_expr = alloc_expr(ir.Expr.expr_member(receiver = recv_ir, member = ma.member_name, ty = found_ft))
+                        return lower_fn_field_call(ctx, field_expr, args, call_ep)
                     _:
                         pass
                 var recv_type_name = named_type_name(recv_ty)
@@ -7139,6 +7160,17 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                 ir_args.push(read(lowered))
                             si += 1
                         return alloc_expr(ir.Expr.expr_call(callee = fn_c_name, arguments = ir_args.as_span(), ty = expr_type(ctx, call_ep)))
+            ast.Expr.expr_index_access as ix:
+                # Calling a proc held in an array or span element: `ops[i](args)`.
+                # The element type comes from the receiver when the analyzer did
+                # not record one for the index expression.
+                var elem_ty = expr_type(ctx, callee)
+                if not is_proc_type(elem_ty):
+                    elem_ty = generic_first_arg(index_receiver_type(ctx, ix.receiver))
+                if is_proc_type(elem_ty):
+                    let elem_recv = lower_expr(ctx, callee)
+                    return lower_proc_field_call(ctx, elem_recv, args, call_ep)
+                return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
             _:
                 return alloc_expr(ir.Expr.expr_zero_init(ty = ctx.void_ty))
 
@@ -12752,9 +12784,15 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
         i += 1
 
     # Call through p.invoke (function pointer field).  The C backend renders
-    # this as p.invoke(arg0, arg1, ...), a direct call through the member.
-    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = expr_type(ctx, call_ep)))
-    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = expr_type(ctx, call_ep)))
+    # this as p.invoke(arg0, arg1, ...), a direct call through the member.  The
+    # analyzer does not always record a type for a call through a proc VALUE
+    # (`let _s = scaler(10.0)` came out void), so fall back to the closure's own
+    # signature, which carries the real return type.
+    var call_ty = expr_type(ctx, call_ep)
+    if is_void_type(call_ty):
+        call_ty = proc_return_type(lb.ty)
+    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = call_ty))
+    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
 
 
 ## Lower a call through a proc-typed struct field: `s.field(args)` compiles to
@@ -12775,8 +12813,13 @@ function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], arg
         unsafe:
             invoke_args.push(read(lowered))
         i += 1
-    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "invoke", ty = expr_type(ctx, call_ep)))
-    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = expr_type(ctx, call_ep)))
+    # As in `lower_proc_call`: a call through a proc-typed field may not have a
+    # recorded type, so take the return type from the field's own signature.
+    var call_ty = expr_type(ctx, call_ep)
+    if is_void_type(call_ty):
+        call_ty = proc_return_type(ir_expr_type(field_expr))
+    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "invoke", ty = call_ty))
+    return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
 
 
 ## Lower a call through an fn-typed struct field: `s.field(args)` compiles to
