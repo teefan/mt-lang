@@ -4081,7 +4081,16 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
                 return Option[FnSig].some(value = unsafe: read(sp))
             return Option[FnSig].none
         types.Type.ty_var as v:
-            return resolve_constraint_method(ctx, v.name, method_name)
+            match resolve_constraint_method(ctx, v.name, method_name):
+                Option.some as sig:
+                    return Option[FnSig].some(value = sig.value)
+                Option.none:
+                    pass
+            # A constrained type parameter may also carry interfaces its own
+            # constraint does not name (`Identifiable.id_value` on a
+            # `Damageable` parameter): the host resolves the method wherever it
+            # is declared, so fall back to any interface that declares the name.
+            return resolve_any_interface_method(ctx, method_name)
         types.Type.ty_str:
             return lookup_method_anywhere(ctx, "str", method_name)
         types.Type.ty_primitive as p:
@@ -4214,6 +4223,51 @@ function resolve_constraint_method(ctx: ref[Context], var_name: str, method_name
                 Option.none:
                     pass
             i += 1
+    return Option[FnSig].none
+
+
+## Any interface method with this name in a module's interface table, as a
+## call signature.
+function interface_method_in_map(ctx: ref[Context], ifaces: map_mod.Map[str, span[ast.InterfaceMethod]], method_name: str) -> Option[FnSig]:
+    var keys = ifaces.keys()
+    while true:
+        let key_ptr = keys.next() else:
+            break
+        let methods_ptr = ifaces.get(unsafe: read(key_ptr)) else:
+            continue
+        match interface_method_named(unsafe: read(methods_ptr), method_name):
+            Option.some as m:
+                enter_suppressed_interface_method(ctx, m.value)
+                let result = build_fn_sig(ctx, m.value.name, m.value.method_params, m.value.return_type, m.value.method_kind, false)
+                ctx.suppressed_type_names.clear()
+                return Option[FnSig].some(value = result)
+            Option.none:
+                pass
+    return Option[FnSig].none
+
+
+## Any visible interface method with this name, in this module or in an imported
+## one — the permissive fallback the host applies to a type-parameter receiver
+## whose own constraint does not declare the method.
+function resolve_any_interface_method(ctx: ref[Context], method_name: str) -> Option[FnSig]:
+    match interface_method_in_map(ctx, ctx.interfaces, method_name):
+        Option.some as sig:
+            return Option[FnSig].some(value = sig.value)
+        Option.none:
+            pass
+    var aliases = ctx.import_aliases.keys()
+    while true:
+        let alias_ptr = aliases.next() else:
+            break
+        let module_name_ptr = ctx.import_aliases.get(unsafe: read(alias_ptr)) else:
+            continue
+        let binding_ptr = lookup_binding(ctx, unsafe: read(module_name_ptr)) else:
+            continue
+        match interface_method_in_map(ctx, unsafe: read(binding_ptr).interfaces, method_name):
+            Option.some as sig:
+                return Option[FnSig].some(value = sig.value)
+            Option.none:
+                pass
     return Option[FnSig].none
 
 
