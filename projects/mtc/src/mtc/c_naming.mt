@@ -40,6 +40,25 @@ public function module_c_prefix(module_name: str) -> str:
     return sanitize_identifier(module_name)
 
 
+## The declared name of the interface a `dyn[I]` / `adapt[I]` use refers to: the
+## text after the last `.`, so that an import-alias prefix (`ifaces.Identifiable`)
+## and the bare spelling (`Identifiable`) yield one `mt_dyn_*` / `mt_vtable_*`
+## symbol.  The host names these after the declaration alone, with no module
+## qualification, so a qualified spelling must not leak into the symbol.
+public function dyn_iface_declared_name(use_name: str) -> str:
+    var last_dot: ptr_uint = 0
+    var has_dot = false
+    var i: ptr_uint = 0
+    while i < use_name.len:
+        if use_name.byte_at(i) == 46:  # '.'
+            last_dot = i
+            has_dot = true
+        i += 1
+    if has_dot:
+        return sanitize_identifier(use_name.slice(last_dot + 1, use_name.len - last_dot - 1))
+    return sanitize_identifier(use_name)
+
+
 ## A module-qualified C name (`en` + `State` -> `en_State`).  Used for function
 ## and type linkage names and for named-type C names in the backend.
 public function qualified_c_name(module_name: str, name: str) -> str:

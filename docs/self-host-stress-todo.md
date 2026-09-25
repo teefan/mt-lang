@@ -3,20 +3,26 @@
 Goal: `build/stage2/mtc build projects/stress` compiles, links, and runs with
 output matching the Ruby host compiler's build of the same project.
 
-Status as of `ea010947`: the **front end is clear**. `projects/stress` parses,
-analyzes (zero diagnostics) and lowers without aborting. Everything that
-remains is codegen: declarations that are referenced but never emitted, plus
-one malformed construct.
+Reference behavior: the host build of `projects/stress` (`ruby -Ilib bin/mtc
+build projects/stress -I . --no-cache --keep-c /tmp/stress_host_ref.c -o
+/tmp/stress_host2`) exits **242** with **empty stdout**. Parity means the
+self-host build matches that.
+
+Status: the front end is clear and codegen is nearly there. The self-host build
+now produces C that fails only **22** `cc -fsyntax-only` diagnostics (down from
+70), all in five clusters listed below. Every change on this path was verified
+against the fixed-point gate (`tools/bootstrap.sh`), which has held at every
+step.
 
 ## How to reproduce and localize
 
 ```sh
 # 1. Build the self-host compiler from the current sources
-ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
+ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/dev/mtc
 
-# 2. Build the target project
+# 2. Build the target project (the driver saves the C it compiled)
 timeout 300 bash -c 'ulimit -v 20000000; \
-  build/stage2/mtc build projects/stress -I . --no-cache -o /tmp/stress_self'
+  build/dev/mtc build projects/stress -I . --no-cache -o /tmp/stress_self'
 
 # 3. Get exact C line numbers.  The driver's source mapping is approximate
 #    (it points at the call site, not the defect); the saved C does not lie.
@@ -25,8 +31,9 @@ cc -fsyntax-only -I . -I std -I std/c "$C" 2>&1 | grep -A4 "error:" | head -30
 ```
 
 Always run the fixed-point gate after every change, never only at the end of a
-batch — two changes in the session that produced this list looked correct at
-the CLI level and broke the compiler's own bootstrap:
+batch — several changes that looked correct at the CLI level broke the
+compiler's own bootstrap (one aborted it outright with `lowering: match
+requires known type, got Result_success`):
 
 ```sh
 tools/bootstrap.sh -j 16     # must print: stage2.c == stage3.c (fixed point holds)
@@ -34,77 +41,74 @@ tools/bootstrap.sh -j 16     # must print: stage2.c == stage3.c (fixed point hol
 
 ## TODO
 
-### 1. `mt_proc_*` struct never declared for proc-typed type aliases
+### 1. Proc-typed array elements render as bare function pointers
 
-* **Symptom**: `error: unknown type name 'mt_proc_bool_ulong'` — from the emitted
-  `typedef mt_proc_bool_ulong engine_types_Predicate;`
-  (`projects/stress/src/engine/types.mt`). Only `mt_proc_bool_int` exists.
-* **Cause**: proc value structs are registered only when a proc *literal* is
-  lowered (three sites in resolver/alias handling all call
-  `proc_ensure_struct_decl`). The type-alias emission pass in
-  `projects/mtc/src/mtc/lowering/lowering.mt` (~lines 558-563) rewrites a
-  proc-typed alias target to
-  `ty_named(module_name = "", name = proc_type_name_from_signature(tv))`
-  and pushes an `ir.TypeAlias` **without registering the declaration**. An alias
-  that is only ever referenced as a typedef (never through
-  `resolve_type_ref`'s alias branch) therefore emits a typedef with no
-  definition.
-* **Why it cannot simply call the existing helper**: that pass has no
-  `LowerCtx`, and `proc_ensure_struct_decl` needs one (it builds fields and
-  pushes into `ctx.pending_proc_structs`).
-* **Fix**: confirm whether the alias pass is in the same function as the
-  `lower_module(…, ref_of(monomorphized_structs), …)` /
-  `dedup_append_structs(…)` code (~lines 470-500); it appears to be, which
-  puts the IR's struct collection in scope. Then factor the
-  `{ env, invoke, release, retain }` field shape out of
-  `proc_ensure_struct_decl` into a `LowerCtx`-free helper and append the struct
-  through the same `dedup_append_structs` path. Otherwise register at
-  alias-lowering time, where a `LowerCtx` exists.
-* **Verify**: the `mt_proc_bool_ulong` error disappears from
-  `cc -fsyntax-only`; fixed point holds.
+* **Symptom**: 10 errors in `projects/stress/src/engine/closures.mt`:
+  `incompatible types when assigning to type 'int32_t (*)(int32_t)' from type
+  'mt_proc_int_int'` (x5), `type name declared as function returning an array`
+  (x3), `expected expression before '{'` (x2).
+* **Cause**: `var ops: array[types.Callback, 3]` — `Callback` is an imported
+  type alias for `proc(int) -> int` — declares as
+  `int32_t (*ops[3])(int32_t)` while the assigned values are the proc struct
+  `mt_proc_int_int`.  A *qualified* alias reference does not resolve to the
+  shared proc struct, so `c_declaration`'s array-of-function-pointer branch
+  takes it.  The unqualified alias case is already handled in
+  `resolve_type_ref` (~line 4238: "A `type Gen = proc(...) -> T` alias resolves
+  to its closure struct"); the qualified/imported path is not.
+* **Verify**: the local declares as `mt_proc_int_int ops[3]`, the errors vanish,
+  and the fixed point holds.
 
-### 2. dyn interface symbols are not canonical
+### 2. Calls through a proc-typed member lower to a plain function call
 
-* **Symptom**: `error: unknown type name 'mt_dyn_Identifiable'; did you mean
-  'mt_dyn_ifaces_Identifiable'?` (same for `Damageable`).
-* **Cause**: one interface is written two ways — bare (`dyn[Identifiable]`
-  inside `projects/stress/src/engine/interfaces.mt`) and through an import alias
-  (`dyn[ifaces.Identifiable]` in `main.mt`). `ea010947` sanitized the names
-  (dots are not valid in C identifiers, previously
-  `struct mt_vtable_ifaces.Identifiable { … }`), but the two spellings still
-  produce two different symbols.
-* **Fix**: canonicalize on the interface *declaration's* module plus name —
-  `InterfaceAnalysis.module_name`, the field the lookup deliberately leaves as
-  written — and route every `mt_dyn_*` / `mt_vtable_*` construction through one
-  helper that uses it. These sites must change **together**
-  (`c_backend.mt` ~2033 and the several `j3("mt_dyn_", …)` /
-  `j3("mt_vtable_", …)` sites in `lowering.mt`): changing only that field is
-  what broke the bootstrap in an earlier attempt.
-* **Verify**: both spellings emit the same symbol; fixed point holds.
+* **Symptom**: 3 errors: `implicit declaration of function
+  'engine_systems_PipelineStep_handler'` (systems.mt), `'engine_closures_mt_cb'`
+  (closures.mt), and — from the same call site in `run_pipeline` — `incompatible
+  types when assigning to type 'engine_types_Outcome_int_engine_types_EngineError'
+  from type 'int'` (the call's result comes back as `int`).
+* **Cause**: `step.handler(input)` and `s.cb()` (proc-typed struct field /
+  variant-arm field) lower to `engine_systems_PipelineStep_handler(step,
+  input)` — a module-qualified *associated function* call.  The host emits
+  `step.handler.invoke(step.handler.env, input)` (with the retain/release pair
+  around it).  Fixing the call shape should also fix the result type, since the
+  invoke slot's signature carries the real return type.
+* **Verify**: the call goes through `.invoke`/`.env`; all three errors disappear;
+  the fixed point holds.
 
-### 3. Monomorphized generic variant instance not collected
+### 3. Result type of a call through a proc value is `void`
 
-* **Symptom**: `error: expected specifier-qualifier-list before
-  'engine_types_Outcome_int_engine_types_EngineError'` — the type is referenced
-  by a field but never declared.
-* **Fix**: mirror how struct instances reach `monomorphized_structs`; the
-  program-lowering call already passes `ref_of(monomorphized_variants)`, so the
-  gap is in what feeds that collection.
+* **Symptom**: 2 errors: `variable or field '_s' declared void` /
+  `'_a' declared void` in `main_closure_stress`.
+* **Cause**: `let _s = scaler(10.0)` where `scaler` is a `proc(double) ->
+  double` local emits `void _s = scaler.invoke(scaler.env, 10.0);`.  The call
+  itself is right; the *declared type* came out `void` instead of the proc's
+  return type.
+* **Verify**: `double _s = ...`; the errors vanish; the fixed point holds.
 
-### 4. Malformed C in the dyn / `adapt[…]` helper
+### 4. `math.mt`: operators on structs and format-string arguments
 
-* **Symptom**: `error: expected ';', ',' or ')' before '->'` at generated-C
-  line 1430 (near the dyn uses at 1434-1435).
-* **Fix**: re-read that line once 2 and 3 land — it is likely the same code
-  path and may fall out of 2.
+* **Symptom**: 3 errors — `conversion to non-scalar type requested` at
+  `let reversed = 3.0 * v3` (an `extending`-block operator on a struct) and
+  `aggregate value used where an integer was expected` (x2) in
+  `format_strings_demo`.
+* **Verify**: the errors vanish; the fixed point holds.
 
-### 5. End-to-end verification and gates
+### 5. `await` / `wait` typing
+
+* **Symptom**: 4 errors — `incompatible type for argument 1 of
+  'std_async_wait__int'` (x3, main.mt) and `incompatible types when returning
+  type 'mt_task_int' but 'int32_t' was expected` (async_tasks.mt).
+* **Cause**: task values are typed `mt_task_*` on one side of the call and the
+  awaited/bare type on the other.
+* **Verify**: the errors vanish; the fixed point holds, and the async output
+  still matches the host.
+
+### 6. End-to-end verification and gates
 
 * `build/stage2/mtc build projects/stress` succeeds; run the binary and compare
-  stdout + exit status against the Ruby host's build of the same project.
+  stdout + exit status against the Ruby host's build (expected: exit 242, empty
+  stdout).
 * Then: `tools/bootstrap.sh` (fixed point), the self-test suite
-  (`build/stage2/mtc test test/mt -I .`) and `rake "cli:parity"` — the latter
-  two were last green at the parent of `18886806`.
+  (`build/stage2/mtc test test/mt -I .`) and `rake "cli:parity"`.
 
 ## Already fixed on this path (do not re-investigate)
 
@@ -116,7 +120,14 @@ tools/bootstrap.sh -j 16     # must print: stage2.c == stage3.c (fixed point hol
 | `47684ed8` | type-parameter method fallback (`entity_killed.emit(entity.id_value())`) |
 | `18886806` | `dyn[alias.Interface]` lookup resolved through the import alias (`dyn lowering: interface not found`) |
 | `ea010947` | dyn interface names sanitized for C (dotted alias leaked into symbols) |
+| this commit | proc-typed type aliases: `proc_struct_decl` factors the field shape out of `proc_ensure_struct_decl` so the program-level alias pass can declare the `mt_proc_*` struct an alias-only proc typedef points at |
+| this commit | dyn symbols canonicalized on the declared interface name (`c_naming.dyn_iface_declared_name`), so `ifaces.Identifiable` and `Identifiable` emit one `mt_dyn_*` / `mt_vtable_*`; the dead `InterfaceAnalysis.module_name` / `iface_module_name` threading removed |
+| this commit | user-defined generic variants: `ensure_generic_variant_decl` collects concrete instances into `Program.monomorphized_variants`, registers their arm payload fields, and `match` routes to the kind-switch path; arm constructors accept a module-qualified receiver and no-payload arms resolve (the prelude `Option`/`Result` `_phantom` pipeline is excluded — registering those generically breaks the bootstrap) |
+| this commit | async proc captures: the synthetic `*__setup_env` parameter is a real C identifier (was `int32_t __mt_frame->local_offset`) and its body reads that parameter |
+| this commit | proc bodies no longer inherit the enclosing async function's CPS return state (`__mt_frame->result` stores / `goto <caller>_resume_complete`) |
+| this commit | qualified struct destructuring resolves field names/types in the value's declaring module (emitted `void x = <temp>.;` before) |
+| this commit | dyn wrapper casts use the concrete type's own module (`(main_Enemy*)` → `(engine_types_Enemy*)`) |
 
 Regression tests are still owed for the `defer`-scope and dyn-alias fixes (both
-produced crashes rather than diagnostics) and for qualified destructuring and
-the type-parameter fallback. Test location: `test/mt/`.
+produced crashes rather than diagnostics) and for qualified destructuring, the
+type-parameter fallback, and the changes above. Test location: `test/mt/`.

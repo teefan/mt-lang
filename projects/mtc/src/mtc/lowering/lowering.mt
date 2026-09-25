@@ -557,7 +557,17 @@ public function lower(program: loader.Program) -> ir.Program:
             match tv:
                 types.Type.ty_function as fnt:
                     if fnt.is_proc:
-                        qualified_tv = types.Type.ty_named(module_name = "", name = proc_type_name_from_signature(tv))
+                        let proc_name = proc_type_name_from_signature(tv)
+                        qualified_tv = types.Type.ty_named(module_name = "", name = proc_name)
+                        # An alias that is only ever referenced as a typedef
+                        # never reaches `resolve_type_ref`, so nothing else
+                        # registers the shared proc value struct it points at.
+                        # Append it here through the same dedup path as the
+                        # IR's own struct collection.
+                        if not proc_type_has_type_var(tv):
+                            var proc_decls = vec.Vec[ir.StructDecl].create()
+                            proc_decls.push(proc_struct_decl(proc_name, tv))
+                            dedup_append_structs(ref_of(structs), proc_decls.as_span(), ref_of(seen_structs))
                 _:
                     pass
             type_aliases.push(ir.TypeAlias(
@@ -3458,9 +3468,15 @@ function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bi
         var member_name: str
         var member_ty: types.Type
         match type_name:
-            Option.some as tn:
-                member_name = struct_field_name_at(ctx, tn.value, i)
-                member_ty = struct_field_type_at(ctx, tn.value, i)
+            Option.some:
+                let fields_opt = struct_fields_of(ctx, val_ty)
+                match fields_opt:
+                    Option.some as fields:
+                        member_name = struct_field_name_at(fields.value, i)
+                        member_ty = qualify_type(ctx, struct_field_type_at(fields.value, i))
+                    Option.none:
+                        member_name = ""
+                        member_ty = types.Type.ty_error
             Option.none:
                 member_name = tuple_field_name(i)
                 member_ty = tuple_element_type(val_ty, i)
@@ -3482,23 +3498,45 @@ function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bi
         i += 1
 
 
-function struct_field_name_at(ctx: ref[LowerCtx], struct_name: str, index: ptr_uint) -> str:
-    let fields_ptr = ctx.analysis.structs.get(struct_name) else:
-        return ""
-    let entries = unsafe: read(fields_ptr)
-    if index < entries.len:
+## The struct fields of the type a destructuring initializer evaluates to.  The
+## fields live in the DECLARING module's struct table, and the source-level type
+## name may be import-qualified (`types.Transform` for `engine.types`), which a
+## lookup by that written name in the current module would miss — the value's own
+## type carries the authoritative module and name.
+function struct_fields_of(ctx: ref[LowerCtx], t: types.Type) -> Option[span[analyzer.FieldEntry]]:
+    var module_name: str
+    var struct_name: str
+    match t:
+        types.Type.ty_imported as im:
+            module_name = im.module_name
+            struct_name = im.name
+        types.Type.ty_named as n:
+            module_name = if n.module_name.len > 0: n.module_name else: ctx.module_name
+            struct_name = n.name
+        _:
+            return Option[span[analyzer.FieldEntry]].none
+    match find_imported_analysis(ctx, module_name):
+        Option.some as a:
+            let fields_ptr = a.value.structs.get(struct_name) else:
+                return Option[span[analyzer.FieldEntry]].none
+            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(fields_ptr))
+        Option.none:
+            return Option[span[analyzer.FieldEntry]].none
+
+
+## The name of a struct's field at `index` (empty when out of range).
+function struct_field_name_at(fields: span[analyzer.FieldEntry], index: ptr_uint) -> str:
+    if index < fields.len:
         unsafe:
-            return read(entries.data + index).name
+            return read(fields.data + index).name
     return ""
 
 
-function struct_field_type_at(ctx: ref[LowerCtx], struct_name: str, index: ptr_uint) -> types.Type:
-    let fields_ptr = ctx.analysis.structs.get(struct_name) else:
-        return types.Type.ty_error
-    let entries = unsafe: read(fields_ptr)
-    if index < entries.len:
+## The declared type of a struct's field at `index` (`ty_error` when out of range).
+function struct_field_type_at(fields: span[analyzer.FieldEntry], index: ptr_uint) -> types.Type:
+    if index < fields.len:
         unsafe:
-            return qualify_type(ctx, read(entries.data + index).ty)
+            return read(fields.data + index).ty
     return types.Type.ty_error
 
 
@@ -3676,6 +3714,15 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
                 if has_unresolved:
                     return t
                 let concrete_name = naming.qualified_c_name(im.module_name, generic_struct_c_name(im.name, resolved_args))
+                # A generic VARIANT instance has no struct fields to extract, so
+                # register its concrete declaration and stop: it is emitted as a
+                # variant, not a struct.
+                match find_imported_analysis(ctx, im.module_name):
+                    Option.some as owner:
+                        if ensure_generic_variant_decl(ctx, owner.value, im.name, resolved_args, concrete_name):
+                            return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = resolved_args)
+                    Option.none:
+                        pass
                 ensure_generic_struct_decl_named(ctx, im.name, span[ast.TypeArgument](), resolved_args, concrete_name)
                 generic_instance_set(ctx, concrete_name, GenericReceiver(owner_name = im.name, concrete_args = resolved_args, owner_module = im.module_name))
                 return types.Type.ty_imported(module_name = im.module_name, name = im.name, args = resolved_args)
@@ -3739,6 +3786,21 @@ function try_monomorphize_generic(ctx: ref[LowerCtx], name: str, args: span[type
         if (name == "Option" and args.len < 1) or (name == "Result" and args.len < 2):
             return types.Type.ty_error
         return ensure_generic_variant(ctx, name, args)
+    # A user-defined generic variant (`Outcome[int, EngineError]`) is emitted as a
+    # concrete variant declaration, not a struct.
+    if ensure_generic_variant_decl(ctx, ctx.analysis, name, args, naming.qualified_c_name(ctx.module_name, generic_struct_c_name(name, args))):
+        return types.Type.ty_imported(module_name = ctx.module_name, name = name, args = args)
+    var vimport_values = ctx.analysis.imports.values()
+    while true:
+        let vtarget_ptr = vimport_values.next() else:
+            break
+        let vtarget_module = unsafe: read(vtarget_ptr)
+        match find_imported_analysis(ctx, vtarget_module):
+            Option.some as vimported:
+                if ensure_generic_variant_decl(ctx, vimported.value, name, args, naming.qualified_c_name(vtarget_module, generic_struct_c_name(name, args))):
+                    return types.Type.ty_imported(module_name = vtarget_module, name = name, args = args)
+            Option.none:
+                pass
     # Try current module first.
     if ctx.analysis.structs.contains(name):
         let concrete_name = naming.qualified_c_name(ctx.module_name, generic_struct_c_name(name, args))
@@ -3886,6 +3948,39 @@ function struct_in_source(module_analysis: analyzer.Analysis, name: str) -> bool
                 pass
         di += 1
     return false
+
+## The type of a concrete generic variant instance.  A prelude `Option`/`Result`
+## instance keeps its global, un-prefixed C name (`std_option_Option_int`), while
+## a user-defined variant instance is named after its declaring module
+## (`engine_types_Outcome_int_engine_types_EngineError`).
+function generic_variant_instance_type(ctx: ref[LowerCtx], variant_name: str, concrete_args: span[types.Type]) -> types.Type:
+    if is_prelude_variant_name(variant_name):
+        return types.Type.ty_generic(name = variant_name, args = concrete_args)
+    match variant_declaring_module(ctx, variant_name):
+        Option.some as owner:
+            return types.Type.ty_imported(module_name = owner.value, name = variant_name, args = concrete_args)
+        Option.none:
+            return types.Type.ty_generic(name = variant_name, args = concrete_args)
+
+
+## The module declaring a variant named `name`, searching the current module then
+## the imports.  `none` when no loaded module declares it.
+function variant_declaring_module(ctx: ref[LowerCtx], name: str) -> Option[str]:
+    if variant_in_source(ctx.analysis, name):
+        return Option[str].some(value = ctx.module_name)
+    var import_values = ctx.analysis.imports.values()
+    while true:
+        let target_ptr = import_values.next() else:
+            break
+        let target_module = unsafe: read(target_ptr)
+        match find_imported_analysis(ctx, target_module):
+            Option.some as imported:
+                if variant_in_source(imported.value, name):
+                    return Option[str].some(value = target_module)
+            Option.none:
+                pass
+    return Option[str].none
+
 
 ## True when a module's AST declares a generic variant named `name`.
 function variant_in_source(module_analysis: analyzer.Analysis, name: str) -> bool:
@@ -4058,7 +4153,7 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
                 return types.Type.ty_nullable(base = types.alloc_type(fun))
             return fun
         if t.is_dyn:
-            return types.Type.ty_dyn(iface = naming.sanitize_identifier(unsafe: analyzer.qname_to_str(t.dyn_interface)))
+            return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(t.dyn_interface)))
         if t.is_tuple:
             var elems = vec.Vec[types.Type].create()
             var i: ptr_uint = 0
@@ -5763,11 +5858,18 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
     let uint_ty = types.primitive("ptr_uint")
 
     var params = vec.Vec[ir.Param].create()
-    # Each capture becomes a parameter of the setup function.
+    # Each capture becomes a parameter of the setup function.  The parameter needs
+    # a C identifier of its own: `cap.c_name` is the *caller's* reference to the
+    # captured value, which inside an async function is a frame member
+    # (`__mt_frame->local_offset`) — unusable in a declaration, and meaningless in
+    # this separate function, whose body must read its own parameter.
+    var param_names = vec.Vec[str].create()
     var ci: ptr_uint = 0
     while ci < captures.len:
         let cap = unsafe: read(captures.data + ci)
-        params.push(ir.Param(name = cap.name, linkage_name = cap.c_name, ty = cap.ty, pointer = false))
+        let pname = fresh_c_temp_name(ctx, "cap")
+        param_names.push(pname)
+        params.push(ir.Param(name = cap.name, linkage_name = pname, ty = cap.ty, pointer = false))
         ci += 1
 
     var body = vec.Vec[ir.Stmt].create()
@@ -5788,7 +5890,9 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
     while ci2 < captures.len:
         let cap = unsafe: read(captures.data + ci2)
         let field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
-        let cap_val = alloc_expr(ir.Expr.expr_name(name = cap.c_name, ty = cap.ty, pointer = false))
+        let pname_ptr = param_names.get(ci2) else:
+            break
+        let cap_val = alloc_expr(ir.Expr.expr_name(name = unsafe: read(pname_ptr), ty = cap.ty, pointer = false))
         if is_array_type(cap.ty):
             let addr_of_field = alloc_expr(ir.Expr.expr_address_of(expression = field, ty = types.Type.ty_generic(name = "ptr", args = sp_type(cap.ty))))
             # An array argument already decays to a pointer in C; taking its
@@ -5816,7 +5920,16 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
     let saved_cps_ci = ctx.async_cps_active
+    let saved_cps_ci_label = ctx.async_resume_return_label
+    let saved_cps_ci_complete = ctx.async_complete_label
+    let saved_cps_ci_result = ctx.async_result_c_name
+    # A proc is a synchronous closure: a literal inside an async function must not
+    # inherit the caller's CPS state, or its body emits `__mt_frame->result` stores
+    # and `goto <caller>_resume_complete` labels that don't exist here.
     ctx.async_cps_active = false
+    ctx.async_resume_return_label = ""
+    ctx.async_complete_label = ""
+    ctx.async_result_c_name = ""
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
 
@@ -5870,6 +5983,9 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     ctx.locals = saved_locals
     ctx.temp_counter = saved_counter
     ctx.async_cps_active = saved_cps_ci
+    ctx.async_resume_return_label = saved_cps_ci_label
+    ctx.async_complete_label = saved_cps_ci_complete
+    ctx.async_result_c_name = saved_cps_ci_result
     return ir.Function(
         name = invoke_c_name,
         linkage_name = invoke_c_name,
@@ -5932,7 +6048,15 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
     let saved_cps_pi = ctx.async_cps_active
+    let saved_cps_pi_label = ctx.async_resume_return_label
+    let saved_cps_pi_complete = ctx.async_complete_label
+    let saved_cps_pi_result = ctx.async_result_c_name
+    # See `build_capturing_invoke`: the proc body is synchronous and must not
+    # inherit the enclosing async function's CPS return state.
     ctx.async_cps_active = false
+    ctx.async_resume_return_label = ""
+    ctx.async_complete_label = ""
+    ctx.async_result_c_name = ""
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
 
@@ -5959,6 +6083,9 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     ctx.locals = saved_locals
     ctx.temp_counter = saved_counter
     ctx.async_cps_active = saved_cps_pi
+    ctx.async_resume_return_label = saved_cps_pi_label
+    ctx.async_complete_label = saved_cps_pi_complete
+    ctx.async_result_c_name = saved_cps_pi_result
     return ir.Function(
         name = invoke_c_name,
         linkage_name = invoke_c_name,
@@ -6760,11 +6887,33 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                             return lower_plain_call_sig(ctx, c_name, cross_args, call_ep, ret_type_ptr, cross_sig)
                     ast.Expr.expr_specialization as spec:
                         # A generic variant arm constructor, e.g. `Option[int].some(value = 42)`.
+                        # A GENERIC variant is deliberately absent from `ctx.variants`
+                        # (that registry drives non-generic match resolution), so
+                        # fall back to the declarations, local then imported.
                         if spec.arguments.len > 0:
                             match read(spec.callee):
                                 ast.Expr.expr_identifier as spec_id:
                                     if ctx.variants.contains(spec_id.name):
                                         return lower_generic_variant_literal(ctx, spec_id.name, spec.arguments, ma.member_name, args)
+                                    match variant_declaring_module(ctx, spec_id.name):
+                                        Option.some:
+                                            return lower_generic_variant_literal(ctx, spec_id.name, spec.arguments, ma.member_name, args)
+                                        Option.none:
+                                            pass
+                                ast.Expr.expr_member_access as spec_ma:
+                                    # Module-qualified: `types.Outcome[int, E].ok(value = 7)`.
+                                    match read(spec_ma.receiver):
+                                        ast.Expr.expr_identifier as spec_mod_id:
+                                            let spec_mod_ptr = ctx.analysis.imports.get(spec_mod_id.name)
+                                            if spec_mod_ptr != null:
+                                                match find_imported_analysis(ctx, unsafe: read(spec_mod_ptr)):
+                                                    Option.some as spec_imported:
+                                                        if variant_in_source(spec_imported.value, spec_ma.member_name):
+                                                            return lower_generic_variant_literal(ctx, spec_ma.member_name, spec.arguments, ma.member_name, args)
+                                                    Option.none:
+                                                        pass
+                                        _:
+                                            pass
                                 _:
                                     pass
                     ast.Expr.expr_member_access as inner_ma:
@@ -7496,6 +7645,90 @@ function extract_generic_struct_fields(ctx: ref[LowerCtx], module_analysis: anal
     return Option[span[ir.Field]].some(value = ir_fields.as_span())
 
 
+## Ensure a concrete declaration exists for a user-defined generic variant
+## instance (`Outcome[int, EngineError]` from `engine.types`).  Mirrors
+## `extract_generic_struct_fields`: the arms' field types resolve in the
+## DECLARING module with the type parameters substituted, and the instance is
+## pushed onto `pending_generic_variants` — the collection that reaches
+## `Program.monomorphized_variants`.  Without it a generic variant instance is
+## referenced by its mangled C name but never declared.
+## Returns true when `variant_name` is a generic variant declared in
+## `module_analysis`; `decl_name` is the instance's C name.
+function ensure_generic_variant_decl(ctx: ref[LowerCtx], module_analysis: analyzer.Analysis, variant_name: str, concrete_args: span[types.Type], decl_name: str) -> bool:
+    var vi: ptr_uint = 0
+    while vi < ctx.pending_generic_variants.len():
+        let vp = ctx.pending_generic_variants.get(vi) else:
+            break
+        unsafe:
+            if read(vp).linkage_name == decl_name:
+                return true
+        vi += 1
+    var found = false
+    var di: ptr_uint = 0
+    while di < module_analysis.source_file.declarations.len and not found:
+        var d: ast.Decl
+        unsafe:
+            d = read(module_analysis.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_variant as vr:
+                if vr.name == variant_name and vr.type_params.len > 0:
+                    found = true
+                    var sub = map_mod.Map[str, types.Type].create()
+                    var spi: ptr_uint = 0
+                    while spi < vr.type_params.len and spi < concrete_args.len:
+                        unsafe:
+                            sub.set(read(vr.type_params.data + spi).name, read(concrete_args.data + spi))
+                        spi += 1
+                    var saved_type_subst = ctx.type_substitution
+                    var saved_analysis = ctx.analysis
+                    var saved_module = ctx.module_name
+                    ctx.type_substitution = sub
+                    ctx.analysis = module_analysis
+                    ctx.module_name = module_analysis.module_name
+                    var arms = vec.Vec[ir.VariantArm].create()
+                    var ai: ptr_uint = 0
+                    while ai < vr.variant_arms.len:
+                        var arm: ast.VariantArm
+                        unsafe:
+                            arm = read(vr.variant_arms.data + ai)
+                        var fields = vec.Vec[ir.Field].create()
+                        var fi: ptr_uint = 0
+                        while fi < arm.arm_fields.len:
+                            var f: ast.Field
+                            unsafe:
+                                f = read(arm.arm_fields.data + fi)
+                            let raw_ty = resolve_field_type_ref(ctx, f.field_type)
+                            let field_ty = substitute_type_params(ctx, raw_ty, ref_of(sub))
+                            fields.push(ir.Field(name = f.name, ty = qualify_type(ctx, field_ty)))
+                            fi += 1
+                        arms.push(ir.VariantArm(name = arm.name, linkage_name = variant_arm_c_name(decl_name, arm.name), fields = fields.as_span()))
+                        # Register the instance's arm payload fields under its C
+                        # name so member access on a match binding of this
+                        # instance resolves its field types.
+                        if fields.len() > 0:
+                            var field_names = vec.Vec[str].create()
+                            var field_types = vec.Vec[types.Type].create()
+                            var rfi: ptr_uint = 0
+                            while rfi < fields.len():
+                                let rf_ptr = fields.get(rfi) else:
+                                    break
+                                unsafe:
+                                    let rf = read(rf_ptr)
+                                    field_names.push(rf.name)
+                                    field_types.push(rf.ty)
+                                rfi += 1
+                            ctx.arm_payload_fields.set(variant_arm_c_name(decl_name, arm.name), VariantArmInfo(name = arm.name, field_names = field_names.as_span(), field_types = field_types.as_span()))
+                        ai += 1
+                    ctx.type_substitution = saved_type_subst
+                    ctx.analysis = saved_analysis
+                    ctx.module_name = saved_module
+                    ctx.pending_generic_variants.push(ir.VariantDecl(name = decl_name, linkage_name = decl_name, arms = arms.as_span(), source_module = Option[str].none))
+            _:
+                pass
+        di += 1
+    return found
+
+
 function is_pointer_or_ref_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
@@ -8179,7 +8412,7 @@ function lower_generic_variant_literal(ctx: ref[LowerCtx], variant_name: str, ty
         unsafe:
             concrete_args.push(qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + i).value)))
         i += 1
-    let ty = types.Type.ty_generic(name = variant_name, args = concrete_args.as_span())
+    let ty = generic_variant_instance_type(ctx, variant_name, concrete_args.as_span())
     return alloc_expr(ir.Expr.expr_variant_literal(
         ty = ty,
         arm_name = arm_name,
@@ -8412,10 +8645,11 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
     let iface_type_ref_val = unsafe: read(iface_type_ref)
     let iface_use_name = unsafe: analyzer.qname_to_str(iface_type_ref_val.name)
     # The use-site name may be a dotted import alias (`ifaces.Identifiable`),
-    # which is not a C identifier: the interface lookup wants it as written,
-    # while every symbol built from it (`mt_dyn_*`, `mt_vtable_*`) must be the
-    # sanitized form.
-    let iface_name = naming.sanitize_identifier(iface_use_name)
+    # which is not a C identifier and is not what the host names the symbols
+    # after: the interface lookup wants it as written (it resolves aliases),
+    # while every symbol built from it (`mt_dyn_*`, `mt_vtable_*`) uses the
+    # declared name alone, so both spellings produce one symbol.
+    let iface_name = naming.dyn_iface_declared_name(iface_use_name)
     # Resolve type arguments from the dyn[...] type (e.g. dyn[Mapper[int]] → [int]).
     var type_args = vec.Vec[types.Type].create()
     var tgi: ptr_uint = 0
@@ -8426,7 +8660,7 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
         Option.some as ia:
             let methods = ia.value.methods
             let concrete_name = canonical_type_name(ctx.module_name, concrete_type)
-            let vtable_name = ensure_dyn_vtable(ctx, concrete_name, concrete_type, iface_name, methods, ia.value.module_name, type_args.as_span(), ia.value.type_params)
+            let vtable_name = ensure_dyn_vtable(ctx, concrete_name, concrete_type, iface_name, methods, type_args.as_span(), ia.value.type_params)
             var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
             # The vtable constant has the `DynVtable` type; its address is a
             # `ptr[DynVtable]`, then cast to `void*` for the fat-pointer field.
@@ -8450,9 +8684,8 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
             fatal(c"dyn lowering: interface not found")
 
 
-## Interface analysis: the owning module name and the methods declared by the interface.
+## Interface analysis: the methods declared by the interface.
 struct InterfaceAnalysis:
-    module_name: str
     methods: span[ast.InterfaceMethod]
     type_params: span[ast.TypeParam]
 
@@ -8472,9 +8705,8 @@ function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[
                 if not rest.is_valid_utf8():
                     break
                 # `mod_name` is what the use site wrote, which may be an import
-                # alias (`ifaces.Identifiable` for `engine.interfaces`).  Look the
-                # analysis up under the real module name, but keep the interface's
-                # recorded module as written.
+                # alias (`ifaces.Identifiable` for `engine.interfaces`): look the
+                # analysis up under the real module name.
                 var target_module = mod_name
                 let alias_ptr = ctx.analysis.imports.get(mod_name)
                 if alias_ptr != null:
@@ -8483,7 +8715,7 @@ function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[
                     Option.some as imported:
                         let m_ptr = imported.value.interfaces.get(rest)
                         if m_ptr != null:
-                            return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = mod_name, methods = unsafe: read(m_ptr), type_params = interface_type_params(imported.value.source_file, rest)))
+                            return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(methods = unsafe: read(m_ptr), type_params = interface_type_params(imported.value.source_file, rest)))
                     Option.none:
                         pass
                 return Option[InterfaceAnalysis].none
@@ -8493,7 +8725,7 @@ function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[
     # Bare name: search current module then all imported modules.
     let m_ptr = ctx.analysis.interfaces.get(iface_name)
     if m_ptr != null:
-        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = ctx.module_name, methods = unsafe: read(m_ptr), type_params = interface_type_params(ctx.analysis.source_file, iface_name)))
+        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(methods = unsafe: read(m_ptr), type_params = interface_type_params(ctx.analysis.source_file, iface_name)))
     var import_values = ctx.analysis.imports.values()
     while true:
         let target_ptr = import_values.next() else:
@@ -8505,7 +8737,7 @@ function find_interface_analysis(ctx: ref[LowerCtx], iface_name: str) -> Option[
                 if i_ptr != null:
                     # Is the interface public in that module?
                     if not module_has_private_interface(imported.value.source_file, iface_name):
-                        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(module_name = target_module, methods = unsafe: read(i_ptr), type_params = interface_type_params(imported.value.source_file, iface_name)))
+                        return Option[InterfaceAnalysis].some(value = InterfaceAnalysis(methods = unsafe: read(i_ptr), type_params = interface_type_params(imported.value.source_file, iface_name)))
             Option.none:
                 pass
     return Option[InterfaceAnalysis].none
@@ -8547,7 +8779,7 @@ function interface_type_params(file: ast.SourceFile, iface_name: str) -> span[as
 ## Ensure a vtable for the given concrete type and interface exists.  Generates the
 ## vtable struct type declaration once per interface, and the wrapper functions +
 ## global vtable constant once per (type, interface) pair.  Returns the vtable global name.
-function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str, type_args: span[types.Type], type_params: span[ast.TypeParam]) -> str:
+function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> str:
     let vtable_c_name = j5("mt_vtable_", concrete_name, "_", iface_name, "")
     if ctx.dyn_generated_vtables.contains(vtable_c_name):
         return vtable_c_name
@@ -8557,7 +8789,7 @@ function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type
     ensure_dyn_vtable_struct(ctx, iface_name, methods, type_args, type_params)
 
     # Generate wrapper functions and vtable constant.
-    var wrappers = gen_dyn_vtable_wrappers(ctx, concrete_name, concrete_type, iface_name, methods, iface_module_name, type_args, type_params)
+    var wrappers = gen_dyn_vtable_wrappers(ctx, concrete_name, concrete_type, iface_name, methods, type_args, type_params)
     gen_dyn_vtable_constant(ctx, iface_name, vtable_type_c_name, vtable_c_name, ref_of(wrappers), methods)
 
     # Ensure the dyn struct type exists (once per interface).
@@ -8651,13 +8883,25 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], iface_name: str, methods: 
 
 ## Generate wrapper functions for each interface method, calling through to the
 ## concrete type's method implementation.  Returns a map from method name to wrapper C name.
-function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], iface_module_name: str, type_args: span[types.Type], type_params: span[ast.TypeParam]) -> map_mod.Map[str, str]:
+function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concrete_type: types.Type, iface_name: str, methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> map_mod.Map[str, str]:
     var wrappers = map_mod.Map[str, str].create()
     var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let concrete_type_name = named_type_name(concrete_type) else:
         fatal(c"dyn lowering: concrete type must be nominal")
     # Use a module-qualified type so c_type renders the correct C struct name.
-    var c_ty = types.Type.ty_imported(module_name = ctx.module_name, name = concrete_type_name, args = span[types.Type]())
+    # The concrete type's OWN module is authoritative: the `adapt` site is often
+    # in a different module than the type being adapted.
+    var concrete_module = ctx.module_name
+    match concrete_type:
+        types.Type.ty_imported as cim:
+            if cim.module_name.len > 0:
+                concrete_module = cim.module_name
+        types.Type.ty_named as cnm:
+            if cnm.module_name.len > 0:
+                concrete_module = cnm.module_name
+        _:
+            pass
+    var c_ty = types.Type.ty_imported(module_name = concrete_module, name = concrete_type_name, args = span[types.Type]())
     var mi: ptr_uint = 0
     while mi < methods.len:
         var m: ast.InterfaceMethod
@@ -12414,15 +12658,24 @@ function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: 
     # inside generic function bodies where T is not yet substituted).
     if proc_type_has_type_var(proc_ty):
         return types.Type.ty_named(module_name = "", name = struct_name)
-    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
+    ctx.pending_proc_structs.push(proc_struct_decl(struct_name, proc_ty))
+    return types.Type.ty_named(module_name = "", name = struct_name)
+
+
+## Build the concrete proc value struct declaration for a signature: the
+## `{ env, invoke, release, retain }` field shape shared by every `mt_proc_*`.
+## Kept `LowerCtx`-free so the program-level type-alias pass — which has no
+## context of its own — can emit the declaration for proc-typed aliases that
+## are never used through `resolve_type_ref`.
+function proc_struct_decl(struct_name: str, proc_ty: types.Type) -> ir.StructDecl:
+    let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     var struct_fields = vec.Vec[ir.Field].create()
     struct_fields.push(ir.Field(name = "env", ty = void_ptr))
     struct_fields.push(ir.Field(name = "invoke", ty = proc_invoke_field_type(proc_ty)))
     let lifecycle_ty = proc_lifecycle_fn_type()
     struct_fields.push(ir.Field(name = "release", ty = lifecycle_ty))
     struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
-    ctx.pending_proc_structs.push(ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
-    return types.Type.ty_named(module_name = "", name = struct_name)
+    return ir.StructDecl(name = struct_name, linkage_name = struct_name, fields = struct_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none)
 
 
 ## True when a function type's params or return type contain an unresolved
@@ -12827,24 +13080,47 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
             ast.Expr.expr_specialization as spec:
                 # No-payload generic variant arm, e.g. `Option[int].none`.
                 if spec.arguments.len > 0:
+                    var spec_variant_name: Option[str] = Option[str].none
                     match read(spec.callee):
                         ast.Expr.expr_identifier as spec_id:
-                            if ctx.variants.contains(spec_id.name):
-                                var concrete_args = vec.Vec[types.Type].create()
-                                var ai: ptr_uint = 0
-                                while ai < spec.arguments.len:
-                                    # Qualify args to match the signature's C name
-                                    # (see lower_generic_variant_literal), so a local
-                                    # struct arg like RemovedEntry becomes module-qualified.
-                                    concrete_args.push(qualify_type(ctx, resolve_type_ref(ctx, read(spec.arguments.data + ai).value)))
-                                    ai += 1
-                                let variant_ty = types.Type.ty_generic(name = spec_id.name, args = concrete_args.as_span())
-                                return alloc_expr(ir.Expr.expr_variant_literal(
-                                    ty = variant_ty,
-                                    arm_name = member,
-                                    fields = span[ir.AggregateField](),
-                                ))
+                            # The declaration is authoritative: a prelude variant
+                            # may never have been registered, and a user-defined
+                            # generic one only from the declaring module.
+                            if ctx.variants.contains(spec_id.name) or variant_declaring_module(ctx, spec_id.name).is_some():
+                                spec_variant_name = Option[str].some(value = spec_id.name)
+                        ast.Expr.expr_member_access as spec_ma:
+                            # Module-qualified: `types.Maybe[int].none`.
+                            match read(spec_ma.receiver):
+                                ast.Expr.expr_identifier as spec_mod_id:
+                                    let spec_mod_ptr = ctx.analysis.imports.get(spec_mod_id.name)
+                                    if spec_mod_ptr != null:
+                                        match find_imported_analysis(ctx, unsafe: read(spec_mod_ptr)):
+                                            Option.some as spec_imported:
+                                                if variant_in_source(spec_imported.value, spec_ma.member_name):
+                                                    spec_variant_name = Option[str].some(value = spec_ma.member_name)
+                                            Option.none:
+                                                pass
+                                _:
+                                    pass
                         _:
+                            pass
+                    match spec_variant_name:
+                        Option.some as svn:
+                            var concrete_args = vec.Vec[types.Type].create()
+                            var ai: ptr_uint = 0
+                            while ai < spec.arguments.len:
+                                # Qualify args to match the signature's C name
+                                # (see lower_generic_variant_literal), so a local
+                                # struct arg like RemovedEntry becomes module-qualified.
+                                concrete_args.push(qualify_type(ctx, resolve_type_ref(ctx, read(spec.arguments.data + ai).value)))
+                                ai += 1
+                            let variant_ty = generic_variant_instance_type(ctx, svn.value, concrete_args.as_span())
+                            return alloc_expr(ir.Expr.expr_variant_literal(
+                                ty = variant_ty,
+                                arm_name = member,
+                                fields = span[ir.AggregateField](),
+                            ))
+                        Option.none:
                             pass
             ast.Expr.expr_member_access as inner_ma:
                 match read(inner_ma.receiver):
@@ -13303,8 +13579,10 @@ function sp_str_type(name: str) -> span[types.Type]:
 
 
 ## Pre-scan variant declarations into the registry so arm constructors and match
-## arms can resolve discriminant indices and payload fields.  Generic variants
-## are registered through the specialization cache at monomorphization time.
+## arms can resolve discriminant indices and payload fields.  Generic variants are
+## registered too — a `match` needs their arm names — while their CONCRETE
+## instances register substituted payload fields when the instance is emitted
+## (`ensure_generic_variant_decl`).
 function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
@@ -13313,11 +13591,15 @@ function collect_variants(ctx: ref[LowerCtx], decls: span[ast.Decl]) -> void:
             d = read(decls.data + i)
         match d:
             ast.Decl.decl_variant as vr:
-                if vr.type_params.len == 0:
+                # A user-defined generic variant is registered too: matching one of
+                # its instances needs the arm names (its CONCRETE payload fields
+                # are registered when the instance is emitted).  The prelude
+                # `Option`/`Result` are excluded — `install_prelude_variants`
+                # registers them with the `_phantom` placeholder that
+                # `specialize_prelude_arm_info` specializes per match site.
+                if vr.type_params.len == 0 or not is_prelude_variant_name(vr.name):
                     ctx.variants.set(vr.name, build_variant_info(ctx, vr.variant_arms))
-                    # Also register arm payload fields for local variants so
-                    # field-level lookups (e.g. nullable wrapping) can resolve
-                    # field types from the arm info.
+                if vr.type_params.len == 0:
                     register_imported_variant_arm_fields(ctx, ctx.module_name, ctx.analysis, vr.name, vr.variant_arms)
             _:
                 pass
@@ -13367,7 +13649,10 @@ function install_imported_variants(ctx: ref[LowerCtx]) -> void:
                         d = read(imported.value.source_file.declarations.data + di)
                     match d:
                         ast.Decl.decl_variant as vr:
-                            if vr.type_params.len == 0 and not ctx.variants.contains(vr.name):
+                            # See `collect_variants`: a user-defined generic
+                            # variant is registered (minus the prelude pair).
+                            let registerable = vr.type_params.len == 0 or not is_prelude_variant_name(vr.name)
+                            if registerable and not ctx.variants.contains(vr.name):
                                 ctx.variants.set(vr.name, build_imported_variant_info(ctx, target_module, imported.value, vr.variant_arms))
                             # Register arm payload field types keyed by the
                             # module-qualified payload struct C name, for EVERY
@@ -13529,24 +13814,13 @@ function variant_base_c_name(ty: types.Type, module_name: str) -> str:
                     buf.append(naming.type_c_key(read(g.args.data + i)))
                 i += 1
             result = buf.as_str()
-        types.Type.ty_imported as im:
-            if is_prelude_variant_name(im.name):
-                # A concrete instance (`Option[int]`) keeps its argument suffix.
-                var buf = string.String.create()
-                if im.name == "Option":
-                    buf.append("std_option_")
-                else:
-                    buf.append("std_result_")
-                buf.append(im.name)
-                var i: ptr_uint = 0
-                while i < im.args.len:
-                    buf.append("_")
-                    unsafe:
-                        buf.append(naming.type_c_key(read(im.args.data + i)))
-                    i += 1
-                result = buf.as_str()
-            else:
-                result = naming.qualified_c_name(im.module_name, im.name)
+        types.Type.ty_imported:
+            # `type_c_key` module-qualifies the name and appends the argument
+            # suffix of a concrete generic instance, and it prefixes the prelude
+            # variants (`std_option_Option_int`).  A bare `qualified_c_name`
+            # would drop the arguments of a user-defined instance
+            # (`engine_types_Outcome_int_EngineError` -> `engine_types_Outcome`).
+            result = naming.type_c_key(ty)
         types.Type.ty_named as n:
             if is_prelude_variant_name(n.name):
                 result = n.name
@@ -13588,7 +13862,7 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
             return types.Type.ty_nullable(base = types.alloc_type(fun))
         return fun
     if tref.is_dyn:
-        return types.Type.ty_dyn(iface = naming.sanitize_identifier(unsafe: analyzer.qname_to_str(tref.dyn_interface)))
+        return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(tref.dyn_interface)))
     if tref.is_tuple:
         var elems = vec.Vec[types.Type].create()
         var ti: ptr_uint = 0
@@ -15257,9 +15531,11 @@ function is_recursive_variant_field_c(payload_c: str, field_ty: types.Type) -> b
 ## C-type name of a variant type.
 function variant_c_type_name(ty: types.Type) -> str:
     match ty:
-        types.Type.ty_imported as im:
-            return naming.qualified_c_name(im.module_name, im.name)
-        types.Type.ty_generic as g:
+        types.Type.ty_imported:
+            # `type_c_key` keeps a concrete generic instance's argument suffix;
+            # a bare `qualified_c_name` would drop it.
+            return naming.type_c_key(ty)
+        types.Type.ty_generic:
             return naming.type_c_key(ty)
         _:
             return ""
@@ -15269,9 +15545,11 @@ function variant_c_type_name(ty: types.Type) -> str:
 function variant_field_type_from_arm(ctx: ref[LowerCtx], variant_ty: types.Type, arm_name: str, field_name: str) -> Option[types.Type]:
     var variant_c: str
     match variant_ty:
-        types.Type.ty_imported as im:
-            variant_c = naming.qualified_c_name(im.module_name, im.name)
-        types.Type.ty_generic as g:
+        types.Type.ty_imported:
+            # Same key shape as `variant_c_type_name`: a concrete generic
+            # instance's arguments are part of its C name.
+            variant_c = naming.type_c_key(variant_ty)
+        types.Type.ty_generic:
             variant_c = naming.type_c_key(variant_ty)
         _:
             return Option[types.Type].none
@@ -16150,7 +16428,7 @@ function resolve_scalar_type_ref(declared: ptr[ast.TypeRef]) -> types.Type:
     unsafe:
         let t = read(declared)
         if t.is_dyn:
-            return types.Type.ty_dyn(iface = naming.sanitize_identifier(unsafe: analyzer.qname_to_str(t.dyn_interface)))
+            return types.Type.ty_dyn(iface = naming.dyn_iface_declared_name(unsafe: analyzer.qname_to_str(t.dyn_interface)))
         if t.is_fn or t.is_proc or t.is_tuple or t.nullable:
             return types.Type.ty_error
         if t.arguments.len > 0:
