@@ -690,14 +690,20 @@ function print_program_diagnostics(program: ref[loader.Program]) -> void:
             let message = rd.message.as_str()
             let location = rd.path.as_str()
             let prefix = if rd.severity == "warning": "warning" else: "error"
-            stdio.print_format(
-                c"%.*s[%.*s]: %.*s -- %.*s:%d:%d\n",
-                int<-(prefix.len), prefix.data,
-                int<-(rd.code.len), rd.code.data,
-                int<-(message.len), message.data,
-                int<-(location.len), location.data,
-                int<-(rd.line), int<-(rd.column),
-            )
+            var block = string.String.create()
+            defer: block.release()
+            block.append(prefix)
+            block.append("[")
+            block.append(rd.code)
+            block.append("]: ")
+            block.append(message)
+            block.append(" -- ")
+            block.append(location)
+            block.append(":")
+            block.append(ptr_uint_to_str(rd.line))
+            block.append(":")
+            block.append(ptr_uint_to_str(rd.column))
+            block.append("\n")
             # Show source context when the diagnostic has a real line and the
             # file is readable.
             if rd.line >= 1:
@@ -721,23 +727,23 @@ function print_program_diagnostics(program: ref[loader.Program]) -> void:
                             let source_line = source_text.slice(line_start, line_end - line_start)
                             var gutter = rjust_line_number(rd.line)
                             defer: gutter.release()
-                            let gutter_str = gutter.as_str()
-                            stdio.print_format(
-                                c"   |\n%.*s | %.*s\n      | ",
-                                int<-(gutter_str.len), gutter_str.data,
-                                int<-(source_line.len), source_line.data,
-                            )
-                            var spaces = string.String.create()
-                            defer: spaces.release()
+                            block.append("   |\n")
+                            block.append(gutter.as_str())
+                            block.append(" | ")
+                            block.append(source_line)
+                            block.append("\n")
+                            block.append("      | ")
                             var sp: ptr_uint = 1
                             while sp < rd.column:
-                                spaces.push_byte(32)
+                                block.push_byte(32)
                                 sp += 1
-                            let spaces_text = spaces.as_str()
-                            stdio.print_format(c"%.*s^\n", int<-(spaces_text.len), spaces_text.data)
+                            block.push_byte(94)
+                            block.append("\n")
                     Result.failure:
                         pass
+            let _ = terminal.write_stderr(block.as_str())
         i += 1
+    let _ = terminal.flush_stderr()
 
 
 ## Append "<n> <singular|plural>" (e.g. "1 error", "3 errors") to `buf`.
@@ -750,13 +756,13 @@ function append_count_phrase(buf: ref[string.String], n: ptr_uint, singular: str
         buf.append(plural)
 
 
-## Print the trailing check summary, matching the Ruby CLI: a blank line then
-## `error: could not check due to <N errors[; M warnings]>`, or, when only
-## warnings are present, `warning: <M warnings>`.
+## Print the trailing check summary the way the Ruby CLI does: a blank line,
+## then `<N errors[; M warnings][; K notes]>` plus ` found` when there is at
+## least one error, on stderr (`1 error found`, `2 warnings`).
 function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: ptr_uint, warnings_as_errors: bool) -> void:
     if errors == 0 and warnings == 0:
         return
-    stdio.print_line("")
+    eprint_line("")
     var body = string.String.create()
     defer: body.release()
     if errors > 0:
@@ -765,11 +771,9 @@ function report_check_summary(errors: ptr_uint, warnings: ptr_uint, file_count: 
         if errors > 0:
             body.append("; ")
         append_count_phrase(ref_of(body), warnings, "warning", "warnings")
-    let body_str = body.as_str()
     if errors > 0:
-        stdio.print_format(c"error: could not check due to %.*s\n", int<-(body_str.len), body_str.data)
-    else:
-        stdio.print_format(c"warning: %.*s\n", int<-(body_str.len), body_str.data)
+        body.append(" found")
+    eprint_line(body.as_str())
 
 
 ## Lint source files and print `path:line: code: message` per warning, matching
