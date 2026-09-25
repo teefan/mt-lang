@@ -61,6 +61,8 @@ Options:
 
 A file containing `# expect-error: <text>` is a compile-fail fixture: `mtc test` requires the compiler to reject it with a diagnostic containing that text, instead of running it.
 
+A file that does not parse is **skipped silently**: it is not listed and not counted in the `N test file(s)` summary, so a suite that looks short is usually a file with a syntax error (e.g. a match arm with an empty body). Compare the count against `ls DIR/*.mt` when in doubt.
+
 ## 4. Example
 
 ```mt

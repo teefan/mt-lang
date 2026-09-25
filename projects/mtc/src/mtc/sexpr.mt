@@ -2369,6 +2369,31 @@ function destructure_bindings_field(name: str, value: Option[span[str]]) -> Sexp
     return field_nil(name)
 
 
+## `destructure_type_name` holds the joined dotted name; the host's AST keeps the
+## part list, so a qualified name renders as a list of its parts
+## (`("types" "Transform")`) while a bare name stays a plain string, matching the
+## reference dump byte for byte.
+function destructure_type_name_field(value: Option[str]) -> SexprField:
+    match value:
+        Option.some as name:
+            if name.value.find_byte('.').is_none():
+                return field_str("destructure_type_name", name.value)
+            var items_out = vec.Vec[SexprValue].create()
+            var rest = name.value
+            while true:
+                match rest.find_byte('.'):
+                    Option.some as dot:
+                        items_out.push(SexprValue.sv_str(value = rest.slice(0, dot.value)))
+                        rest = rest.slice(dot.value + 1, rest.len - dot.value - 1)
+                    Option.none:
+                        items_out.push(SexprValue.sv_str(value = rest))
+                        break
+            return field_value("destructure_type_name", list_value(items_out.as_span()))
+        Option.none:
+            return field_nil("destructure_type_name")
+    return field_nil("destructure_type_name")
+
+
 function stmt_value(ctx: ref[SexprCtx], sp: ptr[ast.Stmt]) -> SexprValue:
     unsafe:
         match read(sp):
@@ -2390,7 +2415,7 @@ function stmt_value(ctx: ref[SexprCtx], sp: ptr[ast.Stmt]) -> SexprValue:
                     len_field("column", x.column),
                     field_bool("recovered_else", false),
                     destructure_bindings_field("destructure_bindings", x.destructure_bindings),
-                    field_opt_str("destructure_type_name", x.destructure_type_name),
+                    destructure_type_name_field(x.destructure_type_name),
                 ))
             ast.Stmt.stmt_assignment as x:
                 return node("AST::Assignment", fields5(

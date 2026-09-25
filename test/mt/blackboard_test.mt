@@ -27,6 +27,7 @@ function test_blackboard_get_missing() -> void:
     let v = board.get("nonexistent")
     match v:
         Option.none:
+            pass
         Option.some:
             expect(false, "expected none for missing key")
 

@@ -142,6 +142,7 @@ function test_input_binding_at_out_of_range() -> void:
     match b:
         Option.none:
             # expected
+            pass
         Option.some:
             expect(false, "expected none for out-of-range")
 

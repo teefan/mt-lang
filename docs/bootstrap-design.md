@@ -1,6 +1,9 @@
 # Milk Tea Bootstrap & Release Design
 
-Status: **Proposal** — not yet implemented. Last updated: 2026-07-14.
+Status: **Phase 1 implemented** (`tools/bootstrap.sh`, in use for every compiler
+change: 3-stage build, revision stamping, `diff`-based fixed-point verification,
+self-test run). Phases 2–3 (binary release tooling, developer tooling) remain
+proposals. Last updated: 2026-09-25.
 
 ## 0. Motivation
 
@@ -22,16 +25,24 @@ them to Milk Tea's constraints (Ruby host, C backend, source-only stdlib).
 
 ## 1. Stage Model — Current & Target
 
-### 1.1 Current state (ad-hoc)
+### 1.1 Current state
+
+Implemented by `tools/bootstrap.sh` (§3), which persists every stage:
 
 ```
-Ruby (stage0) ──build──→ stage1  (tmp/mtc-current)
-stage1        ──build──→ stage2  (tmp/mtc-stage2)
-stage2        ──build──→ stage3  (tmp/mtc-stage3)  ← must == stage2
+stage0 (bin/bootstrap-mtc, $MTC_BOOTSTRAP, or ruby -Ilib bin/mtc)
+        ──build──→ build/stage1/mtc   (fast dev path: --stage 1)
+stage1  ──build──→ build/stage2/mtc   (distributable artifact, --stage 2)
+stage2  ──build──→ build/stage3/mtc   (verification only)
+                   verify: build/stage2.c == build/stage3.c
+                   then:   build/stage2/mtc test projects/mtc
 ```
 
-This is run manually with no artifact persistence, no automation, and always
-requires Ruby.
+Stage 1/2/3 binaries, their generated C (`--keep-c`) and the fixed-point diff
+all live under `$MTC_BUILD_DIR` (default `build/`), so a bootstrap run leaves
+the artifacts behind for inspection.  The only piece of this design that is not
+wired up yet is the *snapshot download* (`$MTC_BOOTSTRAP_URL`): stage0 falls
+back to an existing binary or the Ruby host.
 
 ### 1.2 Target model (mirrors Rust/Go)
 
@@ -256,14 +267,17 @@ $XDG_CACHE_HOME/milk_tea/
 
 ## 6. Implementation Plan
 
-### Phase 1: Bootstrap script
+### Phase 1: Bootstrap script — DONE (`tools/bootstrap.sh`)
 
-- Write `tools/bootstrap.sh`
-- Support `$MTC_BOOTSTRAP`, `--bootstrap`, Ruby fallback, snapshot download
-- 3-stage build + fixed-point verification via `diff`
-- `--stage 1` fast path for development
-- `--no-verify` to skip stage3
-- Cache snapshot downloads at `$XDG_CACHE_HOME/milk_tea/bootstrap/`
+- [x] `tools/bootstrap.sh`
+- [x] Support `$MTC_BOOTSTRAP`, `--bootstrap`, Ruby fallback (snapshot download
+      not implemented — `$MTC_BOOTSTRAP_URL` is unused)
+- [x] 3-stage build + fixed-point verification via `diff`
+- [x] `--stage 1` fast path for development (`--stage 2` stops after stage2)
+- [x] `--no-verify` to skip stage3
+- [x] `--profile debug|release`, `--keep-c`, `-j N`, `$MTC_BUILD_DIR`
+- [x] git-revision stamping of `projects/mtc/src/mtc/version_info.mt` (restored
+      on exit) and a `build/stage2/mtc test projects/mtc` self-test step
 
 ### Phase 2: Release tooling
 
@@ -287,10 +301,10 @@ $XDG_CACHE_HOME/milk_tea/
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `$MTC_BOOTSTRAP` | Path to stage0 mtc binary | auto-detect |
-| `$MTC_BOOTSTRAP_URL` | URL to download snapshot from | none (user-configured) |
+| `$MTC_BOOTSTRAP_URL` | URL to download snapshot from | **not implemented (Phase 2)** |
 | `$CC` | C compiler for native builds | `cc` |
 | `$MTC_BUILD_DIR` | Build output directory | `build/` |
-| `$XDG_CACHE_HOME` | Cache root (bootstrap downloads) | `~/.cache` |
+| `$XDG_CACHE_HOME` | Cache root (bootstrap downloads) | **not implemented (Phase 2)** |
 
 ---
 

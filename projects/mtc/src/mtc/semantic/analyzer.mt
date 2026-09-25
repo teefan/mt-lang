@@ -79,6 +79,7 @@ public struct EventInfo:
 public struct ModuleBinding:
     functions: map_mod.Map[str, FnSig]
     structs: map_mod.Map[str, span[FieldEntry]]
+    unions: map_mod.Map[str, span[FieldEntry]]
     value_types: map_mod.Map[str, types.Type]
     type_aliases: map_mod.Map[str, bool]
     type_alias_types: map_mod.Map[str, types.Type]
@@ -91,6 +92,7 @@ public struct ModuleBinding:
     types: map_mod.Map[str, bool]
     private_functions: map_mod.Map[str, FnSig]
     private_structs: map_mod.Map[str, span[FieldEntry]]
+    private_unions: map_mod.Map[str, span[FieldEntry]]
     private_value_types: map_mod.Map[str, types.Type]
     private_type_aliases: map_mod.Map[str, bool]
     private_static_member_types: map_mod.Map[str, bool]
@@ -106,6 +108,7 @@ struct Context:
     type_alias_types: map_mod.Map[str, types.Type]
     alias_types: map_mod.Map[str, types.Type]
     structs: map_mod.Map[str, span[FieldEntry]]
+    unions: map_mod.Map[str, span[FieldEntry]]
     method_keys: map_mod.Map[str, bool]
     method_sigs: map_mod.Map[str, FnSig]
     static_member_types: map_mod.Map[str, bool]
@@ -146,6 +149,7 @@ public struct Analysis:
     diagnostics: vec.Vec[SemanticDiagnostic]
     type_names: map_mod.Map[str, bool]
     structs: map_mod.Map[str, span[FieldEntry]]
+    unions: map_mod.Map[str, span[FieldEntry]]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     method_keys: map_mod.Map[str, bool]
@@ -189,6 +193,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         type_alias_types = map_mod.Map[str, types.Type].create(),
         alias_types = map_mod.Map[str, types.Type].create(),
         structs = map_mod.Map[str, span[FieldEntry]].create(),
+        unions = map_mod.Map[str, span[FieldEntry]].create(),
         method_keys = map_mod.Map[str, bool].create(),
         method_sigs = map_mod.Map[str, FnSig].create(),
         static_member_types = map_mod.Map[str, bool].create(),
@@ -244,6 +249,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         diagnostics = ctx.diagnostics,
         type_names = ctx.type_names,
         structs = ctx.structs,
+        unions = ctx.unions,
         functions = ctx.functions,
         value_types = ctx.value_types,
         method_keys = ctx.method_keys,
@@ -338,13 +344,30 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 ctx.types.set(op.name, types.Type.ty_named(module_name = ctx.module_name, name = op.name))
                 ctx.implemented.set(op.name, op.opaque_implements)
             ast.Decl.decl_type_alias as ta:
+                # Only register the alias here: its target may name a type that
+                # is declared *later* in the file (e.g. a callback signature
+                # taking a struct declared further down), so resolution happens
+                # in the second pass once every name is known.
                 declare_type(ctx, ta.name, ta.line, ta.column)
                 ctx.type_aliases.set(ta.name, ta.target)
-                ctx.type_alias_types.set(ta.name, resolve_type(ctx, ta.target))
-                ctx.types.set(ta.name, resolve_type(ctx, ta.target))
             ast.Decl.decl_event as ev:
                 declare_type(ctx, ev.name, ev.line, ev.column)
                 ctx.event_types.set(ev.name, EventInfo(name = ev.name, capacity = ev.capacity, payload_type = ev.payload_type))
+            _:
+                pass
+        i += 1
+
+    # Second pass: resolve every alias now that all type names exist.
+    i = 0
+    while i < file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(file.declarations.data + i)
+        match d:
+            ast.Decl.decl_type_alias as ta:
+                let resolved = resolve_type(ctx, ta.target)
+                ctx.type_alias_types.set(ta.name, resolved)
+                ctx.types.set(ta.name, resolved)
             _:
                 pass
         i += 1
@@ -897,6 +920,10 @@ function collect_struct_fields(ctx: ref[Context], file: ast.SourceFile) -> void:
                 collect_nested_struct_fields(ctx, s.nested_types, s.name)
                 ctx.type_params.clear()
                 ctx.suppressed_type_names.clear()
+            ast.Decl.decl_union as u:
+                # Union members are read like struct fields (`ev.type`), so the
+                # analyzer needs their types for member checks.
+                ctx.unions.set(u.name, resolve_field_entries(ctx, u.union_fields))
             _:
                 pass
         i += 1
@@ -4526,6 +4553,17 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
         types.Type.ty_named as n:
             let fieldsp = ctx.structs.get(n.name)
             if fieldsp == null:
+                # A union member is read like a struct field.
+                let unionp = ctx.unions.get(n.name)
+                if unionp != null:
+                    unsafe:
+                        let ufields = read(unionp)
+                        var ui: ptr_uint = 0
+                        while ui < ufields.len:
+                            let ufe = read(ufields.data + ui)
+                            if ufe.name == member:
+                                return ufe.ty
+                            ui += 1
                 # Not a locally-declared struct (enum/variant/opaque/imported).
                 return types.Type.ty_error
             unsafe:
@@ -4635,6 +4673,16 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
                 if fe.name == member:
                     return fe.ty
                 i += 1
+
+        let union_ptr = binding.unions.get(type_name)
+        if union_ptr != null:
+            let ufields = read(union_ptr)
+            var ui: ptr_uint = 0
+            while ui < ufields.len:
+                let ufe = read(ufields.data + ui)
+                if ufe.name == member:
+                    return ufe.ty
+                ui += 1
 
         if member == "with" or binding_has_member(binding, type_name, member):
             return types.Type.ty_error

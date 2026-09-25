@@ -31,6 +31,8 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var opaque_types = map_mod.Map[str, bool].create()
     var private_functions = map_mod.Map[str, analyzer.FnSig].create()
     var private_structs = map_mod.Map[str, span[analyzer.FieldEntry]].create()
+    var unions = map_mod.Map[str, span[analyzer.FieldEntry]].create()
+    var private_unions = map_mod.Map[str, span[analyzer.FieldEntry]].create()
     var private_value_types = map_mod.Map[str, types.Type].create()
     var private_static_member_types = map_mod.Map[str, bool].create()
     var private_type_aliases = map_mod.Map[str, bool].create()
@@ -136,8 +138,18 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 if exports_all or op.visibility:
                     opaque_types.set(op.name, true)
             ast.Decl.decl_union as u:
+                # Union members are readable (`ev.type`), so export their field
+                # types alongside the opaque-type marker.
+                let union_fields_ptr = analysis.unions.get(u.name)
                 if exports_all or u.visibility:
                     opaque_types.set(u.name, true)
+                    if union_fields_ptr != null:
+                        unsafe:
+                            unions.set(u.name, read(union_fields_ptr))
+                else:
+                    if union_fields_ptr != null:
+                        unsafe:
+                            private_unions.set(u.name, read(union_fields_ptr))
             _:
                 pass
         i += 1
@@ -145,6 +157,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     return analyzer.ModuleBinding(
         functions = functions,
         structs = structs,
+        unions = unions,
         value_types = value_types,
         type_aliases = type_aliases,
         type_alias_types = type_alias_types,
@@ -157,6 +170,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         types = opaque_types,
         private_functions = private_functions,
         private_structs = private_structs,
+        private_unions = private_unions,
         private_value_types = private_value_types,
         private_type_aliases = private_type_aliases,
         private_static_member_types = private_static_member_types,

@@ -10,7 +10,6 @@ Signature help: methods and extending-block methods resolved.
 Diagnostic positions: lexer-based token matching, buffer-overflow fix.
 LSP logging: structured stderr with version+revision announcement.
 Snapshot semantic tokens: parity with Ruby on language_baseline.mt after decorator/enum-member/struct-body fixes.
-Snapshot semantic tokens: parity with Ruby on language_baseline.mt after decorator/enum-member/struct-body fixes.
 
 ## 0. Design Principles
 

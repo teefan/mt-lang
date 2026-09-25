@@ -48,6 +48,7 @@ function test_pool_exhausted() -> void:
 
     match c:
         Option.none:
+            pass
         Option.some:
             expect(false, "expected none on exhausted pool")
 

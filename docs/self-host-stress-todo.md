@@ -67,11 +67,16 @@ Added, and passing under both compilers:
   stderr empty; per-section probe identical to the host.
 * `tools/bootstrap.sh -j 16` → `stage2.c == stage3.c (fixed point holds)`,
   compiler self-test `12 test file(s), 0 failed`.
-* `build/stage2/mtc test test/mt -I . --timeout 60` → 56 files, **6 failed** —
-  all six pre-existing and unrelated to this workstream (see below). Before
-  these fixes 9 failed: the same six plus `fmt_test`, `reflect_test` and
-  `linear_algebra_test`, i.e. the new tests fail on the pre-change compiler and
-  pass now.
+* `build/stage2/mtc test test/mt -I . --timeout 60` → after this workstream and
+  the follow-up parse fixes (§0j of the plan) the suite runs **60 files, 315
+  tests pass, 7 fail to build**. Two things changed since the fixes landed:
+  four files (`binary_test`, `blackboard_test`, `input_test`, `pool_test`) had
+  empty match-arm bodies, so the runner silently *skipped* them (56 of 60 files
+  reported); they now parse and run, which exposed one more pre-existing
+  generic-instance build failure (`blackboard_test`, same family as the six
+  below). Before the stress fixes 9 failed: the six below plus `fmt_test`,
+  `reflect_test` and `linear_algebra_test`, i.e. the new tests fail on the
+  pre-change compiler and pass now.
 * `rake "cli:parity"` → 61 cases, 21 match, 39 differ, 1 pending. The differ set
   is **byte-identical** to the pre-change compiler's (compared case by case), so
   no CLI regression.
@@ -82,14 +87,16 @@ Added, and passing under both compilers:
 
 ## Known gaps (pre-existing, out of scope here)
 
-* Six `test/mt` files fail to *build* under the self-host compiler:
-  `behavior_tree_test`, `fsm_test`, `goap_test`, `htn_test`, `net_sync_test`,
-  `spatial_test`. The failure family is generic-instance naming/typing when the
-  type argument is declared in a generated module — e.g. the diagnostic
-  `std_goap_find_node_index__error__error__error` specialization key collapsing
-  to `error` type names, and `Tree[<runner>Context]` instances whose C name is
-  qualified with the generated test-runner module. Verified identical with a
-  compiler built from the pre-change tree.
+* Seven `test/mt` files fail to *build* under the self-host compiler:
+  `behavior_tree_test`, `blackboard_test`, `fsm_test`, `goap_test`, `htn_test`,
+  `net_sync_test`, `spatial_test`. The failure family is generic-instance
+  naming/typing when the type argument is declared in a generated module — e.g.
+  the diagnostic `std_goap_find_node_index__error__error__error` specialization
+  key collapsing to `error` type names, `std_blackboard_find_entry__error`
+  passed a `Blackboard_bool *`, and `Tree[<runner>Context]` instances whose C
+  name is qualified with the generated test-runner module. Six of the seven were
+  verified identical with a compiler built from the pre-change tree; the seventh
+  (`blackboard_test`) was previously skipped and fails in the same family.
 * `rake "cli:parity"` divergence set (39 cases, e.g. `build-library`,
   `build-broken-entry`, `build-unknown-option` diagnostics text/ordering) is
   unchanged by this work.

@@ -1085,7 +1085,7 @@ function platform_label(platform: resolver.Platform) -> str:
 ## the lower, emit-c, and build commands.  Fills `roots` (defaulting to the source
 ## directory when none is given), sets `platform` to the parsed platform (defaults
 ## to linux), and returns the source path, or none after printing an error / usage.
-function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], platform: ref[resolver.Platform]) -> Option[str]:
+function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], owned_roots: ref[vec.Vec[string.String]], platform: ref[resolver.Platform]) -> Option[str]:
     var file_path: Option[str] = Option[str].none
     var i: ptr_uint = 1
     while i < args.len:
@@ -1118,14 +1118,14 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], platfor
 
     match file_path:
         Option.some as p:
-            if roots.is_empty():
-                # Only the discovered project root (the nearest ancestor
-                # containing `std/`) is a module root, matching Ruby's
-                # ModuleRoots.roots_for_path.  Adding the source's own
-                # directory would shadow it (roots are matched longest-first)
-                # and derive a basename-only module name (e.g. the invalid C
-                # identifier `2d_camera_mouse_zoom_main`).
-                discover_project_root(p.value, roots)
+            # The nearest ancestor containing `std/` is a module root even when
+            # explicit `-I` roots are given: Ruby's `ModuleRoots.roots_for_path`
+            # always appends the discovered project root (and the compiler's own
+            # root) to whatever the caller passed.  Adding the source's own
+            # directory instead would shadow it (roots are matched
+            # longest-first) and derive a basename-only module name (e.g. the
+            # invalid C identifier `2d_camera_mouse_zoom_main`).
+            discover_project_root(p.value, roots, owned_roots)
             return Option[str].some(value = p.value)
         Option.none:
             eprint_line("missing source file path")
@@ -1164,6 +1164,8 @@ function reject_missing_entrypoint(program: loader.Program, ir_program: ir.Progr
 function lower_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     var platform = resolver.Platform.linux
     var sexpr = false
     var filtered = vec.Vec[str].create()
@@ -1176,7 +1178,7 @@ function lower_command(args: span[str]) -> int:
         else:
             filtered.push(args[fi])
         fi += 1
-    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -1220,8 +1222,10 @@ function lower_command(args: span[str]) -> int:
 function emit_c_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     var platform = resolver.Platform.linux
-    let path = parse_source_operand(args, ref_of(roots), ref_of(platform)) else:
+    let path = parse_source_operand(args, ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -1423,13 +1427,17 @@ function effective_source_path(raw_path: str, roots: ref[vec.Vec[str]], entry_ow
 
 ## Walk up from `source_path` to find the nearest parent directory that
 ## contains a `std/` subdirectory, and push it onto `roots`.
-## The backing string is stored in the module-level `owned_roots` Vec.
-## Walk up from `source_path` to find the nearest parent directory that
-## contains a `std/` subdirectory, and push it onto `roots`.
-## Works entirely with non-owning str views borrowed from `source_path`,
-## so no allocations are needed.
-function discover_project_root(source_path: str, roots: ref[vec.Vec[str]]) -> void:
-    var current = if fs.is_directory(source_path): source_path else: path_ops.dirname(source_path)
+## The path is absolutized first (like Ruby's `ModuleRoots.project_root_for_path`
+## calls `File.expand_path`), so a relative source operand still resolves the
+## project root — `mtc build standalone/x.mt` run from a fixture directory must
+## find the enclosing `std/`.  `owned` keeps the absolutized string alive because
+## `roots` holds borrowed views into it.
+function discover_project_root(source_path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]]) -> void:
+    owned.push(loader.absolute_path(source_path))
+    let last = owned.get(owned.len() - 1) else:
+        return
+    let abs_path = unsafe: read(last).as_str()
+    var current = if fs.is_directory(abs_path): abs_path else: path_ops.dirname(abs_path)
     while true:
         var joined = path_ops.join(current, "std")
         defer: joined.release()
@@ -1454,6 +1462,8 @@ function discover_project_root(source_path: str, roots: ref[vec.Vec[str]]) -> vo
 function build_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     var output_override: Option[str] = Option[str].none
     var keep_c_path: Option[str] = Option[str].none
     var c_compiler = "cc"
@@ -1543,7 +1553,7 @@ function build_command(args: span[str]) -> int:
             continue
         filtered.push(arg)
         ai += 1
-    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()
@@ -1674,6 +1684,8 @@ function build_command(args: span[str]) -> int:
 function run_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     var output_override: Option[str] = Option[str].none
     var keep_c_path: Option[str] = Option[str].none
     var c_compiler = "cc"
@@ -1769,7 +1781,7 @@ function run_command(args: span[str]) -> int:
             continue
         filtered.push(arg)
         ai += 1
-    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
         return 1
     var entry_path_owner = string.String.create()
     var source_root_owner = string.String.create()
@@ -1938,6 +1950,8 @@ function run_module_command(args: span[str]) -> int:
 
     # Ambient roots: the current directory plus its enclosing project root.
     var cwd = string.String.create()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     defer: cwd.release()
     match fs.current_directory():
         Result.success as dir_payload:
@@ -1948,7 +1962,7 @@ function run_module_command(args: span[str]) -> int:
             dir_error.release()
     if cwd.len() > 0:
         roots.push(cwd.as_str())
-        discover_project_root(cwd.as_str(), ref_of(roots))
+        discover_project_root(cwd.as_str(), ref_of(roots), ref_of(owned_roots))
 
     var resolved = resolve_app_module(name, ref_of(roots)) else:
         stdio.print_format(c"run-module module not found: %.*s\n", int<-(name.len), name.data)
@@ -2548,9 +2562,11 @@ function std_root_dir() -> Option[string.String]:
             pass
     var roots = vec.Vec[str].create()
     defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     if cwd.len() > 0:
         roots.push(cwd.as_str())
-        discover_project_root(cwd.as_str(), ref_of(roots))
+        discover_project_root(cwd.as_str(), ref_of(roots), ref_of(owned_roots))
     var i: ptr_uint = 0
     while i < roots.len():
         let rp = roots.get(i) else:
@@ -2964,7 +2980,9 @@ function snapshot_command(args: span[str]) -> int:
 
     var roots = vec.Vec[str].create()
     defer: roots.release()
-    discover_project_root(input_path, ref_of(roots))
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
+    discover_project_root(input_path, ref_of(roots), ref_of(owned_roots))
 
     var project_root: Option[str] = Option[str].none
     if roots.len() > 0:
@@ -3086,6 +3104,8 @@ function snapshot_command(args: span[str]) -> int:
 function debug_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     var platform = resolver.Platform.linux
 
     var filtered = vec.Vec[str].create()
@@ -3115,7 +3135,7 @@ function debug_command(args: span[str]) -> int:
         filtered.push(arg)
         ai += 1
 
-    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(platform)) else:
+    let path = parse_source_operand(filtered.as_span(), ref_of(roots), ref_of(owned_roots), ref_of(platform)) else:
         return 1
 
     var entry_path_owner = string.String.create()

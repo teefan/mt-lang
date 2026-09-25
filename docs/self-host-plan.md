@@ -8,13 +8,20 @@
 > reflection) plus reproduction and verification steps are recorded in
 > [self-host-stress-todo.md](./self-host-stress-todo.md).
 
-Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**
-Stage2 == stage3 byte-identical. 177 self-tests pass across 12 test files.
+Status: **SELF-HOSTING FIXED POINT ACHIEVED. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**
+Stage2 == stage3 byte-identical; `tools/bootstrap.sh` self-test: **498 tests
+across 12 files, 0 failed** (measured 2026-09-25).
 **Linter parity: 14/16 common rules byte-identical with Ruby on language_baseline.mt.**
-**Raylib parity: 217/219 build and run**
-**Language parity: 13/13 build under `--no-cache`**; all 12 examples runnable headless produce
-byte-identical stdout+exit vs Ruby. CLI: 18 commands at parity (added `cache`,
-`lsp`, `dap`, `bindgen`, `toolchain`). **`mtc lint` has 36 rules plus `--fix`
+**Raylib parity: 217/219 build and run** (2026-07-16 sweep).
+**Language examples: 11/15 build under `--no-cache`** (measured 2026-09-25:
+`async_network_lobby`, `async_stress_test`, `data_structures`,
+`nullable_and_variant_test` fail on the self-host while the host builds all
+four — see §0j); every example that builds also matches the host's
+stdout+exit (sampled: `integration_test`, `reflection_advanced`,
+`language_baseline`, `event_stress_test`). **Vendored example families are not
+buildable yet**: the self-host rejects `examples/sdl3` (34 files),
+`examples/box2d` (30) and `examples/box3d` (14) with three analyzer false
+positives the host accepts (§0j). **`mtc lint` has 36 rules plus `--fix`
 (10 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
 config**. Bootstrap via `tools/bootstrap.sh`.
 Test runner now builds in-process (no Ruby delegation).  Vendored library
@@ -34,19 +41,148 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 **Imported-bindings: 7 modules (incl. registry + methods), ~2,700 lines.  `mtc imported-bindings` CLI command with --all/--check.
 Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (remaining deltas from cosmetic emitter gaps).**
 
-**Remaining CLI gaps: `deps`, `docs`, `--bundle`/`--archive`,
-`--jobs`, Wasm/emcc, formatter CST modes (`--tidy`, `--preserve`).**
-~~`docs`, `snapshot`~~ **`snapshot` DONE (§5.8a).  `debug` DONE (§5.8a).**
-Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
+**Remaining CLI gaps: `deps` and `docs` (absent from the self-host command
+list), `--bundle`/`--archive`, `--jobs`, Wasm/emcc, formatter CST modes
+(`--tidy`, `--preserve`).**  `snapshot` and `debug` are implemented (§5.8a).
+`rake "cli:parity"` (measured 2026-09-25) is
+**21 match / 39 differ / 1 pending of 61 cases**; the differing cases are
+message text/channel/argument-precedence differences, not missing commands
+(§0j).  Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-**`--sexpr` parity: lex 692/692 and parse 683 comparable files byte-identical vs
-Ruby** (1 self-side gap remains: module-qualified struct destructuring; 8
-host-side rejections); sweep with `tools/sexpr_parity.rb` (§5.9). `lower
---sexpr` still diverges, but the two pervasive type-model categories
-(ref/lifetime, dyn vtables) are now closed — overwhelmingly proc/closure
-lowering remains (§0i).
+**`--sexpr` parity (measured 2026-09-25 over 694 files): lex 694/694
+byte-identical; parse 689 comparable files byte-identical with 0 differences
+(5 host-side rejections: external files, platform-pinned); `lower` 35 match /
+520 differ / 53 host-rejected / 86 self-rejected.**  The ref/lifetime and dyn
+vtable categories are closed; the remaining `lower` deltas are dominated by
+mechanical items (contextual integer-literal typing 213 files, `:path`
+attribution 145, opaques, re-export module canonicalization) rather than the
+proc/closure work, which touches at most the 27 corpus files that use proc
+literals (§0j).
 
-Last updated: 2026-09-24 (closed the ref/lifetime and dyn `lower` categories)
+Last updated: 2026-09-25 (stress parity, parse parity, measured status sweep —
+see §0j)
+
+---
+
+## 0j. 2026-09-25 session — stress parity, parse parity, measured status sweep
+
+Goal: build `projects/stress` with the self-host compiler, then take a measured
+inventory of the remaining self-host gaps instead of the estimates in §0i.
+
+### Delivered
+
+1. **`projects/stress` builds and runs at parity** — five root causes fixed
+   (task-root proc bridge, proc bodies inside async functions, builtin vector
+   constructors, format-string locals, `inline for` reflection).  Details and
+   verification live in [self-host-stress-todo.md](./self-host-stress-todo.md).
+2. **`parse --sexpr` reached zero differences**: `:destructure_type_name`
+   rendered the joined `"types.Transform"` where the host's AST holds the part
+   list (`("types" "Transform")`); the dumper now splits the stored name like
+   the host.
+3. **Project-root discovery no longer depends on `-I`** (`main.mt`): Ruby's
+   `ModuleRoots.roots_for_path` always appends the discovered project root and
+   its own root, so a source under a `std/` ancestor resolves `std.*` even when
+   explicit `-I` roots are given.  The walk-up also absolutizes first, so a
+   *relative* operand (`mtc build standalone/x.mt` from a fixture directory)
+   finds the root as `File.expand_path` would.
+4. **Four test files that never ran** (`binary_test`, `blackboard_test`,
+   `input_test`, `pool_test`) had match arms with empty bodies; both compilers
+   reject them and `mtc test` silently skips unparseable files, so the suite
+   reported 56 of 60 files.  Each empty arm now has a `pass` body.
+5. **Union members are modelled by the analyzer.**  `ctx.unions` (and the
+   binder's `unions`/`private_unions` export surface) now carry union field
+   types, and both member-check paths consult them.  Previously a union was
+   exported as opaque, so every `ev.type`-style read on an imported union
+   reported `unknown field SDL_Event.type` — the false positive that blocked all
+   34 `examples/sdl3` files (a sample file now `check`s clean).
+6. **Type aliases resolve in a second pass.**  `declare_named_types` resolved an
+   alias target eagerly while still walking the file, so an alias over a type
+   declared *later* (`type b3CreateDebugShapeCallback = fn(arg0:
+   const_ptr[b3DebugShape], ...)`) reported `unknown type b3DebugShape` — 14 of
+   the `examples/box3d` failures.  All names are registered first, then aliases
+   resolve.
+
+### Remaining blocker for the vendored example families (diagnosed, not fixed)
+
+After 5 and 6, `examples/box2d` (30 files) and `examples/box3d` (14) reduce to a
+single bug: **`extending <alias>.<Type>:` methods declared in the current module
+are not found**.  `collect_extending_methods` keys methods by the *literal*
+qualified name it read (`method_key("b2.Vec2", "length")`), while the call site
+resolves the receiver through the alias chain to the canonical type
+(`b2Vec2`, and `check_imported_member` looks for `b2Vec2.length` in the *source*
+module's binding — the extending block lives in the consumer module, which that
+path never consults).  Fix direction: canonicalize the extending target through
+the import alias and the type-alias chain at registration (mirroring how the
+receiver resolves), and let the imported-member path consult the current
+module's method keys for the canonical name.
+
+### Measured status (2026-09-25, committed tree)
+
+| Gate | Result |
+| --- | --- |
+| `tools/bootstrap.sh -j 16` | fixed point holds (`stage2.c == stage3.c`), self-test 12 files / 498 tests / 0 failed |
+| `build/dev/mtc build projects/stress` | builds; exit 242, empty stdout — identical to the host |
+| Language examples (15 top-level `.mt`) | **11 build**, 4 fail: `async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test` |
+| `test/mt` under the self-host | 60 files run (315 tests pass); **7 fail to build** — the 6 pre-existing ones plus `blackboard_test`, newly enabled by the parse fix, which hits the same generic-instance family (`std_blackboard_find_entry__error` receiver type) |
+| `rake "cli:parity"` | 61 cases: 21 match / 39 differ / 1 pending; diff set unchanged by the refactor work |
+| `sexpr_parity lex` | 694/694 byte-identical |
+| `sexpr_parity parse` | 690 comparable, **0 differ**, 4 host-side rejections |
+| `sexpr_parity lower` | 38 match / 554 differ / 52 host-rejected / 50 self-rejected (before items 5–6: 35 / 520 / 53 / 86) |
+
+### Why the `lower` sweep's "HOST-FAIL" bucket is not a host bug
+
+The sweep reports files the *host* refuses to lower separately instead of
+counting them as differences.  Of 56 rejections: 44 are `external` files (raw C
+bindings such as `std/c/*.mt` — no IR exists to dump), 4 are platform-pinned
+(`*.wasm.mt`, `*.windows.mt`), 4 were our own unparseable test files (fixed
+above), 1 is a compile-fail fixture (`test/examples/compile_fail/*`), and 3 are
+genuine host-side bugs/limitations: a `double` literal rejected where a `float`
+is expected (`examples/raylib/core/custom_frame_control.mt`), an inline foreign
+call that needs temporary text storage (`unicode_emojis.mt`), and an unsupported
+foreign boundary mapping `ptr[Color] as const_ptr[void]`
+(`image_processing.mt`).  The last three belong to the §5.2 family and are
+independent of the self-host work.
+
+### The remaining 50 self-rejections
+
+The union and alias fixes above cleared 36 of the 86 files that previously
+failed the analyzer.  What is left is dominated by one bug and a handful of
+type-visibility gaps:
+
+| Count | Diagnostic | Cause |
+| --- | --- | --- |
+| 30 | `unknown method b2Vec2.length` | the `extending <alias>.<Type>` bug below (`examples/box2d`) |
+| 14 | `unknown method b3Vec3.scale` (etc.) | same bug (`examples/box3d`) |
+| 3 | `unknown type MAX_COLS` / `SNAKE_CELLS_BYTES` / `MAX_PLAYER_COUNT` | an imported module *constant* used in type-argument position (`examples/sdl3/demo`) |
+| 2 | `match on Error is missing cases: missing_file_type, …` | foreign-enum exhaustiveness (`projects/tetris`) |
+| 1 | `cannot assign int to ubyte` | `examples/sdl3/renderer/read_pixels.mt` — the same contextual literal typing as the 213 dump differences below, but here it is a hard false *error* |
+
+### `lower` differences, by first difference
+
+| Files | First difference |
+| --- | --- |
+| 213 | contextual integer-literal typing: a literal stored into a `ubyte`/`ptr_uint` field stays `int` (roadmap §0i #12) |
+| 145 | `:path` attribution: the host attributes IR nodes lowered from an imported/inlined body to that module's file, the self emits `:path nil` |
+| ~150 | remainder — enum members emitted as `IR::Name` instead of a folded literal, generic-instance/struct ordering, `:module_name` of re-exported types (`std.raylib` vs canonical `std.c.raylib`, which also changes linkage names like `std_raylib_Color_is_equal` vs `Color_is_equal`), opaque declarations (9) |
+| 8 | proc/closure lowering — note only **27 files in the whole corpus contain a proc literal**, so §0i's "overwhelmingly proc/closure" framing was misleading: the diff set is dominated by the mechanical items above |
+
+### Next, ranked by files moved per unit of work
+
+1. **`extending <alias>.<Type>` methods** (44 files, plus it is the only thing
+   left before `examples/box2d` and `examples/box3d` can be built) — diagnosed
+   above.
+2. Contextual integer-literal typing (roadmap #12): 213 first-differences *and*
+   one hard false error (`cannot assign int to ubyte`).
+3. `:path` attribution for imported/inlined IR nodes (145 files).
+4. Re-export module canonicalization (`:module_name` + linkage names).
+5. Opaque declarations (roadmap #6) and const folding of enum members (#7).
+6. Imported module constants in type-argument position and foreign-enum
+   exhaustiveness (the 5 remaining small self-rejections).
+7. The four example build bugs: two `field 'local_*' has incomplete type`
+   (value-optional/RESULT frame field declared before its struct), one
+   `unknown type name 'mt_span_error'` (a `span` of the permissive error type
+   reaching C) and one recursive variant payload mismatch
+   (`incompatible type for argument 1 of eval_expr`).
 
 ---
 
@@ -123,6 +259,17 @@ failures; the tool warns when `--self` is stale.
     end after each no-fallthrough arm body; self omits it.
 
 Priority: 2 is the last pervasive item; 4–13 are localized/mechanical.
+
+**Re-measured 2026-09-25 (§0j)**: the corpus is 694 files, 35 byte-identical,
+520 differing, 86 self-rejected (analyzer false positives, not lowering) and 53
+host-rejected.  By *first* difference the ranking is 12 (213 files) ≫ 8 items
+above ≫ 145 files on `:path` attribution (not listed here: IR nodes lowered from
+an imported body carry `:path nil` where the host keeps the defining module's
+path) ≫ 9/6/7 (opaques, const folding) — proc/closure lowering (§0i item 2)
+appears in only 8 files' first difference, consistent with just **27 corpus files
+containing a proc literal at all**.  The "priority: 2 first" recommendation
+should therefore be revisited in favour of item 12, `:path` attribution and
+re-export module canonicalization.
 
 ---
 
@@ -796,13 +943,17 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 
 ---
 
-## 5. Remaining Gaps (2026-07-19)
+## 5. Remaining Gaps (2026-07-19, re-measured 2026-09-25 in §0j)
 
-The compiler is at a held fixed point (177/177 tests across 12 files, 13/13
-language examples, 217/219 raylib — the 2 non-builds are correct rejections).
-**No known self-host codegen, runtime, or example-parity bug remains.** The
-LSP has been brought to capability parity with Ruby (29 advertised, all 53
-handler methods dispatched).  Remaining gaps are infrastructure-depth items:
+The compiler is at a held fixed point (498 tests across 12 files as of
+2026-09-25; 217/219 raylib — the 2 non-builds are correct rejections).
+**Corrected 2026-09-25:** the "13/13 language examples" figure below was stale —
+the self-host builds **11 of the 15 top-level examples** today (§0j), and four
+`test/mt` files had been silently skipped by the test runner, which hid one more
+pre-existing build failure.  The LSP is at capability parity with Ruby (29
+advertised, all 53 handler methods dispatched).  Remaining gaps are
+infrastructure-depth items plus the four example build bugs and the analyzer
+false positives listed in §0j:
 
 ### 5.1 Analyzer false positives → semantic-error gate (DONE — 2026-07-16)
 
@@ -1007,9 +1158,10 @@ No architectural changes planned — this is a self-host value-add feature. The 
 
 ### 5.4 CLI commands not implemented (§0.4)
 
-`deps`, `docs`, `snapshot`. The other 20 commands
-are at parity, incl. `cache` / `new` / `run-module` / `completions` / `lsp` / `dap` / `bindgen` / `toolchain` / `imported-bindings`.
-The legacy Ruby `debug` command is replaced by `mtc dap`.
+`deps` and `docs`.  The other 21 commands exist in the self-host, and
+`rake "cli:parity"` measures 21 of 61 fixture cases matching (the rest differ in
+message text/channel/argument precedence, not command coverage — §0j).
+`snapshot` and the legacy `debug` command are implemented.
 
 ### 5.5 Subsystems not ported (§4)
 
