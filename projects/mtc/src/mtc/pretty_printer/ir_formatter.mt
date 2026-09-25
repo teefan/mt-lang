@@ -499,11 +499,15 @@ function emit_statement(f: ref[Formatter], sp: ptr[ir.Stmt]) -> void:
                 f.indent += 1
                 emit_stmt_body(f, s.then_body)
                 f.indent -= 1
-                if s.else_body.len > 0:
-                    emit_line(f, "else:")
-                    f.indent += 1
-                    emit_stmt_body(f, s.else_body)
-                    f.indent -= 1
+                match s.else_body:
+                    Option.some as eb:
+                        if eb.value.len > 0:
+                            emit_line(f, "else:")
+                            f.indent += 1
+                            emit_stmt_body(f, eb.value)
+                            f.indent -= 1
+                    Option.none:
+                        pass
             ir.Stmt.stmt_switch as s:
                 emit_line(f, j3("switch ", render_expression(s.expression, 0), ":"))
                 f.indent += 1

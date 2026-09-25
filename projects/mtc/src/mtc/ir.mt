@@ -102,7 +102,7 @@ public variant Stmt:
     stmt_local(name: str, linkage_name: str, ty: types.Type, value: ptr[Expr], line: ptr_uint, source_path: str)
     stmt_assignment(target: ptr[Expr], operator: str, value: ptr[Expr])
     stmt_block(body: span[Stmt])
-    stmt_if(condition: ptr[Expr], then_body: span[Stmt], else_body: span[Stmt])
+    stmt_if(condition: ptr[Expr], then_body: span[Stmt], else_body: Option[span[Stmt]])
     stmt_switch(expression: ptr[Expr], cases: span[SwitchCase], exhaustive: bool)
     stmt_while(condition: ptr[Expr], body: span[Stmt])
     stmt_for(init: ptr[Stmt], condition: ptr[Expr], post: ptr[Stmt], body: span[Stmt])

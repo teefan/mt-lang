@@ -840,7 +840,11 @@ function ir_stmt_value(ctx: ref[SexprCtx], sp: ptr[ir.Stmt]) -> SexprValue:
                 var f = vec.Vec[SexprField].create()
                 f.push(field_value("condition", ir_expr_value(ctx, x.condition)))
                 f.push(field_value("then_body", ir_stmts_value(ctx, x.then_body)))
-                f.push(field_value("else_body", ir_stmts_value(ctx, x.else_body)))
+                match x.else_body:
+                    Option.some as eb:
+                        f.push(field_value("else_body", ir_stmts_value(ctx, eb.value)))
+                    Option.none:
+                        f.push(field_nil("else_body"))
                 return node("IR::IfStmt", f.as_span())
             ir.Stmt.stmt_switch as x:
                 var cases = vec.Vec[SexprValue].create()

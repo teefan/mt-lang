@@ -672,7 +672,7 @@ function collect_constant_refs_stmt(sp: ptr[ir.Stmt], by_name: ref[map_mod.Map[s
             ir.Stmt.stmt_if as iff:
                 collect_constant_refs_expr(iff.condition, by_name, referenced, program)
                 collect_constant_refs_stmts(iff.then_body, by_name, referenced, program)
-                collect_constant_refs_stmts(iff.else_body, by_name, referenced, program)
+                collect_constant_refs_stmts(else_stmts_or_empty(iff.else_body), by_name, referenced, program)
             ir.Stmt.stmt_while as w:
                 collect_constant_refs_expr(w.condition, by_name, referenced, program)
                 collect_constant_refs_stmts(w.body, by_name, referenced, program)
@@ -875,7 +875,7 @@ function reach_from_stmt(sp: ptr[ir.Stmt], func_names: ref[map_mod.Map[str, bool
             ir.Stmt.stmt_if as iff:
                 reach_from_expr(iff.condition, func_names, reachable, worklist)
                 reach_from_stmts(iff.then_body, func_names, reachable, worklist)
-                reach_from_stmts(iff.else_body, func_names, reachable, worklist)
+                reach_from_stmts(else_stmts_or_empty(iff.else_body), func_names, reachable, worklist)
             ir.Stmt.stmt_while as w:
                 reach_from_expr(w.condition, func_names, reachable, worklist)
                 reach_from_stmts(w.body, func_names, reachable, worklist)
@@ -1087,7 +1087,7 @@ function collect_slice_from_stmt(sp: ptr[ir.Stmt], has_str: ref[bool], has_str_i
             ir.Stmt.stmt_if as iff:
                 collect_slice_from_expr(iff.condition, has_str, has_str_index, has_str_concat, span_types, seen)
                 collect_slice_from_stmts(iff.then_body, has_str, has_str_index, has_str_concat, span_types, seen)
-                collect_slice_from_stmts(iff.else_body, has_str, has_str_index, has_str_concat, span_types, seen)
+                collect_slice_from_stmts(else_stmts_or_empty(iff.else_body), has_str, has_str_index, has_str_concat, span_types, seen)
             ir.Stmt.stmt_while as w:
                 collect_slice_from_expr(w.condition, has_str, has_str_index, has_str_concat, span_types, seen)
                 collect_slice_from_stmts(w.body, has_str, has_str_index, has_str_concat, span_types, seen)
@@ -1498,7 +1498,7 @@ function collect_gv_from_stmts(body: span[ir.Stmt], seen: ref[map_mod.Map[str, b
                 ir.Stmt.stmt_if as iff:
                     collect_gv_from_expr(iff.condition, seen, result)
                     collect_gv_from_stmts(iff.then_body, seen, result)
-                    collect_gv_from_stmts(iff.else_body, seen, result)
+                    collect_gv_from_stmts(else_stmts_or_empty(iff.else_body), seen, result)
                 ir.Stmt.stmt_while as w:
                     collect_gv_from_expr(w.condition, seen, result)
                     collect_gv_from_stmts(w.body, seen, result)
@@ -1752,7 +1752,7 @@ function stmt_calls(sp: ptr[ir.Stmt], name: str) -> bool:
             ir.Stmt.stmt_block as blk:
                 return body_calls(blk.body, name)
             ir.Stmt.stmt_if as iff:
-                return expr_calls(iff.condition, name) or body_calls(iff.then_body, name) or body_calls(iff.else_body, name)
+                return expr_calls(iff.condition, name) or body_calls(iff.then_body, name) or body_calls(else_stmts_or_empty(iff.else_body), name)
             ir.Stmt.stmt_while as w:
                 return expr_calls(w.condition, name) or body_calls(w.body, name)
             ir.Stmt.stmt_for as f:
@@ -1879,7 +1879,7 @@ function collect_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], 
             ir.Stmt.stmt_if as iff:
                 collect_from_expr(iff.condition, seen, collected)
                 collect_from_stmts(iff.then_body, seen, collected)
-                collect_from_stmts(iff.else_body, seen, collected)
+                collect_from_stmts(else_stmts_or_empty(iff.else_body), seen, collected)
             ir.Stmt.stmt_while as w:
                 collect_from_expr(w.condition, seen, collected)
                 collect_from_stmts(w.body, seen, collected)
@@ -1971,7 +1971,7 @@ function stmt_has_str_equality(sp: ptr[ir.Stmt]) -> bool:
             ir.Stmt.stmt_block as blk:
                 return body_has_str_equality(blk.body)
             ir.Stmt.stmt_if as iff:
-                return expr_has_str_equality(iff.condition) or body_has_str_equality(iff.then_body) or body_has_str_equality(iff.else_body)
+                return expr_has_str_equality(iff.condition) or body_has_str_equality(iff.then_body) or body_has_str_equality(else_stmts_or_empty(iff.else_body))
             ir.Stmt.stmt_while as w:
                 return expr_has_str_equality(w.condition) or body_has_str_equality(w.body)
             ir.Stmt.stmt_for as f:
@@ -2313,7 +2313,7 @@ function simd_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], col
                 simd_from_stmts(blk.body, seen, collected)
             ir.Stmt.stmt_if as iff:
                 simd_from_stmts(iff.then_body, seen, collected)
-                simd_from_stmts(iff.else_body, seen, collected)
+                simd_from_stmts(else_stmts_or_empty(iff.else_body), seen, collected)
             ir.Stmt.stmt_while as w:
                 simd_from_stmts(w.body, seen, collected)
             ir.Stmt.stmt_for as f:
@@ -2468,7 +2468,7 @@ function span_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], col
             ir.Stmt.stmt_if as iff:
                 span_from_expr(iff.condition, seen, collected)
                 span_from_stmts(iff.then_body, seen, collected)
-                span_from_stmts(iff.else_body, seen, collected)
+                span_from_stmts(else_stmts_or_empty(iff.else_body), seen, collected)
             ir.Stmt.stmt_while as w:
                 span_from_expr(w.condition, seen, collected)
                 span_from_stmts(w.body, seen, collected)
@@ -2658,7 +2658,7 @@ function tuple_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], co
                 tuple_from_stmts(blk.body, seen, collected)
             ir.Stmt.stmt_if as iff:
                 tuple_from_stmts(iff.then_body, seen, collected)
-                tuple_from_stmts(iff.else_body, seen, collected)
+                tuple_from_stmts(else_stmts_or_empty(iff.else_body), seen, collected)
             ir.Stmt.stmt_while as w:
                 tuple_from_stmts(w.body, seen, collected)
             ir.Stmt.stmt_for as f:
@@ -3153,8 +3153,9 @@ function collect_soa_from_stmts(e: ref[Emitter], body: span[ir.Stmt], seen: ref[
                     collect_soa_from_type(e, expr_result_type(v), seen, program)
                 ir.Stmt.stmt_if as ifs:
                     collect_soa_from_stmts(e, ifs.then_body, seen, program)
-                    if ifs.else_body.len > 0:
-                        collect_soa_from_stmts(e, ifs.else_body, seen, program)
+                    let soa_eb = else_stmts_or_empty(ifs.else_body)
+                    if soa_eb.len > 0:
+                        collect_soa_from_stmts(e, soa_eb, seen, program)
                 ir.Stmt.stmt_while as w:
                     collect_soa_from_stmts(e, w.body, seen, program)
                 ir.Stmt.stmt_for as fs:
@@ -3706,7 +3707,7 @@ function collect_used_labels(body: span[ir.Stmt], labels: ref[map_mod.Map[str, b
                     collect_used_labels(blk.body, labels)
                 ir.Stmt.stmt_if as iff:
                     collect_used_labels(iff.then_body, labels)
-                    collect_used_labels(iff.else_body, labels)
+                    collect_used_labels(else_stmts_or_empty(iff.else_body), labels)
                 ir.Stmt.stmt_while as w:
                     collect_used_labels(w.body, labels)
                 ir.Stmt.stmt_for as fr:
@@ -3974,7 +3975,7 @@ function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> v
                 else:
                     emit_stmts(e, blk.body, level)
             ir.Stmt.stmt_if as iff:
-                emit_if(e, iff.condition, iff.then_body, iff.else_body, level)
+                emit_if(e, iff.condition, iff.then_body, else_stmts_or_empty(iff.else_body), level)
             ir.Stmt.stmt_while as w:
                 if e.debug_guards:
                     let guard_name = next_loop_guard_name(e)
@@ -4087,9 +4088,9 @@ function statement_terminates(sp: ptr[ir.Stmt]) -> bool:
             ir.Stmt.stmt_block as blk:
                 return body_terminates(blk.body)
             ir.Stmt.stmt_if as iff:
-                if iff.else_body.len == 0:
+                if else_stmts_or_empty(iff.else_body).len == 0:
                     return false
-                return body_terminates(iff.then_body) and body_terminates(iff.else_body)
+                return body_terminates(iff.then_body) and body_terminates(else_stmts_or_empty(iff.else_body))
             _:
                 return false
 
@@ -4109,6 +4110,16 @@ function block_requires_scope(body: span[ir.Stmt]) -> bool:
     return false
 
 
+## The else branch statements of an `if`, or an empty span when it has none.
+function else_stmts_or_empty(else_body: Option[span[ir.Stmt]]) -> span[ir.Stmt]:
+    match else_body:
+        Option.some as eb:
+            return eb.value
+        Option.none:
+            pass
+    return span[ir.Stmt]()
+
+
 ## Emit an `if` and its else chain, re-flattening a single-`if` else body back
 ## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
 function emit_if(e: ref[Emitter], condition: ptr[ir.Expr], then_body: span[ir.Stmt], else_body: span[ir.Stmt], level: ptr_uint) -> void:
@@ -4126,7 +4137,7 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
                 ir.Stmt.stmt_if as nested:
                     emit_line(e, j4(indent, "} else if (", render_expression(e, nested.condition), ") {"))
                     emit_stmts(e, nested.then_body, level + 1)
-                    emit_else(e, nested.else_body, level)
+                    emit_else(e, else_stmts_or_empty(nested.else_body), level)
                     return
                 _:
                     pass
@@ -4390,7 +4401,7 @@ function checked_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]], 
             ir.Stmt.stmt_if as iff:
                 checked_from_expr(iff.condition, seen, collected)
                 checked_from_stmts(iff.then_body, seen, collected)
-                checked_from_stmts(iff.else_body, seen, collected)
+                checked_from_stmts(else_stmts_or_empty(iff.else_body), seen, collected)
             ir.Stmt.stmt_while as w:
                 checked_from_expr(w.condition, seen, collected)
                 checked_from_stmts(w.body, seen, collected)
@@ -4572,7 +4583,7 @@ function span_index_from_stmt(sp: ptr[ir.Stmt], seen: ref[map_mod.Map[str, bool]
             ir.Stmt.stmt_if as iff:
                 span_index_from_expr(iff.condition, seen, collected)
                 span_index_from_stmts(iff.then_body, seen, collected)
-                span_index_from_stmts(iff.else_body, seen, collected)
+                span_index_from_stmts(else_stmts_or_empty(iff.else_body), seen, collected)
             ir.Stmt.stmt_while as w:
                 span_index_from_expr(w.condition, seen, collected)
                 span_index_from_stmts(w.body, seen, collected)
@@ -4966,6 +4977,11 @@ function pointer_member_receiver(ep: ptr[ir.Expr]) -> bool:
 
 function is_ptr_type(t: types.Type) -> bool:
     match t:
+        types.Type.ty_nullable as nl:
+            # A pointer-like nullable is a bare C pointer (`T*`), so members are
+            # reached with `->` (mirrors the host's `nullable_pointer_like_type?`).
+            unsafe:
+                return is_pointer_like_for_nullable(read(nl.base))
         types.Type.ty_generic as g:
             # A `ref` may carry an explicit lifetime (`ref[@a, T]`), so it is not
             # restricted to one argument (mirrors the host's `ref_type?`).
@@ -5104,7 +5120,7 @@ function scan_stmts_for_variant_eq(e: ref[Emitter], body: span[ir.Stmt], program
                 ir.Stmt.stmt_if as ifs:
                     scan_expr_for_variant_eq(e, ifs.condition, program)
                     scan_stmts_for_variant_eq(e, ifs.then_body, program)
-                    let eb = ifs.else_body
+                    let eb = else_stmts_or_empty(ifs.else_body)
                     if eb.len > 0:
                         scan_stmts_for_variant_eq(e, eb, program)
                 ir.Stmt.stmt_switch as sw:
@@ -6345,7 +6361,7 @@ function task_scan_stmt(program: ir.Program, sp: ptr[ir.Stmt], seen: ref[map_mod
             ir.Stmt.stmt_if as iff:
                 task_scan_expr(program, iff.condition, seen, elements)
                 task_scan_stmts(program, iff.then_body, seen, elements)
-                task_scan_stmts(program, iff.else_body, seen, elements)
+                task_scan_stmts(program, else_stmts_or_empty(iff.else_body), seen, elements)
             ir.Stmt.stmt_while as w:
                 task_scan_expr(program, w.condition, seen, elements)
                 task_scan_stmts(program, w.body, seen, elements)
@@ -6605,7 +6621,7 @@ function builtin_from_stmt(sp: ptr[ir.Stmt], needed: ref[map_mod.Map[str, bool]]
             ir.Stmt.stmt_if as iff:
                 builtin_from_expr(iff.condition, needed)
                 builtin_from_stmts(iff.then_body, needed)
-                builtin_from_stmts(iff.else_body, needed)
+                builtin_from_stmts(else_stmts_or_empty(iff.else_body), needed)
             ir.Stmt.stmt_while as w:
                 builtin_from_expr(w.condition, needed)
                 builtin_from_stmts(w.body, needed)
@@ -7093,7 +7109,7 @@ function collect_opt_from_stmts(needed: ref[map_mod.Map[str, types.Type]], opaqu
 
                     collect_opt_from_stmts(needed, opaques, iff.then_body)
 
-                    collect_opt_from_stmts(needed, opaques, iff.else_body)
+                    collect_opt_from_stmts(needed, opaques, else_stmts_or_empty(iff.else_body))
 
                 ir.Stmt.stmt_while as w:
 
@@ -7436,7 +7452,7 @@ function stmt_uses_offsetof(sp: ptr[ir.Stmt]) -> bool:
 
             ir.Stmt.stmt_if as iff:
 
-                return expr_uses_offsetof(iff.condition) or stmts_use_offsetof(iff.then_body) or stmts_use_offsetof(iff.else_body)
+                return expr_uses_offsetof(iff.condition) or stmts_use_offsetof(iff.then_body) or stmts_use_offsetof(else_stmts_or_empty(iff.else_body))
 
             ir.Stmt.stmt_while as w:
 

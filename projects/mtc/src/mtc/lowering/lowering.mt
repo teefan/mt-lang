@@ -39,13 +39,29 @@ public struct LoweringError:
     path: str
 
 
+## How a guard-style binding's visible value is read out of its storage local.
+## An ordinary binding is `plain`; a `let x = v else:` / `let x = v?` binding
+## reads through the projection its storage kind implies, mirroring the host's
+## `local_binding(... projection:)` + `lower_bound_identifier`.
+## `plain` is arm 0, so a `LocalBinding` literal that omits `projection` (every
+## non-guard binding) is zero-initialised to it.
+variant BindingProjection:
+    plain
+    nullable_storage(storage_ty: types.Type)
+    option_some_value(storage_ty: types.Type)
+    result_success_value(storage_ty: types.Type)
+    result_failure_error(storage_ty: types.Type)
+
+
 ## A local/parameter binding in scope during function-body lowering: the source
-## name, its C linkage name, resolved type, and whether it is held by pointer.
+## name, its C linkage name, resolved type, whether it is held by pointer, and
+## how a read of the name projects the value out of `c_name`.
 struct LocalBinding:
     name: str
     c_name: str
     ty: types.Type
     pointer: bool
+    projection: BindingProjection
 
 
 ## One lexical block's pending `defer` cleanups, in the order they were
@@ -2331,7 +2347,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 match read(value):
                     ast.Expr.expr_match as me:
                         let ret_ty = current_return_type(ctx, value)
-                        let temp = fresh_c_temp_name(ctx, "match_ret")
+                        let temp = fresh_c_temp_name(ctx, "match_expr")
                         let tc = utils.c_local_name(temp)
                         let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = ret_ty))
                         output.push(ir.Stmt.stmt_local(name = temp, linkage_name = tc, ty = ret_ty, value = zero_init, line = 0, source_path = ""))
@@ -2372,7 +2388,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # return type (e.g. `return 0` in a `ptr_uint` function), matching
                 # the host's contextual numeric literal inference.
                 let ret_lit = int_literal_to_context_type(value, ctx.current_fn_return_type, lowered)
-                let wrapped = if ctx.inside_async: make_task_literal(ret_lit) else: ret_lit
+                # A bare `null` return takes the function's return type (the
+                # analyzer may record only `void` for it).
+                let ret_null = null_literal_to_context_type(value, ctx.current_fn_return_type, ret_lit)
+                let wrapped = if ctx.inside_async: make_task_literal(ret_null) else: ret_null
                 if has_pending_defers(ctx) and not cleanup_safe_return_expr(value):
                     let ret_ty = ir_expr_type(wrapped)
                     let rtemp = fresh_c_temp_name(ctx, "return_value")
@@ -2400,7 +2419,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # runs on the absent/failure case; on success `x` binds the
                 # unwrapped value.
                 if loc.else_body != null and loc.value != null:
-                    lower_guard_local(ctx, output, loc.name, loc.else_binding, loc.value, loc.else_body)
+                    lower_guard_local(ctx, output, loc.name, loc.else_binding, loc.value, loc.else_body, loc.line)
                     return
                 # let _ = expr / var _ = expr — evaluate the expression for side
                 # effects only; no local binding is introduced.  The lowered
@@ -2627,7 +2646,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     ctx.loop_continue_label = cl
                     var brk = vec.Vec[ir.Stmt].create()
                     brk.push(ir.Stmt.stmt_goto(label = bl))
-                    wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = ctx.bool_ty)), then_body = brk.as_span(), else_body = span[ir.Stmt]()))
+                    wbody.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = cond_ir, ty = ctx.bool_ty)), then_body = brk.as_span(), else_body = Option[span[ir.Stmt]].none))
                     let inner = lower_block(ctx, w.body)
                     var ii: ptr_uint = 0
                     while ii < inner.len:
@@ -2820,49 +2839,60 @@ function local_decl_type(ctx: ref[LowerCtx], declared: ptr[ast.TypeRef]?, value:
 ## Lower a guard local `let name = value else: <else_body>` (and the `var` form).
 ## The initializer has an `Option[T]`, `Result[T, E]`, or nullable `T?` storage
 ## type; the `else` body runs on the absent/failure case and must exit control
-## flow.  On success `name` binds the unwrapped success value `T`.  Mirrors Ruby's
-## let-else lowering (block.rb): store the value in a hidden local, emit
-## `if (failure) { <else_body> }`, then bind `name` to the projected success value.
-function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, else_binding: Option[str], value: ptr[ast.Expr]?, else_body: ptr[ast.Stmt]?) -> void:
+## flow.  On success `name` reads the unwrapped success value `T`.  Mirrors Ruby's
+## let-else lowering (block.rb): store the value in the storage local, emit
+## `if (failure) { <else_body> }`, then register `name` as a projection binding
+## over that storage local (the host projects at each use site).
+function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, else_binding: Option[str], value: ptr[ast.Expr]?, else_body: ptr[ast.Stmt]?, line: ptr_uint) -> void:
     let value_ptr = value else:
         fatal(c"lowering: guard local requires an initializer")
     let value_ir = lower_expr(ctx, value_ptr)
     let storage_ty = qualify_type(ctx, ir_expr_type(value_ir))
 
-    # Hidden storage local holding the full Option/Result/nullable value.
-    let storage_c = fresh_c_temp_name(ctx, "guard")
-    output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
+    # Hidden storage local holding the full Option/Result/nullable value.  The
+    # host names it after the user binding (`memory`) so the C local name is
+    # stable; `_` and discarded bindings get a fresh temp.
+    let storage_c = if name == "_": fresh_c_temp_name(ctx, "let_else_discard") else: utils.c_local_name(name)
+    output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = line, source_path = ctx.analysis.source_path))
     let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
 
     let kind = guard_storage_kind(ctx, storage_ty)
 
-    # else body: for a Result `else as error:` guard, project the failure error
-    # into a local at the top of the else body so it can be referenced there.
+    # else body: for a Result `else as error:` guard, register the failure error
+    # binding so the else body can reference it.
     var else_stmts = vec.Vec[ir.Stmt].create()
     if kind == "result" and else_binding.is_some():
-        emit_result_failure_binding(ctx, ref_of(else_stmts), storage_ty, storage_ref, else_binding.unwrap())
+        register_result_failure_binding(ctx, storage_c, storage_ty, else_binding.unwrap())
     append_span_stmts(ref_of(else_stmts), lower_block(ctx, else_body))
     let else_ir = else_stmts.as_span()
 
     # `if (<failure condition>) { <else body> }`
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
-    output.push(ir.Stmt.stmt_if(condition = cond, then_body = else_ir, else_body = span[ir.Stmt]()))
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = else_ir, else_body = Option[span[ir.Stmt]].none))
 
     # Bind `name` to the unwrapped success value (unless discarded with `_`).
     if name == "_":
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
-    let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
     if ctx.async_cps_active:
         # Spill the guard-bound local to a frame field so it survives suspend.
+        let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
         let gfield = j2("local_", name)
         let gcname = j2("__mt_frame->", gfield)
         async_register_local_field(ctx, name, gfield, gcname, success_ty)
         output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = gcname, ty = success_ty, pointer = false)), operator = "=", value = success_val))
         return
-    let bc = utils.c_local_name(name)
-    output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
-    ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
+    # No second local: reads project the success value out of the storage local.
+    ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = false, projection = guard_binding_projection(kind, storage_ty)))
+
+
+## The projection a guard storage kind implies for its binding.
+function guard_binding_projection(kind: str, storage_ty: types.Type) -> BindingProjection:
+    if kind == "option":
+        return BindingProjection.option_some_value(storage_ty = storage_ty)
+    if kind == "result":
+        return BindingProjection.result_success_value(storage_ty = storage_ty)
+    return BindingProjection.nullable_storage(storage_ty = storage_ty)
 
 
 ## Lower `let name = expr?` — the `?` postfix propagation operator lowers to
@@ -2946,7 +2976,7 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
     fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = line, source_path = source_path))
 
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
-    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = span[ir.Stmt]()))
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = Option[span[ir.Stmt]].none))
 
     # On success, return the unwrapped value.
     let success_ty = guard_success_type(ctx, kind, storage_ty)
@@ -3081,23 +3111,22 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
 
     # `if (<failure condition>) { return storage; }`
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
-    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = span[ir.Stmt]()))
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = Option[span[ir.Stmt]].none))
 
     # Bind `name` to the unwrapped success value (unless discarded with `_`).
     if name == "_":
         return
     let success_ty = guard_success_type(ctx, kind, storage_ty)
-    let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
     if ctx.async_cps_active:
         # Spill the bound local to a frame field so it survives suspend/resume.
+        let success_val = guard_success_projection(ctx, kind, storage_ty, storage_ref, success_ty)
         let afield = j2("local_", name)
         let acname = j2("__mt_frame->", afield)
         async_register_local_field(ctx, name, afield, acname, success_ty)
         output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = acname, ty = success_ty, pointer = false)), operator = "=", value = success_val))
         return
-    let bc = utils.c_local_name(name)
-    output.push(ir.Stmt.stmt_local(name = name, linkage_name = bc, ty = success_ty, value = success_val, line = 0, source_path = ""))
-    ctx.locals.push(LocalBinding(name = name, c_name = bc, ty = success_ty, pointer = false))
+    # No second local: reads project the success value out of the propagation temp.
+    ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = false, projection = guard_binding_projection(kind, storage_ty)))
 
 
 ## Lower `target = expr?` (assignment form of `?` propagation).  Mirrors
@@ -3184,7 +3213,7 @@ function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
         fail_body.push(ir.Stmt.stmt_return(value = fail_value, line = 0, source_path = ""))
 
     let cond = guard_failure_condition(ctx, kind, storage_ty, storage_ref)
-    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = span[ir.Stmt]()))
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = fail_body.as_span(), else_body = Option[span[ir.Stmt]].none))
 
     # Assign the unwrapped success value into the target lvalue.
     let success_ty = guard_success_type(ctx, kind, storage_ty)
@@ -3337,10 +3366,10 @@ function guard_success_projection(ctx: ref[LowerCtx], kind: str, storage_ty: typ
     return alloc_expr(ir.Expr.expr_member(receiver = arm_data, member = "value", ty = success_ty))
 
 
-## Emit the `else as error:` binding for a Result guard as a local at the top of
-## the else body, projected as `storage.data.failure.error`, and register it so
-## the else body resolves the name.
-function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec[ir.Stmt]], storage_ty: types.Type, storage_ref: ptr[ir.Expr], error_name: str) -> void:
+## The failure projection of a Result storage: `storage.data.failure.error`,
+## typed with the storage's error type argument.  Used both for the `else as
+## error:` binding and for a propagation binding's error read.
+function guard_failure_projection(ctx: ref[LowerCtx], storage_ty: types.Type, storage_ref: ptr[ir.Expr]) -> (ptr[ir.Expr], types.Type):
     let outer_c = variant_base_c_name(storage_ty, ctx.module_name)
     let (decl_name, decl_module) = variant_declared_identity(storage_ty, ctx.module_name)
     let payload_ty = variant_arm_payload_binding(decl_name, decl_module, outer_c, "failure")
@@ -3360,9 +3389,38 @@ function emit_result_failure_binding(ctx: ref[LowerCtx], else_stmts: ref[vec.Vec
     let data_member = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "data", ty = types.Type.ty_nil))
     let arm_data = alloc_expr(ir.Expr.expr_member(receiver = data_member, member = "failure", ty = payload_ty))
     let error_val = alloc_expr(ir.Expr.expr_member(receiver = arm_data, member = "error", ty = error_ty))
-    let bc = utils.c_local_name(error_name)
-    else_stmts.push(ir.Stmt.stmt_local(name = error_name, linkage_name = bc, ty = error_ty, value = error_val, line = 0, source_path = ""))
-    ctx.locals.push(LocalBinding(name = error_name, c_name = bc, ty = error_ty, pointer = false))
+    return (error_val, error_ty)
+
+
+## Register the `else as error:` binding for a Result guard so the else body
+## resolves the name to the storage's failure projection (the host registers the
+## same projection on the else env; no local is emitted).
+function register_result_failure_binding(ctx: ref[LowerCtx], storage_c: str, storage_ty: types.Type, error_name: str) -> void:
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+    let (_, error_ty) = guard_failure_projection(ctx, storage_ty, storage_ref)
+    ctx.locals.push(LocalBinding(name = error_name, c_name = storage_c, ty = error_ty, pointer = false, projection = BindingProjection.result_failure_error(storage_ty = storage_ty)))
+
+
+## Read a bound name.  A guard/propagation binding is projected out of its
+## storage local (`x.data.some.value` for an Option, the storage itself for a
+## pointer-like nullable), mirroring the host's `lower_bound_identifier`.
+function lower_binding_read(ctx: ref[LowerCtx], lb: LocalBinding) -> ptr[ir.Expr]:
+    match lb.projection:
+        BindingProjection.plain:
+            return alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = lb.ty, pointer = lb.pointer))
+        BindingProjection.nullable_storage as p:
+            let storage_ref = alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = p.storage_ty, pointer = lb.pointer))
+            return guard_success_projection(ctx, "nullable", p.storage_ty, storage_ref, lb.ty)
+        BindingProjection.option_some_value as p:
+            let storage_ref = alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = p.storage_ty, pointer = lb.pointer))
+            return guard_success_projection(ctx, "option", p.storage_ty, storage_ref, lb.ty)
+        BindingProjection.result_success_value as p:
+            let storage_ref = alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = p.storage_ty, pointer = lb.pointer))
+            return guard_success_projection(ctx, "result", p.storage_ty, storage_ref, lb.ty)
+        BindingProjection.result_failure_error as p:
+            let storage_ref = alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = p.storage_ty, pointer = lb.pointer))
+            let (error_val, _) = guard_failure_projection(ctx, p.storage_ty, storage_ref)
+            return error_val
 
 
 ## Lower `let (a, b) = expr` (tuple) / `let Name(x, y) = expr` (struct) by
@@ -4245,13 +4303,15 @@ function lower_if_chain(ctx: ref[LowerCtx], branches: span[ast.IfBranch], index:
     let cond = lower_expr(ctx, branch.condition)
     let then_body = lower_block(ctx, branch.body)
 
-    var else_span: span[ir.Stmt]
+    # A source-level `if` always carries an else body in the host's IR — an
+    # empty one when the source has no else clause.
+    var else_span: Option[span[ir.Stmt]]
     if index + 1 < branches.len:
         var nested = vec.Vec[ir.Stmt].create()
         nested.push(lower_if_chain(ctx, branches, index + 1, else_body))
-        else_span = nested.as_span()
+        else_span = Option[span[ir.Stmt]].some(value = nested.as_span())
     else:
-        else_span = lower_block(ctx, else_body)
+        else_span = Option[span[ir.Stmt]].some(value = lower_block(ctx, else_body))
 
     return ir.Stmt.stmt_if(condition = cond, then_body = then_body, else_body = else_span)
 
@@ -4534,13 +4594,13 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
         loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = next_ty, value = next_call, line = 0, source_path = ""))
         let null_lit = alloc_expr(ir.Expr.expr_null_literal(ty = next_ty))
         let is_null = alloc_expr(ir.Expr.expr_binary(operator = "==", left = item_ref, right = null_lit, ty = ctx.bool_ty))
-        loop_body.push(ir.Stmt.stmt_if(condition = is_null, then_body = break_body.as_span(), else_body = span[ir.Stmt]()))
+        loop_body.push(ir.Stmt.stmt_if(condition = is_null, then_body = break_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     else:
         let ready_c = fresh_c_temp_name(ctx, "for_ready")
         let ready_ref = alloc_expr(ir.Expr.expr_name(name = ready_c, ty = ctx.bool_ty, pointer = false))
         loop_body.push(ir.Stmt.stmt_local(name = ready_c, linkage_name = ready_c, ty = ctx.bool_ty, value = next_call, line = 0, source_path = ""))
         let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = ready_ref, ty = ctx.bool_ty))
-        loop_body.push(ir.Stmt.stmt_if(condition = not_ready, then_body = break_body.as_span(), else_body = span[ir.Stmt]()))
+        loop_body.push(ir.Stmt.stmt_if(condition = not_ready, then_body = break_body.as_span(), else_body = Option[span[ir.Stmt]].none))
         loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = cur_ty, value = cur_call, line = 0, source_path = ""))
 
     var bi: ptr_uint = 0
@@ -5298,7 +5358,7 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_identifier as id:
                 match lookup_local(ctx, id.name):
                     Option.some as lb:
-                        return alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = lb.value.ty, pointer = lb.value.pointer))
+                        return lower_binding_read(ctx, lb.value)
                     Option.none:
                         if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                             let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
@@ -5617,7 +5677,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
         while si < captures.len:
             let cap = unsafe: read(captures.data + si)
             unsafe:
-                setup_args.push(read(alloc_expr(ir.Expr.expr_name(name = cap.c_name, ty = cap.ty, pointer = false))))
+                setup_args.push(read(cap.read_expr))
             si += 1
         let setup_call = alloc_expr(ir.Expr.expr_call(callee = setup_c.as_str(), arguments = setup_args.as_span(), ty = env_ptr_ty))
 
@@ -5678,7 +5738,7 @@ function collect_locals_for_capture(ctx: ref[LowerCtx], method_params: span[ast.
                 li += 1
                 continue
             seen_names.set(lb.c_name, true)
-            result.push(ProcCapture(name = lb.name, c_name = lb.c_name, ty = lb.ty))
+            result.push(ProcCapture(name = lb.name, c_name = lb.c_name, ty = lb.ty, read_expr = lower_binding_read(ctx, lb)))
         li += 1
     return result.as_span()
 
@@ -5831,7 +5891,7 @@ function build_capturing_release(c_name: str, env_type_name: str, captures: span
     var then_body = vec.Vec[ir.Stmt].create()
     let free_call = alloc_expr(ir.Expr.expr_call(callee = "free", arguments = pack_single(alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = env_ref, ty = void_ptr))), ty = types.primitive("void")))
     then_body.push(ir.Stmt.stmt_expression(expression = free_call, line = 0, source_path = ""))
-    body.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, method_receiver_param = false)
 
@@ -6014,7 +6074,8 @@ function lower_assert_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ki
     let fatal_call = alloc_expr(ir.Expr.expr_call(callee = fatal_callee, arguments = fatal_args.as_span(), ty = ctx.void_ty))
     var then_body = vec.Vec[ir.Stmt].create()
     then_body.push(ir.Stmt.stmt_expression(expression = fatal_call, line = line, source_path = ""))
-    output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = span[ir.Stmt]()))
+    # The host emits an empty (present) else branch for assert-like calls.
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())))
 
 
 function assert_default_message(kind: str) -> str:
@@ -6469,7 +6530,13 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         if is_fn_type(lb.value.ty):
                             var ret_ty = expr_type(ctx, call_ep)
                             var ret_type_ptr = types.alloc_type(ret_ty)
-                            return lower_plain_call_sig(ctx, lb.value.c_name, args, call_ep, ret_type_ptr, empty_fn_sig())
+                            # A guard-projected binding is read as a member chain,
+                            # so it cannot be spelled as a bare callee name.
+                            match lb.value.projection:
+                                BindingProjection.plain:
+                                    return lower_plain_call_sig(ctx, lb.value.c_name, args, call_ep, ret_type_ptr, empty_fn_sig())
+                                _:
+                                    return lower_call_with_callee_expr(ctx, lower_binding_read(ctx, lb.value), args, call_ep, ret_type_ptr, empty_fn_sig())
                     Option.none:
                         pass
                 match find_generic_function(ctx, id.name):
@@ -10541,7 +10608,7 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
     let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
     let cont_stmt = ir.Stmt.stmt_continue
-    let if_active = ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(cont_stmt), else_body = span[ir.Stmt]())
+    let if_active = ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(cont_stmt), else_body = Option[span[ir.Stmt]].none)
     loop_body.push(if_active)
     let gen_ref = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
     loop_body.push(ir.Stmt.stmt_local(name = "__mt_gen", linkage_name = "__mt_gen", ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = gen_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty)), ty = ptr_uint_ty)), line = 0, source_path = ""))
@@ -10618,7 +10685,7 @@ function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRu
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
     let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
     let cont_stmt = ir.Stmt.stmt_continue
-    let if_active = ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(cont_stmt), else_body = span[ir.Stmt]())
+    let if_active = ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(cont_stmt), else_body = Option[span[ir.Stmt]].none)
     loop_body.push(if_active)
     let gen_ref = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
     loop_body.push(ir.Stmt.stmt_local(name = "__mt_gen", linkage_name = "__mt_gen", ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = gen_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty)), ty = ptr_uint_ty)), line = 0, source_path = ""))
@@ -10674,16 +10741,16 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
     let sub_gen = alloc_expr(ir.Expr.expr_member(receiver = sub_ref, member = "generation", ty = ptr_uint_ty))
     let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
     let out_of_range = alloc_expr(ir.Expr.expr_binary(operator = ">=", left = sub_slot, right = cap_lit, ty = bool_ty))
-    body.push(ir.Stmt.stmt_if(condition = out_of_range, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = out_of_range, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
     let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = sub_slot, ty = slot_ty))
     let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
-    body.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = slot_active, ty = bool_ty)), then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = slot_active, ty = bool_ty)), then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     let slot_gen = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
     let gen_mismatch = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = slot_gen, right = sub_gen, ty = bool_ty))
-    body.push(ir.Stmt.stmt_if(condition = gen_mismatch, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = gen_mismatch, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_assignment(target = slot_active, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty)), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
@@ -10714,7 +10781,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
     let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
     let cont_stmt = ir.Stmt.stmt_continue
-    let if_inactive = ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = slot_active, ty = bool_ty)), then_body = span_from_one(cont_stmt), else_body = span[ir.Stmt]())
+    let if_inactive = ir.Stmt.stmt_if(condition = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = slot_active, ty = bool_ty)), then_body = span_from_one(cont_stmt), else_body = Option[span[ir.Stmt]].none)
     loop_body.push(if_inactive)
     let slot_wait_frame = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty))
     let has_wait = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = slot_wait_frame, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
@@ -10741,7 +10808,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     let wake_fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(wake_fn_ty))
     let cast_waiter = alloc_expr(ir.Expr.expr_cast(target_type = wake_fn_ptr_ty, expression = wf_waiter_ref, ty = wake_fn_ptr_ty))
     wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_waiter, arguments = single_expr_span(waiter_frame_ref), ty = types.primitive("void"))), line = 0, source_path = ""))
-    wait_body.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = span[ir.Stmt]()))
+    wait_body.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     wait_body.push(ir.Stmt.stmt_assignment(target = slot_active, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
     wait_body.push(ir.Stmt.stmt_assignment(target = slot_wait_frame, operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     var else_wait_body = vec.Vec[ir.Stmt].create()
@@ -10790,13 +10857,13 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     call_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_listener, arguments = call_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
 
     var dispatch_body = vec.Vec[ir.Stmt].create()
-    dispatch_body.push(ir.Stmt.stmt_if(condition = null_check, then_body = stateful_call_body.as_span(), else_body = call_body.as_span()))
-    else_wait_body.push(ir.Stmt.stmt_if(condition = slot_stateful, then_body = dispatch_body.as_span(), else_body = span_from_one(ir.Stmt.stmt_if(condition = null_check, then_body = call_body.as_span(), else_body = span[ir.Stmt]()))))
+    dispatch_body.push(ir.Stmt.stmt_if(condition = null_check, then_body = stateful_call_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = call_body.as_span())))
+    else_wait_body.push(ir.Stmt.stmt_if(condition = slot_stateful, then_body = dispatch_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = span_from_one(ir.Stmt.stmt_if(condition = null_check, then_body = call_body.as_span(), else_body = Option[span[ir.Stmt]].none)))))
     let slot_once = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty))
     var deact_body = vec.Vec[ir.Stmt].create()
     deact_body.push(ir.Stmt.stmt_assignment(target = slot_active, operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
-    else_wait_body.push(ir.Stmt.stmt_if(condition = slot_once, then_body = deact_body.as_span(), else_body = span[ir.Stmt]()))
-    loop_body.push(ir.Stmt.stmt_if(condition = has_wait, then_body = wait_body.as_span(), else_body = else_wait_body.as_span()))
+    else_wait_body.push(ir.Stmt.stmt_if(condition = slot_once, then_body = deact_body.as_span(), else_body = Option[span[ir.Stmt]].none))
+    loop_body.push(ir.Stmt.stmt_if(condition = has_wait, then_body = wait_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_wait_body.as_span())))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = loop_body.as_span())
     body.push(for_stmt)
     var params = vec.Vec[ir.Param].create()
@@ -10816,7 +10883,7 @@ function build_event_wait_ready_fn(info: ref[EventRuntimeInfo], slot_cn: str, ev
     var body = vec.Vec[ir.Stmt].create()
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = false))
     let null_check = alloc_expr(ir.Expr.expr_binary(operator = "==", left = raw_expr, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
-    body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty)), line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty)), line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
     let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "ready", ty = bool_ty)), line = 0, source_path = ""))
@@ -10842,14 +10909,14 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     let cast_waiter = alloc_expr(ir.Expr.expr_cast(target_type = wake_fn_ptr_ty, expression = waiter_arg, ty = wake_fn_ptr_ty))
     null_then.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_waiter, arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = false))), ty = void_ty)), line = 0, source_path = ""))
     null_then.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    body.push(ir.Stmt.stmt_if(condition = null_check, then_body = null_then.as_span(), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = null_check, then_body = null_then.as_span(), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
     let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
     let ready_expr = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "ready", ty = bool_ty))
     var ready_then = vec.Vec[ir.Stmt].create()
     ready_then.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_waiter, arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = false))), ty = void_ty)), line = 0, source_path = ""))
     ready_then.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    body.push(ir.Stmt.stmt_if(condition = ready_expr, then_body = ready_then.as_span(), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = ready_expr, then_body = ready_then.as_span(), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "waiter_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = false))))
     body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "waiter", ty = void_ptr_ty)), operator = "=", value = waiter_arg))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
@@ -10871,7 +10938,7 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
     var body = vec.Vec[ir.Stmt].create()
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = false))
     let null_check = alloc_expr(ir.Expr.expr_binary(operator = "==", left = raw_expr, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
-    body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = null, line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = null, line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
     let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
     body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "free", arguments = single_expr_span(alloc_expr(ir.Expr.expr_cast(target_type = void_ptr_ty, expression = wf_ref, ty = void_ptr_ty))), ty = void_ty)), line = 0, source_path = ""))
@@ -10893,7 +10960,7 @@ function build_event_wait_take_result_fn(info: ref[EventRuntimeInfo], slot_cn: s
     var fail_fields = vec.Vec[ir.AggregateField].create()
     let event_error_ty = types.Type.ty_named(module_name = "", name = "EventError")
     fail_fields.push(ir.AggregateField(name = "error", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = event_error_ty))))
-    body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_variant_literal(ty = info.wait_result_ty, arm_name = "failure", fields = fail_fields.as_span())), line = 0, source_path = "")), else_body = span[ir.Stmt]()))
+    body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_variant_literal(ty = info.wait_result_ty, arm_name = "failure", fields = fail_fields.as_span())), line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
     let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "result", ty = info.wait_result_ty)), line = 0, source_path = ""))
@@ -10926,7 +10993,7 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
     let slot_active = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty))
-    loop_body.push(ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(ir.Stmt.stmt_continue), else_body = span[ir.Stmt]()))
+    loop_body.push(ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(ir.Stmt.stmt_continue), else_body = Option[span[ir.Stmt]].none))
     let gen_ref = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
     loop_body.push(ir.Stmt.stmt_local(name = "__mt_gen", linkage_name = "__mt_gen", ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = gen_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty)), ty = ptr_uint_ty)), line = 0, source_path = ""))
     let gen_snap = alloc_expr(ir.Expr.expr_name(name = "__mt_gen", ty = ptr_uint_ty, pointer = false))
@@ -11347,6 +11414,17 @@ function lower_plain_call(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argume
 ## mirroring the call-site borrow rule the analyzer accepts.  The signature is
 ## optional; when absent, arguments are lowered verbatim.
 function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
+    return lower_call_with_callee(ctx, c_name, Option[ptr[ir.Expr]].none, args, call_ep, override_ty, sig)
+
+
+## Lower a call whose callee is an expression rather than a bare C name: a
+## guard-projected binding that holds a proc or a function pointer, whose callee
+## is a member chain.
+function lower_call_with_callee_expr(ctx: ref[LowerCtx], callee: ptr[ir.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
+    return lower_call_with_callee(ctx, "", Option[ptr[ir.Expr]].some(value = callee), args, call_ep, override_ty, sig)
+
+
+function lower_call_with_callee(ctx: ref[LowerCtx], c_name: str, callee_expr: Option[ptr[ir.Expr]], args: span[ast.Argument], call_ep: ptr[ast.Expr], override_ty: ptr[types.Type]?, sig: Option[analyzer.FnSig]) -> ptr[ir.Expr]:
     var ir_args = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -11367,7 +11445,32 @@ function lower_plain_call_sig(ctx: ref[LowerCtx], c_name: str, args: span[ast.Ar
             ret_ty = read(ov)
     else:
         ret_ty = expr_type(ctx, call_ep)
+    match callee_expr:
+        Option.some as c:
+            return alloc_expr(ir.Expr.expr_call_indirect(callee = c.value, arguments = ir_args.as_span(), ty = ret_ty))
+        Option.none:
+            pass
     return alloc_expr(ir.Expr.expr_call(callee = c_name, arguments = ir_args.as_span(), ty = ret_ty))
+
+
+## Re-type a bare `null` literal against `context_ty` when the literal's own type
+## is not already nullable (the analyzer records `void` for a bare `null`).
+## Mirrors the host's `infer_null_literal_type` taking the expected type.
+function null_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    var is_null = false
+    unsafe:
+        match read(arg_ast):
+            ast.Expr.expr_null_literal:
+                is_null = true
+            _:
+                pass
+    if not is_null:
+        return value
+    if types.is_nullable_type(ir_expr_type(value)):
+        return value
+    if not is_nullable_pointer_like(context_ty) and not types.is_nullable_type(context_ty):
+        return value
+    return alloc_expr(ir.Expr.expr_null_literal(ty = context_ty))
 
 
 ## Re-type an integer literal whose value fits `context_ty` (a numeric primitive)
@@ -12228,6 +12331,7 @@ struct ProcCapture:
     name: str
     c_name: str
     ty: types.Type
+    read_expr: ptr[ir.Expr]
 
 
 ## True when a lowered type represents a proc struct (has invoke/release/retain
@@ -12352,7 +12456,7 @@ function type_contains_type_var(t: types.Type) -> bool:
 ## call to the invoke function (which is `<struct_name>__invoke`) and pass the
 ## env member as the first argument.
 function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
-    let recv = alloc_expr(ir.Expr.expr_name(name = lb.c_name, ty = lb.ty, pointer = false))
+    let recv = lower_binding_read(ctx, lb)
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_member = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "env", ty = void_ptr))
 
@@ -14002,14 +14106,16 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 ## compare with `==`.  A `_` arm becomes the final else block.
 function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
     let scrutinee_expr = lower_expr(ctx, scrutinee)
-    var else_body = span[ir.Stmt]()
+    # The host's match-to-if chains always carry an else body; the innermost
+    # `if` falls back to an empty one when there is no wildcard arm.
+    var else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())
     var wi: ptr_uint = 0
     while wi < arms.len:
         var warm: ast.MatchArm
         unsafe:
             warm = read(arms.data + wi)
         if warm.pattern == null:
-            else_body = lower_block(ctx, warm.body)
+            else_body = Option[span[ir.Stmt]].some(value = lower_block(ctx, warm.body))
         wi += 1
 
     var idx = arms.len
@@ -14035,12 +14141,16 @@ function lower_scalar_range_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                         cond = alloc_expr(ir.Expr.expr_binary(operator = "==", left = scrutinee_expr, right = lit, ty = ctx.bool_ty))
             var chain = vec.Vec[ir.Stmt].create()
             chain.push(ir.Stmt.stmt_if(condition = cond, then_body = body, else_body = else_body))
-            else_body = chain.as_span()
-    var oi: ptr_uint = 0
-    while oi < else_body.len:
-        unsafe:
-            output.push(read(else_body.data + oi))
-        oi += 1
+            else_body = Option[span[ir.Stmt]].some(value = chain.as_span())
+    match else_body:
+        Option.some as eb:
+            var oi: ptr_uint = 0
+            while oi < eb.value.len:
+                unsafe:
+                    output.push(read(eb.value.data + oi))
+                oi += 1
+        Option.none:
+            pass
 
 
 ## Lower a string match to an if / else-if chain comparing the scrutinee with
@@ -14055,7 +14165,6 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
 
     # Collect literal arms and the optional default (wildcard) body.
     var default_body = span[ir.Stmt]()
-    var has_default = false
     var lit_bodies = vec.Vec[span[ir.Stmt]].create()
     var lit_values = vec.Vec[ptr[ir.Expr]].create()
     var i: ptr_uint = 0
@@ -14067,16 +14176,15 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
         let pattern = arm.pattern
         if pattern == null:
             default_body = body
-            has_default = true
         else:
             lit_values.push(lower_expr(ctx, ptr[ast.Expr]<-pattern))
             lit_bodies.push(body)
         i += 1
 
     # Build the chain from the last arm backwards so each else wraps the rest.
-    var else_body = default_body
-    if not has_default:
-        else_body = span[ir.Stmt]()
+    # The host always carries an else body: the wildcard arm's block, or an
+    # empty one when every arm is a literal.
+    var else_body = Option[span[ir.Stmt]].some(value = default_body)
     var idx = lit_values.len()
     while idx > 0:
         idx -= 1
@@ -14094,13 +14202,17 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
         let then_body = unsafe: read(body_ptr)
         var if_stmts = vec.Vec[ir.Stmt].create()
         if_stmts.push(ir.Stmt.stmt_if(condition = condition, then_body = then_body, else_body = else_body))
-        else_body = if_stmts.as_span()
+        else_body = Option[span[ir.Stmt]].some(value = if_stmts.as_span())
 
-    var j: ptr_uint = 0
-    while j < else_body.len:
-        unsafe:
-            output.push(read(else_body.data + j))
-        j += 1
+    match else_body:
+        Option.some as eb:
+            var j: ptr_uint = 0
+            while j < eb.value.len:
+                unsafe:
+                    output.push(read(eb.value.data + j))
+                j += 1
+        Option.none:
+            pass
 
 
 ## Lower a match expression used as a local variable initializer (`let x = match
@@ -14246,7 +14358,7 @@ function lower_str_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         ))
         var then_body = vec.Vec[ir.Stmt].create()
         then_body.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = unsafe: read(val_ptr)))
-        let else_body = chain.as_span()
+        let else_body = Option[span[ir.Stmt]].some(value = chain.as_span())
         var next_chain = vec.Vec[ir.Stmt].create()
         next_chain.push(ir.Stmt.stmt_if(condition = condition, then_body = then_body.as_span(), else_body = else_body))
         chain = next_chain
@@ -14285,7 +14397,7 @@ function lower_tuple_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
         let cond = tuple_pattern_condition(ctx, scrutinee_expr, scrutinee_ty, unsafe: read(pattern))
         var assign = vec.Vec[ir.Stmt].create()
         assign.push(ir.Stmt.stmt_assignment(target = result_ref, operator = "=", value = lower_expr(ctx, arm.value)))
-        output.push(ir.Stmt.stmt_if(condition = cond, then_body = assign.as_span(), else_body = span[ir.Stmt]()))
+        output.push(ir.Stmt.stmt_if(condition = cond, then_body = assign.as_span(), else_body = Option[span[ir.Stmt]].none))
         ai += 1
 
 
@@ -14293,14 +14405,16 @@ function lower_tuple_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 ## per-element equality conditions, with the `_` arm as the final else.
 function lower_tuple_match_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], scrutinee_ty: types.Type, arms: span[ast.MatchArm]) -> void:
     let scrutinee_expr = lower_expr(ctx, scrutinee)
-    var else_body = span[ir.Stmt]()
+    # The host's match-to-if chains always carry an else body; the innermost
+    # `if` falls back to an empty one when there is no wildcard arm.
+    var else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())
     var wi: ptr_uint = 0
     while wi < arms.len:
         var warm: ast.MatchArm
         unsafe:
             warm = read(arms.data + wi)
         if warm.pattern == null:
-            else_body = lower_block(ctx, warm.body)
+            else_body = Option[span[ir.Stmt]].some(value = lower_block(ctx, warm.body))
         wi += 1
     var idx = arms.len
     while idx > 0:
@@ -14313,12 +14427,16 @@ function lower_tuple_match_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
             let cond = tuple_pattern_condition(ctx, scrutinee_expr, scrutinee_ty, unsafe: read(pattern))
             var chain = vec.Vec[ir.Stmt].create()
             chain.push(ir.Stmt.stmt_if(condition = cond, then_body = lower_block(ctx, arm.body), else_body = else_body))
-            else_body = chain.as_span()
-    var oi: ptr_uint = 0
-    while oi < else_body.len:
-        unsafe:
-            output.push(read(else_body.data + oi))
-        oi += 1
+            else_body = Option[span[ir.Stmt]].some(value = chain.as_span())
+    match else_body:
+        Option.some as eb:
+            var oi: ptr_uint = 0
+            while oi < eb.value.len:
+                unsafe:
+                    output.push(read(eb.value.data + oi))
+                oi += 1
+        Option.none:
+            pass
 
 
 ## Build the boolean condition for a tuple-literal pattern: the conjunction of
@@ -14629,7 +14747,8 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             let tag_check = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = kind_expr, right = tag_value, ty = bool_ty))
             var then_body = vec.Vec[ir.Stmt].create()
             then_body.push(ir.Stmt.stmt_goto(label = goto_label))
-            output.push(ir.Stmt.stmt_if(condition = tag_check, then_body = then_body.as_span(), else_body = span[ir.Stmt]()))
+            # The host emits an empty (present) else branch for arm tag checks.
+            output.push(ir.Stmt.stmt_if(condition = tag_check, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = span[ir.Stmt]())))
 
             var blk = vec.Vec[ir.Stmt].create()
             let payload_ty = variant_arm_payload_binding(variant_name, info.module_name, outer_c, arm_name)
@@ -14701,7 +14820,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                             let cond = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = left, right = right, ty = bool_ty))
                             var guard_body = vec.Vec[ir.Stmt].create()
                             guard_body.push(ir.Stmt.stmt_goto(label = next_arm_label))
-                            blk.push(ir.Stmt.stmt_if(condition = cond, then_body = guard_body.as_span(), else_body = span[ir.Stmt]()))
+                            blk.push(ir.Stmt.stmt_if(condition = cond, then_body = guard_body.as_span(), else_body = Option[span[ir.Stmt]].none))
                         Option.none:
                             pass
                     match read(arg.arg_value):
@@ -14749,7 +14868,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                 let cond = alloc_expr(ir.Expr.expr_binary(operator = b.operator, left = left_expr, right = right_expr, ty = bool_ty))
                                 var guard_fail = vec.Vec[ir.Stmt].create()
                                 guard_fail.push(ir.Stmt.stmt_goto(label = next_arm_label))
-                                blk.push(ir.Stmt.stmt_if(condition = cond, then_body = span[ir.Stmt](), else_body = guard_fail.as_span()))
+                                blk.push(ir.Stmt.stmt_if(condition = cond, then_body = span[ir.Stmt](), else_body = Option[span[ir.Stmt]].some(value = guard_fail.as_span())))
                         _:
                             pass
                     i += 1
@@ -14844,8 +14963,14 @@ function contains_label_target(stmts: span[ir.Stmt], label: str) -> bool:
                 if contains_label_target(f.body, label):
                     return true
             ir.Stmt.stmt_if as ifs:
-                if contains_label_target(ifs.then_body, label) or contains_label_target(ifs.else_body, label):
+                if contains_label_target(ifs.then_body, label):
                     return true
+                match ifs.else_body:
+                    Option.some as eb:
+                        if contains_label_target(eb.value, label):
+                            return true
+                    Option.none:
+                        pass
             ir.Stmt.stmt_switch as sw:
                 var ci: ptr_uint = 0
                 while ci < sw.cases.len:
@@ -19973,11 +20098,11 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             let af_release_fn = alloc_expr(ir.Expr.expr_member(receiver = af_task, member = "release", ty = await_ptr_void))
             af_release_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = af_release_fn, arguments = single_expr_span(af_frame), ty = void_t)), line = 0, source_path = ""))
             let af_has_frame = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = af_frame, right = await_null_ptr, ty = bool_ty))
-            rel_if_body.push(ir.Stmt.stmt_if(condition = af_has_frame, then_body = af_release_body.as_span(), else_body = span[ir.Stmt]()))
+            rel_if_body.push(ir.Stmt.stmt_if(condition = af_has_frame, then_body = af_release_body.as_span(), else_body = Option[span[ir.Stmt]].none))
             afi += 1
         rel_if_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
         let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), ty = bool_ty))
-        vrel.push(ir.Stmt.stmt_if(condition = not_ready, then_body = rel_if_body.as_span(), else_body = span[ir.Stmt]()))
+        vrel.push(ir.Stmt.stmt_if(condition = not_ready, then_body = rel_if_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "free", arguments = single_expr_span(frame_exp), ty = void_t)), line = 0, source_path = ""))
     functions.push(ir.Function(name = j2(name, "_release"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
 
@@ -19991,7 +20116,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     sw_rdy.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = sw_waiter_fn, arguments = single_expr_span(sw_waiter_frame), ty = void_t)), line = 0, source_path = ""))
     sw_rdy.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     let sw_ready_cond = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty))
-    vsw.push(ir.Stmt.stmt_if(condition = sw_ready_cond, then_body = sw_rdy.as_span(), else_body = span[ir.Stmt]()))
+    vsw.push(ir.Stmt.stmt_if(condition = sw_ready_cond, then_body = sw_rdy.as_span(), else_body = Option[span[ir.Stmt]].none))
     vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter_frame", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_frame))
     vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_fn))
     vsw.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
@@ -20322,7 +20447,7 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     let set_waiter_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "set_waiter", ty = ptr_void))
     suspend.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = set_waiter_fn, arguments = sw_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
     suspend.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    output.push(ir.Stmt.stmt_if(condition = not_ready, then_body = suspend.as_span(), else_body = span[ir.Stmt]()))
+    output.push(ir.Stmt.stmt_if(condition = not_ready, then_body = suspend.as_span(), else_body = Option[span[ir.Stmt]].none))
 
     # resume point
     output.push(ir.Stmt.stmt_label(name = async_state_label(ctx.async_resume_c, next_state)))
@@ -20478,7 +20603,7 @@ function async_waiter_wake(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], fr
     let waker_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_waker", ty = waiter_fn_ty, pointer = false))
     wake_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = waiter_fn_ty)), operator = "=", value = null_void))
     wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = waker_ref, arguments = single_expr_span(waiter_frame_field), ty = ctx.void_ty)), line = 0, source_path = ""))
-    output.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = span[ir.Stmt]()))
+    output.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))
 
 
 ## ptr_uint primitive type (repeated for convenience in async section).
