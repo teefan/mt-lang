@@ -44,6 +44,7 @@ import mtc.imported_bindings.main as ib_main
 import mtc.sexpr as sexpr_mod
 import mtc.std_catalog as std_catalog
 import mtc.version_info as ver
+import mtc.cli_help as cli_help
 
 
 ## Global CLI flags parsed by `dispatch_cli` (mirror Ruby's `-v`/`-q`/`--color`).
@@ -54,26 +55,53 @@ var cli_verbose: bool = false
 var cli_color: str = "auto"
 
 
+## Write one line to stderr — CLI errors and usage blocks go there, as in the host.
+function eprint_line(text: str) -> void:
+    let _ = terminal.write_stderr(text)
+    let _ = terminal.write_stderr("\n")
+    let _ = terminal.flush_stderr()
+
+
+## `unknown option <flag> for <command>` on stderr, mirroring the host.
+function eprint_unknown_option(flag: str, command: str) -> void:
+    var buf = string.String.create()
+    defer: buf.release()
+    buf.append("unknown option ")
+    buf.append(flag)
+    buf.append(" for ")
+    buf.append(command)
+    eprint_line(buf.as_str())
+
+
+## Commands that accept module-root flags (host: `command_supports_include_paths?`).
+function command_supports_include_paths(command: str) -> bool:
+    return command == "parse" or command == "lint" or command == "check" or command == "lower" or command == "emit-c" or command == "build" or command == "run" or command == "test" or command == "debug"
+
+
 function main(args: span[str]) -> int:
     if args.len < 2:
-        print_help()
-        return 1
+        cli_help.print_help(false)
+        return 0
     let cli_args = unsafe: span[str](data = args.data + 1, len = args.len - 1)
     return dispatch_cli(cli_args)
 
 
 function dispatch_cli(raw_args: span[str]) -> int:
     if raw_args.len < 1:
-        print_help()
-        return 1
+        cli_help.print_help(false)
+        return 0
 
-    # Global flags (`-v`/`--verbose`, `-q`/`--quiet`, `--color MODE`) may appear
-    # before the command; strip them here.  Scanning stops at `--` so `run`
-    # program arguments pass through untouched.
+    # Global flags (`-v`/`--verbose`, `-q`/`--quiet`, `--color MODE`,
+    # `-I`/`--include-path DIR`) may appear before the command; strip them here.
+    # Scanning stops at `--` so `run` program arguments pass through untouched.
     var filtered = vec.Vec[str].create()
     defer: filtered.release()
+    var include_pairs = vec.Vec[str].create()
+    defer: include_pairs.release()
     var fi: ptr_uint = 0
     var saw_dashdash = false
+    var saw_include = false
+    var include_flag = ""
     while fi < raw_args.len:
         let a = raw_args[fi]
         if saw_dashdash:
@@ -93,25 +121,99 @@ function dispatch_cli(raw_args: span[str]) -> int:
             cli_quiet = true
             fi += 1
             continue
-        if a == "--color":
-            if fi + 1 < raw_args.len:
-                cli_color = raw_args[fi + 1]
+        if a == "--color" or a.starts_with("--color="):
+            var value = ""
+            if a.starts_with("--color="):
+                value = a.slice(8, a.len - 8)
+                fi += 1
+            else if fi + 1 < raw_args.len:
+                value = raw_args[fi + 1]
                 fi += 2
             else:
+                fi += 1
+            if value != "auto" and value != "always" and value != "never":
+                var invalid = string.String.create()
+                defer: invalid.release()
+                invalid.append("--color must be auto, always, or never (got ")
+                invalid.append(value)
+                invalid.append(")")
+                eprint_line(invalid.as_str())
+                return 1
+            cli_color = value
+            continue
+        if a == "-I" or a == "--include-path":
+            if fi + 1 < raw_args.len and not raw_args[fi + 1].starts_with("-"):
+                include_pairs.push(a)
+                include_pairs.push(raw_args[fi + 1])
+                saw_include = true
+                include_flag = a
+                fi += 2
+            else:
+                eprint_line("missing value for -I")
                 fi += 1
             continue
         filtered.push(a)
         fi += 1
 
     if filtered.len() < 1:
-        print_help()
-        return 1
+        cli_help.print_help(false)
+        return 0
+
+    # Module roots are put back after the command name (the host keeps them out
+    # of argv and hands them to the module loader; the commands here parse them
+    # from their own arguments, so they must follow the command).
+    let first_arg = filtered.get(0) else:
+        cli_help.print_help(false)
+        return 0
+    if saw_include and command_supports_include_paths(unsafe: read(first_arg)):
+        var with_roots = vec.Vec[str].create()
+        with_roots.push(unsafe: read(first_arg))
+        var ri: ptr_uint = 0
+        while ri < include_pairs.len():
+            let pair_item = include_pairs.get(ri) else:
+                break
+            with_roots.push(unsafe: read(pair_item))
+            ri += 1
+        var rj: ptr_uint = 1
+        while rj < filtered.len():
+            let rest = filtered.get(rj) else:
+                break
+            with_roots.push(unsafe: read(rest))
+            rj += 1
+        var stale = filtered
+        filtered = with_roots
+        stale.release()
+
     let args = filtered.as_span()
 
     let cmd = args[0]
 
     if cmd == "version" or cmd == "--version" or cmd == "-V":
-        stdio.print_format(c"mtc 0.1.0 (%.*s)\n", int<-(ver.GIT_REVISION.len), ver.GIT_REVISION.data)
+        stdio.print_format(c"mtc %.*s\n", int<-(cli_help.VERSION.len), cli_help.VERSION.data)
+        return 0
+
+    # `mtc`, `mtc -h|--help`, `mtc help [command]` all print help and exit 0.
+    if cmd == "-h" or cmd == "--help":
+        cli_help.print_help(false)
+        return 0
+
+    if cmd == "help":
+        if args.len > 1:
+            if not cli_help.print_command_help(args[1], false):
+                cli_help.print_usage(false)
+            return 0
+        cli_help.print_help(false)
+        return 0
+
+    if saw_include and not command_supports_include_paths(cmd):
+        eprint_unknown_option(include_flag, cmd)
+        cli_help.print_usage(true)
+        return 1
+
+    # `mtc <command> --help|-h` prints that command's help block.
+    if args.len > 1 and (args[1] == "-h" or args[1] == "--help"):
+        if not cli_help.print_command_help(cmd, false):
+            cli_help.print_usage(false)
         return 0
 
     if cmd == "lex":
@@ -140,7 +242,8 @@ function dispatch_cli(raw_args: span[str]) -> int:
                         lex_file = Option[str].some(value = a)
             li += 1
         let lf = lex_file else:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return lex_command(lf, machine, sexpr)
 
@@ -167,49 +270,57 @@ function dispatch_cli(raw_args: span[str]) -> int:
                         parse_file = Option[str].some(value = a)
             pi += 1
         let pf = parse_file else:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return parse_command(pf, parse_sexpr)
 
     if cmd == "check":
         if args.len < 2:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return check_command(args)
 
     if cmd == "lint":
         if args.len < 2:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return lint_command(args)
 
     if cmd == "lower":
         if args.len < 2:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return lower_command(args)
 
     if cmd == "emit-c":
         if args.len < 2:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return emit_c_command(args)
 
     if cmd == "build":
         if args.len < 2:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return build_command(args)
 
     if cmd == "run":
         if args.len < 2:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return run_command(args)
 
     if cmd == "run-module":
         if args.len < 2:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return 1
         return run_module_command(args)
 
@@ -252,47 +363,9 @@ function dispatch_cli(raw_args: span[str]) -> int:
     if cmd == "debug":
         return debug_command(args)
 
-    if cmd == "help":
-        print_help()
-        return 0
-
-    print_unknown(cmd)
+    # Unknown command: the host prints its usage block to stderr and exits 1.
+    cli_help.print_usage(true)
     return 1
-
-
-function print_help() -> void:
-    stdio.print_line("mtc — self-hosted Milk Tea compiler")
-    stdio.print_line("")
-    stdio.print_line("usage: mtc <command> [args...]")
-    stdio.print_line("")
-    stdio.print_line("global options: -v|--verbose  -q|--quiet  --color always|never|auto")
-    stdio.print_line("")
-    stdio.print_line("commands:")
-    stdio.print_line("  lex   <file> [--machine|--sexpr]                    print the lexer token stream")
-    stdio.print_line("  parse <file>                                       parse source and print AST")
-    stdio.print_line("  check <file|dir>... [-I DIR]... [--platform NAME] [-Werror] [--locked] [--frozen]  type-check files/package and imports")
-    stdio.print_line("  lint  <file|dir>... [--fix] [--select RULES] [--ignore RULES] [--ignore-generated] [--timings]  report style/correctness warnings")
-    stdio.print_line("  lower <file|dir> [-I DIR]... [--platform NAME] [--sexpr]  lower to IR and print it")
-    stdio.print_line("  emit-c <file|dir> [-I DIR]... [--platform NAME]    compile to C and print it")
-    stdio.print_line("  build <file|dir> [-I DIR]... [-o OUTPUT] [--cc CC] [--keep-c PATH] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--sanitize] [--no-cache] [--clean]")
-    stdio.print_line("  run   <file|dir> [-I DIR]... [-o OUTPUT] [--keep-c PATH] [--cc CC] [--profile debug|release] [--platform linux|windows|wasm] [--debug-guards|--no-debug-guards] [--sanitize] [--no-cache] [-- ARGS...]")
-    stdio.print_line("  run-module <module> [run options...]                resolve, build, and run a module by name")
-    stdio.print_line("  test  <dir> [-I DIR]... [-n NAME] [--timeout SECONDS] [--mem MB] [--sanitize] [--format human|tap|junit]  discover and run @[test] functions")
-    stdio.print_line("  new   <path>                                        scaffold a new package")
-    stdio.print_line("  format <file> [--check|--write] [--timings]          format source and print, check, or write back")
-    stdio.print_line("  bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH]  generate binding module from C header")
-    stdio.print_line("  imported-bindings <name> [--check] [--all]      regenerate imported binding module(s)")
-    stdio.print_line("  toolchain doctor                                   check build tool availability")
-    stdio.print_line("  std   list|show <module> [--json]                   list standard-library modules / print a module source")
-    stdio.print_line("  snapshot <file> [--theme PATH] [-o OUTPUT]         render highlighted HTML snapshot")
-    stdio.print_line("  debug <file>                                       print tokens, AST facts, and diagnostics")
-    stdio.print_line("  completions bash|zsh|fish                           print a shell completion script")
-    stdio.print_line("  version|--version|-V                                print version and exit")
-    stdio.print_line("  help                                                print this help")
-
-
-function print_unknown(cmd: str) -> void:
-    stdio.print_format(c"mtc: unknown command '%.*s'\n", int<-(cmd.len), cmd.data)
 
 
 ## Ambient module roots for `parse`: the host resolves a file's module name
@@ -449,7 +522,8 @@ function check_command(args: span[str]) -> int:
         i += 1
 
     if input_paths.is_empty():
-        print_help()
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
         return 1
 
     # Expand directories to their .mt files.
@@ -753,7 +827,8 @@ function lint_command(args: span[str]) -> int:
         i += 1
 
     if input_paths.is_empty():
-        print_help()
+        eprint_line("missing source file path")
+        cli_help.print_usage(true)
         return 1
 
     # Collect .mt files.  Paths are copied into owned Strings so they do not
@@ -1048,7 +1123,8 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], platfor
                 discover_project_root(p.value, roots)
             return Option[str].some(value = p.value)
         Option.none:
-            print_help()
+            eprint_line("missing source file path")
+            cli_help.print_usage(true)
             return Option[str].none
 
 
