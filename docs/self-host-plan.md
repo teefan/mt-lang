@@ -1,5 +1,9 @@
 # Self-Host Plan
 
+> **Starting a session?** Read **"How to start a work session"** below (phase
+> order, per-workstream entry points and gates), then **§0j** for the current
+> measured state and the ranked remaining-work table.
+
 > **Workstream status (self-host vs `projects/stress`)**: **DONE** — the
 > self-host compiler builds, links and runs `projects/stress` with output and
 > exit status identical to the Ruby host's build (exit 242, empty stdout).  The
@@ -61,6 +65,47 @@ literals (§0j).
 
 Last updated: 2026-09-25 (stress parity, parse parity, vendored-family parity,
 contextual literal typing; remaining work and approach in §0j)
+
+---
+
+## How to start a work session (read this first)
+
+Entry point for any self-host work: **this file's §0j** (current state, measured
+gates, and the ranked remaining-work table with an approach per item), then the
+workstream doc for the area you are touching:
+
+| Workstream | Read | Verify with |
+| --- | --- | --- |
+| `lower` dump parity (current focus) | §0j "Remaining work" 1–6, §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
+| Hard build failures (`examples/*`, `test/mt`) | §0j item 7 | `build/stage2/mtc test test/mt -I .` and building the four examples |
+| CLI behavior parity | §0j item 8, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
+| LSP feature parity (**not started**) | `docs/lsp-design.md`, `docs/lsp-performance.md` | no harness yet — see below |
+| DAP | `docs/dap-design.md` | `build/stage2/mtc test projects/mtc` covers the compiler, not DAP; drive `mtc dap` by hand (no self-host DAP harness yet) |
+| Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
+| In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
+
+**Always** finish a change with `tools/bootstrap.sh -j 16` (fixed point +
+compiler self-test) plus the sweep that covers the area — several changes that
+looked correct at the CLI level broke the compiler's own bootstrap.
+
+### Phase order and current position
+
+1. **`lower` dump parity** — in progress: 0 self-rejections, 38/694 byte-identical,
+   the remaining categories ranked in §0j.
+2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
+   text, output channel and argument precedence (§0j item 8).
+3. **LSP feature parity** — *not yet verified.*  `lsp-design.md` reports 29
+   advertised capabilities at Ruby parity and the hover/reference/definition
+   work done in July, but the self-hosted server has **no end-to-end comparison
+   harness**: `test/tooling/lsp/server/*` spawns the *Ruby* server
+   (`RbConfig.ruby -I lib -e ...`), so nothing exercises `build/stage2/mtc lsp`.
+   Before claiming parity, add a self-vs-host mode to that harness (the
+   `all_endpoints_benchmark.rb` / `language_baseline_benchmark.rb` shapes are the
+   natural base) and run the same request corpus through both servers, comparing
+   responses; then fix what differs.
+4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
+   bridge was assessed as not feasible without multi-threaded I/O
+   (`dap-design.md`).
 
 ---
 
@@ -280,12 +325,14 @@ once and fork workers, so full-repo sweeps are lex ~4s, parse ~7s, lower ~3min
 (vs ~6–30min per-file). Host-side rejections are reported, not counted as
 failures; the tool warns when `--self` is stale.
 
-### Baseline
+### Baseline (as of this session — see §0j for the live numbers)
 - **lex: 692/692 byte-identical.**
 - **parse: 683/692** — remaining: module-qualified struct destructuring
   (`let types.Transform(x, y) = t`); 8 host-side rejections (platform-pinned
-  files, empty match arms).
-- **lower: still divergent** (see roadmap).
+  files, empty match arms).  *(Closed 2026-09-25: parse is 690/690 comparable
+  files byte-identical.)*
+- **lower: still divergent** (see roadmap).  *(Re-measured 2026-09-25: 0
+  self-rejections; the live ranking is in §0j.)*
 
 ### Remaining `lower` gaps (roadmap)
 1. **`ref[T]` / pointer representation** — **DONE**: a pointer-lowered receiver
@@ -1439,12 +1486,14 @@ rake "sexpr:parity[lex]"                       # same via Rake
 ```
 
 Exit status is 0 only when every comparable file matches; host-side rejections
-(e.g. platform-pinned files, empty match arms) are reported but not counted as
-failures. Current baseline: **lex 692/692, parse 683/692 byte-identical**; the
-remaining `parse` gap is module-qualified struct destructuring
-(`let types.Transform(x, y) = t`); `lower` still diverges on the type model
-(`ref`/pointer representation, proc closures, dyn vtables, guard binding names,
-nested-struct C names, const folding, generic-instance ordering).
+(e.g. external raw bindings, platform-pinned files, compile-fail fixtures) are
+reported but not counted as failures.
+
+**Live baseline (2026-09-25, §0j):** lex 694/694; parse 690 comparable files with
+0 differences; `lower` 38/694 byte-identical with **0 self-rejections** — the
+remaining differences are the mechanical categories ranked in §0j's "Remaining
+work" table (raw-module linkage naming, `:path` attribution, declaration
+ordering, const-folding shape, include set, opaques/const folding).
 
 ---
 

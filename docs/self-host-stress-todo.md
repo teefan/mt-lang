@@ -8,6 +8,10 @@ output matching the Ruby host compiler's build of the same project.
 empty stdout, empty stderr. The fixed-point gate holds (`stage2.c == stage3.c`)
 and the self-host test suite gained coverage for every behavior fixed here.
 
+> **Start a session from [self-host-plan.md §0j](./self-host-plan.md#0j-2026-09-25-session--stress-parity-parse-parity-measured-status-sweep)
+> and its "How to start a work session" section** — this file is the record of
+> the stress workstream (done); the open work is tracked there.
+
 Reference behavior: the host build of `projects/stress` (`ruby -Ilib bin/mtc
 build projects/stress -I . --no-cache --keep-c /tmp/stress_host_ref.c -o
 /tmp/stress_host2`) exits **242** with empty stdout/stderr.

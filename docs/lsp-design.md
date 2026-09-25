@@ -1,8 +1,21 @@
 # Self-Host LSP Architecture
 
-Status: **Implementation complete — all capabilities + long-tail items + 2026-07-22
-linter parity session delivered.** Last updated: 2026-07-22.
+Status: **Server implemented — 29 capabilities advertised at Ruby parity; the
+long-tail items and the 2026-07-22 linter parity session are delivered.**
+Last updated: 2026-09-25 (status qualified: see the parity note below).
 35 modules, ~9,500 lines, 29 capabilities advertised at Ruby parity.
+
+> **Parity is advertised-capability parity, not yet verified feature parity.**
+> The LSP test suite (`test/tooling/lsp/server/*`) spawns the *Ruby* server
+> (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
+> so nothing in CI drives `build/stage2/mtc lsp`.  Feature parity is the third
+> phase of the self-host plan (after `lower` dump parity and CLI behavior
+> parity); the first task there is a comparison harness that replays one request
+> corpus against both servers and diffs the responses — see
+> [self-host-plan.md](./self-host-plan.md#how-to-start-a-work-session-read-this-first).
+> Treat the per-feature claims below (hover 18/25, references, definition,
+> signature help, semantic tokens) as *self-host-side* results until that
+> harness exists.
 Hover coverage: 18/25 declaration types (up from 5/25).
 References: cross-file via workspace index.
 Definition: local variables supported.
