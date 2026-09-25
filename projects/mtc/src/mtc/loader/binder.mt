@@ -159,6 +159,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         structs = structs,
         unions = unions,
         value_types = value_types,
+        const_values = analysis.const_values,
         type_aliases = type_aliases,
         type_alias_types = type_alias_types,
         static_member_types = static_member_types,

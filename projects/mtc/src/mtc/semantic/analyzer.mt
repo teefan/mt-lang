@@ -81,6 +81,7 @@ public struct ModuleBinding:
     structs: map_mod.Map[str, span[FieldEntry]]
     unions: map_mod.Map[str, span[FieldEntry]]
     value_types: map_mod.Map[str, types.Type]
+    const_values: map_mod.Map[str, ptr[ast.Expr]]
     type_aliases: map_mod.Map[str, bool]
     type_alias_types: map_mod.Map[str, types.Type]
     static_member_types: map_mod.Map[str, bool]
@@ -235,6 +236,12 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     install_prelude_types(ref_of(ctx))
     declare_attributes(ref_of(ctx), source)
     var when_extra = expand_module_when(ref_of(ctx), source)
+    # Values and functions are declared before struct fields resolve: an array
+    # size in a struct field may name a module constant
+    # (`ground_ids: array[BodyId, MAX_GROUND_BODIES]`), and the type resolver
+    # folds it from `const_values`.
+    declare_values_and_functions(ref_of(ctx), source)
+    declare_values_and_functions_extra(ref_of(ctx), when_extra)
     collect_struct_fields(ref_of(ctx), source)
     collect_struct_fields_extra(ref_of(ctx), when_extra)
     check_attribute_applications(ref_of(ctx), source)
@@ -243,8 +250,6 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
     collect_interfaces(ref_of(ctx), source)
     register_event_methods(ref_of(ctx))
     register_task_methods(ref_of(ctx))
-    declare_values_and_functions(ref_of(ctx), source)
-    declare_values_and_functions_extra(ref_of(ctx), when_extra)
     check_functions(ref_of(ctx), source)
     check_extending_methods(ref_of(ctx), source)
     check_interface_conformances(ref_of(ctx), source)
@@ -1524,6 +1529,27 @@ function resolve_named(ctx: ref[Context], name: str, arguments: span[ast.TypeRef
                 return types.literal_int(folded.value)
             Option.none:
                 pass
+    # A module-qualified constant in type-argument position
+    # (`array[b3.BodyId, human.BONE_COUNT]`) folds through the import alias the
+    # same way a local constant does.
+    match name.find_byte('.'):
+        Option.some as dot:
+            let alias_name = name.slice(0, dot.value)
+            let member_name = name.slice(dot.value + 1, name.len - dot.value - 1)
+            let mod_ptr = ctx.import_aliases.get(alias_name)
+            if mod_ptr != null:
+                let target_module = unsafe: read(mod_ptr)
+                let binding_ptr = lookup_binding(ctx, target_module)
+                if binding_ptr != null:
+                    let value_ptr = unsafe: read(binding_ptr).const_values.get(member_name)
+                    if value_ptr != null:
+                        match const_eval_int_expr(ctx, unsafe: read(value_ptr)):
+                            Option.some as folded:
+                                return types.literal_int(folded.value)
+                            Option.none:
+                                pass
+        Option.none:
+            pass
     if name.find_byte('.').is_some():
         return types.Type.ty_error
     if ctx.suppressed_type_names.contains(name):
@@ -2627,8 +2653,12 @@ function check_match(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee: ptr
     # local and imported enums and variants, keyed by type name.
     match scrutinee_type_name(scrutinee_ty):
         Option.some as nm:
-            if ctx.match_case_names.contains(nm.value):
-                check_case_match(ctx, nm.value, arms, line, column)
+            # An imported type's case names come from its declaring module: a
+            # bare name shared with a local type (`Error` from std.raylib vs
+            # `pack.Error`) must not pick the wrong member list.
+            let owning_module = scrutinee_type_module(scrutinee_ty)
+            if match_case_names_for(ctx, owning_module, nm.value) != null:
+                check_case_match(ctx, owning_module, nm.value, arms, line, column)
                 return
         Option.none:
             pass
@@ -2657,8 +2687,27 @@ function scrutinee_type_name(t: types.Type) -> Option[str]:
             return Option[str].none
 
 
-function check_case_match(ctx: ref[Context], type_name: str, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
-    let namesp = ctx.match_case_names.get(type_name) else:
+## The module owning an imported scrutinee type ("" for a local one).
+function scrutinee_type_module(t: types.Type) -> str:
+    match t:
+        types.Type.ty_imported as im:
+            return im.module_name
+        _:
+            return ""
+
+
+## The member/arm-name table for `type_name` declared in `module_name` ("" =
+## the current module), or null when the type has no case table.
+function match_case_names_for(ctx: ref[Context], module_name: str, type_name: str) -> ptr[span[str]]?:
+    if module_name.len == 0 or module_name == ctx.module_name:
+        return ctx.match_case_names.get(type_name)
+    let binding_ptr = lookup_binding(ctx, module_name) else:
+        return null
+    return unsafe: read(binding_ptr).match_case_names.get(type_name)
+
+
+function check_case_match(ctx: ref[Context], module_name: str, type_name: str, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+    let namesp = match_case_names_for(ctx, module_name, type_name) else:
         return
     var covered = vec.Vec[str].create()
     var has_wild = false

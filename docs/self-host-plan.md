@@ -18,10 +18,10 @@ across 12 files, 0 failed** (measured 2026-09-25).
 `nullable_and_variant_test` fail on the self-host while the host builds all
 four — see §0j); every example that builds also matches the host's
 stdout+exit (sampled: `integration_test`, `reflection_advanced`,
-`language_baseline`, `event_stress_test`). **Vendored example families are not
-buildable yet**: the self-host rejects `examples/sdl3` (34 files),
-`examples/box2d` (30) and `examples/box3d` (14) with three analyzer false
-positives the host accepts (§0j). **`mtc lint` has 36 rules plus `--fix`
+`language_baseline`, `event_stress_test`). **The vendored example families now
+build and run at parity**: `box2d/drop`, `box2d/explosion`, `box3d/ragdoll` and
+`box3d/box_stack` produce byte-identical stdout under both compilers, and
+`examples/sdl3` files `check` clean (§0j items 5–13). **`mtc lint` has 36 rules plus `--fix`
 (10 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
 config**. Bootstrap via `tools/bootstrap.sh`.
 Test runner now builds in-process (no Ruby delegation).  Vendored library
@@ -126,31 +126,44 @@ inventory of the remaining self-host gaps instead of the estimates in §0i.
    same (`enum_member_reference_c_name`).
 
 State of the vendored families after 5–9: `examples/sdl3` files `check` clean;
-`examples/box3d` (`ragdoll`) `check`s clean and now compiles to the point of two
-*new* codegen gaps; `examples/box2d` is down to 1–3 analyzer errors per file.
+`examples/box3d` (`ragdoll`) `check`s clean; `examples/box2d` was down to 1–3
+analyzer errors per file, all cleared by 10–13 below.
 
-### Newly exposed gaps (previously masked by the false positives above)
+10. **`in` foreign parameters pass an address.**  `foreign function create_world(in
+   world_def: WorldDef) = c.b3CreateWorld` takes a `const WorldDef*`; the
+   argument lowering only handled `out`/`inout` (and `in` only when a boundary
+   type was declared), so the value was passed where a pointer was expected.
+   A plain `in` parameter now takes the argument's address unless it is already
+   pointer-like (hoisting rvalues into a temp, as `materialize_foreign_address_arg`
+   already did).
+11. **Struct equality for raw-binding structs.**  `s_drag_body != b3.b3_nullBodyId`
+   on a `b3BodyId` emitted a raw `!=` — invalid C — because the backend builds
+   `mt_struct_eq_<T>` helpers from `Program.structs` and raw modules never lower
+   their declarations there (the host falls back to the `Types::Struct` object).
+   The lowering now synthesizes the field-wise helper from the analyzer's field
+   list (`is_equality_struct_type` / `ensure_equality_helper_for_struct`,
+   `:str` via `mt_str_equal`, nested raw structs recursing) and rewrites the
+   comparison; unsupported field types leave the comparison untouched rather than
+   emitting invalid C.
+12. **Constants in type-argument position.**  A `const` used as an array size
+   reported `unknown type`: struct fields resolve before `const_values` is
+   filled, and `ModuleBinding` did not export constants.  Values/functions are
+   now declared *before* struct fields resolve, and the binder exports
+   `const_values` so a module-qualified constant (`human.BONE_COUNT`) folds
+   through its import alias.  This was the last analyzer blocker for
+   `examples/box2d` (15 files).
+13. **Match exhaustiveness is module-aware.**  `match error:` on `pack.Error`
+   reported the *local* `Error` enum's members as missing when the two share a
+   bare name; the check now reads the case table from the scrutinee type's
+   declaring module (`match_case_names_for`).
 
-`examples/box3d/ragdoll.mt` now passes the analyzer and compiles to these, all
-pre-existing and independent of the extending/enum fixes:
-
-1. **Struct comparison has no runtime helper.**  `if s_drag_body !=
-   b3.b3_nullBodyId` (two `b3BodyId` structs) emits a raw `!=`; the host emits
-   `mt_struct_eq_b3BodyId(a, b)`.  The self-host needs the per-type struct
-   equality helper (and the `==` negation) for opaque/handle structs.
-2. **Opaque handle structs passed by value**: `incompatible type for argument 1
-   of b3CreateWorld` / `argument 2 of b3CreateBody` — the argument type recorded
-   for the raw `std.c.*` function does not match the header's parameter.
-3. **A local `const` used as an array size inside a *struct field*** still reports
-   `unknown type MAX_GROUND_BODIES`: `declare_values_and_functions` (which fills
-   `const_values`) runs *after* `collect_struct_fields`, so struct field types
-   only fold constants declared before them.  Function bodies are unaffected.
-4. **An imported `const` in type-argument position** (`human.BONE_COUNT` as an
-   array size, plus the three sdl3 `MAX_*` cases): the type resolver only looks
-   at the current module's constants; `ModuleBinding` does not export
-   `const_values` yet.
-
-### Former blocker for the vendored example families — FIXED (item 7)
+With 10–13 the vendored families build and run at parity.  Verified by running
+both compilers' binaries and diffing: `box2d/drop` (exit 0, 49 lines),
+`box2d/explosion` (0, 49), `box3d/ragdoll` (0, 52), `box3d/box_stack` (0, 52) —
+stdout byte-identical in every case.  (`box2d/pyramid` and `box3d/pyramid` fail
+under *both* compilers.)  Note for parallel sweeps: two concurrent builds of the
+same project race on the vendored archives (`tmp/vendored-*/lib*.a` reports
+"file truncated"), in either compiler — run vendored-family builds serially.
 
 `examples/box2d` (30 files) and `examples/box3d` (14) failed on
 `extending <alias>.<Type>:` methods: `collect_extending_methods` keyed methods by
@@ -167,12 +180,13 @@ issues in "Newly exposed gaps").
 | --- | --- |
 | `tools/bootstrap.sh -j 16` | fixed point holds (`stage2.c == stage3.c`), self-test 12 files / 498 tests / 0 failed |
 | `build/dev/mtc build projects/stress` | builds; exit 242, empty stdout — identical to the host |
-| Language examples (15 top-level `.mt`) | **11 build**, 4 fail: `async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test` |
+| Language examples (15 top-level `.mt`) | **11 build**, 4 fail: `async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test` (all four build under the host — item 8 of the next list) |
 | `test/mt` under the self-host | 60 files run (315 tests pass); **7 fail to build** — the 6 pre-existing ones plus `blackboard_test`, newly enabled by the parse fix, which hits the same generic-instance family (`std_blackboard_find_entry__error` receiver type) |
 | `rake "cli:parity"` | 61 cases: 21 match / 39 differ / 1 pending; diff set unchanged by the refactor work |
 | `sexpr_parity lex` | 694/694 byte-identical |
 | `sexpr_parity parse` | 690 comparable, **0 differ**, 4 host-side rejections |
-| `sexpr_parity lower` | 38 match / 585 differ / 52 host-rejected / **19 self-rejected** (start of session: 35 / 520 / 53 / 86) |
+| `sexpr_parity lower` | 38 match / 603 differ / 52 host-rejected / **1 self-rejected** (start of session: 35 / 520 / 53 / 86) |
+| Vendored families (sample) | `box2d/drop`, `box2d/explosion`, `box3d/ragdoll`, `box3d/box_stack` build and run with byte-identical stdout in both compilers |
 
 ### Why the `lower` sweep's "HOST-FAIL" bucket is not a host bug
 
@@ -188,16 +202,14 @@ foreign boundary mapping `ptr[Color] as const_ptr[void]`
 (`image_processing.mt`).  The last three belong to the §5.2 family and are
 independent of the self-host work.
 
-### The remaining 19 self-rejections
+### The remaining self-rejections
 
-Items 5–9 cleared 67 of the 86 files that failed the analyzer.  What is left is
-now dominated by one gap:
+Items 5–13 cleared 85 of the 86 files that previously failed the analyzer; the
+corpus is down to **one**:
 
 | Count | Diagnostic | Cause |
 | --- | --- | --- |
-| 15 | `unknown type BONE_COUNT` / `MAX_BODIES` / `PLANK_COUNT` / `MAX_COLS` / … | a `const` used as an array size in **type-argument position**: struct fields resolve before `const_values` is filled (local consts), and `ModuleBinding` does not export `const_values` (imported consts) — see "Newly exposed gaps" 3–4; this is the last analyzer blocker for `examples/box2d` |
-| 2 | `match on Error is missing cases: missing_file_type, …` | foreign-enum exhaustiveness (`projects/tetris`) |
-| 2 | `cannot assign int to ubyte` and one further case | contextual literal typing (roadmap #12) reaching C |
+| 1 | `cannot assign int to ubyte` (`examples/sdl3/renderer/read_pixels.mt`) | `let shade: ubyte = if average > 50: 0xFF else: 0x00` — the branches are literals that fit, but the self-host's inference has no expected-type propagation into an `if` expression, so the value is typed `int`.  Same root cause as the 213 first-differences below (roadmap #12), here as a hard false error |
 
 ### `lower` differences, by first difference
 
@@ -210,22 +222,19 @@ now dominated by one gap:
 
 ### Next, ranked by files moved per unit of work
 
-1. **`const` in type-argument position** (15 files, and the last analyzer blocker
-   for `examples/box2d`): fill `const_values` before struct fields resolve, and
-   export constants in `ModuleBinding` so imported array sizes fold.
-2. Contextual integer-literal typing (roadmap #12): 213 first-differences *and*
-   a hard false error (`cannot assign int to ubyte`).
-3. `:path` attribution for imported/inlined IR nodes (145 files).
-4. Re-export module canonicalization (`:module_name` + linkage names).
-5. Opaque declarations (roadmap #6) and const folding of enum members (#7).
-6. Foreign-enum exhaustiveness (2 files).
-7. The codegen gaps newly exposed by the box3d build: struct equality helper
-   (`mt_struct_eq_<T>`) and opaque handle structs passed by value.
-8. The four top-level example build bugs: two `field 'local_*' has incomplete
-   type` (value-optional/RESULT frame field declared before its struct), one
-   `unknown type name 'mt_span_error'` (a `span` of the permissive error type
-   reaching C) and one recursive variant payload mismatch
-   (`incompatible type for argument 1 of eval_expr`).
+1. Contextual integer-literal typing (roadmap #12): 213 first-differences *and*
+   the last hard self-rejection (`let shade: ubyte = if ...: 0xFF else: 0x00`).
+   The analyzer needs expected-type propagation into `if`/`match` expressions.
+2. `:path` attribution for imported/inlined IR nodes (145 files).
+3. Re-export module canonicalization (`:module_name` + linkage names).
+4. Opaque declarations (roadmap #6) and const folding of enum members (#7).
+5. The four top-level example build bugs, which are now the largest *hard*
+   failures left (they also account for 6 of the 7 `test/mt` build failures and
+   the four `test/mt` files still failing on generic instances): two
+   `field 'local_*' has incomplete type` (value-optional/RESULT frame field
+   emitted before the struct it embeds), one `unknown type name 'mt_span_error'`
+   (a `span` of the permissive error type reaching C) and one recursive variant
+   payload mismatch (`incompatible type for argument 1 of eval_expr`).
 
 ---
 
