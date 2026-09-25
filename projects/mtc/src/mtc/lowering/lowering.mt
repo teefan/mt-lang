@@ -8760,6 +8760,28 @@ function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args
                 Option.none:
                     pass
     var fields = vec.Vec[ir.AggregateField].create()
+    # An alias-qualified construction (`rl.Color(r = 200)` with
+    # `type Color = c.Color` in std.raylib) declares its fields in the alias's
+    # *target* module, so the per-field type lookup must follow the alias chain —
+    # otherwise integer literals are never re-typed against the field type and
+    # the IR keeps the analyzer's default `int`.
+    var field_struct_name = struct_name
+    var field_source_module = source_module
+    if source_module.len > 0:
+        match resolve_single_imported_type(ctx, source_module, struct_name):
+            Option.some as aliased:
+                match aliased.value:
+                    types.Type.ty_imported as aim:
+                        field_struct_name = aim.name
+                        field_source_module = aim.module_name
+                    types.Type.ty_named as anm:
+                        field_struct_name = anm.name
+                        if anm.module_name.len > 0:
+                            field_source_module = anm.module_name
+                    _:
+                        pass
+            Option.none:
+                pass
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument
@@ -8771,7 +8793,7 @@ function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args
         # Re-type an integer literal whose value fits the field type, mirroring
         # the host: an integer literal passed to a `ptr_uint`/`ubyte` field is
         # lowered with the field's type rather than the analyzer's default `int`.
-        match find_struct_field_type(ctx, struct_name, source_module, field_name):
+        match find_struct_field_type(ctx, field_struct_name, field_source_module, field_name):
             Option.some as field_ty:
                 let fty = field_ty.value
                 value = int_literal_to_context_type(arg.arg_value, fty, value)
@@ -18911,7 +18933,16 @@ function try_const_struct_literal_ir(ctx: ref[LowerCtx], struct_name: str, args:
             return Option[ptr[ir.Expr]].none
         match try_const_value_ir(ctx, arg.arg_value, env):
             Option.some as fv:
-                fields.push(ir.AggregateField(name = field_name, value = fv.value))
+                # Folded constants must still carry the *field's* type: the
+                # folder types an integer literal `int`, while the host renders
+                # e.g. `LIGHTGRAY`'s fields as `ubyte`.
+                var field_value = fv.value
+                match find_struct_field_type(ctx, struct_name, ctx.module_name, field_name):
+                    Option.some as field_ty:
+                        field_value = int_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
+                    Option.none:
+                        pass
+                fields.push(ir.AggregateField(name = field_name, value = field_value))
             Option.none:
                 return Option[ptr[ir.Expr]].none
         i += 1

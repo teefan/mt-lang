@@ -59,8 +59,8 @@ attribution 145, opaques, re-export module canonicalization) rather than the
 proc/closure work, which touches at most the 27 corpus files that use proc
 literals (§0j).
 
-Last updated: 2026-09-25 (stress parity, parse parity, measured status sweep —
-see §0j)
+Last updated: 2026-09-25 (stress parity, parse parity, vendored-family parity,
+contextual literal typing; remaining work and approach in §0j)
 
 ---
 
@@ -157,7 +157,18 @@ analyzer errors per file, all cleared by 10–13 below.
    bare name; the check now reads the case table from the scrutinee type's
    declaring module (`match_case_names_for`).
 
-With 10–13 the vendored families build and run at parity.  Verified by running
+14. **Contextual literal typing** (the last hard rejection and the largest dump
+   difference): an integer literal now takes the *contextual* type in every place
+   the host gives it one — aggregate-literal fields resolved through a type alias
+   (`rl.Color(r = 200)` with `type Color = c.Color`), constant initializers
+   (folded `LIGHTGLOW`-style struct constants keep `ubyte` fields instead of
+   `int`), and numeric-literal-valued `if`/`match` branches assigned to a
+   narrower numeric type (`let shade: ubyte = if c: 0xFF else: 0x00`, which used
+   to be a false "cannot assign int to ubyte").  Concretely: the per-field lookup
+   follows the alias chain, the const-folding literal builder re-types against
+   the field, and `types_compatible` accepts a literal-valued branch chain.
+
+With 10–14 the vendored families build and run at parity.  Verified by running
 both compilers' binaries and diffing: `box2d/drop` (exit 0, 49 lines),
 `box2d/explosion` (0, 49), `box3d/ragdoll` (0, 52), `box3d/box_stack` (0, 52) —
 stdout byte-identical in every case.  (`box2d/pyramid` and `box3d/pyramid` fail
@@ -185,7 +196,7 @@ issues in "Newly exposed gaps").
 | `rake "cli:parity"` | 61 cases: 21 match / 39 differ / 1 pending; diff set unchanged by the refactor work |
 | `sexpr_parity lex` | 694/694 byte-identical |
 | `sexpr_parity parse` | 690 comparable, **0 differ**, 4 host-side rejections |
-| `sexpr_parity lower` | 38 match / 603 differ / 52 host-rejected / **1 self-rejected** (start of session: 35 / 520 / 53 / 86) |
+| `sexpr_parity lower` | 38 match / 604 differ / 52 host-rejected / **0 self-rejected** — every file the host lowers, the self-host lowers too (start of session: 35 / 520 / 53 / 86) |
 | Vendored families (sample) | `box2d/drop`, `box2d/explosion`, `box3d/ragdoll`, `box3d/box_stack` build and run with byte-identical stdout in both compilers |
 
 ### Why the `lower` sweep's "HOST-FAIL" bucket is not a host bug
@@ -202,39 +213,44 @@ foreign boundary mapping `ptr[Color] as const_ptr[void]`
 (`image_processing.mt`).  The last three belong to the §5.2 family and are
 independent of the self-host work.
 
-### The remaining self-rejections
+### Remaining work (planned for the next session)
 
-Items 5–13 cleared 85 of the 86 files that previously failed the analyzer; the
-corpus is down to **one**:
+There are **no self-rejections left**: the self-host analyzes and lowers all 694
+corpus files the host can.  What remains is *dump fidelity* (604 files differ
+somewhere) plus the hard build failures in four top-level examples and seven
+`test/mt` files.  Ranked, with the approach for each:
 
-| Count | Diagnostic | Cause |
-| --- | --- | --- |
-| 1 | `cannot assign int to ubyte` (`examples/sdl3/renderer/read_pixels.mt`) | `let shade: ubyte = if average > 50: 0xFF else: 0x00` — the branches are literals that fit, but the self-host's inference has no expected-type propagation into an `if` expression, so the value is typed `int`.  Same root cause as the 213 first-differences below (roadmap #12), here as a hard false error |
+| # | Item | Evidence | Approach |
+| --- | --- | --- | --- |
+| 1 | **Raw-module linkage naming** (`Color_is_equal` → `std_raylib_Color_is_equal`) | the most common first difference across `examples/raylib` (4/10 sampled) | the host derives extension-method linkage from `c_type_name(receiver)`, which is *bare* for `std.c.*` structs; the self-host always prefixes with the defining module.  Thread the resolved receiver type (not just its name) into `method_link_name`/`method_c_name` and skip the prefix for raw-module receivers, for both definitions and calls.  Also resolves the `:module_name "std.raylib"` vs `"std.c.raylib"` type attribution it comes with |
+| 2 | **`IR::Stmt` `:path` attribution** | 3/10 sampled files (every file that inlines a `std.mem.heap` body) | IR nodes lowered from an imported/inlined body must carry that module's `source_path`; the statement lowering takes the path from `ctx.analysis.source_path` for the *current* module.  Track the owning analysis path per lowered body (or set `ctx` when lowering inlined bodies) |
+| 3 | **Struct/declaration ordering** | `ClockSync` vs `std_net_recv_impl_frame` (std/net/clock.mt) | mirror the host's decl ordering (base decls before specializations, per-module order) in the C backend's sort |
+| 4 | **Const folding shape** | `IR::IntegerLiteral` vs `IR::Cast` (`test/mt/errno_test.mt`) | fold `T<-literal` casts in constant position like the host instead of emitting the cast node |
+| 5 | **Include set** (`math_bindgen.h` vs `raymath.h`, box2d/drop.mt) | 1/10 sampled | the binding's include directives must match the host's registry (std.math → raymath) |
+| 6 | **Opaques**, **enum-member const folding**, **variant-match goto** | 10 / 4 / 1 files | roadmap #6/#7/#13, unchanged |
+| 7 | **Four example build failures** (`async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test`) and the 7 `test/mt` build failures | verified failing with the pre-change compiler too | two are `field 'local_*' has incomplete type` — a value-optional/RESULT frame field is emitted before the struct it embeds; one is `unknown type name 'mt_span_error'` (a `span` of the permissive error type reaching C — the analyzer should reject or type it concretely); one is a recursive variant payload mismatch (`incompatible type for argument 1 of eval_expr`); the `test/mt` seven are all the generic-instance naming/typing family (`std_goap_find_node_index__error__error__error`, `std_blackboard_find_entry__error` given a `Blackboard_bool *`, `Tree[<runner>Context]`) |
+| 8 | **CLI message parity** | `rake "cli:parity"` 39/61 differ, set unchanged all session | message text, stdout-vs-stderr channel and argument-precedence differences (e.g. `std show` prints to stdout instead of stderr; `build --bogus` reports "accepts a single source path" instead of "unknown build option") |
+| 9 | **Host-side bugs (report, not fix here)** | 3 files | `double` literal rejected where `float` is expected (`custom_frame_control.mt`), inline foreign call needing temporary storage (`unicode_emojis.mt`), unsupported foreign boundary mapping (`image_processing.mt`); plus the `inline for` const-folding quirk noted in the stress doc |
 
-### `lower` differences, by first difference
+### `lower` differences, by first difference (after item 14)
 
-| Files | First difference |
+| Files (sampled) | First difference |
 | --- | --- |
-| 213 | contextual integer-literal typing: a literal stored into a `ubyte`/`ptr_uint` field stays `int` (roadmap §0i #12) |
-| 145 | `:path` attribution: the host attributes IR nodes lowered from an imported/inlined body to that module's file, the self emits `:path nil` |
-| ~150 | remainder — enum members emitted as `IR::Name` instead of a folded literal, generic-instance/struct ordering, `:module_name` of re-exported types (`std.raylib` vs canonical `std.c.raylib`, which also changes linkage names like `std_raylib_Color_is_equal` vs `Color_is_equal`), opaque declarations (9) |
-| 8 | proc/closure lowering — note only **27 files in the whole corpus contain a proc literal**, so §0i's "overwhelmingly proc/closure" framing was misleading: the diff set is dominated by the mechanical items above |
+| 4/10 | raw-module extension linkage naming (`Color_is_equal` vs `std_raylib_Color_is_equal`) and the `:module_name` attribution it comes with — item 1 above |
+| 3/10 | `:path` attribution: IR nodes lowered from an imported/inlined body carry `:path nil` where the host keeps the defining module's path — item 2 |
+| 1/10 each | declaration ordering, const-folding shape (`IR::IntegerLiteral` vs `IR::Cast`), include set — items 3–5 |
+| remainder | opaques (10), enum-member const folding (4), variant-match goto (1), plus cases beyond each file's first difference |
+
+Contextual literal typing (the previous dominant category, 213 files) now matches
+byte-for-byte: one raylib example went from 151 differing regions to 47, and none
+of the remainder is literal typing.
 
 ### Next, ranked by files moved per unit of work
 
-1. Contextual integer-literal typing (roadmap #12): 213 first-differences *and*
-   the last hard self-rejection (`let shade: ubyte = if ...: 0xFF else: 0x00`).
-   The analyzer needs expected-type propagation into `if`/`match` expressions.
-2. `:path` attribution for imported/inlined IR nodes (145 files).
-3. Re-export module canonicalization (`:module_name` + linkage names).
-4. Opaque declarations (roadmap #6) and const folding of enum members (#7).
-5. The four top-level example build bugs, which are now the largest *hard*
-   failures left (they also account for 6 of the 7 `test/mt` build failures and
-   the four `test/mt` files still failing on generic instances): two
-   `field 'local_*' has incomplete type` (value-optional/RESULT frame field
-   emitted before the struct it embeds), one `unknown type name 'mt_span_error'`
-   (a `span` of the permissive error type reaching C) and one recursive variant
-   payload mismatch (`incompatible type for argument 1 of eval_expr`).
+See the "Remaining work" table above: 1 (raw-module linkage naming) and 2
+(`:path` attribution) are the two levers that move most of the 604 differing
+files, and both are contained lowering/backend changes.  7 is the only *hard*
+failure family left (four examples + seven `test/mt` files).
 
 ---
 
@@ -312,16 +328,16 @@ failures; the tool warns when `--self` is stale.
 
 Priority: 2 is the last pervasive item; 4–13 are localized/mechanical.
 
-**Re-measured 2026-09-25 (§0j)**: the corpus is 694 files, 35 byte-identical,
-520 differing, 86 self-rejected (analyzer false positives, not lowering) and 53
-host-rejected.  By *first* difference the ranking is 12 (213 files) ≫ 8 items
-above ≫ 145 files on `:path` attribution (not listed here: IR nodes lowered from
-an imported body carry `:path nil` where the host keeps the defining module's
-path) ≫ 9/6/7 (opaques, const folding) — proc/closure lowering (§0i item 2)
-appears in only 8 files' first difference, consistent with just **27 corpus files
-containing a proc literal at all**.  The "priority: 2 first" recommendation
-should therefore be revisited in favour of item 12, `:path` attribution and
-re-export module canonicalization.
+**Re-measured 2026-09-25 (§0j)**: the corpus is 694 files; the self-host now
+lowers **every file the host lowers** (0 self-rejections), 38 byte-identical and
+604 differing.  Item 12 (contextual literal typing) is **done** — it was the
+largest category at 213 files.  The live ranking and the approach for each
+remaining item are in §0j's "Remaining work" table (raw-module linkage naming,
+`:path` attribution, declaration ordering, const-folding shape, include set,
+opaques/const folding, then the hard example/`test/mt` build failures).  Note
+that proc/closure lowering (item 2 above) appears in only 8 files' first
+difference, consistent with just **27 corpus files containing a proc literal**, so
+it is not the pervasive blocker this list implies.
 
 ---
 

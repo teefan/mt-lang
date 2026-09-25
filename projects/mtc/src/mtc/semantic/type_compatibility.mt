@@ -36,6 +36,21 @@ public function is_numeric_literal_expr(ep: ptr[ast.Expr]?) -> bool:
                 return false
 
 
+## True when `ep` is a numeric literal, or an `if`/`match` expression whose
+## branches are all numeric literals.  The host types such branches with the
+## expected type (`let shade: ubyte = if c: 0xFF else: 0x00`), so a
+## literal-valued branch chain is compatible with any numeric target.
+public function is_numeric_literal_valued_expr(ep: ptr[ast.Expr]?) -> bool:
+    let p = ep else:
+        return false
+    unsafe:
+        match read(p):
+            ast.Expr.expr_if as iff:
+                return is_numeric_literal_valued_expr(iff.then_expr) and is_numeric_literal_valued_expr(iff.else_expr)
+            _:
+                return is_numeric_literal_expr(p)
+
+
 ## Returns true when a value of `actual` type is assignable to `expected`.
 ## `source_expr` gates numeric-literal widening: when non-null and a numeric
 ## literal, the literal fits any numeric or char target.  Pass null when the
@@ -43,8 +58,9 @@ public function is_numeric_literal_expr(ep: ptr[ast.Expr]?) -> bool:
 ##
 ## Rules are checked in order; the first match wins.
 public function types_compatible(expected: types.Type, actual: types.Type, source_expr: ptr[ast.Expr]?) -> bool:
-    # 1  Numeric-literal sources fit into any numeric / char target.
-    if source_expr != null and is_numeric_literal_expr(source_expr):
+    # 1  Numeric-literal sources (including `if`/`match` chains of them) fit into
+    #    any numeric / char target.
+    if source_expr != null and is_numeric_literal_valued_expr(source_expr):
         let bare = types.unwrap_nullable(expected)
         if types.is_numeric(bare) or types.is_char_type(bare):
             return true
