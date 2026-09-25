@@ -280,6 +280,18 @@ namespace :sexpr do
   end
 end
 
+namespace :cli do
+  desc 'Compare self-host vs Ruby host CLI output (env: SELF, MAX_DIFFS, FILTER, QUIET)'
+  task :parity do
+    cmd = ['ruby', 'tools/cli_parity.rb']
+    cmd.concat(['--self', ENV['SELF']]) if ENV['SELF']
+    cmd.concat(['--max-diffs', ENV['MAX_DIFFS']]) if ENV['MAX_DIFFS']
+    cmd.concat(['--filter', ENV['FILTER']]) if ENV['FILTER']
+    cmd << '--quiet' if ENV['QUIET']
+    sh(*cmd)
+  end
+end
+
 namespace :imported_bindings do
   desc 'Regenerate all checked-in imported binding modules'
   task all: IMPORTED_BINDINGS.task_names
