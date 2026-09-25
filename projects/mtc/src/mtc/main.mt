@@ -484,6 +484,8 @@ function parse_command(file_path: str, sexpr: bool) -> int:
 function check_command(args: span[str]) -> int:
     var roots = vec.Vec[str].create()
     defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
     var input_paths = vec.Vec[str].create()
     defer: input_paths.release()
     var platform = resolver.Platform.linux
@@ -589,6 +591,12 @@ function check_command(args: span[str]) -> int:
         let effective = effective_source_path(source_path, ref_of(file_roots), ref_of(entry_path_owner), ref_of(source_root_owner)) else:
             continue
 
+        # Ruby's `roots_for_path` always appends the discovered project root, so
+        # `mtc check examples/x.mt` resolves `std.*` without an explicit `-I`.
+        # The source's own directory stays the last-resort root for a lone file
+        # that lives outside any project (adding it up front would shadow the
+        # project root, since roots are matched longest-first).
+        discover_project_root(effective, ref_of(file_roots), ref_of(owned_roots))
         if file_roots.is_empty():
             file_roots.push(path_ops.dirname(effective))
 

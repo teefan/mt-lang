@@ -261,6 +261,7 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
     var uses_tracy = false
     var uses_cjson = false
     var uses_box2d = false
+    var uses_box3d = false
     var uses_sdl3 = false
     var uses_flecs = false
     var uses_pcre2 = false
@@ -289,6 +290,8 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
             uses_cjson = true
         if analysis.module_name == "std.c.box2d":
             uses_box2d = true
+        if analysis.module_name == "std.c.box3d":
+            uses_box3d = true
         if analysis.module_name == "std.c.sdl3":
             uses_sdl3 = true
         if analysis.module_name == "std.c.flecs":
@@ -366,6 +369,12 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
         defer: box2d_include.release()
         if box2d_include.len() > 0:
             result.push(string.String.from_str(j2("-I", box2d_include.as_str())))
+
+    if uses_box3d:
+        var box3d_include = vendored_tree_path(roots, "box3d-upstream/include")
+        defer: box3d_include.release()
+        if box3d_include.len() > 0:
+            result.push(string.String.from_str(j2("-I", box3d_include.as_str())))
 
     if uses_sdl3:
         var sdl3_include = vendored_tree_path(roots, "sdl3-upstream/include")
@@ -504,6 +513,13 @@ function prepare_vendored_libraries(program: loader.Program, roots: span[str]) -
 
     if uses_binding_module(program, "std.c.box2d"):
         match prepare_vendored_box2d(roots):
+            Result.failure as failure:
+                return Result[bool, string.String].failure(error = failure.error)
+            Result.success:
+                pass
+
+    if uses_binding_module(program, "std.c.box3d"):
+        match prepare_vendored_box3d(roots):
             Result.failure as failure:
                 return Result[bool, string.String].failure(error = failure.error)
             Result.success:
@@ -906,6 +922,75 @@ function prepare_vendored_box2d(roots: span[str]) -> Result[bool, string.String]
     return Result[bool, string.String].success(value = true)
 
 
+## Build the vendored Box3D static library from third_party/box3d-upstream via
+## CMake + Ninja.  Produces tmp/vendored-box3d-prefix/lib/libbox3d.a.
+function prepare_vendored_box3d(roots: span[str]) -> Result[bool, string.String]:
+    let root = vendored_source_root(roots, "box3d-upstream") else:
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored Box3D source not found: the box3d binding needs third_party/box3d-upstream to build libbox3d"
+        ))
+
+    var prefix = path_ops.join(root, "tmp/vendored-box3d-prefix")
+    defer: prefix.release()
+    var archive = path_ops.join(prefix.as_str(), "lib/libbox3d.a")
+    defer: archive.release()
+    if fs.is_file(archive.as_str()):
+        return Result[bool, string.String].success(value = true)
+
+    var source_dir = path_ops.join(root, "third_party/box3d-upstream")
+    defer: source_dir.release()
+    var build_dir = path_ops.join(root, "tmp/vendored-box3d")
+    defer: build_dir.release()
+    var prefix_define = string.String.from_str("-DCMAKE_INSTALL_PREFIX=")
+    prefix_define.append(prefix.as_str())
+    defer: prefix_define.release()
+
+    var configure = vec.Vec[str].create()
+    defer: configure.release()
+    configure.push("cmake")
+    configure.push("-S")
+    configure.push(source_dir.as_str())
+    configure.push("-B")
+    configure.push(build_dir.as_str())
+    configure.push("-G")
+    configure.push("Ninja")
+    configure.push(prefix_define.as_str())
+    configure.push("-DCMAKE_BUILD_TYPE=Release")
+    configure.push("-DCMAKE_POSITION_INDEPENDENT_CODE=ON")
+    configure.push("-DBUILD_SHARED_LIBS=OFF")
+    configure.push("-DBOX3D_SAMPLES=OFF")
+    configure.push("-DBOX3D_BENCHMARKS=OFF")
+    configure.push("-DBOX3D_DOCS=OFF")
+    configure.push("-DBOX3D_PROFILE=OFF")
+    configure.push("-DBOX3D_VALIDATE=OFF")
+    configure.push("-DBOX3D_UNIT_TESTS=OFF")
+    match run_build_tool(configure.as_span(), "vendored Box3D cmake configure"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    var build_cmd = vec.Vec[str].create()
+    defer: build_cmd.release()
+    build_cmd.push("cmake")
+    build_cmd.push("--build")
+    build_cmd.push(build_dir.as_str())
+    build_cmd.push("--target")
+    build_cmd.push("install")
+    match run_build_tool(build_cmd.as_span(), "vendored Box3D build"):
+        Result.failure as failure:
+            return Result[bool, string.String].failure(error = failure.error)
+        Result.success:
+            pass
+
+    if not fs.is_file(archive.as_str()):
+        return Result[bool, string.String].failure(error = string.String.from_str(
+            "vendored Box3D build did not produce lib/libbox3d.a"
+        ))
+
+    return Result[bool, string.String].success(value = true)
+
+
 ## Build the vendored SDL3 static library from third_party/sdl3-upstream via
 ## CMake + Ninja.  Produces tmp/vendored-sdl3-prefix/lib/libSDL3.a.
 function prepare_vendored_sdl3(roots: span[str]) -> Result[bool, string.String]:
@@ -1299,6 +1384,19 @@ function collect_vendored_link_flags(program: loader.Program, roots: span[str]) 
                 search_flag.append(lib_dir.as_str())
                 lib_dir.release()
                 result.push(search_flag)
+            Option.none:
+                pass
+
+    if uses_binding_module(program, "std.c.box3d"):
+        match vendored_source_root(roots, "box3d-upstream"):
+            Option.some as box3d_root:
+                var box3d_lib_dir = path_ops.join(box3d_root.value, "tmp/vendored-box3d-prefix/lib")
+                var box3d_lib_flag = string.String.from_str("-L")
+                box3d_lib_flag.append(box3d_lib_dir.as_str())
+                result.push(box3d_lib_flag)
+                result.push(string.String.from_str("-lbox3d"))
+                result.push(string.String.from_str("-lm"))
+                box3d_lib_dir.release()
             Option.none:
                 pass
 

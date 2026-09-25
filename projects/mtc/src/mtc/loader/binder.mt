@@ -128,7 +128,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 else:
                     private_type_aliases.set(ta.name, true)
             ast.Decl.decl_extending_block as ex:
-                export_methods(ref_of(member_keys), ref_of(method_sigs), ref_of(private_member_keys), ref_of(private_method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all)
+                export_methods(ref_of(member_keys), ref_of(method_sigs), ref_of(private_member_keys), ref_of(private_method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all, analysis.extending_canonical_names)
             ast.Decl.decl_interface as iface:
                 if exports_all or iface.visibility:
                     interfaces.set(iface.name, iface.interface_methods)
@@ -221,8 +221,14 @@ function export_arm_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: st
 ## method-call argument checks), keyed by the extended type name.  A method on a
 ## non-exported struct produces harmless dead keys (no importer can hold such a
 ## value), so only method visibility is gated.
-function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], private_member_keys: ref[map_mod.Map[str, bool]], private_method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], source_sigs: map_mod.Map[str, analyzer.FnSig], type_ref: ptr[ast.TypeRef], methods: span[ast.Method], exports_all: bool) -> void:
+function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], private_member_keys: ref[map_mod.Map[str, bool]], private_method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], source_sigs: map_mod.Map[str, analyzer.FnSig], type_ref: ptr[ast.TypeRef], methods: span[ast.Method], exports_all: bool, canonical_names: map_mod.Map[str, str]) -> void:
     let type_name = unsafe: analyzer.qname_to_str(read(type_ref).name)
+    # An alias-qualified target (`extending b3.Vec3:`) also exports its methods
+    # under the resolved type name, which is what importers' receivers resolve to.
+    var canonical = ""
+    let canonical_ptr = canonical_names.get(type_name)
+    if canonical_ptr != null:
+        canonical = unsafe: read(canonical_ptr)
     var i: ptr_uint = 0
     while i < methods.len:
         var method: ast.Method
@@ -237,4 +243,13 @@ function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: r
                 unsafe:
                     method_sigs.set(key, read(sig_ptr))
                     private_method_sigs.set(key, read(sig_ptr))
+            if canonical.len > 0:
+                let canonical_key = analyzer.method_key(canonical, method.name)
+                member_keys.set(canonical_key, true)
+                private_member_keys.set(canonical_key, true)
+                let canonical_sig_ptr = source_sigs.get(canonical_key)
+                if canonical_sig_ptr != null:
+                    unsafe:
+                        method_sigs.set(canonical_key, read(canonical_sig_ptr))
+                        private_method_sigs.set(canonical_key, read(canonical_sig_ptr))
         i += 1

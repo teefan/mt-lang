@@ -117,6 +117,7 @@ struct Context:
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
+    extending_canonical_names: map_mod.Map[str, str]
     type_params: map_mod.Map[str, span[ast.TypeParamConstraint]]
     # Names known to be generic type/value parameters in the current
     # declaration context (struct fields, `extending Type[T]` methods, foreign
@@ -173,6 +174,10 @@ public struct Analysis:
     field_attribute_applications: map_mod.Map[str, span[ast.AttributeApplication]]
     events: map_mod.Map[str, EventInfo]
     type_alias_types: map_mod.Map[str, types.Type]
+    # Literal extending-target name → resolved type name for alias-qualified
+    # blocks (`extending b3.Vec3:` → `b3Vec3`), so importers can resolve the
+    # methods by the name a receiver resolves to.
+    extending_canonical_names: map_mod.Map[str, str]
     # The module's source file path, propagated so lowering can emit `#line`
     # directives that map generated C back to the .mt source (debug builds).
     source_path: str
@@ -202,6 +207,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
         interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
+        extending_canonical_names = map_mod.Map[str, str].create(),
         type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
         suppressed_type_names = map_mod.Map[str, bool].create(),
         function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
@@ -273,6 +279,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         field_attribute_applications = build_field_attr_app_spans(ref_of(ctx)),
         events = ctx.event_types,
         type_alias_types = ctx.type_alias_types,
+        extending_canonical_names = ctx.extending_canonical_names,
         source_path = source_path,
     )
 
@@ -985,6 +992,47 @@ function resolve_field_entries_with_events(ctx: ref[Context], fields: span[ast.F
     return result.as_span()
 
 
+## The canonical name an `extending` block attaches to.  A receiver resolves
+## through its import alias and the target module's type-alias chain
+## (`extending b3.Vec3:` — with `type Vec3 = c.b3Vec3` in std.box3d — is a method
+## on the C struct `b3Vec3`), and call sites look methods up by that resolved
+## name.  Single-part targets (local types, builtins, local aliases) and
+## unresolvable qualifiers keep their literal name.
+function canonical_extending_base(ctx: ref[Context], type_name: ptr[ast.TypeRef]) -> str:
+    let literal = qname_to_str(unsafe: read(type_name).name)
+    let parts = unsafe: read(type_name).name.parts
+    if parts.len < 2:
+        return literal
+    let alias = unsafe: read(parts.data + 0)
+    let module_ptr = ctx.import_aliases.get(alias) else:
+        return literal
+    var target_module = unsafe: read(module_ptr)
+    var name = unsafe: read(parts.data + (parts.len - 1))
+    var depth: int = 0
+    while depth < 10:
+        depth += 1
+        let binding_ptr = lookup_binding(ctx, target_module) else:
+            break
+        let resolved_ptr = unsafe: read(binding_ptr).type_alias_types.get(name)
+        if resolved_ptr == null:
+            break
+        var moved = false
+        match unsafe: read(resolved_ptr):
+            types.Type.ty_imported as im:
+                name = im.name
+                target_module = im.module_name
+                moved = true
+            types.Type.ty_named as nn:
+                name = nn.name
+                target_module = nn.module_name
+                moved = true
+            _:
+                pass
+        if not moved:
+            break
+    return name
+
+
 ## Collect method names from `extending` blocks keyed as "TypeName.method", so
 ## member/method reads on locally-declared struct instances can distinguish a
 ## valid method from an unknown member.  A struct and its `extending` blocks
@@ -1001,6 +1049,11 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                 var base: str = ""
                 unsafe:
                     base = qname_to_str(read(ex.type_name).name)
+                # Alias-qualified targets also register under the resolved type
+                # name, which is what a call site's receiver resolves to.
+                let canonical = canonical_extending_base(ctx, ex.type_name)
+                if canonical != base:
+                    ctx.extending_canonical_names.set(base, canonical)
                 var j: ptr_uint = 0
                 while j < ex.methods.len:
                     var m: ast.Method
@@ -1008,10 +1061,17 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                         m = read(ex.methods.data + j)
                     let key = method_key(base, m.name)
                     ctx.method_keys.set(key, true)
+                    if canonical != base:
+                        ctx.method_keys.set(method_key(canonical, m.name), true)
                     enter_suppressed_extending_target(ctx, ex.type_name)
                     enter_type_params(ctx, m.type_params)
+                    let sig = build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, m.is_async)
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
-                        ctx.method_sigs.set(key, build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, m.is_async))
+                        ctx.method_sigs.set(key, sig)
+                    if canonical != base:
+                        let canonical_key = method_key(canonical, m.name)
+                        if not ctx.method_sigs.contains(canonical_key):
+                            ctx.method_sigs.set(canonical_key, sig)
                     ctx.type_params.clear()
                     ctx.suppressed_type_names.clear()
                     if m.type_params.len > 0:
@@ -4687,6 +4747,12 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
         if member == "with" or binding_has_member(binding, type_name, member):
             return types.Type.ty_error
 
+    # A method this module declares on the receiver's type (`extending
+    # b3.Vec3:` for a receiver that resolved to the C struct `b3Vec3`) lives in
+    # the current module's method keys, not in any imported binding.
+    if has_method(ctx, type_name, member):
+        return types.Type.ty_error
+
     # Follow a type alias to its source module when the member is not found
     # directly (e.g. `public type uv_run_mode = c.uv_run_mode` re-exports an
     # external enum whose members live in the source external module).
@@ -4722,6 +4788,11 @@ function alias_binding_has_member(ctx: ref[Context], module_name: str, type_name
         while binding_entries.next():
             let entry = binding_entries.current()
             let candidate = read(entry.value)
+            # A module that declares `extending <alias>.<Type>:` on an imported
+            # type registers the method under the *resolved* name (`b3Vec3`),
+            # which is exactly what this receiver resolved to.
+            if binding_has_member(candidate, type_name, member):
+                return true
             var alias_entries = candidate.type_alias_types.entries()
             while alias_entries.next():
                 let alias_entry = alias_entries.current()

@@ -101,22 +101,67 @@ inventory of the remaining self-host gaps instead of the estimates in §0i.
    const_ptr[b3DebugShape], ...)`) reported `unknown type b3DebugShape` — 14 of
    the `examples/box3d` failures.  All names are registered first, then aliases
    resolve.
+7. **`extending <alias>.<Type>:` attaches to the resolved type.**  `extending
+   b3.Vec3:` (with `type Vec3 = c.b3Vec3` in std.box3d) declares methods on the C
+   struct `b3Vec3`, which is the name a receiver resolves to at a call site.  The
+   analyzer now registers method keys and signatures under both the literal name
+   and the canonical one (`canonical_extending_base` follows the import alias and
+   the type-alias chain), the binder exports the canonical keys so *importing*
+   modules resolve them, the imported-member path consults the current module's
+   keys and any visible binding's canonical key, and the lowering emits the
+   definitions under the canonical name with the resolved receiver type.
+   Previously `examples/box3d/common.mt` and `examples/box2d/common.mt` reported
+   a dozen `unknown method b3Vec3.scale` / `b2Vec2.add` false positives each, and
+   the definitions that were emitted never matched the calls.
+8. **Union members and forward aliases aside, the box3d *build* recipe was
+   missing entirely**: `collect_binding_flags` / `prepare_vendored_libraries` /
+   `collect_vendored_link_flags` had no `box3d` entry, so the C compile failed on
+   `#include "box3d/box3d.h"`.  It now mirrors the box2d recipe (include path,
+   CMake static build into `tmp/vendored-box3d-prefix`, `-L…/lib -lbox3d -lm`).
+9. **Raw-module enum members in `match` arms.**  An arm like
+   `b3.BodyType.b3_staticBody` was emitted as the scoped constant
+   `std_c_box3d_b3BodyType_b3_staticBody`, which a raw module never defines; the
+   host uses the C header's bare enumerator (`b3_staticBody`) — mirroring its
+   `imported_value_c_name` raw-module rule.  Match-arm lowering now does the
+   same (`enum_member_reference_c_name`).
 
-### Remaining blocker for the vendored example families (diagnosed, not fixed)
+State of the vendored families after 5–9: `examples/sdl3` files `check` clean;
+`examples/box3d` (`ragdoll`) `check`s clean and now compiles to the point of two
+*new* codegen gaps; `examples/box2d` is down to 1–3 analyzer errors per file.
 
-After 5 and 6, `examples/box2d` (30 files) and `examples/box3d` (14) reduce to a
-single bug: **`extending <alias>.<Type>:` methods declared in the current module
-are not found**.  `collect_extending_methods` keys methods by the *literal*
-qualified name it read (`method_key("b2.Vec2", "length")`), while the call site
-resolves the receiver through the alias chain to the canonical type
-(`b2Vec2`, and `check_imported_member` looks for `b2Vec2.length` in the *source*
-module's binding — the extending block lives in the consumer module, which that
-path never consults).  Fix direction: canonicalize the extending target through
-the import alias and the type-alias chain at registration (mirroring how the
-receiver resolves), and let the imported-member path consult the current
-module's method keys for the canonical name.
+### Newly exposed gaps (previously masked by the false positives above)
 
-### Measured status (2026-09-25, committed tree)
+`examples/box3d/ragdoll.mt` now passes the analyzer and compiles to these, all
+pre-existing and independent of the extending/enum fixes:
+
+1. **Struct comparison has no runtime helper.**  `if s_drag_body !=
+   b3.b3_nullBodyId` (two `b3BodyId` structs) emits a raw `!=`; the host emits
+   `mt_struct_eq_b3BodyId(a, b)`.  The self-host needs the per-type struct
+   equality helper (and the `==` negation) for opaque/handle structs.
+2. **Opaque handle structs passed by value**: `incompatible type for argument 1
+   of b3CreateWorld` / `argument 2 of b3CreateBody` — the argument type recorded
+   for the raw `std.c.*` function does not match the header's parameter.
+3. **A local `const` used as an array size inside a *struct field*** still reports
+   `unknown type MAX_GROUND_BODIES`: `declare_values_and_functions` (which fills
+   `const_values`) runs *after* `collect_struct_fields`, so struct field types
+   only fold constants declared before them.  Function bodies are unaffected.
+4. **An imported `const` in type-argument position** (`human.BONE_COUNT` as an
+   array size, plus the three sdl3 `MAX_*` cases): the type resolver only looks
+   at the current module's constants; `ModuleBinding` does not export
+   `const_values` yet.
+
+### Former blocker for the vendored example families — FIXED (item 7)
+
+`examples/box2d` (30 files) and `examples/box3d` (14) failed on
+`extending <alias>.<Type>:` methods: `collect_extending_methods` keyed methods by
+the *literal* qualified name (`method_key("b2.Vec2", "length")`) while a call site
+resolved the receiver through the alias chain to the canonical type
+(`b2Vec2`, looked up in the *source* module's binding).  Item 7 fixed the
+registration, the export surface and the lookup; the families now get past the
+analyzer (`box3d/ragdoll.mt` `check`s clean, `box2d/*` is down to the const
+issues in "Newly exposed gaps").
+
+### Measured status (2026-09-25)
 
 | Gate | Result |
 | --- | --- |
@@ -127,7 +172,7 @@ module's method keys for the canonical name.
 | `rake "cli:parity"` | 61 cases: 21 match / 39 differ / 1 pending; diff set unchanged by the refactor work |
 | `sexpr_parity lex` | 694/694 byte-identical |
 | `sexpr_parity parse` | 690 comparable, **0 differ**, 4 host-side rejections |
-| `sexpr_parity lower` | 38 match / 554 differ / 52 host-rejected / 50 self-rejected (before items 5–6: 35 / 520 / 53 / 86) |
+| `sexpr_parity lower` | 38 match / 585 differ / 52 host-rejected / **19 self-rejected** (start of session: 35 / 520 / 53 / 86) |
 
 ### Why the `lower` sweep's "HOST-FAIL" bucket is not a host bug
 
@@ -143,19 +188,16 @@ foreign boundary mapping `ptr[Color] as const_ptr[void]`
 (`image_processing.mt`).  The last three belong to the §5.2 family and are
 independent of the self-host work.
 
-### The remaining 50 self-rejections
+### The remaining 19 self-rejections
 
-The union and alias fixes above cleared 36 of the 86 files that previously
-failed the analyzer.  What is left is dominated by one bug and a handful of
-type-visibility gaps:
+Items 5–9 cleared 67 of the 86 files that failed the analyzer.  What is left is
+now dominated by one gap:
 
 | Count | Diagnostic | Cause |
 | --- | --- | --- |
-| 30 | `unknown method b2Vec2.length` | the `extending <alias>.<Type>` bug below (`examples/box2d`) |
-| 14 | `unknown method b3Vec3.scale` (etc.) | same bug (`examples/box3d`) |
-| 3 | `unknown type MAX_COLS` / `SNAKE_CELLS_BYTES` / `MAX_PLAYER_COUNT` | an imported module *constant* used in type-argument position (`examples/sdl3/demo`) |
+| 15 | `unknown type BONE_COUNT` / `MAX_BODIES` / `PLANK_COUNT` / `MAX_COLS` / … | a `const` used as an array size in **type-argument position**: struct fields resolve before `const_values` is filled (local consts), and `ModuleBinding` does not export `const_values` (imported consts) — see "Newly exposed gaps" 3–4; this is the last analyzer blocker for `examples/box2d` |
 | 2 | `match on Error is missing cases: missing_file_type, …` | foreign-enum exhaustiveness (`projects/tetris`) |
-| 1 | `cannot assign int to ubyte` | `examples/sdl3/renderer/read_pixels.mt` — the same contextual literal typing as the 213 dump differences below, but here it is a hard false *error* |
+| 2 | `cannot assign int to ubyte` and one further case | contextual literal typing (roadmap #12) reaching C |
 
 ### `lower` differences, by first difference
 
@@ -168,18 +210,19 @@ type-visibility gaps:
 
 ### Next, ranked by files moved per unit of work
 
-1. **`extending <alias>.<Type>` methods** (44 files, plus it is the only thing
-   left before `examples/box2d` and `examples/box3d` can be built) — diagnosed
-   above.
+1. **`const` in type-argument position** (15 files, and the last analyzer blocker
+   for `examples/box2d`): fill `const_values` before struct fields resolve, and
+   export constants in `ModuleBinding` so imported array sizes fold.
 2. Contextual integer-literal typing (roadmap #12): 213 first-differences *and*
-   one hard false error (`cannot assign int to ubyte`).
+   a hard false error (`cannot assign int to ubyte`).
 3. `:path` attribution for imported/inlined IR nodes (145 files).
 4. Re-export module canonicalization (`:module_name` + linkage names).
 5. Opaque declarations (roadmap #6) and const folding of enum members (#7).
-6. Imported module constants in type-argument position and foreign-enum
-   exhaustiveness (the 5 remaining small self-rejections).
-7. The four example build bugs: two `field 'local_*' has incomplete type`
-   (value-optional/RESULT frame field declared before its struct), one
+6. Foreign-enum exhaustiveness (2 files).
+7. The codegen gaps newly exposed by the box3d build: struct equality helper
+   (`mt_struct_eq_<T>`) and opaque handle structs passed by value.
+8. The four top-level example build bugs: two `field 'local_*' has incomplete
+   type` (value-optional/RESULT frame field declared before its struct), one
    `unknown type name 'mt_span_error'` (a `span` of the permissive error type
    reaching C) and one recursive variant payload mismatch
    (`incompatible type for argument 1 of eval_expr`).

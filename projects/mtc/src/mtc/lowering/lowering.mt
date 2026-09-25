@@ -1818,6 +1818,27 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
     # are monomorphized by `lower_monomorphized_call` when concrete calls occur.
     if unsafe: read(type_ref_ptr).arguments.len > 0:
         return
+    # An alias-qualified target attaches to the *resolved* type: `extending
+    # b3.Vec3:` (with `type Vec3 = c.b3Vec3` in std.box3d) declares methods on the
+    # C struct `b3Vec3`, which is the name a call site derives from the receiver's
+    # resolved type.  Emitting them under the literal last segment instead would
+    # leave every call to an undeclared function.
+    var resolved_receiver: Option[types.Type] = Option[types.Type].none
+    if unsafe: read(type_ref_ptr).name.parts.len > 1:
+        let alias_name = unsafe: read(read(type_ref_ptr).name.parts.data + 0)
+        let mod_ptr = ctx.analysis.imports.get(alias_name)
+        if mod_ptr != null:
+            let target_module = unsafe: read(mod_ptr)
+            match resolve_single_imported_type(ctx, target_module, bare_name):
+                Option.some as resolved:
+                    match named_type_name(resolved.value):
+                        Option.some as resolved_name:
+                            bare_name = resolved_name.value
+                            resolved_receiver = Option[types.Type].some(value = resolved.value)
+                        Option.none:
+                            pass
+                Option.none:
+                    pass
     var mi: ptr_uint = 0
     while mi < methods.len:
         var m: ast.Method
@@ -1828,7 +1849,12 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
             mi += 1
             continue
         let c_name = method_link_name(ctx.module_name, bare_name, m.name, m.method_kind == ast.MethodKind.mk_static)
-        let receiver_ty = extending_receiver_type(ctx.module_name, bare_name)
+        var receiver_ty = extending_receiver_type(ctx.module_name, bare_name)
+        match resolved_receiver:
+            Option.some as resolved_ty:
+                receiver_ty = resolved_ty.value
+            Option.none:
+                pass
         # Async methods are lowered through the full CPS path, with the receiver
         # (`this`) as an implicit param — except static async methods, which have
         # no receiver.
@@ -14335,6 +14361,29 @@ function enum_source_module(ctx: ref[LowerCtx], ty: types.Type, default_module: 
         _:
             return default_module
 
+## The C name a match-arm reference to `Enum.member` uses.  A raw (external)
+## module's enum is the C header's enum, whose members are the bare enumerators
+## (the module emits no scoped constants), so the member name is used as-is;
+## mt-declared enums use the module-scoped constant
+## (`<module>_<Enum>_<member>`), mirroring Ruby's `imported_value_c_name`
+## raw-module rule.
+function enum_member_reference_c_name(ctx: ref[LowerCtx], enum_module: str, enum_name: str, member: str) -> str:
+    if enum_module.len > 0 and module_is_raw(ctx, enum_module):
+        return member
+    return naming.qualified_member_c_name(enum_module, enum_name, member)
+
+
+## True when `module_name`'s analysis is a raw (external) module.
+function module_is_raw(ctx: ref[LowerCtx], module_name: str) -> bool:
+    if module_name == ctx.module_name:
+        return is_raw_module(ctx.analysis.module_kind)
+    match find_imported_analysis(ctx, module_name):
+        Option.some as imported:
+            return is_raw_module(imported.value.module_kind)
+        Option.none:
+            return false
+
+
 function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
     # Save/restore locals so match-arm bindings (as name) and arm-body
     # locals don't leak into subsequent code or proc captures.
@@ -14414,7 +14463,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
             let member = match_member_name(pattern) else:
                 fatal(c"lowering: unsupported match pattern")
             let value = alloc_expr(ir.Expr.expr_name(
-                name = naming.qualified_member_c_name(enum_module, enum_name, member),
+                name = enum_member_reference_c_name(ctx, enum_module, enum_name, member),
                 ty = scrutinee_ty,
                 pointer = false,
             ))
@@ -14916,7 +14965,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
             match type_name:
                 Option.some as tn:
                     let value = alloc_expr(ir.Expr.expr_name(
-                        name = naming.qualified_member_c_name(enum_module, tn.value, member),
+                        name = enum_member_reference_c_name(ctx, enum_module, tn.value, member),
                         ty = ir_expr_type(scrutinee_expr),
                         pointer = false,
                     ))
