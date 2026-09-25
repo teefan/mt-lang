@@ -477,3 +477,24 @@ function test_emit_function_becomes_top_level() -> void:
     expect(text.contains_substring("fn hex_prefix"))
     ## The call resolves to the emitted function's linkage name.
     expect(text.contains_substring("return main_zero_meaning()"))
+
+
+# =============================================================================
+#  Format-string locals — the declared local must be visible to later
+#  interpolations (a missing binding made `f"#{s}"` format a str as an int).
+# =============================================================================
+
+@[test]
+function test_format_string_local_is_interpolated_as_str() -> void:
+    var source = <<-SRC
+        function render() -> str:
+            let hex = f"n=#{1:x}"
+            let combined = f"#{hex}"
+            return combined
+    SRC
+    var ir = lower_source(source)
+    defer: ir.release()
+    let text = ir.as_str()
+    ## The `str` local interpolates through the str append, not the int one.
+    expect(text.contains_substring("mt_format_append_str"))
+    expect(not text.contains_substring("mt_format_append_int"))

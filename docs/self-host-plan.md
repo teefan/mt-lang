@@ -1,8 +1,11 @@
 # Self-Host Plan
 
-> **Workstream status (self-host vs `projects/stress`)**: the remaining
-> blockers for building `projects/stress` with the self-host compiler, with
-> reproduction, verified root causes and fix locations, are tracked in
+> **Workstream status (self-host vs `projects/stress`)**: **DONE** — the
+> self-host compiler builds, links and runs `projects/stress` with output and
+> exit status identical to the Ruby host's build (exit 242, empty stdout).  The
+> root causes fixed on the way (task-root proc bridge, proc bodies inside async
+> functions, builtin vector constructors, format-string locals, `inline for`
+> reflection) plus reproduction and verification steps are recorded in
 > [self-host-stress-todo.md](./self-host-stress-todo.md).
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED. RAYLIB + LANGUAGE PARITY COMPLETE. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**

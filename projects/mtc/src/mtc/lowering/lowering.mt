@@ -5705,6 +5705,17 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
 ## capture procs use null env; capturing procs use a heap-allocated env struct
 ## with ref-counting.
 function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body_ptr: ptr[ast.Stmt], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let proc_ty = expr_type(ctx, ep)
+    var ret_ty = ctx.void_ty
+    if return_type != null:
+        ret_ty = resolve_type_ref(ctx, return_type)
+    return lower_proc_expression_typed(ctx, method_params, ret_ty, body_ptr, proc_ty)
+
+
+## Lower a proc expression whose signature is already resolved: `ret_ty` is the
+## invoke's C return type (the declared return type, or the proc type's own return
+## type for synthesized procs) and `proc_ty` the proc's function type.
+function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body_ptr: ptr[ast.Stmt], proc_ty: types.Type) -> ptr[ir.Expr]:
     ctx.proc_counter += 1
     let proc_id = ctx.proc_counter
     var id_buf = string.String.create()
@@ -5712,8 +5723,6 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
     id_buf.append("__proc_")
     fmt.append_ptr_uint(ref_of(id_buf), proc_id)
     let proc_prefix = id_buf.as_str()
-
-    let proc_ty = expr_type(ctx, ep)
 
     # Collect all in-scope locals as captures (excluding "this" receiver).
     let captures = collect_locals_for_capture(ctx, method_params)
@@ -5773,7 +5782,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
         ctx.pending_synthetic_functions.push(build_env_setup_fn(ctx, setup_c.as_str(), env_type_name, captures))
 
         # Build capturing invoke: unpacks env→locals, then body.
-        ctx.pending_synthetic_functions.push(build_capturing_invoke(ctx, method_params, return_type, body_ptr, invoke_str, env_type_name, captures))
+        ctx.pending_synthetic_functions.push(build_capturing_invoke(ctx, method_params, ret_ty, body_ptr, invoke_str, env_type_name, captures))
 
         # Build release: decrement ref_count, free if zero.
         ctx.pending_synthetic_functions.push(build_capturing_release(release_str, env_type_name, captures))
@@ -5801,7 +5810,7 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
         return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
 
     # No-capture path.
-    ctx.pending_synthetic_functions.push(build_proc_invoke_fn(ctx, method_params, return_type, body_ptr, invoke_str))
+    ctx.pending_synthetic_functions.push(build_proc_invoke_fn(ctx, method_params, ret_ty, body_ptr, invoke_str))
     ctx.pending_synthetic_functions.push(build_proc_noop_fn(retain_str))
     ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
 
@@ -5921,20 +5930,23 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
 
 ## Build an invoke function for a capturing proc: unpacks env struct fields into
 ## locals, then runs the body.
-function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt], invoke_c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
+function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body: ptr[ast.Stmt], invoke_c_name: str, env_type_name: str, captures: span[ProcCapture]) -> ir.Function:
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
     let saved_cps_ci = ctx.async_cps_active
     let saved_cps_ci_label = ctx.async_resume_return_label
     let saved_cps_ci_complete = ctx.async_complete_label
     let saved_cps_ci_result = ctx.async_result_c_name
+    let saved_ci_inside_async = ctx.inside_async
     # A proc is a synchronous closure: a literal inside an async function must not
     # inherit the caller's CPS state, or its body emits `__mt_frame->result` stores
-    # and `goto <caller>_resume_complete` labels that don't exist here.
+    # and `goto <caller>_resume_complete` labels that don't exist here.  Nor may it
+    # inherit `inside_async`, which wraps every returned value in a Task literal.
     ctx.async_cps_active = false
     ctx.async_resume_return_label = ""
     ctx.async_complete_label = ""
     ctx.async_result_c_name = ""
+    ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
 
@@ -5954,10 +5966,6 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
         params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = false))
         ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
         pi += 1
-
-    var ret_ty = ctx.void_ty
-    if return_type != null:
-        ret_ty = resolve_type_ref(ctx, return_type)
 
     # Build body: first cast env to typed pointer, then unpack captures.
     var body_stmts = vec.Vec[ir.Stmt].create()
@@ -5991,6 +5999,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     ctx.async_resume_return_label = saved_cps_ci_label
     ctx.async_complete_label = saved_cps_ci_complete
     ctx.async_result_c_name = saved_cps_ci_result
+    ctx.inside_async = saved_ci_inside_async
     return ir.Function(
         name = invoke_c_name,
         linkage_name = invoke_c_name,
@@ -6049,19 +6058,22 @@ function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
 
 ## Build a non-capturing proc invoke function: unpacks env (unused), lowers the
 ## body.  Returns the body expression directly (or void return for no-return).
-function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt], invoke_c_name: str) -> ir.Function:
+function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body: ptr[ast.Stmt], invoke_c_name: str) -> ir.Function:
     let saved_locals = ctx.locals
     let saved_counter = ctx.temp_counter
     let saved_cps_pi = ctx.async_cps_active
     let saved_cps_pi_label = ctx.async_resume_return_label
     let saved_cps_pi_complete = ctx.async_complete_label
     let saved_cps_pi_result = ctx.async_result_c_name
+    let saved_pi_inside_async = ctx.inside_async
     # See `build_capturing_invoke`: the proc body is synchronous and must not
-    # inherit the enclosing async function's CPS return state.
+    # inherit the enclosing async function's CPS return state — nor its
+    # `inside_async`, which would wrap the returned value in a Task literal.
     ctx.async_cps_active = false
     ctx.async_resume_return_label = ""
     ctx.async_complete_label = ""
     ctx.async_result_c_name = ""
+    ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
 
@@ -6080,9 +6092,6 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
         ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
         pi += 1
 
-    var ret_ty = ctx.void_ty
-    if return_type != null:
-        ret_ty = resolve_type_ref(ctx, return_type)
     let body_stmts = lower_function_body(ctx, body)
 
     ctx.locals = saved_locals
@@ -6091,6 +6100,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     ctx.async_resume_return_label = saved_cps_pi_label
     ctx.async_complete_label = saved_cps_pi_complete
     ctx.async_result_c_name = saved_cps_pi_result
+    ctx.inside_async = saved_pi_inside_async
     return ir.Function(
         name = invoke_c_name,
         linkage_name = invoke_c_name,
@@ -11731,10 +11741,15 @@ function lower_call_with_callee(ctx: ref[LowerCtx], c_name: str, callee_expr: Op
         var arg: ast.Argument
         unsafe:
             arg = read(args.data + i)
-        var lowered = lower_expr(ctx, arg.arg_value)
-        lowered = coerce_arg_to_ref_param(sig, i, lowered)
-        lowered = coerce_arg_to_span_param(sig, i, lowered)
-        lowered = coerce_fn_arg_to_proc(ctx, sig, i, lowered, arg.arg_value)
+        var lowered: ptr[ir.Expr]
+        match task_root_proc_bridge_proc_type(ctx, sig, i, arg.arg_value):
+            Option.some as bridge_proc:
+                lowered = lower_task_expression_as_root_proc(ctx, arg.arg_value, bridge_proc.value)
+            Option.none:
+                lowered = lower_expr(ctx, arg.arg_value)
+                lowered = coerce_arg_to_ref_param(sig, i, lowered)
+                lowered = coerce_arg_to_span_param(sig, i, lowered)
+                lowered = coerce_fn_arg_to_proc(ctx, sig, i, lowered, arg.arg_value)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -11882,29 +11897,73 @@ function coerce_fn_arg_to_proc(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], 
                         if ctx.function_returns.contains(id.name) or ctx.analysis.functions.contains(id.name):
                             let fn_c_name = naming.qualified_c_name(ctx.module_name, id.name)
                             return lower_fn_to_proc(ctx, fn_c_name, param_ty)
-                    # Task-root-proc bridge: argument is a function call returning
-                    # Task[X] — wrap it in a proc to match proc()->Task[T] parameter.
-                    ast.Expr.expr_call as call:
-                        match read(call.callee):
-                            ast.Expr.expr_identifier as callee_id:
-                                let actual_ty = ir_expr_type(lowered)
-                                var is_task = false
-                                match actual_ty:
-                                    types.Type.ty_generic as g:
-                                        if g.name == "Task":
-                                            is_task = true
-                                    _:
-                                        pass
-                                if is_task and (ctx.function_returns.contains(callee_id.name) or ctx.analysis.functions.contains(callee_id.name)):
-                                    let fn_c_name = naming.qualified_c_name(ctx.module_name, callee_id.name)
-                                    return lower_fn_to_proc(ctx, fn_c_name, param_ty)
-                            _:
-                                pass
                     _:
                         pass
             return lowered
         Option.none:
             return lowered
+
+
+## True when `t` is a `Task[X]`.
+function is_task_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            return g.name == "Task" and g.args.len == 1
+        _:
+            return false
+
+
+## The `Task[X]` type of a task-root proc parameter (`proc() -> Task[X]`), or none
+## when `param_ty` is not one.
+function task_root_proc_task_type(param_ty: types.Type) -> Option[types.Type]:
+    match param_ty:
+        types.Type.ty_function as fnt:
+            if fnt.is_proc and fnt.params.len == 0:
+                let ret = unsafe: read(fnt.return_type)
+                if is_task_type(ret):
+                    return Option[types.Type].some(value = ret)
+            return Option[types.Type].none
+        _:
+            return Option[types.Type].none
+
+
+## The task-root-proc bridge: a `Task[X]` argument passed to a `proc() -> Task[X]`
+## parameter is wrapped in a zero-parameter thunk the async runtime invokes, so the
+## task is created when `wait`/`run` drives it rather than at the call site.
+## Returns the parameter's proc type when the bridge applies.  Mirrors the host's
+## `direct_task_to_proc_argument_compatible?` + `wrap_task_expression_in_root_proc`.
+function task_root_proc_bridge_proc_type(ctx: ref[LowerCtx], sig: Option[analyzer.FnSig], index: ptr_uint, arg_ast: ptr[ast.Expr]) -> Option[types.Type]:
+    match sig:
+        Option.some as s:
+            if index >= s.value.params.len:
+                return Option[types.Type].none
+            var param_ty: types.Type
+            unsafe:
+                param_ty = read(s.value.params.data + index).ty
+            let task_ty = task_root_proc_task_type(param_ty) else:
+                return Option[types.Type].none
+            if types.type_equals(expr_type(ctx, arg_ast), task_ty):
+                return Option[types.Type].some(value = param_ty)
+            return Option[types.Type].none
+        Option.none:
+            return Option[types.Type].none
+
+
+## Wrap a `Task[X]` expression in the zero-parameter root proc `proc() -> Task[X]`
+## that the async runtime drives.
+function lower_task_expression_as_root_proc(ctx: ref[LowerCtx], expr_ast: ptr[ast.Expr], proc_ty: types.Type) -> ptr[ir.Expr]:
+    let ret_stmt = alloc_ast_stmt(ast.Stmt.stmt_ret(value = expr_ast, line = 0, column = 0, length = 0))
+    var stmts = vec.Vec[ast.Stmt].create()
+    unsafe:
+        stmts.push(read(ret_stmt))
+    let body = alloc_ast_stmt(ast.Stmt.stmt_block(statements = stmts.as_span()))
+    var ret_ty = ctx.void_ty
+    match proc_ty:
+        types.Type.ty_function as fnt:
+            ret_ty = unsafe: read(fnt.return_type)
+        _:
+            pass
+    return lower_proc_expression_typed(ctx, span[ast.Param](), ret_ty, body, proc_ty)
 
 
 ## Lower a foreign function call to a direct call on its mapped C function,
@@ -16518,6 +16577,7 @@ function lower_format_string_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.St
     else:
         value_expr = build_format_string_dynamic(ctx, parts, output)
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = str_ty, value = value_expr, line = 0, source_path = ""))
+    ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = str_ty, pointer = false))
 
 
 ## True when a format string has no interpolations (only literal text parts),
@@ -16986,7 +17046,7 @@ function comptime_iterable_elements(ctx: ref[LowerCtx], iterable: ptr[ast.Expr])
                         if id.name == "members_of" and call.args.len == 1:
                             return comptime_members_of(ctx, call.args.data + 0)
                         if id.name == "attributes_of" and call.args.len >= 1:
-                            return comptime_attributes_of(ctx, call.args.data + 0)
+                            return comptime_attributes_of(ctx, call.args)
                     _:
                         pass
             _:
@@ -17035,9 +17095,8 @@ function comptime_members_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -
     let type_name: str = comptime_resolve_type_arg_name(ctx, args_data)
     if type_name.len == 0:
         return Option[span[ComptimeElement]].none
-    let names_ptr = ctx.analysis.match_case_names.get(type_name) else:
+    let names = comptime_lookup_member_names(ctx, type_name) else:
         return Option[span[ComptimeElement]].none
-    let names = unsafe: read(names_ptr)
     var elements = vec.Vec[ComptimeElement].create()
     var ni: ptr_uint = 0
     while ni < names.len:
@@ -17050,13 +17109,52 @@ function comptime_members_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -
     return Option[span[ComptimeElement]].some(value = elements.as_span())
 
 
-## Look up the integer value of an enum member by scanning the source file AST.
+## Look up an enum/variant's member names by type name, searching the current
+## module first and then every program analysis, so `members_of(alias.Enum)`
+## reflects an enum declared in another module.
+function comptime_lookup_member_names(ctx: ref[LowerCtx], type_name: str) -> Option[span[str]]:
+    let local = ctx.analysis.match_case_names.get(type_name)
+    if local != null:
+        return Option[span[str]].some(value = unsafe: read(local))
+    var i: ptr_uint = 0
+    while i < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + i)
+        let p = a.match_case_names.get(type_name)
+        if p != null:
+            return Option[span[str]].some(value = unsafe: read(p))
+        i += 1
+    return Option[span[str]].none
+
+
+## Look up the integer value of an enum member by scanning the source file of the
+## analysis that declares the enum (searched program-wide).
 function comptime_enum_member_value(ctx: ref[LowerCtx], type_name: str, member_name: str) -> long:
+    var fi: ptr_uint = 0
+    while fi <= ctx.program_analyses.len:
+        var file: ast.SourceFile
+        unsafe:
+            if fi == 0:
+                file = ctx.analysis.source_file
+            else:
+                file = read(ctx.program_analyses.data + (fi - 1)).source_file
+        let found = enum_member_value_in_file(ctx, file, type_name, member_name)
+        match found:
+            Option.some as v:
+                return v.value
+            Option.none:
+                pass
+        fi += 1
+    return 0
+
+
+function enum_member_value_in_file(ctx: ref[LowerCtx], file: ast.SourceFile, type_name: str, member_name: str) -> Option[long]:
     var di: ptr_uint = 0
-    while di < ctx.analysis.source_file.declarations.len:
+    while di < file.declarations.len:
         var d: ast.Decl
         unsafe:
-            d = read(ctx.analysis.source_file.declarations.data + di)
+            d = read(file.declarations.data + di)
         match d:
             ast.Decl.decl_enum as e:
                 if e.name == type_name:
@@ -17079,35 +17177,115 @@ function comptime_enum_member_value(ctx: ref[LowerCtx], type_name: str, member_n
                                     Option.none:
                                         pass
                         if m.name == member_name:
-                            return auto_val
+                            return Option[long].some(value = auto_val)
                         auto_val += 1
                         mi += 1
+                    return Option[long].none
             _:
                 pass
         di += 1
-    return 0
+    return Option[long].none
 
 
-function comptime_attributes_of(ctx: ref[LowerCtx], args_data: ptr[ast.Argument]) -> Option[span[ComptimeElement]]:
-    # For the baseline use case, attributes_of returns a count only.
-    # The loop just counts attributes, so return N dummy elements.
-    var elements = vec.Vec[ComptimeElement].create()
-    # Determine count from what we know about the attribute on the target.
-    # The baseline case: attributes_of(field_of(Labeled, value)) returns 1 attribute.
-    # For attributes_of(Type), count the attributes from the analyzed AST.
-    unsafe:
-        let arg = read(args_data)
-        match comptime_attr_count(ctx, arg.arg_value):
-            Option.some as cnt:
-                var ci: ptr_uint = 0
-                while ci < cnt.value:
-                    elements.push(ComptimeElement.ce_attribute)
-                    ci += 1
-            Option.none:
-                pass
-    if elements.len() == 0:
+function comptime_attributes_of(ctx: ref[LowerCtx], args: span[ast.Argument]) -> Option[span[ComptimeElement]]:
+    if args.len == 0:
         return Option[span[ComptimeElement]].none
+    # `attributes_of(field_of(Type, field)[, name])` reflects the field's
+    # attributes; `attributes_of(Type[, name])` the declaration's.
+    unsafe:
+        let first = read(args.data + 0)
+        match read(first.arg_value):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_identifier as cid:
+                        if cid.name == "field_of" and call.args.len == 2:
+                            let type_name = comptime_type_arg_name(call.args.data + 0)
+                            let field_name = comptime_arg_name(call.args.data + 1)
+                            return comptime_elements_for_attribute_apps(comptime_field_attr_apps(ctx, type_name, field_name), comptime_attr_filter(args))
+                    _:
+                        pass
+            _:
+                pass
+    var type_name = ""
+    unsafe:
+        type_name = comptime_resolve_type_arg_name(ctx, args.data + 0)
+    return comptime_elements_for_attribute_apps(comptime_attr_apps(ctx, type_name), comptime_attr_filter(args))
+
+
+## The attribute-name filter of `attributes_of(target, name)`, or "" when the
+## call has no filter argument.
+function comptime_attr_filter(args: span[ast.Argument]) -> str:
+    if args.len < 2:
+        return ""
+    unsafe:
+        return comptime_arg_name(args.data + 1)
+
+
+## Build one element per attribute application matching `filter` (all of them
+## when the filter is empty).
+function comptime_elements_for_attribute_apps(apps: span[ast.AttributeApplication], filter: str) -> Option[span[ComptimeElement]]:
+    var elements = vec.Vec[ComptimeElement].create()
+    var ai: ptr_uint = 0
+    while ai < apps.len:
+        var app: ast.AttributeApplication
+        unsafe:
+            app = read(apps.data + ai)
+        if filter.len == 0 or attribute_application_name_is(app, filter):
+            elements.push(ComptimeElement.ce_attribute)
+        ai += 1
     return Option[span[ComptimeElement]].some(value = elements.as_span())
+
+
+function attribute_application_name_is(app: ast.AttributeApplication, name: str) -> bool:
+    if app.name.parts.len == 0:
+        return false
+    unsafe:
+        return read(app.name.parts.data + (app.name.parts.len - 1)) == name
+
+
+## The attribute applications recorded for the declaration `type_name`,
+## searching the current module first and then every program analysis.
+function comptime_attr_apps(ctx: ref[LowerCtx], type_name: str) -> span[ast.AttributeApplication]:
+    if type_name.len == 0:
+        return span[ast.AttributeApplication]()
+    let local = ctx.analysis.attribute_applications.get(type_name)
+    if local != null:
+        return unsafe: read(local)
+    var i: ptr_uint = 0
+    while i < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + i)
+        let p = a.attribute_applications.get(type_name)
+        if p != null:
+            return unsafe: read(p)
+        i += 1
+    return span[ast.AttributeApplication]()
+
+
+## The attribute applications recorded for `Type.field`, searching the current
+## module first and then every program analysis.
+function comptime_field_attr_apps(ctx: ref[LowerCtx], type_name: str, field_name: str) -> span[ast.AttributeApplication]:
+    if type_name.len == 0 or field_name.len == 0:
+        return span[ast.AttributeApplication]()
+    var key_buf = string.String.create()
+    key_buf.append(type_name)
+    key_buf.append(".")
+    key_buf.append(field_name)
+    let key = key_buf.as_str()
+    let local = ctx.analysis.field_attribute_applications.get(key)
+    if local != null:
+        return unsafe: read(local)
+    var i: ptr_uint = 0
+    while i < ctx.program_analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(ctx.program_analyses.data + i)
+        let p = a.field_attribute_applications.get(key)
+        if p != null:
+            return unsafe: read(p)
+        i += 1
+    return span[ast.AttributeApplication]()
 
 
 ## Lower one iteration of an inline for loop.  For struct fields, detect and
@@ -17226,35 +17404,6 @@ function comptime_expr_to_type(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.T
     return types.Type.ty_error
 
 
-function comptime_attr_count(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> Option[ptr_uint]:
-    unsafe:
-        match read(arg):
-            ast.Expr.expr_call as call:
-                match read(call.callee):
-                    ast.Expr.expr_identifier as cid:
-                        if cid.name == "field_of" and call.args.len == 2:
-                            return comptime_field_attr_count(ctx, call.args.data + 0, call.args.data + 1)
-                    _:
-                        pass
-            _:
-                pass
-    return Option[ptr_uint].none
-
-
-function comptime_field_attr_count(ctx: ref[LowerCtx], type_arg: ptr[ast.Argument], field_arg: ptr[ast.Argument]) -> Option[ptr_uint]:
-    let type_name = comptime_type_arg_name(type_arg)
-    if type_name.len == 0:
-        return Option[ptr_uint].none
-    let field_name = comptime_arg_name(field_arg)
-    if field_name.len == 0:
-        return Option[ptr_uint].none
-    # Check if the struct field has attributes applied.
-    # In the baseline, Labeled.value has @[rename("my_field")] — 1 attribute.
-    if type_name == "Labeled" and field_name == "value":
-        return Option[ptr_uint].some(value = 1)
-    return Option[ptr_uint].some(value = 0)
-
-
 function comptime_element_type(ctx: ref[LowerCtx], elem: ComptimeElement) -> types.Type:
     match elem:
         ComptimeElement.ce_struct_field:
@@ -17265,13 +17414,17 @@ function comptime_element_type(ctx: ref[LowerCtx], elem: ComptimeElement) -> typ
             return types.Type.ty_error  # attribute_handle — opaque
 
 
-## Extract the type name from a comptime argument like `Particle` or `Labeled`.
+## Extract the type name from a comptime argument like `Particle`, `Labeled`, or a
+## module-qualified `types.EntityKind` (the analyzer keys its type tables by the
+## bare name, so the qualifier is dropped).
 function comptime_type_arg_name(arg_ptr: ptr[ast.Argument]) -> str:
     unsafe:
         let arg = read(arg_ptr)
         match read(arg.arg_value):
             ast.Expr.expr_identifier as id:
                 return id.name
+            ast.Expr.expr_member_access as ma:
+                return ma.member_name
             _:
                 pass
     return ""
@@ -17331,6 +17484,8 @@ function inline_for_member_subst(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], me
                             ast.Expr.expr_identifier as id:
                                 if member == "value":
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = m.member_value, ty = types.primitive("int"))))
+                                if member == "name":
+                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = m.name, ty = types.Type.ty_str, cstring = false)))
                             _:
                                 pass
                 ComptimeElement.ce_struct_field as f:
@@ -20603,6 +20758,13 @@ function alloc_ast_expr(e: ast.Expr) -> ptr[ast.Expr]:
     var p = heap_mod.must_alloc[ast.Expr](1)
     unsafe:
         read(p) = e
+    return p
+
+
+function alloc_ast_stmt(s: ast.Stmt) -> ptr[ast.Stmt]:
+    var p = heap_mod.must_alloc[ast.Stmt](1)
+    unsafe:
+        read(p) = s
     return p
 
 

@@ -128,6 +128,7 @@ struct Context:
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
     types: map_mod.Map[str, types.Type]
     attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
+    field_attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
     unsafe_depth: int
     inside_async: bool
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
@@ -165,6 +166,7 @@ public struct Analysis:
     directives: span[ast.Decl]
     types: map_mod.Map[str, types.Type]
     attribute_applications: map_mod.Map[str, span[ast.AttributeApplication]]
+    field_attribute_applications: map_mod.Map[str, span[ast.AttributeApplication]]
     events: map_mod.Map[str, EventInfo]
     type_alias_types: map_mod.Map[str, types.Type]
     # The module's source file path, propagated so lowering can emit `#line`
@@ -204,6 +206,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         imported_modules = imported_modules,
         types = map_mod.Map[str, types.Type].create(),
         attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
+        field_attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
         unsafe_depth = 0,
         inside_async = false,
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
@@ -261,6 +264,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         directives = file.directives,
         types = ctx.types,
         attribute_applications = build_attr_app_spans(ref_of(ctx)),
+        field_attribute_applications = build_field_attr_app_spans(ref_of(ctx)),
         events = ctx.event_types,
         type_alias_types = ctx.type_alias_types,
         source_path = source_path,
@@ -718,6 +722,7 @@ function check_attribute_applications(ctx: ref[Context], file: ast.SourceFile) -
             ast.Decl.decl_struct as s:
                 check_attr_span(ctx, s.struct_attrs, "struct", s.line, s.column)
                 record_attr_apps(ctx, s.name, s.struct_attrs)
+                record_field_attr_apps(ctx, s.name, s.struct_fields)
             ast.Decl.decl_function as f:
                 check_attr_span(ctx, f.attributes, "function", f.line, f.column)
                 record_attr_apps(ctx, f.name, f.attributes)
@@ -754,6 +759,35 @@ function check_attr_span(ctx: ref[Context], attrs: span[ast.AttributeApplication
             let attr_name = unsafe: read(a.name.parts.data + 0)
             if not is_valid_attr_target(attr_name, target):
                 report(ctx, line, column, attr_target_message(attr_name, target))
+        i += 1
+
+
+## Record each field's attribute applications under the `Type.field` key, so
+## `attributes_of(field_of(Type, field))` reflects the declaring field's
+## attributes (mirrors the host's `resolved_attribute_applications_for_target`).
+function record_field_attr_apps(ctx: ref[Context], type_name: str, fields: span[ast.Field]) -> void:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        var f: ast.Field
+        unsafe:
+            f = read(fields.data + i)
+        if f.attributes.len > 0:
+            var key_buf = string.String.create()
+            key_buf.append(type_name)
+            key_buf.append(".")
+            key_buf.append(f.name)
+            let key = key_buf.as_str()
+            let existing_ptr = ctx.field_attribute_apps.get(key)
+            var v = vec.Vec[ast.AttributeApplication].create()
+            if existing_ptr != null:
+                unsafe:
+                    v = read(existing_ptr)
+            var ai: ptr_uint = 0
+            while ai < f.attributes.len:
+                unsafe:
+                    v.push(read(f.attributes.data + ai))
+                ai += 1
+            ctx.field_attribute_apps.set(key, v)
         i += 1
 
 
@@ -807,6 +841,19 @@ function attr_target_message(attr_name: str, target: str) -> str:
 function build_attr_app_spans(ctx: ref[Context]) -> map_mod.Map[str, span[ast.AttributeApplication]]:
     var result = map_mod.Map[str, span[ast.AttributeApplication]].create()
     var entries = ctx.attribute_apps.entries()
+    while true:
+        if not entries.next():
+            break
+        unsafe:
+            let key = read(entries.current().key)
+            let vec_ptr = read(entries.current().value)
+            result.set(key, vec_ptr.as_span())
+    return result
+
+
+function build_field_attr_app_spans(ctx: ref[Context]) -> map_mod.Map[str, span[ast.AttributeApplication]]:
+    var result = map_mod.Map[str, span[ast.AttributeApplication]].create()
+    var entries = ctx.field_attribute_apps.entries()
     while true:
         if not entries.next():
             break
@@ -4380,9 +4427,10 @@ function check_static_member(ctx: ref[Context], type_name: str, member: str, lin
     report(ctx, line, column, unknown_member_message("member", type_name, member))
 
 
-## When `callee` is a bare identifier naming a locally-declared struct (not
-## shadowed by a local value), validate each named-field argument and return
-## the constructed struct type.  Returns none for ordinary function calls.
+## When `callee` is a bare identifier naming a locally-declared struct or a
+## builtin vec/mat/quat type (not shadowed by a local value), validate each
+## named-field argument and return the constructed type.  Returns none for
+## ordinary function calls.
 function try_construction(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> Option[types.Type]:
     unsafe:
         match read(callee):
@@ -4391,6 +4439,14 @@ function try_construction(ctx: ref[Context], scope: ref[sscope.Scope], callee: p
                     return Option[types.Type].none
                 let fieldsp = ctx.structs.get(id.name)
                 if fieldsp == null:
+                    # Builtin vector/matrix/quaternion constructors
+                    # (`vec3(x = 1.0, y = 2.0, z = 3.0)`) yield the builtin type
+                    # itself, mirroring the host's Vector/Matrix/Quaternion
+                    # construction through `lookup_named_type`.
+                    if is_vec_math_name(id.name):
+                        let builtin = ctx.types.get(id.name)
+                        if builtin != null:
+                            return Option[types.Type].some(value = read(builtin))
                     return Option[types.Type].none
                 check_construction(ctx, scope, id.name, read(fieldsp), args, id.line, id.column)
                 return Option[types.Type].some(value = types.Type.ty_named(module_name = "", name = id.name))
