@@ -280,6 +280,37 @@ work (the per-family approach is the Evidence column):
 | 7 | **`workspace/symbol` scope** | `workspace/symbol` | host returns the declaration in the workspace with a name-token range; self returns repo-wide `compute*` matches (index walks the `std/` ancestor root — same scope bug as the valgrind note above) |
 | 8 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}` |
 
+### Where the next session starts (LSP parity)
+
+Read this order: this §0k → `docs/lsp-design.md` (architecture; its banner points
+back here for status) → `tools/lsp_parity.rb` (the gate).  Rebuild before
+measuring — the harness silently uses a stale `build/stage2/mtc`:
+
+```sh
+ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
+ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
+ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
+ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json --full
+tools/bootstrap.sh -j 16          # fixed point + tests, before every commit
+```
+
+Then take the rows above in order; the first three, with their opening files:
+1. **Completion** — `projects/mtc/src/mtc/lsp/completion.mt`
+   (`resolve_receiver_type_name`, `type_method_completions`,
+   `module_member_completions`, `build_completions_json`, `append_item`);
+   `type_render.initializer_type` already provides the receiver's inferred type.
+2. **Formatting (tidy)** — new `pretty_printer/tidy_formatter.mt` +
+   `lexer/lexer.mt` (trivia) + `lsp/formatting.mt` (segment formatting);
+   `lib/milk_tea/tooling/formatter.rb` + `lib/milk_tea/core/cst.rb` are the
+   reference (~500 lines to port), `§7` in this file is the design note.
+3. **`documentSymbol`** — `projects/mtc/src/mtc/lsp/symbols.mt`; the host's
+   `enrich_with_children` (`lib/milk_tea/lsp/server/formatting.rb`) is the spec,
+   and `type_render.short_name` already renders the `detail` text.
+
+Each phase is done only when its harness entries are byte-equal **and** the global
+counters move; the docs in this file and in `lsp-design.md` are synced in the
+same commit as the change.
+
 ### How to re-run
 
 ```sh
@@ -1740,11 +1771,14 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb --no-cache
 # raylib parity sweep (per-file build, compare against the passing baseline)
 ```
 
-A change is safe only if: stage2.c == stage3.c, 178/178 tests pass across 12
-files, 13/13 language examples build, and the raylib passing set does not shrink
+A change is safe only if: stage2.c == stage3.c, **12 test files / 498 tests pass
+with 0 failures** (`tools/bootstrap.sh -j 16` reports the count), the language
+examples do not regress (live baseline: **11 of 15** build — the four failures and
+their causes are §0j item 9), and the raylib passing set does not shrink
 (currently 217; the 2 non-builds must remain clean rejections with Ruby's
-messages). LSP changes additionally require the piped JSON-RPC fixtures +
-valgrind and, for behavior changes, the headless-Neovim smoke test.
+messages). LSP changes additionally require the self-vs-host harness
+(`tools/lsp_parity.rb`, §0k) plus valgrind and, for behavior changes, the
+headless-Neovim smoke test.
 
 For **runtime correctness**, diff against the Ruby compiler on arithmetic / type
 patterns:

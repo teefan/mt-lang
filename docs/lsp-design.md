@@ -98,7 +98,7 @@ projects/mtc/src/mtc/
   semantic/         ← existing
   parser/           ← existing
 
-  lsp/              ← new (35 modules, ~8,500 lines)
+  lsp/              ← new (36 modules, ~12.2k lines)
     protocol.mt     ← JSON-RPC transport (Content-Length framing, outgoing requests)
     server.mt       ← message loop, if/else handler dispatch, response routing
     workspace.mt    ← document state, module roots, lazy symbol-index, diagnostic/semantic
@@ -419,7 +419,7 @@ fixed the same day.
 
 | Aspect | Ruby LSP | Self-Host LSP |
 |--------|----------|---------------|
-| Lines | ~11,900 | ~8,500 (35 modules) |
+| Lines | ~12,200 | ~12.2k (36 modules) |
 | Threads | Worker pool (8 threads) | Single-threaded |
 | Dispatch | 22 mixin modules | if/else chain (53 methods) |
 | JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
@@ -436,6 +436,7 @@ fixed the same day.
 
 | Feature | Status |
 |---------|--------|
+| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 15 of 47 requests and 6 of 15 stress probes still differ) |
 | Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
 | Config application | **DONE** — parse workspace/configuration response |
 | Per-request tracing | **DONE** — `[DEBUG] lsp: → <id> <method>` |
