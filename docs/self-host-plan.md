@@ -81,7 +81,7 @@ parameter types (§0j).
 
 Last updated: 2026-09-26 (LSP parity stage 5: the formatting family — trivia-aware
 lexing, the CST reconstruct, the tidy wrap + blank-line pipeline, and the LSP mode
-dispatch — leaves the harness at 3 differing entries, and `tools/format_parity.rb`
+dispatch — leaves the harness at 4 differing entries (stage 6d added the malformed-frame probe), and `tools/format_parity.rb`
 measures tidy 702/702 and preserve 702/702 byte-identical; catalogue and working
 order in §0k; `lower`/CLI remaining work unchanged in §0j)
 
@@ -406,7 +406,7 @@ allocated in `code_lens.mt:140` (`title.append`), freed by the handler's
    — catalogued in the table below.
 4. **The harness could not see any of this**: it never sent the resolve
    endpoints a real client always sends.  `tools/lsp_parity.rb` now drives
-   **54 requests + 15 probes** — `willSaveWaitUntil`, `codeLens/resolve`,
+   **54 requests + 19 probes** — `willSaveWaitUntil`, `codeLens/resolve`,
    `completionItem/resolve` and `documentLink/resolve` (payloads derived from
    the responses just recorded), plus `didSave`, `$/setTrace`,
    `milkTea/documentContext` (notification form), and, after the measured probes,
@@ -418,7 +418,7 @@ allocated in `code_lens.mt:140` (`title.append`), freed by the handler's
 resolve → links → diagnostics; 12,176 allocations) reports **0 valgrind errors**
 where it previously aborted; the extended valgrind drive over
 formatting/rangeFormatting/codeLens-resolve/documentLink-resolve/willSaveWaitUntil
-is clean; the harness records 54 + 15 with no crash and no timeouts.
+is clean; the harness records 54 + 19 with no crash and no timeouts.
 
 ### Fixed this session (2026-09-26, stage 5c — module roots for real projects)
 
@@ -561,8 +561,114 @@ the diagnostics on std-generic code (including the editable mutation case), and
 a resolvable import pair
 (`helper.mt`/`user.mt`; the importer stays closed because the host's pull
 diagnostics report `unknown callable` for it while its reference facts resolve
-it) locks cross-file references — **54 requests + 15 probes**, still 3
-differing entries, 0 crashes, 0 timeouts.
+it) locks cross-file references — **54 requests + 19 probes**, 4 differing entries (the extra one is the
+malformed-frame probe below, where the host times out and the self answers),
+0 crashes, 0 timeouts.
+
+### Robustness and performance (2026-09-26, stage 6d)
+
+A robustness pass over the running server — malformed traffic, broken documents,
+edit storms, pathological input, then the latencies of a real edit cycle.
+
+**Recovery**
+
+- **A malformed frame used to shut the server down.**  `read_message` returned
+  none for EOF *and* for every protocol error, and the loop treats none as EOF,
+  so one bad message (invalid JSON, a missing or bogus `Content-Length`, a
+  negative length) ended the session.  `read_message_status` now reports
+  `READ_EOF` / `READ_MALFORMED`, the loop answers a malformed frame with a
+  JSON-RPC `-32700` (id null) and keeps serving, and a declared body larger than
+  256 MB is rejected instead of read.  Verified: garbage frames interleaved with
+  real requests no longer disturb the session, and unknown methods answer
+  `-32601`.
+- **Syntax errors no longer disable the outline.**  `documentSymbol` returned
+  `-32800` for any file with parse errors, so the outline went blank exactly
+  while typing; the host reports the symbols it could parse (measured: 1 item
+  for the broken fixture) and so do we now.
+- **Import cycles, a 1 MB string literal, and 2 000 nested parentheses** all
+  answer within ~85 ms with no hang and no crash (checked under valgrind:
+  0 errors).
+- **200 `didChange` notifications in a row** leave the server responsive and
+  every following request sees the newest text (`documentSymbol` returned the
+  last edit's locals).  Closing a document re-reads it from disk.
+
+**Stale state**
+
+- **The workspace index was only built once**, so an edit that added a symbol
+  was invisible to `workspace/symbol`, completion and document links.  Content
+  changes now mark the file dirty and the next index-backed request re-indexes
+  just that file (`Index.remove_file` + `collect_file_symbols_with_source`,
+  reading the editor buffer, not disk); a full tree walk is no longer needed.
+  Verified against the host: after adding `beta_fn` in an edit,
+  `workspace/symbol` and `references` both find it, matching the host.
+- **`semanticTokens/full/delta` compared the current scan with a rescan of the
+  same text**, so it always reported an empty edit list and the client kept
+  stale colours.  The cache now stores the token data that produced its
+  `resultId` and the delta diffs against that.  The response *shape* for plain
+  `full` stays the host's (no `resultId`), so the harness entries are unchanged.
+
+**Performance** (measured on a 1 700-line file with std imports, per request)
+
+| request | before | after |
+| --- | --- | --- |
+| `semanticTokens/full` (same content) | 143 ms | 7.8 ms |
+| `semanticTokens/full` (after an edit) | 144 ms | 58 ms |
+| `textDocument/diagnostic` (pull) | 155 ms | 110 ms |
+| `codeLens` | 10 ms | 1.7 ms |
+| `inlayHint` | 58 ms | 45 ms |
+| `documentSymbol` (after an edit) | 74 ms | 73 ms |
+
+- The pull diagnostic rebuilt the loader program per request; it now reads the
+  workspace's cached one (built once per content version).
+- The token scan re-read, re-parsed *and re-checked every imported module on
+  every request*; it now goes through the workspace's parse cache.
+- `documentSymbol`, `codeLens`, `inlayHint` and the token scan each re-parsed and
+  re-checked the document per request; `Workspace.parsed_analysis_for` caches the
+  pair (the AST with the analysis, since `resolved_expr_types` is keyed by
+  expression pointer) per content fingerprint.  The cache owns its copy of the
+  source text — the AST's views outlive the request that produced them, which is
+  what valgrind caught when the first version cached them without it.
+- `scan_is_destructure_let` walked the *whole* token array for every identifier
+  (O(n²): 99 ms of the 1700-line file's scan); it now starts at the line's first
+  token, with identical results.
+
+**Lint and fix**
+
+- `mtc lint` and `codeActions`' `source.fixAll` now analyze the file like
+  `check` does, so they see `editable` receivers, owning types and unresolved
+  imports.  That closes the hazard documented in the previous commit: the
+  `prefer-let` fix can no longer rewrite `var v = vec.Vec[int].create()` while
+  `v.push(1)` requires the `var`, because the warning is no longer produced.
+  A binding that really is never mutated is still rewritten.  `mtc lint` on
+  `examples/data_structures.mt` now differs from the host only by the
+  self-host-only `dead-assignment` rule.
+
+**Locked by the harness** (3 new stress probes, 15 → 19)
+
+- `stress/unterminated-source+symbols` — a file with parse errors still yields
+  an outline (identical to the host).
+- `stress/edited-symbol+workspaceSymbol` — a symbol added by an edit is found by
+  `workspace/symbol` right away (identical to the host).
+- `stress/malformed-frame+parseError` — a frame whose body is not JSON.  The
+  self answers `-32700`; the host **times out** (it neither answers nor closes),
+  so this entry differs by design, and `stress/malformed-frame+recovery`
+  confirms the next request is served by both.
+
+**Determinism (found by the fixed-point check, not by a test)**
+
+- The stage2/stage3 comparison failed after this batch with `mt_str_lit_*`
+  renumbering: three method lookups that walk *every visible binding* returned
+  whichever match the map yielded first (`lookup_method_anywhere`, and the two
+  helpers that resolve an instantiated imported receiver).  Which binding wins
+  changes the inferred type and therefore the emitted C.  All three now pick the
+  lexicographically smallest module name, so the choice cannot depend on map
+  iteration order — a self-hosting requirement worth remembering for any new
+  cross-binding search.
+
+Still open on this axis: the loader re-parses and re-analyzes its whole import
+closure per content version (the 73 ms `documentSymbol` above); a per-module
+cache keyed by module content would cut that to the root module's own work
+(~20 ms), and is the next performance step if the file sizes here grow.
 
 ### Measured (same corpus, both servers)
 
@@ -658,16 +764,17 @@ comparisons differ (16 entries)**; 0 timeouts; 0 crashes.  The stage-1 root caus
 
 ### Remaining LSP gaps (all reproducible with the harness)
 
-Re-measured 2026-09-26 after stage 6c (54 requests): **3 differing entries** — 1 of 53 requests,
-2 of 15 probes, 0 semantic-token comparisons — plus one gap the corpus does not
+Re-measured 2026-09-26 after stage 6d (54 requests, 19 probes): **4 differing entries** — 1 of 54 requests,
+3 of 19 probes, 0 semantic-token comparisons — plus one gap the corpus does not
 cover yet (row 2).
 
 | # | Family | Entries | Evidence / target |
 | --- | --- | --- | --- |
 | 1 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  **Measured 2026-09-26**: the host text embeds Ruby `object_id`s (`obj 992 → binding_id: 3`), binding ids in host allocation order, `ValueBinding[id: N]` reprs, Ruby AST class/member names and `node_ids: {123 entries}` counts, so literal byte-parity needs (a) harness normalization for the object ids, (b) a binding-id model in the self analyzer and (c) a Ruby-AST-shaped tree/facts renderer — re-scope its acceptance before starting it |
-| 2 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
-| 3 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |
-| 4 | **Generic function-call inference** | not corpus-covered (found 2026-09-26 by diffing `examples/data_structures.mt`'s outline) | the 9 remaining local details there: `iter.iter_filter(vec_iter, is_even)` shows `Iter[T]` where the host infers `Iter[int]`, `paths.path_to(4)` shows `<error>` instead of `Vec[ptr_uint]`, `b.test(3)` instead of `bool`.  A *free* generic call must infer its type arguments from the argument types (`T` from an `Iter[int]` argument) and substitute them into the signature; stage 6c's instantiated-receiver path covers the receiver forms.  Approach: build the substitution from the callee's declared type params and the argument types in the analyzer's `check_call`, then reuse `substitute_type` at the same call sites 6c wired |
+| 2 | **Malformed frame: the host hangs** | `stress/malformed-frame+parseError` | a JSON-RPC frame whose body is not JSON (or carries a bogus `Content-Length`) leaves the Ruby host blocked — it never answers that frame (the probe times out) and only resumes on the next one.  The self answers `-32700` with a null id and keeps serving.  This entry differs by design and is a self-host improvement; it also locks the crash it used to cause (a malformed frame used to be treated as EOF and shut the server down) |
+| 3 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
+| 4 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |
+| 5 | **Generic function-call inference** | not corpus-covered (found 2026-09-26 by diffing `examples/data_structures.mt`'s outline) | the 9 remaining local details there: `iter.iter_filter(vec_iter, is_even)` shows `Iter[T]` where the host infers `Iter[int]`, `paths.path_to(4)` shows `<error>` instead of `Vec[ptr_uint]`, `b.test(3)` instead of `bool`.  A *free* generic call must infer its type arguments from the argument types (`T` from an `Iter[int]` argument) and substitute them into the signature; stage 6c's instantiated-receiver path covers the receiver forms.  Approach: build the substitution from the callee's declared type params and the argument types in the analyzer's `check_call`, then reuse `substitute_type` at the same call sites 6c wired |
 
 ### Where the next session starts (LSP parity)
 

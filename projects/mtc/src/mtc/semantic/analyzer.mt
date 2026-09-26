@@ -4509,14 +4509,29 @@ function lookup_method_anywhere(ctx: ref[Context], type_name: str, method_name: 
 
     let imported = ctx.imported_modules else:
         return Option[FnSig].none
+
+    # Several bindings can declare the same method (a raw struct is extended in
+    # more than one module).  Pick the lexicographically smallest module name
+    # rather than whichever binding the map yields first: the choice must not
+    # depend on iteration order, or the two bootstrap stages would compile this
+    # compiler differently (`mt_str_lit_*` renumbering in the fixed-point check).
+    var chosen_name: str = ""
+    var chosen_sig: FnSig
+    var chosen = false
     unsafe:
-        var bindings = read(imported).values()
-        while true:
-            let binding_ptr = bindings.next() else:
-                return Option[FnSig].none
-            let sig_ptr = read(binding_ptr).method_sigs.get(key)
-            if sig_ptr != null:
-                return Option[FnSig].some(value = read(sig_ptr))
+        var entries = read(imported).entries()
+        while entries.next():
+            let entry = entries.current()
+            let candidate = read(entry.value).method_sigs.get(key)
+            if candidate != null:
+                let candidate_name = read(entry.key)
+                if not chosen or candidate_name.compare(chosen_name) < 0:
+                    chosen_name = candidate_name
+                    chosen_sig = read(candidate)
+                    chosen = true
+    if chosen:
+        return Option[FnSig].some(value = chosen_sig)
+    return Option[FnSig].none
 
 
 ## The signature a type variable's constraints make available for `method_name`:
@@ -4693,13 +4708,20 @@ function binding_declaring_type(ctx: ref[Context], own: ptr[ModuleBinding]?, typ
         return own
     let bindings = ctx.imported_modules else:
         return null
+    # Deterministic pick (smallest module name), like `lookup_method_anywhere`:
+    # the choice must not depend on map iteration order.
+    var chosen_name: str = ""
+    var chosen: ptr[ModuleBinding]? = null
     unsafe:
         var entries = read(bindings).entries()
         while entries.next():
             let entry = entries.current()
             if read(entry.value).type_param_names.contains(type_name):
-                return entry.value
-    return null
+                let name = read(entry.key)
+                if chosen == null or name.compare(chosen_name) < 0:
+                    chosen_name = name
+                    chosen = entry.value
+    return chosen
 
 
 ## The signature of `Type.member` among the visible bindings: the receiver's own
@@ -4712,14 +4734,21 @@ function imported_method_signature(ctx: ref[Context], own: ptr[ModuleBinding]?, 
             return own_sig
     let bindings = ctx.imported_modules else:
         return null
+    # Deterministic pick (smallest module name) for the same reason as
+    # `lookup_method_anywhere`.
+    var chosen_name: str = ""
+    var chosen: ptr[FnSig]? = null
     unsafe:
         var entries = read(bindings).entries()
         while entries.next():
             let entry = entries.current()
             let candidate = read(entry.value).method_sigs.get(key)
             if candidate != null:
-                return candidate
-    return null
+                let name = read(entry.key)
+                if chosen == null or name.compare(chosen_name) < 0:
+                    chosen_name = name
+                    chosen = candidate
+    return chosen
 
 
 ## `imported_method_return_type` with the call's arguments checked against the

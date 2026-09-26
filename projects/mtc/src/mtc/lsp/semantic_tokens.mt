@@ -124,15 +124,34 @@ public function handle_semantic_tokens_delta(
     var result_id = string.String.create()
     result_id.append_format(f"#{current_hash:x}")
 
-    # Cache the new result.
-    ws.semantic_token_cache_set(file_path.as_str(), current_hash, string.String.from_str(result_id.as_str()), full_data.len() / 5)
-
-    # If we have a cache entry (different hash), compute delta.
+    # Diff against the tokens the client holds *before* replacing the cache: the
+    # cached data belongs to the previous result id, and the delta must describe
+    # the transition from it to the current tokens.
+    var have_previous = false
+    var old_data = vec.Vec[uint].create()
+    defer: old_data.release()
     if cached_ptr != null:
-        # Recompute cached tokens to get delta.  Fall back to full.
-        var old_data = compute_token_data(ws, file_path.as_str(), source, false, 0, 0)
-        defer: old_data.release()
+        unsafe:
+            let cached = read(cached_ptr)
+            var di: ptr_uint = 0
+            while di < cached.data.len():
+                let dp = cached.data.get(di) else:
+                    break
+                old_data.push(read(dp))
+                di += 1
+        have_previous = true
 
+    # Cache the new result (takes ownership of a copy of the token data).
+    var cached_copy = vec.Vec[uint].create()
+    var ci: ptr_uint = 0
+    while ci < full_data.len():
+        let cp = full_data.get(ci) else:
+            break
+        cached_copy.push(unsafe: read(cp))
+        ci += 1
+    ws.semantic_token_cache_set(file_path.as_str(), current_hash, string.String.from_str(result_id.as_str()), full_data.len() / 5, cached_copy)
+
+    if have_previous:
         var edits = compute_delta_edits(ref_of(old_data), ref_of(full_data))
         defer: edits.release()
 
@@ -523,7 +542,14 @@ function scan_is_destructure_let(tokens: span[token_mod.Token], index: ptr_uint)
     var third_found = false
     var lparen_seen = false
     var equal_seen = false
-    var i: ptr_uint = 0
+    # Only this line's tokens matter, so start at the line's first token: the
+    # scan used to walk the whole token array for every identifier, which is
+    # O(n^2) on a large file (99 ms of a 1700-line file's token request).
+    var i = index
+    while i > 0:
+        if unsafe: read(tokens.data + i - 1).line != tok.line:
+            break
+        i -= 1
     while i < tokens.len:
         let t = unsafe: read(tokens.data + i)
         if t.line != tok.line:
@@ -934,6 +960,7 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
 ## Register one import's exported surface when the module resolves.  Unresolved
 ## imports contribute nothing: the alias stays unknown, matching the host.
 function register_resolved_import(
+    ws: ref[workspace.Workspace],
     facts: ref[ScanFacts],
     path: ast.QualifiedName,
     alias_name: Option[str],
@@ -989,7 +1016,7 @@ function scan_import_alias_name(path: ast.QualifiedName, alias_name: Option[str]
 
 
 ## Build the classification tables for one scan.
-function build_scan_facts(file: ast.SourceFile, analysis: ref[analyzer.Analysis], roots: span[str]) -> ScanFacts:
+function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, analysis: ref[analyzer.Analysis], roots: span[str]) -> ScanFacts:
     var facts = ScanFacts(
         functions = map_mod.Map[str, bool].create(),
         types = map_mod.Map[str, bool].create(),
@@ -1026,7 +1053,7 @@ function build_scan_facts(file: ast.SourceFile, analysis: ref[analyzer.Analysis]
         unsafe:
             match read(file.imports.data + i):
                 ast.Decl.decl_import as imp:
-                    register_resolved_import(ref_of(facts), imp.path, imp.alias_name, roots)
+                    register_resolved_import(ws, ref_of(facts), imp.path, imp.alias_name, roots)
                 _:
                     pass
         i += 1
@@ -1044,19 +1071,39 @@ function compute_token_data(
     clip_start_line: ptr_uint,
     clip_end_line: ptr_uint,
 ) -> vec.Vec[uint]:
+    # The cache holds the tokens of the document's last computed version; when
+    # the text is unchanged they are exactly what this call would produce, so
+    # repeated full/range requests for one edit cost a copy instead of a scan.
+    if not clip:
+        let cached_ptr = ws.semantic_token_cache_get(path)
+        if cached_ptr != null:
+            unsafe:
+                let cached = read(cached_ptr)
+                if cached.source_hash == fnv1a_hash(source) and cached.data.len() > 0:
+                    var reused = vec.Vec[uint].create()
+                    var ri: ptr_uint = 0
+                    while ri < cached.data.len():
+                        let rp = cached.data.get(ri) else:
+                            break
+                        reused.push(read(rp))
+                        ri += 1
+                    return reused
+
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
     var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: all_tokens.release()
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var analysis = analyzer.check_source_file(ast_file)
+    # The parse and single-file check are shared with the other features through
+    # the workspace's parse cache: on a large file they cost more than the scan.
+    let parsed = workspace.parsed_analysis_for(ws, path, source) else:
+        return vec.Vec[uint].create()
+    var ast_file = parsed.ast_file
+    var analysis = parsed.analysis
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
-    var facts = build_scan_facts(ast_file, ref_of(analysis), roots.as_span())
+    var facts = build_scan_facts(ws, ast_file, ref_of(analysis), roots.as_span())
 
     let tokens = all_tokens.as_span()
     var data = vec.Vec[uint].create()
@@ -1157,6 +1204,20 @@ function emit_semantic_tokens(
 
     var data = compute_token_data(ws, file_path.as_str(), content.as_str(), clip, clip_start_line, clip_end_line)
     defer: data.release()
+
+    # Remember the tokens of this version (the response shape stays the host's:
+    # no resultId), so a repeat of the same request is a cache hit.
+    if not clip:
+        var cached_copy = vec.Vec[uint].create()
+        var ci: ptr_uint = 0
+        while ci < data.len():
+            let cp = data.get(ci) else:
+                break
+            cached_copy.push(unsafe: read(cp))
+            ci += 1
+        var result_id = string.String.create()
+        result_id.append_format(f"#{fnv1a_hash(content.as_str()):x}")
+        ws.semantic_token_cache_set(file_path.as_str(), fnv1a_hash(content.as_str()), result_id, data.len() / 5, cached_copy)
 
     var json_text = build_tokens_json(ref_of(data))
     proto.write_response_raw(id, json_text.as_str())

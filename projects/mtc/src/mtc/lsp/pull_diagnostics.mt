@@ -63,7 +63,7 @@ public function handle_document_diagnostic(
     # Compute new diagnostics.
     var roots = ws.effective_module_roots_for(file_path.as_str())
     defer: roots.release()
-    var diagnostics = diag.collect_diagnostics(file_path.as_str(), roots.as_span(), source)
+    var diagnostics = diag.collect_diagnostics(ws, file_path.as_str(), source)
 
     var diag_json = string.String.create()
     append_json_value_into(ref_of(diag_json), diagnostics)
@@ -152,7 +152,7 @@ public function handle_workspace_diagnostic(
 
                 var roots = ws.effective_module_roots_for(path)
                 defer: roots.release()
-                var diagnostics = diag.collect_diagnostics(path, roots.as_span(), source)
+                var diagnostics = diag.collect_diagnostics(ws, path, source)
 
                 var diag_json = string.String.create()
                 append_json_value_into(ref_of(diag_json), diagnostics)

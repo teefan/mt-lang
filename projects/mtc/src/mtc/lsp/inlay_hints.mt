@@ -50,10 +50,14 @@ public function handle_inlay_hint(
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: tokens.release()
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var analysis = analyzer.check_source_file(ast_file)
+    # Shared with the other features through the workspace's parse cache: the
+    # parse and single-file check of a large file cost more than a request's
+    # own work.
+    let parsed = workspace.parsed_analysis_for(ws, file_path.as_str(), source) else:
+        proto.write_error(id, -32800, "inlay hint request failed: parse error")
+        return
+    var ast_file = parsed.ast_file
+    var analysis = parsed.analysis
 
     var json_text = string.String.create()
     defer: json_text.release()

@@ -255,6 +255,22 @@ class LspClient
     @stdin.flush
   end
 
+  ## Write bytes straight to the server's input: the malformed-frame probe
+  ## needs a frame the JSON writer can never produce.
+  def write_raw(bytes)
+    @stdin.write(bytes)
+    @stdin.flush
+  end
+
+  ## The next message the server sends, whatever it is (used after a raw frame).
+  def read_after_raw_frame
+    message = Timeout.timeout(@timeout_s) { read_message }
+    return { "closed" => true } if message.nil?
+    message
+  rescue Timeout::Error
+    { "timeout" => true }
+  end
+
   def read_until(id)
     Timeout.timeout(@timeout_s) do
       loop do
@@ -548,6 +564,25 @@ def run_stress(client, dir, paths)
   })
   outcomes["stress/unterminated-source+diagnostic"] = client.request("textDocument/diagnostic", { "textDocument" => { "uri" => main_uri } })
   outcomes["stress/unterminated-source+tokens"] = client.request("textDocument/semanticTokens/full", { "textDocument" => { "uri" => main_uri } })
+  # A file mid-edit still gets an outline (the host reports what it parsed).
+  outcomes["stress/unterminated-source+symbols"] = client.request("textDocument/documentSymbol", { "textDocument" => { "uri" => main_uri } })
+
+  # 5b. a frame the server cannot parse must not end the session: the JSON-RPC
+  # body is garbage, so the answer is a ParseError and the next request still
+  # works.  The host exits on this frame, so the entry differs by design
+  # (documented in docs/self-host-plan.md §0k).
+  client.write_raw("Content-Length: 7\r\n\r\nnotjson")
+  outcomes["stress/malformed-frame+parseError"] = client.read_after_raw_frame
+  outcomes["stress/malformed-frame+recovery"] = client.request("textDocument/documentSymbol", { "textDocument" => { "uri" => main_uri } })
+
+  # 5c. an edit that adds a symbol must be visible to index-backed requests.
+  client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:helper]), "languageId" => "milk-tea", "version" => 1, "text" => HELPER_SOURCE } })
+  version += 1
+  client.notify("textDocument/didChange", {
+    "textDocument" => { "uri" => path_to_uri(paths[:helper]), "version" => version + 1 },
+    "contentChanges" => [{ "text" => HELPER_SOURCE + "\npublic function helper_extra() -> int:\n    return 3\n" }],
+  })
+  outcomes["stress/edited-symbol+workspaceSymbol"] = client.request("workspace/symbol", { "query" => "helper_extra" })
 
   # 6. multi-byte / emoji positions
   version += 1

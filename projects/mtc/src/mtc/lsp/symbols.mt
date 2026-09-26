@@ -51,12 +51,11 @@ public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, 
         proto.write_error(id, -32800, "symbol request failed: empty file")
         return
 
+    # A file that is mid-edit usually has parse errors; the host still reports
+    # the symbols it could parse, so the outline stays usable while typing.
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    if parse_diags.len() > 0:
-        proto.write_error(id, -32800, "symbol request failed: parse error")
-        return
 
     # The loader-backed analysis binds imported modules, so a local's inferred
     # type resolves through them (`Vec[int]`); the single-file analysis is the

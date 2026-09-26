@@ -8,6 +8,7 @@ import std.vec as vec
 
 import mtc.linter.config as lint_config
 import mtc.linter.fix_engine as fix_engine
+import mtc.semantic.analyzer as analyzer
 
 
 ## Run the fix engine over `source` with no select/ignore filters.
@@ -16,7 +17,7 @@ function fix_all(source: str) -> string.String:
     defer: select.release()
     var ignore = vec.Vec[str].create()
     defer: ignore.release()
-    return fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore))
+    return fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore), 120z, span[str](), span[analyzer.EditableSite]())
 
 
 function expect_fixed(source: str, expected: str) -> void:
@@ -256,7 +257,7 @@ function test_fix_respects_ignore() -> void:
     var ignore = vec.Vec[str].create()
     defer: ignore.release()
     ignore.push("prefer-let")
-    var fixed = fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore))
+    var fixed = fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore), 120z, span[str](), span[analyzer.EditableSite]())
     defer: fixed.release()
     expect_eq(fixed.as_str(), source)
 
@@ -277,7 +278,7 @@ function test_fix_respects_select() -> void:
     select.push("redundant-return")
     var ignore = vec.Vec[str].create()
     defer: ignore.release()
-    var fixed = fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore))
+    var fixed = fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore), 120z, span[str](), span[analyzer.EditableSite]())
     defer: fixed.release()
     expect_eq(fixed.as_str(), expected)
 

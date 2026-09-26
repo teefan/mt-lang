@@ -60,7 +60,8 @@ public function run(args: span[str]) -> int:
 
     var running = true
     while running:
-        var msg_opt = proto.read_message()
+        var read_status: ptr_uint = proto.READ_OK
+        var msg_opt = proto.read_message_status(ref_of(read_status))
         match msg_opt:
             Option.some as msg_payload:
                 var msg = msg_payload.value
@@ -83,8 +84,15 @@ public function run(args: span[str]) -> int:
                         else:
                             running = dispatch_method(ws, method, msg)
             Option.none:
-                log.info("lsp: EOF, shutting down")
-                running = false
+                # Only a real EOF ends the session: a malformed frame is
+                # reported (JSON-RPC ParseError, id null) and the loop goes on,
+                # so one bad message never takes the server down.
+                if read_status == proto.READ_EOF:
+                    log.info("lsp: EOF, shutting down")
+                    running = false
+                else:
+                    log.warn("lsp: malformed message ignored")
+                    proto.write_error(json.null_value(), -32700, "Parse error")
 
     log.info("lsp: server stopped")
     return 0

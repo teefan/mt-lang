@@ -38,6 +38,18 @@ public struct Index:
     files: vec.Vec[FileImports]
 
 
+## True when `path` already has an entry in the index.
+public function has_file(index: ref[Index], path: str) -> bool:
+    var fi: ptr_uint = 0
+    while fi < index.files.len():
+        let fp = index.files.get(fi) else:
+            break
+        if unsafe: read(fp).path.as_str().equal(path):
+            return true
+        fi += 1
+    return false
+
+
 ## Scan all .mt files and build a fresh index.
 public function build_index(module_roots: ref[vec.Vec[string_mod.String]]) -> Index:
     var index = Index(entries = vec.Vec[Entry].create(), files = vec.Vec[FileImports].create())
@@ -158,10 +170,55 @@ function collect_directory(dir: str, index: ref[Index], roots: ref[vec.Vec[strin
                 i += 1
 
 
+## Drop every entry (symbols and import record) belonging to `path`, so an
+## edited file can be re-indexed in place instead of re-walking the whole tree.
+public function remove_file(index: ref[Index], path: str) -> void:
+    var kept = vec.Vec[Entry].create()
+    var ei: ptr_uint = 0
+    while ei < index.entries.len():
+        let ep = index.entries.get(ei) else:
+            break
+        ei += 1
+        var entry = unsafe: read(ep)
+        if entry.path.as_str().equal(path):
+            entry.name.release()
+            entry.path.release()
+            continue
+        kept.push(entry)
+    index.entries.release()
+    index.entries = kept
+
+    var kept_files = vec.Vec[FileImports].create()
+    var fi: ptr_uint = 0
+    while fi < index.files.len():
+        let fp = index.files.get(fi) else:
+            break
+        fi += 1
+        var file = unsafe: read(fp)
+        if file.path.as_str().equal(path):
+            file.path.release()
+            file.imports.release()
+            continue
+        kept_files.push(file)
+    index.files.release()
+    index.files = kept_files
+
+
 function collect_file_symbols(path: str, index: ref[Index], roots: ref[vec.Vec[string_mod.String]]) -> void:
+    collect_file_symbols_with_source(path, index, roots, "")
+
+
+## Index one file, optionally from an in-memory buffer (`source_override`) rather
+## than disk — an editor's unsaved text is what its symbols and imports are.
+public function collect_file_symbols_with_source(
+    path: str,
+    index: ref[Index],
+    roots: ref[vec.Vec[string_mod.String]],
+    source_override: str,
+) -> void:
     match fs_mod.canonicalize(path):
         Result.success as canonical:
-            var source = read_file(canonical.value.as_str())
+            var source = if source_override.len > 0: string_mod.String.from_str(source_override) else: read_file(canonical.value.as_str())
             defer: source.release()
             var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
             defer: parse_diags.release()

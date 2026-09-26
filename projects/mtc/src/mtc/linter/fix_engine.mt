@@ -28,6 +28,7 @@ import std.vec as vec
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.linter.linter as linter
+import mtc.semantic.analyzer as analyzer
 
 
 const MAX_PASSES: ptr_uint = 5
@@ -76,6 +77,9 @@ public function fix_source(
     owning_type_names: span[str],
     select: ref[vec.Vec[str]],
     ignore: ref[vec.Vec[str]],
+    max_line_length: ptr_uint,
+    unresolved_import_paths: span[str],
+    editable_sites: span[analyzer.EditableSite],
 ) -> string.String:
     var current = string.String.from_str(source)
 
@@ -91,7 +95,7 @@ public function fix_source(
                 break
             let code = unsafe: read(code_ptr)
             if rule_enabled(code, select, ignore):
-                if fix_rule_to_fixpoint(ref_of(current), code, path, owning_type_names):
+                if fix_rule_to_fixpoint(ref_of(current), code, path, owning_type_names, max_line_length, unresolved_import_paths, editable_sites):
                     changed_in_pass = true
             ci += 1
         if not changed_in_pass:
@@ -121,11 +125,19 @@ function code_in(code: str, codes: ref[vec.Vec[str]]) -> bool:
 
 ## Re-lint and fix one rule until its warnings stop changing the source.
 ## Returns true when any edit was applied.
-function fix_rule_to_fixpoint(current: ref[string.String], code: str, path: str, owning_type_names: span[str]) -> bool:
+function fix_rule_to_fixpoint(
+    current: ref[string.String],
+    code: str,
+    path: str,
+    owning_type_names: span[str],
+    max_line_length: ptr_uint,
+    unresolved_import_paths: span[str],
+    editable_sites: span[analyzer.EditableSite],
+) -> bool:
     var changed = false
     var iteration: ptr_uint = 0
     while iteration < MAX_RULE_ITERATIONS:
-        var updated = fix_rule_single_pass(current.as_str(), code, path, owning_type_names)
+        var updated = fix_rule_single_pass(current.as_str(), code, path, owning_type_names, max_line_length, unresolved_import_paths, editable_sites)
         if updated.as_str() == current.as_str():
             updated.release()
             break
@@ -137,7 +149,15 @@ function fix_rule_to_fixpoint(current: ref[string.String], code: str, path: str,
 
 
 ## One lint-and-apply cycle for a single rule.
-function fix_rule_single_pass(source: str, code: str, path: str, owning_type_names: span[str]) -> string.String:
+function fix_rule_single_pass(
+    source: str,
+    code: str,
+    path: str,
+    owning_type_names: span[str],
+    max_line_length: ptr_uint,
+    unresolved_import_paths: span[str],
+    editable_sites: span[analyzer.EditableSite],
+) -> string.String:
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     let file = parser.parse_source(source, ref_of(parse_diags))
@@ -145,7 +165,17 @@ function fix_rule_single_pass(source: str, code: str, path: str, owning_type_nam
         # Never rewrite a file that does not parse.
         return string.String.from_str(source)
 
-    var warnings = linter.lint_source(file, source, path, owning_type_names)
+    # Lint the way the command did: with the analysis-backed facts, so a rule
+    # that would rewrite `var v` while `v.push(1)` needs it never fires.
+    var warnings = linter.lint_source_with(
+        file,
+        source,
+        path,
+        owning_type_names,
+        max_line_length,
+        unresolved_import_paths,
+        editable_sites,
+    )
     defer: warnings.release()
 
     var rule_warnings = vec.Vec[linter.Warning].create()

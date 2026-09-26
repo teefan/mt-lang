@@ -817,10 +817,26 @@ function lint_command(args: span[str]) -> int:
     var fix_mode = false
     var ignore_generated = false
     var timings = false
+    var roots = vec.Vec[str].create()
+    defer: roots.release()
+    var owned_roots = vec.Vec[string.String].create()
+    defer: owned_roots.release()
+    var platform = resolver.Platform.linux
     var i: ptr_uint = 1
     while i < args.len:
         let arg = args[i]
         if arg == "-I" or arg == "--root" or arg == "--include-path":
+            if i + 1 < args.len:
+                roots.push(args[i + 1])
+            i += 2
+            continue
+        if arg == "--platform":
+            if i + 1 < args.len:
+                match parse_platform_name(args[i + 1]):
+                    Option.some as plat:
+                        platform = plat.value
+                    Option.none:
+                        pass
             i += 2
             continue
         if arg == "--fix":
@@ -934,13 +950,59 @@ function lint_command(args: span[str]) -> int:
                 merge_filter_codes(ref_of(effective_ignore), ref_of(ignore_set), ref_of(cfg.ignore))
                 let max_line_length = if cfg.max_line_length > 0: cfg.max_line_length else: 120z
 
+                # Load the module so the lint sees what the analyzer knows: which
+                # methods are `editable` (prefer-let on `var v` + `v.push(1)`),
+                # which types own resources, and which imports failed.  The host's
+                # linter runs on analyzed files too.
+                var lint_roots = vec.Vec[str].create()
+                defer: lint_roots.release()
+                var rj: ptr_uint = 0
+                while rj < roots.len():
+                    let rp = roots.get(rj) else:
+                        break
+                    lint_roots.push(unsafe: read(rp))
+                    rj += 1
+                var entry_path_owner = string.String.create()
+                defer: entry_path_owner.release()
+                var source_root_owner = string.String.create()
+                defer: source_root_owner.release()
+                var lint_target = fp
+                match effective_source_path(fp, ref_of(lint_roots), ref_of(entry_path_owner), ref_of(source_root_owner)):
+                    Option.some as eff:
+                        lint_target = eff.value
+                    Option.none:
+                        pass
+                add_module_roots(lint_target, ref_of(lint_roots), ref_of(owned_roots))
+                if lint_roots.is_empty():
+                    lint_roots.push(path_ops.dirname(lint_target))
+                var lint_program = loader.check_program(lint_target, lint_roots.as_span(), platform)
+                defer: lint_program.release()
+                var owning_names = lint_program.owning_type_span()
+                var unresolved_paths = vec.Vec[str].create()
+                defer: unresolved_paths.release()
+                var editable_sites = span[analyzer.EditableSite]()
+                if lint_program.analyses.len() > 0:
+                    var up: ptr_uint = 0
+                    while up < lint_program.unresolved_import_paths.len():
+                        let upp = lint_program.unresolved_import_paths.get(up) else:
+                            break
+                        unresolved_paths.push(unsafe: read(upp).as_str())
+                        up += 1
+                    let root_analysis_ptr = lint_program.analyses.get(lint_program.root_index)
+                    if root_analysis_ptr != null:
+                        unsafe:
+                            editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
+
                 if fix_mode:
                     var fixed = fix_engine.fix_source(
                         src.as_str(),
                         fp,
-                        span[str](),
+                        owning_names,
                         ref_of(effective_select),
-                        ref_of(effective_ignore)
+                        ref_of(effective_ignore),
+                        max_line_length,
+                        unresolved_paths.as_span(),
+                        editable_sites,
                     )
                     defer: fixed.release()
                     if not fixed.as_str().equal(src.as_str()):
@@ -958,7 +1020,16 @@ function lint_command(args: span[str]) -> int:
                 var diags = vec.Vec[pstate.ParseDiagnostic].create()
                 defer: diags.release()
                 let file = parser.parse_source(src.as_str(), ref_of(diags))
-                var warns = linter.lint_source_opts(file, src.as_str(), fp, span[str](), max_line_length)
+
+                var warns = linter.lint_source_with(
+                    file,
+                    src.as_str(),
+                    fp,
+                    owning_names,
+                    max_line_length,
+                    unresolved_paths.as_span(),
+                    editable_sites,
+                )
                 defer: warns.release()
                 var filtered = vec.Vec[linter.Warning].create()
                 defer: filtered.release()

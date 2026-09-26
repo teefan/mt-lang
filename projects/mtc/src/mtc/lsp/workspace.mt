@@ -14,6 +14,9 @@ import std.log as log
 
 import mtc.lexer.token as tok
 import mtc.loader.module_loader as loader
+import mtc.parser.ast as ast
+import mtc.parser.parser as parser
+import mtc.parser.state as pstate
 import mtc.loader.package_manifest as package_manifest
 import mtc.loader.path_resolver as resolver_mod
 import mtc.semantic.analyzer as analyzer
@@ -22,11 +25,27 @@ import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace_index as idx
 
 
+## One document's parse and single-file analysis, cached by content
+## fingerprint.  Five features need exactly this pair for the same edit, and
+## re-parsing plus re-checking a large file per request dominates their cost;
+## the AST is cached with the analysis because `resolved_expr_types` is keyed by
+## expression pointer.
+public struct ParseCacheEntry:
+    content_hash: uint
+    parse_error_count: ptr_uint
+    ## Owned copy of the document text: the AST's and analysis' string views
+    ## point into it, so it must outlive them (the caller's buffer is released
+    ## at the end of its request, and caching views into it reads freed memory).
+    source: string.String
+    ast_file: ast.SourceFile
+    analysis: analyzer.Analysis
+
+
 ## A loader-backed analysis of one document: the whole import closure is
 ## loaded and bound, which the single-file `analyzer.check_source_file` path
 ## cannot do (imported generics and their members stay unresolved there).
 ## The owning Program is retained so the analysis' name/type views stay valid.
-struct AnalysisCacheEntry:
+public struct AnalysisCacheEntry:
     path: string.String
     content_hash: uint
     program: loader.Program
@@ -46,10 +65,14 @@ public struct DiagnosticCache:
     entries: map_mod.Map[string.String, DiagnosticCacheEntry]
 
 
-struct SemanticTokenCacheEntry:
+public struct SemanticTokenCacheEntry:
     source_hash: uint
     result_id: string.String
     token_count: ptr_uint
+    ## The token data that produced `result_id`, so a `full/delta` request can
+    ## diff against what the client actually holds (recomputing from the new
+    ## source would compare it with itself and report no edits).
+    data: vec.Vec[uint]
 
 
 public struct Workspace:
@@ -63,6 +86,11 @@ public struct Workspace:
     cancelled_ids: vec.Vec[ptr_uint]
     diagnostic_cache: DiagnosticCache
     analysis_cache: map_mod.Map[string.String, AnalysisCacheEntry]
+    parse_cache: map_mod.Map[string.String, ParseCacheEntry]
+    ## Files whose content changed since the index was built: they are re-indexed
+    ## in place on the next request that needs the index, so symbol search,
+    ## completion and references see the edit without a full re-walk.
+    index_dirty: vec.Vec[string.String]
     semantic_token_cache: map_mod.Map[string.String, SemanticTokenCacheEntry]
     config_request_id: ptr_uint
     config_received: bool
@@ -88,6 +116,8 @@ extending Workspace:
             cancelled_ids = vec.Vec[ptr_uint].create(),
             diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create()),
             analysis_cache = map_mod.Map[string.String, AnalysisCacheEntry].create(),
+            parse_cache = map_mod.Map[string.String, ParseCacheEntry].create(),
+            index_dirty = vec.Vec[string.String].create(),
             semantic_token_cache = map_mod.Map[string.String, SemanticTokenCacheEntry].create(),
             config_request_id = 0,
             config_received = false,
@@ -119,6 +149,9 @@ extending Workspace:
         this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
         release_analysis_cache(ref_of(this.analysis_cache))
         this.analysis_cache = map_mod.Map[string.String, AnalysisCacheEntry].create()
+        release_parse_cache(ref_of(this.parse_cache))
+        this.parse_cache = map_mod.Map[string.String, ParseCacheEntry].create()
+        release_dirty_paths(ref_of(this.index_dirty))
         if this.index_built:
             idx.release_index(ref_of(this.index))
             this.index = idx.Index(entries = vec.Vec[idx.Entry].create())
@@ -131,6 +164,7 @@ extending Workspace:
             Option.some as path_payload:
                 this.track_open_path(path_payload.value.as_str())
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
+                this.mark_index_dirty(path_payload.value.as_str())
             Option.none:
                 pass
 
@@ -141,6 +175,7 @@ extending Workspace:
             Option.some as path_payload:
                 this.track_open_path(path_payload.value.as_str())
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
+                this.mark_index_dirty(path_payload.value.as_str())
             Option.none:
                 pass
 
@@ -151,6 +186,8 @@ extending Workspace:
             Option.some as path_payload:
                 this.untrack_open_path(path_payload.value.as_str())
                 this.open_docs.remove(path_payload.value)
+                # The buffer is gone: re-read the file (its saved content).
+                this.mark_index_dirty(path_payload.value.as_str())
             Option.none:
                 pass
 
@@ -217,13 +254,46 @@ extending Workspace:
         return result
 
 
+    ## Record `path` as needing re-indexing (idempotent).
+    public editable function mark_index_dirty(path: str) -> void:
+        if path.len == 0:
+            return
+        var i: ptr_uint = 0
+        while i < this.index_dirty.len():
+            let p = this.index_dirty.get(i) else:
+                break
+            if unsafe: read(p).as_str().equal(path):
+                return
+            i += 1
+        this.index_dirty.push(string.String.from_str(path))
+
+
+    ## Build the index once, then keep the changed files current: re-indexing one
+    ## file is milliseconds, while re-walking the tree is seconds.
     public editable function build_index_if_needed() -> void:
         if not this.index_built:
             log.info("lsp: building workspace index")
             idx.release_index(ref_of(this.index))
             this.index = idx.build_index(ref_of(this.module_roots))
             this.index_built = true
+            release_dirty_paths(ref_of(this.index_dirty))
             log.info("lsp: workspace index ready")
+            return
+
+        var di: ptr_uint = 0
+        while di < this.index_dirty.len():
+            let dp = this.index_dirty.get(di) else:
+                break
+            let path = unsafe: read(dp).as_str()
+            idx.remove_file(ref_of(this.index), path)
+            match this.document_source(path):
+                Option.some as content:
+                    idx.collect_file_symbols_with_source(path, ref_of(this.index), ref_of(this.module_roots), content.value.as_str())
+                    content.value.release()
+                Option.none:
+                    pass
+            di += 1
+        release_dirty_paths(ref_of(this.index_dirty))
 
 
     ## Number of currently open documents.
@@ -340,9 +410,30 @@ extending Workspace:
 
 
     ## Store a cached semantic token entry.
-    public editable function semantic_token_cache_set(path: str, source_hash: uint, result_id: string.String, token_count: ptr_uint) -> void:
+    public editable function semantic_token_cache_set(
+        path: str,
+        source_hash: uint,
+        result_id: string.String,
+        token_count: ptr_uint,
+        data: vec.Vec[uint],
+    ) -> void:
         var key = string.String.from_str(path)
-        var entry = SemanticTokenCacheEntry(source_hash = source_hash, result_id = result_id, token_count = token_count)
+        # Replace any previous entry (releasing its strings and token data).
+        var lookup = string.String.from_str(path)
+        defer: lookup.release()
+        let stale_ptr = this.semantic_token_cache.get(lookup)
+        if stale_ptr != null:
+            unsafe:
+                var stale = read(stale_ptr)
+                stale.result_id.release()
+                stale.data.release()
+            this.semantic_token_cache.remove(lookup)
+        var entry = SemanticTokenCacheEntry(
+            source_hash = source_hash,
+            result_id = result_id,
+            token_count = token_count,
+            data = data,
+        )
         this.semantic_token_cache.set(key, entry)
 
 
@@ -355,7 +446,8 @@ extending Workspace:
 
     ## Clear all cached semantic token entries.
     public editable function semantic_token_cache_remove_all() -> void:
-        this.semantic_token_cache.clear()
+        release_semantic_token_cache(ref_of(this.semantic_token_cache))
+        this.semantic_token_cache = map_mod.Map[string.String, SemanticTokenCacheEntry].create()
 
 
     ## Force a full workspace symbol index rebuild on the next query.
@@ -411,6 +503,26 @@ function fnv1a_hash(text: str) -> uint:
     return hash
 
 
+function release_dirty_paths(paths: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let p = paths.get(i) else:
+            break
+        unsafe: read(p).release()
+        i += 1
+    paths.clear()
+
+
+function release_parse_cache(cache: ref[map_mod.Map[string.String, ParseCacheEntry]]) -> void:
+    var entries_iter = cache.entries()
+    while entries_iter.next():
+        let entry = entries_iter.current()
+        unsafe:
+            var entry_value = read(entry.value)
+            entry_value.source.release()
+    cache.release()
+
+
 function release_analysis_cache(cache: ref[map_mod.Map[string.String, AnalysisCacheEntry]]) -> void:
     var entries_iter = cache.entries()
     while entries_iter.next():
@@ -428,11 +540,61 @@ function release_analysis_cache(cache: ref[map_mod.Map[string.String, AnalysisCa
 ## `ModuleLoader`, while `analyzer.check_source_file` cannot.  Cached per content
 ## fingerprint because the loader runs the whole import closure.
 public function analysis_for(ws: ref[Workspace], path: str) -> Option[analyzer.Analysis]:
-    var content = ws.document_source(path) else:
+    let entry_ptr = analysis_entry_for(ws, path) else:
         return Option[analyzer.Analysis].none
+    return Option[analyzer.Analysis].some(value = unsafe: read(entry_ptr).analysis)
+
+
+## The parse and single-file analysis of `source` (which must be the document's
+## current text), cached by content fingerprint.
+public function parsed_analysis_for(ws: ref[Workspace], path: str, source: str) -> Option[ParseCacheEntry]:
+    let current_hash = fnv1a_hash(source)
+    var cache_key = string.String.from_str(path)
+    defer: cache_key.release()
+
+    let cached_ptr = ws.parse_cache.get(cache_key)
+    if cached_ptr != null:
+        unsafe:
+            let cached = read(cached_ptr)
+            if cached.content_hash == current_hash:
+                return Option[ParseCacheEntry].some(value = cached)
+
+    var source_owner = string.String.from_str(source)
+    let owned_source = source_owner.as_str()
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var ast_file = parser.parse_source(owned_source, ref_of(parse_diags))
+    var analysis = analyzer.check_source_file(ast_file)
+
+    var entry = ParseCacheEntry(
+        content_hash = current_hash,
+        parse_error_count = parse_diags.len(),
+        source = source_owner,
+        ast_file = ast_file,
+        analysis = analysis,
+    )
+    # Replace (and release) any stale entry for this path; `set` owns the key.
+    let stale_ptr = ws.parse_cache.get(cache_key)
+    if stale_ptr != null:
+        unsafe:
+            var stale = read(stale_ptr)
+            stale.source.release()
+        ws.parse_cache.remove(cache_key)
+    ws.parse_cache.set(string.String.from_str(path), entry)
+    return Option[ParseCacheEntry].some(value = entry)
+
+
+## The whole cache entry (loader-backed program + analysis) for `path`.  The
+## pointer addresses the cache's own storage, so it stays valid for the rest of
+## the request; the entry is replaced when the document's content changes.
+## Sharing a single loader run across every feature that needs imports is what
+## keeps a large file's requests cheap.
+public function analysis_entry_for(ws: ref[Workspace], path: str) -> Option[ptr[AnalysisCacheEntry]]:
+    var content = ws.document_source(path) else:
+        return Option[ptr[AnalysisCacheEntry]].none
     defer: content.release()
     if content.len() == 0:
-        return Option[analyzer.Analysis].none
+        return Option[ptr[AnalysisCacheEntry]].none
 
     let current_hash = fnv1a_hash(content.as_str())
     var cache_key = string.String.from_str(path)
@@ -443,7 +605,7 @@ public function analysis_for(ws: ref[Workspace], path: str) -> Option[analyzer.A
         unsafe:
             let cached = read(cached_ptr)
             if cached.content_hash == current_hash:
-                return Option[analyzer.Analysis].some(value = cached.analysis)
+                return Option[ptr[AnalysisCacheEntry]].some(value = cached_ptr)
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
@@ -451,10 +613,10 @@ public function analysis_for(ws: ref[Workspace], path: str) -> Option[analyzer.A
 
     if program.analyses.len() == 0:
         program.release()
-        return Option[analyzer.Analysis].none
+        return Option[ptr[AnalysisCacheEntry]].none
     let root_entry = program.analyses.get(program.root_index) else:
         program.release()
-        return Option[analyzer.Analysis].none
+        return Option[ptr[AnalysisCacheEntry]].none
     let analysis = unsafe: read(root_entry)
 
     # Replace (and release) any stale entry for this path.
@@ -473,7 +635,12 @@ public function analysis_for(ws: ref[Workspace], path: str) -> Option[analyzer.A
         program = program,
         analysis = analysis,
     ))
-    return Option[analyzer.Analysis].some(value = analysis)
+    # Re-read through the cache so the returned pointer addresses its storage.
+    var stored_key = string.String.from_str(path)
+    defer: stored_key.release()
+    let stored_ptr = ws.analysis_cache.get(stored_key) else:
+        return Option[ptr[AnalysisCacheEntry]].none
+    return Option[ptr[AnalysisCacheEntry]].some(value = stored_ptr)
 
 
 ## Walk upward from source_path to find the project root (the directory
@@ -575,4 +742,5 @@ function release_semantic_token_cache(cache: ref[map_mod.Map[string.String, Sema
         unsafe:
             var entry_value = read(entry.value)
             entry_value.result_id.release()
+            entry_value.data.release()
     cache.release()

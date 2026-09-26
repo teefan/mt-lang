@@ -90,8 +90,28 @@ function read_body_bytes(body: ref[string.String], count: ptr_uint) -> bool:
     return true
 
 
-## Read one JSON-RPC message from stdin.  Returns none on EOF / protocol error.
+## Why `read_message` returned none: a clean EOF ends the session, while a
+## malformed frame must not (a client that writes one bad message — or a stray
+## byte on the stream — used to shut the server down).
+public const READ_OK:       ptr_uint = 0
+public const READ_EOF:      ptr_uint = 1
+public const READ_MALFORMED: ptr_uint = 2
+
+## Upper bound on a declared body size: a bogus header must not make the server
+## block reading gigabytes from stdin.
+const MAX_BODY_BYTES: ptr_uint = 268435456
+
+
+## Read one JSON-RPC message from stdin.  Returns none with `status` set to
+## READ_EOF (nothing left to read) or READ_MALFORMED (a frame that could not be
+## understood — the caller may report it and keep going).
 public function read_message() -> Option[Message]:
+    var status: ptr_uint = READ_OK
+    return read_message_status(ref_of(status))
+
+
+public function read_message_status(status: ref[ptr_uint]) -> Option[Message]:
+    unsafe: read(status) = READ_OK
     var header_line = string.String.create()
     defer: header_line.release()
     var body = string.String.create()
@@ -100,9 +120,12 @@ public function read_message() -> Option[Message]:
     # Read Content-Length header.
     var content_length: ptr_uint = 0
     var found_length = false
+    var saw_any_line = false
     while true:
         if not read_header_line(ref_of(header_line)):
+            unsafe: read(status) = if saw_any_line: READ_MALFORMED else: READ_EOF
             return Option[Message].none
+        saw_any_line = true
 
         let length = parse_content_length(header_line.as_str())
         match length:
@@ -116,24 +139,29 @@ public function read_message() -> Option[Message]:
         if header_line.len() == 0:
             break
 
-    if not found_length or content_length == 0:
+    if not found_length or content_length == 0 or content_length > MAX_BODY_BYTES:
+        unsafe: read(status) = READ_MALFORMED
         return Option[Message].none
 
     if not read_body_bytes(ref_of(body), content_length):
+        unsafe: read(status) = READ_MALFORMED
         return Option[Message].none
 
     let body_text = body.as_str()
     if body_text.len == 0:
+        unsafe: read(status) = READ_MALFORMED
         return Option[Message].none
 
     # Parse JSON body.
     var parsed = json.parse(body_text) else as error:
         var owned_error = error
         owned_error.release()
+        unsafe: read(status) = READ_MALFORMED
         return Option[Message].none
 
     let parsed_obj = parsed.as_object() else:
         json.release_value(parsed)
+        unsafe: read(status) = READ_MALFORMED
         return Option[Message].none
 
     # Owned copy of the raw body text so the Message keeps its own storage.

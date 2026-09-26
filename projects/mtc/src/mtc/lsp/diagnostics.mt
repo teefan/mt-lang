@@ -14,6 +14,7 @@ import mtc.loader.path_resolver as resolver
 import mtc.linter.linter as linter_mod
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
+import mtc.lsp.workspace as workspace
 
 
 ## LSP Diagnostic severity values.
@@ -31,13 +32,16 @@ const SYNC_FULL: double = 1.0
 ## reports on imported modules and the prelude), matching the Ruby LSP's
 ## per-document pull.  `source` is the document's text — passed to the loader so
 ## an unsaved editor buffer is analyzed instead of the file on disk.
-public function collect_diagnostics(root_path: str, roots: span[str], source: str) -> json.Value:
-    var platform = default_platform()
-    var program = loader.check_program_with_source(root_path, roots, platform, source, true)
+public function collect_diagnostics(ws: ref[workspace.Workspace], root_path: str, source: str) -> json.Value:
+    # Reuse the workspace's loader-backed analysis: it is the same program the
+    # other requests see, built once per content version instead of once per
+    # request (a large file's import closure costs ~70 ms).
+    let entry_ptr = workspace.analysis_entry_for(ws, root_path) else:
+        return json.create_array_value()
+    var program = unsafe: read(entry_ptr).program
 
     var diag_array = json.create_array_value()
     let array_ptr = diag_array.as_array() else:
-        program.release()
         return diag_array
 
     var i: ptr_uint = 0
@@ -62,13 +66,10 @@ public function collect_diagnostics(root_path: str, roots: span[str], source: st
     # (order.last() indexes the root), not modules.last().
     if program.analyses.len() > 0 and program.modules.len() > 0 and program.order.len() > 0:
         let last_analysis_ptr = program.analyses.get(program.root_index) else:
-            program.release()
             return diag_array
         let root_index_ptr = program.order.last() else:
-            program.release()
             return diag_array
         let root_module_ptr = program.modules.get(unsafe: read(root_index_ptr)) else:
-            program.release()
             return diag_array
         unsafe:
             root_source = read(root_module_ptr).source.as_str()
@@ -102,14 +103,13 @@ public function collect_diagnostics(root_path: str, roots: span[str], source: st
         wi += 1
 
     lint_warnings.release()
-    program.release()
     return diag_array
 
 
 ## Publish diagnostics for a file via an LSP notification.
 ## Uses the textDocument/publishDiagnostics notification.
-public function publish_for_uri(uri: str, root_path: str, roots: span[str], source: str) -> void:
-    var diagnostics = collect_diagnostics(root_path, roots, source)
+public function publish_for_uri(ws: ref[workspace.Workspace], uri: str, root_path: str, source: str) -> void:
+    var diagnostics = collect_diagnostics(ws, root_path, source)
 
     var params = json.create_object_value()
     let params_obj = params.as_object() else:

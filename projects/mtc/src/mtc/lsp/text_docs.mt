@@ -199,12 +199,10 @@ public function handle_did_save(ws: ref[workspace.Workspace], params: json.Value
     var owned_path = uri_ops.file_uri_to_path(uri) else:
         return
     defer: owned_path.release()
-    var roots = ws.effective_module_roots_for(owned_path.as_str())
-    defer: roots.release()
     var source = ws.document_source(owned_path.as_str()) else:
         return
     defer: source.release()
-    diag.publish_for_uri(uri, owned_path.as_str(), roots.as_span(), source.as_str())
+    diag.publish_for_uri(ws, uri, owned_path.as_str(), source.as_str())
 
 
 ## Extract the textDocument.uri from a didOpen / didChange / didClose / didSave

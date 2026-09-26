@@ -43,9 +43,10 @@ public function handle_code_lens(
     defer: content.release()
 
     let source = content.as_str()
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    let parsed = workspace.parsed_analysis_for(ws, file_path.as_str(), source) else:
+        proto.write_error(id, -32800, "code lens request failed: parse error")
+        return
+    var ast_file = parsed.ast_file
 
     var result = string.String.create()
     defer: result.release()
