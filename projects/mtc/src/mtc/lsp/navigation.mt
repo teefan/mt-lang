@@ -648,6 +648,8 @@ function resolve_non_decl_hover(
     defer: tokens.release()
 
     var ti: ptr_uint = 0
+    var matched_index: ptr_uint = 0
+    var matched = false
     let target_line = line + 1
     while ti < tokens.len:
         let tp = tokens.get(ti) else:
@@ -656,6 +658,8 @@ function resolve_non_decl_hover(
         if t.line > target_line:
             break
         if t.line == target_line and t.column - 1 <= character and t.column - 1 + t.end_offset - t.start_offset > character:
+            matched_index = ti
+            matched = true
             let lexeme = unsafe: token_mod.token_lexeme(t, source)
 
             match hover_docs.language_keyword(lexeme):
@@ -684,6 +688,13 @@ function resolve_non_decl_hover(
             return Option[CursorResult].some(value = fd.value)
         Option.none:
             pass
+
+    if matched:
+        match named_argument_label_hover(ws, source, file_path.as_str(), ref_of(tokens), matched_index):
+            Option.some as label_hover:
+                return Option[CursorResult].some(value = label_hover.value)
+            Option.none:
+                pass
 
     return Option[CursorResult].none
 
@@ -1432,6 +1443,130 @@ function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uin
 
     return Option[CursorResult].none
 
+
+## Hover for a named-argument label inside a struct aggregate literal
+## (`Sample(x = 1, …)`, hovering `x`): the field's declaration line and its
+## type, rendered as the host's `field x: int`.  A label of an ordinary call
+## (whose head is not a struct declared in this file) stays unresolved.
+function named_argument_label_hover(
+    ws: ref[workspace.Workspace],
+    source: str,
+    file_path: str,
+    tokens: ref[vec.Vec[token_mod.Token]],
+    ti: ptr_uint,
+) -> Option[CursorResult]:
+    if ti == 0 or ti + 1 >= tokens.len():
+        return Option[CursorResult].none
+    let label_ptr = tokens.get(ti) else:
+        return Option[CursorResult].none
+    let label_tok = unsafe: read(label_ptr)
+    if label_tok.kind != tk.TokenKind.identifier:
+        return Option[CursorResult].none
+    let eq_ptr = tokens.get(ti + 1) else:
+        return Option[CursorResult].none
+    if unsafe: read(eq_ptr).kind != tk.TokenKind.equal:
+        return Option[CursorResult].none
+
+    # The head of the enclosing call: the identifier before its `(`.
+    var opener: int = -1
+    var depth: int = 0
+    var k: int = int<-(ti - 1)
+    while k >= 0:
+        let kp = tokens.get(ptr_uint<-k) else:
+            break
+        let kind = unsafe: read(kp).kind
+        if kind == tk.TokenKind.rparen or kind == tk.TokenKind.rbracket:
+            depth += 1
+        else if kind == tk.TokenKind.lparen or kind == tk.TokenKind.lbracket:
+            if depth == 0:
+                opener = k
+                break
+            depth -= 1
+        k -= 1
+    if opener < 1:
+        return Option[CursorResult].none
+    let head_ptr = tokens.get(ptr_uint<-(opener - 1)) else:
+        return Option[CursorResult].none
+    let head = unsafe: read(head_ptr)
+    if head.kind != tk.TokenKind.identifier:
+        return Option[CursorResult].none
+    let type_name = cursor.token_text(source, head)
+    let field_name = cursor.token_text(source, label_tok)
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+
+    var field_line: ptr_uint = 0
+    var field_column: ptr_uint = 0
+    var found = false
+    var type_text = string.String.create()
+    defer: type_text.release()
+
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_struct as s:
+                if s.name.equal(type_name):
+                    var fi: ptr_uint = 0
+                    while fi < s.struct_fields.len:
+                        let field = unsafe: read(s.struct_fields.data + fi)
+                        if field.name.equal(field_name):
+                            field_line = field.line
+                            field_column = field.column
+                            found = true
+                            if field.field_type.name.parts.len > 0:
+                                type_text.append(unsafe: read(field.field_type.name.parts.data))
+                                if field.field_type.nullable:
+                                    type_text.append("?")
+                        fi += 1
+            _:
+                pass
+        di += 1
+
+    if not found:
+        return Option[CursorResult].none
+
+    # The host renders the field's semantic type, module-qualified and then
+    # shortened, so a user-defined field type reports a `*From <module>*` line.
+    var module_roots = ws.effective_module_roots_for(file_path)
+    defer: module_roots.release()
+    var current_module = resolver.infer_module_name(file_path, module_roots.as_span())
+    defer: current_module.release()
+    var analysis = analyzer.check_source_file(ast_file)
+    let entry_fields_ptr = analysis.structs.get(type_name)
+    if entry_fields_ptr != null:
+        let entry_fields = unsafe: read(entry_fields_ptr)
+        var fi: ptr_uint = 0
+        while fi < entry_fields.len:
+            let entry = unsafe: read(entry_fields.data + fi)
+            if entry.name.equal(field_name):
+                type_text.release()
+                type_text = type_render.qualified_name(entry.ty, current_module.as_str())
+            fi += 1
+
+    var signature = string.String.create()
+    signature.append("field ")
+    signature.append(field_name)
+    signature.append(": ")
+    signature.append(type_text.as_str())
+    var shortened = type_render.shorten_signature(signature.as_str())
+    signature.release()
+
+    let column_zero = if field_column > 0: field_column - 1 else: 0z
+    return Option[CursorResult].some(value = CursorResult(
+        line = field_line,
+        column = column_zero,
+        name_len = field_name.len,
+        hover_text = shortened.text,
+        docs = string.String.create(),
+        target_uri = string.String.create(),
+        from_modules = shortened.modules
+    ))
+
 function resolve_local_hover(
     ws: ref[workspace.Workspace],
     uri: str,
@@ -1490,7 +1625,7 @@ function resolve_local_hover(
         match decl:
             ast.Decl.decl_function as fun:
                 if fun.line <= target_line and fun.body != null:
-                    var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str(), ref_of(analysis), current_module.as_str())
+                    var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str(), source, ref_of(analysis), current_module.as_str())
                     match body_loc:
                         Option.some as loc:
                             return Option[CursorResult].some(value = loc.value)
@@ -1602,6 +1737,7 @@ function lexical_local_hover(source: str, target_line: ptr_uint, character: ptr_
 function find_local_in_block(
     block_stmt: ast.Stmt,
     name: str,
+    source: str,
     analysis: ref[analyzer.Analysis],
     current_module: str,
 ) -> Option[CursorResult]:
@@ -1614,7 +1750,7 @@ function find_local_in_block(
                     ast.Stmt.stmt_local as loc:
                         if loc.name == name:
                             return Option[CursorResult].some(value = local_hover_result(
-                                loc.is_let, name, loc.line, loc.stmt_type, loc.value, analysis, current_module))
+                                loc.is_let, name, loc.line, loc.stmt_type, loc.value, source, analysis, current_module))
                     _:
                         pass
                 si += 1
@@ -1630,6 +1766,7 @@ function local_hover_result(
     decl_line: ptr_uint,
     stmt_type: ptr[ast.TypeRef]?,
     value: ptr[ast.Expr]?,
+    source: str,
     analysis: ref[analyzer.Analysis],
     current_module: str,
 ) -> CursorResult:
@@ -1666,9 +1803,20 @@ function local_hover_result(
 
     var shortened = type_render.shorten_signature(signature.as_str())
     signature.release()
+
+    # The 0-based column of the name on its declaration line, so a go-to-
+    # definition request lands on the name itself (the host's token range).
+    var column: ptr_uint = 0
+    let line_text = cursor.source_line(source, decl_line)
+    match cursor.token_start_in_line(line_text, name):
+        Option.some as pos:
+            column = pos.value
+        Option.none:
+            pass
+
     return CursorResult(
         line = decl_line,
-        column = 0,
+        column = column,
         name_len = name.len,
         hover_text = shortened.text,
         docs = string.String.create(),
