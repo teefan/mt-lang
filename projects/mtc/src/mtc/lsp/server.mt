@@ -311,7 +311,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         log.warn(msg_text.as_str())
         msg_text.release()
         if not msg.id.is_null():
-            proto.write_error(msg.id, -32601, "method not found")
+            proto.write_error(msg.id, -32601, "Method not found")
 
     return true
 
