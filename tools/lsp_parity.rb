@@ -96,6 +96,23 @@ BETA_SOURCE = <<~MT
       return value + 3
 MT
 
+# A std-generic fixture: the locals' inferred types come from imported generic
+# methods (`vec.Vec[int].create()` -> `Vec[int]`, `v.get(0)` -> `ptr[int]?`) and
+# from a method another module extends onto the type (`v.iter()` in std.iter ->
+# `Iter[int]`), which the outline's `detail` must render as the host does.
+CONTAINERS_SOURCE = <<~MT
+  import std.vec as vec
+
+  function containers_demo() -> int:
+      let v = vec.Vec[int].create()
+      let elem = v.get(0)
+      let n = v.len()
+      let as_iter = v.iter()
+      let _elem = elem
+      let _iter = as_iter
+      return int<-n
+MT
+
 def path_to_uri(path)
   "file://#{path.split("/").map { |seg| CGI.escape(seg).gsub("+", "%20") }.join("/")}"
 end
@@ -109,11 +126,13 @@ def build_workspace(dir)
     beta: File.join(dir, "mod_beta", "lib.mt"),
     main: File.join(dir, "main.mt"),
     scratch: File.join(dir, "scratch.mt"),
+    containers: File.join(dir, "containers.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
   File.write(paths[:main], MAIN_SOURCE)
   File.write(paths[:scratch], "function scratch_fn() -> int:\n    return 1\n")
+  File.write(paths[:containers], CONTAINERS_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -395,6 +414,7 @@ def corpus(dir, paths)
   requests["foldingRange/scratch"] = ["textDocument/foldingRange", { "textDocument" => { "uri" => scratch_uri } }]
   requests["hover/alpha"] = ["textDocument/hover", { "textDocument" => { "uri" => alpha_uri }, "position" => { "line" => 1, "character" => 10 } }]
   requests["documentSymbol/beta"] = ["textDocument/documentSymbol", { "textDocument" => { "uri" => beta_uri } }]
+  requests["documentSymbol/containers"] = ["textDocument/documentSymbol", { "textDocument" => { "uri" => path_to_uri(paths[:containers]) } }]
   requests
 end
 
@@ -407,6 +427,7 @@ def run_corpus(client, dir, paths)
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:alpha]), "languageId" => "milk-tea", "version" => 1, "text" => ALPHA_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:beta]), "languageId" => "milk-tea", "version" => 1, "text" => BETA_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:scratch]), "languageId" => "milk-tea", "version" => 1, "text" => "function scratch_fn() -> int:\n    return 1\n" } })
+  client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:containers]), "languageId" => "milk-tea", "version" => 1, "text" => CONTAINERS_SOURCE } })
   # Let the background diagnostics worker settle, and pull diagnostics once per
   # document so facts are materialized in a deterministic order.
   sleep 1.0

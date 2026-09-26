@@ -13,10 +13,24 @@ import std.vec as vec
 import std.log as log
 
 import mtc.lexer.token as tok
+import mtc.loader.module_loader as loader
 import mtc.loader.package_manifest as package_manifest
 import mtc.loader.path_resolver as resolver_mod
+import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace_index as idx
+
+
+## A loader-backed analysis of one document: the whole import closure is
+## loaded and bound, which the single-file `analyzer.check_source_file` path
+## cannot do (imported generics and their members stay unresolved there).
+## The owning Program is retained so the analysis' name/type views stay valid.
+struct AnalysisCacheEntry:
+    path: string.String
+    content_hash: uint
+    program: loader.Program
+    analysis: analyzer.Analysis
 
 
 struct DiagnosticCacheEntry:
@@ -48,6 +62,7 @@ public struct Workspace:
     document_contexts: map_mod.Map[string.String, string.String]
     cancelled_ids: vec.Vec[ptr_uint]
     diagnostic_cache: DiagnosticCache
+    analysis_cache: map_mod.Map[string.String, AnalysisCacheEntry]
     semantic_token_cache: map_mod.Map[string.String, SemanticTokenCacheEntry]
     config_request_id: ptr_uint
     config_received: bool
@@ -72,6 +87,7 @@ extending Workspace:
             document_contexts = map_mod.Map[string.String, string.String].create(),
             cancelled_ids = vec.Vec[ptr_uint].create(),
             diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create()),
+            analysis_cache = map_mod.Map[string.String, AnalysisCacheEntry].create(),
             semantic_token_cache = map_mod.Map[string.String, SemanticTokenCacheEntry].create(),
             config_request_id = 0,
             config_received = false,
@@ -101,6 +117,8 @@ extending Workspace:
         append_compiler_module_roots(path, ref_of(this.module_roots))
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
+        release_analysis_cache(ref_of(this.analysis_cache))
+        this.analysis_cache = map_mod.Map[string.String, AnalysisCacheEntry].create()
         if this.index_built:
             idx.release_index(ref_of(this.index))
             this.index = idx.Index(entries = vec.Vec[idx.Entry].create())
@@ -381,6 +399,81 @@ extending Workspace:
         release_semantic_token_cache(ref_of(this.semantic_token_cache))
         if this.index_built:
             idx.release_index(ref_of(this.index))
+
+
+## A content fingerprint for the analysis cache.
+function fnv1a_hash(text: str) -> uint:
+    var hash: uint = 2166136261
+    var i: ptr_uint = 0
+    while i < text.len:
+        hash = (hash ^ uint<-text.byte_at(i)) * 16777619
+        i += 1
+    return hash
+
+
+function release_analysis_cache(cache: ref[map_mod.Map[string.String, AnalysisCacheEntry]]) -> void:
+    var entries_iter = cache.entries()
+    while entries_iter.next():
+        let entry = entries_iter.current()
+        unsafe:
+            var entry_value = read(entry.value)
+            entry_value.path.release()
+            entry_value.program.release()
+    cache.release()
+
+
+## A loader-backed analysis of the document at `path`, or none when the file is
+## unreadable.  Imported modules and the prelude are bound, so types and members
+## that live in other modules resolve — the host's facts do the same through
+## `ModuleLoader`, while `analyzer.check_source_file` cannot.  Cached per content
+## fingerprint because the loader runs the whole import closure.
+public function analysis_for(ws: ref[Workspace], path: str) -> Option[analyzer.Analysis]:
+    var content = ws.document_source(path) else:
+        return Option[analyzer.Analysis].none
+    defer: content.release()
+    if content.len() == 0:
+        return Option[analyzer.Analysis].none
+
+    let current_hash = fnv1a_hash(content.as_str())
+    var cache_key = string.String.from_str(path)
+    defer: cache_key.release()
+
+    let cached_ptr = ws.analysis_cache.get(cache_key)
+    if cached_ptr != null:
+        unsafe:
+            let cached = read(cached_ptr)
+            if cached.content_hash == current_hash:
+                return Option[analyzer.Analysis].some(value = cached.analysis)
+
+    var roots = ws.effective_module_roots_for(path)
+    defer: roots.release()
+    var program = loader.check_program_with_source(path, roots.as_span(), resolver_mod.Platform.linux, content.as_str(), true)
+
+    if program.analyses.len() == 0:
+        program.release()
+        return Option[analyzer.Analysis].none
+    let root_entry = program.analyses.get(program.root_index) else:
+        program.release()
+        return Option[analyzer.Analysis].none
+    let analysis = unsafe: read(root_entry)
+
+    # Replace (and release) any stale entry for this path.
+    let stale_ptr = ws.analysis_cache.get(cache_key)
+    if stale_ptr != null:
+        unsafe:
+            var stale = read(stale_ptr)
+            stale.path.release()
+            stale.program.release()
+        ws.analysis_cache.remove(cache_key)
+
+    # `set` takes ownership of the key, as the other caches do.
+    ws.analysis_cache.set(string.String.from_str(path), AnalysisCacheEntry(
+        path = string.String.from_str(path),
+        content_hash = current_hash,
+        program = program,
+        analysis = analysis,
+    ))
+    return Option[analyzer.Analysis].some(value = analysis)
 
 
 ## Walk upward from source_path to find the project root (the directory

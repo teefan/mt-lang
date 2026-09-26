@@ -395,6 +395,13 @@ function stmt_contains_name(stmt: ptr[ast.Stmt], name: str) -> bool:
                 if expr_contains_name(asgn.target, name):
                     return true
                 return expr_contains_name(asgn.value, name)
+            ast.Stmt.stmt_local as loc:
+                # A local's initializer names the import too
+                # (`let v = vec.Vec[int].create()`), so an import used only
+                # there is not unused.
+                let value = loc.value else:
+                    return false
+                return expr_contains_name(value, name)
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0
                 while bi < iff.branches.len:

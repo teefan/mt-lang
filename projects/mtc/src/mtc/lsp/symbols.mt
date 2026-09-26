@@ -58,7 +58,16 @@ public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, 
         proto.write_error(id, -32800, "symbol request failed: parse error")
         return
 
-    var analysis = analyzer.check_source_file(ast_file)
+    # The loader-backed analysis binds imported modules, so a local's inferred
+    # type resolves through them (`Vec[int]`); the single-file analysis is the
+    # fallback when the document cannot be loaded.
+    var maybe_analysis = workspace.analysis_for(ws, owned_path.as_str())
+    var analysis = if maybe_analysis.is_some(): maybe_analysis.unwrap() else: analyzer.check_source_file(ast_file)
+    # The loader parses its own AST and `resolved_expr_types` is keyed by
+    # expression pointer, so the walk must use the tree the analysis was built
+    # from when the loader path succeeded.
+    if maybe_analysis.is_some():
+        ast_file = analysis.source_file
 
     var json_text = string.String.create()
     defer: json_text.release()

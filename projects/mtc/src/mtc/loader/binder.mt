@@ -39,6 +39,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var private_member_keys = map_mod.Map[str, bool].create()
     var private_method_sigs = map_mod.Map[str, analyzer.FnSig].create()
     var private_interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create()
+    var type_param_names = map_mod.Map[str, span[ast.TypeParam]].create()
     let exports_all = analysis.source_file.module_kind == ast.ModuleKind.module_raw
 
     var i: ptr_uint = 0
@@ -69,6 +70,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     let sig = unsafe: read(sig_ptr)
                     functions.set(ef.name, sig)
             ast.Decl.decl_struct as s:
+                type_param_names.set(s.name, s.type_params)
                 let fields_ptr = analysis.structs.get(s.name)
                 if exports_all or s.visibility:
                     if fields_ptr != null:
@@ -111,6 +113,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     private_static_member_types.set(fl.name, true)
                     export_member_keys(ref_of(private_member_keys), fl.name, fl.flags_members)
             ast.Decl.decl_variant as vr:
+                type_param_names.set(vr.name, vr.type_params)
                 if exports_all or vr.visibility:
                     static_member_types.set(vr.name, true)
                     export_arm_keys(ref_of(member_keys), vr.name, vr.variant_arms)
@@ -177,6 +180,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         private_static_member_types = private_static_member_types,
         private_member_keys = private_member_keys,
         private_method_sigs = private_method_sigs,
+        type_param_names = type_param_names,
         private_interfaces = private_interfaces,
     )
 

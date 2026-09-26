@@ -2991,6 +2991,78 @@ function push_line_too_long(path: str, line: ptr_uint, length: ptr_uint, max_lin
 #  owning-release-leak / owning-release-double — AST-based ownership checks.
 # =============================================================================
 
+## A collected owning binding: where it was declared and which owning type it
+## holds, so the leak warning anchors on the declaration and names the type
+## (the host's `owning binding 'x' of type 'T' is never released`).
+struct OwningBinding:
+    line: ptr_uint
+    type_name: str
+
+
+## The owning type's name for a creation call (`vec.Vec[int].create()` -> `Vec`,
+## `Counter.make()` -> `Counter`, `Sample(...)` -> `Sample`).
+function own_created_type_name(value: ptr[ast.Expr]?, stmt_type: ptr[ast.TypeRef]?) -> str:
+    let type_ref = stmt_type else:
+        return own_call_type_name(value)
+    return owning_annotation_type_name(type_ref)
+
+
+## The base name of an owning annotation (`Map[str, str]` -> `Map`).
+function owning_annotation_type_name(type_ref: ptr[ast.TypeRef]) -> str:
+    unsafe:
+        let t = read(type_ref)
+        if t.name.parts.len == 0:
+            return ""
+        return read(t.name.parts.data + (t.name.parts.len - 1))
+
+
+function own_call_type_name(value: ptr[ast.Expr]?) -> str:
+    let ep = value else:
+        return ""
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as call:
+                return own_callee_type_name(call.callee)
+            _:
+                return ""
+
+
+function own_callee_type_name(callee: ptr[ast.Expr]) -> str:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return id.name
+            ast.Expr.expr_member_access as ma:
+                if not is_create_method_name(ma.member_name) and not is_alloc_method_name(ma.member_name):
+                    return ""
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        # `Counter.create()`: the receiver names the type.
+                        return rid.name
+                    ast.Expr.expr_member_access as inner:
+                        # `alias.Counter.create()`.
+                        return inner.member_name
+                    ast.Expr.expr_specialization as recv_spec:
+                        # `vec.Vec[int].create()` / `Vec[int].create()`.
+                        match read(recv_spec.callee):
+                            ast.Expr.expr_member_access as spec_member:
+                                return spec_member.member_name
+                            ast.Expr.expr_identifier as spec_id:
+                                return spec_id.name
+                            _:
+                                return ""
+                    _:
+                        return ""
+            ast.Expr.expr_specialization as spec:
+                match read(spec.callee):
+                    ast.Expr.expr_member_access as sma:
+                        return sma.member_name
+                    _:
+                        return ""
+            _:
+                return ""
+
+
 ## Walk all function-like bodies to collect owning locals and release calls,
 ## then report leaks and double-releases.
 function lint_ownership(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
@@ -3030,12 +3102,14 @@ function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[ve
     defer: transferred.release()
     var released_lines = map_mod.Map[str, ptr_uint].create()
     defer: released_lines.release()
+    var created_info = map_mod.Map[str, OwningBinding].create()
+    defer: created_info.release()
 
     # Collect from statements.
     var si: ptr_uint = 0
     while si < stmts.len:
         unsafe:
-            ownership_collect_stmt(stmts.data + si, ref_of(created), ref_of(released), ref_of(released_lines), ref_of(transferred), path, warnings, owning_type_names)
+            ownership_collect_stmt(stmts.data + si, ref_of(created), ref_of(created_info), ref_of(released), ref_of(released_lines), ref_of(transferred), path, warnings, owning_type_names)
         si += 1
 
     # Recurse into nested scopes.
@@ -3045,18 +3119,30 @@ function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[ve
             ownership_recurse_stmt(stmts.data + si, path, warnings)
         si += 1
 
-    # Report leaks: created but never released and never transferred.
+    # Report leaks: created but never released and never transferred.  Anchor
+    # the warning on the binding's declaration line and name its type, as the
+    # host's release rules do.
     si = 0
     while si < created.len():
         let namep = created.get(si) else:
             break
         let name = unsafe: read(namep)
         if not ownership_contains(ref_of(released), name) and not ownership_contains(ref_of(transferred), name):
+            var line: ptr_uint = 1
+            var type_name: str = ""
+            let info_ptr = created_info.get(name)
+            if info_ptr != null:
+                unsafe:
+                    let info = read(info_ptr)
+                    line = info.line
+                    type_name = info.type_name
             var buf = string.String.create()
             buf.append("owning binding '")
             buf.append(name)
+            buf.append("' of type '")
+            buf.append(type_name)
             buf.append("' is never released")
-            push_warning(warnings, path, 1, "owning-release-leak", buf.as_str(), "warning")
+            push_warning(warnings, path, line, "owning-release-leak", buf.as_str(), "warning")
         si += 1
 
 
@@ -3071,13 +3157,14 @@ function ownership_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
     return false
 
 
-function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]], released: ref[vec.Vec[str]], released_lines: ref[map_mod.Map[str, ptr_uint]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
+function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]], created_info: ref[map_mod.Map[str, OwningBinding]], released: ref[vec.Vec[str]], released_lines: ref[map_mod.Map[str, ptr_uint]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_local as loc:
                 if loc.value != null:
                     if own_creating_call(loc.value):
                         created.push(loc.name)
+                        created_info.set(loc.name, OwningBinding(line = loc.line, type_name = own_created_type_name(loc.value, loc.stmt_type)))
                     else if ownership_transfer_ctor(loc.value, loc.name):
                         transferred.push(loc.name)
                 # Also detect owning bindings from type annotations (e.g. `var m: Map[str, str]`).
@@ -3085,6 +3172,7 @@ function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]],
                     let vt = loc.stmt_type
                     if vt != null and is_owning_type_annotation(unsafe: read(vt), owning_type_names):
                         created.push(loc.name)
+                        created_info.set(loc.name, OwningBinding(line = loc.line, type_name = own_created_type_name(null, loc.stmt_type)))
                 ownership_collect_expr_opt(loc.value, released, released_lines, transferred, path, warnings)
                 ownership_collect_body_opt(loc.else_body, path, warnings)
             ast.Stmt.stmt_expression as ex:
@@ -3145,7 +3233,9 @@ function ownership_collect_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[v
                 defer: released_lines.release()
                 var transferred = vec.Vec[str].create()
                 defer: transferred.release()
-                ownership_collect_stmt(bp, ref_of(created), ref_of(released), ref_of(released_lines), ref_of(transferred), path, warnings, span[str]())
+                var created_info = map_mod.Map[str, OwningBinding].create()
+                defer: created_info.release()
+                ownership_collect_stmt(bp, ref_of(created), ref_of(created_info), ref_of(released), ref_of(released_lines), ref_of(transferred), path, warnings, span[str]())
 
 
 function ownership_collect_body_opt(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:

@@ -38,7 +38,7 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
-**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 1/52 harness requests and 2/15 stress probes still differing — 3 entries (§0k), plus a cross-file reference-scoping gap the corpus does not cover yet.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 1/53 harness requests and 2/15 stress probes still differing — 3 entries (§0k), plus a cross-file reference-scoping gap the corpus does not cover yet.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 both modes); the LSP's `formatting` and `rangeFormatting` entries are closed, and the canonical AST printer still drops comments (host reattaches trivia).**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
@@ -115,7 +115,7 @@ looked correct at the CLI level broke the compiler's own bootstrap.
 2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 8).
 3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
-   harness (`tools/lsp_parity.rb`) measures 330/30 capability keys, 1 of 52 request
+   harness (`tools/lsp_parity.rb`) measures 330/30 capability keys, 1 of 53 request
    entries and 2 of 15 stress probes differing (3 entries), and 0 semantic-token
    comparisons; the remaining families and the working order are in §0k.  Stages 1
    (seven isolated entries), 2 (completion), 3 (documentSymbol), 4
@@ -149,7 +149,7 @@ ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
 
 - builds one synthetic multi-module workspace at a **fixed path**
   (`tmp/lsp-parity-ws`, so URIs compare equal), opens it with
-  `initialize.rootUri`, and drives a 52-request corpus covering every endpoint
+  `initialize.rootUri`, and drives a 53-request corpus covering every endpoint
   (hover at 8 positions, definition/declaration/typeDefinition/implementation,
   references, documentHighlight/Symbol, folding/selection/linkedEditing ranges,
   completion at 4 positions, signatureHelp, prepareRename/rename, inlayHint,
@@ -406,7 +406,7 @@ allocated in `code_lens.mt:140` (`title.append`), freed by the handler's
    — catalogued in the table below.
 4. **The harness could not see any of this**: it never sent the resolve
    endpoints a real client always sends.  `tools/lsp_parity.rb` now drives
-   **52 requests + 15 probes** — `willSaveWaitUntil`, `codeLens/resolve`,
+   **53 requests + 15 probes** — `willSaveWaitUntil`, `codeLens/resolve`,
    `completionItem/resolve` and `documentLink/resolve` (payloads derived from
    the responses just recorded), plus `didSave`, `$/setTrace`,
    `milkTea/documentContext` (notification form), and, after the measured probes,
@@ -418,7 +418,7 @@ allocated in `code_lens.mt:140` (`title.append`), freed by the handler's
 resolve → links → diagnostics; 12,176 allocations) reports **0 valgrind errors**
 where it previously aborted; the extended valgrind drive over
 formatting/rangeFormatting/codeLens-resolve/documentLink-resolve/willSaveWaitUntil
-is clean; the harness records 52 + 15 with no crash and no timeouts.
+is clean; the harness records 53 + 15 with no crash and no timeouts.
 
 ### Fixed this session (2026-09-26, stage 5c — module roots for real projects)
 
@@ -463,6 +463,54 @@ Two more fixes found while building that project:
 - **Qualified const-method calls** (`lowering.mt`): `alias.Type.method(...)` in
   const position now reaches the const evaluator (`try_const_method_value`), so
   `const B: int = rl.Color.arithmetic()` folds like the host's.
+
+### Fixed this session (2026-09-26, stage 6c — imported generics, outline details, linter parity)
+
+Reported from VS Code: the outline (`documentSymbol` details) rendered every
+local as `<error>` — `v :: <error>` where the host shows `v :: Vec[int]`.
+Three fixes:
+
+1. **`extending Vec[T]:` never registered the block's type parameters.**  The
+   signature pass entered only the *method's* type params, so a `T` in a
+   method's parameter or return type resolved to `ty_error` — every generic
+   extending method (`std.vec`, `std.iter`, …) had an untyped signature.
+   `enter_extending_type_params` now registers the block target's arguments in
+   both the signature and the body pass.
+2. **Instantiated imported receivers had no member resolution.**
+   `resolve_member_access` / `check_member_call` resolve
+   `alias.Type[args].method(...)` and instance methods on an instantiated
+   imported receiver, substituting the type arguments into the binding's
+   signature (`substitute_type` recurses into `ty_imported` args; bindings
+   export their types' declared parameters; the method search covers every
+   visible binding, because `std.iter` declares `extending Vec[T]:` on a type
+   another module owns).  Arguments are still checked, so cross-module
+   arity/type mismatches stay diagnosed.
+3. **`documentSymbol` uses a loader-backed analysis.**  New
+   `Workspace.analysis_for(path)` runs the loader (imports bound, cached per
+   content fingerprint, the owning Program retained so name views stay valid)
+   and `symbols.mt` walks *that* AST, because `resolved_expr_types` is keyed by
+   expression pointer.  This is the path the host's facts come from.
+
+Measured on `examples/data_structures.mt` (the file in the report): the outline
+now differs from the host in **9 of 81 local details** (was 81 of 81).  The
+remaining ones are generic *function* calls whose type arguments must be
+inferred from the arguments (`iter.iter_filter(vec_iter, is_even)` →
+`Iter[int]`, `paths.path_to(4)` → `Vec[ptr_uint]`, `b.test(3)` → `bool`) — the
+analyzer's generic-call inference, catalogued in the gaps table.
+
+Linter parity fixes found by the same fixture (`mtc lint` is now byte-identical
+on it): `unused-import` walks a local's initializer, so an import used only as
+`vec.Vec[int]` is not reported unused; `owning-release-leak` anchors on the
+binding's declaration line (was line 1) and names the type — `owning binding 'v'
+of type 'Vec' is never released`, matching the host.  Still open there:
+`prefer-let` does not see mutation through *editable* methods (`var v` +
+`v.push(1)` is correct code the host does not flag — §5.3c item 1), and the
+self-host-only `dead-assignment` rule adds items the host has no rule for (a
+deliberate value-add; files where it fires differ by design).
+
+Harness: a std-generic fixture (`containers.mt`) locks the outline details and
+the diagnostics on std-generic code — **53 requests + 15 probes**, still 3
+differing entries, 0 crashes, 0 timeouts.
 
 ### Measured (same corpus, both servers)
 
@@ -558,7 +606,7 @@ comparisons differ (16 entries)**; 0 timeouts; 0 crashes.  The stage-1 root caus
 
 ### Remaining LSP gaps (all reproducible with the harness)
 
-Re-measured 2026-09-26 after stage 6b (52 requests): **3 differing entries** — 1 of 52 requests,
+Re-measured 2026-09-26 after stage 6c (53 requests): **3 differing entries** — 1 of 53 requests,
 2 of 15 probes, 0 semantic-token comparisons — plus one gap the corpus does not
 cover yet (row 2).
 
@@ -568,6 +616,8 @@ cover yet (row 2).
 | 2 | **Cross-file reference scoping** | `references/imported-decl` matches; the same-file case is not corpus-covered | the host scopes cross-file references to files that **import the declaration's module** (`reverse_import_dependents_for`), while the self-host walks every workspace-index entry named `name`.  The corpus's cross-file entry (references at an imported function's declaration) agrees — both return just the declaration — but a hand probe (2026-09-26) shows the difference where an unrelated file in the `std/` ancestor tree declares the same name: `references` at `sum`'s declaration in the fixture returned 4 locations (Two from that file) where the host returns 2.  The code-lens count now uses the host's same-file rule, so it no longer over-counts; the references walk itself still can.  Approach: restrict the cross-file candidate set to import dependents (see stage 7 in "Where the next session starts") |
 | 3 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
 | 4 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |
+| 5 | **Generic function-call inference** | not corpus-covered (found 2026-09-26 by diffing `examples/data_structures.mt`'s outline) | the 9 remaining local details there: `iter.iter_filter(vec_iter, is_even)` shows `Iter[T]` where the host infers `Iter[int]`, `paths.path_to(4)` shows `<error>` instead of `Vec[ptr_uint]`, `b.test(3)` instead of `bool`.  A *free* generic call must infer its type arguments from the argument types (`T` from an `Iter[int]` argument) and substitute them into the signature; stage 6c's instantiated-receiver path covers the receiver forms.  Approach: build the substitution from the callee's declared type params and the argument types in the analyzer's `check_call`, then reuse `substitute_type` at the same call sites 6c wired |
+| 6 | **`prefer-let` misses editable-method mutation** | not corpus-covered (found by the stage-6c fixture) | `var v = vec.Vec[int].create()` + `v.push(1)` is correct code (the analyzer itself reports `cannot call editable method push on an immutable receiver` for the `let` form), so the host's `prefer-let` stays quiet — the self-host's linter flags it, because it does not track editable calls.  §5.3c item 1's plan (an editable-receiver set recorded during analysis, queried by the scope-tracking pass) is the fix.  The self-host-only `dead-assignment` rule also adds items where it fires — a deliberate value-add, kept |
 
 ### Where the next session starts (LSP parity)
 

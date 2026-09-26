@@ -102,6 +102,8 @@ public struct ModuleBinding:
     private_static_member_types: map_mod.Map[str, bool]
     private_member_keys: map_mod.Map[str, bool]
     private_method_sigs: map_mod.Map[str, FnSig]
+    ## Declared generic parameters per exported type name (`Vec` -> `[T]`).
+    type_param_names: map_mod.Map[str, span[ast.TypeParam]]
     private_interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
 
@@ -123,6 +125,8 @@ struct Context:
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     extending_canonical_names: map_mod.Map[str, str]
     type_params: map_mod.Map[str, span[ast.TypeParamConstraint]]
+    ## Declared generic parameters per type name (`Vec` -> `[T]`).
+    type_param_names: map_mod.Map[str, span[ast.TypeParam]]
     # Names known to be generic type/value parameters in the current
     # declaration context (struct fields, `extending Type[T]` methods, foreign
     # value params, interface methods).  Used ONLY to suppress "unknown type"
@@ -186,6 +190,9 @@ public struct Analysis:
     # blocks (`extending b3.Vec3:` → `b3Vec3`), so importers can resolve the
     # methods by the name a receiver resolves to.
     extending_canonical_names: map_mod.Map[str, str]
+    ## Declared generic parameters per type name, so an instantiated receiver
+    ## (`Vec[int]`) can substitute them.
+    type_param_names: map_mod.Map[str, span[ast.TypeParam]]
     # The module's source file path, propagated so lowering can emit `#line`
     # directives that map generated C back to the .mt source (debug builds).
     source_path: str
@@ -228,6 +235,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
         extending_canonical_names = map_mod.Map[str, str].create(),
         type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
+        type_param_names = map_mod.Map[str, span[ast.TypeParam]].create(),
         suppressed_type_names = map_mod.Map[str, bool].create(),
         function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
         method_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
@@ -304,6 +312,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         events = ctx.event_types,
         type_alias_types = ctx.type_alias_types,
         extending_canonical_names = ctx.extending_canonical_names,
+        type_param_names = ctx.type_param_names,
         source_path = source_path,
     )
 
@@ -367,6 +376,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
             ast.Decl.decl_struct as s:
                 declare_type(ctx, s.name, s.line, s.column)
                 ctx.types.set(s.name, types.Type.ty_named(module_name = ctx.module_name, name = s.name))
+                ctx.type_param_names.set(s.name, s.type_params)
                 ctx.implemented.set(s.name, s.impl_list)
                 register_nested_struct_types(ctx, s.nested_types, s.name)
                 register_struct_events(ctx, s.struct_events)
@@ -382,6 +392,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
             ast.Decl.decl_variant as vr:
                 declare_type(ctx, vr.name, vr.line, vr.column)
                 ctx.types.set(vr.name, types.Type.ty_named(module_name = ctx.module_name, name = vr.name))
+                ctx.type_param_names.set(vr.name, vr.type_params)
             ast.Decl.decl_opaque as op:
                 declare_type(ctx, op.name, op.line, op.column)
                 ctx.types.set(op.name, types.Type.ty_named(module_name = ctx.module_name, name = op.name))
@@ -1116,6 +1127,7 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                         ctx.method_keys.set(method_key(canonical, m.name), true)
                     enter_suppressed_extending_target(ctx, ex.type_name)
                     enter_type_params(ctx, m.type_params)
+                    enter_extending_type_params(ctx, ex.type_name)
                     let sig = build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, m.is_async)
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
                         ctx.method_sigs.set(key, sig)
@@ -1698,7 +1710,9 @@ function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> voi
                     var m: ast.Method
                     unsafe:
                         m = read(ex.methods.data + j)
+                    enter_extending_type_params(ctx, ex.type_name)
                     check_method_body(ctx, this_type, m, ex.type_name)
+                    ctx.type_params.clear()
                     j += 1
             _:
                 pass
@@ -2010,6 +2024,23 @@ function check_definite_assignment(ctx: ref[Context], params: span[ast.Param], b
 ## Register a generic body's type parameters so references to them resolve to
 ## type variables carrying their `implements` constraints.  Value and lifetime
 ## parameters are not type variables and are skipped.  Cleared after the body.
+## Register an extending block's own type parameters (`extending Vec[T]:`) as
+## type variables, so the methods declared in it resolve `T` the way a struct
+## body does.  The parser keeps them on the target's qualified name.
+function enter_extending_type_params(ctx: ref[Context], target: ptr[ast.TypeRef]) -> void:
+    var i: ptr_uint = 0
+    unsafe:
+        let target_ref = read(target)
+        while i < target_ref.arguments.len:
+            let argument = read(target_ref.arguments.data + i)
+            let qname = argument.name
+            if qname.parts.len > 0:
+                let leaf = read(qname.parts.data + (qname.parts.len - 1))
+                if leaf.len > 0:
+                    ctx.type_params.set(leaf, span[ast.TypeParamConstraint]())
+            i += 1
+
+
 function enter_type_params(ctx: ref[Context], type_params: span[ast.TypeParam]) -> void:
     var i: ptr_uint = 0
     while i < type_params.len:
@@ -3869,8 +3900,21 @@ function substitute_type(t: types.Type, subs: ref[map_mod.Map[str, types.Type]])
                 pi2 += 1
             let new_ret = substitute_type(unsafe: read(f.return_type), subs)
             return types.Type.ty_function(params = new_params.as_span(), return_type = types.alloc_type(new_ret), variadic = f.variadic, is_proc = f.is_proc, param_names = f.param_names)
+        types.Type.ty_imported as imported:
+            return types.Type.ty_imported(module_name = imported.module_name, name = imported.name, args = substitute_type_span(imported.args, subs))
         _:
             return t
+
+
+## Substitution over a type-argument list.
+function substitute_type_span(args: span[types.Type], subs: ref[map_mod.Map[str, types.Type]]) -> span[types.Type]:
+    var replaced = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            replaced.push(substitute_type(read(args.data + i), subs))
+        i += 1
+    return replaced.as_span()
 
 
 ## Validate constraints against an inferred substitution map (from a bare
@@ -4177,7 +4221,25 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
         Option.none:
             pass
 
+    # An instantiated imported receiver resolves the call against the binding
+    # with the type arguments substituted (`vec.Vec[int].create()` -> `Vec[int]`);
+    # the signature is still argument-checked, as the local-type path does.
+    match specialization_imported_receiver(ctx, scope, receiver):
+        Option.some as instantiated:
+            match imported_method_call_type(ctx, instantiated.value, method_name, args, arg_types, any_named, line, column):
+                Option.some as method_type:
+                    return method_type.value
+                Option.none:
+                    pass
+        Option.none:
+            pass
+
     let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
+    match imported_method_call_type(ctx, recv, method_name, args, arg_types, any_named, line, column):
+        Option.some as substituted_method:
+            return substituted_method.value
+        Option.none:
+            pass
     check_editable_receiver_immutable(ctx, scope, receiver, recv, method_name, line, column)
     return check_typed_method_call(ctx, recv, method_name, args, arg_types, any_named, line, column)
 
@@ -4533,10 +4595,171 @@ function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver
                 return Option[types.Type].none
 
 
+## Resolve `alias.Type[args]` in expression position to the instantiated
+## imported type (none when it is not an imported type).
+function specialization_imported_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_specialization as spec:
+                match read(spec.callee):
+                    ast.Expr.expr_member_access as ma:
+                        match read(ma.receiver):
+                            ast.Expr.expr_identifier as alias_id:
+                                if scope_get(scope, alias_id.name) != null:
+                                    return Option[types.Type].none
+                                let module_name_ptr = ctx.import_aliases.get(alias_id.name) else:
+                                    return Option[types.Type].none
+                                let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                                    return Option[types.Type].none
+                                if not read(binding_ptr).structs.contains(ma.member_name) and not read(binding_ptr).types.contains(ma.member_name):
+                                    return Option[types.Type].none
+                                return Option[types.Type].some(value = types.Type.ty_imported(
+                                    module_name = read(module_name_ptr),
+                                    name = ma.member_name,
+                                    args = resolve_type_arguments(ctx, spec.arguments),
+                                ))
+                            _:
+                                return Option[types.Type].none
+                    _:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
+## The declared type arguments of a specialization as resolved types.
+function resolve_type_arguments(ctx: ref[Context], type_args: span[ast.TypeArgument]) -> span[types.Type]:
+    var resolved = vec.Vec[types.Type].create()
+    var i: ptr_uint = 0
+    while i < type_args.len:
+        var ref_ptr: ptr[ast.TypeRef]
+        unsafe:
+            ref_ptr = read(type_args.data + i).value
+        resolved.push(resolve_type(ctx, ref_ptr))
+        i += 1
+    return resolved.as_span()
+
+
+## Substitute an instantiated type's arguments into the declaring binding's
+## recorded parameter names.
+function imported_type_substitution(ctx: ref[Context], binding_ptr: ptr[ModuleBinding]?, type_name: str, args: span[types.Type]) -> map_mod.Map[str, types.Type]:
+    var subs = map_mod.Map[str, types.Type].create()
+    if binding_ptr == null:
+        return subs
+    let params_ptr = unsafe: read(binding_ptr).type_param_names.get(type_name) else:
+        return subs
+    let params = unsafe: read(params_ptr)
+    var i: ptr_uint = 0
+    while i < params.len and i < args.len:
+        unsafe:
+            subs.set(read(params.data + i).name, read(args.data + i))
+        i += 1
+    return subs
+
+
+## The binding that declares `type_name`, when any visible binding does.  The
+## receiver's own module declares it normally; a raw re-export may not carry
+## the type's parameters, so this also scans the visible bindings.
+function binding_declaring_type(ctx: ref[Context], own: ptr[ModuleBinding]?, type_name: str) -> ptr[ModuleBinding]?:
+    if own != null and unsafe: read(own).type_param_names.contains(type_name):
+        return own
+    let bindings = ctx.imported_modules else:
+        return null
+    unsafe:
+        var entries = read(bindings).entries()
+        while entries.next():
+            let entry = entries.current()
+            if read(entry.value).type_param_names.contains(type_name):
+                return entry.value
+    return null
+
+
+## The signature of `Type.member` among the visible bindings: the receiver's own
+## module first, then anywhere else (`std.iter` declares `extending Vec[T]:`).
+function imported_method_signature(ctx: ref[Context], own: ptr[ModuleBinding]?, type_name: str, member: str) -> ptr[FnSig]?:
+    let key = method_key(type_name, member)
+    if own != null:
+        let own_sig = unsafe: read(own).method_sigs.get(key)
+        if own_sig != null:
+            return own_sig
+    let bindings = ctx.imported_modules else:
+        return null
+    unsafe:
+        var entries = read(bindings).entries()
+        while entries.next():
+            let entry = entries.current()
+            let candidate = read(entry.value).method_sigs.get(key)
+            if candidate != null:
+                return candidate
+    return null
+
+
+## `imported_method_return_type` with the call's arguments checked against the
+## (substituted) signature, so an arity or argument-type mismatch is still
+## reported for an instantiated imported receiver.
+function imported_method_call_type(
+    ctx: ref[Context],
+    recv: types.Type,
+    member: str,
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    any_named: bool,
+    line: ptr_uint,
+    column: ptr_uint,
+) -> Option[types.Type]:
+    match recv:
+        types.Type.ty_imported as imported:
+            let own = lookup_binding(ctx, imported.module_name)
+            let sig_ptr = imported_method_signature(ctx, own, imported.name, member) else:
+                return Option[types.Type].none
+            let sig = unsafe: read(sig_ptr)
+            check_signature_call(ctx, member, sig, args, arg_types, any_named, line, column)
+            return imported_method_return_type(ctx, recv, member)
+        _:
+            return Option[types.Type].none
+
+
+## The return type of an instantiated imported method (`Vec[int].create()` ->
+## `Vec[int]`), with the receiver's type arguments substituted.  None when no
+## visible binding declares the method, so callers keep their permissive
+## fallback.
+function imported_method_return_type(ctx: ref[Context], recv: types.Type, member: str) -> Option[types.Type]:
+    match recv:
+        types.Type.ty_imported as imported:
+            let own = lookup_binding(ctx, imported.module_name)
+            let sig_ptr = imported_method_signature(ctx, own, imported.name, member) else:
+                return Option[types.Type].none
+
+            var subs = imported_type_substitution(
+                ctx,
+                binding_declaring_type(ctx, own, imported.name),
+                imported.name,
+                imported.args,
+            )
+            defer: subs.release()
+
+            let sig = unsafe: read(sig_ptr)
+            if not sig.has_return_type:
+                return Option[types.Type].some(value = types.primitive("void"))
+            return Option[types.Type].some(value = substitute_type(sig.return_type, ref_of(subs)))
+        _:
+            return Option[types.Type].none
+
+
 ## Dispatch a member access: a bare type-name receiver of an enum/flags/variant
 ## is a static member access (validate against members/arms/methods); anything
 ## else is an instance access (struct field/method or permissive).
 function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
+    # An instantiated imported receiver resolves the member against the binding
+    # with the type arguments substituted.
+    match specialization_imported_receiver(ctx, scope, receiver):
+        Option.some as instantiated:
+            match imported_method_return_type(ctx, instantiated.value, member):
+                Option.some as method_type:
+                    return method_type.value
+                Option.none:
+                    pass
+        Option.none:
+            pass
     match try_imported_member(ctx, scope, receiver, member):
         Option.some as imported_value:
             return imported_value.value
