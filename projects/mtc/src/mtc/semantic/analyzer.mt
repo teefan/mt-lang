@@ -651,6 +651,21 @@ const BUILTIN_TYPE_NAMES: array[str, 26] = array[str, 26](
 )
 
 
+## True for the built-in type names the host hides from completion — its
+## `INSTALLABLE_BUILTIN_TYPE_NAMES`: the primitives plus the handle types,
+## `EventError` and `Subscription`.
+public function is_builtin_completion_type(name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < 26:
+        if name.equal(BUILTIN_TYPE_NAMES[i]):
+            return true
+        i += 1
+    return name.equal("struct_handle") or name.equal("field_handle") or
+        name.equal("callable_handle") or name.equal("attribute_handle") or
+        name.equal("member_handle") or name.equal("type") or
+        name.equal("EventError") or name.equal("Subscription")
+
+
 ## Copy the exported member/method keys of a seeded prelude module's binding
 ## (e.g. `Option.expect` from std.option's `extending Option[T]`) into the
 ## current module's method-key set.  No-op when the binding is absent

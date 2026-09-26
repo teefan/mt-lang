@@ -1,11 +1,9 @@
-## Completion — keyword, symbol, module-member, and method-receiver completion
-## at cursor.
-##
-## Returns Milk Tea keywords plus function/type/value names from the semantic
-## Analysis maps.  In a dot-member context after an import alias (`vec.|`),
-## returns the public declarations of the imported module.  In a dot-member
-## context after a typed value (`s.|`), returns the methods declared on the
-## value's type.
+## Completion — mirrors the host's `lib/milk_tea/lsp/server/completion.rb`:
+## the import context, the dot-receiver chain (module members, type members,
+## enum/variant members, value members, then the file's method list) and the
+## global bucket list (functions, types, imports, values, locals, type
+## constructors, keywords) with the host's kinds, `sortText` keys and `data`
+## payloads.
 
 import std.fmt
 import std.fs as fs_mod
@@ -20,27 +18,47 @@ import std.log as log
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
+import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
-import mtc.lsp.scope as scope
+import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_index as workspace_index
 
 
-## LSP CompletionItemKind values.
-const KIND_FUNCTION:  int = 3
-const KIND_VARIABLE:  int = 6
-const KIND_CLASS:     int = 7
-const KIND_INTERFACE: int = 8
-const KIND_MODULE:    int = 9
-const KIND_ENUM:      int = 13
-const KIND_KEYWORD:   int = 14
-const KIND_CONSTANT:  int = 21
+## LSP CompletionItemKind values, matching the host's numbering.
+const KIND_MODULE:      int = 2
+const KIND_METHOD:      int = 6
+const KIND_CLASS:       int = 7
+const KIND_FIELD:       int = 8
+const KIND_FUNCTION:    int = 12
+const KIND_VARIABLE:    int = 13
+const KIND_ENUM:        int = 13
+const KIND_KEYWORD:     int = 14
+const KIND_ENUM_MEMBER: int = 22
+
+const MAX_COMPLETION_ITEMS: ptr_uint = 200
+
+
+## The host's `COMPLETION_KEYWORDS`, in its order.
+const COMPLETION_KEYWORDS: array[str, 47] = array[str, 47](
+    "let", "var", "const", "function", "async", "struct", "enum", "flags", "variant", "union",
+    "type", "interface", "opaque", "if", "while", "for", "match", "return", "import", "public",
+    "static", "extending", "external", "fn", "event", "attribute", "defer", "break", "continue", "pass",
+    "unsafe", "consuming", "implements", "include", "link", "foreign", "proc", "editable", "in", "out",
+    "inout", "as", "when", "inline", "await", "static_assert", "emit",
+)
+
+
+## The host's `TYPE_CONSTRUCTOR_KEYWORDS`, in its order.
+const TYPE_CONSTRUCTOR_KEYWORDS: array[str, 12] = array[str, 12](
+    "ptr", "ref", "span", "array", "dyn", "Option", "Result", "Task", "SoA", "str_buffer", "const_ptr", "simd",
+)
 
 
 ## Handle textDocument/completion.
@@ -77,39 +95,23 @@ public function handle_completion(
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
     var analysis = analyzer.check_source_file(ast_file)
 
-    # Dot-member context after an import alias: complete the module's exports.
+    # Dot-receiver context.  The host answers every dot receiver from the
+    # receiver chain — and, failing that, from the file's method list — so the
+    # keyword list is never a dot-receiver answer.
     match cursor.dot_receiver_at(source, line, character):
         Option.some as recv:
-            # Import alias: complete the module's exports.
-            let module_ptr = analysis.imports.get(recv.value)
-            if module_ptr != null:
-                var items = module_member_completions(ws, ref_of(analysis), recv.value, prefix)
-                defer: items.release()
-                proto.write_response_raw(id, items.as_str())
-                return
-
-            # Not an import alias — try method completions.
-            var methods = type_method_completions(ref_of(analysis), recv.value, prefix)
-            if methods != null:
-                proto.write_response_raw(id, unsafe: read(methods).as_str())
-                unsafe: read(methods).release()
-                heap.release(methods)
-                return
-
-            # Try enum/variant member completions.
-            var members = enum_member_completions(ref_of(analysis), recv.value, prefix)
-            if members != null:
-                proto.write_response_raw(id, unsafe: read(members).as_str())
-                unsafe: read(members).release()
-                heap.release(members)
-                return
+            var dot_items = dot_receiver_completions(
+                ws, ref_of(analysis), ast_file, file_path.as_str(), uri, recv.value, prefix, line)
+            proto.write_response_raw(id, dot_items.as_str())
+            dot_items.release()
+            return
         Option.none:
             pass
 
     # Call context: suggest parameter names for the innermost call.
     match cursor.call_name_at(source, line, character):
         Option.some as callee:
-            var named = named_argument_completions(ref_of(analysis), callee.value, prefix)
+            var named = named_argument_completions(ref_of(analysis), callee.value, prefix, uri)
             if named != null:
                 proto.write_response_raw(id, unsafe: read(named).as_str())
                 unsafe: read(named).release()
@@ -118,17 +120,58 @@ public function handle_completion(
         Option.none:
             pass
 
-    # Scope/local context: local variables and parameters visible at cursor.
-    var scope_items = scope_completions(source, line + 1, prefix)
-    if scope_items != null:
-        proto.write_response_raw(id, unsafe: read(scope_items).as_str())
-        unsafe: read(scope_items).release()
-        heap.release(scope_items)
-        return
-
-    var items_json = build_completions_json(ref_of(analysis), prefix)
+    var items_json = build_completions_json(
+        ws, ref_of(analysis), ast_file, file_path.as_str(), uri, line, prefix)
     proto.write_response_raw(id, items_json.as_str())
     items_json.release()
+
+
+## The host's dot-receiver chain.  A resolved import alias answers with module
+## members; a type name with its members and methods; a value with fields then
+## methods; anything else with the file's method list.
+function dot_receiver_completions(
+    ws: ref[workspace.Workspace],
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    file_path: str,
+    uri: str,
+    receiver: str,
+    prefix: str,
+    line: ptr_uint,
+) -> string.String:
+    var current_module = module_name_for(ws, file_path)
+    defer: current_module.release()
+    let module_text = current_module.as_str()
+    # 1. Import alias that resolves to a loadable module.
+    if unsafe: read(analysis).imports.contains(receiver):
+        var module_items = module_member_completions(ws, analysis, receiver, prefix, uri)
+        if module_items != null:
+            let result = unsafe: read(module_items)
+            heap.release(module_items)
+            return result
+        # A failed import has no facts binding, so the host falls through.
+
+    # 2. Type receiver: enum/variant members, then the type's methods.
+    var type_items = type_receiver_completions(analysis, ast_file, receiver, prefix, uri)
+    if type_items != null:
+        let result = unsafe: read(type_items)
+        heap.release(type_items)
+        return result
+
+    # 3. Value receiver: fields then methods of the receiver's type.
+    match receiver_value_type(analysis, ast_file, receiver, line + 1):
+        Option.some as ty:
+            var value_items = value_receiver_completions(
+                analysis, ast_file, ty.value, prefix, uri, module_text)
+            if value_items != null:
+                let result = unsafe: read(value_items)
+                heap.release(value_items)
+                return result
+        Option.none:
+            pass
+
+    # 4. The file's method list.
+    return method_fallback_completions(ast_file, prefix, uri)
 
 
 ## Handle completionItem/resolve.  When the editor resolves a completion
@@ -146,7 +189,6 @@ public function handle_completion_resolve(
         return
 
     # Look up the label in the workspace symbol index.
-    let ws_root = ws.root_path.as_str()
     ws.build_index_if_needed()
     var match_indices = workspace_index.query_index(ref_of(ws.index), label, 1)
     defer: match_indices.release()
@@ -443,55 +485,9 @@ function add_import_item(
     if seen.contains(name) or unsafe: read(count) >= MAX_COMPLETION_ITEMS:
         return
     seen.set(name, true)
-    append_item(json_out, name, KIND_MODULE, "module", name, first)
+    append_plain_item(json_out, name, KIND_MODULE, "module", name, first)
     unsafe:
         read(count) = read(count) + 1
-
-
-
-## Completions for local variables and parameters visible at the cursor.
-## Collects all scoped bindings via scope.collect_bindings and filters to
-## those whose line range covers the cursor line and whose name matches the
-## prefix.  Only activates when the user has typed at least one character.
-function scope_completions(
-    source: str,
-    target_line: ptr_uint,
-    prefix: str,
-) -> ptr[string.String]?:
-    if prefix.len == 0:
-        return null
-
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var bindings = scope.collect_bindings(source, ast_file)
-    defer: bindings.release()
-
-    var items_json = string.String.create()
-    items_json.append("[")
-    var first = true
-    var count: ptr_uint = 0
-
-    var bi: ptr_uint = 0
-    while bi < bindings.len() and count < MAX_COMPLETION_ITEMS:
-        let bp = bindings.get(bi) else:
-            break
-        let b = unsafe: read(bp)
-        if b.name.len > 0 and b.name != "_" and not b.name.starts_with("_") and b.name.starts_with(prefix):
-            if target_line >= b.line and target_line <= b.scope_end:
-                append_item(ref_of(items_json), b.name, KIND_VARIABLE, b.name, b.name, ref_of(first))
-                count += 1
-        bi += 1
-
-    items_json.append("]")
-
-    if count == 0:
-        items_json.release()
-        return null
-
-    let alloc = heap.must_alloc[string.String](1)
-    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
-    return alloc
 
 
 ## True when `dir_path` is a directory and contains at least one `.mt` file.
@@ -514,24 +510,20 @@ function dir_contains_mt(dir_path: str) -> bool:
     return false
 
 
-## Completions for `alias.` — the public declarations of the module the
-## import alias resolves to.  Returns "[]" when the receiver is not a known
-## import alias or the module cannot be resolved.
+## Completions for `alias.` — the host's module-member shape: functions
+## (kind 12, `0_`), values (kind 13, `1_`) and types (kind 5, `2_`).  Returns
+## null when the alias's module cannot be resolved, so the caller falls
+## through to the rest of the receiver chain.
 function module_member_completions(
     ws: ref[workspace.Workspace],
     analysis: ref[analyzer.Analysis],
     alias_name: str,
     prefix: str,
-) -> string.String:
-    var items_json = string.String.create()
-    items_json.append("[")
-    var first = true
-    var count: ptr_uint = 0
-
+    uri: str,
+) -> ptr[string.String]?:
     let module_ptr = unsafe: read(analysis).imports.get(alias_name)
     if module_ptr == null:
-        items_json.append("]")
-        return wrap_completion_result(ref_of(items_json), false)
+        return null
     let module_name = unsafe: read(module_ptr)
 
     var roots = ws.effective_module_roots_for("")
@@ -540,20 +532,20 @@ function module_member_completions(
         Result.failure as failure_payload:
             var err = failure_payload.error
             err.release()
-            items_json.append("]")
-            return wrap_completion_result(ref_of(items_json), false)
+            return null
         Result.success as path_payload:
             var module_path = path_payload.value
             defer: module_path.release()
-
             var module_source = ws.document_source(module_path.as_str()) else:
-                items_json.append("]")
-                return wrap_completion_result(ref_of(items_json), false)
+                return null
             defer: module_source.release()
-
             var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
             defer: parse_diags.release()
             var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
+            var items_json = string.String.create()
+            items_json.append("[")
+            var first = true
+            var count: ptr_uint = 0
 
             let exports_all = module_file.module_kind == ast.ModuleKind.module_raw
             var di: ptr_uint = 0
@@ -564,349 +556,152 @@ function module_member_completions(
                 match d:
                     ast.Decl.decl_function as f:
                         if (exports_all or f.visibility) and prefix_matches(f.name, prefix):
-                            append_item(ref_of(items_json), f.name, KIND_FUNCTION, f.name, f.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_foreign_function as ff:
-                        if (exports_all or ff.visibility) and prefix_matches(ff.name, prefix):
-                            append_item(ref_of(items_json), ff.name, KIND_FUNCTION, ff.name, ff.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_extern_function as ef:
-                        if prefix_matches(ef.name, prefix):
-                            append_item(ref_of(items_json), ef.name, KIND_FUNCTION, ef.name, ef.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_struct as s:
-                        if (exports_all or s.visibility) and prefix_matches(s.name, prefix):
-                            append_item(ref_of(items_json), s.name, KIND_CLASS, "type", s.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_union as u:
-                        if (exports_all or u.visibility) and prefix_matches(u.name, prefix):
-                            append_item(ref_of(items_json), u.name, KIND_CLASS, "type", u.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_enum as e:
-                        if (exports_all or e.visibility) and prefix_matches(e.name, prefix):
-                            append_item(ref_of(items_json), e.name, KIND_ENUM, "enum", e.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_flags as fl:
-                        if (exports_all or fl.visibility) and prefix_matches(fl.name, prefix):
-                            append_item(ref_of(items_json), fl.name, KIND_ENUM, "flags", fl.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_variant as vr:
-                        if (exports_all or vr.visibility) and prefix_matches(vr.name, prefix):
-                            append_item(ref_of(items_json), vr.name, KIND_ENUM, "variant", vr.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_interface as iface:
-                        if (exports_all or iface.visibility) and prefix_matches(iface.name, prefix):
-                            append_item(ref_of(items_json), iface.name, KIND_INTERFACE, "interface", iface.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_type_alias as ta:
-                        if (exports_all or ta.visibility) and prefix_matches(ta.name, prefix):
-                            append_item(ref_of(items_json), ta.name, KIND_CLASS, "type", ta.name, ref_of(first))
-                            count += 1
-                    ast.Decl.decl_opaque as op:
-                        if (exports_all or op.visibility) and prefix_matches(op.name, prefix):
-                            append_item(ref_of(items_json), op.name, KIND_CLASS, "opaque", op.name, ref_of(first))
-                            count += 1
+                            emit_module_function(
+                                ref_of(items_json), f.name, f.method_params, f.return_type,
+                                module_name, uri, ref_of(first), ref_of(count))
                     ast.Decl.decl_const as c:
                         if (exports_all or c.visibility) and prefix_matches(c.name, prefix):
-                            append_item(ref_of(items_json), c.name, KIND_CONSTANT, c.name, c.name, ref_of(first))
-                            count += 1
+                            emit_module_value(
+                                ref_of(items_json), c.name, c.const_type, uri, ref_of(first), ref_of(count))
                     ast.Decl.decl_var as v:
                         if (exports_all or v.visibility) and prefix_matches(v.name, prefix):
-                            append_item(ref_of(items_json), v.name, KIND_VARIABLE, v.name, v.name, ref_of(first))
-                            count += 1
+                            emit_module_value(
+                                ref_of(items_json), v.name, v.var_type, uri, ref_of(first), ref_of(count))
+                    ast.Decl.decl_struct as s:
+                        if (exports_all or s.visibility) and prefix_matches(s.name, prefix):
+                            emit_module_type(ref_of(items_json), s.name, uri, ref_of(first), ref_of(count))
+                    ast.Decl.decl_union as u:
+                        if (exports_all or u.visibility) and prefix_matches(u.name, prefix):
+                            emit_module_type(ref_of(items_json), u.name, uri, ref_of(first), ref_of(count))
+                    ast.Decl.decl_enum as e:
+                        if (exports_all or e.visibility) and prefix_matches(e.name, prefix):
+                            emit_module_type(ref_of(items_json), e.name, uri, ref_of(first), ref_of(count))
+                    ast.Decl.decl_flags as fl:
+                        if (exports_all or fl.visibility) and prefix_matches(fl.name, prefix):
+                            emit_module_type(ref_of(items_json), fl.name, uri, ref_of(first), ref_of(count))
+                    ast.Decl.decl_variant as vr:
+                        if (exports_all or vr.visibility) and prefix_matches(vr.name, prefix):
+                            emit_module_type(ref_of(items_json), vr.name, uri, ref_of(first), ref_of(count))
+                    ast.Decl.decl_type_alias as ta:
+                        if (exports_all or ta.visibility) and prefix_matches(ta.name, prefix):
+                            emit_module_type(ref_of(items_json), ta.name, uri, ref_of(first), ref_of(count))
+                    ast.Decl.decl_opaque as op:
+                        if (exports_all or op.visibility) and prefix_matches(op.name, prefix):
+                            emit_module_type(ref_of(items_json), op.name, uri, ref_of(first), ref_of(count))
+                    ast.Decl.decl_interface as iface:
+                        if (exports_all or iface.visibility) and prefix_matches(iface.name, prefix):
+                            emit_module_type(ref_of(items_json), iface.name, uri, ref_of(first), ref_of(count))
                     _:
                         pass
                 di += 1
 
             items_json.append("]")
-            return wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+            let alloc = heap.must_alloc[string.String](1)
+            unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+            return alloc
 
 
-## Build a JSON array of CompletionItem objects for the general (non-dot)
-## context: keywords plus the current module's own symbols.
-const MAX_COMPLETION_ITEMS: ptr_uint = 200
+## Emit one exported module function in the host's shape.
+function emit_module_function(
+    items_json: ref[string.String],
+    name: str,
+    params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    module_name: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var params_text = string.String.create()
+    defer: params_text.release()
+    append_ast_params(ref_of(params_text), params)
 
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append("function ")
+    detail.append(name)
+    detail.append("(")
+    detail.append(params_text.as_str())
+    detail.append(") -> ")
+    append_ast_type(ref_of(detail), return_type, "void")
 
-## Build a JSON array of completion items from the analysis data.
-## Capped at MAX_COMPLETION_ITEMS; returns an empty array when nothing matches.
-function build_completions_json(analysis: ref[analyzer.Analysis], prefix: str) -> string.String:
-    var first = true
-    var count: ptr_uint = 0
-    var truncated = false
+    var snippet = string.String.create()
+    defer: snippet.release()
+    let has_snippet = append_ast_snippet(ref_of(snippet), name, params)
+    let insert_text = if has_snippet: snippet.as_str() else: name
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("0_")
+    sort_text.append(name)
+    var label_details = string.String.create()
+    defer: label_details.release()
+    if params_text.len() > 0:
+        label_details.append(" (")
+        label_details.append(params_text.as_str())
+        label_details.append(")")
 
-    var items_json = string.String.create()
-    items_json.append("[")
-
-    var keywords = collect_keywords()
-    var ki: ptr_uint = 0
-    while ki < keywords.len() and count < MAX_COMPLETION_ITEMS:
-        let kw = keywords.get(ki) else:
-            break
-        let name = unsafe: read(kw)
-        if prefix_matches(name, prefix):
-            append_item(ref_of(items_json), name, KIND_KEYWORD, "keyword", name, ref_of(first))
-            count += 1
-        ki += 1
-    keywords.release()
-
+    append_item_ext(
+        items_json, name, KIND_FUNCTION, detail.as_str(), insert_text,
+        sort_text.as_str(), name, uri, 2, label_details.as_str(), module_name, first)
     unsafe:
-        # Functions
-        var fn_keys = read(analysis).functions.keys()
-        while count < MAX_COMPLETION_ITEMS:
-            let kp = fn_keys.next() else:
-                break
-            let name = read(kp)
-            if prefix_matches(name, prefix):
-                var detail = string.String.create()
-                detail.append("function ")
-                detail.append(name)
-                let sig_ptr = read(analysis).functions.get(name)
-                if sig_ptr != null:
-                    let sig = read(sig_ptr)
-                    detail.append("(")
-                    var pi: ptr_uint = 0
-                    while pi < sig.params.len:
-                        let param = read(sig.params.data + pi)
-                        if pi > 0:
-                            detail.append(", ")
-                        detail.append(param.name)
-                        detail.append(": ")
-                        detail.append(types.type_to_string(param.ty))
-                        pi += 1
-                    if sig.is_variadic:
-                        if sig.params.len > 0:
-                            detail.append(", ")
-                        detail.append("...")
-                    detail.append(")")
-                    if sig.has_return_type:
-                        detail.append(" -> ")
-                        detail.append(types.type_to_string(sig.return_type))
-                    if sig.params.len > 0:
-                        var snippet = function_snippet(name, sig)
-                        append_snippet_item(ref_of(items_json), name, KIND_FUNCTION, detail.as_str(), snippet.as_str(), ref_of(first))
-                        snippet.release()
-                    else:
-                        append_item(ref_of(items_json), name, KIND_FUNCTION, detail.as_str(), name, ref_of(first))
-                else:
-                    append_item(ref_of(items_json), name, KIND_FUNCTION, detail.as_str(), name, ref_of(first))
-                detail.release()
-                count += 1
-                if count >= MAX_COMPLETION_ITEMS:
-                    truncated = true
-
-        # Structs
-        var struct_keys = read(analysis).structs.keys()
-        while count < MAX_COMPLETION_ITEMS:
-            let kp = struct_keys.next() else:
-                break
-            let name = read(kp)
-            if prefix_matches(name, prefix):
-                append_item(ref_of(items_json), name, KIND_CLASS, "type", name, ref_of(first))
-                count += 1
-                if count >= MAX_COMPLETION_ITEMS:
-                    truncated = true
-
-        # Enums, flags, and variants
-        var static_keys = read(analysis).static_member_types.keys()
-        while count < MAX_COMPLETION_ITEMS:
-            let kp = static_keys.next() else:
-                break
-            let name = read(kp)
-            if prefix_matches(name, prefix):
-                append_item(ref_of(items_json), name, KIND_ENUM, "type", name, ref_of(first))
-                count += 1
-                if count >= MAX_COMPLETION_ITEMS:
-                    truncated = true
-
-        # Interfaces
-        var iface_keys = read(analysis).interfaces.keys()
-        while count < MAX_COMPLETION_ITEMS:
-            let kp = iface_keys.next() else:
-                break
-            let name = read(kp)
-            if prefix_matches(name, prefix):
-                append_item(ref_of(items_json), name, KIND_INTERFACE, "interface", name, ref_of(first))
-                count += 1
-                if count >= MAX_COMPLETION_ITEMS:
-                    truncated = true
-
-        # Module-level consts and vars
-        var value_keys = read(analysis).value_types.keys()
-        while count < MAX_COMPLETION_ITEMS:
-            let kp = value_keys.next() else:
-                break
-            let name = read(kp)
-            if prefix_matches(name, prefix):
-                let tp = read(analysis).value_types.get(name)
-                if tp == null:
-                    append_item(ref_of(items_json), name, KIND_CONSTANT, name, name, ref_of(first))
-                else:
-                    var detail = string.String.create()
-                    detail.append(name)
-                    detail.append(": ")
-                    detail.append(types.type_to_string(read(tp)))
-                    append_item(ref_of(items_json), name, KIND_CONSTANT, detail.as_str(), name, ref_of(first))
-                    detail.release()
-                count += 1
-                if count >= MAX_COMPLETION_ITEMS:
-                    truncated = true
-
-        # Import aliases
-        var import_keys = read(analysis).imports.keys()
-        while count < MAX_COMPLETION_ITEMS:
-            let kp = import_keys.next() else:
-                break
-            let name = read(kp)
-            if prefix_matches(name, prefix):
-                var detail = string.String.create()
-                detail.append("module ")
-                let mod_ptr = read(analysis).imports.get(name)
-                if mod_ptr != null:
-                    detail.append(read(mod_ptr))
-                append_item(ref_of(items_json), name, KIND_MODULE, detail.as_str(), name, ref_of(first))
-                detail.release()
-                count += 1
-                if count >= MAX_COMPLETION_ITEMS:
-                    truncated = true
-
-    items_json.append("]")
-    return wrap_completion_result(ref_of(items_json), truncated)
+        read(count) = read(count) + 1
 
 
-## True when `name` starts with `prefix`, or when prefix is empty.
-function prefix_matches(name: str, prefix: str) -> bool:
-    if prefix.len == 0:
-        return true
-    return name.starts_with(prefix)
+## Emit one exported module value in the host's shape.
+function emit_module_value(
+    items_json: ref[string.String],
+    name: str,
+    declared: ptr[ast.TypeRef]?,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append(name)
+    detail.append(": ")
+    append_ast_type(ref_of(detail), declared, "void")
+
+    append_item_ext(
+        items_json, name, KIND_VARIABLE, detail.as_str(), name, "1_", name, uri,
+        0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
 
 
-## Append one CompletionItem with label, kind, detail, insertText, and sortText.
-function append_item(json_out: ref[string.String], label: str, kind: int, detail: str, insert: str, first_var: ref[bool]) -> void:
-    if label.len == 0:
-        return
-    if not unsafe: read(first_var):
-        json_out.append(",")
-    unsafe: read(first_var) = false
-    json_out.append("{\"label\":\"")
-    proto.append_escaped(json_out, label)
-    json_out.append("\",\"kind\":")
-    json_out.append_format(f"#{kind}")
-    json_out.append(",\"detail\":\"")
-    proto.append_escaped(json_out, detail)
-    json_out.append("\",\"insertText\":\"")
-    proto.append_escaped(json_out, insert)
-    json_out.append("\",\"sortText\":\"")
-    proto.append_escaped(json_out, label)
-    json_out.append("\"}")
+## Emit one exported module type in the host's shape.
+function emit_module_type(
+    items_json: ref[string.String],
+    name: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append("type ")
+    detail.append(name)
+
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("2_")
+    sort_text.append(name)
+    append_item_ext(items_json, name, KIND_CLASS, detail.as_str(), name, sort_text.as_str(), name, uri, 0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
 
 
-## Append a CompletionItem with snippet insertTextFormat for function calls.
-function append_snippet_item(json_out: ref[string.String], label: str, kind: int, detail: str, snippet: str, first_var: ref[bool]) -> void:
-    if label.len == 0:
-        return
-    if not unsafe: read(first_var):
-        json_out.append(",")
-    unsafe: read(first_var) = false
-    json_out.append("{\"label\":\"")
-    proto.append_escaped(json_out, label)
-    json_out.append("\",\"kind\":")
-    json_out.append_format(f"#{kind}")
-    json_out.append(",\"detail\":\"")
-    proto.append_escaped(json_out, detail)
-    json_out.append("\",\"insertTextFormat\":2")
-    json_out.append(",\"insertText\":\"")
-    proto.append_escaped(json_out, snippet)
-    json_out.append("\",\"sortText\":\"")
-    proto.append_escaped(json_out, label)
-    json_out.append("\"}")
-
-
-## Build a snippet-like insertText for a function call: `name(${1:p1}, ${2:p2})`.
-function function_snippet(name: str, sig: analyzer.FnSig) -> string.String:
-    var result = string.String.create()
-    result.append(name)
-    result.append("(")
-    var pi: ptr_uint = 0
-    while pi < sig.params.len:
-        let param = unsafe: read(sig.params.data + pi)
-        if pi > 0:
-            result.append(", ")
-        result.append("${")
-        result.append_format(f"#{pi + 1}")
-        result.append(":")
-        result.append(param.name)
-        result.append("}")
-        pi += 1
-    result.append(")")
-    return result
-
-
-
-function collect_keywords() -> vec.Vec[str]:
-    var result = vec.Vec[str].create()
-    result.push("function")
-    result.push("if")
-    result.push("else")
-    result.push("return")
-    result.push("let")
-    result.push("var")
-    result.push("while")
-    result.push("for")
-    result.push("match")
-    result.push("struct")
-    result.push("enum")
-    result.push("interface")
-    result.push("import")
-    result.push("const")
-    result.push("type")
-    result.push("break")
-    result.push("continue")
-    result.push("defer")
-    result.push("unsafe")
-    result.push("public")
-    result.push("extending")
-    result.push("variant")
-    result.push("flags")
-    result.push("union")
-    result.push("opaque")
-    result.push("foreign")
-    result.push("external")
-    result.push("async")
-    result.push("pass")
-    result.push("true")
-    result.push("false")
-    result.push("null")
-    result.push("and")
-    result.push("or")
-    result.push("not")
-    return result
-
-
-## Wrap a JSON items array in the LSP completion result object.
-function wrap_completion_result(items_json: ref[string.String], truncated: bool) -> string.String:
-    var result = string.String.create()
-    result.append("{\"isIncomplete\":")
-    if truncated:
-        result.append("true")
-    else:
-        result.append("false")
-    result.append(",\"items\":")
-    result.append(items_json.as_str())
-    result.append("}")
-    items_json.release()
-    return result
-
-
-## Completions for `receiver.` when the receiver is a value or type name.
-## Resolves the receiver name via analysis.types and analysis.type_names,
-## then looks up methods declared for that type in analysis.method_keys.
-## Returns a heap-allocated string.String on success, null otherwise.
-function type_method_completions(
+## Completions for a type-name receiver: enum/variant members (kind 22) first,
+## then the type's methods (kind 6).  Returns null when the receiver is not a
+## known type name.
+function type_receiver_completions(
     analysis: ref[analyzer.Analysis],
-    receiver_name: str,
+    ast_file: ast.SourceFile,
+    receiver: str,
     prefix: str,
+    uri: str,
 ) -> ptr[string.String]?:
-    let type_name = resolve_receiver_type_name(analysis, receiver_name)
+    let type_name = resolve_receiver_type_name(analysis, receiver)
     if type_name.len == 0:
         return null
 
@@ -915,25 +710,32 @@ function type_method_completions(
     var first = true
     var count: ptr_uint = 0
 
-    var prefix_buf = string.String.create()
-    prefix_buf.append(type_name)
-    prefix_buf.append(".")
-    let type_prefix = prefix_buf.as_str()
-    let type_prefix_len = type_prefix.len
+    # Enum/flags/variant members.
+    let members_ptr = unsafe: read(analysis).match_case_names.get(type_name)
+    if members_ptr != null:
+        unsafe:
+            let members = read(members_ptr)
+            var mi: ptr_uint = 0
+            while mi < members.len and count < MAX_COMPLETION_ITEMS:
+                let mname = read(members.data + mi)
+                if mname.len > 0 and prefix_matches(mname, prefix):
+                    var detail = string.String.create()
+                    detail.append(type_name)
+                    detail.append(".")
+                    detail.append(mname)
+                    append_item_ext(
+                        ref_of(items_json), mname, KIND_ENUM_MEMBER, detail.as_str(), mname,
+                        "0_", mname, uri, 0, "", "", ref_of(first))
+                    detail.release()
+                    count += 1
+                mi += 1
 
-    var method_entries = unsafe: read(analysis).method_keys.entries()
-    while method_entries.next() and count < MAX_COMPLETION_ITEMS:
-        let entry = method_entries.current()
-        let whole_key = unsafe: read(entry.key)
-        if whole_key.starts_with(type_prefix):
-            let method_name = whole_key.slice(type_prefix_len, whole_key.len - type_prefix_len)
-            if method_name.len > 0 and prefix_matches(method_name, prefix):
-                append_item(ref_of(items_json), method_name, KIND_FUNCTION, method_name, method_name, ref_of(first))
-                count += 1
+    # Methods declared on the type.
+    emit_type_methods(
+        ast_file, type_name, prefix, uri, 0, "0_",
+        ref_of(items_json), ref_of(first), ref_of(count))
 
     items_json.append("]")
-    prefix_buf.release()
-
     if count == 0:
         items_json.release()
         return null
@@ -943,35 +745,977 @@ function type_method_completions(
     return alloc
 
 
-
-## Complete enum/variant member names after a dot receiver.
-## When the cursor is after `EnumType.`, return the enum's member names.
-function enum_member_completions(
+## Completions for a value receiver: the type's fields (kind 8, `0_`) then its
+## methods (kind 6, `1_`).  Returns null when the type has neither.
+function value_receiver_completions(
     analysis: ref[analyzer.Analysis],
-    name: str,
+    ast_file: ast.SourceFile,
+    receiver_ty: types.Type,
     prefix: str,
+    uri: str,
+    current_module: str,
 ) -> ptr[string.String]?:
-    let type_name = resolve_receiver_type_name(analysis, name)
+    let type_name = type_to_key_name(receiver_ty)
     if type_name.len == 0:
-        return null
-
-    let members_ptr = unsafe: read(analysis).match_case_names.get(type_name)
-    if members_ptr == null:
         return null
 
     var items_json = string.String.create()
     items_json.append("[")
     var first = true
     var count: ptr_uint = 0
-    unsafe:
-        let members = read(members_ptr)
-        var mi: ptr_uint = 0
-        while mi < members.len and count < MAX_COMPLETION_ITEMS:
-            let mname = read(members.data + mi)
-            if mname.len > 0 and prefix_matches(mname, prefix):
-                append_item(ref_of(items_json), mname, KIND_ENUM, mname, mname, ref_of(first))
+
+    let fields_ptr = unsafe: read(analysis).structs.get(type_name)
+    if fields_ptr != null:
+        let fields = unsafe: read(fields_ptr)
+        var fi: ptr_uint = 0
+        while fi < fields.len and count < MAX_COMPLETION_ITEMS:
+            let field = unsafe: read(fields.data + fi)
+            if prefix_matches(field.name, prefix):
+                var detail = string.String.create()
+                detail.append(field.name)
+                detail.append(": ")
+                detail.append(field_type_text(ast_file, type_name, field.name))
+                var sort_text = string.String.create()
+                sort_text.append("0_")
+                sort_text.append(field.name)
+                append_item_ext(
+                    ref_of(items_json), field.name, KIND_FIELD, detail.as_str(), field.name,
+                    sort_text.as_str(), field.name, uri, 0, "", "", ref_of(first))
+                sort_text.release()
+                detail.release()
                 count += 1
-            mi += 1
+            fi += 1
+
+    emit_type_methods(
+        ast_file, type_name, prefix, uri, 2, "1_",
+        ref_of(items_json), ref_of(first), ref_of(count))
+
+    items_json.append("]")
+    if count == 0:
+        items_json.release()
+        return null
+
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    return alloc
+
+
+## Render a struct/union field's declared type from the AST.  The semantic
+## `FieldEntry.ty` names are resolution-time views, so the AST TypeRef is the
+## safe source (the host reads its own binding's type here).
+function field_type_text(ast_file: ast.SourceFile, type_name: str, field_name: str) -> str:
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_struct as s:
+                if s.name.equal(type_name):
+                    var fi: ptr_uint = 0
+                    while fi < s.struct_fields.len:
+                        let f = unsafe: read(s.struct_fields.data + fi)
+                        if f.name.equal(field_name):
+                            return ast_formatter.render_type(f.field_type)
+                        fi += 1
+            ast.Decl.decl_union as u:
+                if u.name.equal(type_name):
+                    var ui: ptr_uint = 0
+                    while ui < u.union_fields.len:
+                        let f = unsafe: read(u.union_fields.data + ui)
+                        if f.name.equal(field_name):
+                            return ast_formatter.render_type(f.field_type)
+                        ui += 1
+            _:
+                pass
+        di += 1
+    return ""
+
+
+## Emit the methods declared for `type_name` by `extending` blocks, in
+## declaration order, with `sort_prefix` (`0_` for a type receiver and the
+## method fallback, `1_` for a value receiver's methods).
+function emit_type_methods(
+    ast_file: ast.SourceFile,
+    type_name: str,
+    prefix: str,
+    uri: str,
+    insert_format: int,
+    sort_prefix: str,
+    items_json: ref[string.String],
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                if extending_type_name(ext.type_name).equal(type_name):
+                    var mi: ptr_uint = 0
+                    while mi < ext.methods.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+                        var mfn: ast.Method
+                        unsafe:
+                            mfn = read(ext.methods.data + mi)
+                        if prefix_matches(mfn.name, prefix):
+                            emit_method_item(
+                                mfn.name, mfn.method_params, mfn.return_type, sort_prefix, uri,
+                                insert_format, items_json, first, count)
+                        mi += 1
+            _:
+                pass
+        di += 1
+
+
+## Emit one method completion item.
+function emit_method_item(
+    name: str,
+    params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    sort_prefix: str,
+    uri: str,
+    insert_format: int,
+    items_json: ref[string.String],
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var params_text = string.String.create()
+    defer: params_text.release()
+    append_ast_params(ref_of(params_text), params)
+
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append(name)
+    detail.append("(")
+    detail.append(params_text.as_str())
+    detail.append(") -> ")
+    append_ast_type(ref_of(detail), return_type, "void")
+
+    var snippet = string.String.create()
+    defer: snippet.release()
+    let has_snippet = append_ast_snippet(ref_of(snippet), name, params)
+    let insert_text = if has_snippet: snippet.as_str() else: name
+
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append(sort_prefix)
+    sort_text.append(name)
+
+    append_item_ext(
+        items_json, name, KIND_METHOD, detail.as_str(), insert_text,
+        sort_text.as_str(), name, uri, insert_format, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## The file's method list, in declaration order — the host's
+## `method-fallback` answer for a receiver it cannot resolve.
+function method_fallback_completions(
+    ast_file: ast.SourceFile,
+    prefix: str,
+    uri: str,
+) -> string.String:
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len and count < MAX_COMPLETION_ITEMS:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len and count < MAX_COMPLETION_ITEMS:
+                    var mfn: ast.Method
+                    unsafe:
+                        mfn = read(ext.methods.data + mi)
+                    if prefix_matches(mfn.name, prefix):
+                        emit_method_item(
+                            mfn.name, mfn.method_params, mfn.return_type, "0_", uri,
+                            2, ref_of(items_json), ref_of(first), ref_of(count))
+                    mi += 1
+            _:
+                pass
+        di += 1
+
+    items_json.append("]")
+    return wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+
+
+## The declared type name of an `extending` block (`extending a.B:` → `B`).
+function extending_type_name(type_name: ptr[ast.TypeRef]?) -> str:
+    let tp = type_name else:
+        return ""
+    let t = unsafe: read(tp)
+    if t.name.parts.len == 0:
+        return ""
+    return unsafe: read(t.name.parts.data + t.name.parts.len - 1)
+
+
+## Resolve a receiver name to the value's type: the innermost local or
+## parameter of that name visible at `cursor_line`, else a module-level value.
+function receiver_value_type(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    name: str,
+    cursor_line: ptr_uint,
+) -> Option[types.Type]:
+    # Locals and parameters of the enclosing function.
+    var best_line: ptr_uint = 0
+    var body: ptr[ast.Stmt]? = null
+    var params: span[ast.Param] = span[ast.Param]()
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                if fun.line <= cursor_line and fun.line >= best_line:
+                    best_line = fun.line
+                    body = fun.body
+                    params = fun.method_params
+            _:
+                pass
+        di += 1
+
+    var pi: ptr_uint = 0
+    while pi < params.len:
+        let p = unsafe: read(params.data + pi)
+        if p.name.equal(name):
+            # `Param.param_type` is a value, so resolve the TypeRef by name.
+            if p.param_type.name.parts.len == 0:
+                return Option[types.Type].none
+            let type_name = unsafe: read(p.param_type.name.parts.data + p.param_type.name.parts.len - 1)
+            return type_by_name(analysis, type_name)
+        pi += 1
+
+    if body != null:
+        match find_local_type(analysis, unsafe: read(ptr[ast.Stmt]<-body), name, cursor_line):
+            Option.some as ty:
+                return Option[types.Type].some(value = ty.value)
+            Option.none:
+                pass
+
+    # Module-level values.
+    di = 0
+    while di < ast_file.declarations.len:
+        var decl2: ast.Decl
+        unsafe:
+            decl2 = read(ast_file.declarations.data + di)
+        match decl2:
+            ast.Decl.decl_const as c:
+                if c.name.equal(name):
+                    return type_ref_to_type(analysis, c.const_type)
+            ast.Decl.decl_var as v:
+                if v.name.equal(name):
+                    return type_ref_to_type(analysis, v.var_type)
+            _:
+                pass
+        di += 1
+
+    return Option[types.Type].none
+
+
+## The type of the local `name` declared in `stmt` at or before
+## `cursor_line`, preferring the analyzer's inferred initializer type.
+function find_local_type(
+    analysis: ref[analyzer.Analysis],
+    stmt: ast.Stmt,
+    name: str,
+    cursor_line: ptr_uint,
+) -> Option[types.Type]:
+    match stmt:
+        ast.Stmt.stmt_local as loc:
+            if loc.name.equal(name) and loc.line <= cursor_line:
+                match type_render.initializer_type(analysis, loc.value):
+                    Option.some as ty:
+                        return Option[types.Type].some(value = ty.value)
+                    Option.none:
+                        return type_ref_to_type(analysis, loc.stmt_type)
+        ast.Stmt.stmt_block as blk:
+            var si: ptr_uint = 0
+            while si < blk.statements.len:
+                match find_local_type(analysis, unsafe: read(blk.statements.data + si), name, cursor_line):
+                    Option.some as ty:
+                        return Option[types.Type].some(value = ty.value)
+                    Option.none:
+                        pass
+                si += 1
+        ast.Stmt.stmt_if as iff:
+            var ib: ptr_uint = 0
+            while ib < iff.branches.len:
+                let branch = unsafe: read(iff.branches.data + ib)
+                match find_local_type(analysis, unsafe: read(branch.body), name, cursor_line):
+                    Option.some as ty:
+                        return Option[types.Type].some(value = ty.value)
+                    Option.none:
+                        pass
+                ib += 1
+            if iff.else_body != null:
+                return find_local_type(analysis, unsafe: read(ptr[ast.Stmt]<-iff.else_body), name, cursor_line)
+        ast.Stmt.stmt_while as w:
+            if w.body != null:
+                return find_local_type(analysis, unsafe: read(ptr[ast.Stmt]<-w.body), name, cursor_line)
+        ast.Stmt.stmt_for as f:
+            if f.body != null:
+                return find_local_type(analysis, unsafe: read(ptr[ast.Stmt]<-f.body), name, cursor_line)
+        ast.Stmt.stmt_match as m:
+            var ai: ptr_uint = 0
+            while ai < m.arms.len:
+                let arm = unsafe: read(m.arms.data + ai)
+                if arm.body != null:
+                    match find_local_type(analysis, unsafe: read(ptr[ast.Stmt]<-arm.body), name, cursor_line):
+                        Option.some as ty:
+                            return Option[types.Type].some(value = ty.value)
+                        Option.none:
+                            pass
+                ai += 1
+        _:
+            pass
+    return Option[types.Type].none
+
+
+## Resolve a declared `TypeRef` to a `types.Type` through the analyzer's type
+## table (`int` → primitive, `Sample` → the local struct).
+function type_ref_to_type(analysis: ref[analyzer.Analysis], type_ref: ptr[ast.TypeRef]?) -> Option[types.Type]:
+    let tp = type_ref else:
+        return Option[types.Type].none
+    let t = unsafe: read(tp)
+    if t.name.parts.len == 0:
+        return Option[types.Type].none
+    return type_by_name(analysis, unsafe: read(t.name.parts.data + t.name.parts.len - 1))
+
+
+## The analyzer's `types.Type` for a declared type name.
+function type_by_name(analysis: ref[analyzer.Analysis], type_name: str) -> Option[types.Type]:
+    let ty_ptr = unsafe: read(analysis).types.get(type_name)
+    if ty_ptr == null:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = unsafe: read(ty_ptr))
+
+
+## The host's global bucket list: functions, types, imports, values, locals,
+## type constructors, keywords — each with its `sortText` bucket and `data`.
+function build_completions_json(
+    ws: ref[workspace.Workspace],
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    file_path: str,
+    uri: str,
+    line: ptr_uint,
+    prefix: str,
+) -> string.String:
+    var current_module = module_name_for(ws, file_path)
+    defer: current_module.release()
+    let module_text = current_module.as_str()
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+
+    # Functions, in declaration order.
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len and count < MAX_COMPLETION_ITEMS:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                if prefix_matches(fun.name, prefix):
+                    emit_function_item(
+                        ref_of(items_json), analysis, fun.name, fun.method_params, fun.return_type,
+                        module_text, uri, ref_of(first), ref_of(count))
+            _:
+                pass
+        di += 1
+
+    # Types: the prelude's and the resolved imports' first, then the file's.
+    emit_import_type_items(
+        ws, ref_of(items_json), analysis, uri, prefix, ref_of(first), ref_of(count))
+    di = 0
+    while di < ast_file.declarations.len and count < MAX_COMPLETION_ITEMS:
+        var decl2: ast.Decl
+        unsafe:
+            decl2 = read(ast_file.declarations.data + di)
+        emit_declared_type_item(ref_of(items_json), decl2, uri, prefix, ref_of(first), ref_of(count))
+        di += 1
+
+    # Imports (resolved only), the prelude pair first.
+    emit_import_items(
+        ws, analysis, ast_file, ref_of(items_json), uri, prefix, ref_of(first), ref_of(count))
+
+    # Module-level values.
+    di = 0
+    while di < ast_file.declarations.len and count < MAX_COMPLETION_ITEMS:
+        var decl3: ast.Decl
+        unsafe:
+            decl3 = read(ast_file.declarations.data + di)
+        match decl3:
+            ast.Decl.decl_const as c:
+                if prefix_matches(c.name, prefix):
+                    emit_value_item(
+                        ref_of(items_json), analysis, c.name, c.const_type,
+                        module_text, uri, ref_of(first), ref_of(count))
+            ast.Decl.decl_var as v:
+                if prefix_matches(v.name, prefix):
+                    emit_value_item(
+                        ref_of(items_json), analysis, v.name, v.var_type,
+                        module_text, uri, ref_of(first), ref_of(count))
+            _:
+                pass
+        di += 1
+
+    # Locals visible at the cursor.
+    emit_local_binding_items(
+        analysis, ast_file, line + 1, prefix, uri, module_text,
+        ref_of(items_json), ref_of(first), ref_of(count))
+
+    # Type-constructor keywords.
+    var tci: ptr_uint = 0
+    while tci < 12 and count < MAX_COMPLETION_ITEMS:
+        let tc = TYPE_CONSTRUCTOR_KEYWORDS[tci]
+        if prefix_matches(tc, prefix):
+            var detail = string.String.create()
+            defer: detail.release()
+            detail.append("type constructor ")
+            detail.append(tc)
+            var sort_text = string.String.create()
+            defer: sort_text.release()
+            sort_text.append("8_")
+            sort_text.append(tc)
+            append_item_ext(
+                ref_of(items_json), tc, KIND_KEYWORD, detail.as_str(), tc,
+                sort_text.as_str(), tc, uri, 0, "", "", ref_of(first))
+            count += 1
+        tci += 1
+
+    # Keywords.
+    var ki: ptr_uint = 0
+    while ki < 47 and count < MAX_COMPLETION_ITEMS:
+        let kw = COMPLETION_KEYWORDS[ki]
+        if prefix_matches(kw, prefix):
+            var detail = string.String.create()
+            defer: detail.release()
+            detail.append("keyword ")
+            detail.append(kw)
+            var sort_text = string.String.create()
+            defer: sort_text.release()
+            sort_text.append("9_")
+            sort_text.append(kw)
+            append_item_ext(
+                ref_of(items_json), kw, KIND_KEYWORD, detail.as_str(), kw,
+                sort_text.as_str(), kw, uri, 0, "", "", ref_of(first))
+            count += 1
+        ki += 1
+
+    items_json.append("]")
+    return wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+
+
+## Emit one global-path function item.
+function emit_function_item(
+    items_json: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    current_module: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var params_text = string.String.create()
+    defer: params_text.release()
+    var detail = string.String.create()
+    defer: detail.release()
+    var snippet = string.String.create()
+    defer: snippet.release()
+    var has_snippet = false
+
+    let sig_ptr = unsafe: read(analysis).functions.get(name)
+    if sig_ptr != null:
+        let sig = unsafe: read(sig_ptr)
+        append_semantic_params(ref_of(params_text), sig.params, current_module)
+        has_snippet = append_semantic_snippet(ref_of(snippet), name, sig.params)
+        detail.append("function ")
+        detail.append(name)
+        detail.append("(")
+        detail.append(params_text.as_str())
+        if sig.is_variadic:
+            if params_text.len() > 0:
+                detail.append(", ")
+            detail.append("...")
+        detail.append(") -> ")
+        var returns_text = type_render.qualified_name(sig.return_type, current_module)
+        detail.append(returns_text.as_str())
+        returns_text.release()
+    else:
+        append_ast_params(ref_of(params_text), params)
+        has_snippet = append_ast_snippet(ref_of(snippet), name, params)
+        detail.append("function ")
+        detail.append(name)
+        detail.append("(")
+        detail.append(params_text.as_str())
+        detail.append(") -> ")
+        append_ast_type(ref_of(detail), return_type, "void")
+
+    let insert_text = if has_snippet: snippet.as_str() else: name
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("0_")
+    sort_text.append(name)
+    var label_details = string.String.create()
+    defer: label_details.release()
+    if params_text.len() > 0:
+        label_details.append(" (")
+        label_details.append(params_text.as_str())
+        label_details.append(")")
+    append_item_ext(
+        items_json, name, KIND_FUNCTION, detail.as_str(), insert_text,
+        sort_text.as_str(), name, uri, 2, label_details.as_str(), "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## Emit one type item for a declaration, in the host's kind mapping:
+## non-generic enums/flags/variants are kind 13, everything else kind 7.
+function emit_declared_type_item(
+    items_json: ref[string.String],
+    decl: ast.Decl,
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    match decl:
+        ast.Decl.decl_struct as s:
+            emit_type_item(items_json, s.name, KIND_CLASS, uri, prefix, first, count)
+        ast.Decl.decl_union as u:
+            emit_type_item(items_json, u.name, KIND_CLASS, uri, prefix, first, count)
+        ast.Decl.decl_enum as e:
+            emit_type_item(items_json, e.name, KIND_ENUM, uri, prefix, first, count)
+        ast.Decl.decl_flags as fl:
+            emit_type_item(items_json, fl.name, KIND_ENUM, uri, prefix, first, count)
+        ast.Decl.decl_variant as vr:
+            if vr.type_params.len == 0:
+                emit_type_item(items_json, vr.name, KIND_ENUM, uri, prefix, first, count)
+            else:
+                emit_type_item(items_json, vr.name, KIND_CLASS, uri, prefix, first, count)
+        ast.Decl.decl_type_alias as ta:
+            emit_type_item(items_json, ta.name, KIND_CLASS, uri, prefix, first, count)
+        ast.Decl.decl_opaque as op:
+            emit_type_item(items_json, op.name, KIND_CLASS, uri, prefix, first, count)
+        _:
+            pass
+
+
+## Emit one type item, skipping the host's hidden built-in names.
+function emit_type_item(
+    items_json: ref[string.String],
+    name: str,
+    kind: int,
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    if name.len == 0 or analyzer.is_builtin_completion_type(name) or not prefix_matches(name, prefix):
+        return
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append("type ")
+    detail.append(name)
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("1_")
+    sort_text.append(name)
+    append_item_ext(items_json, name, kind, detail.as_str(), name, sort_text.as_str(), name, uri, 0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## Emit the types the resolved imports bring in — the prelude pair first.
+function emit_import_type_items(
+    ws: ref[workspace.Workspace],
+    items_json: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    if unsafe: read(analysis).imports.contains("std.option"):
+        emit_module_type_items(ws, items_json, "std.option", uri, prefix, first, count)
+    if unsafe: read(analysis).imports.contains("std.result"):
+        emit_module_type_items(ws, items_json, "std.result", uri, prefix, first, count)
+
+
+## Emit the type declarations a resolved module exports, in declaration order.
+function emit_module_type_items(
+    ws: ref[workspace.Workspace],
+    items_json: ref[string.String],
+    module_name: str,
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var roots = ws.effective_module_roots_for("")
+    defer: roots.release()
+    match resolver.resolve_module_path(module_name, roots.as_span(), resolver.Platform.linux):
+        Result.failure as failure_payload:
+            var err = failure_payload.error
+            err.release()
+            return
+        Result.success as path_payload:
+            var module_path = path_payload.value
+            defer: module_path.release()
+            var module_source = ws.document_source(module_path.as_str()) else:
+                return
+            defer: module_source.release()
+            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer: parse_diags.release()
+            var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
+            let exports_all = module_file.module_kind == ast.ModuleKind.module_raw
+            var di: ptr_uint = 0
+            while di < module_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+                var decl: ast.Decl
+                unsafe:
+                    decl = read(module_file.declarations.data + di)
+                if decl_is_public_type(decl, exports_all):
+                    emit_declared_type_item(items_json, decl, uri, prefix, first, count)
+                di += 1
+
+
+## True when a declaration is an exported type declaration.
+function decl_is_public_type(decl: ast.Decl, exports_all: bool) -> bool:
+    match decl:
+        ast.Decl.decl_struct as s:
+            return exports_all or s.visibility
+        ast.Decl.decl_union as u:
+            return exports_all or u.visibility
+        ast.Decl.decl_enum as e:
+            return exports_all or e.visibility
+        ast.Decl.decl_flags as fl:
+            return exports_all or fl.visibility
+        ast.Decl.decl_variant as vr:
+            return exports_all or vr.visibility
+        ast.Decl.decl_type_alias as ta:
+            return exports_all or ta.visibility
+        ast.Decl.decl_opaque as op:
+            return exports_all or op.visibility
+        _:
+            return false
+
+
+## Emit the resolved imports (kind 2) in order: the prelude pair, then each
+## import statement whose module resolves.
+function emit_import_items(
+    ws: ref[workspace.Workspace],
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    items_json: ref[string.String],
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var roots = ws.effective_module_roots_for("")
+    defer: roots.release()
+
+    if unsafe: read(analysis).imports.contains("std.option"):
+        emit_import_item(items_json, "std.option", "std.option", uri, prefix, first, count)
+    if unsafe: read(analysis).imports.contains("std.result"):
+        emit_import_item(items_json, "std.result", "std.result", uri, prefix, first, count)
+
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_import as imp:
+                let module_name = analyzer.qname_to_str(imp.path)
+                if module_resolves(module_name, roots.as_span()):
+                    var label = module_name
+                    match imp.alias_name:
+                        Option.some as alias:
+                            label = alias.value
+                        Option.none:
+                            pass
+                    emit_import_item(items_json, label, module_name, uri, prefix, first, count)
+            _:
+                pass
+        di += 1
+
+
+## True when the module resolves under the workspace's roots.
+function module_resolves(module_name: str, roots: span[str]) -> bool:
+    match resolver.resolve_module_path(module_name, roots, resolver.Platform.linux):
+        Result.success as path_payload:
+            var path = path_payload.value
+            path.release()
+            return true
+        Result.failure as failure_payload:
+            var err = failure_payload.error
+            err.release()
+            return false
+
+
+## Emit one import item.
+function emit_import_item(
+    items_json: ref[string.String],
+    label: str,
+    module_name: str,
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    if not prefix_matches(label, prefix):
+        return
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append("module ")
+    detail.append(module_name)
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("2_")
+    sort_text.append(label)
+    append_item_ext(
+        items_json, label, KIND_MODULE, detail.as_str(), label, sort_text.as_str(), label, uri,
+        0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## Emit one module-level value item.
+function emit_value_item(
+    items_json: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    declared: ptr[ast.TypeRef]?,
+    current_module: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append(name)
+    detail.append(": ")
+    let ty_ptr = unsafe: read(analysis).value_types.get(name)
+    if ty_ptr != null:
+        var rendered = type_render.qualified_name(unsafe: read(ty_ptr), current_module)
+        detail.append(rendered.as_str())
+        rendered.release()
+    else:
+        append_ast_type(ref_of(detail), declared, "void")
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("3_")
+    sort_text.append(name)
+    append_item_ext(
+        items_json, name, KIND_VARIABLE, detail.as_str(), name, sort_text.as_str(), name, uri,
+        0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## Emit the locals visible at `cursor_line`: the enclosing function's
+## parameters and every `let`/`var` declared at or before the cursor, in
+## declaration order.
+function emit_local_binding_items(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    cursor_line: ptr_uint,
+    prefix: str,
+    uri: str,
+    current_module: str,
+    items_json: ref[string.String],
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    # The enclosing function is the last one declared at or before the cursor.
+    var best_line: ptr_uint = 0
+    var body: ptr[ast.Stmt]? = null
+    var params: span[ast.Param] = span[ast.Param]()
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                if fun.line <= cursor_line and fun.line >= best_line:
+                    best_line = fun.line
+                    body = fun.body
+                    params = fun.method_params
+            _:
+                pass
+        di += 1
+
+    var pi: ptr_uint = 0
+    while pi < params.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        let p = unsafe: read(params.data + pi)
+        if p.name.len > 0 and p.name != "_" and prefix_matches(p.name, prefix):
+            emit_local_item(items_json, p.name, ast_formatter.render_type(p.param_type), uri, first, count)
+        pi += 1
+
+    if body != null:
+        emit_stmt_locals(
+            analysis, unsafe: read(ptr[ast.Stmt]<-body), cursor_line, prefix, uri,
+            current_module, items_json, first, count)
+
+
+## Emit one local binding item.
+function emit_local_item(
+    items_json: ref[string.String],
+    name: str,
+    type_text: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    if type_text.len == 0:
+        return
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append(name)
+    detail.append(": ")
+    detail.append(type_text)
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("3_")
+    sort_text.append(name)
+    append_item_ext(
+        items_json, name, KIND_VARIABLE, detail.as_str(), name, sort_text.as_str(), name, uri,
+        0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## Walk statements in order, emitting every local visible at the cursor.
+function emit_stmt_locals(
+    analysis: ref[analyzer.Analysis],
+    stmt: ast.Stmt,
+    cursor_line: ptr_uint,
+    prefix: str,
+    uri: str,
+    current_module: str,
+    items_json: ref[string.String],
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    match stmt:
+        ast.Stmt.stmt_block as blk:
+            var si: ptr_uint = 0
+            while si < blk.statements.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+                emit_stmt_locals(
+                    analysis, unsafe: read(blk.statements.data + si), cursor_line, prefix, uri,
+                    current_module, items_json, first, count)
+                si += 1
+        ast.Stmt.stmt_local as loc:
+            if loc.name.len > 0 and loc.name != "_" and loc.line <= cursor_line and
+                    prefix_matches(loc.name, prefix):
+                if loc.stmt_type != null:
+                    var type_text = string.String.create()
+                    defer: type_text.release()
+                    append_ast_type(ref_of(type_text), loc.stmt_type, "")
+                    emit_local_item(items_json, loc.name, type_text.as_str(), uri, first, count)
+                else:
+                    match type_render.initializer_type(analysis, loc.value):
+                        Option.some as ty:
+                            var type_text = type_render.qualified_name(ty.value, current_module)
+                            defer: type_text.release()
+                            emit_local_item(items_json, loc.name, type_text.as_str(), uri, first, count)
+                        Option.none:
+                            pass
+        ast.Stmt.stmt_if as iff:
+            var ib: ptr_uint = 0
+            while ib < iff.branches.len:
+                let branch = unsafe: read(iff.branches.data + ib)
+                emit_stmt_locals(
+                    analysis, unsafe: read(branch.body), cursor_line, prefix, uri,
+                    current_module, items_json, first, count)
+                ib += 1
+            if iff.else_body != null:
+                emit_stmt_locals(
+                    analysis, unsafe: read(ptr[ast.Stmt]<-iff.else_body), cursor_line, prefix, uri,
+                    current_module, items_json, first, count)
+        ast.Stmt.stmt_while as w:
+            if w.body != null:
+                emit_stmt_locals(
+                    analysis, unsafe: read(ptr[ast.Stmt]<-w.body), cursor_line, prefix, uri,
+                    current_module, items_json, first, count)
+        ast.Stmt.stmt_for as f:
+            if f.body != null:
+                emit_stmt_locals(
+                    analysis, unsafe: read(ptr[ast.Stmt]<-f.body), cursor_line, prefix, uri,
+                    current_module, items_json, first, count)
+        ast.Stmt.stmt_match as m:
+            var ai: ptr_uint = 0
+            while ai < m.arms.len:
+                let arm = unsafe: read(m.arms.data + ai)
+                if arm.body != null:
+                    emit_stmt_locals(
+                        analysis, unsafe: read(ptr[ast.Stmt]<-arm.body), cursor_line, prefix, uri,
+                        current_module, items_json, first, count)
+                ai += 1
+        _:
+            pass
+
+
+## Completions for `func(|)` inside a call's argument list — the host's
+## named-argument shape (`name = `, kind 14, `0_`).
+function named_argument_completions(
+    analysis: ref[analyzer.Analysis],
+    callee_name: str,
+    prefix: str,
+    uri: str,
+) -> ptr[string.String]?:
+    let sig_ptr = unsafe: read(analysis).functions.get(callee_name)
+    if sig_ptr == null:
+        return null
+
+    let sig = unsafe: read(sig_ptr)
+    if sig.params.len == 0:
+        return null
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+
+    var pi: ptr_uint = 0
+    while pi < sig.params.len and count < MAX_COMPLETION_ITEMS:
+        let param = unsafe: read(sig.params.data + pi)
+        if param.name != "_" and prefix_matches(param.name, prefix):
+            var label = string.String.create()
+            defer: label.release()
+            label.append(param.name)
+            label.append(" = ")
+            var detail = string.String.create()
+            defer: detail.release()
+            detail.append(param.name)
+            detail.append(": ")
+            detail.append(types.type_to_string(param.ty))
+            var sort_text = string.String.create()
+            defer: sort_text.release()
+            sort_text.append("0_")
+            sort_text.append(param.name)
+            append_item_ext(
+                ref_of(items_json), label.as_str(), KIND_KEYWORD, detail.as_str(), label.as_str(),
+                sort_text.as_str(), param.name, uri, 0, "", "", ref_of(first))
+            count += 1
+        pi += 1
 
     items_json.append("]")
 
@@ -1017,46 +1761,191 @@ function type_to_key_name(t: types.Type) -> str:
             return ""
 
 
-## Completions for `func(|)` or `func(pos = |)` inside a call's argument
-## list.  Returns parameter names (as "name " label) for the callee, or
-## null when the callee is not found or has no params.
-function named_argument_completions(
-    analysis: ref[analyzer.Analysis],
-    callee_name: str,
-    prefix: str,
-) -> ptr[string.String]?:
-    let sig_ptr = unsafe: read(analysis).functions.get(callee_name)
-    if sig_ptr == null:
-        return null
+## The file's module name, as the host infers it from the module roots.
+function module_name_for(ws: ref[workspace.Workspace], file_path: str) -> string.String:
+    var roots = ws.effective_module_roots_for(file_path)
+    defer: roots.release()
+    return resolver.infer_module_name(file_path, roots.as_span())
 
-    let sig = unsafe: read(sig_ptr)
-    if sig.params.len == 0:
-        return null
 
-    var items_json = string.String.create()
-    items_json.append("[")
-    var first = true
-    var count: ptr_uint = 0
-
+## Render `a: int, b: int` from semantic parameters.
+function append_semantic_params(target: ref[string.String], params: span[analyzer.ParamEntry], current_module: str) -> void:
     var pi: ptr_uint = 0
-    while pi < sig.params.len and count < MAX_COMPLETION_ITEMS:
-        let param = unsafe: read(sig.params.data + pi)
-        if param.name != "_" and prefix_matches(param.name, prefix):
-            var detail = string.String.create()
-            detail.append(param.name)
-            detail.append(": ")
-            detail.append(types.type_to_string(param.ty))
-            append_item(ref_of(items_json), param.name, KIND_VARIABLE, detail.as_str(), param.name, ref_of(first))
-            detail.release()
-            count += 1
+    while pi < params.len:
+        let param = unsafe: read(params.data + pi)
+        if pi > 0:
+            target.append(", ")
+        target.append(param.name)
+        target.append(": ")
+        var rendered = type_render.qualified_name(param.ty, current_module)
+        target.append(rendered.as_str())
+        rendered.release()
         pi += 1
 
-    items_json.append("]")
 
-    if count == 0:
-        items_json.release()
-        return null
+## Render `a: int, b: int` from AST parameters.
+function append_ast_params(target: ref[string.String], params: span[ast.Param]) -> void:
+    var pi: ptr_uint = 0
+    while pi < params.len:
+        let param = unsafe: read(params.data + pi)
+        if pi > 0:
+            target.append(", ")
+        target.append(param.name)
+        target.append(": ")
+        target.append(ast_formatter.render_type(param.param_type))
+        pi += 1
 
-    let alloc = heap.must_alloc[string.String](1)
-    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
-    return alloc
+
+## Append a rendered type from an optional TypeRef, or `fallback`.
+function append_ast_type(target: ref[string.String], type_ref: ptr[ast.TypeRef]?, fallback: str) -> void:
+    let tp = type_ref else:
+        target.append(fallback)
+        return
+    target.append(ast_formatter.render_type(unsafe: read(tp)))
+
+
+## The host's `snippet_for_callable` over semantic parameters: `name()` for
+## zero params, `${n:param}` stops for one to five, nothing beyond five.
+function append_semantic_snippet(target: ref[string.String], name: str, params: span[analyzer.ParamEntry]) -> bool:
+    if params.len > 5:
+        return false
+    target.append(name)
+    target.append("(")
+    var pi: ptr_uint = 0
+    while pi < params.len:
+        let param = unsafe: read(params.data + pi)
+        if pi > 0:
+            target.append(", ")
+        target.append("${")
+        target.append_format(f"#{pi + 1}")
+        target.append(":")
+        target.append(param.name)
+        target.append("}")
+        pi += 1
+    target.append(")")
+    return true
+
+
+## The host's `snippet_for_callable` over AST parameters.
+function append_ast_snippet(target: ref[string.String], name: str, params: span[ast.Param]) -> bool:
+    if params.len > 5:
+        return false
+    target.append(name)
+    target.append("(")
+    var pi: ptr_uint = 0
+    while pi < params.len:
+        let param = unsafe: read(params.data + pi)
+        if pi > 0:
+            target.append(", ")
+        target.append("${")
+        target.append_format(f"#{pi + 1}")
+        target.append(":")
+        target.append(param.name)
+        target.append("}")
+        pi += 1
+    target.append(")")
+    return true
+
+
+## True when `name` starts with `prefix`, or when prefix is empty.
+function prefix_matches(name: str, prefix: str) -> bool:
+    if prefix.len == 0:
+        return true
+    return name.starts_with(prefix)
+
+
+## Append one CompletionItem in the host's shape.  `uri` non-empty adds the
+## host's `data {uri,name}` payload; `label_details` (with an optional
+## description) renders the host's `labelDetails` object.
+function append_item_ext(
+    json_out: ref[string.String],
+    label: str,
+    kind: int,
+    detail: str,
+    insert: str,
+    sort_text: str,
+    data_name: str,
+    uri: str,
+    insert_format: int,
+    label_details: str,
+    label_details_description: str,
+    first_var: ref[bool],
+) -> void:
+    if label.len == 0:
+        return
+    if not unsafe: read(first_var):
+        json_out.append(",")
+    unsafe: read(first_var) = false
+    json_out.append("{\"label\":\"")
+    proto.append_escaped(json_out, label)
+    json_out.append("\",\"kind\":")
+    json_out.append_format(f"#{kind}")
+    json_out.append(",\"detail\":\"")
+    proto.append_escaped(json_out, detail)
+    json_out.append("\",\"insertText\":\"")
+    proto.append_escaped(json_out, insert)
+    json_out.append("\"")
+    if insert_format == 2:
+        json_out.append(",\"insertTextFormat\":2")
+    json_out.append(",\"sortText\":\"")
+    proto.append_escaped(json_out, sort_text)
+    json_out.append("\"")
+    if uri.len > 0:
+        json_out.append(",\"data\":{\"uri\":\"")
+        proto.append_escaped(json_out, uri)
+        json_out.append("\",\"name\":\"")
+        proto.append_escaped(json_out, data_name)
+        json_out.append("\"}")
+    if label_details.len > 0:
+        json_out.append(",\"labelDetails\":{\"detail\":\"")
+        proto.append_escaped(json_out, label_details)
+        json_out.append("\"")
+        if label_details_description.len > 0:
+            json_out.append(",\"description\":\"")
+            proto.append_escaped(json_out, label_details_description)
+            json_out.append("\"")
+        json_out.append("}")
+    json_out.append("}")
+
+
+## Append one CompletionItem with the label as its sort key and no `data`
+## payload (the import context's shape).
+function append_plain_item(
+    json_out: ref[string.String],
+    label: str,
+    kind: int,
+    detail: str,
+    insert: str,
+    first_var: ref[bool],
+) -> void:
+    if label.len == 0:
+        return
+    if not unsafe: read(first_var):
+        json_out.append(",")
+    unsafe: read(first_var) = false
+    json_out.append("{\"label\":\"")
+    proto.append_escaped(json_out, label)
+    json_out.append("\",\"kind\":")
+    json_out.append_format(f"#{kind}")
+    json_out.append(",\"detail\":\"")
+    proto.append_escaped(json_out, detail)
+    json_out.append("\",\"insertText\":\"")
+    proto.append_escaped(json_out, insert)
+    json_out.append("\",\"sortText\":\"")
+    proto.append_escaped(json_out, label)
+    json_out.append("\"}")
+
+
+## Wrap a JSON items array in the LSP completion result object.
+function wrap_completion_result(items_json: ref[string.String], truncated: bool) -> string.String:
+    var result = string.String.create()
+    result.append("{\"isIncomplete\":")
+    if truncated:
+        result.append("true")
+    else:
+        result.append("false")
+    result.append(",\"items\":")
+    result.append(items_json.as_str())
+    result.append("}")
+    items_json.release()
+    return result
