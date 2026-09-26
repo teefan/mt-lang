@@ -9,7 +9,7 @@ Last updated: 2026-09-26 (parity note rewritten: the harness exists and is the g
 > advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,
 > `compare`, `--stress`) drives an out-of-process corpus of 47 requests plus 15
 > adversarial probes against both servers and diffs normalized responses.  As of
-> 2026-09-26 it reports 30/30 capability keys identical, **17 of 47 requests and
+> 2026-09-26 it reports 30/30 capability keys identical, **15 of 47 requests and
 > 6 of 15 stress probes still differing** — every differing entry is catalogued
 > by family in
 > [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure),
