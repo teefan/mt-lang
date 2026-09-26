@@ -643,6 +643,21 @@ edit storms, pathological input, then the latencies of a real edit cycle.
   `examples/data_structures.mt` now differs from the host only by the
   self-host-only `dead-assignment` rule.
 
+**Real client (Neovim's LSP client, headless)**
+
+`nvim --headless` starts the server, requests symbols/tokens/diagnostics/inlay
+hints/code lenses, then inserts a line twelve times with a `documentSymbol`
+after each edit.  On the SimpleGame project every request answered in ~1.3 ms
+and the client stayed attached throughout; on this repo's 1 700-line
+`navigation.mt` the per-edit symbol request cost 28–49 ms end-to-end through the
+client, with the cold baseline at 643 ms for the first symbol request and
+597 ms for the first inlay-hint request (cold caches), 100 ms for the first pull
+diagnostic and 9.7 ms for tokens.  (The VS Code extension host launches its own
+server from `milkTea.lsp.serverPath`; driving it headlessly here is unreliable
+because the launcher forks to a running instance, so the client-level edit storm
+above is the automated real-client check, with the earlier manual VS Code run
+as the editor-level one.)
+
 **Locked by the harness** (3 new stress probes, 15 → 19)
 
 - `stress/unterminated-source+symbols` — a file with parse errors still yields
