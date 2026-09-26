@@ -61,7 +61,10 @@ vtable categories are closed, and so are the three levers §0j ranked first —
 **raw-module method linkage naming**, **unsigned literals in the unsigned
 domain** (`18446744073709551615`, provenance-tracked so `~0` still prints `-1`)
 and **`:path` attribution for statements lowered from AST nodes** (a 19-file
-sample went from 138 pathless `return` statements to 0, matching the host).
+sample went from 138 pathless `return` statements to 0, matching the host), and
+**floating-point literals are emitted the way the host spells them**
+(`0.2f`, not `0.20000000000000001`; shortest round-trip form plus the `f` suffix
+for `float` literals).
 **Same-module foreign calls returning a nominal type** no longer lower to
 `Types::Error`.  The remaining `lower` deltas start 30–40 KB into the dumps for
 those families; they are dominated by opaque declarations (the sdl3 family's
@@ -85,7 +88,7 @@ workstream doc for the area you are touching:
 | `lower` dump parity (current focus) | §0j "Remaining work" 1–6, §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
 | Hard build failures (`examples/*`, `test/mt`) | §0j item 7 | `build/stage2/mtc test test/mt -I .` and building the four examples |
 | CLI behavior parity | §0j item 8, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
-| LSP feature parity (**not started**) | `docs/lsp-design.md`, `docs/lsp-performance.md` | no harness yet — see below |
+| LSP feature parity (**in progress**, §0k) | §0k's gap list, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`) |
 | DAP | `docs/dap-design.md` | `build/stage2/mtc test projects/mtc` covers the compiler, not DAP; drive `mtc dap` by hand (no self-host DAP harness yet) |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
@@ -417,6 +420,23 @@ issues in "Newly exposed gaps").
     that re-resolved with a *module-less* type name (`examples_box2d_common_b2Vec2_add`
     against the emitted `b2Vec2_add`).  The restriction now applies only to
     non-raw receivers.
+
+20. **Floating-point literals are emitted at full precision** (found in the
+    emitted C, not in the dumps): `0.2` became `0.20000000000000001` because the
+    backend formatted every literal with `%.17g`.  The host renders an integral
+    value with one decimal (`1.0`, `100000000000000000000.0`), anything else
+    with the shortest decimal string that round-trips (Ruby's `Float#to_s`), and
+    appends C's `f` suffix for `float`-typed literals.  `double_to_str` now
+    tries `%.1f` and otherwise searches the smallest `%.*g` precision that
+    parses back to the same double (`std/fmt.append_double_g`), with Ruby's
+    exponent spelling (`1.0e-07`).  The `f` suffix needs the literal's type,
+    which exposed a missing piece of contextual literal inference: an untyped
+    `0.2` in a `double` position now takes `double`
+    (`float_literal_to_context_type`) at local declarations, returns and
+    struct-field initializers.  Verified byte-identical against the host for
+    nine literal shapes and for the unique float-literal sets of seven files
+    (`examples/box3d/ragdoll.mt`: 36 literals, `std/raylib.mt`, `std/sdl3.mt`,
+    `examples/language_baseline.mt`, …).
 
 Verification for 15–17: `tools/bootstrap.sh -j 16` (fixed point holds, 12 files /
 0 failed); `box2d/drop` and `box3d/ragdoll` build under both compilers and their
