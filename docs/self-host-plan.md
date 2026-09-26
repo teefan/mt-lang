@@ -1,8 +1,9 @@
 # Self-Host Plan
 
 > **Starting a session?** Read **"How to start a work session"** below (phase
-> order, per-workstream entry points and gates), then **§0j** for the current
-> measured state and the ranked remaining-work table.
+> order, per-workstream entry points and gates), then **§0k** for the active LSP-
+> parity phase (live counters, remaining entries, opening files) and **§0j** for
+> the compiler-side remaining work (`lower`, builds, CLI).
 
 > **Workstream status (self-host vs `projects/stress`)**: **DONE** — the
 > self-host compiler builds, links and runs `projects/stress` with output and
@@ -225,6 +226,10 @@ ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
    hover there — not corpus-covered, noted as a gap).  Closes `hover/field`.
 
 ### Measured (same corpus, both servers)
+
+The table below is the **2026-09-25/26 session's** before/after record — its
+"After" column is historical.  The stage re-measurements that follow it are the
+live counters.
 
 | Gate | Before | After |
 | --- | --- | --- |
