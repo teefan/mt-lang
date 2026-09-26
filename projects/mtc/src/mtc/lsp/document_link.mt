@@ -229,9 +229,7 @@ function append_link(output: ref[string.String], line: ptr_uint, column: ptr_uin
     output.append_format(f"#{(column - 1) + length}")
     output.append("}},\"target\":\"")
     proto.append_escaped(output, target_uri)
-    output.append("\",\"tooltip\":\"")
-    proto.append_escaped(output, target_uri)
-    output.append("\"}")
+    output.append("\",\"tooltip\":\"Open linked file\"}")
 
 
 ## Append a string-valued JSON field.

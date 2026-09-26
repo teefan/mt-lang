@@ -84,7 +84,7 @@ public function handle_prepare_rename(
     let col = if target.column > 0: target.column - 1 else: 0z
     var json_text = string.String.create()
     defer: json_text.release()
-    json_text.append("{\"start\":{\"line\":")
+    json_text.append("{\"range\":{\"start\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
     json_text.append_format(f"#{col}")
@@ -92,7 +92,9 @@ public function handle_prepare_rename(
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
     json_text.append_format(f"#{col + target.length}")
-    json_text.append("}}")
+    json_text.append("}},\"placeholder\":\"")
+    proto.append_escaped(ref_of(json_text), target.text)
+    json_text.append("\"}")
     proto.write_response_raw(id, json_text.as_str())
 
 

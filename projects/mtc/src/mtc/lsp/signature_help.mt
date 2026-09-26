@@ -111,7 +111,10 @@ function build_signature_help_json(sig: ref[analyzer.FnSig], func_name: str) -> 
             var type_name = types_mod.type_to_string(param.ty)
             result.append(type_name)
             pi += 1
-    result.append(")\",\"parameters\":[")
+    result.append(") -> ")
+    var return_name = types_mod.type_to_string(unsafe: read(sig).return_type)
+    result.append(return_name)
+    result.append("\",\"parameters\":[")
     pi = 0
     first = true
     unsafe:
