@@ -17,6 +17,7 @@ import std.log as log
 
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
+import mtc.lexer.token_kinds as tk
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -24,6 +25,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
+import mtc.lsp.hover_docs as hover_docs
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
@@ -118,22 +120,36 @@ function hover_range_json(ws: ref[workspace.Workspace], uri: str, line: ptr_uint
     defer: content.release()
     match cursor.identifier_at(content.as_str(), line, character):
         Option.some as tok:
-            let lz = if tok.value.line > 0: tok.value.line - 1 else: 0z
-            let col = if tok.value.column > 0: tok.value.column - 1 else: 0z
-            var frag = string.String.create()
-            frag.append("\"range\":{\"start\":{\"line\":")
-            frag.append_format(f"#{lz}")
-            frag.append(",\"character\":")
-            frag.append_format(f"#{col}")
-            frag.append("},\"end\":{\"line\":")
-            frag.append_format(f"#{lz}")
-            frag.append(",\"character\":")
-            frag.append_format(f"#{col + tok.value.length}")
-            frag.append("}}")
+            var frag = hover_range_fragment(tok.value)
+            empty.release()
+            return frag
+        Option.none:
+            pass
+    # Keywords, builtins and operators: the host ranges the token itself.
+    match cursor.token_at(content.as_str(), line, character):
+        Option.some as tok:
+            var frag = hover_range_fragment(tok.value)
             empty.release()
             return frag
         Option.none:
             return empty
+
+
+## Render the `"range":{...}` fragment for a resolved cursor token.
+function hover_range_fragment(tok: cursor.CursorToken) -> string.String:
+    let lz = if tok.line > 0: tok.line - 1 else: 0z
+    let col = if tok.column > 0: tok.column - 1 else: 0z
+    var frag = string.String.create()
+    frag.append("\"range\":{\"start\":{\"line\":")
+    frag.append_format(f"#{lz}")
+    frag.append(",\"character\":")
+    frag.append_format(f"#{col}")
+    frag.append("},\"end\":{\"line\":")
+    frag.append_format(f"#{lz}")
+    frag.append(",\"character\":")
+    frag.append_format(f"#{col + tok.length}")
+    frag.append("}}")
+    return frag
 
 
 ## Handle textDocument/references: find all references to the symbol at the
@@ -578,11 +594,25 @@ struct CursorResult:
 ## Quick hover result — no declaration source line, no docs.
 function quick_hover(text: str) -> CursorResult:
     return CursorResult(
-        line = 1,
+        line = 0,
         column = 0,
         name_len = 0,
         hover_text = string.String.from_str(text),
         docs = string.String.create(),
+        target_uri = string.String.create()
+    )
+
+
+## Quick hover result carrying the host's long-form docs — signature in the
+## fence, docs below it, and no `Defined at` line (the host renders none for
+## keywords and builtins).
+function quick_hover_doc(doc: hover_docs.HoverDoc) -> CursorResult:
+    return CursorResult(
+        line = 0,
+        column = 0,
+        name_len = 0,
+        hover_text = string.String.from_str(doc.signature),
+        docs = string.String.from_str(doc.docs),
         target_uri = string.String.create()
     )
 
@@ -622,21 +652,21 @@ function resolve_non_decl_hover(
         if t.line == target_line and t.column - 1 <= character and t.column - 1 + t.end_offset - t.start_offset > character:
             let lexeme = unsafe: token_mod.token_lexeme(t, source)
 
-            match keyword_hover_text(lexeme):
+            match hover_docs.language_keyword(lexeme):
                 Option.some as kw:
-                    return Option[CursorResult].some(value = quick_hover(kw.value))
-                Option.none:
-                    pass
-
-            match builtin_hover_text(lexeme):
-                Option.some as bu:
-                    return Option[CursorResult].some(value = quick_hover(bu.value))
+                    return Option[CursorResult].some(value = quick_hover_doc(kw.value))
                 Option.none:
                     pass
 
             match builtin_specialization_hover(tokens, ti, lexeme):
                 Option.some as bs:
                     return Option[CursorResult].some(value = quick_hover(bs.value))
+                Option.none:
+                    pass
+
+            match hover_docs.builtin_call(lexeme):
+                Option.some as bu:
+                    return Option[CursorResult].some(value = quick_hover_doc(bu.value))
                 Option.none:
                     pass
 
@@ -1335,112 +1365,9 @@ function find_token_str(source: str, line: ptr_uint, character: ptr_uint) -> Opt
     return Option[string.String].none
 
 
-# =============================================================================
-#  Builtin and keyword hover tables
-# =============================================================================
-
-function keyword_hover_text(lexeme: str) -> Option[str]:
-    if lexeme.equal("return"):
-        return Option[str].some(value = "keyword return — exits a function with an optional value")
-    if lexeme.equal("if"):
-        return Option[str].some(value = "keyword if / else — conditional control flow")
-    if lexeme.equal("else"):
-        return Option[str].some(value = "keyword else — fallback branch in if / match")
-    if lexeme.equal("while"):
-        return Option[str].some(value = "keyword while — conditional loop")
-    if lexeme.equal("for"):
-        return Option[str].some(value = "keyword for — iteration over ranges, arrays, spans, or structural iterables")
-    if lexeme.equal("match"):
-        return Option[str].some(value = "keyword match — exhaustive pattern matching on enums, variants, integers, or strings")
-    if lexeme.equal("let"):
-        return Option[str].some(value = "keyword let — immutable local binding, supports else: guard over T? / Option / Result")
-    if lexeme.equal("var"):
-        return Option[str].some(value = "keyword var — mutable local binding, supports else: guard")
-    if lexeme.equal("const"):
-        return Option[str].some(value = "keyword const — compile-time constant value")
-    if lexeme.equal("type"):
-        return Option[str].some(value = "keyword type — type alias definition")
-    if lexeme.equal("struct"):
-        return Option[str].some(value = "keyword struct — plain data record with named fields")
-    if lexeme.equal("enum"):
-        return Option[str].some(value = "keyword enum — fixed set of named integer values with an explicit backing type")
-    if lexeme.equal("interface"):
-        return Option[str].some(value = "keyword interface — compile-time method-set contract for static polymorphism")
-    if lexeme.equal("variant"):
-        return Option[str].some(value = "keyword variant — tagged union with optional payload fields")
-    if lexeme.equal("flags"):
-        return Option[str].some(value = "keyword flags — named bitmask values with a fixed integer backing type")
-    if lexeme.equal("union"):
-        return Option[str].some(value = "keyword union — untagged C-ABI union for FFI / low-level storage")
-    if lexeme.equal("opaque"):
-        return Option[str].some(value = "keyword opaque — C handle type with hidden layout")
-    if lexeme.equal("extending"):
-        return Option[str].some(value = "keyword extending — method declarations on an existing type")
-    if lexeme.equal("function"):
-        return Option[str].some(value = "keyword function — named callable entity")
-    if lexeme.equal("const function"):
-        return Option[str].some(value = "keyword const function — compile-time-evaluable callable")
-    if lexeme.equal("async"):
-        return Option[str].some(value = "keyword async — cooperative multitasking via task model")
-    if lexeme.equal("external"):
-        return Option[str].some(value = "keyword external — raw C ABI binding file marker")
-    if lexeme.equal("public"):
-        return Option[str].some(value = "keyword public — exported declaration visibility")
-    if lexeme.equal("import"):
-        return Option[str].some(value = "keyword import — module dependency declaration")
-    if lexeme.equal("defer"):
-        return Option[str].some(value = "keyword defer — scope-exit cleanup registration")
-    if lexeme.equal("unsafe"):
-        return Option[str].some(value = "keyword unsafe — explicitly-allowed raw pointer operations")
-    if lexeme.equal("break"):
-        return Option[str].some(value = "keyword break — exit the innermost enclosing loop")
-    if lexeme.equal("continue"):
-        return Option[str].some(value = "keyword continue — skip to the next iteration of the innermost loop")
-    if lexeme.equal("in"):
-        return Option[str].some(value = "keyword in — used in for-in iterable clauses and foreign param modes")
-    if lexeme.equal("size_of"):
-        return Option[str].some(value = "builtin size_of(T) -> ptr_uint")
-    if lexeme.equal("align_of"):
-        return Option[str].some(value = "builtin align_of(T) -> ptr_uint")
-    if lexeme.equal("offset_of"):
-        return Option[str].some(value = "builtin offset_of(T, field) -> ptr_uint")
-    return Option[str].none
-
-
-function builtin_hover_text(lexeme: str) -> Option[str]:
-    if lexeme.equal("fatal"):
-        return Option[str].some(value = "builtin fatal(message: cstr) -> void")
-    if lexeme.equal("ref_of"):
-        return Option[str].some(value = "builtin ref_of(x: T) -> ref[T]")
-    if lexeme.equal("const_ptr_of"):
-        return Option[str].some(value = "builtin const_ptr_of(x: T) -> const_ptr[T]")
-    if lexeme.equal("ptr_of"):
-        return Option[str].some(value = "builtin ptr_of(x: T) -> ptr[T]")
-    if lexeme.equal("read"):
-        return Option[str].some(value = "builtin read(r: ref[T]) -> T\n\nProjects the referent value from a ref[T] or ptr[T].")
-    if lexeme.equal("adapt"):
-        return Option[str].some(value = "builtin adapt[I](value: ref[T]) -> dyn[I]\n\nConstructs a runtime interface value.")
-    if lexeme.equal("get"):
-        return Option[str].some(value = "builtin get(coll, index) -> ptr[T]?\n\nBounds-checked collection access returning a nullable pointer.")
-    if lexeme.equal("field_of"):
-        return Option[str].some(value = "builtin field_of(T, name) -> field_handle\n\nCompile-time reflection for struct fields.")
-    if lexeme.equal("callable_of"):
-        return Option[str].some(value = "builtin callable_of(T, name) -> callable_handle\n\nCompile-time reflection for callables.")
-    if lexeme.equal("has_attribute"):
-        return Option[str].some(value = "builtin has_attribute(T, name) -> bool\n\nTrue if T has the named attribute applied.")
-    if lexeme.equal("attribute_of"):
-        return Option[str].some(value = "builtin attribute_of(T, name) -> attribute_handle\n\nCompile-time reflection for attributes.")
-    if lexeme.equal("attribute_arg"):
-        return Option[str].some(value = "builtin attribute_arg[T](h, name) -> T\n\nReturns the T-typed argument of a resolved attribute handle.")
-    if lexeme.equal("members_of"):
-        return Option[str].some(value = "builtin members_of(E) -> array[member_handle, N]\n\nCompile-time enumeration of an enum or variant.")
-    if lexeme.equal("fields_of"):
-        return Option[str].some(value = "builtin fields_of(T) -> array[field_handle, N]\n\nCompile-time enumeration of struct fields.")
-    if lexeme.equal("attributes_of"):
-        return Option[str].some(value = "builtin attributes_of(T) -> array[attribute_handle, N]\n\nCompile-time enumeration of attributes.")
-    return Option[str].none
-
-
+## Specialization-form hover for `zero`/`default`/`reinterpret` and the
+## container constructors: only when the identifier is followed by `[`, as the
+## host's specialization paths require.
 function builtin_specialization_hover(tokens: vec.Vec[token_mod.Token], ti: ptr_uint, lexeme: str) -> Option[str]:
     var is_spec = false
     if lexeme.equal("zero") or lexeme.equal("default") or lexeme.equal("reinterpret") or lexeme.equal("array") or lexeme.equal("span"):
@@ -1448,14 +1375,13 @@ function builtin_specialization_hover(tokens: vec.Vec[token_mod.Token], ti: ptr_
     if not is_spec:
         return Option[str].none
 
-    # Look ahead for a `[` specialization token after this identifier.
     var next_idx = ti + 1
-    if next_idx < tokens.len:
-        let np = tokens.get(next_idx) else:
-            return Option[str].none
-        let nt = unsafe: read(np)
-        if int<-(nt.kind) == 19:
-            return Option[str].some(value = f"builtin {lexeme}[...]")
+    if next_idx >= tokens.len:
+        return Option[str].none
+    let np = tokens.get(next_idx) else:
+        return Option[str].none
+    let nt = unsafe: read(np)
+    if nt.kind == tk.TokenKind.lbracket:
         return Option[str].some(value = f"builtin {lexeme}[...]")
     return Option[str].none
 
@@ -1698,7 +1624,7 @@ function write_hover_result(id: json.Value, res: CursorResult, request_uri: str,
         value_text.append(payload.hover_text.as_str())
         value_text.append("\n```")
         if payload.docs.len() > 0:
-            value_text.append("\n")
+            value_text.append("\n\n")
             value_text.append(payload.docs.as_str())
         append_defined_at(ref_of(value_text), payload, request_uri)
         var json_text = string.String.create()

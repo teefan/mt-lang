@@ -66,6 +66,51 @@ public function identifier_at(source: str, line: ptr_uint, character: ptr_uint) 
     return Option[CursorToken].none
 
 
+## The token at the LSP position regardless of kind, excluding the structural
+## tokens the host never hovers (newline / indent / dedent / eof).  The host
+## returns a hover range for keywords and builtins as well as identifiers.
+public function token_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorToken]:
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: tokens.release()
+
+    let target_line = line + 1
+    let target_col = character + 1
+
+    # Pass 1: exact containment [column, column + len).
+    var ti: ptr_uint = 0
+    while ti < tokens.len():
+        let tp = tokens.get(ti) else:
+            break
+        let tok = unsafe: read(tp)
+        if hoverable_token_kind(tok.kind) and tok.line == target_line:
+            let len = tok.end_offset - tok.start_offset
+            if target_col >= tok.column and target_col < tok.column + len:
+                return Option[CursorToken].some(value = cursor_token(source, tok))
+        ti += 1
+
+    # Pass 2: end-inclusive — cursor sitting right after the token.
+    ti = 0
+    while ti < tokens.len():
+        let tp = tokens.get(ti) else:
+            break
+        let tok = unsafe: read(tp)
+        if hoverable_token_kind(tok.kind) and tok.line == target_line:
+            let len = tok.end_offset - tok.start_offset
+            if target_col == tok.column + len:
+                return Option[CursorToken].some(value = cursor_token(source, tok))
+        ti += 1
+
+    return Option[CursorToken].none
+
+
+function hoverable_token_kind(kind: tk.TokenKind) -> bool:
+    if kind == tk.TokenKind.newline or kind == tk.TokenKind.indent or kind == tk.TokenKind.dedent or kind == tk.TokenKind.eof:
+        return false
+    return true
+
+
 ## The callee name of the innermost call expression enclosing the LSP
 ## position: `foo(a, |)` resolves to "foo", `mod.method(|)` to "method",
 ## and `name[T](|)` to "name" (specialization brackets are skipped).
