@@ -14,6 +14,7 @@ import std.string as string
 import std.str
 
 import mtc.parser.ast as ast
+import mtc.semantic.analyzer as analyzer
 
 
 public struct ScopeWarning:
@@ -52,6 +53,9 @@ struct ScopeCtx:
     scope_count: ptr_uint
     generic_function_depth: ptr_uint
     match_arm_depth: ptr_uint
+    ## Receivers of `editable` method calls, recorded by the analyzer: a call on
+    ## one of them mutates the binding, so prefer-let must not fire.
+    editable_sites: span[analyzer.EditableSite]
 
 
 # =============================================================================
@@ -104,6 +108,7 @@ function ctx_init(ctx: ref[ScopeCtx], buf: ptr[ScopeEntry]) -> void:
     read(ctx).buf = buf
     read(ctx).scope_count = 0
     read(ctx).generic_function_depth = 0
+    read(ctx).editable_sites = span[analyzer.EditableSite]()
 
 
 function ctx_push_scope(ctx: ref[ScopeCtx]) -> void:
@@ -217,6 +222,34 @@ function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> void:
                 pass
 
 
+## Mark a binding mutated when the call is an `editable` method call on it:
+## `var s = Stack[int].create()` plus `s.push(x)` needs `var`, so prefer-let must
+## not fire.  The analyzer records those receivers while resolving method kinds,
+## matching them by the receiver identifier's name and line.
+function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+    unsafe:
+        match read(call):
+            ast.Expr.expr_call as cl:
+                match read(cl.callee):
+                    ast.Expr.expr_member_access as ma:
+                        match read(ma.receiver):
+                            ast.Expr.expr_identifier as id:
+                                var si: ptr_uint = 0
+                                let sites = read(ctx).editable_sites
+                                while si < sites.len:
+                                    let site = read(sites.data + si)
+                                    if site.line == id.line and site.name.equal(id.name):
+                                        ctx_mark_mutated(ctx, ma.receiver)
+                                        return
+                                    si += 1
+                            _:
+                                pass
+                    _:
+                        pass
+            _:
+                pass
+
+
 ## When a call creates a writable alias (ref_of / ptr_of / out / inout), mark
 ## the source identifier as potentially mutated through the alias.
 function ctx_mark_alias_source(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
@@ -280,10 +313,17 @@ function emit_scope_flat(path: str, warnings: ref[vec.Vec[ScopeWarning]], buf: p
 #  Pass entry point
 # =============================================================================
 
-public function lint_scope_pass(file: ast.SourceFile, path: str, unresolved_import_paths: span[str], warnings: ref[vec.Vec[ScopeWarning]]) -> void:
+public function lint_scope_pass(
+    file: ast.SourceFile,
+    path: str,
+    unresolved_import_paths: span[str],
+    editable_sites: span[analyzer.EditableSite],
+    warnings: ref[vec.Vec[ScopeWarning]],
+) -> void:
     var entries_buf: array[ScopeEntry, 4096]
     var sc: ScopeCtx
     ctx_init(ref_of(sc), ptr_of(entries_buf[0]))
+    unsafe: read(ref_of(sc)).editable_sites = editable_sites
     check_unused_imports(file, path, unresolved_import_paths, warnings)
     var i: ptr_uint = 0
     while i < file.declarations.len:
@@ -685,6 +725,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[ScopeW
                     visit_expr(read(call.args.data + i).arg_value, path, warnings, ctx)
                     i += 1
                 ctx_mark_alias_source(expr, ctx)
+                ctx_mark_editable_receiver(expr, ctx)
             ast.Expr.expr_index_access as ix:
                 visit_expr(ix.receiver, path, warnings, ctx)
                 visit_expr(ix.index, path, warnings, ctx)

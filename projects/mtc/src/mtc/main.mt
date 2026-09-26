@@ -28,6 +28,7 @@ import mtc.formatter.tidy as tidy
 import mtc.loader.path_resolver as resolver
 import mtc.loader.package_manifest as package_manifest
 import mtc.loader.module_loader as loader
+import mtc.semantic.analyzer as analyzer
 import mtc.lowering.lowering as lowering
 import mtc.c_backend.c_backend as c_backend
 import mtc.ir as ir
@@ -632,7 +633,24 @@ function check_command(args: span[str]) -> int:
                     var diags = vec.Vec[pstate.ParseDiagnostic].create()
                     defer: diags.release()
                     let lfile = parser.parse_source(src.as_str(), ref_of(diags))
-                    var lwarns = linter.lint_source(lfile, src.as_str(), effective, span[str]())
+                    # The root module's analysis records the receivers of
+                    # `editable` method calls, so prefer-let stays quiet on a
+                    # `var` binding that is only mutated through them.
+                    var editable_sites = span[analyzer.EditableSite]()
+                    if program.analyses.len() > 0:
+                        let root_analysis_ptr = program.analyses.get(program.root_index)
+                        if root_analysis_ptr != null:
+                            unsafe:
+                                editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
+                    var lwarns = linter.lint_source_with(
+                        lfile,
+                        src.as_str(),
+                        effective,
+                        span[str](),
+                        linter.DEFAULT_MAX_LINE_LENGTH,
+                        span[str](),
+                        editable_sites,
+                    )
                     defer: lwarns.release()
                     if lwarns.len() > 0:
                         var lwi: ptr_uint = 0

@@ -37,6 +37,7 @@ import std.map as map_mod
 import std.hash
 
 import mtc.parser.ast as ast
+import mtc.semantic.analyzer as analyzer
 import mtc.lexer.lexer as lexer
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
@@ -64,7 +65,7 @@ public struct Warning:
 ## Lint a parsed source file, returning warnings in source (traversal) order.
 ## `source` is the original text, re-lexed for the token-based passes.
 public function lint_source(file: ast.SourceFile, source: str, path: str, owning_type_names: span[str]) -> vec.Vec[Warning]:
-    return lint_source_with(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH, span[str]())
+    return lint_source_with(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH, span[str](), span[analyzer.EditableSite]())
 
 
 ## lint_source with an explicit line-length limit (from `.mt-lint.yml`'s
@@ -76,7 +77,7 @@ public function lint_source_opts(
     owning_type_names: span[str],
     max_line_length: ptr_uint,
 ) -> vec.Vec[Warning]:
-    return lint_source_with(file, source, path, owning_type_names, max_line_length, span[str]())
+    return lint_source_with(file, source, path, owning_type_names, max_line_length, span[str](), span[analyzer.EditableSite]())
 
 
 ## lint_source_opts plus the module paths whose imports failed to resolve (the
@@ -87,13 +88,17 @@ public function lint_source_unresolved(
     path: str,
     owning_type_names: span[str],
     unresolved_import_paths: span[str],
+    editable_sites: span[analyzer.EditableSite],
 ) -> vec.Vec[Warning]:
-    return lint_source_with(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH, unresolved_import_paths)
+    return lint_source_with(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH, unresolved_import_paths, editable_sites)
 
 
 ## lint_source with an explicit line-length limit and the module paths whose
 ## imports failed to resolve.  `unused-import` skips unresolved imports,
 ## mirroring Ruby's `Linter` `unresolved_import_paths`.
+## `editable_sites` are the receivers of `editable` method calls recorded by
+## the analyzer; the scope pass treats those bindings as mutated (prefer-let),
+## which needs the analysis because method kinds are not visible in the AST.
 public function lint_source_with(
     file: ast.SourceFile,
     source: str,
@@ -101,6 +106,7 @@ public function lint_source_with(
     owning_type_names: span[str],
     max_line_length: ptr_uint,
     unresolved_import_paths: span[str],
+    editable_sites: span[analyzer.EditableSite],
 ) -> vec.Vec[Warning]:
     var warnings = vec.Vec[Warning].create()
     var i: ptr_uint = 0
@@ -110,7 +116,7 @@ public function lint_source_with(
         i += 1
     # Scope-tracking pass: unused-local, unused-param, shadow, prefer-let, unused-import
     var scope_warnings = vec.Vec[scope_tracking.ScopeWarning].create()
-    scope_tracking.lint_scope_pass(file, path, unresolved_import_paths, ref_of(scope_warnings))
+    scope_tracking.lint_scope_pass(file, path, unresolved_import_paths, editable_sites, ref_of(scope_warnings))
     i = 0
     while i < scope_warnings.len():
         let sp = scope_warnings.get(i) else:
@@ -2925,7 +2931,7 @@ function uint_to_str(n: ptr_uint) -> str:
 #  line-too-long — source-level check for lines exceeding the max length.
 # =============================================================================
 
-const DEFAULT_MAX_LINE_LENGTH: ptr_uint = 120
+public const DEFAULT_MAX_LINE_LENGTH: ptr_uint = 120
 
 function lint_line_too_long(source: str, path: str, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
     var start: ptr_uint = 0

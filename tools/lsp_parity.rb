@@ -127,6 +127,15 @@ CONTAINERS_SOURCE = <<~MT
       let _elem = elem
       let _iter = as_iter
       return int<-n
+
+  # `var` plus an `editable` method call: correct code the host does not warn
+  # about, so prefer-let must not fire either.
+  function containers_mutating() -> int:
+      var v = vec.Vec[int].create()
+      v.push(1)
+      let n = v.len()
+      v.release()
+      return int<-n
 MT
 
 def path_to_uri(path)

@@ -42,13 +42,13 @@ public function assign_to_let_message(name: str) -> str:
     return buf.as_str()
 
 
+## `cannot call editable method push on an immutable receiver` — the host names
+## the method only, not the receiver binding.
 public function editable_on_immutable_message(name: str, method: str) -> str:
     var buf = string.String.create()
     buf.append("cannot call editable method ")
-    buf.append(name)
-    buf.append(".")
     buf.append(method)
-    buf.append(" on an immutable value")
+    buf.append(" on an immutable receiver")
     return buf.as_str()
 
 

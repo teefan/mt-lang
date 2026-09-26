@@ -170,7 +170,6 @@ function collect_file_symbols(path: str, index: ref[Index], roots: ref[vec.Vec[s
                 path = string_mod.String.from_str(canonical.value.as_str()),
                 imports = collect_resolved_imports(ast_file, roots),
             ))
-            let output = ref_of(index.entries)
 
             var di: ptr_uint = 0
             while di < ast_file.declarations.len:
@@ -181,7 +180,7 @@ function collect_file_symbols(path: str, index: ref[Index], roots: ref[vec.Vec[s
                 if sym_kind >= 0:
                     let info = decl_name_and_line(decl)
                     if info.name.len > 0:
-                        output.push(Entry(
+                        index.entries.push(Entry(
                             name = string_mod.String.from_str(info.name),
                             kind = sym_kind,
                             path = string_mod.String.from_str(canonical.value.as_str()),
@@ -196,7 +195,7 @@ function collect_file_symbols(path: str, index: ref[Index], roots: ref[vec.Vec[s
                             unsafe:
                                 mfn = read(ext.methods.data + mi)
                             if mfn.name.len > 0:
-                                output.push(Entry(
+                                index.entries.push(Entry(
                                     name = string_mod.String.from_str(mfn.name),
                                     kind = 12,
                                     path = string_mod.String.from_str(canonical.value.as_str()),

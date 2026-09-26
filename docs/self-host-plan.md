@@ -519,8 +519,31 @@ deliberate value-add; files where it fires differ by design).
    `sum`, both servers now return the declaration **and** `b.mt`'s call site
    (before, the self-host returned only the declaration).
 
+5. **`prefer-let` no longer fires on editable-method mutation.**  `var v =
+   vec.Vec[int].create()` plus `v.push(1)` is correct code (the analyzer itself
+   reports `cannot call editable method push on an immutable receiver` for the
+   `let` form), but the linter could not see method kinds, so it told users to
+   make the binding `let` — 28 such false hints on `examples/data_structures.mt`
+   alone.  The analyzer now records every `editable` method call's receiver
+   (`EditableSite`: name + the receiver's line, the host's
+   `editable_receiver_expression_ids`), `lint_source_with` /
+   `lint_source_unresolved` take those sites, and the scope pass marks the
+   binding mutated, so the hint only appears when the host reports it.
+   Restoring that check also fixed a stage-6c regression: the instantiated
+   imported-receiver path returned before the editable check, so
+   `let v` + `v.push(1)` was accepted silently; the check now runs before the
+   type is substituted, and its message matches the host
+   (`cannot call editable method push on an immutable receiver`, not
+   `… method v.push … on an immutable value`).  Measured: prefer-let hints on
+   `examples/data_structures.mt` 28 → 3, so the remaining linter delta there is
+   the self-host-only `dead-assignment` rule (4 hints the host has no rule for).
+   The `mtc lint` subcommand and `mtc fix` still lint standalone files, so they
+   pass no sites and keep the old hints; the `check` path and the LSP's
+   diagnostics use the root analysis.
+
 Harness: a std-generic fixture (`containers.mt`) locks the outline details and
-the diagnostics on std-generic code, and a resolvable import pair
+the diagnostics on std-generic code (including the editable mutation case), and
+a resolvable import pair
 (`helper.mt`/`user.mt`; the importer stays closed because the host's pull
 diagnostics report `unknown callable` for it while its reference facts resolve
 it) locks cross-file references — **54 requests + 15 probes**, still 3
@@ -630,7 +653,6 @@ cover yet (row 2).
 | 2 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
 | 3 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |
 | 4 | **Generic function-call inference** | not corpus-covered (found 2026-09-26 by diffing `examples/data_structures.mt`'s outline) | the 9 remaining local details there: `iter.iter_filter(vec_iter, is_even)` shows `Iter[T]` where the host infers `Iter[int]`, `paths.path_to(4)` shows `<error>` instead of `Vec[ptr_uint]`, `b.test(3)` instead of `bool`.  A *free* generic call must infer its type arguments from the argument types (`T` from an `Iter[int]` argument) and substitute them into the signature; stage 6c's instantiated-receiver path covers the receiver forms.  Approach: build the substitution from the callee's declared type params and the argument types in the analyzer's `check_call`, then reuse `substitute_type` at the same call sites 6c wired |
-| 5 | **`prefer-let` misses editable-method mutation** | not corpus-covered (found by the stage-6c fixture) | `var v = vec.Vec[int].create()` + `v.push(1)` is correct code (the analyzer itself reports `cannot call editable method push on an immutable receiver` for the `let` form), so the host's `prefer-let` stays quiet — the self-host's linter flags it, because it does not track editable calls.  §5.3c item 1's plan (an editable-receiver set recorded during analysis, queried by the scope-tracking pass) is the fix.  The self-host-only `dead-assignment` rule also adds items where it fires — a deliberate value-add, kept |
 
 ### Where the next session starts (LSP parity)
 

@@ -85,7 +85,8 @@ public function collect_diagnostics(root_path: str, roots: span[str], source: st
                 root_source,
                 root_path,
                 program.owning_type_span(),
-                unresolved.as_span()
+                unresolved.as_span(),
+                read(last_analysis_ptr).editable_receiver_sites.as_span(),
             )
 
     var wi: ptr_uint = 0

@@ -127,6 +127,11 @@ struct Context:
     type_params: map_mod.Map[str, span[ast.TypeParamConstraint]]
     ## Declared generic parameters per type name (`Vec` -> `[T]`).
     type_param_names: map_mod.Map[str, span[ast.TypeParam]]
+    ## Receiver identifiers of `editable` method calls (`s.push(x)`) with the
+    ## call's line: a binding used this way is mutated (the host's
+    ## `editable_receiver_expression_ids`), which the linter's prefer-let needs
+    ## because it cannot resolve method kinds itself.
+    editable_receiver_sites: vec.Vec[EditableSite]
     # Names known to be generic type/value parameters in the current
     # declaration context (struct fields, `extending Type[T]` methods, foreign
     # value params, interface methods).  Used ONLY to suppress "unknown type"
@@ -193,6 +198,8 @@ public struct Analysis:
     ## Declared generic parameters per type name, so an instantiated receiver
     ## (`Vec[int]`) can substitute them.
     type_param_names: map_mod.Map[str, span[ast.TypeParam]]
+    ## Receiver identifiers of `editable` method calls, with their lines.
+    editable_receiver_sites: vec.Vec[EditableSite]
     # The module's source file path, propagated so lowering can emit `#line`
     # directives that map generated C back to the .mt source (debug builds).
     source_path: str
@@ -236,6 +243,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         extending_canonical_names = map_mod.Map[str, str].create(),
         type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
         type_param_names = map_mod.Map[str, span[ast.TypeParam]].create(),
+        editable_receiver_sites = vec.Vec[EditableSite].create(),
         suppressed_type_names = map_mod.Map[str, bool].create(),
         function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
         method_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
@@ -313,6 +321,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         type_alias_types = ctx.type_alias_types,
         extending_canonical_names = ctx.extending_canonical_names,
         type_param_names = ctx.type_param_names,
+        editable_receiver_sites = ctx.editable_receiver_sites,
         source_path = source_path,
     )
 
@@ -4226,6 +4235,7 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
     # the signature is still argument-checked, as the local-type path does.
     match specialization_imported_receiver(ctx, scope, receiver):
         Option.some as instantiated:
+            check_editable_receiver_immutable(ctx, scope, receiver, instantiated.value, method_name, line, column)
             match imported_method_call_type(ctx, instantiated.value, method_name, args, arg_types, any_named, line, column):
                 Option.some as method_type:
                     return method_type.value
@@ -4235,12 +4245,12 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
             pass
 
     let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
+    check_editable_receiver_immutable(ctx, scope, receiver, recv, method_name, line, column)
     match imported_method_call_type(ctx, recv, method_name, args, arg_types, any_named, line, column):
         Option.some as substituted_method:
             return substituted_method.value
         Option.none:
             pass
-    check_editable_receiver_immutable(ctx, scope, receiver, recv, method_name, line, column)
     return check_typed_method_call(ctx, recv, method_name, args, arg_types, any_named, line, column)
 
 
@@ -4295,6 +4305,13 @@ function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, m
 
 ## When the receiver is a `let`-bound value and the method is `editable`, flag the
 ## call.  `ref` (borrow) and `var` (mutable) receivers are fine.
+## A receiver of an `editable` method call: the binding's name and the call's
+## line, so a linter can treat the binding as mutated.
+public struct EditableSite:
+    name: str
+    line: ptr_uint
+
+
 function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.Scope], receiver_expr: ptr[ast.Expr], receiver_type: types.Type, method_name: str, line: ptr_uint, column: ptr_uint) -> void:
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
@@ -4307,6 +4324,7 @@ function check_editable_receiver_immutable(ctx: ref[Context], scope: ref[sscope.
                                 # never a local let binding.
                                 if id.name == "this":
                                     return
+                                ctx.editable_receiver_sites.push(EditableSite(name = id.name, line = id.line))
                                 if scope_is_let(scope, id.name):
                                     report(ctx, line, column, editable_on_immutable_message(id.name, method_name))
                             _:
