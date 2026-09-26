@@ -745,6 +745,14 @@ function ir_expr_value(ctx: ref[SexprCtx], ep: ptr[ir.Expr]) -> SexprValue:
                 f.push(field_int("value", x.value))
                 f.push(field_value("type", types_value(ctx, x.ty)))
                 return node("IR::IntegerLiteral", f.as_span())
+            ir.Expr.expr_unsigned_integer_literal as x:
+                # A lexeme-derived value too large for a signed `long` renders in
+                # the unsigned domain: the host keeps `18446744073709551615` as a
+                # positive value and dumps the same `IR::IntegerLiteral` node.
+                var uf = vec.Vec[SexprField].create()
+                uf.push(field_uint("value", x.value))
+                uf.push(field_value("type", types_value(ctx, x.ty)))
+                return node("IR::IntegerLiteral", uf.as_span())
             ir.Expr.expr_float_literal as x:
                 var f = vec.Vec[SexprField].create()
                 f.push(SexprField(name = "value", value = SexprValue.sv_float(value = x.value)))

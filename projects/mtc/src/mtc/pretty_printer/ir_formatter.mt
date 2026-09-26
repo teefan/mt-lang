@@ -101,6 +101,12 @@ function long_to_str(value: long) -> str:
     return buf.as_str()
 
 
+function ptr_uint_to_str(value: ptr_uint) -> str:
+    var buf = string.String.create()
+    fmt.append_ptr_uint(ref_of(buf), value)
+    return buf.as_str()
+
+
 function double_to_str(value: double) -> str:
     var buf = string.String.create()
     fmt.append_double(ref_of(buf), value)
@@ -660,6 +666,8 @@ function expr_type(ep: ptr[ir.Expr]) -> types.Type:
                 return e.ty
             ir.Expr.expr_integer_literal as e:
                 return e.ty
+            ir.Expr.expr_unsigned_integer_literal as e:
+                return e.ty
             ir.Expr.expr_float_literal as e:
                 return e.ty
             ir.Expr.expr_string_literal as e:
@@ -741,6 +749,11 @@ function render_expression(ep: ptr[ir.Expr], parent_precedence: int) -> str:
                 return j5("offset_of(", render_type(e.target_type), ", ", e.field, ")")
             ir.Expr.expr_integer_literal as e:
                 return long_to_str(e.value)
+            ir.Expr.expr_unsigned_integer_literal as e:
+                # A lexeme-derived value too large for a signed `long` renders in
+                # the unsigned domain, as the host does (`18446744073709551615`,
+                # not `-1`).
+                return ptr_uint_to_str(e.value)
             ir.Expr.expr_float_literal as e:
                 return double_to_str(e.value)
             ir.Expr.expr_string_literal as e:

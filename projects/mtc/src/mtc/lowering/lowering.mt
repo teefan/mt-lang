@@ -24,6 +24,7 @@ import mtc.loader.module_loader as loader
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.parser.ast as ast
+import mtc.parser.literal_parsing as lparse
 import mtc.c_naming as naming
 import mtc.lowering.async as async_mod
 import mtc.lowering.utils as utils
@@ -516,7 +517,7 @@ public function lower(program: loader.Program) -> ir.Program:
             break
         let ana_ptr = module_analyses.get(fi) else:
             break
-        var ordered = ordered_module_functions(unsafe: read(ana_ptr), unsafe: read(frag_ptr).functions, ref_of(all_by_linkage), ref_of(spec_infos))
+        var ordered = ordered_module_functions(unsafe: read(ana_ptr), program.analyses.as_span(), unsafe: read(frag_ptr).functions, ref_of(all_by_linkage), ref_of(spec_infos))
         dedup_append_functions(ref_of(functions), ordered.as_span(), ref_of(seen_functions))
         fi += 1
 
@@ -1068,7 +1069,7 @@ function emit_specializations(decl_key: str, owner_module: str, all_by_linkage: 
 ## Order one module's functions like the host: walk its declarations, emitting
 ## each function/method (or its sorted instances) in source order, then append
 ## any remaining synthetic functions in creation order.
-function ordered_module_functions(analysis: analyzer.Analysis, fragment_functions: span[ir.Function], all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> vec.Vec[ir.Function]:
+function ordered_module_functions(analysis: analyzer.Analysis, analyses: span[analyzer.Analysis], fragment_functions: span[ir.Function], all_by_linkage: ref[map_mod.Map[str, ir.Function]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> vec.Vec[ir.Function]:
     var result = vec.Vec[ir.Function].create()
     var emitted = map_mod.Map[str, bool].create()
     let module_name = analysis.module_name
@@ -1088,6 +1089,20 @@ function ordered_module_functions(analysis: analyzer.Analysis, fragment_function
                     emit_specializations(j2("fn:", fun.name), module_name, all_by_linkage, spec_infos, ref_of(emitted), ref_of(result))
             ast.Decl.decl_extending_block as ex:
                 let bare = unsafe: type_ref_last_name(ex.type_name)
+                # Resolve the receiver the same way `lower_extending_block` does,
+                # so the linkage name looked up here is the one it emitted.
+                var recv_name = bare
+                var receiver_ty = extending_receiver_type(module_name, bare)
+                match extending_receiver_target(analyses, analysis, ex.type_name):
+                    Option.some as resolved:
+                        receiver_ty = resolved.value
+                        match named_type_name(resolved.value):
+                            Option.some as resolved_name:
+                                recv_name = resolved_name.value
+                            Option.none:
+                                pass
+                    Option.none:
+                        pass
                 var mi: ptr_uint = 0
                 while mi < ex.methods.len:
                     var m: ast.Method
@@ -1101,7 +1116,7 @@ function ordered_module_functions(analysis: analyzer.Analysis, fragment_function
                         dk.append(m.name)
                         emit_specializations(dk.as_str(), module_name, all_by_linkage, spec_infos, ref_of(emitted), ref_of(result))
                     else:
-                        let lk = method_link_name(module_name, bare, m.name, m.method_kind == ast.MethodKind.mk_static)
+                        let lk = method_c_name_for_receiver(receiver_ty, module_name, recv_name, m.name, m.method_kind)
                         emit_fragment_function_linkage(lk, all_by_linkage, ref_of(emitted), ref_of(result))
                     mi += 1
             _:
@@ -1798,6 +1813,28 @@ function extending_receiver_type(module_name: str, type_name: str) -> types.Type
     return types.Type.ty_imported(module_name = module_name, name = type_name, args = span[types.Type]())
 
 
+## The resolved receiver type of an `extending` target, mirroring the host's
+## `resolve_extending_receiver_type`: a single-part target follows the declaring
+## module's own alias chain (`type Color = c.Color` in std.raylib attaches the
+## block to the raw `std.c.raylib.Color`), a qualified target follows its import
+## alias into the target module's chain (`extending b3.Vec3:` -> `b3Vec3`).
+## Returns none when the target names no alias, leaving the caller on the
+## literal-name scheme.
+function extending_receiver_target(analyses: span[analyzer.Analysis], analysis: analyzer.Analysis, type_ref_ptr: ptr[ast.TypeRef]) -> Option[types.Type]:
+    let parts = unsafe: read(type_ref_ptr).name.parts
+    if parts.len == 0:
+        return Option[types.Type].none
+    let last = unsafe: read(parts.data + (parts.len - 1))
+    if parts.len == 1:
+        let target = analysis.type_alias_types.get(last) else:
+            return Option[types.Type].none
+        return Option[types.Type].some(value = unsafe: read(target))
+    let alias_name = unsafe: read(parts.data + 0)
+    let module_ptr = analysis.imports.get(alias_name) else:
+        return Option[types.Type].none
+    return resolve_imported_alias_type(analyses, unsafe: read(module_ptr), last)
+
+
 ## Lower all methods in an extending block to IR functions.  Each method becomes
 ## a C function with the receiver as the first parameter (pointer for editable,
 ## by value for plain, omitted for static).
@@ -1822,27 +1859,22 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
     # are monomorphized by `lower_monomorphized_call` when concrete calls occur.
     if unsafe: read(type_ref_ptr).arguments.len > 0:
         return
-    # An alias-qualified target attaches to the *resolved* type: `extending
-    # b3.Vec3:` (with `type Vec3 = c.b3Vec3` in std.box3d) declares methods on the
-    # C struct `b3Vec3`, which is the name a call site derives from the receiver's
-    # resolved type.  Emitting them under the literal last segment instead would
-    # leave every call to an undeclared function.
-    var resolved_receiver: Option[types.Type] = Option[types.Type].none
-    if unsafe: read(type_ref_ptr).name.parts.len > 1:
-        let alias_name = unsafe: read(read(type_ref_ptr).name.parts.data + 0)
-        let mod_ptr = ctx.analysis.imports.get(alias_name)
-        if mod_ptr != null:
-            let target_module = unsafe: read(mod_ptr)
-            match resolve_single_imported_type(ctx, target_module, bare_name):
-                Option.some as resolved:
-                    match named_type_name(resolved.value):
-                        Option.some as resolved_name:
-                            bare_name = resolved_name.value
-                            resolved_receiver = Option[types.Type].some(value = resolved.value)
-                        Option.none:
-                            pass
+    # An alias target attaches to the *resolved* type: `extending Color:` in
+    # std.raylib (with `type Color = c.Color`) and `extending b3.Vec3:` in
+    # examples.box3d.common (with `type Vec3 = c.b3Vec3` in std.box3d) both
+    # declare methods on the raw C struct, which is the type a call site derives
+    # from the receiver — and the type the host names the linkage after.
+    var receiver_ty = extending_receiver_type(ctx.module_name, bare_name)
+    match extending_receiver_target(ctx.program_analyses, ctx.analysis, type_ref_ptr):
+        Option.some as resolved:
+            receiver_ty = resolved.value
+            match named_type_name(resolved.value):
+                Option.some as resolved_name:
+                    bare_name = resolved_name.value
                 Option.none:
                     pass
+        Option.none:
+            pass
     var mi: ptr_uint = 0
     while mi < methods.len:
         var m: ast.Method
@@ -1852,13 +1884,7 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
         if m.type_params.len > 0:
             mi += 1
             continue
-        let c_name = method_link_name(ctx.module_name, bare_name, m.name, m.method_kind == ast.MethodKind.mk_static)
-        var receiver_ty = extending_receiver_type(ctx.module_name, bare_name)
-        match resolved_receiver:
-            Option.some as resolved_ty:
-                receiver_ty = resolved_ty.value
-            Option.none:
-                pass
+        let c_name = method_c_name_for_receiver(receiver_ty, ctx.module_name, bare_name, m.name, m.method_kind)
         # Async methods are lowered through the full CPS path, with the receiver
         # (`this`) as an implicit param — except static async methods, which have
         # no receiver.
@@ -2378,7 +2404,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         let wrapped = make_task_literal(void_ret_val)
                         output.push(ir.Stmt.stmt_return(value = wrapped, line = r.line, source_path = ctx.analysis.source_path))
                     else:
-                        output.push(ir.Stmt.stmt_return(value = null, line = r.line, source_path = ""))
+                        output.push(ir.Stmt.stmt_return(value = null, line = r.line, source_path = ctx.analysis.source_path))
                     return
                 # `return match ...`: a match expression has no direct C form, so
                 # hoist it into a synthetic temp local (a switch / if-chain that
@@ -4226,9 +4252,19 @@ function generic_c_type_raw(name: str, args: span[types.Type]) -> str:
 ## originating module (e.g. `ty_imported("std.c.raylib", "CameraMode")`).
 ## Returns none if `type_name` is not a type alias in the target module.
 function resolve_single_imported_type(ctx: ref[LowerCtx], target_module: str, type_name: str) -> Option[types.Type]:
-    match find_imported_analysis(ctx, target_module):
-        Option.some as ia:
-            let alias_target = ia.value.type_alias_types.get(type_name) else:
+    return resolve_imported_alias_type(ctx.program_analyses, target_module, type_name)
+
+
+## `resolve_single_imported_type` over an explicit analysis list, so callers
+## without a `LowerCtx` (the function-ordering pass) resolve identically.
+function resolve_imported_alias_type(analyses: span[analyzer.Analysis], target_module: str, type_name: str) -> Option[types.Type]:
+    var ai: ptr_uint = 0
+    while ai < analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(analyses.data + ai)
+        if a.module_name == target_module:
+            let alias_target = a.type_alias_types.get(type_name) else:
                 return Option[types.Type].none
             unsafe:
                 var at = read(alias_target)
@@ -4242,8 +4278,8 @@ function resolve_single_imported_type(ctx: ref[LowerCtx], target_module: str, ty
                         return Option[types.Type].some(value = types.Type.ty_named(module_name = nm.module_name, name = nm.name))
                     _:
                         return Option[types.Type].some(value = at)
-        Option.none:
-            return Option[types.Type].none
+        ai += 1
+    return Option[types.Type].none
 
 
 ## The C name for a member resolved through an import alias.
@@ -9433,6 +9469,50 @@ function method_c_name(module_name: str, type_name: str, method_name: str, metho
     return method_link_name(module_name, type_name, method_name, method_kind == ast.MethodKind.mk_static)
 
 
+## The C name of a method receiver's own type, mirroring the host's `c_type_name`:
+## a type living in a raw (`std.c.*`) module is named bare (`Color`), any other
+## nominal type keeps its module-qualified name.  Returns none for receivers the
+## host names by a different scheme (primitives, `str`, generic instances, types
+## with no module attribution); callers then fall back on the declaring-module
+## scheme.
+function receiver_c_type_name(t: types.Type) -> Option[str]:
+    match t:
+        types.Type.ty_imported as im:
+            if im.args.len > 0 or im.module_name.len == 0:
+                return Option[str].none
+            if im.module_name.starts_with("std.c."):
+                return Option[str].some(value = im.name)
+            return Option[str].some(value = naming.qualified_c_name(im.module_name, im.name))
+        types.Type.ty_named as n:
+            if n.module_name.len == 0:
+                return Option[str].none
+            if n.module_name.starts_with("std.c."):
+                return Option[str].some(value = n.name)
+            return Option[str].some(value = naming.qualified_c_name(n.module_name, n.name))
+        _:
+            return Option[str].none
+
+
+## The C linkage name for a method whose receiver type is known.  The host derives
+## it from the receiver's *own* resolved type (`c_type_name`), not from the module
+## that declares the `extending` block, so a method on a raw (`std.c.*`) struct is
+## bare (`Color_is_equal`) even when the block lives in a wrapper module
+## (`std.raylib`, `examples.box3d.common`).  Falls back to `method_c_name`'s
+## declaring-module scheme when the receiver yields no C type name.
+function method_c_name_for_receiver(receiver_ty: types.Type, declaring_module: str, type_name: str, method_name: str, method_kind: ast.MethodKind) -> str:
+    match receiver_c_type_name(receiver_ty):
+        Option.some as ct:
+            var buf = string.String.create()
+            buf.append(ct.value)
+            buf.append("_")
+            buf.append(method_name)
+            if method_kind == ast.MethodKind.mk_static:
+                buf.append("_static")
+            return buf.as_str()
+        Option.none:
+            return method_c_name(declaring_module, type_name, method_name, method_kind)
+
+
 ## Some(type name) when `t` is a primitive or `str` receiver type, whose methods
 ## use the bare naming scheme; none for nominal or other receiver types.
 function primitive_receiver_name(t: types.Type) -> Option[str]:
@@ -9475,14 +9555,14 @@ function resolve_canonical_hook(ctx: ref[LowerCtx], t_ty: types.Type, hook: str)
         return Option[str].none
     let key = analyzer.method_key(type_name, hook)
     if ctx.analysis.method_sigs.contains(key):
-        return Option[str].some(value = method_link_name(ctx.module_name, type_name, hook, true))
+        return Option[str].some(value = method_c_name_for_receiver(t_ty, ctx.module_name, type_name, hook, ast.MethodKind.mk_static))
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
         var a: analyzer.Analysis
         unsafe:
             a = read(ctx.program_analyses.data + ai)
         if a.method_sigs.contains(key):
-            return Option[str].some(value = method_link_name(a.module_name, type_name, hook, true))
+            return Option[str].some(value = method_c_name_for_receiver(t_ty, a.module_name, type_name, hook, ast.MethodKind.mk_static))
         ai += 1
     return Option[str].none
 
@@ -9597,16 +9677,21 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
         var ret = sig.return_type
         if not sig.has_return_type:
             ret = ctx.void_ty
-        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name(ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret), params = sig.params))
+        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name_for_receiver(effective_ty, ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret), params = sig.params))
     # Search imported modules' method_sigs when the method is not found locally.
     # When the receiver type carries a specific originating module (ty_imported),
     # restrict the search to that module first so that structs with the same name
     # in different modules (e.g. Config in both std.net.session and
     # std.net.channel) resolve methods from the correct module.
+    # A raw (`std.c.*`) receiver's methods are declared by wrapper modules
+    # (`std.raylib`, `examples.box2d.common`) — a raw module has no `extending`
+    # blocks of its own — so restricting the search to it would never match and
+    # the call would fall through to a module-less re-resolution.
     var preferred_module = ""
     match effective_ty:
         types.Type.ty_imported as im:
-            preferred_module = im.module_name
+            if not im.module_name.starts_with("std.c."):
+                preferred_module = im.module_name
         _:
             pass
     var ai: ptr_uint = 0
@@ -9639,7 +9724,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                 _:
                     pass
             return Option[MethodInfo].some(value = MethodInfo(
-                c_name = method_c_name(a.module_name, type_name, method_name, sig.method_kind),
+                c_name = method_c_name_for_receiver(effective_ty, a.module_name, type_name, method_name, sig.method_kind),
                 method_kind = sig.method_kind,
                 return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
                 params = sig.params,
@@ -9683,7 +9768,7 @@ function resolve_method_info_imported(ctx: ref[LowerCtx], receiver_ty: types.Typ
                     _:
                         pass
                 return Option[MethodInfo].some(value = MethodInfo(
-                    c_name = method_c_name(a.module_name, type_name, method_name, sig.method_kind),
+                    c_name = method_c_name_for_receiver(effective_ty, a.module_name, type_name, method_name, sig.method_kind),
                     method_kind = sig.method_kind,
                     return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
                     params = sig.params,
@@ -11975,15 +12060,32 @@ function int_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.T
     if not types.is_integer_type(context_ty):
         return value
     var literal_value: long
+    var literal_lexeme: str = ""
     unsafe:
         match read(arg_ast):
             ast.Expr.expr_integer_literal as lit:
                 literal_value = long<-lit.value
+                literal_lexeme = lit.lexeme
             _:
                 return value
     if not int_value_fits_type(literal_value, context_ty):
         return value
-    return alloc_expr(ir.Expr.expr_integer_literal(value = literal_value, ty = context_ty))
+    return alloc_expr(integer_literal_expr(literal_lexeme, literal_value, context_ty))
+
+
+## The IR node for an integer literal read from the AST, mirroring the host's
+## parse: Ruby's lexer stores an unbounded Integer, so a magnitude that does not
+## fit a signed `long` (`18446744073709551615`, `0xFFFFFFFFFFFFFFFF`) stays
+## positive and renders in the unsigned domain.  A signed `long` can only hold
+## the same bit pattern, so those literals get their own node
+## (`expr_unsigned_integer_literal`).  Everything else — including a folded
+## arithmetic result such as `~0`, which the host folds to `-1` for the same
+## `ptr_uint` type — stays a signed `expr_integer_literal`: the distinction is
+## provenance, not type or value.
+function integer_literal_expr(lexeme: str, value: long, ty: types.Type) -> ir.Expr:
+    if value < 0 and not lexeme.starts_with("-"):
+        return ir.Expr.expr_unsigned_integer_literal(value = lparse.parse_int_literal_unsigned(lexeme), ty = ty)
+    return ir.Expr.expr_integer_literal(value = value, ty = ty)
 
 
 ## True when the (non-negative) literal value fits the integer primitive `t`.
@@ -12710,7 +12812,11 @@ function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) ->
                     ff_c_name = resolve_foreign_c_name(ctx, ff.mapping)
                 ctx.foreign_map.set(ff.name, ForeignInfo(
                     c_name = ff_c_name,
-                    return_ty = qualify_type(ctx, resolve_scalar_type_ref(ff.return_type)),
+                    # The declared return type resolved like any other type ref:
+                    # a nominal return (`-> Vector4` through `type Vector4 =
+                    # c.Vector4`) must yield the originating raw type, exactly as
+                    # `imported_foreign_call` resolves a cross-module callee.
+                    return_ty = qualify_type(ctx, resolve_type_ref(ctx, ff.return_type)),
                     params = ff.foreign_params,
                     mapping = ff.mapping,
                     simple = ff_simple,
@@ -17783,7 +17889,7 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
-                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = lit.value, ty = types.primitive("int"))))
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(integer_literal_expr(lit.lexeme, lit.value, types.primitive("int"))))
             ast.Expr.expr_float_literal as lit:
                 return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = types.primitive("float"))))
             ast.Expr.expr_bool_literal as b:
@@ -18001,6 +18107,13 @@ function coerce_const_value(ctx: ref[LowerCtx], v: ir.Expr, target_ty: types.Typ
             match v:
                 ir.Expr.expr_integer_literal as lit:
                     return ir.Expr.expr_integer_literal(value = lit.value, ty = target_ty)
+                ir.Expr.expr_unsigned_integer_literal as lit:
+                    # Keep the lexeme-derived unsigned rendering when the target is
+                    # unsigned; a signed target (a program the host rejects) keeps
+                    # the bit pattern so the emitted C stays a valid initializer.
+                    if types.is_unsigned_integer_type(target_ty):
+                        return ir.Expr.expr_unsigned_integer_literal(value = lit.value, ty = target_ty)
+                    return ir.Expr.expr_integer_literal(value = long<-lit.value, ty = target_ty)
                 ir.Expr.expr_float_literal as fl:
                     return ir.Expr.expr_float_literal(value = fl.value, ty = target_ty)
                 _:
@@ -18321,7 +18434,7 @@ function try_const_typed_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: re
             unsafe:
                 match read(ep):
                     ast.Expr.expr_integer_literal as lit:
-                        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = lit.value, ty = target_ty)))
+                        return Option[ptr[ir.Expr]].some(value = alloc_expr(integer_literal_expr(lit.lexeme, lit.value, target_ty)))
                     ast.Expr.expr_float_literal as lit:
                         return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = target_ty)))
                     ast.Expr.expr_char_literal as ch:
@@ -18914,7 +19027,7 @@ function attribute_arg_value_to_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], ty: ty
             ast.Expr.expr_string_literal as s:
                 return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = s.value, ty = result_ty, cstring = s.is_cstring)))
             ast.Expr.expr_integer_literal as lit:
-                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = lit.value, ty = result_ty)))
+                return Option[ptr[ir.Expr]].some(value = alloc_expr(integer_literal_expr(lit.lexeme, lit.value, result_ty)))
             ast.Expr.expr_bool_literal as b:
                 return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = result_ty)))
             _:
@@ -20294,7 +20407,7 @@ function evaluate_const_expr_to_ir(ctx: ref[LowerCtx], variables: ref[map_mod.Ma
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
                 return Option[ptr[ir.Expr]].some(value = alloc_expr(
-                    ir.Expr.expr_integer_literal(value = lit.value, ty = types.primitive("int"))))
+                    integer_literal_expr(lit.lexeme, lit.value, types.primitive("int"))))
             ast.Expr.expr_float_literal as lit:
                 return Option[ptr[ir.Expr]].some(value = alloc_expr(
                     ir.Expr.expr_integer_literal(value = long<-(lit.value), ty = types.primitive("int"))))

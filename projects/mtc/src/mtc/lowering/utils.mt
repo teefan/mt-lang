@@ -149,6 +149,8 @@ public function ir_expr_type(ep: ptr[ir.Expr]) -> types.Type:
                 return x.ty
             ir.Expr.expr_integer_literal as x:
                 return x.ty
+            ir.Expr.expr_unsigned_integer_literal as x:
+                return x.ty
             ir.Expr.expr_boolean_literal as x:
                 return x.ty
             ir.Expr.expr_string_literal as x:

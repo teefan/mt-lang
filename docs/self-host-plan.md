@@ -54,17 +54,23 @@ message text/channel/argument-precedence differences, not missing commands
 (§0j).  Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
 **`--sexpr` parity (measured 2026-09-25 over 694 files): lex 694/694
-byte-identical; parse 689 comparable files byte-identical with 0 differences
-(5 host-side rejections: external files, platform-pinned); `lower` 35 match /
-520 differ / 53 host-rejected / 86 self-rejected.**  The ref/lifetime and dyn
-vtable categories are closed; the remaining `lower` deltas are dominated by
-mechanical items (contextual integer-literal typing 213 files, `:path`
-attribution 145, opaques, re-export module canonicalization) rather than the
-proc/closure work, which touches at most the 27 corpus files that use proc
-literals (§0j).
+byte-identical; parse 690 comparable files byte-identical with 0 differences
+(4 host-side rejections: external files, platform-pinned); `lower` 38 match /
+604 differ / 52 host-rejected / 0 self-rejected.**  The ref/lifetime and dyn
+vtable categories are closed, and so are the three levers §0j ranked first —
+**raw-module method linkage naming**, **unsigned literals in the unsigned
+domain** (`18446744073709551615`, provenance-tracked so `~0` still prints `-1`)
+and **`:path` attribution for statements lowered from AST nodes** (a 19-file
+sample went from 138 pathless `return` statements to 0, matching the host).
+**Same-module foreign calls returning a nominal type** no longer lower to
+`Types::Error`.  The remaining `lower` deltas start 30–40 KB into the dumps for
+those families; they are dominated by opaque declarations (the sdl3 family's
+first difference *and* its build failure), zero-valued aggregate field types,
+`null` contextual typing, event-field modelling and generic-specialization
+parameter types (§0j).
 
-Last updated: 2026-09-25 (stress parity, parse parity, vendored-family parity,
-contextual literal typing; remaining work and approach in §0j)
+Last updated: 2026-09-25 (method linkage naming, foreign nominal returns,
+unsigned literals, `:path` attribution; remaining work and approach in §0j)
 
 ---
 
@@ -94,18 +100,154 @@ looked correct at the CLI level broke the compiler's own bootstrap.
    the remaining categories ranked in §0j.
 2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 8).
-3. **LSP feature parity** — *not yet verified.*  `lsp-design.md` reports 29
-   advertised capabilities at Ruby parity and the hover/reference/definition
-   work done in July, but the self-hosted server has **no end-to-end comparison
-   harness**: `test/tooling/lsp/server/*` spawns the *Ruby* server
-   (`RbConfig.ruby -I lib -e ...`), so nothing exercises `build/stage2/mtc lsp`.
-   Before claiming parity, add a self-vs-host mode to that harness (the
-   `all_endpoints_benchmark.rb` / `language_baseline_benchmark.rb` shapes are the
-   natural base) and run the same request corpus through both servers, comparing
-   responses; then fix what differs.
+3. **LSP feature parity** — **now measured** (§0k): the missing self-vs-host
+   harness exists (`tools/lsp_parity.rb`), capabilities are at 30/30 keys and
+   hover/definition/declaration/typeDefinition/references are byte-identical for
+   the harness corpus; 26 of 47 request entries and 9 of 15 stress probes still
+   differ (completion, hover docs/inferred types, `documentSymbol` ranges,
+   formatting, and small response shapes — ranked in §0k).  The self-host
+   survives the whole stress corpus without a crash or hang.
 4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
    bridge was assessed as not feasible without multi-threaded I/O
    (`dap-design.md`).
+
+---
+
+## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+Goal: do what phase 3 above says — actually exercise `build/stage2/mtc lsp`
+against the Ruby server and close what differs.
+
+### The harness (`tools/lsp_parity.rb`)
+
+The missing piece: an **out-of-process** driver, because every existing LSP test
+drives the Ruby server in-process (`test/tooling/lsp/server/helpers.rb` spawns
+`RbConfig.ruby -I lib -e "require 'milk_tea'; ..."`).  `tools/lsp_parity.rb`:
+
+```
+ruby tools/lsp_parity.rb record --server host  --out tmp/host.json [--stress]
+ruby tools/lsp_parity.rb record --server self  --out tmp/self.json [--stress]
+ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
+```
+
+- builds one synthetic multi-module workspace at a **fixed path**
+  (`tmp/lsp-parity-ws`, so URIs compare equal), opens it with
+  `initialize.rootUri`, and drives a 47-request corpus covering every endpoint
+  (hover at 8 positions, definition/declaration/typeDefinition/implementation,
+  references, documentHighlight/Symbol, folding/selection/linkedEditing ranges,
+  completion at 4 positions, signatureHelp, prepareRename/rename, inlayHint,
+  semanticTokens full/range, codeLens, codeAction, documentLink,
+  call/typeHierarchy prepares, pull + workspace diagnostics,
+  `milkTea/documentContext`, `milkTea/debugInfo`, workspace/symbol, formatting,
+  rangeFormatting, onTypeFormatting, cross-file hover/symbols);
+- **normalizes** the volatile parts before comparing (workspace path, `resultId`
+  fingerprints) and decodes semantic tokens with each server's own legend so
+  token *types* compare by name, not by legend index;
+- answers server→client requests (`workspace/configuration`) the way a real
+  client must — without that the self-host's `milkTea/documentContext` looked
+  like a hang;
+- `--stress` adds 15 adversarial probes: 20 rapid incremental `didChange`s,
+  5 full-document replacements, out-of-range/negative positions, unknown
+  methods, missing params, wrong param types, unknown documents, unterminated
+  source, emoji/UTF-8 positions, open/close cycling.
+
+### Fixed this session
+
+1. **`initialize.rootUri` was ignored; the workspace root came from argv.**
+   `handle_initialize(id)` never read its params and `workspace_root_from_args`
+   returned `args[0]` — the *command name* (`lsp`), so the workspace root was
+   literally `"lsp"`.  The index, diagnostics, references and `workspace/symbol`
+   therefore ran against the wrong tree (`milkTea/debugInfo` showed
+   `Root path: lsp`, `Index entries: 21292` — the repo).  Now
+   `handle_initialize(id, params, ws)` applies `rootUri`/`rootPath` through
+   `Workspace.set_root` (re-discovering module roots and dropping the stale
+   index/diagnostic caches), and the CLI arg is only the pre-initialize default.
+2. **Capability parity: 30/30 keys.**  Added `positionEncoding`,
+   `textDocumentSync.willSaveWaitUntil`, the host's `diagnosticProvider`,
+   `codeActionProvider.codeActionKinds` case, and the host's full semantic-token
+   legend (23 token types / 10 modifiers — the self-host advertised 15/3 and
+   classified with its own indices, so `semantic_tokens.mt`'s `TOKEN_*`
+   constants were renumbered and `SNAPSHOT_TOKEN_NAMES` extended).
+3. **Cross-file `references` emitted malformed JSON** (`"}}` where three closing
+   braces are needed), which aborted the whole response frame; fixed, and
+   `references/compute` is now byte-identical to the host.
+4. **`milkTea/documentContext` never answered a request.**  The host replies
+   `null`; the self-host treated it as a notification only.
+5. **Hover now carries the host's location line and range**:
+   `Defined at: [main.mt:33](file:///…/main.mt#L33)` (instead of
+   `*Defined at line 33*`) plus the `"range"` object for the hovered token.
+6. **`definition` / `declaration` / `typeDefinition` return a bare `Location`
+   object** when there is one result, as the host does (they returned a
+   single-element array).
+
+### Measured (same corpus, both servers)
+
+| Gate | Before | After |
+| --- | --- | --- |
+| `initialize` capabilities | 5 of 30 keys differ | **0 differ** |
+| requests differing | 33 of 47 | **26 of 47** |
+| stress probes differing | 15 of 15 | **9 of 15** |
+| requests timing out | 1 (`milkTea/documentContext`) | **0** |
+| crashes / hangs | — | **none** (all 62 probes complete; no SIGSEGV/SIGABRT) |
+| byte-identical endpoints | — | `hover/function-call`, `definition/compute`, `declaration/struct`, `typeDefinition/circle`, `references/compute` |
+
+### Crash / memory-safety verification
+
+- **Stress corpus** (15 adversarial probes: rapid and full-document edits,
+  out-of-range and negative positions, unknown methods, missing/ill-typed
+  params, unknown documents, unterminated source, emoji positions, open/close
+  cycling): **no crash, no hang, no timeout** — every probe answered, and the
+  server kept serving afterwards.
+- **valgrind** (`--leak-check=full`, driving initialize → didOpen → hover,
+  definition, references, documentSymbol, semanticTokens, completion, pull
+  diagnostics, codeLens, foldingRange, inlayHint → shutdown/exit):
+  **0 invalid reads/writes, 0 uninitialised-value uses, 0 invalid frees**.
+  All 1329 valgrind "errors" are leak records.  The leaks are real but
+  structural: arena-style buffers the codebase never frees, dominated by the
+  workspace index (`workspace_index_collect_directory` → `parse_source` per
+  file), which in this run also walked the *repository* root because
+  `discover_project_root` appends the nearest `std/` ancestor to the module
+  roots.  Worth a follow-up (an editor session is long-lived), but it is not a
+  correctness bug and not new.
+
+### Remaining LSP gaps (ranked, all reproducible with the harness)
+
+1. **Completion** — `completion/member`, `completion/import-member` and
+   `completion/top-level` return keyword items where the host returns symbols
+   (`sum`/`x`/`compute` …), so receiver-type and import-member resolution is not
+   wired into the completion path; snippets (`compute(${1:a}, ${2:b})`) and
+   `sortText`/`data` payloads are missing too.  This is the largest functional
+   gap (3 corpus entries + the unicode probe).
+2. **Hover content beyond signatures** — keyword hovers use the self-host's own
+   short descriptions where the host has long-form docs; locals lack the
+   inferred type (`let s: Sample (immutable)`) and the `*From <module>*` line
+   that the host emits when it shortens a qualified type.
+3. **`documentSymbol` ranges are `0:0`** — names/kinds match but every range and
+   selectionRange is empty, so editor outlines and breadcrumbs are wrong.
+4. **Formatting** — `textDocument/formatting` drops `##` doc comments (the host
+   keeps them) and `rangeFormatting` returns corrupted text
+   (`"is.x + this.y\n\ninterface Shape:…"`), i.e. a real bug, not a shape
+   difference.
+5. **Small shapes**: `codeLens.data` (string vs `{uri,name,line,column}`),
+   `inlayHint.paddingRight`, `documentLink.tooltip` (path vs
+   `Open linked file`), `prepareRename` (`{range, placeholder}` vs a bare
+   range), `signatureHelp` label (missing `-> int`), `milkTea/debugInfo`
+   (entirely different renderer).
+6. **Diagnostics/classification details**: semantic-token modifier bits differ
+   on one token (`512` vs `0`, declaration/modification), one identifier is
+   `method` where the host says `macro`; on unterminated source the self-host
+   reports only the import error where the host also reports the lex error;
+   `Method not found` vs `method not found`; a wrong-typed position falls back
+   to a keyword hover instead of `null`.
+
+### How to re-run
+
+```sh
+ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
+ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
+ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
+ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json
+```
 
 ---
 
@@ -230,6 +372,102 @@ registration, the export surface and the lookup; the families now get past the
 analyzer (`box3d/ragdoll.mt` `check`s clean, `box2d/*` is down to the const
 issues in "Newly exposed gaps").
 
+### Same session, second pass — linkage naming and foreign return types
+
+15. **Raw-module method linkage naming** (ranked item 1, the dominant first
+    difference in the raylib/box2d/box3d families): the host names a method from
+    the receiver's *own* resolved type — `c_type_name(receiver_type)` in
+    `function_binding_c_name` — and that name is **bare** whenever the receiver
+    lives in a raw (`std.c.*`) module.  The self-host always prefixed with the
+    module that *declares* the `extending` block, so `extending Color:` in
+    std.raylib produced `std_raylib_Color_is_equal` (host: `Color_is_equal`) and
+    `extending b3.Vec3:` in examples.box3d.common produced
+    `examples_box3d_common_b3Vec3_scale` (host: `b3Vec3_scale`).  Three pieces
+    (all in `lowering.mt`):
+    - `extending_receiver_target` resolves an `extending` target the way the host
+      does — a single-part target through the declaring module's own alias chain
+      (`type Color = c.Color`), a qualified target through its import alias and
+      that module's chain — and `lower_extending_block` now takes the receiver
+      type (and the `this` parameter's type) from it.  `resolve_single_imported_type`
+      was split so the ordering pass resolves identically without a `LowerCtx`
+      (`resolve_imported_alias_type`).
+    - `receiver_c_type_name` / `method_c_name_for_receiver` mirror `c_type_name`:
+      bare for `std.c.*` receivers, module-qualified otherwise, with a
+      `_static` suffix for static methods, falling back to the old
+      declaring-module scheme when the receiver carries no module.
+    - the same naming is used at every call site that resolves a method
+      (`resolve_method_info`, `resolve_method_info_imported`,
+      `resolve_canonical_hook`) and by the ordering pass.
+
+16. **Same-module foreign calls returning a nominal type** (found while
+    verifying 15; 269 of 312 example files had *some* `Types::Error` the host did
+    not): `collect_foreign_functions` resolved a same-module foreign function's
+    return type with the scalar-only `resolve_scalar_type_ref`, so `-> Vector4`
+    (through `type Vector4 = c.Vector4`) yielded `ty_error` — and every call then
+    carried `Types::Error` (also poisoning the hoisted `__mt_foreign_ret_N`
+    temporaries).  The imported-callee path already used the full resolver
+    (`imported_foreign_call`); the same-module path now does too.  `std/raylib.mt`
+    and the box2d/box3d examples are down to **zero** `Types::Error`.
+
+17. **Raw receivers search every module for the method** (required by 15 — box2d
+    stopped compiling without it): `resolve_method_info` restricts the imported
+    search to the receiver's own module to disambiguate same-named structs
+    (§0a).  A raw module has no `extending` blocks, so for a `std.c.*` receiver
+    that restriction could never match, and the call fell through to a fallback
+    that re-resolved with a *module-less* type name (`examples_box2d_common_b2Vec2_add`
+    against the emitted `b2Vec2_add`).  The restriction now applies only to
+    non-raw receivers.
+
+Verification for 15–17: `tools/bootstrap.sh -j 16` (fixed point holds, 12 files /
+0 failed); `box2d/drop` and `box3d/ragdoll` build under both compilers and their
+output is byte-identical (both are windowed, so runs are `timeout`-bounded);
+`lower` sweep unchanged at 38 match / 604 differ / 0 self-rejected with the
+*sets* of linkage names now equal to the host's for the vendored families.
+Token-level measurement (`diff` over whitespace-split tokens of the `--sexpr
+lower` dumps, before → after): `box3d/ragdoll` 34,083 → 5,087;
+`box3d/box_stack` 34,121 → 5,133; `box2d/common` 31,622 → 5,558; `box2d/drop`
+33,537 → 7,701; each sampled raylib example and `std/raylib.mt` −1,136.  Files
+without raw-module `extending` blocks are unchanged, so the corpus-wide *file*
+count does not move — every one of the 604 still differs in some later category.
+
+### Same session, third pass — unsigned literals and `:path` attribution
+
+18. **Unsigned literals render in the unsigned domain** (ranked item 1 of the
+    second pass; the first difference for the whole `examples/sdl3` family).  The
+    host's lexer stores an unbounded Ruby Integer, so `const SDL_MAX_UINT64:
+    ptr_uint = 18446744073709551615` stays *positive* and dumps/emits
+    `18446744073709551615`, while the self-host's signed `long` holds only the
+    same bit pattern and printed `-1`.  The distinction is **provenance, not type
+    or value** — the host folds `~0` to `-1` and prints `-1` for the same
+    `ptr_uint` type (`std/mem/heap.ptr_uint_max`), so a type- or value-based rule
+    cannot work.  The first attempt (render unsigned whenever the type is
+    unsigned) fixed the sdl3 constant and broke `ptr_uint_max`, i.e. exactly
+    swapped one diff for another.  Landed instead:
+    - `ir.mt` gains `expr_unsigned_integer_literal(value: ptr_uint, ty)`, the
+      node for a lexeme whose magnitude does not fit a signed `long`; the dumper
+      renders it with the same `IR::IntegerLiteral` tag (as the host does), and
+      the C backend and pretty printer emit it unsigned.
+    - `lowering.integer_literal_expr(lexeme, value, ty)` builds the node wherever
+      an *AST literal* becomes IR (contextual typing, const folding, attribute
+      args, `evaluate_const_expr_to_ir`); `coerce_const_value` preserves the
+      provenance when re-typing.  Folded arithmetic keeps the signed node.
+    - `types.is_unsigned_integer_name/_type` mirror the host's
+      `unsigned_integer?`.
+    Measured: the 5 huge-literal constants the host dumps (sdl3 family) now match
+    (0 → 5 in the sample), `~0` still prints `-1`, and both the dump and the
+    emitted C match the host for both shapes.  The sdl3 family's first difference
+    moved from ~1.5 KB to ~37.8 KB into the dump.
+
+19. **`:path` attribution for statements lowered from an AST node** (ranked item
+    2): the bare `return;` lowering used `source_path = ""`, so every guard-style
+    void return (e.g. `if size_bytes == 0: return` in `std/mem/heap.mt`) dumped
+    `:line 102 :path nil` where the host has the module's path.  One-line fix in
+    `lower_stmt` (`ctx.analysis.source_path`, matching the async branch right
+    above it).  Measured on a 19-file sample: pathless `return` statements
+    **138 → 0**, matching the host exactly; `examples/data_structures.mt`'s
+    `:path nil` count fell 47 → 11 (the host has 12; the remaining nils are
+    per-function synthetic statements that both compilers leave pathless).
+
 ### Measured status (2026-09-25)
 
 | Gate | Result |
@@ -263,39 +501,50 @@ independent of the self-host work.
 There are **no self-rejections left**: the self-host analyzes and lowers all 694
 corpus files the host can.  What remains is *dump fidelity* (604 files differ
 somewhere) plus the hard build failures in four top-level examples and seven
-`test/mt` files.  Ranked, with the approach for each:
+`test/mt` files.  Ranking after the third pass (items 18–19 closed the former
+#1 and #2); 1–3 below are the categories the current first differences are
+dominated by, and 1 is the only item that also fixes hard build failures:
 
 | # | Item | Evidence | Approach |
 | --- | --- | --- | --- |
-| 1 | **Raw-module linkage naming** (`Color_is_equal` → `std_raylib_Color_is_equal`) | the most common first difference across `examples/raylib` (4/10 sampled) | the host derives extension-method linkage from `c_type_name(receiver)`, which is *bare* for `std.c.*` structs; the self-host always prefixes with the defining module.  Thread the resolved receiver type (not just its name) into `method_link_name`/`method_c_name` and skip the prefix for raw-module receivers, for both definitions and calls.  Also resolves the `:module_name "std.raylib"` vs `"std.c.raylib"` type attribution it comes with |
-| 2 | **`IR::Stmt` `:path` attribution** | 3/10 sampled files (every file that inlines a `std.mem.heap` body) | IR nodes lowered from an imported/inlined body must carry that module's `source_path`; the statement lowering takes the path from `ctx.analysis.source_path` for the *current* module.  Track the owning analysis path per lowered body (or set `ctx` when lowering inlined bodies) |
-| 3 | **Struct/declaration ordering** | `ClockSync` vs `std_net_recv_impl_frame` (std/net/clock.mt) | mirror the host's decl ordering (base decls before specializations, per-module order) in the C backend's sort |
-| 4 | **Const folding shape** | `IR::IntegerLiteral` vs `IR::Cast` (`test/mt/errno_test.mt`) | fold `T<-literal` casts in constant position like the host instead of emitting the cast node |
-| 5 | **Include set** (`math_bindgen.h` vs `raymath.h`, box2d/drop.mt) | 1/10 sampled | the binding's include directives must match the host's registry (std.math → raymath) |
-| 6 | **Opaques**, **enum-member const folding**, **variant-match goto** | 10 / 4 / 1 files | roadmap #6/#7/#13, unchanged |
-| 7 | **Four example build failures** (`async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test`) and the 7 `test/mt` build failures | verified failing with the pre-change compiler too | two are `field 'local_*' has incomplete type` — a value-optional/RESULT frame field is emitted before the struct it embeds; one is `unknown type name 'mt_span_error'` (a `span` of the permissive error type reaching C — the analyzer should reject or type it concretely); one is a recursive variant payload mismatch (`incompatible type for argument 1 of eval_expr`); the `test/mt` seven are all the generic-instance naming/typing family (`std_goap_find_node_index__error__error__error`, `std_blackboard_find_entry__error` given a `Blackboard_bool *`, `Tree[<runner>Context]`) |
-| 8 | **CLI message parity** | `rake "cli:parity"` 39/61 differ, set unchanged all session | message text, stdout-vs-stderr channel and argument-precedence differences (e.g. `std show` prints to stdout instead of stderr; `build --bogus` reports "accepts a single source path" instead of "unknown build option") |
-| 9 | **Host-side bugs (report, not fix here)** | 3 files | `double` literal rejected where `float` is expected (`custom_frame_control.mt`), inline foreign call needing temporary storage (`unicode_emojis.mt`), unsupported foreign boundary mapping (`image_processing.mt`); plus the `inline for` const-folding quirk noted in the stress doc |
+| 1 | **Opaque declarations** (`IR::OpaqueDecl`) | the first difference for the whole `examples/sdl3` family *and* its build failure: host `(IR::OpaqueDecl :name "Window" :linkage_name "SDL_Window" :forward_declarable true :source_module "std.sdl3")` vs self `(:name "std_sdl3_Window" :forward_declarable false)`; the emitted C is `typedef struct SDL_Window SDL_Window;` vs `typedef SDL_Window std_sdl3_Window;`, which leaves `SDL_Window` incomplete and fails the build | a re-exported opaque keeps its *declared* name and forwards `typedef struct <c_name> <name>;`; mirror the host's `OpaqueDecl` naming/`forward_declarable` (roadmap #6, now ranked first because it gates a whole family's builds) |
+| 2 | **Zero-valued aggregate fields typed by field type** | `box3d/ragdoll`'s first difference: host `(IR::AggregateField :name "metric" :value (IR::FloatLiteral :value 0.0 :type (Types::Primitive :name "float")))` vs self `(IR::IntegerLiteral :value 0 :type (Types::Primitive :name "int"))` | an omitted/zeroed field must take the *field's* type and literal kind (float field → `0.0` float); the self-host emits an untyped int 0 |
+| 3 | **`null` literal contextual typing** | `data_structures` / `reflection_advanced`'s first difference: host `(IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name "ptr" :arguments ((Types::Primitive :name "ubyte")))))` vs self `(IR::NullLiteral :type (Types::Primitive :name "void"))` | a `null` in a typed position takes the expected nullable pointer type, as the host's `infer_null_literal_type` does; the existing `null_literal_to_context_type` helper covers only part of the sites (comparisons here) |
+| 4 | **Event fields in event-carrying structs** | `event_stress_test`'s first difference: host `(IR::Field :name "__event_closed" :type (Types::Event :name "closed" :capacity 4 …))` vs self `(IR::Field :name "closed" :type (Types::Struct :name "mt_event_…_closed_4"))` | the event runtime models each `event` field as `__event_<name>` typed `Types::Event`; the self-host emits the listener-slot struct under the bare name.  Mirror the host's field naming/type in the event-declaration lowering |
+| 5 | **Generic-specialization parameter types** | `language_baseline`'s first difference: host `(Types::Parameter :name "x" :type (Types::Primitive :name "int"))` vs self `(Types::Struct :name "T" :module_name "")` | a specialization's parameter types must be substituted like its body/locals; same family as the 7 `test/mt` build failures (item 9).  Check `lower_specialized_function`'s param path for `type_substitution` |
+| 6 | **Function-type names** (`Types::Function :name ""`) | visible in the sdl3 dumps right after item 1's first difference: host `:name "run_app_no_args_uninitialized"` vs self `:name ""` | the function *type* of a function reference carries the callee's name in the host; thread it through the analyzer/lowering type construction |
+| 7 | **Include set** (`math_bindgen.h` vs `raymath.h`, box2d/drop.mt) | the first difference for `examples/box2d` | the binding's include directives must match the host's registry (std.math → raymath) |
+| 8 | **Struct/declaration ordering**, **const-folding shape**, **enum-member const folding**, **variant-match goto** | `ClockSync` vs `std_net_recv_impl_frame`; `IR::IntegerLiteral` vs `IR::Cast` (`errno_test.mt`); 4 / 1 files | mirror the host's decl ordering in the C backend's sort; fold `T<-literal` casts in constant position; roadmap #7/#13 |
+| 9 | **Four example build failures** (`async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test`) and the 7 `test/mt` build failures | verified failing with the pre-change compiler too | two are `field 'local_*' has incomplete type` — a value-optional/RESULT frame field is emitted before the struct it embeds; one is `unknown type name 'mt_span_error'` (a `span` of the permissive error type reaching C — the analyzer should reject or type it concretely); one is a recursive variant payload mismatch (`incompatible type for argument 1 of eval_expr`); the `test/mt` seven are all the generic-instance naming/typing family (`std_goap_find_node_index__error__error__error`, `std_blackboard_find_entry__error` given a `Blackboard_bool *`, `Tree[<runner>Context]`) — item 5 above is likely the same root cause |
+| 10 | **CLI message parity** | `rake "cli:parity"` 39/61 differ, set unchanged all session | message text, stdout-vs-stderr channel and argument-precedence differences (e.g. `std show` prints to stdout instead of stderr; `build --bogus` reports "accepts a single source path" instead of "unknown build option") |
+| 11 | **Host-side bugs (report, not fix here)** | 3 files | `double` literal rejected where `float` is expected (`custom_frame_control.mt`), inline foreign call needing temporary storage (`unicode_emojis.mt`), unsupported foreign boundary mapping (`image_processing.mt`); plus the `inline for` const-folding quirk noted in the stress doc |
 
-### `lower` differences, by first difference (after item 14)
+### `lower` differences, by first difference (after items 18–19)
 
 | Files (sampled) | First difference |
 | --- | --- |
-| 4/10 | raw-module extension linkage naming (`Color_is_equal` vs `std_raylib_Color_is_equal`) and the `:module_name` attribution it comes with — item 1 above |
-| 3/10 | `:path` attribution: IR nodes lowered from an imported/inlined body carry `:path nil` where the host keeps the defining module's path — item 2 |
-| 1/10 each | declaration ordering, const-folding shape (`IR::IntegerLiteral` vs `IR::Cast`), include set — items 3–5 |
-| remainder | opaques (10), enum-member const folding (4), variant-match goto (1), plus cases beyond each file's first difference |
+| 34 (`examples/sdl3/**`) | opaque declaration naming/`forward_declarable` (was the unsigned literal, then the function-type name) — item 1 |
+| 2 (`box3d/ragdoll`, `box3d/box_stack`) | zero-valued aggregate field typed `int 0` instead of the field's `float 0.0` — item 2 |
+| 2+ (`data_structures`, `reflection_advanced`) | `null` literal typed `void` instead of the expected nullable pointer — item 3 |
+| 1 (`event_stress_test`) | event field naming/type (`__event_closed` typed `Types::Event`) — item 4 |
+| 1 (`language_baseline`) | generic-specialization parameter type not substituted (`T` instead of `int`) — item 5 |
+| 1 (`box2d/drop`) | include set (`math_bindgen.h` vs `raymath.h`) — item 7 |
+| remainder | declaration ordering, const-folding shape, enum-member const folding, variant-match goto, plus cases beyond each file's first difference |
 
-Contextual literal typing (the previous dominant category, 213 files) now matches
-byte-for-byte: one raylib example went from 151 differing regions to 47, and none
-of the remainder is literal typing.
+Contextual literal typing (the dominant category at the start of the session,
+213 files), raw-module linkage naming, unsigned-literal rendering and void-return
+`:path` attribution all now match the host; the vendored families' linkage-name
+*sets* equal the host's, and a 19-file sample has **0** pathless `return`
+statements (host: 0, before: 138) and all 5 huge-literal constants the host
+dumps.  The remaining `lower` mismatches start 30–40 KB into the dumps for the
+families this session touched (they were at ~1.5–2.3 KB).
 
 ### Next, ranked by files moved per unit of work
 
-See the "Remaining work" table above: 1 (raw-module linkage naming) and 2
-(`:path` attribution) are the two levers that move most of the 604 differing
-files, and both are contained lowering/backend changes.  7 is the only *hard*
-failure family left (four examples + seven `test/mt` files).
+Item 1 is the only remaining item that fixes *builds* as well as dumps (the
+whole sdl3 family), and item 2/3 are each a handful of lines that clear the
+first difference of the box3d and data-structures families.  Item 5 is the
+lever for the `test/mt` build failures.
 
 ---
 

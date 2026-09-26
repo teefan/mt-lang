@@ -4182,6 +4182,11 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return n.name
             ir.Expr.expr_integer_literal as lit:
                 return long_to_str(lit.value)
+            ir.Expr.expr_unsigned_integer_literal as lit:
+                # A lexeme-derived value too large for a signed `long` renders in
+                # the unsigned domain, as the host does (`18446744073709551615`,
+                # not `-1`).
+                return ptr_uint_to_str(lit.value)
             ir.Expr.expr_float_literal as lit:
                 return c_float_literal(lit.value)
             ir.Expr.expr_boolean_literal as b:
@@ -5661,6 +5666,8 @@ function wrap_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 return text
             ir.Expr.expr_integer_literal:
                 return text
+            ir.Expr.expr_unsigned_integer_literal:
+                return text
             ir.Expr.expr_float_literal:
                 return text
             ir.Expr.expr_boolean_literal:
@@ -5814,6 +5821,8 @@ function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
             ir.Expr.expr_offsetof as x:
                 return x.ty
             ir.Expr.expr_integer_literal as x:
+                return x.ty
+            ir.Expr.expr_unsigned_integer_literal as x:
                 return x.ty
             ir.Expr.expr_float_literal as x:
                 return x.ty

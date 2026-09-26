@@ -327,6 +327,20 @@ public function is_signed_integer_name(name: str) -> bool:
     )
 
 
+## True for unsigned integer primitives, mirroring the host's
+## `Types::Primitive#unsigned_integer?` (`char` is neither signed nor unsigned
+## and is handled by the char rules).  Used to render an integer literal in the
+## unsigned domain: the host rejects a negated literal for these types
+## (`negated value -1 does not fit in type ptr_uint`), so their literals are
+## always meant as unsigned values and a `long` carrying the high bit set must
+## print as `18446744073709551615`, not `-1`.
+public function is_unsigned_integer_name(name: str) -> bool:
+    return (
+        name == "ubyte" or name == "ushort" or name == "uint"
+        or name == "ulong" or name == "ptr_uint"
+    )
+
+
 ## Structural equality of two types.  Needed because variant == is not
 ## supported in the self-host C backend; this function pattern-matches
 ## both sides and compares fields manually.
@@ -603,6 +617,17 @@ public function is_integer_type(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
             return is_integer_name(p.name)
+        _:
+            return false
+
+
+## True when `t` is an unsigned primitive integer (`ubyte`/`ushort`/`uint`/
+## `ulong`/`ptr_uint`).  Integer literals of these types are rendered in the
+## unsigned domain — see `is_unsigned_integer_name`.
+public function is_unsigned_integer_type(t: Type) -> bool:
+    match t:
+        Type.ty_primitive as p:
+            return is_unsigned_integer_name(p.name)
         _:
             return false
 

@@ -79,6 +79,14 @@ public variant Expr:
     expr_alignof(target_type: types.Type, ty: types.Type)
     expr_offsetof(target_type: types.Type, field: str, ty: types.Type)
     expr_integer_literal(value: long, ty: types.Type)
+    ## An integer literal whose source lexeme does not fit a signed `long`
+    ## (`18446744073709551615`, `0xFFFFFFFFFFFFFFFF`).  The host keeps Ruby's
+    ## unbounded value, so it stays positive and renders in the unsigned domain;
+    ## a signed `long` can only hold the same bit pattern, hence the separate
+    ## node.  A *computed* value keeps `expr_integer_literal` — the host folds
+    ## `~0` to `-1` and prints `-1` for the same `ptr_uint` type — so the
+    ## distinction is provenance, not type or value.
+    expr_unsigned_integer_literal(value: ptr_uint, ty: types.Type)
     expr_float_literal(value: double, ty: types.Type)
     expr_string_literal(value: str, ty: types.Type, cstring: bool)
     expr_boolean_literal(value: bool, ty: types.Type)
