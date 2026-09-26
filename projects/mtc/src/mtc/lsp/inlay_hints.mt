@@ -21,6 +21,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
+import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
@@ -144,8 +145,138 @@ public function handle_inlay_hint(
                 )
         ti += 1
 
+    # Type-annotation hints for inferred locals, after the parameter hints —
+    # the host's collect_inferred_type_hints.
+    emit_type_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), start_line, end_line)
+
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
+
+
+## Type-annotation hints for inferred locals — the host's
+## collect_inferred_type_hints, which walks every function/method body in
+## source order and renders `: <type>` after an unannotated binding's name.
+function emit_type_hints(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    start_line: ptr_uint,
+    end_line: ptr_uint,
+) -> void:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                if fun.body != null:
+                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-fun.body), analysis, start_line, end_line)
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    let method = unsafe: read(ext.methods.data + mi)
+                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-method.body), analysis, start_line, end_line)
+                    mi += 1
+            _:
+                pass
+        di += 1
+
+
+function emit_type_hints_in_stmt(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    stmt: ast.Stmt,
+    analysis: ref[analyzer.Analysis],
+    start_line: ptr_uint,
+    end_line: ptr_uint,
+) -> void:
+    match stmt:
+        ast.Stmt.stmt_block as blk:
+            var si: ptr_uint = 0
+            while si < blk.statements.len:
+                var inner = unsafe: read(blk.statements.data + si)
+                emit_type_hints_in_stmt(json_text, emitted, inner, analysis, start_line, end_line)
+                si += 1
+        ast.Stmt.stmt_local as loc:
+            emit_local_type_hint(json_text, emitted, loc.name, loc.stmt_type, loc.value, loc.line, loc.column, analysis, start_line, end_line)
+        ast.Stmt.stmt_if as iff:
+            var bi: ptr_uint = 0
+            while bi < iff.branches.len:
+                let branch = unsafe: read(iff.branches.data + bi)
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(branch.body), analysis, start_line, end_line)
+                bi += 1
+            if iff.else_body != null:
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-iff.else_body), analysis, start_line, end_line)
+        ast.Stmt.stmt_while as wh:
+            if wh.body != null:
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-wh.body), analysis, start_line, end_line)
+        ast.Stmt.stmt_for as fo:
+            if fo.body != null:
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-fo.body), analysis, start_line, end_line)
+        ast.Stmt.stmt_match as ma:
+            var ai: ptr_uint = 0
+            while ai < ma.arms.len:
+                let arm = unsafe: read(ma.arms.data + ai)
+                if arm.body != null:
+                    emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-arm.body), analysis, start_line, end_line)
+                ai += 1
+        ast.Stmt.stmt_unsafe as un:
+            if un.body != null:
+                emit_type_hints_in_stmt(json_text, emitted, unsafe: read(ptr[ast.Stmt]<-un.body), analysis, start_line, end_line)
+        _:
+            pass
+
+
+## One `: <type>` hint for an unannotated local whose type the analyzer
+## inferred.  Nothing is emitted for annotated bindings, `_` bindings, or
+## bindings outside the requested line range.
+function emit_local_type_hint(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    name: str,
+    stmt_type: ptr[ast.TypeRef]?,
+    value: ptr[ast.Expr]?,
+    line: ptr_uint,
+    column: ptr_uint,
+    analysis: ref[analyzer.Analysis],
+    start_line: ptr_uint,
+    end_line: ptr_uint,
+) -> void:
+    if name.len == 0 or name.equal("_") or stmt_type != null:
+        return
+    let line_zero = if line > 0: line - 1 else: 0z
+    if line_zero < start_line or line_zero > end_line:
+        return
+
+    match type_render.initializer_type(analysis, value):
+        Option.some as ty:
+            if is_error_type(ty.value):
+                return
+            var label = type_render.short_name(ty.value)
+            let name_end = if column > 0: (column - 1) + name.len else: name.len
+            if unsafe: read(emitted) > 0:
+                json_text.append(",")
+            unsafe: read(emitted) = read(emitted) + 1
+            json_text.append("{\"position\":{\"line\":")
+            json_text.append_format(f"#{line_zero}")
+            json_text.append(",\"character\":")
+            json_text.append_format(f"#{name_end}")
+            json_text.append("},\"label\":\": ")
+            proto.append_escaped(json_text, label.as_str())
+            json_text.append("\",\"kind\":1,\"paddingRight\":false}")
+            label.release()
+        Option.none:
+            pass
+
+
+function is_error_type(ty: types.Type) -> bool:
+    match ty:
+        types.Type.ty_error:
+            return true
+        _:
+            return false
 
 
 ## Emit one hint per positional argument of the call whose lparen is at
@@ -200,7 +331,7 @@ function emit_call_hints(
         json_text.append_format(f"#{arg_col}")
         json_text.append("},\"label\":\"")
         proto.append_escaped(json_text, param.name)
-        json_text.append(": \",\"kind\":2}")
+        json_text.append(": \",\"kind\":2,\"paddingRight\":true}")
         ai += 1
 
 

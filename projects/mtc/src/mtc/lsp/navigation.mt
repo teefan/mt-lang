@@ -28,6 +28,7 @@ import mtc.lsp.cursor as cursor
 import mtc.lsp.hover_docs as hover_docs
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
+import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 import mtc.lsp.workspace_index as ws_idx
@@ -589,6 +590,9 @@ struct CursorResult:
     hover_text: string.String
     docs: string.String
     target_uri: string.String
+    ## Module names stripped from the hovered signature, ", "-joined; rendered
+    ## as the host's `*From <modules>*` line.  Empty when nothing was stripped.
+    from_modules: string.String
 
 
 ## Quick hover result — no declaration source line, no docs.
@@ -599,7 +603,8 @@ function quick_hover(text: str) -> CursorResult:
         name_len = 0,
         hover_text = string.String.from_str(text),
         docs = string.String.create(),
-        target_uri = string.String.create()
+        target_uri = string.String.create(),
+        from_modules = string.String.create()
     )
 
 
@@ -613,7 +618,8 @@ function quick_hover_doc(doc: hover_docs.HoverDoc) -> CursorResult:
         name_len = 0,
         hover_text = string.String.from_str(doc.signature),
         docs = string.String.from_str(doc.docs),
-        target_uri = string.String.create()
+        target_uri = string.String.create(),
+        from_modules = string.String.create()
     )
 
 
@@ -780,7 +786,8 @@ function resolve_module_reference(ws: ref[workspace.Workspace], module_name: str
         name_len = 0,
         hover_text = hover,
         docs = string.String.create(),
-        target_uri = file_uri_for_path(module_path.as_str())
+        target_uri = file_uri_for_path(module_path.as_str()),
+        from_modules = string.String.create()
     ))
 
 
@@ -841,7 +848,8 @@ function resolve_enum_member(type_name: str, member: str, source: str, analysis:
         name_len = member.len,
         hover_text = hover,
         docs = string.String.create(),
-        target_uri = string.String.create()
+        target_uri = string.String.create(),
+        from_modules = string.String.create()
     ))
 
 
@@ -1050,7 +1058,8 @@ function make_result(decl_line: ptr_uint, name: str, source: str, hover: string.
         name_len = name.len,
         hover_text = hover,
         docs = doc_lines_above(source, decl_line),
-        target_uri = string.String.create()
+        target_uri = string.String.create(),
+        from_modules = string.String.create()
     )
 
 
@@ -1462,6 +1471,15 @@ function resolve_local_hover(
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var analysis = analyzer.check_source_file(ast_file)
+
+    # The file's own module name, so a type declared here renders qualified
+    # (`main.Sample`) and the renderer can report `*From main*`, as the host
+    # does from its semantic facts.
+    var module_roots = ws.effective_module_roots_for(file_path.as_str())
+    defer: module_roots.release()
+    var current_module = resolver.infer_module_name(file_path.as_str(), module_roots.as_span())
+    defer: current_module.release()
 
     # 3. AST walk: let/var declarations in enclosing function body.
     var di: ptr_uint = 0
@@ -1472,7 +1490,7 @@ function resolve_local_hover(
         match decl:
             ast.Decl.decl_function as fun:
                 if fun.line <= target_line and fun.body != null:
-                    var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str())
+                    var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str(), ref_of(analysis), current_module.as_str())
                     match body_loc:
                         Option.some as loc:
                             return Option[CursorResult].some(value = loc.value)
@@ -1576,10 +1594,16 @@ function lexical_local_hover(source: str, target_line: ptr_uint, character: ptr_
 
 
 ## Walk the top-level statements in a stmt_block body looking for a
-## local declaration of `name`.
+## local declaration of `name`, and render it the way the host's
+## `value_hover_signature` does: `let name: <type> (immutable)`, with the
+## declared type when the binding is annotated and the analyzer's inferred type
+## otherwise.  The signature is built with the declaring module and shortened,
+## so a user type reports the host's `*From <module>*` line.
 function find_local_in_block(
     block_stmt: ast.Stmt,
     name: str,
+    analysis: ref[analyzer.Analysis],
+    current_module: str,
 ) -> Option[CursorResult]:
     match block_stmt:
         ast.Stmt.stmt_block as blk:
@@ -1589,24 +1613,68 @@ function find_local_in_block(
                 match s:
                     ast.Stmt.stmt_local as loc:
                         if loc.name == name:
-                            var hover = string.String.create()
-                            if loc.is_let:
-                                hover.append("let ")
-                            else:
-                                hover.append("var ")
-                            hover.append(name)
-                            if loc.stmt_type != null:
-                                hover.append(": ")
-                                let ty = unsafe: read(ptr[ast.TypeRef]<-loc.stmt_type)
-                                if ty.name.parts.len > 0:
-                                    hover.append(unsafe: read(ty.name.parts.data))
-                            return Option[CursorResult].some(value = make_result(loc.line, name, "", hover))
+                            return Option[CursorResult].some(value = local_hover_result(
+                                loc.is_let, name, loc.line, loc.stmt_type, loc.value, analysis, current_module))
                     _:
                         pass
                 si += 1
         _:
             pass
     return Option[CursorResult].none
+
+
+## The hover result for one local declaration.
+function local_hover_result(
+    is_let: bool,
+    name: str,
+    decl_line: ptr_uint,
+    stmt_type: ptr[ast.TypeRef]?,
+    value: ptr[ast.Expr]?,
+    analysis: ref[analyzer.Analysis],
+    current_module: str,
+) -> CursorResult:
+    var type_text = string.String.create()
+
+    if stmt_type != null:
+        let ty = unsafe: read(ptr[ast.TypeRef]<-stmt_type)
+        if ty.name.parts.len > 0:
+            type_text.append(unsafe: read(ty.name.parts.data))
+            if ty.nullable:
+                type_text.append("?")
+    else:
+        match type_render.initializer_type(analysis, value):
+            Option.some as init_ty:
+                type_text.release()
+                type_text = type_render.qualified_name(init_ty.value, current_module)
+            Option.none:
+                pass
+
+    var signature = string.String.create()
+    if is_let:
+        signature.append("let ")
+    else:
+        signature.append("var ")
+    signature.append(name)
+    if type_text.len() > 0:
+        signature.append(": ")
+        signature.append(type_text.as_str())
+        if is_let:
+            signature.append(" (immutable)")
+        else:
+            signature.append(" (mutable)")
+    type_text.release()
+
+    var shortened = type_render.shorten_signature(signature.as_str())
+    signature.release()
+    return CursorResult(
+        line = decl_line,
+        column = 0,
+        name_len = name.len,
+        hover_text = shortened.text,
+        docs = string.String.create(),
+        target_uri = string.String.create(),
+        from_modules = shortened.modules
+    )
 
 
 
@@ -1623,6 +1691,10 @@ function write_hover_result(id: json.Value, res: CursorResult, request_uri: str,
         value_text.append("```milk-tea\n")
         value_text.append(payload.hover_text.as_str())
         value_text.append("\n```")
+        if payload.from_modules.len() > 0:
+            value_text.append("\n*From ")
+            value_text.append(payload.from_modules.as_str())
+            value_text.append("*")
         if payload.docs.len() > 0:
             value_text.append("\n\n")
             value_text.append(payload.docs.as_str())
@@ -1642,6 +1714,7 @@ function write_hover_result(id: json.Value, res: CursorResult, request_uri: str,
     payload.hover_text.release()
     payload.docs.release()
     payload.target_uri.release()
+    payload.from_modules.release()
     token_range.release()
 
 

@@ -1,0 +1,224 @@
+## Type rendering for editor features — resolves the type of an inferred local
+## from the analyzer's `resolved_expr_types` map and renders type text the way
+## the reference LSP does.
+##
+## Two renderings are needed:
+##   * hover signatures use the host's `Types::Struct#to_s` spelling, which
+##     prefixes the declaring module (`main.Sample`) and is then shortened by
+##     `shorten_signature`, which also reports the stripped modules so hover can
+##     print the host's `*From <module>*` line;
+##   * inline type hints and outline details use the host's `short_type_detail`,
+##     the bare name with generic arguments (`Sample`, `Deque[int]`).
+
+import std.str
+import std.string as string
+
+import mtc.parser.ast as ast
+import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
+
+
+## The type the analyzer recorded for an initializer expression, when it
+## inferred one (`let s = Sample(…)` → `Sample`).
+public function initializer_type(analysis: ref[analyzer.Analysis], value: ptr[ast.Expr]?) -> Option[types.Type]:
+    let vp = value else:
+        return Option[types.Type].none
+    let key = unsafe: reinterpret[ptr_uint](vp)
+    let ty_ptr = unsafe: read(analysis).resolved_expr_types.get(key)
+    if ty_ptr == null:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = unsafe: read(ty_ptr))
+
+
+## The host's `short_type_detail`: a type's own name with its generic
+## arguments, without the module qualifier.
+public function short_name(ty: types.Type) -> string.String:
+    var buf = string.String.create()
+    match ty:
+        types.Type.ty_primitive as p:
+            buf.append(p.name)
+        types.Type.ty_named as n:
+            buf.append(n.name)
+        types.Type.ty_opaque as o:
+            buf.append(o.name)
+        types.Type.ty_imported as im:
+            buf.append(im.name)
+            append_short_args(ref_of(buf), im.args)
+        types.Type.ty_generic as g:
+            buf.append(g.name)
+            append_short_args(ref_of(buf), g.args)
+        types.Type.ty_nullable as nl:
+            var base = short_name(unsafe: read(nl.base))
+            buf.append(base.as_str())
+            base.release()
+            buf.append("?")
+        _:
+            buf.append(types.type_to_string(ty))
+    return buf
+
+
+## The hover's type text: a nominal type carries its declaring module
+## (`main.Sample`, `std.c.raylib.Vector4`) — the host's `Types::Struct#to_s`.
+## A nominal declared in the file being hovered has no module recorded when the
+## file is checked on its own, so `current_module` stands in for it.
+public function qualified_name(ty: types.Type, current_module: str) -> string.String:
+    var buf = string.String.create()
+    match ty:
+        types.Type.ty_primitive as p:
+            buf.append(p.name)
+        types.Type.ty_named as n:
+            append_module_prefix(ref_of(buf), n.module_name, current_module)
+            buf.append(n.name)
+        types.Type.ty_opaque as o:
+            append_module_prefix(ref_of(buf), o.module_name, current_module)
+            buf.append(o.name)
+        types.Type.ty_imported as im:
+            if im.module_name.len > 0:
+                buf.append(im.module_name)
+                buf.append(".")
+            buf.append(im.name)
+            append_qualified_args(ref_of(buf), im.args, current_module)
+        types.Type.ty_generic as g:
+            buf.append(g.name)
+            append_qualified_args(ref_of(buf), g.args, current_module)
+        types.Type.ty_nullable as nl:
+            var base = qualified_name(unsafe: read(nl.base), current_module)
+            buf.append(base.as_str())
+            base.release()
+            buf.append("?")
+        _:
+            buf.append(types.type_to_string(ty))
+    return buf
+
+
+## A signature with its module qualifiers stripped plus the modules that were
+## stripped, in first-appearance order — the host's `shorten_qualified_types`.
+## `let s: main.Sample (immutable)` → text `let s: Sample (immutable)`,
+## modules `main`.
+public struct ShortenedSignature:
+    text: string.String
+    modules: string.String
+
+
+public function shorten_signature(signature: str) -> ShortenedSignature:
+    var text = string.String.create()
+    var modules = string.String.create()
+    var copy_from: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < signature.len:
+        let b = signature.byte_at(i)
+        if not is_identifier_head(b):
+            i += 1
+            continue
+
+        # Scan the identifier chain starting at `i` (`name`, or `a.b.c` while
+        # the segments start lower-case).
+        var j = i
+        while j < signature.len and is_identifier_char(signature.byte_at(j)):
+            j += 1
+        var chain_end = j
+        while j + 1 < signature.len and signature.byte_at(j) == '.' and is_lower_head(signature.byte_at(j + 1)):
+            j += 1
+            while j < signature.len and is_identifier_char(signature.byte_at(j)):
+                j += 1
+            chain_end = j
+
+        # `chain.Type` — drop the qualifier and record the module.
+        if j > i and j + 1 < signature.len and signature.byte_at(j) == '.' and is_upper_head(signature.byte_at(j + 1)):
+            text.append(signature.slice(copy_from, i - copy_from))
+            append_module(ref_of(modules), signature.slice(i, j - i))
+            copy_from = j + 1
+            i = j + 1
+            continue
+
+        if chain_end > i:
+            i = chain_end
+        else:
+            i += 1
+
+    text.append(signature.slice(copy_from, signature.len - copy_from))
+    return ShortenedSignature(text = text, modules = modules)
+
+
+function append_short_args(target: ref[string.String], args: span[types.Type]) -> void:
+    if args.len == 0:
+        return
+    target.append("[")
+    var i: ptr_uint = 0
+    while i < args.len:
+        if i > 0:
+            target.append(", ")
+        let arg = unsafe: read(args.data + i)
+        var rendered = short_name(arg)
+        target.append(rendered.as_str())
+        rendered.release()
+        i += 1
+    target.append("]")
+
+
+function append_qualified_args(target: ref[string.String], args: span[types.Type], current_module: str) -> void:
+    if args.len == 0:
+        return
+    target.append("[")
+    var i: ptr_uint = 0
+    while i < args.len:
+        if i > 0:
+            target.append(", ")
+        let arg = unsafe: read(args.data + i)
+        var rendered = qualified_name(arg, current_module)
+        target.append(rendered.as_str())
+        rendered.release()
+        i += 1
+    target.append("]")
+
+
+function append_module_prefix(target: ref[string.String], module_name: str, current_module: str) -> void:
+    if module_name.len > 0:
+        target.append(module_name)
+        target.append(".")
+        return
+    if current_module.len > 0:
+        target.append(current_module)
+        target.append(".")
+
+
+## Append `name` to the ", "-joined module list when it is not there yet.
+function append_module(modules: ref[string.String], name: str) -> void:
+    if name.len == 0 or module_list_contains(modules.as_str(), name):
+        return
+    if modules.len() > 0:
+        modules.append(", ")
+    modules.append(name)
+
+
+function module_list_contains(list: str, name: str) -> bool:
+    var start: ptr_uint = 0
+    while start <= list.len:
+        var end = start
+        while end < list.len:
+            if list.byte_at(end) == ',' and end + 1 < list.len and list.byte_at(end + 1) == ' ':
+                break
+            end += 1
+        let entry = list.slice(start, end - start)
+        if entry.equal(name):
+            return true
+        if end >= list.len:
+            return false
+        start = end + 2
+    return false
+
+
+function is_identifier_head(b: ubyte) -> bool:
+    return is_lower_head(b) or (b >= 'A' and b <= 'Z')
+
+
+function is_lower_head(b: ubyte) -> bool:
+    return (b >= 'a' and b <= 'z') or b == '_'
+
+
+function is_upper_head(b: ubyte) -> bool:
+    return b >= 'A' and b <= 'Z'
+
+
+function is_identifier_char(b: ubyte) -> bool:
+    return is_identifier_head(b) or (b >= '0' and b <= '9')
