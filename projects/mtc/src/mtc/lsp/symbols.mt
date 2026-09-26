@@ -13,6 +13,7 @@ import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.type_render as type_render
@@ -33,6 +34,7 @@ const SYMBOLKIND_METHOD:      int = 6
 const SYMBOLKIND_FIELD:       int = 8
 const SYMBOLKIND_ENUM_MEMBER: int = 22
 const SYMBOLKIND_CLASS:       int = 5
+const SYMBOLKIND_TYPE_PARAMETER: int = 26
 
 
 public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, id: json.Value) -> void:
@@ -113,7 +115,7 @@ function emit_declaration_symbol(
             emit_symbol(json_out, v.name, SYMBOLKIND_VARIABLE, v.line, v.column, detail.as_str(), ref_of(no_children), first)
             detail.release()
         ast.Decl.decl_struct as s:
-            var children = collect_type_member_children(analysis, s.struct_fields, s.struct_events, s.nested_types)
+            var children = collect_type_member_children_with_params(analysis, s.name, s.struct_fields, s.struct_events, s.nested_types, s.type_params)
             var detail = string.String.create()
             append_type_decl_detail(ref_of(detail), s.impl_list, null, s.type_params)
             emit_symbol(json_out, s.name, SYMBOLKIND_STRUCT, s.line, s.column, detail.as_str(), ref_of(children), first)
@@ -140,6 +142,7 @@ function emit_declaration_symbol(
             detail.release()
         ast.Decl.decl_variant as vr:
             var children = collect_variant_children(vr.variant_arms, vr.line)
+            prepend_type_parameters(ref_of(children), vr.type_params)
             var detail = string.String.create()
             append_type_decl_detail(ref_of(detail), span[ast.QualifiedName](), null, vr.type_params)
             emit_symbol(json_out, vr.name, SYMBOLKIND_STRUCT, vr.line, vr.column, detail.as_str(), ref_of(children), first)
@@ -435,16 +438,45 @@ function token_column(source: str, line: ptr_uint, name: str) -> ptr_uint:
 
 ## Field children (kind 8) for a struct or union.
 function collect_field_children(analysis: ref[analyzer.Analysis], fields: span[ast.Field]) -> vec.Vec[string.String]:
+    return collect_field_children_of(analysis, "", fields)
+
+
+## The fields of a struct/union.  `owner_name` names the declaration so the
+## field's *resolved* type can be used when the analyzer has one: the host
+## renders fields from its facts, so `cb: fn(value: int) -> bool` comes out as
+## `fn(int) -> bool` there.  The source text is the fallback.
+function collect_field_children_of(
+    analysis: ref[analyzer.Analysis],
+    owner_name: str,
+    fields: span[ast.Field],
+) -> vec.Vec[string.String]:
     var children = vec.Vec[string.String].create()
     var fi: ptr_uint = 0
     while fi < fields.len:
         let field = unsafe: read(fields.data + fi)
-        var detail = string.String.create()
-        detail.append(ast_formatter.render_type(field.field_type))
-        children.push(render_block_symbol(field.name, SYMBOLKIND_FIELD, field.line, field.column, detail.as_str()))
-        detail.release()
+        var detail_owner = field_detail_type(analysis, owner_name, field)
+        children.push(render_block_symbol(field.name, SYMBOLKIND_FIELD, field.line, field.column, detail_owner.as_str()))
+        detail_owner.release()
         fi += 1
     return children
+
+
+## A field's rendered type: the resolved type when the analyzer has one, else the
+## source text.
+function field_detail_type(analysis: ref[analyzer.Analysis], owner_name: str, field: ast.Field) -> string.String:
+    if owner_name.len > 0:
+        let entries_ptr = unsafe: read(analysis).structs.get(owner_name)
+        if entries_ptr != null:
+            let entries = unsafe: read(entries_ptr)
+            var i: ptr_uint = 0
+            while i < entries.len:
+                let entry = unsafe: read(entries.data + i)
+                if entry.name.len > 0 and entry.name.compare(field.name) == 0:
+                    if not contains_error_type(entry.ty):
+                        return type_render.short_name(entry.ty)
+                    break
+                i += 1
+    return string.String.from_str(ast_formatter.render_type(field.field_type))
 
 
 ## The members of a struct: fields, nested types and events, in the host's
@@ -455,7 +487,71 @@ function collect_type_member_children(
     events: span[ast.Decl],
     nested: span[ast.Decl],
 ) -> vec.Vec[string.String]:
-    var children = collect_field_children(analysis, fields)
+    return collect_type_member_children_with_params(analysis, "", fields, events, nested, span[ast.TypeParam]())
+
+
+## Put a declaration's type parameters ahead of its other children (the host
+## lists them first, each on its own token).
+function prepend_type_parameters(children: ref[vec.Vec[string.String]], type_params: span[ast.TypeParam]) -> void:
+    if type_params.len == 0:
+        return
+    var params = vec.Vec[string.String].create()
+    var tp: ptr_uint = 0
+    while tp < type_params.len:
+        var param: ast.TypeParam
+        unsafe:
+            param = read(type_params.data + tp)
+        if param.name.len > 0 and not param.is_lifetime and not param.is_value:
+            var no_detail = string.String.create()
+            params.push(render_name_span_symbol(param.name, SYMBOLKIND_TYPE_PARAMETER, param.line, param.column, no_detail.as_str()))
+            no_detail.release()
+        tp += 1
+    var i: ptr_uint = 0
+    while i < children.len():
+        let existing = children.get(i) else:
+            break
+        params.push(unsafe: read(existing))
+        i += 1
+    children.clear()
+    var j: ptr_uint = 0
+    while j < params.len():
+        let p = params.get(j) else:
+            break
+        children.push(unsafe: read(p))
+        j += 1
+    params.release()
+
+
+## The same, preceded by the declaration's type parameters: the host lists each
+## one as a `TypeParameter` (kind 26) child on the parameter's own token, with no
+## detail (`Pair :: "[A, B]"` then `A :: nil`, `B :: nil`, then the fields).
+function collect_type_member_children_with_params(
+    analysis: ref[analyzer.Analysis],
+    owner_name: str,
+    fields: span[ast.Field],
+    events: span[ast.Decl],
+    nested: span[ast.Decl],
+    type_params: span[ast.TypeParam],
+) -> vec.Vec[string.String]:
+    var children = vec.Vec[string.String].create()
+    var tp: ptr_uint = 0
+    while tp < type_params.len:
+        var param: ast.TypeParam
+        unsafe:
+            param = read(type_params.data + tp)
+        if param.name.len > 0 and not param.is_lifetime and not param.is_value:
+            var no_detail = string.String.create()
+            children.push(render_name_span_symbol(param.name, SYMBOLKIND_TYPE_PARAMETER, param.line, param.column, no_detail.as_str()))
+            no_detail.release()
+        tp += 1
+    var field_children = collect_field_children_of(analysis, owner_name, fields)
+    var fc: ptr_uint = 0
+    while fc < field_children.len():
+        let c = field_children.get(fc) else:
+            break
+        children.push(unsafe: read(c))
+        fc += 1
+    field_children.release()
     var ei: ptr_uint = 0
     while ei < events.len:
         var ev: ast.Decl
@@ -594,10 +690,8 @@ function append_method_detail(
     is_async: bool,
     return_type: ptr[ast.TypeRef]?,
 ) -> void:
-    if method_kind == ast.MethodKind.mk_editable:
-        target.append("mut ")
-    else if method_kind == ast.MethodKind.mk_static:
-        target.append("static ")
+    # The host renders neither `static` nor `editable`; only `async` is shown
+    # (`fetch :: "async -> int"`).
     if is_async:
         target.append("async ")
     target.append("-> ")
@@ -663,8 +757,42 @@ function append_local_type(
         return
     match type_render.initializer_type(analysis, value):
         Option.some as ty:
+            # A type the analyzer could not resolve renders as no detail at all:
+            # the host omits `detail` (it never shows `<error>`), and a
+            # `<error>` in the outline is what this looked like to the user.
+            if contains_error_type(ty.value):
+                return
             var short_text = type_render.short_name(ty.value)
             target.append(short_text.as_str())
             short_text.release()
         Option.none:
             pass
+
+
+## True when the type (recursively) contains the analyzer's error type, i.e. it
+## is not a resolved type worth showing.
+function contains_error_type(ty: types.Type) -> bool:
+    match ty:
+        types.Type.ty_error:
+            return true
+        types.Type.ty_imported as imported:
+            return type_args_contain_error(imported.args)
+        types.Type.ty_generic as generic:
+            return type_args_contain_error(generic.args)
+        types.Type.ty_nullable as nullable:
+            return contains_error_type(unsafe: read(nullable.base))
+        types.Type.ty_function as fn_type:
+            if contains_error_type(unsafe: read(fn_type.return_type)):
+                return true
+            return type_args_contain_error(fn_type.params)
+        _:
+            return false
+
+
+function type_args_contain_error(args: span[types.Type]) -> bool:
+    var i: ptr_uint = 0
+    while i < args.len:
+        if contains_error_type(unsafe: read(args.data + i)):
+            return true
+        i += 1
+    return false

@@ -104,6 +104,9 @@ public struct ModuleBinding:
     private_method_sigs: map_mod.Map[str, FnSig]
     ## Declared generic parameters per exported type name (`Vec` -> `[T]`).
     type_param_names: map_mod.Map[str, span[ast.TypeParam]]
+    ## Declared generic parameters per exported function (`iter_filter` -> `[T]`),
+    ## so an imported call can infer its type arguments from the arguments.
+    function_type_params: map_mod.Map[str, span[ast.TypeParam]]
     private_interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
 
@@ -4055,6 +4058,62 @@ function unify_call_args(params: span[ParamEntry], arg_types: span[types.Type], 
         i += 1
 
 
+## `unify_call_args` with the argument expressions in hand: a bare function
+## reference infers as `ty_error` (recorded types, and therefore code
+## generation, treat it that way), but inference needs its signature —
+## `iter_map(it, triple)` binds `U` from `triple: fn(value: int) -> int`.
+function unify_call_arguments(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    params: span[ParamEntry],
+    args: span[ast.Argument],
+    arg_types: span[types.Type],
+    subs: ref[map_mod.Map[str, types.Type]],
+) -> void:
+    var i: ptr_uint = 0
+    while i < params.len and i < arg_types.len:
+        var actual: types.Type
+        unsafe:
+            actual = read(arg_types.data + i)
+            if i < args.len:
+                actual = argument_inference_type(ctx, scope, read(args.data + i).arg_value, actual)
+            unify(read(params.data + i).ty, actual, subs)
+        i += 1
+
+
+## The type an argument contributes to generic inference.  Only a `ty_error`
+## argument that names a known function is refined (to that function's
+## signature); everything else is used as inferred.
+function argument_inference_type(ctx: ref[Context], scope: ref[sscope.Scope], arg: ptr[ast.Expr], inferred: types.Type) -> types.Type:
+    match inferred:
+        types.Type.ty_error:
+            unsafe:
+                match read(arg):
+                    ast.Expr.expr_identifier as id:
+                        if scope_get(scope, id.name) != null:
+                            return inferred
+                        let sig_ptr = ctx.functions.get(id.name)
+                        if sig_ptr == null:
+                            return inferred
+                        let sig = read(sig_ptr)
+                        var params = vec.Vec[types.Type].create()
+                        var pi: ptr_uint = 0
+                        while pi < sig.params.len:
+                            params.push(read(sig.params.data + pi).ty)
+                            pi += 1
+                        return types.Type.ty_function(
+                            params = params.as_span(),
+                            return_type = types.alloc_type(sig.return_type),
+                            variadic = sig.is_variadic,
+                            is_proc = false,
+                            param_names = span[str](),
+                        )
+                    _:
+                        return inferred
+        _:
+            return inferred
+
+
 function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[str, types.Type]]) -> void:
     match pattern:
         types.Type.ty_var as v:
@@ -4085,6 +4144,27 @@ function unify(pattern: types.Type, actual: types.Type, subs: ref[map_mod.Map[st
                                 i += 1
                     _:
                         pass
+        types.Type.ty_imported as pi:
+            # An imported generic type in a signature (`iter_filter[T]` takes
+            # `Iter[T]`): unify the type arguments so the call's type parameters
+            # bind from the argument types.
+            match actual:
+                types.Type.ty_imported as ai:
+                    if pi.name == ai.name and pi.args.len == ai.args.len:
+                        var i: ptr_uint = 0
+                        while i < pi.args.len:
+                            unsafe:
+                                unify(read(pi.args.data + i), read(ai.args.data + i), subs)
+                            i += 1
+                types.Type.ty_generic as ag:
+                    if pi.name == ag.name and pi.args.len == ag.args.len:
+                        var j: ptr_uint = 0
+                        while j < pi.args.len:
+                            unsafe:
+                                unify(read(pi.args.data + j), read(ag.args.data + j), subs)
+                            j += 1
+                _:
+                    pass
         types.Type.ty_function as pf:
             match actual:
                 types.Type.ty_function as af:
@@ -4159,6 +4239,16 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                         if sig_ptr != null:
                             let sig = read(sig_ptr)
                             check_signature_call(ctx, ma.member_name, sig, args, arg_types, any_named, ma.line, ma.column)
+                            # A generic exported function infers its type arguments
+                            # from the call's arguments (`iter.iter_filter(it, pred)`
+                            # -> `Iter[int]`), exactly as a local call does.
+                            let tps_ptr = read(binding_ptr).function_type_params.get(ma.member_name)
+                            if tps_ptr != null:
+                                var subs = map_mod.Map[str, types.Type].create()
+                                defer: subs.release()
+                                unify_call_arguments(ctx, scope, sig.params, args, arg_types, ref_of(subs))
+                                validate_inferred_type_args(ctx, read(tps_ptr), ref_of(subs), ma.line, ma.column)
+                                return Option[types.Type].some(value = substitute_type(sig.return_type, ref_of(subs)))
                             return Option[types.Type].some(value = sig.return_type)
 
                         let fields_ptr = read(binding_ptr).structs.get(ma.member_name)
@@ -4781,6 +4871,19 @@ function imported_method_call_type(
 ## visible binding declares the method, so callers keep their permissive
 ## fallback.
 function imported_method_return_type(ctx: ref[Context], recv: types.Type, member: str) -> Option[types.Type]:
+    # A receiver whose type arrives as a bare name (`Bitset`, re-exported by an
+    # imported signature) resolves its methods through the visible bindings.
+    match recv:
+        types.Type.ty_named as named:
+            let own = if named.module_name.len > 0: lookup_binding(ctx, named.module_name) else: null
+            let sig_ptr = imported_method_signature(ctx, own, named.name, member) else:
+                return Option[types.Type].none
+            let sig = unsafe: read(sig_ptr)
+            if not sig.has_return_type:
+                return Option[types.Type].some(value = types.primitive("void"))
+            return Option[types.Type].some(value = sig.return_type)
+        _:
+            pass
     match recv:
         types.Type.ty_imported as imported:
             let own = lookup_binding(ctx, imported.module_name)
@@ -5287,7 +5390,7 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null:
                     var subs = map_mod.Map[str, types.Type].create()
-                    unify_call_args(sig.params, arg_types, ref_of(subs))
+                    unify_call_arguments(ctx, scope, sig.params, args, arg_types, ref_of(subs))
                     validate_inferred_type_args(ctx, read(tps_ptr), ref_of(subs), id.line, id.column)
                     return substitute_type(sig.return_type, ref_of(subs))
                 return sig.return_type

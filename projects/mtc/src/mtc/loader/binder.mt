@@ -40,6 +40,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var private_method_sigs = map_mod.Map[str, analyzer.FnSig].create()
     var private_interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create()
     var type_param_names = map_mod.Map[str, span[ast.TypeParam]].create()
+    var function_type_params = map_mod.Map[str, span[ast.TypeParam]].create()
     let exports_all = analysis.source_file.module_kind == ast.ModuleKind.module_raw
 
     var i: ptr_uint = 0
@@ -54,6 +55,8 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     let sig = unsafe: read(sig_ptr)
                     if exports_all or fun.visibility:
                         functions.set(fun.name, sig)
+                        if fun.type_params.len > 0:
+                            function_type_params.set(fun.name, fun.type_params)
                     else:
                         private_functions.set(fun.name, sig)
             ast.Decl.decl_foreign_function as ff:
@@ -181,6 +184,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         private_member_keys = private_member_keys,
         private_method_sigs = private_method_sigs,
         type_param_names = type_param_names,
+        function_type_params = function_type_params,
         private_interfaces = private_interfaces,
     )
 

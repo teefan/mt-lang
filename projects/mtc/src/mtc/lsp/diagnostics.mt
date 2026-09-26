@@ -325,9 +325,15 @@ function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Val
     var start_char: ptr_uint = 0
     var end_char: ptr_uint = 1
     if w.column > 0:
-        # The rule tracked the exact position (e.g. trailing-list-comma).
+        # The rule tracked the exact position (e.g. trailing-list-comma).  When
+        # it carried no length, the host's range covers the warning's symbol —
+        # the name the message quotes (`unused parameter 'self'` spans `self`).
         start_char = w.column - 1
-        end_char = start_char + (if w.length > 0: w.length else: 1z)
+        if w.length > 0:
+            end_char = start_char + w.length
+        else:
+            let quoted = extract_quoted_name(w.message)
+            end_char = start_char + (if quoted.len > 0: quoted.len else: 1z)
     else:
         let name = extract_quoted_name(w.message)
         if name.len > 0 and source.len > 0:

@@ -116,6 +116,43 @@ USER_SOURCE = <<~MT
       return int<-helper_sum(1, 2)
 MT
 
+# Generic declarations and function-typed members: the outline must render the
+# host's shapes — type parameters as `TypeParameter` (kind 26) children with no
+# detail, `fn(int) -> bool` without parameter names, and no `static`/`mut`
+# prefix on methods (only `async`).
+GENERICS_SOURCE = <<~MT
+  public struct Pair[A, B]:
+      left: A
+      right: B
+      cb: fn(value: A) -> bool
+
+  public variant Maybe[T]:
+      Some(value: T)
+      None
+
+  public flags Level:
+      low = 1
+      high = 2
+
+  extending Pair[A, B]:
+      public static function of(left: A, right: B) -> Pair[A, B]:
+          return Pair[A, B](left = left, right = right, cb = always)
+
+      public editable function swap(self: ref[Pair[A, B]]) -> void:
+          let tmp = self.left
+          self.left = self.right
+          self.right = tmp
+
+      public async function fetch(self: ref[Pair[A, B]]) -> int:
+          return 1
+
+  public function always(value: int) -> bool:
+      return true
+
+  public function make[A](value: A) -> Pair[A, int]:
+      return Pair[A, int](left = value, right = 0, cb = always)
+MT
+
 CONTAINERS_SOURCE = <<~MT
   import std.vec as vec
 
@@ -152,6 +189,7 @@ def build_workspace(dir)
     main: File.join(dir, "main.mt"),
     scratch: File.join(dir, "scratch.mt"),
     containers: File.join(dir, "containers.mt"),
+    generics: File.join(dir, "generics.mt"),
     helper: File.join(dir, "helper.mt"),
     user: File.join(dir, "user.mt"),
   }
@@ -160,6 +198,7 @@ def build_workspace(dir)
   File.write(paths[:main], MAIN_SOURCE)
   File.write(paths[:scratch], "function scratch_fn() -> int:\n    return 1\n")
   File.write(paths[:containers], CONTAINERS_SOURCE)
+  File.write(paths[:generics], GENERICS_SOURCE)
   File.write(paths[:helper], HELPER_SOURCE)
   File.write(paths[:user], USER_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
@@ -466,6 +505,7 @@ def corpus(dir, paths)
   requests["hover/alpha"] = ["textDocument/hover", { "textDocument" => { "uri" => alpha_uri }, "position" => { "line" => 1, "character" => 10 } }]
   requests["documentSymbol/beta"] = ["textDocument/documentSymbol", { "textDocument" => { "uri" => beta_uri } }]
   requests["documentSymbol/containers"] = ["textDocument/documentSymbol", { "textDocument" => { "uri" => path_to_uri(paths[:containers]) } }]
+  requests["documentSymbol/generics"] = ["textDocument/documentSymbol", { "textDocument" => { "uri" => path_to_uri(paths[:generics]) } }]
   requests
 end
 
@@ -479,6 +519,7 @@ def run_corpus(client, dir, paths)
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:beta]), "languageId" => "milk-tea", "version" => 1, "text" => BETA_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:scratch]), "languageId" => "milk-tea", "version" => 1, "text" => "function scratch_fn() -> int:\n    return 1\n" } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:containers]), "languageId" => "milk-tea", "version" => 1, "text" => CONTAINERS_SOURCE } })
+  client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:generics]), "languageId" => "milk-tea", "version" => 1, "text" => GENERICS_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:helper]), "languageId" => "milk-tea", "version" => 1, "text" => HELPER_SOURCE } })
   # `user.mt` stays closed on purpose: the host's pull diagnostics report
   # `unknown callable helper_sum` for the (resolvable) import, while its
