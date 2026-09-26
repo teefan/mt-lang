@@ -72,8 +72,9 @@ first difference *and* its build failure), zero-valued aggregate field types,
 `null` contextual typing, event-field modelling and generic-specialization
 parameter types (§0j).
 
-Last updated: 2026-09-25 (method linkage naming, foreign nominal returns,
-unsigned literals, `:path` attribution; remaining work and approach in §0j)
+Last updated: 2026-09-26 (LSP parity re-measured with the harness: 36 differing
+entries catalogued in §0k; LSP feature parity is the active phase — see the phase
+order below; `lower`/CLI remaining work unchanged in §0j)
 
 ---
 
@@ -85,7 +86,7 @@ workstream doc for the area you are touching:
 
 | Workstream | Read | Verify with |
 | --- | --- | --- |
-| `lower` dump parity (current focus) | §0j "Remaining work" 1–6, §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
+| `lower` dump parity | §0j "Remaining work" 1–6, §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
 | Hard build failures (`examples/*`, `test/mt`) | §0j item 7 | `build/stage2/mtc test test/mt -I .` and building the four examples |
 | CLI behavior parity | §0j item 8, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
 | LSP feature parity (**in progress**, §0k) | §0k's gap list, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`) |
@@ -99,17 +100,15 @@ looked correct at the CLI level broke the compiler's own bootstrap.
 
 ### Phase order and current position
 
-1. **`lower` dump parity** — in progress: 0 self-rejections, 38/694 byte-identical,
+1. **`lower` dump parity** — paused: 0 self-rejections, 38/694 byte-identical,
    the remaining categories ranked in §0j.
 2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 8).
-3. **LSP feature parity** — **now measured** (§0k): the missing self-vs-host
-   harness exists (`tools/lsp_parity.rb`), capabilities are at 30/30 keys and
-   hover/definition/declaration/typeDefinition/references are byte-identical for
-   the harness corpus; 26 of 47 request entries and 9 of 15 stress probes still
-   differ (completion, hover docs/inferred types, `documentSymbol` ranges,
-   formatting, and small response shapes — ranked in §0k).  The self-host
-   survives the whole stress corpus without a crash or hang.
+3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
+   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 26 of 47 request
+   entries and 8 of 15 stress probes differing; all 36 differing entries are
+   catalogued by family in §0k.  The self-host survives the whole stress corpus
+   without a crash or hang.
 4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
    bridge was assessed as not feasible without multi-threaded I/O
    (`dap-design.md`).
@@ -189,10 +188,20 @@ ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
 | --- | --- | --- |
 | `initialize` capabilities | 5 of 30 keys differ | **0 differ** |
 | requests differing | 33 of 47 | **26 of 47** |
-| stress probes differing | 15 of 15 | **9 of 15** |
+| stress probes differing | 15 of 15 | **8 of 15** (`ae12a5be` closed the method-not-found message) |
 | requests timing out | 1 (`milkTea/documentContext`) | **0** |
 | crashes / hangs | — | **none** (all 62 probes complete; no SIGSEGV/SIGABRT) |
 | byte-identical endpoints | — | `hover/function-call`, `definition/compute`, `declaration/struct`, `typeDefinition/circle`, `references/compute` |
+| **differing entries, total** | — | **36** (2 semantic-token entries + 26 requests + 8 probes) |
+
+**Re-measured 2026-09-26 (fresh stage2, both servers recorded with `--stress`)**:
+capabilities 30/30 keys identical; 26/47 requests and 8/15 probes differ; 0 timeouts;
+0 crashes.  The per-entry catalogue is in "Remaining LSP gaps" below — it is wider
+than the 2026-09-25 list in three places the harness now names precisely:
+`definition/local` and `references/sum` (local-symbol ranges and local references),
+`prepareCallHierarchy` (declaration range + `data`), and the diagnostics family
+(`diagnostic/pull` ranges/codes/stages, `workspace/diagnostic` file set,
+`workspace/symbol` index scope), plus `selectionRange`'s outer block end.
 
 ### Crash / memory-safety verification
 
@@ -213,35 +222,23 @@ ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
   roots.  Worth a follow-up (an editor session is long-lived), but it is not a
   correctness bug and not new.
 
-### Remaining LSP gaps (ranked, all reproducible with the harness)
+### Remaining LSP gaps (all reproducible with the harness)
 
-1. **Completion** — `completion/member`, `completion/import-member` and
-   `completion/top-level` return keyword items where the host returns symbols
-   (`sum`/`x`/`compute` …), so receiver-type and import-member resolution is not
-   wired into the completion path; snippets (`compute(${1:a}, ${2:b})`) and
-   `sortText`/`data` payloads are missing too.  This is the largest functional
-   gap (3 corpus entries + the unicode probe).
-2. **Hover content beyond signatures** — keyword hovers use the self-host's own
-   short descriptions where the host has long-form docs; locals lack the
-   inferred type (`let s: Sample (immutable)`) and the `*From <module>*` line
-   that the host emits when it shortens a qualified type.
-3. **`documentSymbol` ranges are `0:0`** — names/kinds match but every range and
-   selectionRange is empty, so editor outlines and breadcrumbs are wrong.
-4. **Formatting** — `textDocument/formatting` drops `##` doc comments (the host
-   keeps them) and `rangeFormatting` returns corrupted text
-   (`"is.x + this.y\n\ninterface Shape:…"`), i.e. a real bug, not a shape
-   difference.
-5. **Small shapes**: `codeLens.data` (string vs `{uri,name,line,column}`),
-   `inlayHint.paddingRight`, `documentLink.tooltip` (path vs
-   `Open linked file`), `prepareRename` (`{range, placeholder}` vs a bare
-   range), `signatureHelp` label (missing `-> int`), `milkTea/debugInfo`
-   (entirely different renderer).
-6. **Diagnostics/classification details**: semantic-token modifier bits differ
-   on one token (`512` vs `0`, declaration/modification), one identifier is
-   `method` where the host says `macro`; on unterminated source the self-host
-   reports only the import error where the host also reports the lex error;
-   `Method not found` vs `method not found`; a wrong-typed position falls back
-   to a keyword hover instead of `null`.
+Re-measured 2026-09-26: 36 differing entries — 2 semantic-token comparisons, 26 of
+47 requests, 8 of 15 probes.  The families, ranked by entries moved per unit of
+work (the per-family approach is the Evidence column):
+
+| # | Family | Entries | Evidence / target |
+| --- | --- | --- | --- |
+| 1 | **Hover docs tables** | `hover/struct`, `hover/local`, `hover/keyword`, `hover/alpha`, `stress/open-close+hover` | keyword/builtin hovers carry the self-host's one-line text where the host renders `signature` + `docs` from its tables (`LANGUAGE_KEYWORD_HOVER_INFO` `hover.rb:22-223`, `KEYWORD_HOVER_INFO` `:7-20`, `BUILTIN_TYPE_DOCS` `:225-272`, method-signature tables `:274-357`, `BUILTIN_CALL_HOVER_INFO` `server.rb:64-145`).  Pure data port into `navigation.mt`'s `keyword_hover_text`/`builtin_hover_text`; the renderer already matches (`hover/function-call` is byte-identical) |
+| 2 | **Completion** | `completion/member`, `completion/import-member`, `completion/top-level`, `stress/unicode+completion` | host returns fields (`kind 8`, `sortText "0_x"`, `detail "x: int"`, `data {uri,name}`) then methods (`kind 6`, `"1_sum"`, `detail "sum() -> int"`, `insertText "sum()"`); self returns the keyword list.  Receiver resolution misses inferred locals (`let s = Sample(…)`), so `s.` falls through; host's `completion/import-member` on an unresolvable alias returns the file's method list (fallback, `completion.rb:264-297`), self returns `[]`; top-level needs the host's buckets (functions `0_`, types `1_`, imports `2_`, values `3_`, constructors `8_`, keywords `9_`) + `labelDetails`; `stress/unicode+completion` must return **no** items |
+| 3 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets → `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia → `reconstruct_normalized` → blank lines → wrap) |
+| 4 | **`documentSymbol`** | `documentSymbol`, `documentSymbol/beta`, `stress/full-didChange+symbols` | host ranges are real and carry `detail` (`int` for fields, `implementation` for `extending` blocks, `-> int` for functions), field children `kind 8`, methods `kind 6`, plus one symbol per `extending` block; self emits `character:0` ranges, `kind 13` fields, no detail, no implementation symbols |
+| 5 | **Small shapes** | `signatureHelp`, `prepareRename`, `documentLink`, `codeLens`, `inlayHint`, `prepareCallHierarchy`, `selectionRange` | `signatureHelp` label needs ` -> int`; `prepareRename` needs `{range, placeholder}`; `documentLink.tooltip` = `Open linked file`; `codeLens.data` = `{uri,name,line,column}` **and** the lens set differs (host also lenses the interface method `area`); `inlayHint` needs `paddingRight` **and** the host's inferred-type hint (`": Sample"`, `kind 1`, `paddingRight false`); `prepareCallHierarchy` returns the declaration range + `data {name,uri,receiver_type}`; `selectionRange`'s outer block ends at the file end |
+| 6 | **Diagnostics / classification** | `diagnostic/pull`, `workspace/diagnostic`, `stress/unterminated-source+diagnostic`, `stress/wrong-param-type`, `stress/unterminated-source+tokens`, `stress/unicode+semanticTokens` | host codes/stages/ranges (`import/load-error` at the module name, `sema/error` entries) vs self `module/error` at the alias + lint warnings; `workspace/diagnostic` returns the root file only; unterminated source must report the lex errors; a wrong-typed position must answer `null`; one token is `method`(13) vs `macro`(14) and one carries `defaultLibrary`(512); unicode completion must be empty |
+| 7 | **Local-symbol ranges** | `definition/local`, `references/sum` | host points `total` at its name token (`{36,8}-{36,13}`) and finds both `s` occurrences; self points at the statement start and returns `[]` for local references |
+| 8 | **`workspace/symbol` scope** | `workspace/symbol` | host returns the declaration in the workspace with a name-token range; self returns repo-wide `compute*` matches (index walks the `std/` ancestor root — same scope bug as the valgrind note above) |
+| 9 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}` |
 
 ### How to re-run
 
