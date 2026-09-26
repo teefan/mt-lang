@@ -73,9 +73,10 @@ first difference *and* its build failure), zero-valued aggregate field types,
 parameter types (§0j).
 
 Last updated: 2026-09-26 (LSP parity: hover docs tables + hover token ranges +
-three response shapes landed — differing entries 36 -> 28, catalogue and ranked
-remainder in §0k; LSP feature parity is the active phase — see the phase order
-below; `lower`/CLI remaining work unchanged in §0j)
+three response shapes + inferred local types in hover/inline hints landed —
+differing entries 36 -> 25, catalogue and ranked remainder in §0k; LSP feature
+parity is the active phase — see the phase order below; `lower`/CLI remaining work
+unchanged in §0j)
 
 ---
 
@@ -106,8 +107,8 @@ looked correct at the CLI level broke the compiler's own bootstrap.
 2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 8).
 3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
-   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 19 of 47 request
-   entries and 7 of 15 stress probes differing; all 28 differing entries are
+   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 17 of 47 request
+   entries and 6 of 15 stress probes differing; all 25 differing entries are
    catalogued by family in §0k.  The self-host survives the whole stress corpus
    without a crash or hang.
 4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
@@ -203,26 +204,36 @@ ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
 4. **`signatureHelp`** labels carry the return type; **`prepareRename`** answers
    `{range, placeholder}`; **`documentLink`**'s direct tooltip is
    `Open linked file`.
+5. **Inferred local types** (`mtc/lsp/type_render.mt`, new).  A local hover now
+   renders the host's `let s: Sample (immutable)` — the declared type when
+   annotated, else `analysis.resolved_expr_types[<initializer pointer>]` — plus
+   the host's `*From <module>*` line, fed by `type_render.shorten_signature`,
+   which strips `module.` prefixes and reports them; the file's module name comes
+   from `resolver.infer_module_name` (the compiler's own rule).
+   `CursorResult` carries the stripped modules and the renderer prints them after
+   the fence.  Inline hints gained the host's `: Sample` type hint (kind 1,
+   `paddingRight false`, emitted after the parameter hints) and
+   `paddingRight true` on the parameter hints.  Closes `hover/method-call`,
+   `inlayHint`, `stress/rapid-didChange+hover`.
 
 ### Measured (same corpus, both servers)
 
 | Gate | Before | After |
 | --- | --- | --- |
 | `initialize` capabilities | 5 of 30 keys differ | **0 differ** |
-| requests differing | 33 of 47 | **19 of 47** |
-| stress probes differing | 15 of 15 | **7 of 15** (`ae12a5be` closed the method-not-found message) |
+| requests differing | 33 of 47 | **17 of 47** |
+| stress probes differing | 15 of 15 | **6 of 15** (`ae12a5be` closed the method-not-found message) |
 | requests timing out | 1 (`milkTea/documentContext`) | **0** |
 | crashes / hangs | — | **none** (all 62 probes complete; no SIGSEGV/SIGABRT) |
-| byte-identical endpoints | — | `hover/function-call`, `hover/struct`, `hover/local`, `hover/keyword`, `hover/alpha`, `definition/compute`, `declaration/struct`, `typeDefinition/circle`, `references/compute`, `signatureHelp`, `prepareRename`, `documentLink`, `stress/open-close+hover` |
-| **differing entries, total** | — | **28** (2 semantic-token entries + 19 requests + 7 probes) |
+| byte-identical endpoints | — | hover (all 8), `inlayHint`, `definition/compute`, `declaration/struct`, `typeDefinition/circle`, `references/compute`, `signatureHelp`, `prepareRename`, `documentLink`, `stress/open-close+hover`, `stress/rapid-didChange+hover` |
+| **differing entries, total** | — | **25** (2 semantic-token entries + 17 requests + 6 probes) |
 
 **Re-measured 2026-09-26 (fresh stage2, both servers recorded with `--stress`)**:
-capabilities 30/30 keys identical; 19/47 requests and 7/15 probes differ; 0 timeouts;
-0 crashes.  Closed so far this session: the keyword/builtin hover docs tables (5
-entries — `hover/struct`, `hover/local`, `hover/keyword`, `hover/alpha`,
-`stress/open-close+hover`), plus `signatureHelp`, `prepareRename` and
-`documentLink`'s tooltip.  The per-entry catalogue of what is left is in
-"Remaining LSP gaps" below.
+capabilities 30/30 keys identical; 17/47 requests and 6/15 probes differ; 0 timeouts;
+0 crashes.  Closed this session: the keyword/builtin hover docs tables and hover
+token ranges (5 entries), `signatureHelp`, `prepareRename` and `documentLink`'s
+tooltip, and inferred local types in hover + inline hints (3 entries).  The
+per-entry catalogue of what is left is in "Remaining LSP gaps" below.
 
 ### Crash / memory-safety verification
 
@@ -245,21 +256,20 @@ entries — `hover/struct`, `hover/local`, `hover/keyword`, `hover/alpha`,
 
 ### Remaining LSP gaps (all reproducible with the harness)
 
-Re-measured 2026-09-26: 28 differing entries — 2 semantic-token comparisons, 19 of
-47 requests, 7 of 15 probes.  The families, ranked by entries moved per unit of
+Re-measured 2026-09-26: 25 differing entries — 2 semantic-token comparisons, 17 of
+47 requests, 6 of 15 probes.  The families, ranked by entries moved per unit of
 work (the per-family approach is the Evidence column):
 
 | # | Family | Entries | Evidence / target |
 | --- | --- | --- | --- |
-| 1 | **Local type inference** (hover + inlayHint) | `hover/method-call`, `stress/rapid-didChange+hover`, `inlayHint` | host: `let s: Sample (immutable)` + `*From main*` (it renders the qualified type then `shorten_qualified_types` strips the module and lists it); self: `let s` with no type.  The type is available as `analysis.resolved_expr_types[<initializer expr pointer>]` (`analyzer.mt:2988-2990`) — `resolve_local_hover` must run the analyzer and pass it into `find_local_in_block` (`navigation.mt:1580`).  `inlayHint` needs the same value for its `": Sample"` type hint (`kind 1`, `paddingRight false`) and `paddingRight true` on its parameter hints |
-| 2 | **Completion** | `completion/member`, `completion/import-member`, `completion/top-level`, `stress/unicode+completion` | host returns fields (`kind 8`, `sortText "0_x"`, `detail "x: int"`, `data {uri,name}`) then methods (`kind 6`, `"1_sum"`, `detail "sum() -> int"`, `insertText "sum()"`); self returns the keyword list.  Receiver resolution misses inferred locals (`let s = Sample(…)`), so `s.` falls through (same missing piece as #1); host's `completion/import-member` on an unresolvable alias returns the file's method list (fallback, `completion.rb:264-297`), self returns `[]`; top-level needs the host's buckets (functions `0_`, types `1_`, imports `2_`, values `3_`, constructors `8_`, keywords `9_`) + `labelDetails`; `stress/unicode+completion` must return **no** items |
-| 3 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets → `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia → `reconstruct_normalized` → blank lines → wrap) |
-| 4 | **`documentSymbol`** | `documentSymbol`, `documentSymbol/beta`, `stress/full-didChange+symbols` | host ranges are real and carry `detail` (`int` for fields, `implementation` for `extending` blocks, `-> int` for functions), field children `kind 8`, methods `kind 6`, plus one symbol per `extending` block; self emits `character:0` ranges, `kind 13` fields, no detail, no implementation symbols |
-| 5 | **Small shapes (left)** | `codeLens`, `prepareCallHierarchy`, `selectionRange`, `inlayHint` | `codeLens.data` = `{uri,name,line,column}` **and** the lens set differs (host also lenses the interface method `area`); `prepareCallHierarchy` returns the declaration range + `data {name,uri,receiver_type}` (self returns the call-site range, no data); `selectionRange`'s outer block ends at the file end; `inlayHint` (see #1) |
-| 6 | **Diagnostics / classification** | `diagnostic/pull`, `workspace/diagnostic`, `stress/unterminated-source+diagnostic`, `stress/wrong-param-type`, `stress/unterminated-source+tokens`, `stress/unicode+semanticTokens` | host codes/stages/ranges (`import/load-error` at the module name, `sema/error` entries) vs self `module/error` at the alias + lint warnings; `workspace/diagnostic` returns the root file only; unterminated source must report the lex errors; a wrong-typed position must answer `null`; one token is `method`(13) vs `macro`(14) and one carries `defaultLibrary`(512); unicode completion must be empty |
-| 7 | **Local-symbol ranges** | `definition/local`, `references/sum` | host points `total` at its name token (`{36,8}-{36,13}`) and finds both `s` occurrences; self points at the statement start and returns `[]` for local references |
-| 8 | **`workspace/symbol` scope** | `workspace/symbol` | host returns the declaration in the workspace with a name-token range; self returns repo-wide `compute*` matches (index walks the `std/` ancestor root — same scope bug as the valgrind note above) |
-| 9 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}` |
+| 1 | **Completion** | `completion/member`, `completion/import-member`, `completion/top-level`, `stress/unicode+completion` | host returns fields (`kind 8`, `sortText "0_x"`, `detail "x: int"`, `data {uri,name}`) then methods (`kind 6`, `"1_sum"`, `detail "sum() -> int"`, `insertText "sum()"`); self returns the keyword list.  The receiver-type resolution piece now exists (`type_render.initializer_type` + `qualified/short` rendering, wired into hover) — completion needs the same lookup in `resolve_receiver_type_name`, plus the host's `sortText` buckets, `data`, `labelDetails`, snippets, and its fallback for an unresolvable alias (the file's method list, `completion.rb:264-297`); `stress/unicode+completion` must return **no** items |
+| 2 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets → `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia → `reconstruct_normalized` → blank lines → wrap) |
+| 3 | **`documentSymbol`** | `documentSymbol`, `documentSymbol/beta`, `stress/full-didChange+symbols` | host ranges are real and carry `detail` (`int` for fields, `implementation` for `extending` blocks, `-> int` for functions), field children `kind 8`, methods `kind 6`, plus one symbol per `extending` block; self emits `character:0` ranges, `kind 13` fields, no detail, no implementation symbols.  `type_render.short_name` already renders the host's field/return detail text |
+| 4 | **Diagnostics / classification** | `diagnostic/pull`, `workspace/diagnostic`, `stress/unterminated-source+diagnostic`, `stress/wrong-param-type`, `stress/unterminated-source+tokens`, `stress/unicode+semanticTokens` | host codes/stages/ranges (`import/load-error` at the module name, `sema/error` entries) vs self `module/error` at the alias + lint warnings; `workspace/diagnostic` returns the root file only; unterminated source must report the lex errors; a wrong-typed position must answer `null`; one token is `method`(13) vs `macro`(14) and one carries `defaultLibrary`(512); unicode completion must be empty |
+| 5 | **Small shapes (left)** | `codeLens`, `prepareCallHierarchy`, `hover/field`, `selectionRange` | `codeLens.data` = `{uri,name,line,column}` **and** the lens set differs (host also lenses the interface method `area`); `prepareCallHierarchy` returns the declaration range + `data {name,uri,receiver_type}` (self returns the call-site range, no data); `hover/field` is the aggregate-literal *label* (`Sample(x = 1, y = 2)` → `field x: int`, host `resolve_named_argument_label_hover_info`); `selectionRange`'s outer block: host `{36,0}-{47,0}` (body start → EOF) vs self `{35,0}-{46,16}` (function header → last line's end) — the host's block range starts at the enclosing block's first statement and ends at end-of-file |
+| 6 | **Local-symbol ranges** | `definition/local`, `references/sum` | host points `total` at its name token (`{36,8}-{36,13}`) and finds both `s` occurrences; self points at the statement start (the local hover's `column` is 0) and returns `[]` for local references |
+| 7 | **`workspace/symbol` scope** | `workspace/symbol` | host returns the declaration in the workspace with a name-token range; self returns repo-wide `compute*` matches (index walks the `std/` ancestor root — same scope bug as the valgrind note above) |
+| 8 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}` |
 
 ### How to re-run
 
