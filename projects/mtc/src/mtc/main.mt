@@ -26,6 +26,7 @@ import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.pretty_printer.ir_formatter as ir_formatter
 import mtc.formatter.tidy as tidy
 import mtc.loader.path_resolver as resolver
+import mtc.loader.package_manifest as package_manifest
 import mtc.loader.module_loader as loader
 import mtc.lowering.lowering as lowering
 import mtc.c_backend.c_backend as c_backend
@@ -597,7 +598,7 @@ function check_command(args: span[str]) -> int:
         # The source's own directory stays the last-resort root for a lone file
         # that lives outside any project (adding it up front would shadow the
         # project root, since roots are matched longest-first).
-        discover_project_root(effective, ref_of(file_roots), ref_of(owned_roots))
+        add_module_roots(effective, ref_of(file_roots), ref_of(owned_roots))
         if file_roots.is_empty():
             file_roots.push(path_ops.dirname(effective))
 
@@ -1134,7 +1135,7 @@ function parse_source_operand(args: span[str], roots: ref[vec.Vec[str]], owned_r
             # directory instead would shadow it (roots are matched
             # longest-first) and derive a basename-only module name (e.g. the
             # invalid C identifier `2d_camera_mouse_zoom_main`).
-            discover_project_root(p.value, roots, owned_roots)
+            add_module_roots(p.value, roots, owned_roots)
             return Option[str].some(value = p.value)
         Option.none:
             eprint_line("missing source file path")
@@ -1464,6 +1465,56 @@ function discover_project_root(source_path: str, roots: ref[vec.Vec[str]], owned
         if parent.equal(current):
             return
         current = parent
+
+
+## Ruby's `ModuleRoots.roots_for_path` in one step: the discovered project root,
+## the enclosing package's source root, and the compiler's own roots
+## (`$MILK_TEA_MODULE_ROOT` / `$MILK_TEA_STD_ROOT` and the `std/` next to the
+## running binary).  A project living outside this tree still resolves `std.*`,
+## and its own modules resolve by their bare names.
+function add_module_roots(source_path: str, roots: ref[vec.Vec[str]], owned: ref[vec.Vec[string.String]]) -> void:
+    discover_project_root(source_path, roots, owned)
+
+    var candidates = vec.Vec[string.String].create()
+    defer: candidates.release()
+
+    match package_manifest.package_source_root_for_path(source_path):
+        Option.some as package_root:
+            candidates.push(package_root.value)
+        Option.none:
+            pass
+
+    var compiler_roots = resolver.compiler_root_candidates()
+    defer: compiler_roots.release()
+    var ci: ptr_uint = 0
+    while ci < compiler_roots.len():
+        let entry = compiler_roots.get(ci) else:
+            break
+        candidates.push(string.String.from_str(unsafe: read(entry).as_str()))
+        ci += 1
+
+    var i: ptr_uint = 0
+    while i < candidates.len():
+        let candidate_entry = candidates.get(i) else:
+            break
+        let candidate = unsafe: read(candidate_entry).as_str()
+
+        var already_present = false
+        var j: ptr_uint = 0
+        while j < roots.len():
+            let existing = roots.get(j) else:
+                break
+            if unsafe: read(existing).equal(candidate):
+                already_present = true
+                break
+            j += 1
+
+        if not already_present:
+            owned.push(string.String.from_str(candidate))
+            let pushed = owned.get(owned.len() - 1) else:
+                break
+            roots.push(unsafe: read(pushed).as_str())
+        i += 1
 
 
 ## Build a program (`mtc build`).  Supports both single `.mt` files and package
@@ -1971,7 +2022,7 @@ function run_module_command(args: span[str]) -> int:
             dir_error.release()
     if cwd.len() > 0:
         roots.push(cwd.as_str())
-        discover_project_root(cwd.as_str(), ref_of(roots), ref_of(owned_roots))
+        add_module_roots(cwd.as_str(), ref_of(roots), ref_of(owned_roots))
 
     var resolved = resolve_app_module(name, ref_of(roots)) else:
         stdio.print_format(c"run-module module not found: %.*s\n", int<-(name.len), name.data)
@@ -2575,7 +2626,7 @@ function std_root_dir() -> Option[string.String]:
     defer: owned_roots.release()
     if cwd.len() > 0:
         roots.push(cwd.as_str())
-        discover_project_root(cwd.as_str(), ref_of(roots), ref_of(owned_roots))
+        add_module_roots(cwd.as_str(), ref_of(roots), ref_of(owned_roots))
     var i: ptr_uint = 0
     while i < roots.len():
         let rp = roots.get(i) else:
@@ -2991,7 +3042,7 @@ function snapshot_command(args: span[str]) -> int:
     defer: roots.release()
     var owned_roots = vec.Vec[string.String].create()
     defer: owned_roots.release()
-    discover_project_root(input_path, ref_of(roots), ref_of(owned_roots))
+    add_module_roots(input_path, ref_of(roots), ref_of(owned_roots))
 
     var project_root: Option[str] = Option[str].none
     if roots.len() > 0:

@@ -1267,6 +1267,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     # as capturing stale bindings.
                     ctx.locals.clear()
                     g_val = lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
+                    g_val = string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                 globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
             ast.Decl.decl_const as c:
                 var c_ty = resolve_type_ref(ctx, c.const_type)
@@ -2598,13 +2599,16 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             ty = ir_expr_type(value_expr)
                     else:
                         ty = qualify_type(ctx, ir_expr_type(value_expr))
-                # A float literal in a declared `float`/`double` position takes
-                # that type, as the host's contextual literal inference does.
+                # A float or bare string literal in a declared `float`/`double`
+                # or `cstr` position takes that type (the host's contextual
+                # literal inference).
                 if init != null:
                     unsafe:
                         match read(ptr[ast.Expr]<-init):
                             ast.Expr.expr_float_literal:
                                 value_expr = float_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
+                            ast.Expr.expr_string_literal:
+                                value_expr = string_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
                             _:
                                 pass
                 # Wrap a non-nullable value into a value-type nullable's opt struct.
@@ -12106,6 +12110,30 @@ function float_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types
                 return value
 
 
+## Re-type a bare string literal in a `cstr` position as a cstring literal,
+## mirroring the host's `lower_compile_time_literal`: `var Title: cstr = "Hello"`
+## emits the bare C string rather than the `mt_str` aggregate (which the C
+## compiler rejects for a `const char*` slot).
+function string_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    var is_cstr_context = false
+    match context_ty:
+        types.Type.ty_primitive as p:
+            if p.name == "cstr":
+                is_cstr_context = true
+        _:
+            pass
+    if not is_cstr_context:
+        return value
+    unsafe:
+        match read(arg_ast):
+            ast.Expr.expr_string_literal as lit:
+                if lit.is_cstring:
+                    return value
+                return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = context_ty, cstring = true))
+            _:
+                return value
+
+
 ## The IR node for an integer literal read from the AST, mirroring the host's
 ## parse: Ruby's lexer stores an unbounded Integer, so a magnitude that does not
 ## fit a signed `long` (`18446744073709551615`, `0xFFFFFFFFFFFFFFFF`) stays
@@ -18798,6 +18826,11 @@ function try_const_call_ir(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span
                             return try_const_variant_literal_ir(ctx, rid.name, ma.member_name, args, env)
                         if ctx.analysis.structs.contains(rid.name):
                             return try_const_method_value(ctx, env, rid.name, ma.member_name, Option[ptr[ir.Expr]].none, args)
+                        # Qualified struct literal through an import alias
+                        # (`rl.Color(r = …)`), which the bare-name branch above
+                        # already handles for an unqualified `Color(r = …)`.
+                        if ctx.analysis.imports.contains(rid.name) and struct_exists_in_imports(ctx, ma.member_name):
+                            return try_const_struct_literal_ir(ctx, ma.member_name, args, env)
                     ast.Expr.expr_specialization as spec:
                         match read(spec.callee):
                             ast.Expr.expr_identifier as sid:
@@ -18805,6 +18838,19 @@ function try_const_call_ir(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span
                                     return try_const_variant_literal_ir(ctx, sid.name, ma.member_name, args, env)
                                 if sid.name == "array":
                                     return try_const_array_literal_ir(ctx, spec.arguments, args, env)
+                            _:
+                                pass
+                    ast.Expr.expr_member_access as inner_ma:
+                        # Qualified receiver: `alias.Type.method(...)` — the
+                        # extending block declaring the const method names the
+                        # type through the same import alias, so the bare type
+                        # name is what `try_const_method_value` matches on.
+                        match read(inner_ma.receiver):
+                            ast.Expr.expr_identifier as alias_id:
+                                if ctx.analysis.imports.contains(alias_id.name):
+                                    if ctx.variants.contains(inner_ma.member_name):
+                                        return try_const_variant_literal_ir(ctx, inner_ma.member_name, ma.member_name, args, env)
+                                    return try_const_method_value(ctx, env, inner_ma.member_name, ma.member_name, Option[ptr[ir.Expr]].none, args)
                             _:
                                 pass
                     _:

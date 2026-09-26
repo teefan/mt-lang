@@ -115,6 +115,7 @@ public function handle_code_lens_resolve(
         return
 
     let data_uri = extract_nested_string(params, "data", "uri")
+    let data_line = extract_nested_number(params, "data", "line")
     var file_path = string.String.create()
     defer: file_path.release()
     if data_uri.len > 0:
@@ -127,7 +128,7 @@ public function handle_code_lens_resolve(
                 pass
 
     ws.build_index_if_needed()
-    let count = nav_mod.count_reference_locations(ws, name, file_path.as_str())
+    let count = nav_mod.count_declaration_references(ws, name, file_path.as_str(), data_line)
     log.info(f"code_lens resolve: name=#{name} count=#{count}")
     if count == 0:
         proto.write_response(id, params)
@@ -165,6 +166,24 @@ function token_column(source: str, line: ptr_uint, name: str) -> ptr_uint:
     match cursor.token_start_in_line(utils.source_line(source, line), name):
         Option.some as col:
             return col.value + 1
+        Option.none:
+            return 0
+
+
+## Extract `value[outer][inner]` as a non-negative integer (0 when absent).
+function extract_nested_number(value: json.Value, outer: str, inner: str) -> ptr_uint:
+    let obj_ptr = value.as_object()
+    if obj_ptr == null:
+        return 0
+    let outer_ptr = unsafe: read(obj_ptr).get_object(outer)
+    if outer_ptr == null:
+        return 0
+    let inner_value = unsafe: read(outer_ptr).get_number(inner)
+    match inner_value:
+        Option.some as n:
+            if n.value < 0.0:
+                return 0
+            return ptr_uint<-int<-n.value
         Option.none:
             return 0
 

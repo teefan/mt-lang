@@ -12,6 +12,9 @@ import std.string as string
 import std.vec as vec
 import std.log as log
 
+import mtc.lexer.token as tok
+import mtc.loader.package_manifest as package_manifest
+import mtc.loader.path_resolver as resolver_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace_index as idx
 
@@ -60,6 +63,7 @@ extending Workspace:
     public static function create(root: str) -> Workspace:
         var roots = vec.Vec[string.String].create()
         discover_project_root(root, ref_of(roots))
+        append_compiler_module_roots(root, ref_of(roots))
         return Workspace(
             root_path = string.String.from_str(root),
             module_roots = roots,
@@ -94,6 +98,7 @@ extending Workspace:
         this.module_roots = vec.Vec[string.String].create()
         this.module_roots.push(string.String.from_str(path))
         discover_project_root(path, ref_of(this.module_roots))
+        append_compiler_module_roots(path, ref_of(this.module_roots))
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
         if this.index_built:
@@ -401,6 +406,51 @@ public function discover_project_root(source_path: str, roots: ref[vec.Vec[strin
         if parent.equal(current):
             return
         current = parent
+
+
+## Append the compiler's own roots (`$MILK_TEA_MODULE_ROOT` /
+## `$MILK_TEA_STD_ROOT`, then the `std/` next to the running binary) and the
+## enclosing package's source root to the workspace's module roots, as
+## `ModuleRoots.roots_for_path` does.  This is what lets a project outside the
+## compiler's own tree resolve `std.*` and its own modules by bare name.
+public function append_compiler_module_roots(path: str, roots: ref[vec.Vec[string.String]]) -> void:
+    var candidates = vec.Vec[string.String].create()
+    defer: candidates.release()
+
+    match package_manifest.package_source_root_for_path(path):
+        Option.some as package_root:
+            candidates.push(package_root.value)
+        Option.none:
+            pass
+
+    var compiler_roots = resolver_mod.compiler_root_candidates()
+    defer: compiler_roots.release()
+    var ci: ptr_uint = 0
+    while ci < compiler_roots.len():
+        let entry = compiler_roots.get(ci) else:
+            break
+        candidates.push(string.String.from_str(unsafe: read(entry).as_str()))
+        ci += 1
+
+    var i: ptr_uint = 0
+    while i < candidates.len():
+        let candidate_entry = candidates.get(i) else:
+            break
+        let candidate = unsafe: read(candidate_entry).as_str()
+
+        var already_present = false
+        var j: ptr_uint = 0
+        while j < roots.len():
+            let existing = roots.get(j) else:
+                break
+            if unsafe: read(existing).as_str().equal(candidate):
+                already_present = true
+                break
+            j += 1
+
+        if not already_present:
+            roots.push(string.String.from_str(candidate))
+        i += 1
 
 
 function release_module_roots(roots: ref[vec.Vec[string.String]]) -> void:

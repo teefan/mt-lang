@@ -4,16 +4,16 @@ Status: **Server implemented — 29 capabilities advertised at Ruby parity, and 
 measured against the host by `tools/lsp_parity.rb`.**
 Last updated: 2026-09-26 (stage 5 closed the formatting entries: trivia-aware
 lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
-`tools/format_parity.rb` measures tidy/preserve 700/700 byte-identical).
+`tools/format_parity.rb` measures tidy/preserve 702/702 byte-identical).
 37 modules, ~14.4k lines, 29 capabilities advertised at Ruby parity.
 
 > **Parity is measured by the self-vs-host harness, not by capability
 > advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,
-> `compare`, `--stress`) drives an out-of-process corpus of 51 requests — every
+> `compare`, `--stress`) drives an out-of-process corpus of 52 requests — every
 > endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a
 > real editor makes — and 15 adversarial probes, and diffs normalized responses.
-> As of 2026-09-26 (stage 5b) it reports 30/30 capability keys identical, **2 of
-> 51 requests and 2 of 15 stress probes still differing** — every differing entry
+> As of 2026-09-26 (stage 6b) it reports 30/30 capability keys identical, **1 of
+> 52 requests and 2 of 15 stress probes still differing** — every differing entry
 > is catalogued by family in
 > [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure),
 > which is the live status; the per-feature claims below are self-host-side

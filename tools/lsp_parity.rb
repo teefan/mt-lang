@@ -357,6 +357,12 @@ def corpus(dir, paths)
   requests["implementation/area"] = ["textDocument/implementation", at.call("c.area()")]
   requests["references/compute"] = ["textDocument/references", at.call("compute(3, 4)").merge("context" => { "includeDeclaration" => true })]
   requests["references/sum"] = ["textDocument/references", at.call("s.sum()").merge("context" => { "includeDeclaration" => true })]
+  # Cross-file: the declaration of an imported function, referenced from main.
+  requests["references/imported-decl"] = ["textDocument/references", {
+    "textDocument" => { "uri" => alpha_uri },
+    "position" => { "line" => 1, "character" => 16 },
+    "context" => { "includeDeclaration" => true },
+  }]
   requests["documentHighlight"] = ["textDocument/documentHighlight", at.call("total += s.sum()", off: 0)]
   requests["documentSymbol"] = ["textDocument/documentSymbol", tc]
   requests["foldingRange"] = ["textDocument/foldingRange", tc]

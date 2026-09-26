@@ -498,55 +498,45 @@ function build_references_json_cross_file(ws: ref[workspace.Workspace], name: st
     return result
 
 
-## Count the reference locations for `name` in `file_path`, by the same walk
-## the references handler uses (`build_references_json_cross_file`).  The
-## host's `codeLens/resolve` counts `module_level_reference_locations` with
-## declarations included, i.e. exactly these locations.
-public function count_reference_locations(ws: ref[workspace.Workspace], name: str, file_path: str) -> ptr_uint:
-    var total: ptr_uint = 0
-    var seen = map_mod.Map[str, bool].create()
-    defer: seen.release()
-
-    # The open document first, exactly as the references walk does.
-    total += count_file_occurrences(ws, file_path, name)
-    if file_path.len > 0:
-        seen.set(file_path, true)
-
-    var max_results = ws.index.entries.len()
-    var results = ws_idx.query_index(ref_of(ws.index), name, max_results)
-    defer: results.release()
-
-    var ri: ptr_uint = 0
-    while ri < results.len():
-        let rp = results.get(ri) else:
-            break
-        let ei = unsafe: read(rp)
-        let ep = ws.index.entries.get(ei) else:
-            break
-        let entry = unsafe: read(ep)
-        if entry.name.as_str().equal(name):
-            let path = entry.path.as_str()
-            if not seen.contains(path):
-                seen.set(path, true)
-                total += count_file_occurrences(ws, path, name)
-        ri += 1
-
-    return total
-
-
-## Identifier occurrences of `name` in one file (0 when unreadable or empty).
-function count_file_occurrences(ws: ref[workspace.Workspace], file_ref: str, name: str) -> ptr_uint:
-    if file_ref.len == 0 or name.len == 0:
+## The reference count the host reports for the symbol declared at `line`:
+## `module_level_reference_locations(..., include_declaration: true).length` —
+## the same-file, scope-aware occurrences of the declared name.  (The host also
+## adds occurrences from files that import the declaration's module; the
+## self-host does not track reverse import dependents yet — §0k.)
+public function count_declaration_references(ws: ref[workspace.Workspace], name: str, file_path: str, line: ptr_uint) -> ptr_uint:
+    if name.len == 0 or file_path.len == 0:
         return 0
-    var maybe_content = ws.document_source(file_ref)
+
+    var maybe_content = ws.document_source(file_path)
     if maybe_content.is_none():
         return 0
     var content = maybe_content.unwrap()
-    var occurrences = cursor.identifier_occurrences(content.as_str(), name)
-    let count = occurrences.len()
-    occurrences.release()
-    content.release()
-    return count
+    defer: content.release()
+
+    return count_same_scope_occurrences(content.as_str(), name, line)
+
+
+## Count the same-file, scope-aware occurrences (`build_references_json`'s rule).
+function count_same_scope_occurrences(source: str, name: str, target_line: ptr_uint) -> ptr_uint:
+    var occurrences = cursor.identifier_occurrences(source, name)
+    defer: occurrences.release()
+
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var bindings = scope_mod.collect_bindings(source, ast_file)
+    defer: bindings.release()
+
+    var total: ptr_uint = 0
+    var oi: ptr_uint = 0
+    while oi < occurrences.len():
+        let op = occurrences.get(oi) else:
+            break
+        let occ = unsafe: read(op)
+        if scope_mod.is_in_same_scope(ref_of(bindings), name, target_line, occ.line):
+            total += 1
+        oi += 1
+    return total
 
 
 ## Scan a single file for identifier occurrences of `name` and append

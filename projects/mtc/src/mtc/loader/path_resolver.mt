@@ -7,10 +7,12 @@
 ## dependency rules and shared analysis caches are intentionally out of scope
 ## here; single-root resolution comes first.
 
+import std.env as env
 import std.fs as fs
 import std.path as path_ops
 import std.str
 import std.string as string
+import std.vec as vec
 
 import mtc.loader.errors as errors
 
@@ -114,6 +116,87 @@ public function infer_module_name(path: str, roots: span[str]) -> string.String:
                     return module_name_from_relative(path_ops.basename(path))
         Option.none:
             return module_name_from_relative(path_ops.basename(path))
+
+
+# =============================================================================
+#  Compiler-provided module roots
+# =============================================================================
+
+## Module roots the compiler itself provides, so a project outside the
+## compiler's own tree still resolves `std.*`:
+##
+##   1. `$MILK_TEA_MODULE_ROOT` and `$MILK_TEA_STD_ROOT` (PATH-separated), and
+##   2. the directory containing `std/` next to the running binary.
+##
+## The Ruby host appends the same two sources in `ModuleRoots.add_env_roots!`
+## and its unconditional `MilkTea.root` append; a root that names `std` itself
+## is normalized to its parent (`ModuleRoots.normalize_root`).  Every entry is
+## owned — the caller releases the vector.
+public function compiler_root_candidates() -> vec.Vec[string.String]:
+    var roots = vec.Vec[string.String].create()
+    append_env_root_candidates(ref_of(roots), "MILK_TEA_MODULE_ROOT")
+    append_env_root_candidates(ref_of(roots), "MILK_TEA_STD_ROOT")
+
+    match fs.canonicalize("/proc/self/exe"):
+        Result.success as exe_payload:
+            var exe = exe_payload.value
+            defer: exe.release()
+            match fs.find_ancestor_containing(exe.as_str(), "std"):
+                Option.some as root_payload:
+                    var root = root_payload.value
+                    push_root_candidate(ref_of(roots), root.as_str())
+                    root.release()
+                Option.none:
+                    pass
+        Result.failure as failure:
+            var read_error = failure.error
+            read_error.release()
+
+    return roots
+
+
+## Append the PATH-separated roots of the environment variable `name`.
+function append_env_root_candidates(roots: ref[vec.Vec[string.String]], name: str) -> void:
+    match env.get(name):
+        Option.some as value:
+            let text = value.value
+            var start: ptr_uint = 0
+            var i: ptr_uint = 0
+            while i <= text.len:
+                if i == text.len or text.byte_at(i) == ':':
+                    if i > start:
+                        push_root_candidate(roots, text.slice(start, i - start))
+                    start = i + 1
+                i += 1
+        Option.none:
+            pass
+
+
+## Append `candidate` (normalized, no duplicates) to `roots` as an owned copy.
+function push_root_candidate(roots: ref[vec.Vec[string.String]], candidate: str) -> void:
+    if candidate.len == 0:
+        return
+
+    var normalized = normalize_root_path(candidate)
+    defer: normalized.release()
+    let text = normalized.as_str()
+
+    var i: ptr_uint = 0
+    while i < roots.len():
+        let entry = roots.get(i) else:
+            break
+        if unsafe: read(entry).as_str().equal(text):
+            return
+        i += 1
+
+    roots.push(string.String.from_str(text))
+
+
+## A root that points at a `std` directory names its parent.
+function normalize_root_path(root: str) -> string.String:
+    if path_ops.basename(root).equal("std"):
+        return string.String.from_str(path_ops.dirname(root))
+    return string.String.from_str(root)
 
 
 # =============================================================================
