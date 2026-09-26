@@ -1,21 +1,23 @@
 # Self-Host LSP Architecture
 
-Status: **Server implemented — 29 capabilities advertised at Ruby parity; the
-long-tail items and the 2026-07-22 linter parity session are delivered.**
-Last updated: 2026-09-25 (status qualified: see the parity note below).
-35 modules, ~9,500 lines, 29 capabilities advertised at Ruby parity.
+Status: **Server implemented — 29 capabilities advertised at Ruby parity, and now
+measured against the host by `tools/lsp_parity.rb`.**
+Last updated: 2026-09-26 (parity note rewritten: the harness exists and is the gate).
+36 modules, ~12.2k lines, 29 capabilities advertised at Ruby parity.
 
-> **Parity is advertised-capability parity, not yet verified feature parity.**
-> The LSP test suite (`test/tooling/lsp/server/*`) spawns the *Ruby* server
+> **Parity is measured by the self-vs-host harness, not by capability
+> advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,
+> `compare`, `--stress`) drives an out-of-process corpus of 47 requests plus 15
+> adversarial probes against both servers and diffs normalized responses.  As of
+> 2026-09-26 it reports 30/30 capability keys identical, **19 of 47 requests and
+> 7 of 15 stress probes still differing** — every differing entry is catalogued
+> by family in
+> [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure),
+> which is the live status; the per-feature claims below are self-host-side
+> results that the harness now confirms or contradicts entry by entry.
+> The LSP test suite (`test/tooling/lsp/server/*`) still spawns the *Ruby* server
 > (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
-> so nothing in CI drives `build/stage2/mtc lsp`.  Feature parity is the third
-> phase of the self-host plan (after `lower` dump parity and CLI behavior
-> parity); the first task there is a comparison harness that replays one request
-> corpus against both servers and diffs the responses — see
-> [self-host-plan.md](./self-host-plan.md#how-to-start-a-work-session-read-this-first).
-> Treat the per-feature claims below (hover 18/25, references, definition,
-> signature help, semantic tokens) as *self-host-side* results until that
-> harness exists.
+> so CI alone does not exercise `build/stage2/mtc lsp`.
 Hover coverage: 18/25 declaration types (up from 5/25).
 References: cross-file via workspace index.
 Definition: local variables supported.
