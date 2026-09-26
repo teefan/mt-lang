@@ -35,6 +35,7 @@ public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str
     var json_text = string.String.create()
     defer: json_text.release()
     json_text.append("[")
+    var first = true
 
     var ri: ptr_uint = 0
     while ri < results.len():
@@ -43,8 +44,15 @@ public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str
         let ei = unsafe: read(rp)
         let ep = ws.index.entries.get(ei) else:
             break
-        if ri > 0:
+        let entry = unsafe: read(ep)
+        # The host's symbol index covers the client root only; the module
+        # roots also carry the project/std ancestor used for imports.
+        if not under_root(entry.path.as_str(), ws.root_path.as_str()):
+            ri += 1
+            continue
+        if not first:
             json_text.append(",")
+        first = false
         emit_symbol_json(ref_of(json_text), ep)
         ri += 1
 
@@ -55,6 +63,7 @@ public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str
 function emit_symbol_json(json_text: ref[string.String], entry: ptr[idx.Entry]) -> void:
     let e = unsafe: read(entry)
     let lz = if e.line > 0: e.line - 1 else: 0z
+    let colz = if e.column > 0: e.column - 1 else: 0z
 
     json_text.append("{\"name\":\"")
     proto.append_escaped(json_text, e.name.as_str())
@@ -64,8 +73,21 @@ function emit_symbol_json(json_text: ref[string.String], entry: ptr[idx.Entry]) 
     proto.append_escaped(json_text, e.path.as_str())
     json_text.append("\",\"range\":{\"start\":{\"line\":")
     json_text.append_format(f"#{lz}")
-    json_text.append(",\"character\":0},\"end\":{\"line\":")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{colz}")
+    json_text.append("},\"end\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
-    json_text.append_format(f"#{e.name.len()}")
+    json_text.append_format(f"#{colz + e.name.len()}")
     json_text.append("}}}}")
+
+
+## True when `path` lies inside the workspace root directory.
+function under_root(path: str, root: str) -> bool:
+    if root.len == 0:
+        return true
+    if not path.starts_with(root):
+        return false
+    if path.len == root.len:
+        return true
+    return path.byte_at(root.len) == '/'

@@ -177,10 +177,24 @@ public function handle_references(
         proto.write_response(id, json.null_value())
         return
 
-    ws.build_index_if_needed()
-    var refs_json = build_references_json_cross_file(ws, target.text, uri)
-    proto.write_response_raw(id, refs_json.as_str())
-    refs_json.release()
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var bindings = scope_mod.collect_bindings(source, ast_file)
+    defer: bindings.release()
+
+    # A local binding resolves within its scope in this file; every other
+    # name is resolved through the workspace index.
+    match scope_mod.local_binding_line(ref_of(bindings), target.text, target.line):
+        Option.some as binding_line:
+            var local_json = build_references_json(source, target.text, binding_line.value, uri)
+            proto.write_response_raw(id, local_json.as_str())
+            local_json.release()
+        Option.none:
+            ws.build_index_if_needed()
+            var refs_json = build_references_json_cross_file(ws, target.text, file_path.as_str())
+            proto.write_response_raw(id, refs_json.as_str())
+            refs_json.release()
 
 
 ## Handle textDocument/typeDefinition: for a type name, its own declaration;

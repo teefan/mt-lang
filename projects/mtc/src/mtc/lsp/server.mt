@@ -179,7 +179,10 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         nav.handle_implementation(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/hover":
         var pos = extract_position_params(msg.params)
-        nav.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
+        if not pos.valid:
+            proto.write_response(msg.id, json.null_value())
+        else:
+            nav.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/references":
         var pos = extract_position_params(msg.params)
         nav.handle_references(ws, pos.uri, pos.line, pos.character, msg.id)
@@ -325,13 +328,18 @@ struct PositionParams:
     uri: str
     line: ptr_uint
     character: ptr_uint
+    ## False when the request carries no usable `position` object; the host's
+    ## handlers raise on such input and answer null.
+    valid: bool
 
 
-## Extract textDocument/definition-like position params.
+## Extract textDocument position params.  `valid` is false when the request
+## carries no usable position object; the host's handlers raise on such
+## input and answer null.
 function extract_position_params(params: json.Value) -> PositionParams:
     let obj_ptr = params.as_object()
     if obj_ptr == null:
-        return PositionParams(uri = "", line = 0z, character = 0z)
+        return PositionParams(uri = "", line = 0z, character = 0z, valid = false)
 
     var uri: str = ""
     var line: ptr_uint = 0
@@ -344,26 +352,31 @@ function extract_position_params(params: json.Value) -> PositionParams:
                 let uri_val = read(td_obj_ptr).get("uri")
                 if uri_val != null:
                     let s = read(uri_val).as_string() else:
-                        return PositionParams(uri = "", line = 0z, character = 0z)
+                        return PositionParams(uri = "", line = 0z, character = 0z, valid = false)
                     uri = s
 
         let pos_ptr = read(obj_ptr).get("position")
-        if pos_ptr != null:
-            let pos_obj_ptr = read(pos_ptr).as_object()
-            if pos_obj_ptr != null:
-                let line_val = read(pos_obj_ptr).get("line")
-                if line_val != null:
-                    let n = read(line_val).as_number() else:
-                        return PositionParams(uri = "", line = 0z, character = 0z)
-                    line = ptr_uint<-int<-n
+        if pos_ptr == null:
+            return PositionParams(uri = uri, line = 0z, character = 0z, valid = false)
+        let pos_obj_ptr = read(pos_ptr).as_object()
+        if pos_obj_ptr == null:
+            return PositionParams(uri = uri, line = 0z, character = 0z, valid = false)
 
-                let char_val = read(pos_obj_ptr).get("character")
-                if char_val != null:
-                    let c = read(char_val).as_number() else:
-                        return PositionParams(uri = "", line = 0z, character = 0z)
-                    character = ptr_uint<-int<-c
+        let line_val = read(pos_obj_ptr).get("line")
+        if line_val == null:
+            return PositionParams(uri = uri, line = 0z, character = 0z, valid = false)
+        let n = read(line_val).as_number() else:
+            return PositionParams(uri = "", line = 0z, character = 0z, valid = false)
+        line = ptr_uint<-int<-n
 
-    return PositionParams(uri = uri, line = line, character = character)
+        let char_val = read(pos_obj_ptr).get("character")
+        if char_val == null:
+            return PositionParams(uri = uri, line = 0z, character = 0z, valid = false)
+        let c = read(char_val).as_number() else:
+            return PositionParams(uri = "", line = 0z, character = 0z, valid = false)
+        character = ptr_uint<-int<-c
+
+    return PositionParams(uri = uri, line = line, character = character, valid = true)
 
 
 ## Determine the workspace root from CLI arguments or the current directory.

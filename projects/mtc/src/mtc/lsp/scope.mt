@@ -16,6 +16,8 @@ public struct Binding:
     name: str
     line: ptr_uint
     scope_end: ptr_uint
+    ## True for module-level declarations; false for parameters and locals.
+    is_toplevel: bool
 
 
 public function collect_bindings(source_text: str, ast_file: ast.SourceFile) -> vec.Vec[Binding]:
@@ -75,7 +77,7 @@ function collect_toplevel_names(bindings: ref[vec.Vec[Binding]], decls: span[ast
         unsafe:
             let nl = decl_name_and_line(decls.data + di)
             if nl.name.len > 0:
-                bindings.push(Binding(name = nl.name, line = nl.line, scope_end = last_line(source_text)))
+                bindings.push(Binding(name = nl.name, line = nl.line, scope_end = last_line(source_text), is_toplevel = true))
         di += 1
 
 
@@ -119,7 +121,7 @@ function collect_params(bindings: ref[vec.Vec[Binding]], params: span[ast.Param]
         var p: ast.Param
         unsafe:
             p = read(params.data + pi)
-        bindings.push(Binding(name = p.name, line = p.line, scope_end = scope_end))
+        bindings.push(Binding(name = p.name, line = p.line, scope_end = scope_end, is_toplevel = false))
         pi += 1
 
 
@@ -152,14 +154,14 @@ function walk_stmts(bindings: ref[vec.Vec[Binding]], stmts: span[ast.Stmt], pare
             match read(stmts.data + si):
                 ast.Stmt.stmt_local as loc:
                     if loc.name != "_" and loc.name.len > 0:
-                        bindings.push(Binding(name = loc.name, line = loc.line, scope_end = parent_end))
+                        bindings.push(Binding(name = loc.name, line = loc.line, scope_end = parent_end, is_toplevel = false))
                     if loc.destructure_bindings.is_some():
                         let binds = loc.destructure_bindings.unwrap()
                         var bi: ptr_uint = 0
                         while bi < binds.len:
                             var bn: str = read(binds.data + bi)
                             if bn != "_":
-                                bindings.push(Binding(name = bn, line = loc.line, scope_end = parent_end))
+                                bindings.push(Binding(name = bn, line = loc.line, scope_end = parent_end, is_toplevel = false))
                             bi += 1
                 ast.Stmt.stmt_if as iff:
                     var ib: ptr_uint = 0
@@ -185,7 +187,7 @@ function walk_stmts(bindings: ref[vec.Vec[Binding]], stmts: span[ast.Stmt], pare
                         let mend = branch_body_end(arm.body, parent_end)
                         match arm.binding_name:
                             Option.some as bn:
-                                bindings.push(Binding(name = bn.value, line = arm.binding_line, scope_end = mend))
+                                bindings.push(Binding(name = bn.value, line = arm.binding_line, scope_end = mend, is_toplevel = false))
                             Option.none:
                                 pass
                         walk_stmt(bindings, arm.body, mend, source_text)
@@ -206,7 +208,7 @@ function walk_stmt(bindings: ref[vec.Vec[Binding]], sp: ptr[ast.Stmt]?, parent_e
                 walk_stmts(bindings, blk.statements, parent_end, source_text)
             ast.Stmt.stmt_local as loc:
                 if loc.name != "_" and loc.name.len > 0:
-                    bindings.push(Binding(name = loc.name, line = loc.line, scope_end = parent_end))
+                    bindings.push(Binding(name = loc.name, line = loc.line, scope_end = parent_end, is_toplevel = false))
             ast.Stmt.stmt_if as iff:
                 var ib: ptr_uint = 0
                 while ib < iff.branches.len:
@@ -228,7 +230,7 @@ function collect_for_bindings(bindings: ref[vec.Vec[Binding]], for_bindings: spa
         unsafe:
             fb = read(for_bindings.data + i)
         if fb.name != "_":
-            bindings.push(Binding(name = fb.name, line = line, scope_end = scope_end))
+            bindings.push(Binding(name = fb.name, line = line, scope_end = scope_end, is_toplevel = false))
         i += 1
 
 
@@ -318,3 +320,25 @@ public function is_in_same_scope(bindings: ref[vec.Vec[Binding]], name: str, tar
         bi += 1
 
     return occ_line >= target_line and occ_line <= target_end
+
+
+## The declaration line of the innermost non-top-level binding named `name`
+## that contains `cursor_line`, or none when the cursor is not on a local
+## binding (module-level and unknown names both yield none).
+public function local_binding_line(bindings: ref[vec.Vec[Binding]], name: str, cursor_line: ptr_uint) -> Option[ptr_uint]:
+    var best_line: ptr_uint = 0
+    var found = false
+    var bi: ptr_uint = 0
+    while bi < bindings.len():
+        let bp = bindings.get(bi) else:
+            break
+        let b = unsafe: read(bp)
+        if not b.is_toplevel and b.name.equal(name):
+            if cursor_line >= b.line and cursor_line <= b.scope_end:
+                if not found or b.line > best_line:
+                    best_line = b.line
+                    found = true
+        bi += 1
+    if not found:
+        return Option[ptr_uint].none
+    return Option[ptr_uint].some(value = best_line)

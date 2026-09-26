@@ -134,7 +134,7 @@ function collect_file_symbols(path: str, output: ref[vec.Vec[Entry]]) -> void:
                             kind = sym_kind,
                             path = string_mod.String.from_str(canonical.value.as_str()),
                             line = info.line,
-                            column = 0,
+                            column = info.column,
                         ))
                 match decl:
                     ast.Decl.decl_extending_block as ext:
@@ -146,10 +146,10 @@ function collect_file_symbols(path: str, output: ref[vec.Vec[Entry]]) -> void:
                             if mfn.name.len > 0:
                                 output.push(Entry(
                                     name = string_mod.String.from_str(mfn.name),
-                                    kind = 6,
+                                    kind = 12,
                                     path = string_mod.String.from_str(canonical.value.as_str()),
                                     line = mfn.line,
-                                    column = 0,
+                                    column = mfn.column,
                                 ))
                             mi += 1
                     _:
@@ -184,13 +184,13 @@ function decl_symbol_kind(d: ast.Decl) -> int:
         ast.Decl.decl_flags:
             return 10
         ast.Decl.decl_variant:
-            return 10
+            return 23
         ast.Decl.decl_interface:
             return 11
         ast.Decl.decl_type_alias:
             return 5
         ast.Decl.decl_opaque:
-            return 5
+            return 23
         ast.Decl.decl_const:
             return 14
         ast.Decl.decl_var:
@@ -202,34 +202,35 @@ function decl_symbol_kind(d: ast.Decl) -> int:
 struct DeclInfo:
     name: str
     line: ptr_uint
+    column: ptr_uint
 
 
 function decl_name_and_line(d: ast.Decl) -> DeclInfo:
     match d:
         ast.Decl.decl_function as fun:
-            return DeclInfo(name = fun.name, line = fun.line)
+            return DeclInfo(name = fun.name, line = fun.line, column = fun.column)
         ast.Decl.decl_struct as s:
-            return DeclInfo(name = s.name, line = s.line)
+            return DeclInfo(name = s.name, line = s.line, column = s.column)
         ast.Decl.decl_union as u:
-            return DeclInfo(name = u.name, line = u.line)
+            return DeclInfo(name = u.name, line = u.line, column = u.column)
         ast.Decl.decl_enum as e:
-            return DeclInfo(name = e.name, line = e.line)
+            return DeclInfo(name = e.name, line = e.line, column = e.column)
         ast.Decl.decl_flags as fl:
-            return DeclInfo(name = fl.name, line = fl.line)
+            return DeclInfo(name = fl.name, line = fl.line, column = fl.column)
         ast.Decl.decl_variant as vr:
-            return DeclInfo(name = vr.name, line = vr.line)
+            return DeclInfo(name = vr.name, line = vr.line, column = vr.column)
         ast.Decl.decl_interface as ifc:
-            return DeclInfo(name = ifc.name, line = ifc.line)
+            return DeclInfo(name = ifc.name, line = ifc.line, column = ifc.column)
         ast.Decl.decl_type_alias as ta:
-            return DeclInfo(name = ta.name, line = ta.line)
+            return DeclInfo(name = ta.name, line = ta.line, column = ta.column)
         ast.Decl.decl_opaque as op:
-            return DeclInfo(name = op.name, line = op.line)
+            return DeclInfo(name = op.name, line = op.line, column = op.column)
         ast.Decl.decl_const as c:
-            return DeclInfo(name = c.name, line = c.line)
+            return DeclInfo(name = c.name, line = c.line, column = c.column)
         ast.Decl.decl_var as v:
-            return DeclInfo(name = v.name, line = v.line)
+            return DeclInfo(name = v.name, line = v.line, column = v.column)
         _:
-            return DeclInfo(name = "", line = 0)
+            return DeclInfo(name = "", line = 0, column = 0)
 
 
 function skip_entry(name: str) -> bool:

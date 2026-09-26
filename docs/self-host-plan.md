@@ -34,7 +34,7 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
-**LSP: 36 modules, ~12.2k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 19/47 harness requests and 7/15 stress probes still differing (§0k).**
+**LSP: 36 modules, ~12.2k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 10/47 harness requests, 4/15 stress probes and 2 semantic-token comparisons still differing — 16 entries (§0k).**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
 **LSP logging: structured stderr, version+revision announcement, blank-line filtering.**
@@ -72,11 +72,11 @@ first difference *and* its build failure), zero-valued aggregate field types,
 `null` contextual typing, event-field modelling and generic-specialization
 parameter types (§0j).
 
-Last updated: 2026-09-26 (LSP parity: hover docs tables + hover token ranges +
-three response shapes + inferred local types in hover/inline hints landed —
-differing entries 36 -> 23, catalogue and ranked remainder in §0k; LSP feature
-parity is the active phase — see the phase order below; `lower`/CLI remaining work
-unchanged in §0j)
+Last updated: 2026-09-26 (LSP parity stage 1: selectionRange, codeLens,
+prepareCallHierarchy, local references, workspace/symbol scope, invalid-position
+null and the unterminated-string token closed — differing entries 23 -> 16,
+catalogue and working order in §0k; LSP feature parity is the active phase — see
+the phase order below; `lower`/CLI remaining work unchanged in §0j)
 
 ---
 
@@ -107,10 +107,11 @@ looked correct at the CLI level broke the compiler's own bootstrap.
 2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 8).
 3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
-   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 15 of 47 request
-   entries and 6 of 15 stress probes differing; all 23 differing entries are
-   catalogued by family in §0k.  The self-host survives the whole stress corpus
-   without a crash or hang.
+   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 10 of 47 request
+   entries, 4 of 15 stress probes and 2 semantic-token comparisons differing (16
+   entries); the remaining families and the working order are in §0k.  Stage 1
+   (seven isolated entries) is closed.  The self-host survives the whole stress
+   corpus without a crash or hang.
 4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
    bridge was assessed as not feasible without multi-threaded I/O
    (`dap-design.md`).
@@ -241,8 +242,35 @@ capabilities 30/30 keys identical; 15/47 requests and 6/15 probes differ; 0 time
 0 crashes.  Closed this session: the keyword/builtin hover docs tables and hover
 token ranges (5 entries), `signatureHelp`, `prepareRename`, `documentLink`'s
 tooltip, inferred local types in hover + inline hints (3), `definition/local`'s
-range and the aggregate-literal label hover `hover/field`.  The per-entry
-catalogue of what is left is in "Remaining LSP gaps" below.
+range and the aggregate-literal label hover `hover/field`.
+
+**Re-measured 2026-09-26 (stage 1 — seven isolated entries closed)**: capabilities
+30/30 keys identical; **10/47 requests, 4/15 probes and 2 semantic-token
+comparisons differ (16 entries)**; 0 timeouts; 0 crashes.  The stage-1 root causes:
+
+1. **`selectionRange`** — `utils.split_lines` now mirrors Ruby's `split("\n", -1)`
+   (a trailing newline keeps a final empty line) and `enclosing_block_range` stops
+   at the first body line instead of including the function header; the outer block
+   is `{36,0}-{47,0}` like the host.
+2. **`codeLens`** — interface methods are lensed, `data` is the host's
+   `{uri,name,line,column}` object, and `codeLens/resolve` answers the lens with
+   its command attached instead of a bare command object.
+3. **`prepareCallHierarchy`** — the item carries the *declaration* range and
+   selectionRange plus `data {name,uri,receiver_type}` (functions and
+   extending-block methods) instead of the call-site range.
+4. **`references/sum`** — the same-file scan was passed the URI where
+   `document_source` expects a path, so it always missed; names that resolve to a
+   non-top-level binding now go through `lsp/scope.mt` (`Binding` records
+   `is_toplevel`, `local_binding_line` finds the innermost local).
+5. **`workspace/symbol`** — results are scoped to the client root (the index also
+   walks the `std/` ancestor), index entries carry the name-token column, and the
+   kind mapping follows the host (`variant`/`opaque` -> 23, extending methods -> 12).
+6. **`stress/wrong-param-type`** — `extract_position_params` reports whether the
+   request carried a usable position object; hover answers `null` when it did not
+   (the host raises and rescues to null).
+7. **`stress/unterminated-source+tokens`** — `scan_string_segment` is bounded by
+   the line (`line_stop` was passed but ignored), so an unterminated literal ends
+   the token at end-of-line and reports the real line/column instead of `(0,0)`.
 
 ### Crash / memory-safety verification
 
@@ -265,20 +293,18 @@ catalogue of what is left is in "Remaining LSP gaps" below.
 
 ### Remaining LSP gaps (all reproducible with the harness)
 
-Re-measured 2026-09-26: 23 differing entries — 2 semantic-token comparisons, 15 of
-47 requests, 6 of 15 probes.  The families, ranked by entries moved per unit of
-work (the per-family approach is the Evidence column):
+Re-measured 2026-09-26 after stage 1: **16 differing entries** — 2 semantic-token
+comparisons, 10 of 47 requests, 4 of 15 probes.  The remaining families, in the
+working order for this phase (quick and mid-weight first, the two heavy ports
+last):
 
 | # | Family | Entries | Evidence / target |
 | --- | --- | --- | --- |
-| 1 | **Completion** | `completion/member`, `completion/import-member`, `completion/top-level`, `stress/unicode+completion` | host returns fields (`kind 8`, `sortText "0_x"`, `detail "x: int"`, `data {uri,name}`) then methods (`kind 6`, `"1_sum"`, `detail "sum() -> int"`, `insertText "sum()"`); self returns the keyword list.  The receiver-type resolution piece now exists (`type_render.initializer_type` + `qualified/short` rendering, wired into hover) — completion needs the same lookup in `resolve_receiver_type_name`, plus the host's `sortText` buckets, `data`, `labelDetails`, snippets, and its fallback for an unresolvable alias (the file's method list, `completion.rb:264-297`); `stress/unicode+completion` must return **no** items |
-| 2 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets → `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia → `reconstruct_normalized` → blank lines → wrap) |
-| 3 | **`documentSymbol`** | `documentSymbol`, `documentSymbol/beta`, `stress/full-didChange+symbols` | host ranges are real and carry `detail` (`int` for fields, `implementation` for `extending` blocks, `-> int` for functions), field children `kind 8`, methods `kind 6`, plus one symbol per `extending` block; self emits `character:0` ranges, `kind 13` fields, no detail, no implementation symbols.  `type_render.short_name` already renders the host's field/return detail text |
-| 4 | **Diagnostics / classification** | `diagnostic/pull`, `workspace/diagnostic`, `stress/unterminated-source+diagnostic`, `stress/wrong-param-type`, `stress/unterminated-source+tokens`, `stress/unicode+semanticTokens` | host codes/stages/ranges (`import/load-error` at the module name, `sema/error` entries) vs self `module/error` at the alias + lint warnings; `workspace/diagnostic` returns the root file only; unterminated source must report the lex errors; a wrong-typed position must answer `null`; one token is `method`(13) vs `macro`(14) and one carries `defaultLibrary`(512); unicode completion must be empty |
-| 5 | **Small shapes (left)** | `codeLens`, `prepareCallHierarchy`, `selectionRange` | `codeLens.data` = `{uri,name,line,column}` **and** the lens set differs (host also lenses the interface method `area`); `prepareCallHierarchy` returns the declaration range + `data {name,uri,receiver_type}` (self returns the call-site range, no data); `selectionRange`'s outer block: host `{36,0}-{47,0}` (body start → EOF) vs self `{35,0}-{46,16}` (function header → last line's end) |
-| 6 | **Local references** | `references/sum` | host finds both `s` occurrences (declaration + use); self returns `[]` — references are resolved through the workspace index, which does not know local bindings.  `lsp/scope.mt` (`collect_bindings` + `identifier_occurrences`, already used by rename) is the tool |
-| 7 | **`workspace/symbol` scope** | `workspace/symbol` | host returns the declaration in the workspace with a name-token range; self returns repo-wide `compute*` matches (index walks the `std/` ancestor root — same scope bug as the valgrind note above) |
-| 8 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}` |
+| 1 | **Completion** | `completion/member`, `completion/import-member`, `completion/top-level`, `stress/unicode+completion` | host returns fields (`kind 8`, `sortText "0_x"`, `detail "x: int"`, `data {uri,name}`) then methods (`kind 6`, `"1_sum"`, `detail "sum() -> int"`, `insertText "sum()"`); self returns the keyword list for the receiver requests and `{"items":[]}` for `completion/import-member` (its module-member branch fails to resolve).  The receiver-type resolution piece now exists (`type_render.initializer_type` + `qualified/short` rendering, wired into hover) — completion needs the same lookup in `resolve_receiver_type_name`, plus the host's `sortText` buckets, `data`, `labelDetails`, snippets, and its fallback for an unresolvable alias (the file's method list, `completion.rb:264-297`); `stress/unicode+completion` must return **no** items |
+| 2 | **`documentSymbol`** | `documentSymbol`, `documentSymbol/beta`, `stress/full-didChange+symbols` | host ranges are real and carry `detail` (`int` for fields, `implementation` for `extending` blocks, `-> int` for functions), field children `kind 8`, methods `kind 6`, plus one symbol per `extending` block; self emits `character:0` ranges, `kind 13` fields, no detail, no implementation symbols.  `type_render.short_name` already renders the host's field/return detail text |
+| 3 | **Diagnostics / semantic tokens** | `diagnostic/pull`, `workspace/diagnostic`, `stress/unterminated-source+diagnostic`, `stress/unicode+semanticTokens`, `semanticTokens/full`, `semanticTokens/range` | host codes/stages/ranges (`import/load-error` at the module name, `sema/error` entries) vs self `module/error` at the alias + lint warnings; `workspace/diagnostic` emits only cache misses, so the root document is dropped; an unterminated source must report the lex errors through the loader; the full/range token streams classify `s.sum()`/`s.len` as `variable`(8) where the host uses `method`(13)/`property`(9) and never emit `defaultLibrary`(512) for builtin names — the earlier "`method`(13) vs `macro`(14)" note was stale (the observed pair is `method` vs `variable`; neither server emits `macro`), and the import `declaration` modifier sits on the module path instead of the alias |
+| 4 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets -> `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia -> `reconstruct_normalized` -> blank lines -> wrap; ~1.1–1.8k MT lines) |
+| 5 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  The Bindings section needs binding-identity data the self analyzer does not model |
 
 ### Where the next session starts (LSP parity)
 
@@ -294,18 +320,25 @@ ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json --full
 tools/bootstrap.sh -j 16          # fixed point + tests, before every commit
 ```
 
-Then take the rows above in order; the first three, with their opening files:
+Stage 1 is closed; take the remaining rows in the working order, each with its
+opening files:
 1. **Completion** — `projects/mtc/src/mtc/lsp/completion.mt`
    (`resolve_receiver_type_name`, `type_method_completions`,
    `module_member_completions`, `build_completions_json`, `append_item`);
    `type_render.initializer_type` already provides the receiver's inferred type.
-2. **Formatting (tidy)** — new `pretty_printer/tidy_formatter.mt` +
-   `lexer/lexer.mt` (trivia) + `lsp/formatting.mt` (segment formatting);
-   `lib/milk_tea/tooling/formatter.rb` + `lib/milk_tea/core/cst.rb` are the
-   reference (~500 lines to port), `§7` in this file is the design note.
-3. **`documentSymbol`** — `projects/mtc/src/mtc/lsp/symbols.mt`; the host's
+2. **`documentSymbol`** — `projects/mtc/src/mtc/lsp/symbols.mt`; the host's
    `enrich_with_children` (`lib/milk_tea/lsp/server/formatting.rb`) is the spec,
    and `type_render.short_name` already renders the `detail` text.
+3. **Diagnostics + semantic tokens** — `lsp/pull_diagnostics.mt`,
+   `lsp/diagnostics.mt`, `lsp/semantic_tokens.mt`, `loader/module_loader.mt`,
+   `parser/parser.mt` (lex diagnostics); host `diagnostics.rb` and
+   `semantic_tokens.rb` are the reference.
+4. **`milkTea/debugInfo`** — `lsp/debug_info.mt` + the `lsp/server.mt` dispatch;
+   host `tooling/debug_info_formatter.rb` is the spec.
+5. **Formatting (tidy)** — new `pretty_printer/tidy_formatter.mt` +
+   `lexer/lexer.mt` (trivia) + `lsp/formatting.mt` (segment formatting);
+   `lib/milk_tea/tooling/formatter.rb` + `lib/milk_tea/core/cst.rb` are the
+   reference, `§7` in this file is the design note.
 
 Each phase is done only when its harness entries are byte-equal **and** the global
 counters move; the docs in this file and in `lsp-design.md` are synced in the
@@ -1994,7 +2027,7 @@ The self-host formatter (`mtc format`) supports only **canonical** mode: parse �
 
 ### 7.2 Key Gap: CST Builder
 
-All non-canonical modes (`preserve`, `tidy`) require a **Concrete Syntax Tree** (CST) representation that preserves comments, whitespace, and original formatting details. Ruby's `CSTBuilder` (`lib/milk_tea/core/cst_builder.rb`) constructs this from the token stream. The self-host has no CST builder — only an AST-based pretty printer.
+All non-canonical modes (`preserve`, `tidy`) require a **Concrete Syntax Tree** (CST) representation that preserves comments, whitespace, and original formatting details. Ruby's `CSTBuilder` (`lib/milk_tea/core/cst.rb`) constructs this from the token stream. The self-host has no CST builder — only an AST-based pretty printer.
 
 Building a CST builder is the **gateway dependency** for both the `--tidy` and `--preserve` formatter modes, and for the linter's `line-too-long` wrap-fix machinery.
 

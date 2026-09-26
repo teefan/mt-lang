@@ -69,9 +69,13 @@ public function source_line(source: str, line_no: ptr_uint) -> str:
 
 
 ## Split `source` at LF newlines into a vector of lines (without the
-## trailing newline characters).
+## trailing newline characters).  Mirrors Ruby's `split("\n", -1)`: a
+## trailing newline yields a final empty line, and an empty source
+## yields no lines.
 public function split_lines(source: str) -> vec.Vec[str]:
     var result = vec.Vec[str].create()
+    if source.len == 0:
+        return result
     var start: ptr_uint = 0
     var i: ptr_uint = 0
     while i < source.len:
@@ -79,6 +83,5 @@ public function split_lines(source: str) -> vec.Vec[str]:
             result.push(source.slice(start, i - start))
             start = i + 1
         i += 1
-    if start < source.len:
-        result.push(source.slice(start, source.len - start))
+    result.push(source.slice(start, source.len - start))
     return result

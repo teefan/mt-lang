@@ -13,6 +13,7 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -47,8 +48,6 @@ public function handle_prepare_call_hierarchy(
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var analysis = analyzer.check_source_file(ast_file)
-
     let token_opt = cursor.identifier_at(source, line, character)
     match token_opt:
         Option.none:
@@ -56,11 +55,53 @@ public function handle_prepare_call_hierarchy(
             return
         Option.some as token_payload:
             let name = token_payload.value.text
+
+            # The host reports the declaration site, preferring a top-level
+            # function and falling back to an extending-block method.
             var found = false
             var kind: int = KIND_FUNCTION
+            var decl_line: ptr_uint = 0
+            var decl_column: ptr_uint = 0
+            var receiver_type: str = ""
 
-            unsafe:
-                found = analysis.functions.contains(name)
+            var di: ptr_uint = 0
+            while di < ast_file.declarations.len and not found:
+                var decl: ast.Decl
+                unsafe:
+                    decl = read(ast_file.declarations.data + di)
+                match decl:
+                    ast.Decl.decl_function as fun:
+                        if fun.name.equal(name):
+                            found = true
+                            decl_line = fun.line
+                            decl_column = fun.column
+                    _:
+                        pass
+                di += 1
+
+            if not found:
+                var ei: ptr_uint = 0
+                while ei < ast_file.declarations.len and not found:
+                    var decl2: ast.Decl
+                    unsafe:
+                        decl2 = read(ast_file.declarations.data + ei)
+                    match decl2:
+                        ast.Decl.decl_extending_block as ext:
+                            var mi: ptr_uint = 0
+                            while mi < ext.methods.len and not found:
+                                var mfn: ast.Method
+                                unsafe:
+                                    mfn = read(ext.methods.data + mi)
+                                if mfn.name.equal(name):
+                                    found = true
+                                    kind = KIND_METHOD
+                                    decl_line = mfn.line
+                                    decl_column = mfn.column
+                                    receiver_type = render_receiver_type(ext.type_name)
+                                mi += 1
+                        _:
+                            pass
+                    ei += 1
 
             if not found:
                 proto.write_response(id, json.null_value())
@@ -69,7 +110,16 @@ public function handle_prepare_call_hierarchy(
             var result = string.String.create()
             defer: result.release()
             result.append("[")
-            append_call_item(ref_of(result), name, kind, uri, token_payload.value.line, token_payload.value.column, token_payload.value.length)
+            append_call_item(
+                ref_of(result),
+                name,
+                kind,
+                uri,
+                decl_line,
+                decl_column,
+                name.len,
+                receiver_type
+            )
             result.append("]")
             proto.write_response_raw(id, result.as_str())
 
@@ -435,6 +485,7 @@ function append_call_item(
     line: ptr_uint,
     column: ptr_uint,
     length: ptr_uint,
+    receiver_type: str,
 ) -> void:
     let lz = if line > 0: line - 1 else: 0z
     let colz = if column > 0: column - 1 else: 0z
@@ -460,8 +511,26 @@ function append_call_item(
     output.append_format(f"#{lz}")
     output.append(",\"character\":")
     output.append_format(f"#{colz + length}")
-    output.append("}}}")
+    output.append("}},\"data\":{\"name\":\"")
+    proto.append_escaped(output, name)
+    output.append("\",\"uri\":\"")
+    proto.append_escaped(output, uri)
+    output.append("\",\"receiver_type\":")
+    if receiver_type.len == 0:
+        output.append("null")
+    else:
+        output.append("\"")
+        proto.append_escaped(output, receiver_type)
+        output.append("\"")
+    output.append("}}")
 
+
+## Render an extending block's receiver type for the call-hierarchy data.
+function render_receiver_type(type_name: ptr[ast.TypeRef]?) -> str:
+    let t = type_name else:
+        return ""
+    let ty = unsafe: read(t)
+    return ast_formatter.render_type(ty)
 
 function append_incoming_call(
     output: ref[string.String],

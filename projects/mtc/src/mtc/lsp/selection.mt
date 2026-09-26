@@ -195,8 +195,7 @@ function enclosing_block_range(lines: ref[vec.Vec[str]], line: ptr_uint) -> Opti
     var start_line = line
     while start_line > 0:
         let prev = utils.line_at(lines, start_line - 1)
-        if not utils.is_blank(prev) and utils.indent_of(prev) < indent:
-            start_line -= 1
+        if not (utils.is_blank(prev) or utils.indent_of(prev) >= indent):
             break
         start_line -= 1
 
@@ -214,8 +213,3 @@ function enclosing_block_range(lines: ref[vec.Vec[str]], line: ptr_uint) -> Opti
         end_line = end_line,
         end_character = utils.line_at(lines, end_line).len
     ))
-
-
-
-
-

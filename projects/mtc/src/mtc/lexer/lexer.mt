@@ -701,7 +701,7 @@ function scan_string_adjacent(
     let source = session.source
     var consumed_lines: ptr_uint = 1
 
-    let first_end = scan_string_segment(session, start, line_start + line_content_len, is_cstring)
+    let first_end = scan_string_segment(session, start, line_start + line_content_len, line_number, line_start, is_cstring)
     var segment_end = first_end
 
     let remainder_blank = line_remainder_is_blank(source, segment_end, line_start + line_content_len)
@@ -751,7 +751,7 @@ function scan_string_adjacent(
                 if not (ch0 == DOUBLE_QUOTE):
                     break
 
-            let seg_end = scan_string_segment(session, nl_start + i, nl_start + nl_len, is_cstring)
+            let seg_end = scan_string_segment(session, nl_start + i, nl_start + nl_len, next_line_number, nl_start, is_cstring)
 
             if not line_remainder_is_blank(source, seg_end, nl_start + nl_len):
                 break
@@ -775,7 +775,18 @@ function scan_string_adjacent(
     return StringScanResult(next_pos = segment_end, lines_consumed = consumed_lines)
 
 
-function scan_string_segment(session: ref[LexSession], start: ptr_uint, line_stop: ptr_uint, is_cstring: bool) -> ptr_uint:
+## Scan one line's string segment.  The scan is bounded by `line_stop`, so an
+## unterminated literal ends the token at the end of its line and is reported
+## at the opening quote, exactly as the host does (its segments never span a
+## newline; continuation is handled by `scan_string_adjacent`).
+function scan_string_segment(
+    session: ref[LexSession],
+    start: ptr_uint,
+    line_stop: ptr_uint,
+    line_number: ptr_uint,
+    line_start: ptr_uint,
+    is_cstring: bool,
+) -> ptr_uint:
     let source = session.source
     var pos = start
     if is_cstring:
@@ -783,23 +794,23 @@ function scan_string_segment(session: ref[LexSession], start: ptr_uint, line_sto
     else:
         pos += 1
 
-    while pos < session.src_len:
+    while pos < line_stop:
         let b = unsafe: ubyte<-read(source.data + pos)
 
         if b == DOUBLE_QUOTE:
             return pos + 1
 
         if b == BACKSLASH:
-            if pos + 1 >= session.src_len:
-                session_fatal(session, c"unterminated string literal", 0, 0)
-                return pos
+            if pos + 1 >= line_stop:
+                session_fatal(session, c"unterminated string literal", line_number, start - line_start + 1)
+                return line_stop
             pos += 2
             continue
 
         pos += 1
 
-    session_fatal(session, c"unterminated string literal", 0, 0)
-    return pos
+    session_fatal(session, c"unterminated string literal", line_number, start - line_start + 1)
+    return line_stop
 
 
 # =============================================================================

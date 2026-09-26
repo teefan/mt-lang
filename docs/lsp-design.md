@@ -436,7 +436,7 @@ fixed the same day.
 
 | Feature | Status |
 |---------|--------|
-| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 15 of 47 requests and 6 of 15 stress probes still differ) |
+| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 10 of 47 requests, 4 of 15 stress probes and 2 semantic-token comparisons still differ — 16 entries) |
 | Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
 | Config application | **DONE** — parse workspace/configuration response |
 | Per-request tracing | **DONE** — `[DEBUG] lsp: → <id> <method>` |
@@ -454,4 +454,4 @@ fixed the same day.
 | Workspace dependency graph (didChangeWatchedFiles) | **DONE** — broad cache invalidation with per-URI clearing for renames |
 | Multi-root workspace reindex (didChangeWorkspaceFolders) | **DONE** — cache clear + index stale flag |
 | Workspace index rename (willRenameFiles) | **DONE** — per-oldUri cache clearing + index stale flag |
-| Sporadic SIGSEGV | **INVESTIGATING** — crash-guards added; per-request tracing helps isolate |
+| Sporadic SIGSEGV | **NO REPRODUCTIONS** — the 2026-09-26 stress corpus (15 adversarial probes) plus a valgrind run over a full request sweep completed with zero crashes, invalid reads/writes or invalid frees |
