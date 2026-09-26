@@ -4378,7 +4378,18 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             let sig_ptr = ctx.method_sigs.get(method_key(n.name, method_name))
             if sig_ptr != null:
                 return Option[FnSig].some(value = unsafe: read(sig_ptr))
-            return Option[FnSig].none
+            if n.module_name.len > 0:
+                let bp = lookup_binding(ctx, n.module_name)
+                if bp != null:
+                    let bound = unsafe: read(bp).method_sigs.get(method_key(n.name, method_name))
+                    if bound != null:
+                        return Option[FnSig].some(value = unsafe: read(bound))
+            # A raw or re-exported struct resolves its methods wherever they are
+            # declared (`extending Bitset:` lives in std.bitset, while the value's
+            # type may arrive as a bare name from an imported signature): the
+            # editable check needs the kind, so the search must not stop at the
+            # current module.
+            return lookup_method_anywhere(ctx, n.name, method_name)
         types.Type.ty_imported as im:
             let bp = lookup_binding(ctx, im.module_name)
             if bp != null:

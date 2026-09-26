@@ -534,9 +534,16 @@ deliberate value-add; files where it fires differ by design).
    `let v` + `v.push(1)` was accepted silently; the check now runs before the
    type is substituted, and its message matches the host
    (`cannot call editable method push on an immutable receiver`, not
-   `… method v.push … on an immutable value`).  Measured: prefer-let hints on
-   `examples/data_structures.mt` 28 → 3, so the remaining linter delta there is
-   the self-host-only `dead-assignment` rule (4 hints the host has no rule for).
+   `… method v.push … on an immutable value`).  That exposed one more gap:
+   `resolve_method_sig`'s bare-name case stopped at the current module, so a
+   value whose type arrives as a re-exported/raw struct name
+   (`bitset.with_capacity(64)` → `Bitset`) never resolved `Bitset.set`, and the
+   editable check stayed silent where the host reports it; it now also consults
+   the receiver's module binding and every visible binding, like
+   `lookup_method_anywhere`.  Measured: prefer-let hints on
+   `examples/data_structures.mt` 28 → **0** (the host reports none), so the
+   linter's only remaining delta there is the self-host-only `dead-assignment`
+   rule (4 hints the host has no rule for).
    The `mtc lint` subcommand and its `--fix` still lint standalone files, so they
    pass no sites and keep the old hints; the `check` path and the LSP's
    diagnostics use the root analysis.  **Known hazard (pre-existing, not a
