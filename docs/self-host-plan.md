@@ -537,9 +537,17 @@ deliberate value-add; files where it fires differ by design).
    `… method v.push … on an immutable value`).  Measured: prefer-let hints on
    `examples/data_structures.mt` 28 → 3, so the remaining linter delta there is
    the self-host-only `dead-assignment` rule (4 hints the host has no rule for).
-   The `mtc lint` subcommand and `mtc fix` still lint standalone files, so they
+   The `mtc lint` subcommand and its `--fix` still lint standalone files, so they
    pass no sites and keep the old hints; the `check` path and the LSP's
-   diagnostics use the root analysis.
+   diagnostics use the root analysis.  **Known hazard (pre-existing, not a
+   regression):** `mtc lint --fix --select prefer-let` therefore still rewrites
+   `var v = vec.Vec[int].create()` to `let v` while `v.push(1)` remains, i.e. it
+   emits code the analyzer rejects.  The fix is to make the `lint` command
+   loader-backed like `check` (pass the root analysis' `editable_receiver_sites`
+   to `lint_source_opts` and `fix_engine.fix_source`), which also brings its
+   hint set to parity; a conservative "skip prefer-let when the binding is a
+   call receiver" guard in the fix engine is the alternative if the command must
+   stay standalone.
 
 Harness: a std-generic fixture (`containers.mt`) locks the outline details and
 the diagnostics on std-generic code (including the editable mutation case), and
