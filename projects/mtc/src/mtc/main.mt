@@ -24,6 +24,7 @@ import mtc.parser.state as pstate
 import mtc.parser.ast as ast
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.pretty_printer.ir_formatter as ir_formatter
+import mtc.formatter.tidy as tidy
 import mtc.loader.path_resolver as resolver
 import mtc.loader.module_loader as loader
 import mtc.lowering.lowering as lowering
@@ -3369,6 +3370,8 @@ function format_command(args: span[str]) -> int:
     var check_mode = false
     var write_mode = false
     var timings = false
+    var mode = tidy.FormatMode.safe
+    var explicit_max_line_length: ptr_uint = 0
     var ai: ptr_uint = 1
     while ai < args.len:
         let arg = args[ai]
@@ -3380,15 +3383,52 @@ function format_command(args: span[str]) -> int:
             timings = true
             ai += 1
             continue
-        if arg == "--write":
+        if arg == "--write" or arg == "-w":
             write_mode = true
             ai += 1
+            continue
+        if arg == "--preserve":
+            mode = tidy.FormatMode.preserve
+            ai += 1
+            continue
+        if arg == "--canonical":
+            mode = tidy.FormatMode.canonical
+            ai += 1
+            continue
+        if arg == "--safe":
+            mode = tidy.FormatMode.safe
+            ai += 1
+            continue
+        if arg == "--tidy":
+            mode = tidy.FormatMode.tidy
+            ai += 1
+            continue
+        if arg == "--max-line-length":
+            if ai + 1 >= args.len:
+                stdio.print_line("error: --max-line-length requires a value")
+                return 1
+            let parsed = parse_positive_int(args[ai + 1]) else:
+                stdio.print_line("--max-line-length must be a positive integer")
+                return 1
+            explicit_max_line_length = parsed
+            ai += 2
+            continue
+        if arg == "--":
+            ai += 1
+            while ai < args.len:
+                if file_path.is_none():
+                    file_path = Option[str].some(value= args[ai])
+                ai += 1
             continue
         if file_path.is_none():
             file_path = Option[str].some(value= arg)
             ai += 1
             continue
         stdio.print_format(c"error: unknown option %.*s\n", int<-(arg.len), arg.data)
+        return 1
+
+    if check_mode and write_mode:
+        stdio.print_line("format options --check and --write cannot be combined")
         return 1
 
     let path = file_path else:
@@ -3408,14 +3448,9 @@ function format_command(args: span[str]) -> int:
             defer: source.release()
             let source_text = source.as_str()
 
-            var diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: diags.release()
-            let file = parser.parse_source(source_text, ref_of(diags))
-            if diags.len() > 0:
+            var formatted = tidy.format_source(source_text, path, mode, explicit_max_line_length) else:
                 stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
                 return 1
-
-            var formatted = fmt.format_source_file(file)
             defer: formatted.release()
             let fmt_text = formatted.as_str()
             if timings:

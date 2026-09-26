@@ -16,8 +16,8 @@
 > [self-host-stress-todo.md](./self-host-stress-todo.md).
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**
-Stage2 == stage3 byte-identical; `tools/bootstrap.sh` self-test: **498 tests
-across 12 files, 0 failed** (measured 2026-09-25).
+Stage2 == stage3 byte-identical; `tools/bootstrap.sh` self-test: **506 tests
+across 13 files, 0 failed** (measured 2026-09-26).
 **Linter parity: 14/16 common rules byte-identical with Ruby on language_baseline.mt.**
 **Raylib parity: 217/219 build and run** (2026-07-16 sweep).
 **Language examples: 11/15 build under `--no-cache`** (measured 2026-09-25:
@@ -38,7 +38,8 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
-**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 3/47 harness requests and 2/15 stress probes still differing — 5 entries (§0k); both semantic-token comparisons are byte-equal.**
+**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 2/51 harness requests and 2/15 stress probes still differing — 4 entries (§0k); both semantic-token comparisons are byte-equal.  The 2026-09-26 VS Code startup crash (a `codeLens/resolve` double free) is fixed and the harness now drives the resolve endpoints a real client sends.**
+**Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 700/700 both modes); the LSP's `formatting` and `rangeFormatting` entries are closed, and the canonical AST printer still drops comments (host reattaches trivia).**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
 **LSP logging: structured stderr, version+revision announcement, blank-line filtering.**
@@ -50,16 +51,18 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (remaining deltas from cosmetic emitter gaps).**
 
 **Remaining CLI gaps: `deps` and `docs` (absent from the self-host command
-list), `--bundle`/`--archive`, `--jobs`, Wasm/emcc, formatter CST modes
-(`--tidy`, `--preserve`).**  `snapshot` and `debug` are implemented (§5.8a).
-`rake "cli:parity"` (measured 2026-09-25) is
-**21 match / 39 differ / 1 pending of 61 cases**; the differing cases are
+list), `--bundle`/`--archive`, `--jobs`, Wasm/emcc.**  `snapshot` and `debug`
+are implemented (§5.8a); the formatter CST modes (`--tidy`, `--preserve`) landed
+on 2026-09-26 (§7).
+`rake "cli:parity"` (measured 2026-09-26) is
+**22 match / 39 differ / 0 pending of 61 cases** (the pending case was the
+`format` mode-flag case, now matching); the differing cases are
 message text/channel/argument-precedence differences, not missing commands
 (§0j).  Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-**`--sexpr` parity (measured 2026-09-25 over 694 files): lex 694/694
-byte-identical; parse 690 comparable files byte-identical with 0 differences
-(4 host-side rejections: external files, platform-pinned); `lower` 38 match /
+**`--sexpr` parity (measured 2026-09-26 over 701 files): lex 700/700 comparable
+byte-identical (1 host-side rejection); parse 696 comparable files byte-identical
+with 0 differences (5 host-side rejections: external files, platform-pinned); `lower` 38 match /
 604 differ / 52 host-rejected / 0 self-rejected.**  The ref/lifetime and dyn
 vtable categories are closed, and so are the three levers §0j ranked first —
 **raw-module method linkage naming**, **unsigned literals in the unsigned
@@ -76,12 +79,11 @@ first difference *and* its build failure), zero-valued aggregate field types,
 `null` contextual typing, event-field modelling and generic-specialization
 parameter types (§0j).
 
-Last updated: 2026-09-26 (LSP parity stage 4: the diagnostics family — buffer-backed
-analysis, lex diagnostics through the loader, host codes/stages/ranges,
-`workspace/diagnostic` — and the semantic-token scanner port are closed;
-differing entries 9 -> 5, with the two remaining in-scope entries diagnosed as a
-parser-recovery port and a host facts-lag artifact; catalogue and working order
-in §0k; `lower`/CLI remaining work unchanged in §0j)
+Last updated: 2026-09-26 (LSP parity stage 5: the formatting family — trivia-aware
+lexing, the CST reconstruct, the tidy wrap + blank-line pipeline, and the LSP mode
+dispatch — leaves the harness at 3 differing entries, and `tools/format_parity.rb`
+measures tidy 700/700 and preserve 700/700 byte-identical; catalogue and working
+order in §0k; `lower`/CLI remaining work unchanged in §0j)
 
 ---
 
@@ -96,7 +98,8 @@ workstream doc for the area you are touching:
 | `lower` dump parity | §0j "Remaining work" 1–6, §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
 | Hard build failures (`examples/*`, `test/mt`) | §0j item 7 | `build/stage2/mtc test test/mt -I .` and building the four examples |
 | CLI behavior parity | §0j item 8, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
-| LSP feature parity (**in progress**, §0k) | §0k's gap list + the stage 5/6 capsules, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`), plus valgrind and the headless-Neovim smoke test for behavior changes |
+| LSP feature parity (**in progress**, §0k) | §0k's gap list + the stage 6 capsule, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`), plus valgrind and the headless-Neovim smoke test for behavior changes |
+| Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (preserve/tidy must stay 700/700; canonical is the comment-reattachment delta) |
 | DAP | `docs/dap-design.md` | `build/stage2/mtc test projects/mtc` covers the compiler, not DAP; drive `mtc dap` by hand (no self-host DAP harness yet) |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
@@ -112,12 +115,14 @@ looked correct at the CLI level broke the compiler's own bootstrap.
 2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 8).
 3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
-   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 3 of 47 request
-   entries and 2 of 15 stress probes differing (5 entries), and 0 semantic-token
+   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 2 of 51 request
+   entries and 2 of 15 stress probes differing (4 entries), and 0 semantic-token
    comparisons; the remaining families and the working order are in §0k.  Stages 1
-   (seven isolated entries), 2 (completion), 3 (documentSymbol) and 4
-   (diagnostics + semantic tokens) are closed.  The self-host survives the whole
-   stress corpus without a crash or hang.
+   (seven isolated entries), 2 (completion), 3 (documentSymbol), 4
+   (diagnostics + semantic tokens), 5 (formatting/tidy — plus the
+   `tools/format_parity.rb` mode sweep) and 5b (the VS Code startup crash and the
+   resolve endpoints the harness was missing) are closed.  The self-host survives
+   the whole stress corpus without a crash or hang.
 4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
    bridge was assessed as not feasible without multi-threaded I/O
    (`dap-design.md`).
@@ -143,14 +148,22 @@ ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
 
 - builds one synthetic multi-module workspace at a **fixed path**
   (`tmp/lsp-parity-ws`, so URIs compare equal), opens it with
-  `initialize.rootUri`, and drives a 47-request corpus covering every endpoint
+  `initialize.rootUri`, and drives a 51-request corpus covering every endpoint
   (hover at 8 positions, definition/declaration/typeDefinition/implementation,
   references, documentHighlight/Symbol, folding/selection/linkedEditing ranges,
   completion at 4 positions, signatureHelp, prepareRename/rename, inlayHint,
   semanticTokens full/range, codeLens, codeAction, documentLink,
   call/typeHierarchy prepares, pull + workspace diagnostics,
   `milkTea/documentContext`, `milkTea/debugInfo`, workspace/symbol, formatting,
-  rangeFormatting, onTypeFormatting, cross-file hover/symbols);
+  rangeFormatting, onTypeFormatting, willSaveWaitUntil, cross-file hover/symbols);
+- **follows up with the resolve endpoints a real editor calls** —
+  `codeLens/resolve`, `completionItem/resolve` and `documentLink/resolve`, with
+  payloads derived from the responses just recorded — plus the notification-form
+  `didSave`, `$/setTrace` and `milkTea/documentContext`, and (after the measured
+  probes) the cache-invalidating `didChangeConfiguration`,
+  `didChangeWatchedFiles`, `didChangeWorkspaceFolders` and `willRenameFiles`
+  notifications.  Stage 5b: the resolve endpoints were missing, which is how the
+  VS Code startup double free shipped;
 - **normalizes** the volatile parts before comparing (workspace path, `resultId`
   fingerprints) and decodes semantic tokens with each server's own legend so
   token *types* compare by name, not by legend index;
@@ -303,6 +316,109 @@ diagnostics + token paths (0 invalid reads/writes; leaks only), and a headless
 Neovim 0.12 attach/edit/shutdown smoke test (an unsaved edit changes the pull
 diagnostics, proving the buffer path).
 
+### Fixed this session (2026-09-26, stage 5 — formatting/tidy)
+
+**Re-measured**: capabilities 30/30 keys identical; **1/47 requests and 2/15
+stress probes differ (3 entries)**; 0 timeouts; 0 crashes; both semantic-token
+comparisons byte-equal.  Entries closed: `formatting`, `rangeFormatting`.
+
+1. **Trivia-aware lexing** (`mtc/lexer/trivia.mt` + `lexer.mt`): a
+   `lex_with_trivia` mode records blank lines, comment-only lines, indentation,
+   interior space runs, inline comments and grouping newlines in source order —
+   a port of `core/lexer.rb:136-193, 207-292, 424-440` and
+   `core/lexer/trivia.rb`.  `lex`/`lex_reporting` are untouched, so the
+   compiler's token stream and the `--sexpr lex` dump stay byte-identical.
+2. **CST** (`mtc/formatter/cst.mt`): `build_cst`, `reconstruct` (verbatim) and
+   `reconstruct_normalized` (interior runs collapse to one space; indentation,
+   comments and blank lines stay) — a port of `core/cst.rb`.  The Ruby CST
+   attaches leading/trailing trivia per token; the port merges the
+   source-ordered trivia list with the token list by offset, which emits the
+   same bytes because trivia never crosses a token span.
+3. **Tidy pipeline** (`mtc/formatter/tidy.mt`): the mode dispatch
+   (`safe`/`canonical` → the existing AST printer, `preserve` → CST reconstruct,
+   `tidy` → normalize → wrap → blank lines; `formatter.rb:13-24, 54-69`),
+   `normalize_blank_lines` with its helper set (`225-621`) and the long-line wrap
+   machinery (`71-216`, `623-778`) including its 100-iteration cap and
+   per-candidate re-parse validation.
+4. **LSP handlers** (`lsp/formatting.mt`) match `lsp/server/formatting.rb:646-693`:
+   the mode comes from the client configuration (empty ⇒ `tidy`, the host's
+   default), a full format always answers one edit ending at `count("\n") + 1`,
+   `rangeFormatting` formats the *segment* (the requested range's bytes) and
+   carries the requested range, and any formatter failure answers `[]`.  The
+   advertised-but-unhandled `textDocument/willSaveWaitUntil` capability now has
+   its host handler too (`lsp/server/text_documents.rb:109-135`: one edit, or
+   `null` when the buffer is already formatted; the host's 0.5 s cap is not
+   ported).
+5. **CLI**: `mtc format` gained `--tidy` / `--preserve` / `--canonical` /
+   `--safe` / `--max-line-length N` / `-w` / `--` (`format.rb:111-171`); the
+   default stays the canonical printer.
+6. **New sweep** `tools/format_parity.rb` (host formatter in-process, self-host
+   per file with timeout + memory cap, `-j` workers): repository-wide
+   **preserve 700/700 and tidy 700/700 byte-identical**.  It found two port bugs
+   the LSP harness cannot reach — the wrap candidate sort must be *stable* (the
+   host's `sort_by` keeps equal keys in discovery order for the small candidate
+   lists a line produces), and the wrap's slices mix the lexer's byte columns
+   with Ruby's **character** indexing, which is also why the host refuses to
+   wrap lines whose arguments contain multi-byte text (both behaviours are
+   reproduced exactly and pinned in `projects/mtc/test/tidy_formatter_test.mt`).
+   `canonical` is 302/700: the host reattaches trivia into the AST printer while
+   the self-host's `pretty_printer/ast_formatter.mt` still drops comments — the
+   pre-existing canonical-mode gap, untouched by this stage.
+
+**Costs measured** (host vs self, same file): `format --tidy` on
+`projects/mtc/src/mtc/main.mt` (4.5k lines, many over-length lines) 17.6 s →
+1.35 s; `std/raylib.mt` (long file, no over-length lines) formats in 16 ms.  The
+cost is the wrap loop, which re-lexes and re-validates the whole file per applied
+fix (100-iteration cap) — the host does exactly the same, so the profile matches
+by construction; the LSP `formatting` request inherits it for large files with
+many long lines.
+
+### Fixed this session (2026-09-26, stage 5b — the VS Code startup crash)
+
+A real VS Code session aborted with `free(): double free detected in tcache 2`
+within ~20 ms of `initialize` (the client restarted the server five times, then
+gave up).  Reproduced by running the extension host headlessly
+(`xvfb-run code --extensionDevelopmentPath=bindings/vscode …`) with the server
+wrapped in valgrind, which reported two `Invalid free`s: a 16-byte block
+allocated in `code_lens.mt:140` (`title.append`), freed by the handler's
+`defer: title.release()` **and** again by the JSON release chain.
+
+1. **`codeLens/resolve` double-freed its title** (`lsp/code_lens.mt`):
+   `json.string_value(title)` takes ownership of the `String`, so the handler's
+   `defer` and the response's release both freed the same buffer.  Now the title
+   is copied in with `json.string_from_str(title.as_str())`, matching the
+   adjacent `command` field.
+2. **`documentLink/resolve` emitted malformed JSON** (`lsp/document_link.mt`):
+   the response was hand-built without the `range` field and started with a
+   stray comma (`{,"target":…`), which the client's frame parser rejects —
+   caught the moment the harness gained the entry.  Replaced with the host's
+   semantics (`handle_document_link_resolve`): echo the link back with
+   `tooltip = "<path>\n<first line>"` (unchanged when the target is unreadable).
+3. **`codeLens/resolve` counted references by raw text** (`lsp/code_lens.mt`):
+   `count_references` summed word-boundary matches across every indexed file
+   (4 for the fixture's `sum` where the host reports 2 — a repo file whose index
+   entry is also named `sum` contributes).  It now counts the same locations the
+   references handler produces (`navigation.count_reference_locations`), which is
+   the host's fallback rule.  The host's *static-method* path
+   (`resolve_static_type_reference_target` → `static_type_method_references`,
+   receiver-type aware) is still not ported, so method lenses can still differ
+   — catalogued in the table below.
+4. **The harness could not see any of this**: it never sent the resolve
+   endpoints a real client always sends.  `tools/lsp_parity.rb` now drives
+   **51 requests + 15 probes** — `willSaveWaitUntil`, `codeLens/resolve`,
+   `completionItem/resolve` and `documentLink/resolve` (payloads derived from
+   the responses just recorded), plus `didSave`, `$/setTrace`,
+   `milkTea/documentContext` (notification form), and, after the measured probes,
+   the cache-invalidating `didChangeConfiguration` / `didChangeWatchedFiles` /
+   `didChangeWorkspaceFolders` / `willRenameFiles` notifications (crash coverage;
+   placed last so they cannot perturb the probe results).
+
+**Verified**: the headless VS Code session (initialize → didOpen → codeLens →
+resolve → links → diagnostics; 12,176 allocations) reports **0 valgrind errors**
+where it previously aborted; the extended valgrind drive over
+formatting/rangeFormatting/codeLens-resolve/documentLink-resolve/willSaveWaitUntil
+is clean; the harness records 51 + 15 with no crash and no timeouts.
+
 ### Measured (same corpus, both servers)
 
 The table below is the **2026-09-25/26 session's** before/after record — its
@@ -397,13 +513,13 @@ comparisons differ (16 entries)**; 0 timeouts; 0 crashes.  The stage-1 root caus
 
 ### Remaining LSP gaps (all reproducible with the harness)
 
-Re-measured 2026-09-26 after stage 4: **5 differing entries** — 3 of 47 requests,
+Re-measured 2026-09-26 after stage 5b: **4 differing entries** — 2 of 51 requests,
 2 of 15 probes, 0 semantic-token comparisons.
 
 | # | Family | Entries | Evidence / target |
 | --- | --- | --- | --- |
-| 1 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets -> `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia -> `reconstruct_normalized` -> blank lines -> wrap; ~1.1–1.8k MT lines) |
-| 2 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  The Bindings section needs binding-identity data the self analyzer does not model |
+| 1 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  **Measured 2026-09-26**: the host text embeds Ruby `object_id`s (`obj 992 → binding_id: 3`), binding ids in host allocation order, `ValueBinding[id: N]` reprs, Ruby AST class/member names and `node_ids: {123 entries}` counts, so literal byte-parity needs (a) harness normalization for the object ids, (b) a binding-id model in the self analyzer and (c) a Ruby-AST-shaped tree/facts renderer — re-scope its acceptance before starting it |
+| 2 | **`codeLens/resolve` method counts** | `codeLens/resolve` | host title `2 references`, self `4 references` for the fixture's `sum` (an `extending Sample:` method).  The host routes methods through `resolve_static_type_reference_target` → `static_type_method_references` (`lsp/server/completion.rb`): the declaration token's receiver type is resolved, candidate files are the declaring module plus its import dependents, and occurrences are kept only when their dot-receiver has that type.  The self counts the references walk (`navigation.count_reference_locations`, the host's fallback rule), so it also counts index entries of the same name elsewhere in the workspace.  Port the static-method path (or scope method-name counts to the declaring module) |
 | 3 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
 | 4 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |
 
@@ -421,11 +537,30 @@ ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json --full
 tools/bootstrap.sh -j 16          # fixed point + tests, before every commit
 ```
 
-Stages 1–4 are closed (seven isolated entries; completion; documentSymbol;
-diagnostics + semantic tokens).  Two stages remain, in this order; both are heavy
-ports, so each is a session of its own.
+Stages 1–5b are closed (seven isolated entries; completion; documentSymbol;
+diagnostics + semantic tokens; formatting/tidy — which also delivered the CST
+that §7's formatter modes and the linter's wrap fix need, plus the
+`tools/format_parity.rb` mode sweep; and stage 5b, the VS Code startup crash
+plus the resolve-endpoint coverage the harness was missing).  **Two LSP items
+remain**, one of which needs its acceptance re-scoped before work starts.
 
-**Stage 5 — `milkTea/debugInfo`** (1 entry; counters 5 → 4)
+**Stage 6 — `codeLens/resolve` method counts** (1 entry; counters 4 → 3)
+- self: `lsp/code_lens.mt` `handle_code_lens_resolve` counts
+  `navigation.count_reference_locations` (the references walk — the host's
+  *fallback* rule), so the fixture's `sum` reports 4 where the host reports 2.
+- host: for a `:method` target it takes `static_method_code_lens_count`
+  (`lsp/server/code_lens.rb`) → `resolve_static_type_reference_target` +
+  `static_type_method_references` (`lsp/server/completion.rb`): resolve the
+  declaration token's dot-receiver type, take the declaring module plus its
+  import dependents as candidate files, and keep an occurrence only when its own
+  dot-receiver has that type.
+- work: port the receiver-type resolution for a *declaration* position (the
+  completion module already resolves receivers for call sites) and the candidate
+  file rule; then count.  Budget ≈150–250 MT lines.  Verify with the harness
+  entry plus `references/*` (which must stay byte-equal).
+- acceptance: `codeLens/resolve` byte-equal; counters move to 3.
+
+**Stage 7 — `milkTea/debugInfo`** (1 entry; counters 3 → 2)
 - self: `lsp/debug_info.mt` (73 lines: `build_debug_text` 11–46,
   `handle_debug_info` 49–62) + dispatch at `lsp/server.mt:250-251`; it currently
   returns its own workspace summary as `{formatted, content}`.
@@ -436,31 +571,22 @@ ports, so each is a session of its own.
   `imports` + `local_completion_frames`, callable-value site maps,
   `required_unsafe_lines`), Bindings 392–424, Diagnostics 426–454.  The envelope
   itself changes: `{text: …}`, not `{formatted, content}`.
-- data the self has: content, tokens (`lexer.lex_reporting`), parse errors, AST,
-  `Analysis` facts, semantic-token entries.  Missing: the **Bindings section**
-  (`facts.binding_resolution`: `identifier_binding_ids`, `declaration_binding_ids`,
-  `binding_types` — a global binding-id counter allocated during name resolution,
-  `core/semantic_analyzer.rb:51-64,170-178`).  The self analyzer models no binding
-  identity, so this needs a semantic-model addition before the formatter port can
-  be byte-equal.  Budget ≈450–650 MT lines for the formatter plus the binding-id
-  model.
-- acceptance: `milkTea/debugInfo` byte-equal; counters move.
-
-**Stage 6 — formatting (tidy)** (2 entries: `formatting`, `rangeFormatting`;
-counters 4 → 2)
-- self: `lsp/formatting.mt` (288 lines) formats with the AST pretty-printer
-  (`pretty_printer/ast_formatter.mt`, 1432 lines), which drops comments; the
-  lexer carries no trivia (`lexer/lexer.mt` has only `lex`/`lex_reporting`).
-- host: `Formatter.format_source(mode: :tidy)` (`tooling/formatter.rb:54-59`) =
-  CST build → `reconstruct_normalized` → wrap → `normalize_blank_lines`
-  (218–316), with the wrap machinery at 71–216 + 623–766; `core/cst.rb` is 64
-  lines and `core/lexer/trivia.rb` 51 lines plus the lexer trivia hooks.
-  `rangeFormatting` must format the *segment* (`lsp/server/formatting.rb:667-693`)
-  instead of slicing both texts at the same offsets.
-- work: trivia-aware lexer → CST builder/reconstruct → tidy driver (§7's pipeline,
-  ≈1.1–1.8k MT lines).  The same CST unblocks the linter's `line-too-long` wrap
-  fix (§7.3).
-- acceptance: both entries byte-equal; counters move.
+- **Measured 2026-09-26** against the live recording: the text is host-internal
+  throughout — `obj 992 → binding_id: 3` are Ruby `object_id`s (not
+  reproducible), `ValueBinding[id: N]`/`binding_id: N` come from the host's
+  binding-id counter in its name-resolution order, the AST section prints Ruby
+  AST class/member names and `node_ids: {123 entries}`, and the Facts section
+  prints host `Type#to_s` reprs and analyzer counters (`local_completion_frames:
+  4`).  Literal byte-parity therefore needs (a) a harness normalizer for the
+  object ids, (b) the binding-id model in `semantic/analyzer.mt` (scope frames
+  carrying ids; `identifier_binding_ids`/`declaration_binding_ids`/
+  `binding_types` keyed by `reinterpret[ptr_uint]`; allocated in the host's
+  order) and (c) a Ruby-AST-shaped renderer over the self-host's variant AST.
+  Re-scope the acceptance (normalized comparison, and/or which sections must be
+  byte-equal) before starting it — as written ("byte-equal") it is not
+  reachable.
+- acceptance (proposed): harness `milkTea/debugInfo` equal **after the harness
+  normalizes host object ids**; counters move to 2.
 
 **Not stages of their own:**
 - `stress/unterminated-source+diagnostic` (parser recovery, row 3) changes
@@ -468,6 +594,9 @@ counters 4 → 2)
   item 10) rather than the LSP rows.
 - `stress/unicode+semanticTokens` (host facts lag, row 4) is not actionable on
   the self side.
+- Canonical-mode comment reattachment (the 398-file `canonical` delta in
+  `tools/format_parity.rb`) is a formatter-completeness item (§7), not an LSP
+  entry: the LSP's configured default is `tidy`.
 
 Each phase is done only when its harness entries are byte-equal **and** the global
 counters move; the docs in this file and in `lsp-design.md` are synced in the
@@ -482,6 +611,13 @@ ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
 ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
 ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json
+```
+
+### How to re-run (formatter modes)
+
+```sh
+ruby tools/format_parity.rb all -j 16        # preserve / tidy must be 700/700
+ruby tools/format_parity.rb tidy examples/raylib   # a subset when iterating
 ```
 
 ---
@@ -1553,16 +1689,16 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 | ~~DAP server~~ **DONE (2026-07-19)** — 7 modules, ~1,050 lines, process backend with child I/O polling | — |
 | LSP workspace dependency graph (didChangeWatchedFiles depth) | Medium |
 | LSP multi-root reindex (didChangeWorkspaceFolders depth) | Medium |
-| Formatter CST modes (`--tidy`, `--preserve`) | Large |
-| Linter wrap-fix machinery (`line-too-long` auto-fix) | Medium |
+| ~~Formatter CST modes (`--tidy`, `--preserve`)~~ **DONE (§7, 2026-09-26)** | — |
+| Linter wrap-fix machinery (`line-too-long` auto-fix) — pipeline landed (§7.2), wiring left | Small |
 | **Added 2026-07-19** | |
 
 ---
 
 ## 5. Remaining Gaps (2026-07-19, re-measured 2026-09-25 in §0j)
 
-The compiler is at a held fixed point (498 tests across 12 files as of
-2026-09-25; 217/219 raylib — the 2 non-builds are correct rejections).
+The compiler is at a held fixed point (506 tests across 13 files as of
+2026-09-26; 217/219 raylib — the 2 non-builds are correct rejections).
 **Corrected 2026-09-25:** the "13/13 language examples" figure below was stale —
 the self-host builds **11 of the 15 top-level examples** today (§0j), and four
 `test/mt` files had been silently skipped by the test runner, which hid one more
@@ -1775,7 +1911,7 @@ No architectural changes planned — this is a self-host value-add feature. The 
 ### 5.4 CLI commands not implemented (§0.4)
 
 `deps` and `docs`.  The other 21 commands exist in the self-host, and
-`rake "cli:parity"` measures 21 of 61 fixture cases matching (the rest differ in
+`rake "cli:parity"` measures 22 of 61 fixture cases matching (the rest differ in
 message text/channel/argument precedence, not command coverage — §0j).
 `snapshot` and the legacy `debug` command are implemented.
 
@@ -1935,14 +2071,21 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb --no-cache
 # raylib parity sweep (per-file build, compare against the passing baseline)
 ```
 
-A change is safe only if: stage2.c == stage3.c, **12 test files / 498 tests pass
+A change is safe only if: stage2.c == stage3.c, **13 test files / 506 tests pass
 with 0 failures** (`tools/bootstrap.sh -j 16` reports the count), the language
 examples do not regress (live baseline: **11 of 15** build — the four failures and
 their causes are §0j item 9), and the raylib passing set does not shrink
 (currently 217; the 2 non-builds must remain clean rejections with Ruby's
-messages). LSP changes additionally require the self-vs-host harness
-(`tools/lsp_parity.rb`, §0k) plus valgrind and, for behavior changes, the
-headless-Neovim smoke test.
+messages).  LSP changes additionally require the self-vs-host harness
+(`tools/lsp_parity.rb`, §0k — it drives the resolve endpoints a real editor
+calls) plus valgrind and, for behavior changes, the headless-Neovim smoke test;
+user-visible LSP changes should also run the headless VS Code session with the
+server under valgrind (that is how the 2026-09-26 `codeLens/resolve` double free
+was found).  Formatter changes add the mode sweep:
+
+```sh
+ruby tools/format_parity.rb all -j 16    # preserve / tidy must be 700/700
+```
 
 For **runtime correctness**, diff against the Ruby compiler on arithmetic / type
 patterns:
@@ -2143,33 +2286,42 @@ Implementation: `registry.mt` (130 lines, hardcoded 28-binding entry list) + `im
 
 ---
 
-## 7. Formatter Gaps (2026-07-19)
+## 7. Formatter Gaps (CST modes landed 2026-09-26)
 
 ### 7.1 Current State
 
-The self-host formatter (`mtc format`) supports only **canonical** mode: parse → AST → pretty-print. Ruby supports 4 modes:
+`mtc format` supports all four of Ruby's modes:
 
 | Mode | Ruby | Self-host |
-|------|------|-----------|
-| `:canonical` | AST pretty-print | AST pretty-print (only mode) |
-| `:safe` | Same as canonical | — |
-| `:preserve` | CST-based, keeps original formatting | **Not implemented** |
-| `:tidy` | CST normalize → wrap → blank lines | **Not implemented** |
+| --- | --- | --- |
+| `:canonical` | AST pretty-print with trivia reattached | AST pretty-print, **comments dropped** (see 7.3) |
+| `:safe` | Same as canonical | Same as canonical |
+| `:preserve` | CST-based, keeps original formatting | **DONE** — `formatter/cst.mt` |
+| `:tidy` | CST normalize → wrap → blank lines | **DONE** — `formatter/tidy.mt` |
 
-### 7.2 Key Gap: CST Builder
+Measured by `tools/format_parity.rb` (host in-process, self per file, `-j`
+workers) over the repository's 700 `.mt` files: **preserve 700/700 and tidy
+700/700 byte-identical**; canonical 302/700 (the comment-reattachment delta
+below).  The LSP's `formatting` + `rangeFormatting` entries are closed by the
+same pipeline (§0k stage 5).
 
-All non-canonical modes (`preserve`, `tidy`) require a **Concrete Syntax Tree** (CST) representation that preserves comments, whitespace, and original formatting details. Ruby's `CSTBuilder` (`lib/milk_tea/core/cst.rb`) constructs this from the token stream. The self-host has no CST builder — only an AST-based pretty printer.
+### 7.2 Landed 2026-09-26
 
-Building a CST builder is the **gateway dependency** for both the `--tidy` and `--preserve` formatter modes, and for the linter's `line-too-long` wrap-fix machinery.
+| Piece | Where | Host reference |
+| --- | --- | --- |
+| Trivia-aware lexing | `lexer/trivia.mt`, `lexer.mt` (`lex_with_trivia`) | `core/lexer.rb:136-193, 207-292, 424-440`, `core/lexer/trivia.rb` |
+| CST build + reconstruct | `formatter/cst.mt` | `core/cst.rb` |
+| Mode dispatch, wrap, blank lines | `formatter/tidy.mt` | `tooling/formatter.rb:13-24, 54-216, 225-778` |
+| LSP handlers | `lsp/formatting.mt` | `lsp/server/formatting.rb:646-693` |
+| CLI flags (`--tidy`/`--preserve`/`--canonical`/`--safe`/`--max-line-length`/`-w`/`--`) | `main.mt` `format_command` | `tooling/cli/commands/format.rb:111-171` |
+| Sweep | `tools/format_parity.rb` | — |
+| Tests | `projects/mtc/test/tidy_formatter_test.mt` | host goldens |
 
-### 7.3 Required Work
+### 7.3 Remaining
 
 | Gap | Effort | Depends on |
-|-----|--------|------------|
-| CST builder | **Large** (~1,500 lines) | Token stream + parser infrastructure |
-| `--preserve` format mode | Medium | CST builder |
-| `--tidy` format mode (normalize + wrap + blank lines) | Medium | CST builder |
-| `--max-line-length` flag for format | Small | CST builder |
-| Linter `line-too-long` wrap-fix | Medium | CST builder |
-| Linter `:fast` tier | Small | Independent (no CST dependency) |
-| Formatter `--timings` profile | Small | Independent |
+| --- | --- | --- |
+| Canonical-mode comment reattachment (host `PrettyPrinter.format_ast(ast, trivia:)`; 398/700 files differ by dropped comments) | Medium | the CST trivia (now available) |
+| Linter `line-too-long` wrap-fix (reuse `formatter.tidy.wrap_long_argument_lists` / `build_long_line_wrap_fix`) | Small | landed pipeline |
+| Linter `:fast` tier | Small | independent |
+| Formatter `--timings` profile phases | Small | independent |

@@ -385,6 +385,7 @@ def corpus(dir, paths)
   requests["formatting"] = ["textDocument/formatting", tc.merge("options" => { "tabSize" => 4, "insertSpaces" => true })]
   requests["rangeFormatting"] = ["textDocument/rangeFormatting", tc.merge("range" => { "start" => { "line" => 10, "character" => 0 }, "end" => { "line" => 12, "character" => 0 } }, "options" => { "tabSize" => 4, "insertSpaces" => true })]
   requests["onTypeFormatting"] = ["textDocument/onTypeFormatting", { "textDocument" => { "uri" => main_uri }, "position" => { "line" => 14, "character" => 0 }, "ch" => "\n", "options" => { "tabSize" => 4, "insertSpaces" => true } }]
+  requests["willSaveWaitUntil"] = ["textDocument/willSaveWaitUntil", tc.merge("reason" => 1)]
   requests["foldingRange/scratch"] = ["textDocument/foldingRange", { "textDocument" => { "uri" => scratch_uri } }]
   requests["hover/alpha"] = ["textDocument/hover", { "textDocument" => { "uri" => alpha_uri }, "position" => { "line" => 1, "character" => 10 } }]
   requests["documentSymbol/beta"] = ["textDocument/documentSymbol", { "textDocument" => { "uri" => beta_uri } }]
@@ -409,6 +410,24 @@ def run_corpus(client, dir, paths)
 
     recordings[label] = client.request(method, params)
   end
+
+  # The resolve endpoints and post-open notifications a real editor sends:
+  # VS Code resolves fresh code lenses, document links and completion items
+  # itself, and notifies on save / watched-file changes / configuration.
+  # Derived payloads come from the responses the two servers just produced.
+  lens = Array(recordings.dig("codeLens", "result")).first
+  recordings["codeLens/resolve"] = client.request("codeLens/resolve", lens) if lens
+
+  item = Array(recordings.dig("completion/member", "result", "items")).first
+  recordings["completionItem/resolve"] = client.request("completionItem/resolve", item) if item
+
+  link = Array(recordings.dig("documentLink", "result")).first
+  recordings["documentLink/resolve"] = client.request("documentLink/resolve", link) if link
+
+  client.notify("$/setTrace", { "value" => "off" })
+  client.notify("textDocument/didSave", { "textDocument" => { "uri" => path_to_uri(paths[:main]) }, "text" => MAIN_SOURCE })
+  client.notify("milkTea/documentContext", { "textDocument" => { "uri" => path_to_uri(paths[:main]) }, "source" => "active-editor" })
+
   recordings
 end
 
@@ -480,6 +499,13 @@ def run_stress(client, dir, paths)
     client.notify("textDocument/didClose", { "textDocument" => { "uri" => uri } })
   end
   outcomes["stress/open-close+hover"] = client.request("textDocument/hover", { "textDocument" => { "uri" => main_uri }, "position" => { "line" => 0, "character" => 0 } })
+
+  # 8. cache-invalidating client notifications, after the measured probes so
+  # they cannot perturb them (they are here for crash coverage).
+  client.notify("workspace/didChangeConfiguration", { "settings" => { "milkTea" => { "format" => { "mode" => "tidy" } } } })
+  client.notify("workspace/didChangeWatchedFiles", { "changes" => [{ "uri" => main_uri, "type" => 2 }] })
+  client.notify("workspace/didChangeWorkspaceFolders", { "event" => { "added" => [], "removed" => [] } })
+  client.notify("workspace/willRenameFiles", { "files" => [{ "oldUri" => main_uri, "newUri" => path_to_uri(File.join(dir, "renamed.mt")) }] })
 
   outcomes
 end

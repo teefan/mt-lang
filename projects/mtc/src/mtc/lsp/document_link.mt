@@ -82,14 +82,15 @@ public function handle_document_link(
     proto.write_response_raw(id, result.as_str())
 
 
-## Handle documentLink/resolve.  Adds a tooltip with the first line of
-## the linked file.
+## Handle documentLink/resolve.  Echoes the link back with a `tooltip` of the
+## form `"<path>\n<first line>"` (host `handle_document_link_resolve`); a link
+## whose target is missing or unreadable comes back unchanged.
 public function handle_document_link_resolve(
     params: json.Value,
     id: json.Value,
 ) -> void:
     let target_uri = extract_string_field(params, "target")
-    if target_uri.len == 0:
+    if target_uri.len == 0 or not target_uri.starts_with("file://"):
         proto.write_response(id, params)
         return
 
@@ -98,41 +99,50 @@ public function handle_document_link_resolve(
         return
     defer: target_path.release()
 
+    let obj_ptr = params.as_object()
+    if obj_ptr == null:
+        proto.write_response(id, params)
+        return
+
+    var first_line = read_first_line(target_path.as_str())
+    if first_line.is_none():
+        proto.write_response(id, params)
+        return
+    var line_text = first_line.unwrap()
+    defer: line_text.release()
+    let stripped = line_text.as_str().trim_ascii_whitespace()
+
     var tooltip = string.String.create()
     defer: tooltip.release()
+    tooltip.append(target_path.as_str())
+    if stripped.len > 0:
+        tooltip.append("\n")
+        tooltip.append(stripped)
 
-    match fs_mod.read_text(target_path.as_str()):
+    unsafe:
+        read(obj_ptr).set("tooltip", json.string_from_str(tooltip.as_str()))
+
+    proto.write_response(id, params)
+
+
+## The first line of a text file, or none when it cannot be read.
+function read_first_line(path: str) -> Option[string.String]:
+    match fs_mod.read_text(path):
         Result.success as payload:
             var content = payload.value
-            var start = content.as_str()
+            var line = string.String.create()
+            let text = content.as_str()
             var i: ptr_uint = 0
-            while i < start.len:
-                let b = start.byte_at(i)
+            while i < text.len:
+                let b = text.byte_at(i)
                 if b == '\n' or b == '\r':
-                    tooltip.append(start.slice(0, i))
                     break
                 i += 1
-            if i >= start.len:
-                tooltip.append(start)
+            line.append(text.slice(0, i))
             content.release()
+            return Option[string.String].some(value = line)
         Result.failure:
-            proto.write_response(id, params)
-            return
-
-    # Build response with tooltip added.
-    var result_json = string.String.create()
-    defer: result_json.release()
-
-    # Rebuild the params as a string, then inject tooltip.
-    var base = string.String.create()
-    defer: base.release()
-    base.append("{")
-    append_field_str(ref_of(base), "target", target_uri, false)
-    base.append(",\"tooltip\":\"")
-    proto.append_escaped(ref_of(base), tooltip.as_str())
-    base.append("\"}")
-
-    proto.write_response_raw(id, base.as_str())
+            return Option[string.String].none
 
 
 ## Extract the text content of a token from the source, using lexer offsets.
@@ -231,13 +241,3 @@ function append_link(output: ref[string.String], line: ptr_uint, column: ptr_uin
     proto.append_escaped(output, target_uri)
     output.append("\",\"tooltip\":\"Open linked file\"}")
 
-
-## Append a string-valued JSON field.
-function append_field_str(output: ref[string.String], name: str, value: str, first: bool) -> void:
-    if not first:
-        output.append(",")
-    output.append("\"")
-    output.append(name)
-    output.append("\":\"")
-    proto.append_escaped(output, value)
-    output.append("\"")

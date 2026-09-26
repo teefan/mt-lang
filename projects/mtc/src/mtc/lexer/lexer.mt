@@ -3,6 +3,7 @@
 ## Public API:
 ##   lex(source: str) -> Vec[Token]
 ##   lex_reporting(source: str, diagnostics: ref[Vec[LexDiagnostic]]) -> Vec[Token]
+##   lex_with_trivia(source: str, diagnostics: ref[Vec[LexDiagnostic]]) -> CstLexResult
 ##
 ## Parity with the Ruby lexer (lib/milk_tea/core/lexer.rb).  Every production
 ## rule, the indent dedent strategy, the line-continuation protocol, the suffix
@@ -17,6 +18,7 @@ import std.vec as vec
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.token as tok
 import mtc.lexer.keywords as keywords
+import mtc.lexer.trivia as triv
 
 const SPACE_BYTE: ubyte = ' '
 const TAB_BYTE: ubyte = '\t'
@@ -77,6 +79,8 @@ struct LexSession:
     grouping_depth: int
     source: str
     src_len: ptr_uint
+    with_trivia: bool
+    trivia: vec.Vec[triv.TriviaEntry]
 
 
 # =============================================================================
@@ -92,10 +96,14 @@ public function lex(source: str) -> vec.Vec[tok.Token]:
         grouping_depth = 0,
         source = source,
         src_len = source.len,
+        with_trivia = false,
+        trivia = vec.Vec[triv.TriviaEntry].create(),
     )
     session.indent_stack.push(0)
     lex_lines(ref_of(session))
-    return emit_eof(ref_of(session))
+    let tokens = emit_eof(ref_of(session))
+    session.trivia.release()
+    return tokens
 
 
 public function lex_reporting(source: str, diagnostics: ref[vec.Vec[tok.LexDiagnostic]]) -> vec.Vec[tok.Token]:
@@ -107,10 +115,35 @@ public function lex_reporting(source: str, diagnostics: ref[vec.Vec[tok.LexDiagn
         grouping_depth = 0,
         source = source,
         src_len = source.len,
+        with_trivia = false,
+        trivia = vec.Vec[triv.TriviaEntry].create(),
     )
     session.indent_stack.push(0)
     lex_lines(ref_of(session))
-    return emit_eof(ref_of(session))
+    let tokens = emit_eof(ref_of(session))
+    session.trivia.release()
+    return tokens
+
+
+## Lex in with-trivia mode: the token stream plus every comment, blank line,
+## whitespace run and swallowed grouping newline in source order.  Mirrors the
+## Ruby lexer's `Lexer.lex_with_trivia`.
+public function lex_with_trivia(source: str, diagnostics: ref[vec.Vec[tok.LexDiagnostic]]) -> triv.CstLexResult:
+    var session = LexSession(
+        tokens = vec.Vec[tok.Token].create(),
+        indent_stack = vec.Vec[ptr_uint].create(),
+        diags = ptr_of(diagnostics),
+        continuation_pending = false,
+        grouping_depth = 0,
+        source = source,
+        src_len = source.len,
+        with_trivia = true,
+        trivia = vec.Vec[triv.TriviaEntry].create(),
+    )
+    session.indent_stack.push(0)
+    lex_lines(ref_of(session))
+    let tokens = emit_eof(ref_of(session))
+    return triv.CstLexResult(tokens = tokens, trivia = session.trivia)
 
 
 # =============================================================================
@@ -232,6 +265,31 @@ function line_remainder_is_blank(source: str, start: ptr_uint, stop: ptr_uint) -
     return true
 
 
+## Record one trivia entry (no-op unless the session lexes with trivia).
+## Mirrors the Ruby lexer's `push_leading_trivia` / `attach_trivia` recording
+## side; the reconstruct emits trivia in source order, so the leading/trailing
+## distinction the Ruby lexer tracks is not needed here.
+function trivia_push(
+    session: ref[LexSession],
+    kind: triv.TriviaKind,
+    start_offset: ptr_uint,
+    end_offset: ptr_uint,
+    line: ptr_uint,
+    column: ptr_uint,
+) -> void:
+    if not session.with_trivia:
+        return
+    session.trivia.push(
+        triv.TriviaEntry(
+            kind = kind,
+            start_offset = start_offset,
+            end_offset = end_offset,
+            line = line,
+            column = column,
+        ),
+    )
+
+
 # =============================================================================
 #  Main lex loop
 # =============================================================================
@@ -256,28 +314,45 @@ function lex_lines(session: ref[LexSession]) -> void:
         let is_blank = line_is_blank(source, line_start, line_content_len)
         let is_comment = line_is_comment(source, line_start, line_content_len)
 
-        if is_blank or is_comment:
+        if is_blank:
+            trivia_push(session, triv.TriviaKind.blank_line, line_start, line_end, line_number, 1)
+            offset = line_end
+            line_number += consumed_lines
+            continue
+
+        if is_comment:
+            trivia_push(session, triv.TriviaKind.comment, line_start, line_end, line_number, 1)
             offset = line_end
             line_number += consumed_lines
             continue
 
         let indent = count_indent(source, line_start, line_content_len)
 
+        if indent > 0:
+            trivia_push(session, triv.TriviaKind.space, line_start, line_start + indent, line_number, 1)
+
         if session.grouping_depth == 0 and not session.continuation_pending:
             emit_indentation(session, indent, line_number, line_start)
         session.continuation_pending = false
 
-        var pos = line_start
+        var pos = line_start + indent
         let line_stop = line_start + line_content_len
 
         while pos < line_stop:
             let b = unsafe: ubyte<-read(source.data + pos)
 
             if b == SPACE_BYTE:
-                pos += 1
+                let run_start = pos
+                while pos < line_stop:
+                    unsafe:
+                        if ubyte<-read(source.data + pos) != SPACE_BYTE:
+                            break
+                    pos += 1
+                trivia_push(session, triv.TriviaKind.space, run_start, pos, line_number, run_start - line_start + 1)
                 continue
 
             if b == HASH_BYTE:
+                trivia_push(session, triv.TriviaKind.comment, pos, line_stop, line_number, pos - line_start + 1)
                 break
 
             if b == DOUBLE_QUOTE:
@@ -383,6 +458,16 @@ function lex_lines(session: ref[LexSession]) -> void:
                     column = nl_column,
                 )
                 session.tokens.push(nl)
+        else:
+            if last_has_nl:
+                trivia_push(
+                    session,
+                    triv.TriviaKind.newline,
+                    newline_offset,
+                    newline_end_offset,
+                    line_number + consumed_lines - 1,
+                    nl_column,
+                )
 
         offset = actual_end
         line_number += consumed_lines

@@ -2,19 +2,27 @@
 
 Status: **Server implemented — 29 capabilities advertised at Ruby parity, and now
 measured against the host by `tools/lsp_parity.rb`.**
-Last updated: 2026-09-26 (stage 4 closed the diagnostics + semantic-token entries).
+Last updated: 2026-09-26 (stage 5 closed the formatting entries: trivia-aware
+lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
+`tools/format_parity.rb` measures tidy/preserve 700/700 byte-identical).
 37 modules, ~14.4k lines, 29 capabilities advertised at Ruby parity.
 
 > **Parity is measured by the self-vs-host harness, not by capability
 > advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,
-> `compare`, `--stress`) drives an out-of-process corpus of 47 requests plus 15
-> adversarial probes against both servers and diffs normalized responses.  As of
-> 2026-09-26 (stage 4) it reports 30/30 capability keys identical, **3 of 47
-> requests and 2 of 15 stress probes still differing** — every differing entry is
-> catalogued by family in
+> `compare`, `--stress`) drives an out-of-process corpus of 51 requests — every
+> endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a
+> real editor makes — and 15 adversarial probes, and diffs normalized responses.
+> As of 2026-09-26 (stage 5b) it reports 30/30 capability keys identical, **2 of
+> 51 requests and 2 of 15 stress probes still differing** — every differing entry
+> is catalogued by family in
 > [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure),
 > which is the live status; the per-feature claims below are self-host-side
 > results that the harness now confirms or contradicts entry by entry.
+> **LSP changes must be verified against a real client too**: the 2026-09-26 VS
+> Code startup crash lived only in `codeLens/resolve`, which the corpus did not
+> send.  Run the extension host headlessly with the server under valgrind
+> (`xvfb-run code --extensionDevelopmentPath=bindings/vscode …`) for
+> user-visible changes.
 > The LSP test suite (`test/tooling/lsp/server/*`) still spawns the *Ruby* server
 > (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
 > so CI alone does not exercise `build/stage2/mtc lsp`.
@@ -25,6 +33,9 @@ Signature help: methods and extending-block methods resolved.
 Diagnostic positions: lexer-based token matching, buffer-overflow fix.
 LSP logging: structured stderr with version+revision announcement.
 Snapshot semantic tokens: parity with Ruby on language_baseline.mt after decorator/enum-member/struct-body fixes.
+Formatting: `textDocument/formatting` + `rangeFormatting` byte-equal (mode from
+the client configuration, `tidy` by default; `rangeFormatting` formats the
+requested segment), backed by `formatter/cst.mt` + `formatter/tidy.mt`.
 
 ## 0. Design Principles
 

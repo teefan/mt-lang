@@ -3,10 +3,8 @@
 ## workspace symbol index.
 
 import std.fmt
-import std.fs as fs_mod
 import std.json as json
 import std.log as log
-import std.map as map_mod
 import std.str
 import std.string as string
 import std.vec as vec
@@ -15,11 +13,11 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.lsp.cursor as cursor
+import mtc.lsp.navigation as nav_mod
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
-import mtc.lsp.workspace_index as idx
 
 
 ## LSP SymbolKind for codeLens data items.
@@ -116,8 +114,20 @@ public function handle_code_lens_resolve(
         proto.write_response(id, params)
         return
 
+    let data_uri = extract_nested_string(params, "data", "uri")
+    var file_path = string.String.create()
+    defer: file_path.release()
+    if data_uri.len > 0:
+        match uri_ops.file_uri_to_path(data_uri):
+            Option.some as resolved_path:
+                var path_value = resolved_path.value
+                file_path.append(path_value.as_str())
+                path_value.release()
+            Option.none:
+                pass
+
     ws.build_index_if_needed()
-    var count = count_references(name, ws)
+    let count = nav_mod.count_reference_locations(ws, name, file_path.as_str())
     log.info(f"code_lens resolve: name=#{name} count=#{count}")
     if count == 0:
         proto.write_response(id, params)
@@ -141,7 +151,7 @@ public function handle_code_lens_resolve(
     else:
         title.append_format(f"#{count} references")
     unsafe:
-        read(command_ptr).set("title", json.string_value(title))
+        read(command_ptr).set("title", json.string_from_str(title.as_str()))
         read(command_ptr).set("command", json.string_from_str(""))
         read(obj_ptr).set("command", command)
 
@@ -157,73 +167,6 @@ function token_column(source: str, line: ptr_uint, name: str) -> ptr_uint:
             return col.value + 1
         Option.none:
             return 0
-
-
-## Count references to a named symbol across the workspace index.
-## Searches all indexed .mt files for occurrences of the name.
-function count_references(name: str, ws: ref[workspace.Workspace]) -> ptr_uint:
-    var total: ptr_uint = 0
-    var max_results = ws.index.entries.len()
-    var results = idx.query_index(ref_of(ws.index), "", max_results)
-    defer: results.release()
-
-    var seen = map_mod.Map[str, bool].create()
-    defer: seen.release()
-
-    var ri: ptr_uint = 0
-    while ri < results.len():
-        let rp = results.get(ri) else:
-            break
-        let ei = unsafe: read(rp)
-        let ep = ws.index.entries.get(ei) else:
-            break
-        let entry = unsafe: read(ep)
-        if entry.name.as_str().equal(name):
-            let path = entry.path.as_str()
-            if not seen.contains(path):
-                seen.set(path, true)
-                match fs_mod.read_text(path):
-                    Result.success as payload:
-                        var content = payload.value
-                        total += count_occurrences(content.as_str(), name)
-                        content.release()
-                    Result.failure:
-                        pass
-        ri += 1
-
-    return total
-
-
-## Count token-level occurrences of a name in source text.
-function count_occurrences(source: str, name: str) -> ptr_uint:
-    var count: ptr_uint = 0
-    var i: ptr_uint = 0
-    while i + name.len <= source.len:
-        let b = source.byte_at(i)
-        if (b & ubyte<-(0xC0)) == ubyte<-(0x80):
-            i += 1
-            continue
-        if source.slice(i, name.len).equal(name):
-            # Check word boundaries.
-            var is_start = i == 0
-            if i > 0:
-                let before = source.byte_at(i - 1)
-                is_start = not is_word_byte(before)
-            var after = i + name.len
-            var is_end = after >= source.len
-            if after < source.len:
-                let after_byte = source.byte_at(after)
-                is_end = not is_word_byte(after_byte)
-            if is_start and is_end:
-                count += 1
-        i += 1
-    return count
-
-
-## True when a byte is part of an identifier character.
-function is_word_byte(b: ubyte) -> bool:
-    return (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or
-        (b >= '0' and b <= '9') or b == '_'
 
 
 ## Extract `value[outer][inner]` when both levels are objects and the leaf is

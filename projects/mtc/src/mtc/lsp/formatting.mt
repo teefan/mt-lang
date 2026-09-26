@@ -1,25 +1,25 @@
-## Formatting handler — format a document via the existing source formatter.
+## Formatting handlers — the mode dispatch the client configuration selects.
 ##
-## Parses the source text, runs the AST formatter, and returns the formatted
-## text as a TextEdit replacement for the entire document.
+## Ports the host's handlers (lib/milk_tea/lsp/server/formatting.rb:646-693):
+## the mode comes from the client configuration (default `:tidy`), a full
+## format always answers one edit whose range ends at `line_count + 1`, and
+## range formatting formats the requested byte segment rather than slicing a
+## whole-document result.
 
 import std.json as json
 import std.str
 import std.string as string
-import std.vec as vec
 
-import mtc.parser.parser as parser
-import mtc.parser.state as pstate
-import mtc.pretty_printer.ast_formatter as ast_formatter
+import mtc.formatter.tidy as tidy
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
 
-## Handle textDocument/formatting: format the entire document and return
-## a list of TextEdit replacements (a single full-document edit).
+## Handle textDocument/formatting: format the entire document and return a
+## single TextEdit replacement.
 public function handle_formatting(ws: ref[workspace.Workspace], params: json.Value, id: json.Value) -> void:
-    let uri = text_doc_uri_from_params(params)
+    let uri = proto.extract_text_doc_uri(params)
     if uri.len == 0:
         proto.write_error(id, -32602, "invalid params: missing textDocument.uri")
         return
@@ -29,89 +29,24 @@ public function handle_formatting(ws: ref[workspace.Workspace], params: json.Val
         return
     defer: owned_path.release()
 
-    # Read source text from the open document if available, otherwise from disk.
     var source_text = ws.document_source(owned_path.as_str()) else:
         proto.write_error(id, -32800, "format request failed: could not read file")
         return
     defer: source_text.release()
 
     let source = source_text.as_str()
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    if parse_diags.len() > 0:
-        proto.write_error(id, -32800, "format request failed: parse error")
+    var formatted = format_with_mode(ws, source, owned_path.as_str()) else:
+        # The host rescues formatter failures into an empty edit list.
+        proto.write_response_raw(id, "[]")
         return
-
-    var formatted = ast_formatter.format_source_file(ast_file)
     defer: formatted.release()
 
-    if formatted.as_str() == source or formatted.len() == 0:
-        # No changes needed — return empty edit list.
-        var result = json.create_array_value()
-        proto.write_response(id, result)
-        return
-
-    var text_edit = json.create_object_value()
-    var text_edit_ptr = text_edit.as_object()
-    if text_edit_ptr == null:
-        json.release_value(text_edit)
-        proto.write_error(id, -32603, "internal error")
-        return
-
-    # Count lines in the source for the end position.
-    var line_count: ptr_uint = 1
-    var last_line_start: ptr_uint = 0
-    var bi: ptr_uint = 0
-    while bi < source.len:
-        if source.byte_at(bi) == '\n':
-            line_count += 1
-            last_line_start = bi + 1
-        bi += 1
-    let last_line_length = source.len - last_line_start
-
-    var edit_start = json.create_object_value()
-    var edit_end = json.create_object_value()
-    var edit_range = json.create_object_value()
-
-    var s_ptr = edit_start.as_object()
-    var e_ptr = edit_end.as_object()
-    var r_ptr = edit_range.as_object()
-
-    if s_ptr == null or e_ptr == null or r_ptr == null:
-        json.release_value(edit_start)
-        json.release_value(edit_end)
-        json.release_value(edit_range)
-        json.release_value(text_edit)
-        proto.write_error(id, -32603, "internal error")
-        return
-
-    unsafe:
-        read(s_ptr).set("line", json.number_value(0.0))
-        read(s_ptr).set("character", json.number_value(0.0))
-        read(e_ptr).set("line", json.number_value(double<-(line_count - 1)))
-        read(e_ptr).set("character", json.number_value(double<-last_line_length))
-        read(r_ptr).set("start", edit_start)
-        read(r_ptr).set("end", edit_end)
-        read(text_edit_ptr).set("range", edit_range)
-        read(text_edit_ptr).set("newText", json.string_from_str(formatted.as_str()))
-
-    var result = json.create_array_value()
-    var result_ptr = result.as_array()
-    if result_ptr == null:
-        json.release_value(text_edit)
-        json.release_value(result)
-        proto.write_error(id, -32603, "internal error")
-        return
-    unsafe:
-        read(result_ptr).push(text_edit)
-
-    proto.write_response(id, result)
+    let line_count = newline_count(source)
+    emit_text_edit(id, 0, 0, line_count + 1, 0, formatted.as_str())
 
 
-## Handle textDocument/rangeFormatting: format only the portion of the
-## document within the given range.  Returns a TextEdit array replacing the
-## request range with the formatted text.
+## Handle textDocument/rangeFormatting: format only the requested byte
+## segment of the document and replace the requested range with the result.
 public function handle_range_formatting(ws: ref[workspace.Workspace], params: json.Value, id: json.Value) -> void:
     let uri = proto.extract_text_doc_uri(params)
     if uri.len == 0:
@@ -129,43 +64,87 @@ public function handle_range_formatting(ws: ref[workspace.Workspace], params: js
     defer: source_text.release()
 
     let source = source_text.as_str()
+    let range = extract_range(params)
 
-    # Extract the range from params.
-    var range = extract_range(params)
-    if range.start_line > range.end_line:
-        proto.write_response_raw(id, "[]")
-        return
-
-    # Convert line positions to byte offsets.
     let start_offset = line_offset(source, range.start_line, range.start_char)
     let end_offset = line_offset(source, range.end_line, range.end_char)
-    if end_offset > source.len:
-        proto.write_response_raw(id, "[]")
-        return
-    if start_offset >= end_offset:
+    if start_offset > end_offset or end_offset > source.len:
         proto.write_response_raw(id, "[]")
         return
 
-    # Format the full file, then extract the diff for the requested range.
-    # We format the full file because the Milk Tea formatter needs AST context.
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    if parse_diags.len() > 0:
+    let segment = source.slice(start_offset, end_offset - start_offset)
+    var formatted = format_with_mode(ws, segment, owned_path.as_str()) else:
         proto.write_response_raw(id, "[]")
         return
-
-    var formatted = ast_formatter.format_source_file(ast_file)
     defer: formatted.release()
 
-    # Extract the original and formatted text in the requested byte range.
-    let original_slice = source.slice(start_offset, end_offset - start_offset)
-    let formatted_slice = formatted.as_str().slice(start_offset, end_offset - start_offset)
-    if original_slice.equal(formatted_slice):
-        proto.write_response_raw(id, "[]")
+    emit_text_edit(id, range.start_line, range.start_char, range.end_line, range.end_char, formatted.as_str())
+
+
+## Handle textDocument/willSaveWaitUntil: answer with the full-document edit the
+## client applies on save, or `null` when nothing changes (host
+## `lsp/server/text_documents.rb:109-135`).  The host also caps the work at
+## 0.5 s and answers `null` on timeout; this port has no timeout here.
+public function handle_will_save_wait_until(ws: ref[workspace.Workspace], params: json.Value, id: json.Value) -> void:
+    let uri = proto.extract_text_doc_uri(params)
+    if uri.len == 0:
+        proto.write_response(id, json.null_value())
         return
 
-    # Build a single TextEdit replacing the range.
+    var owned_path = uri_ops.file_uri_to_path(uri) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer: owned_path.release()
+
+    var source_text = ws.document_source(owned_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer: source_text.release()
+
+    let source = source_text.as_str()
+    if source.len == 0:
+        proto.write_response(id, json.null_value())
+        return
+
+    var formatted = format_with_mode(ws, source, owned_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    defer: formatted.release()
+
+    if formatted.as_str().equal(source):
+        proto.write_response(id, json.null_value())
+        return
+
+    let line_count = newline_count(source)
+    emit_text_edit(id, 0, 0, line_count + 1, 0, formatted.as_str())
+
+
+## Format with the configured mode.  An empty configuration, an unknown mode
+## name or a formatter failure all leave the document alone (empty edit list).
+function format_with_mode(ws: ref[workspace.Workspace], source: str, path: str) -> Option[string.String]:
+    return tidy.format_source(source, path, current_format_mode(ws), 0)
+
+
+## The host initializes `@format_mode` to `:tidy` and only replaces it with one
+## of `Formatter::MODES` (lib/milk_tea/lsp/server/configuration.rb:46-59).
+function current_format_mode(ws: ref[workspace.Workspace]) -> tidy.FormatMode:
+    let configured = ws.format_mode.as_str()
+    if configured.len == 0:
+        return tidy.FormatMode.tidy
+    let parsed = tidy.parse_format_mode(configured) else:
+        return tidy.FormatMode.tidy
+    return parsed
+
+
+## Answer with a one-element TextEdit array.
+function emit_text_edit(
+    id: json.Value,
+    start_line: ptr_uint,
+    start_char: ptr_uint,
+    end_line: ptr_uint,
+    end_char: ptr_uint,
+    new_text: str,
+) -> void:
     var result = json.create_array_value()
     var result_ptr = result.as_array()
     if result_ptr == null:
@@ -184,6 +163,7 @@ public function handle_range_formatting(ws: ref[workspace.Workspace], params: js
     var edit_start = json.create_object_value()
     var edit_end = json.create_object_value()
     var edit_range = json.create_object_value()
+
     let sd = edit_start.as_object() else:
         json.release_value(edit_start)
         json.release_value(edit_end)
@@ -210,17 +190,28 @@ public function handle_range_formatting(ws: ref[workspace.Workspace], params: js
         return
 
     unsafe:
-        read(sd).set("line", json.number_value(double<-range.start_line))
-        read(sd).set("character", json.number_value(double<-range.start_char))
-        read(ed).set("line", json.number_value(double<-range.end_line))
-        read(ed).set("character", json.number_value(double<-range.end_char))
+        read(sd).set("line", json.number_value(double<-start_line))
+        read(sd).set("character", json.number_value(double<-start_char))
+        read(ed).set("line", json.number_value(double<-end_line))
+        read(ed).set("character", json.number_value(double<-end_char))
         read(rd).set("start", edit_start)
         read(rd).set("end", edit_end)
         read(text_edit_ptr).set("range", edit_range)
-        read(text_edit_ptr).set("newText", json.string_from_str(formatted_slice))
+        read(text_edit_ptr).set("newText", json.string_from_str(new_text))
         read(result_ptr).push(text_edit)
 
     proto.write_response(id, result)
+
+
+## Number of newlines in `source` (Ruby's `String#count("\n")`).
+function newline_count(source: str) -> ptr_uint:
+    var count: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < source.len:
+        if source.byte_at(i) == '\n':
+            count += 1
+        i += 1
+    return count
 
 
 ## Extract the range from a rangeFormatting request params.
@@ -281,8 +272,3 @@ function number_field(obj: ptr[json.Object], name: str) -> ptr_uint:
         if value < 0.0:
             return 0
         return ptr_uint<-int<-value
-
-
-## Extract the textDocument.uri from a formatting notification params object.
-function text_doc_uri_from_params(params: json.Value) -> str:
-    return proto.extract_text_doc_uri(params)

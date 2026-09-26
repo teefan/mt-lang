@@ -161,6 +161,8 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         formatting.handle_formatting(ws, msg.params, msg.id)
     else if method == "textDocument/rangeFormatting":
         formatting.handle_range_formatting(ws, msg.params, msg.id)
+    else if method == "textDocument/willSaveWaitUntil":
+        formatting.handle_will_save_wait_until(ws, msg.params, msg.id)
 
     # Document symbols (Tier 2)
     else if method == "textDocument/documentSymbol":
