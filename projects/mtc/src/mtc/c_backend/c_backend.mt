@@ -15,6 +15,7 @@
 import std.string as string
 import std.str
 import std.fmt as fmt
+import std.libc as libc
 import std.map as map_mod
 import std.vec as vec
 import std.mem.heap as heap
@@ -1002,24 +1003,67 @@ function long_to_str(value: long) -> str:
     return buf.as_str()
 
 
+## Render a floating-point literal the way the host does: a value whose `%.1f`
+## form parses back unchanged keeps one decimal (`1.0`, `0.2`,
+## `100000000000000000000.0`), every other value uses the shortest decimal
+## string that round-trips (Ruby's `Float#to_s`), so `0.2` is not printed as
+## `0.20000000000000001`.
 function double_to_str(value: double) -> str:
+    var one_decimal = string.String.create()
+    fmt.append_double_precision(ref_of(one_decimal), value, 1)
+    if parses_back_to(one_decimal.as_str(), value):
+        return one_decimal.as_str()
+    one_decimal.release()
+
+    var precision = 1
+    while precision <= 17:
+        var candidate = string.String.create()
+        fmt.append_double_g(ref_of(candidate), value, precision)
+        if parses_back_to(candidate.as_str(), value):
+            var styled = ruby_exponent_style(candidate.as_str())
+            candidate.release()
+            return styled.as_str()
+        candidate.release()
+        precision += 1
+
+    var full = string.String.create()
+    fmt.append_double_full(ref_of(full), value)
+    return full.as_str()
+
+
+## True when `text` parses back to exactly `value`.
+function parses_back_to(text: str, value: double) -> bool:
+    return libc.parse_double_to_end(text, null) == value
+
+
+## An owned copy of `text` with Ruby's exponent spelling: `%g` writes `1e-07`
+## where Ruby writes `1.0e-07`, so a fraction digit is inserted before the
+## exponent when it is missing.
+function ruby_exponent_style(text: str) -> string.String:
     var buf = string.String.create()
-    # 17 significant digits: `%g`'s default 6 would round constants like PI to
-    # 3.14159 and lose the double's precision in emitted C literals.
-    fmt.append_double_full(ref_of(buf), value)
-    return buf.as_str()
+    let e_pos = text.find_substring("e") else:
+        buf.append(text)
+        return buf
+    if text.contains_substring("."):
+        buf.append(text)
+        return buf
+    buf.append(text.slice(0, e_pos))
+    buf.append(".0")
+    buf.append(text.slice(e_pos, text.len - e_pos))
+    return buf
 
 
 ## Render a float/double literal as a C *floating-point* literal.  A whole-number
-## double like `1.0` formats as `"1"`, which C parses as an `int` — so `1.0 /
-## 3.0` would become integer division `1 / 3 == 0`.  Append `.0` when the text
-## has no decimal point, exponent, or inf/nan marker, so the value stays
-## floating-point (matches Ruby, which emits `1.0`).
-function c_float_literal(value: double) -> str:
+## double like `1.0` formats as `"1"` in `%g` terms, which C parses as an `int` —
+## so a `.0` is appended when the text has no decimal point or exponent (matches
+## Ruby, which emits `1.0`).  A `float`-typed literal carries C's `f` suffix, as
+## the host emits (`0.2f`).
+function c_float_literal(value: double, is_float32: bool) -> str:
     let s = double_to_str(value)
-    if float_literal_needs_decimal(s):
-        return j2(s, ".0")
-    return s
+    var text = if float_literal_needs_decimal(s): j2(s, ".0") else: s
+    if is_float32:
+        return j2(text, "f")
+    return text
 
 
 function float_literal_needs_decimal(s: str) -> bool:
@@ -4188,7 +4232,14 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 # not `-1`).
                 return ptr_uint_to_str(lit.value)
             ir.Expr.expr_float_literal as lit:
-                return c_float_literal(lit.value)
+                var is_float32 = false
+                match lit.ty:
+                    types.Type.ty_primitive as p:
+                        if p.name == "float":
+                            is_float32 = true
+                    _:
+                        pass
+                return c_float_literal(lit.value, is_float32)
             ir.Expr.expr_boolean_literal as b:
                 return if b.value: "true" else: "false"
             ir.Expr.expr_string_literal as s:

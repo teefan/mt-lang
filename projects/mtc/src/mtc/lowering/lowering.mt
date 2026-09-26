@@ -2454,9 +2454,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # return type (e.g. `return 0` in a `ptr_uint` function), matching
                 # the host's contextual numeric literal inference.
                 let ret_lit = int_literal_to_context_type(value, ctx.current_fn_return_type, lowered)
+                let ret_flt = float_literal_to_context_type(value, ctx.current_fn_return_type, ret_lit)
                 # A bare `null` return takes the function's return type (the
                 # analyzer may record only `void` for it).
-                let ret_null = null_literal_to_context_type(value, ctx.current_fn_return_type, ret_lit)
+                let ret_null = null_literal_to_context_type(value, ctx.current_fn_return_type, ret_flt)
                 let wrapped = if ctx.inside_async: make_task_literal(ret_null) else: ret_null
                 if has_pending_defers(ctx) and not cleanup_safe_return_expr(value):
                     let ret_ty = ir_expr_type(wrapped)
@@ -2597,6 +2598,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             ty = ir_expr_type(value_expr)
                     else:
                         ty = qualify_type(ctx, ir_expr_type(value_expr))
+                # A float literal in a declared `float`/`double` position takes
+                # that type, as the host's contextual literal inference does.
+                if init != null:
+                    unsafe:
+                        match read(ptr[ast.Expr]<-init):
+                            ast.Expr.expr_float_literal:
+                                value_expr = float_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
+                            _:
+                                pass
                 # Wrap a non-nullable value into a value-type nullable's opt struct.
                 if types.is_nullable_type(ty) and not is_nullable_pointer_like(ty):
                     let value_ty = ir_expr_type(value_expr)
@@ -8833,6 +8843,7 @@ function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args
             Option.some as field_ty:
                 let fty = field_ty.value
                 value = int_literal_to_context_type(arg.arg_value, fty, value)
+                value = float_literal_to_context_type(arg.arg_value, fty, value)
                 # Wrap non-nullable values into value-type nullable fields.
                 if types.is_nullable_type(fty) and not is_nullable_pointer_like(fty):
                     let value_ty = ir_expr_type(value)
@@ -12071,6 +12082,28 @@ function int_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.T
     if not int_value_fits_type(literal_value, context_ty):
         return value
     return alloc_expr(integer_literal_expr(literal_lexeme, literal_value, context_ty))
+
+
+## Re-type a float literal against a `float`/`double` context, mirroring the
+## host's contextual numeric literal inference: `0.2` in a `double` position is
+## a double literal (the emitted C carries no `f` suffix), in a `float` position
+## it stays a float literal.
+function float_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    var is_float_ctx = false
+    match context_ty:
+        types.Type.ty_primitive as p:
+            if p.name == "float" or p.name == "double":
+                is_float_ctx = true
+        _:
+            pass
+    if not is_float_ctx:
+        return value
+    unsafe:
+        match read(arg_ast):
+            ast.Expr.expr_float_literal as lit:
+                return alloc_expr(ir.Expr.expr_float_literal(value = lit.value, ty = context_ty))
+            _:
+                return value
 
 
 ## The IR node for an integer literal read from the AST, mirroring the host's
