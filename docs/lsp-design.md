@@ -436,7 +436,7 @@ fixed the same day.
 
 | Feature | Status |
 |---------|--------|
-| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 7 of 47 requests, 3 of 15 stress probes and 2 semantic-token comparisons still differ — 12 entries) |
+| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 5 of 47 requests, 2 of 15 stress probes and 2 semantic-token comparisons still differ — 9 entries) |
 | Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
 | Config application | **DONE** — parse workspace/configuration response |
 | Per-request tracing | **DONE** — `[DEBUG] lsp: → <id> <method>` |

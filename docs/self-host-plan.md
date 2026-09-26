@@ -34,7 +34,7 @@ sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
-**LSP: 36 modules, ~12.2k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 7/47 harness requests, 3/15 stress probes and 2 semantic-token comparisons still differing — 12 entries (§0k).**
+**LSP: 36 modules, ~12.2k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 5/47 harness requests, 2/15 stress probes and 2 semantic-token comparisons still differing — 9 entries (§0k).**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
 **LSP logging: structured stderr, version+revision announcement, blank-line filtering.**
@@ -72,10 +72,10 @@ first difference *and* its build failure), zero-valued aggregate field types,
 `null` contextual typing, event-field modelling and generic-specialization
 parameter types (§0j).
 
-Last updated: 2026-09-26 (LSP parity stages 1-2: the seven isolated entries plus
-the whole completion family closed — differing entries 23 -> 12, catalogue and
-working order in §0k; LSP feature parity is the active phase — see the phase order
-below; `lower`/CLI remaining work unchanged in §0j)
+Last updated: 2026-09-26 (LSP parity stages 1-3: the seven isolated entries, the
+completion family and documentSymbol closed — differing entries 23 -> 9, catalogue
+and working order in §0k; LSP feature parity is the active phase — see the phase
+order below; `lower`/CLI remaining work unchanged in §0j)
 
 ---
 
@@ -106,11 +106,11 @@ looked correct at the CLI level broke the compiler's own bootstrap.
 2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 8).
 3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
-   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 7 of 47 request
-   entries, 3 of 15 stress probes and 2 semantic-token comparisons differing (12
+   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 5 of 47 request
+   entries, 2 of 15 stress probes and 2 semantic-token comparisons differing (9
    entries); the remaining families and the working order are in §0k.  Stages 1
-   (seven isolated entries) and 2 (completion) are closed.  The self-host survives
-   the whole stress corpus without a crash or hang.
+   (seven isolated entries), 2 (completion) and 3 (documentSymbol) are closed.  The
+   self-host survives the whole stress corpus without a crash or hang.
 4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
    bridge was assessed as not feasible without multi-threaded I/O
    (`dap-design.md`).
@@ -243,6 +243,16 @@ token ranges (5 entries), `signatureHelp`, `prepareRename`, `documentLink`'s
 tooltip, inferred local types in hover + inline hints (3), `definition/local`'s
 range and the aggregate-literal label hover `hover/field`.
 
+**Re-measured 2026-09-26 (stage 3 — documentSymbol closed)**: capabilities 30/30
+keys identical; **5/47 requests, 2/15 probes and 2 semantic-token comparisons
+differ (9 entries)**; 0 timeouts; 0 crashes.  Stage 3 rewrote `lsp/symbols.mt`
+against the host's tree: declaration symbols in source order with the host's kinds,
+name-token `range`/`selectionRange`, `detail` text (`-> ret` with
+`const`/`async`/`mut`/`static` prefixes, `(impls)`, `: backing`, `[generics]`,
+`= target`, `event[cap](payload)`, `implementation` for `extending` blocks),
+field/enum-member/variant-arm children on the host's line spans (arms report on the
+variant's line) and function locals as kind-13 name-span children (`_` skipped).
+
 **Re-measured 2026-09-26 (stage 2 — completion closed)**: capabilities 30/30 keys
 identical; **7/47 requests, 3/15 probes and 2 semantic-token comparisons differ
 (12 entries)**; 0 timeouts; 0 crashes.  Stage 2 rewrote `lsp/completion.mt` against
@@ -304,16 +314,15 @@ comparisons differ (16 entries)**; 0 timeouts; 0 crashes.  The stage-1 root caus
 
 ### Remaining LSP gaps (all reproducible with the harness)
 
-Re-measured 2026-09-26 after stage 2: **12 differing entries** — 2 semantic-token
-comparisons, 7 of 47 requests, 3 of 15 probes.  The remaining families, in the
+Re-measured 2026-09-26 after stage 3: **9 differing entries** — 2 semantic-token
+comparisons, 5 of 47 requests, 2 of 15 probes.  The remaining families, in the
 working order for this phase (mid-weight first, the two heavy ports last):
 
 | # | Family | Entries | Evidence / target |
 | --- | --- | --- | --- |
-| 1 | **`documentSymbol`** | `documentSymbol`, `documentSymbol/beta`, `stress/full-didChange+symbols` | host ranges are real and carry `detail` (`int` for fields, `implementation` for `extending` blocks, `-> int` for functions), field children `kind 8`, methods `kind 6`, plus one symbol per `extending` block; self emits `character:0` ranges, `kind 13` fields, no detail, no implementation symbols.  `type_render.short_name` already renders the host's field/return detail text |
-| 2 | **Diagnostics / semantic tokens** | `diagnostic/pull`, `workspace/diagnostic`, `stress/unterminated-source+diagnostic`, `stress/unicode+semanticTokens`, `semanticTokens/full`, `semanticTokens/range` | host codes/stages/ranges (`import/load-error` at the module name, `sema/error` entries) vs self `module/error` at the alias + lint warnings; `workspace/diagnostic` emits only cache misses, so the root document is dropped; an unterminated source must report the lex errors through the loader; the full/range token streams classify `s.sum()`/`s.len` as `variable`(8) where the host uses `method`(13)/`property`(9) and never emit `defaultLibrary`(512) for builtin names — the earlier "`method`(13) vs `macro`(14)" note was stale (the observed pair is `method` vs `variable`; neither server emits `macro`), and the import `declaration` modifier sits on the module path instead of the alias |
-| 3 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets -> `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia -> `reconstruct_normalized` -> blank lines -> wrap; ~1.1–1.8k MT lines) |
-| 4 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  The Bindings section needs binding-identity data the self analyzer does not model |
+| 1 | **Diagnostics / semantic tokens** | `diagnostic/pull`, `workspace/diagnostic`, `stress/unterminated-source+diagnostic`, `stress/unicode+semanticTokens`, `semanticTokens/full`, `semanticTokens/range` | host codes/stages/ranges (`import/load-error` at the module name, `sema/error` entries) vs self `module/error` at the alias + lint warnings; `workspace/diagnostic` emits only cache misses, so the root document is dropped; an unterminated source must report the lex errors through the loader; the full/range token streams classify `s.sum()`/`s.len` as `variable`(8) where the host uses `method`(13)/`property`(9) and never emit `defaultLibrary`(512) for builtin names — the earlier "`method`(13) vs `macro`(14)" note was stale (the observed pair is `method` vs `variable`; neither server emits `macro`), and the import `declaration` modifier sits on the module path instead of the alias |
+| 2 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets -> `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia -> `reconstruct_normalized` -> blank lines -> wrap; ~1.1–1.8k MT lines) |
+| 3 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  The Bindings section needs binding-identity data the self analyzer does not model |
 
 ### Where the next session starts (LSP parity)
 
@@ -329,18 +338,15 @@ ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json --full
 tools/bootstrap.sh -j 16          # fixed point + tests, before every commit
 ```
 
-Stages 1–2 are closed; take the remaining rows in the working order, each with its
+Stages 1–3 are closed; take the remaining rows in the working order, each with its
 opening files:
-1. **`documentSymbol`** — `projects/mtc/src/mtc/lsp/symbols.mt`; the host's
-   `enrich_with_children` (`lib/milk_tea/lsp/server/formatting.rb`) is the spec,
-   and `type_render.short_name` already renders the `detail` text.
-2. **Diagnostics + semantic tokens** — `lsp/pull_diagnostics.mt`,
+1. **Diagnostics + semantic tokens** — `lsp/pull_diagnostics.mt`,
    `lsp/diagnostics.mt`, `lsp/semantic_tokens.mt`, `loader/module_loader.mt`,
    `parser/parser.mt` (lex diagnostics); host `diagnostics.rb` and
    `semantic_tokens.rb` are the reference.
-3. **`milkTea/debugInfo`** — `lsp/debug_info.mt` + the `lsp/server.mt` dispatch;
+2. **`milkTea/debugInfo`** — `lsp/debug_info.mt` + the `lsp/server.mt` dispatch;
    host `tooling/debug_info_formatter.rb` is the spec.
-4. **Formatting (tidy)** — new `pretty_printer/tidy_formatter.mt` +
+3. **Formatting (tidy)** — new `pretty_printer/tidy_formatter.mt` +
    `lexer/lexer.mt` (trivia) + `lsp/formatting.mt` (segment formatting);
    `lib/milk_tea/tooling/formatter.rb` + `lib/milk_tea/core/cst.rb` are the
    reference, `§7` in this file is the design note.
