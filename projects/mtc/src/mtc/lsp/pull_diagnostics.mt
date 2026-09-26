@@ -63,7 +63,7 @@ public function handle_document_diagnostic(
     # Compute new diagnostics.
     var roots = ws.effective_module_roots_for(file_path.as_str())
     defer: roots.release()
-    var diagnostics = diag.collect_diagnostics(file_path.as_str(), roots.as_span())
+    var diagnostics = diag.collect_diagnostics(file_path.as_str(), roots.as_span(), source)
 
     var diag_json = string.String.create()
     append_json_value_into(ref_of(diag_json), diagnostics)
@@ -90,8 +90,10 @@ public function handle_document_diagnostic(
     proto.write_response_raw(id, result_json.as_str())
 
 
-## Handle workspace/diagnostic.  Computes diagnostics for all open
-## documents and returns a workspace diagnostic report.
+## Handle workspace/diagnostic.  Reports every open document in didOpen order
+## (the host's `open_document_uris` is insertion-ordered), reusing the same
+## per-document cache as the single-document pull: a document whose fingerprint
+## and `previousResultIds` entry still match is reported as `unchanged`.
 public function handle_workspace_diagnostic(
     ws: ref[workspace.Workspace],
     params: json.Value,
@@ -101,59 +103,117 @@ public function handle_workspace_diagnostic(
     defer: result_json.release()
     result_json.append("{\"items\":[")
 
-    var doc_iter = ws.open_docs.keys()
+    let paths = ws.open_paths_in_order()
     var first = true
+    var pi: ptr_uint = 0
+    while pi < paths.len:
+        let path = unsafe: read(paths.data + pi).as_str()
+        pi += 1
 
-    while true:
-        let kp = doc_iter.next() else:
-            break
-        let path = unsafe: read(kp).as_str()
-        let source_ptr = ws.open_docs.get(unsafe: read(kp))
-        if source_ptr == null:
-            continue
+        var content_opt = ws.document_source(path)
+        match content_opt:
+            Option.none:
+                continue
+            Option.some as payload:
+                var content = payload.value
+                defer: content.release()
+                let source = content.as_str()
+                if source.len == 0:
+                    continue
 
-        let source = unsafe: read(source_ptr).as_str()
-        let current_hash = fnv1a_hash(source)
+                let current_hash = fnv1a_hash(source)
+                let previous_id = previous_result_id_for(params, path)
 
-        # Check cache.
-        var hit = false
-        let cached_ptr = ws.diagnostic_cache_get(path)
-        if cached_ptr != null:
-            let cached = unsafe: read(cached_ptr)
-            if cached.source_hash == current_hash:
-                hit = true
+                # Cache hit: the same fingerprint and the client's previous
+                # result id for this document.
+                var hit = false
+                var cached_id = string.String.create()
+                defer: cached_id.release()
+                let cached_ptr = ws.diagnostic_cache_get(path)
+                if cached_ptr != null:
+                    let cached = unsafe: read(cached_ptr)
+                    if cached.source_hash == current_hash:
+                        cached_id.append(cached.result_id.as_str())
+                        if previous_id.equal(cached_id.as_str()):
+                            hit = true
 
-        if not hit:
-            # Compute and cache.
-            var roots = ws.effective_module_roots_for(path)
-            defer: roots.release()
-            var diagnostics = diag.collect_diagnostics(path, roots.as_span())
+                if not first:
+                    result_json.append(",")
+                first = false
 
-            var diag_json = string.String.create()
-            append_json_value_into(ref_of(diag_json), diagnostics)
-            json.release_value(diagnostics)
+                result_json.append("{\"uri\":\"file://")
+                proto.append_escaped(ref_of(result_json), path)
 
-            var result_id = string.String.create()
-            result_id.append_format(f"#{current_hash:x}")
+                if hit:
+                    result_json.append("\",\"kind\":\"unchanged\",\"resultId\":\"")
+                    proto.append_escaped(ref_of(result_json), cached_id.as_str())
+                    result_json.append("\",\"items\":[],\"version\":null}")
+                    continue
 
-            var cached_diag = string.String.from_str(diag_json.as_str())
-            var cached_id = string.String.from_str(result_id.as_str())
-            ws.diagnostic_cache_set(path, current_hash, cached_id, cached_diag)
+                var roots = ws.effective_module_roots_for(path)
+                defer: roots.release()
+                var diagnostics = diag.collect_diagnostics(path, roots.as_span(), source)
 
-            if not first:
-                result_json.append(",")
-            first = false
-            result_json.append("{\"uri\":\"file://")
-            proto.append_escaped(ref_of(result_json), path)
-            result_json.append("\",\"kind\":\"full\",\"resultId\":\"")
-            proto.append_escaped(ref_of(result_json), result_id.as_str())
-            result_json.append("\",\"items\":")
-            result_json.append(diag_json.as_str())
-            result_json.append("}")
-            result_id.release()
+                var diag_json = string.String.create()
+                append_json_value_into(ref_of(diag_json), diagnostics)
+                json.release_value(diagnostics)
+
+                var result_id = string.String.create()
+                result_id.append_format(f"#{current_hash:x}")
+
+                var cached_diag = string.String.from_str(diag_json.as_str())
+                var owned_id = string.String.from_str(result_id.as_str())
+                ws.diagnostic_cache_set(path, current_hash, owned_id, cached_diag)
+
+                result_json.append("\",\"kind\":\"full\",\"resultId\":\"")
+                proto.append_escaped(ref_of(result_json), result_id.as_str())
+                result_json.append("\",\"items\":")
+                result_json.append(diag_json.as_str())
+                result_json.append(",\"version\":null}")
+                result_id.release()
+                diag_json.release()
 
     result_json.append("]}")
     proto.write_response_raw(id, result_json.as_str())
+
+
+## The `previousResultIds` value recorded for `path`, or "" when absent.  The
+## client sends an array of `{uri, value}` entries.
+function previous_result_id_for(params: json.Value, path: str) -> str:
+    let obj_ptr = params.as_object() else:
+        return ""
+    unsafe:
+        let prev_ptr = read(obj_ptr).get("previousResultIds")
+        if prev_ptr == null:
+            return ""
+        let arr_ptr = read(prev_ptr).as_array() else:
+            return ""
+        var i: ptr_uint = 0
+        while i < read(arr_ptr).len():
+            let entry_ptr = read(arr_ptr).get(i) else:
+                break
+            let entry_obj = read(entry_ptr).as_object() else:
+                i += 1
+                continue
+            let uri_ptr = read(entry_obj).get("uri")
+            if uri_ptr != null:
+                let uri_str = read(uri_ptr).as_string() else:
+                    i += 1
+                    continue
+                if uri_matches_path(uri_str, path):
+                    let value_ptr = read(entry_obj).get("value")
+                    if value_ptr != null:
+                        let value_str = read(value_ptr).as_string() else:
+                            return ""
+                        return value_str
+            i += 1
+    return ""
+
+
+## True when a client URI refers to the given file path (the workspace keys
+## documents by path).
+function uri_matches_path(uri: str, path: str) -> bool:
+    return uri.equal(path) or uri.ends_with(path)
 
 
 ## Compute an FNV-1a hash of a source string.  Used as the diagnostic

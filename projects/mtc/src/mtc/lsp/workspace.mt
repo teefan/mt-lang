@@ -39,6 +39,9 @@ public struct Workspace:
     root_path: string.String
     module_roots: vec.Vec[string.String]
     open_docs: map_mod.Map[string.String, string.String]
+    ## Open document paths in didOpen order: `workspace/diagnostic` reports
+    ## documents in the client's open order, which a hash map cannot express.
+    open_doc_order: vec.Vec[string.String]
     document_contexts: map_mod.Map[string.String, string.String]
     cancelled_ids: vec.Vec[ptr_uint]
     diagnostic_cache: DiagnosticCache
@@ -61,6 +64,7 @@ extending Workspace:
             root_path = string.String.from_str(root),
             module_roots = roots,
             open_docs = map_mod.Map[string.String, string.String].create(),
+            open_doc_order = vec.Vec[string.String].create(),
             document_contexts = map_mod.Map[string.String, string.String].create(),
             cancelled_ids = vec.Vec[ptr_uint].create(),
             diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create()),
@@ -102,6 +106,7 @@ extending Workspace:
         let path_result = uri_ops.file_uri_to_path(uri)
         match path_result:
             Option.some as path_payload:
+                this.track_open_path(path_payload.value.as_str())
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
             Option.none:
                 pass
@@ -111,6 +116,7 @@ extending Workspace:
         let path_result = uri_ops.file_uri_to_path(uri)
         match path_result:
             Option.some as path_payload:
+                this.track_open_path(path_payload.value.as_str())
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
             Option.none:
                 pass
@@ -120,9 +126,39 @@ extending Workspace:
         let path_result = uri_ops.file_uri_to_path(uri)
         match path_result:
             Option.some as path_payload:
+                this.untrack_open_path(path_payload.value.as_str())
                 this.open_docs.remove(path_payload.value)
             Option.none:
                 pass
+
+
+    ## Record `path` in didOpen order, once.
+    public editable function track_open_path(path: str) -> void:
+        var i: ptr_uint = 0
+        while i < this.open_doc_order.len():
+            let p = this.open_doc_order.get(i) else:
+                break
+            if unsafe: read(p).as_str().equal(path):
+                return
+            i += 1
+        this.open_doc_order.push(string.String.from_str(path))
+
+
+    ## Drop `path` from the didOpen-order list.
+    public editable function untrack_open_path(path: str) -> void:
+        var i: ptr_uint = 0
+        while i < this.open_doc_order.len():
+            let p = this.open_doc_order.get(i) else:
+                break
+            if unsafe: read(p).as_str().equal(path):
+                match this.open_doc_order.remove(i):
+                    Option.some as removed:
+                        var owned = removed.value
+                        owned.release()
+                    Option.none:
+                        pass
+                return
+            i += 1
 
 
     ## Source text for a file: the open editor buffer when present, else disk.
@@ -183,6 +219,12 @@ extending Workspace:
             unsafe:
                 result.push(string.String.from_str(read(kp).as_str()))
         return result
+
+
+    ## Open document paths in didOpen order (the client's open order, which
+    ## `open_document_keys` cannot express).  Borrowed from the workspace.
+    public function open_paths_in_order() -> span[string.String]:
+        return this.open_doc_order.as_span()
 
 
     ## Number of entries in the workspace symbol index.
@@ -320,6 +362,14 @@ extending Workspace:
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         this.open_docs.release()
+        var oi: ptr_uint = 0
+        while oi < this.open_doc_order.len():
+            let op = this.open_doc_order.get(oi) else:
+                break
+            unsafe:
+                read(op).release()
+            oi += 1
+        this.open_doc_order.release()
         this.document_contexts.release()
         this.cancelled_ids.release()
         release_diagnostic_cache(ref_of(this.diagnostic_cache))

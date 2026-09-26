@@ -2,8 +2,10 @@
 
 > **Starting a session?** Read **"How to start a work session"** below (phase
 > order, per-workstream entry points and gates), then **§0k** for the active LSP-
-> parity phase (live counters, remaining entries, opening files) and **§0j** for
-> the compiler-side remaining work (`lower`, builds, CLI).
+> parity phase (live counters, the remaining entries, and the **stage 5/6
+> capsules** — `milkTea/debugInfo`, then formatting/tidy — with opening files,
+> host references and budgets) and **§0j** for the compiler-side remaining work
+> (`lower`, builds, CLI).
 
 > **Workstream status (self-host vs `projects/stress`)**: **DONE** — the
 > self-host compiler builds, links and runs `projects/stress` with output and
@@ -26,16 +28,17 @@ stdout+exit (sampled: `integration_test`, `reflection_advanced`,
 `language_baseline`, `event_stress_test`). **The vendored example families now
 build and run at parity**: `box2d/drop`, `box2d/explosion`, `box3d/ragdoll` and
 `box3d/box_stack` produce byte-identical stdout under both compilers, and
-`examples/sdl3` files `check` clean (§0j items 5–13). **`mtc lint` has 36 rules plus `--fix`
+`examples/sdl3` files `check` clean (§0j items 5–13). **`mtc lint` has 37 rules plus `--fix`
 (10 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
-config**. Bootstrap via `tools/bootstrap.sh`.
+config** (`prefer-inline-methods` landed with the LSP diagnostics work; its
+auto-fix is not ported).  Bootstrap via `tools/bootstrap.sh`.
 Test runner now builds in-process (no Ruby delegation).  Vendored library
 recipes complete for all 7 libraries (raylib, glfw, tracy, cjson, box2d,
 sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
 **DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
-**LSP: 36 modules, ~12.2k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 5/47 harness requests, 2/15 stress probes and 2 semantic-token comparisons still differing — 9 entries (§0k).**
+**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 3/47 harness requests and 2/15 stress probes still differing — 5 entries (§0k); both semantic-token comparisons are byte-equal.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
 **LSP logging: structured stderr, version+revision announcement, blank-line filtering.**
@@ -73,10 +76,12 @@ first difference *and* its build failure), zero-valued aggregate field types,
 `null` contextual typing, event-field modelling and generic-specialization
 parameter types (§0j).
 
-Last updated: 2026-09-26 (LSP parity stages 1-3: the seven isolated entries, the
-completion family and documentSymbol closed — differing entries 23 -> 9, catalogue
-and working order in §0k; LSP feature parity is the active phase — see the phase
-order below; `lower`/CLI remaining work unchanged in §0j)
+Last updated: 2026-09-26 (LSP parity stage 4: the diagnostics family — buffer-backed
+analysis, lex diagnostics through the loader, host codes/stages/ranges,
+`workspace/diagnostic` — and the semantic-token scanner port are closed;
+differing entries 9 -> 5, with the two remaining in-scope entries diagnosed as a
+parser-recovery port and a host facts-lag artifact; catalogue and working order
+in §0k; `lower`/CLI remaining work unchanged in §0j)
 
 ---
 
@@ -91,7 +96,7 @@ workstream doc for the area you are touching:
 | `lower` dump parity | §0j "Remaining work" 1–6, §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
 | Hard build failures (`examples/*`, `test/mt`) | §0j item 7 | `build/stage2/mtc test test/mt -I .` and building the four examples |
 | CLI behavior parity | §0j item 8, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
-| LSP feature parity (**in progress**, §0k) | §0k's gap list, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`) |
+| LSP feature parity (**in progress**, §0k) | §0k's gap list + the stage 5/6 capsules, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`), plus valgrind and the headless-Neovim smoke test for behavior changes |
 | DAP | `docs/dap-design.md` | `build/stage2/mtc test projects/mtc` covers the compiler, not DAP; drive `mtc dap` by hand (no self-host DAP harness yet) |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
@@ -107,11 +112,12 @@ looked correct at the CLI level broke the compiler's own bootstrap.
 2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 8).
 3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
-   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 5 of 47 request
-   entries, 2 of 15 stress probes and 2 semantic-token comparisons differing (9
-   entries); the remaining families and the working order are in §0k.  Stages 1
-   (seven isolated entries), 2 (completion) and 3 (documentSymbol) are closed.  The
-   self-host survives the whole stress corpus without a crash or hang.
+   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 3 of 47 request
+   entries and 2 of 15 stress probes differing (5 entries), and 0 semantic-token
+   comparisons; the remaining families and the working order are in §0k.  Stages 1
+   (seven isolated entries), 2 (completion), 3 (documentSymbol) and 4
+   (diagnostics + semantic tokens) are closed.  The self-host survives the whole
+   stress corpus without a crash or hang.
 4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
    bridge was assessed as not feasible without multi-threaded I/O
    (`dap-design.md`).
@@ -225,6 +231,78 @@ ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
    Function-call labels stay unresolved (the host answers with a parameter
    hover there — not corpus-covered, noted as a gap).  Closes `hover/field`.
 
+### Fixed this session (2026-09-26, stage 4 — diagnostics + semantic tokens)
+
+**Re-measured**: capabilities 30/30 keys identical; **3/47 requests and 2/15
+stress probes differ (5 entries)**; 0 timeouts; 0 crashes; **both
+semantic-token comparisons are byte-equal**.  Entries closed: `diagnostic/pull`,
+`workspace/diagnostic`, `semanticTokens/full`, `semanticTokens/range`.
+
+1. **Diagnostics analyse the editor buffer, not the file on disk.**  The self
+   hashed the buffer but loaded diagnostics from disk, so a `didChange` without
+   save (the stress probe's premise) reported stale items.
+   `loader.check_program_with_source` parses the *root* module from the caller's
+   text (imports still read from disk); `collect_diagnostics` passes the buffer
+   through.
+2. **Lexer diagnostics reach the client.**  `parser.parse_source_reporting`
+   exposes the lexer's recoverable errors; `LoadedModule` carries them and
+   `check_and_bind_module` reports them as `lex/error` *before* the parse errors
+   (the host's `lex_errors + parse_errors` order).  Semantic analysis now also
+   runs on a recovered AST, so parse errors no longer short-circuit it.
+3. **Diagnostic fidelity** (`lsp/diagnostics.mt`): the LSP derives the host's
+   codes (`module/error` → `import/load-error`) and `data.stage`
+   (`lex`/`parse`/`import`/`sema`/`lint`); ranges span the offending token (new
+   `LoadDiagnostic.length`, import failures anchored at the module-path text via
+   the host's `import_path_span`); sema messages that quote identifiers become
+   MarkupContent; items are scoped to the requested document.  `SemanticDiagnostic`
+   gained a `length` (`unknown name X` spans the name).
+4. **`workspace/diagnostic`** reports *every* open document in didOpen order
+   (`Workspace.open_doc_order`, because the map is hash-ordered) with the host's
+   `{uri,kind,resultId,items,version:null}` shape and `previousResultIds`
+   handling, instead of only cache misses.
+5. **One semantic-token scanner** for full/range/delta.  The divergent
+   `emit_semantic_tokens`/`compute_token_data` pair became a single
+   `classify_scan_identifier` porting the host's `classify_name_semantic` order:
+   import path segments vs the alias (`namespace` + `declaration` on the
+   *alias*, not the first path segment), declaration names after their keywords
+   (struct/union/enum/flags/variant/type/opaque/interface names are `type`, not
+   `struct`/`interface`), struct fields / enum members / variant arms / payload
+   fields, parameter declarations, named-argument labels in type constructors
+   (`property`), dotted members (imported-module member through the resolved
+   alias surface; `enumMember` for a type receiver; `method` when called and
+   `property` otherwise), builtin `defaultLibrary` type and function names, and
+   type-constructor calls (`Sample(...)` → `type`).  `handle_semantic_tokens_range`
+   reproduces the host's band quirk (the requested range's first line is never
+   emitted, `semantic_tokens.rb:105-118`).
+6. **Linter parity for those items**: `prefer-inline-methods` implemented
+   (host `rules.rb:600-631`; hint; `extending X:` on a same-file struct),
+   `unused-import` skips unresolved imports (the LSP hands the loader's list to
+   `lint_source_unresolved`), and `doc-tag` warnings carry the host's `@` column
+   and lengths instead of `[0,1]`.  `mtc lint` itself still passes no unresolved
+   list (its command has no module roots), so the CLI keeps flagging unresolved
+   imports — a CLI-parity follow-up.
+7. **Unresolved import aliases stay unbound in the LSP path**
+   (`check_module_requiring_resolved_imports`, the host's `allow_missing_imports`
+   behaviour), so `alpha.fn_alpha(10)` reports `unknown name alpha` like the
+   host, while the compile path keeps the permissive aliasing the lowering tests
+   depend on.
+
+**Costs measured**: the token scanner loads each *resolved* import's surface per
+request (a resolve stat plus a parse/analyze of the imported module), so
+`semanticTokens/full` on `projects/mtc/src/mtc/main.mt` (28.8k tokens, ~30
+imports) takes 557 ms and a diagnostic pull 694 ms (std/raylib.mt: 168 ms /
+41 ms).  Acceptable for now; a content-keyed alias-surface cache in `Workspace`
+is the follow-up if it hurts editing.
+
+**Gates re-run for this change**: `tools/bootstrap.sh -j 16` (fixed point holds —
+`stage2.c == stage3.c` — 12 test files / 0 failed), `build/stage2/mtc test test/mt`
+(60 files / 7 pre-existing build failures), `rake "cli:parity"` (21 match / 39
+differ / 1 pending, unchanged), `sexpr_parity lex` 696/696 and `parse` 0
+differences, `lower` 38 match / 606 differ / 0 self-rejected, valgrind on the new
+diagnostics + token paths (0 invalid reads/writes; leaks only), and a headless
+Neovim 0.12 attach/edit/shutdown smoke test (an unsaved edit changes the pull
+diagnostics, proving the buffer path).
+
 ### Measured (same corpus, both servers)
 
 The table below is the **2026-09-25/26 session's** before/after record — its
@@ -319,15 +397,15 @@ comparisons differ (16 entries)**; 0 timeouts; 0 crashes.  The stage-1 root caus
 
 ### Remaining LSP gaps (all reproducible with the harness)
 
-Re-measured 2026-09-26 after stage 3: **9 differing entries** — 2 semantic-token
-comparisons, 5 of 47 requests, 2 of 15 probes.  The remaining families, in the
-working order for this phase (mid-weight first, the two heavy ports last):
+Re-measured 2026-09-26 after stage 4: **5 differing entries** — 3 of 47 requests,
+2 of 15 probes, 0 semantic-token comparisons.
 
 | # | Family | Entries | Evidence / target |
 | --- | --- | --- | --- |
-| 1 | **Diagnostics / semantic tokens** | `diagnostic/pull`, `workspace/diagnostic`, `stress/unterminated-source+diagnostic`, `stress/unicode+semanticTokens`, `semanticTokens/full`, `semanticTokens/range` | host codes/stages/ranges (`import/load-error` at the module name, `sema/error` entries) vs self `module/error` at the alias + lint warnings; `workspace/diagnostic` emits only cache misses, so the root document is dropped; an unterminated source must report the lex errors through the loader; the full/range token streams classify `s.sum()`/`s.len` as `variable`(8) where the host uses `method`(13)/`property`(9) and never emit `defaultLibrary`(512) for builtin names — the earlier "`method`(13) vs `macro`(14)" note was stale (the observed pair is `method` vs `variable`; neither server emits `macro`), and the import `declaration` modifier sits on the module path instead of the alias |
-| 2 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets -> `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia -> `reconstruct_normalized` -> blank lines -> wrap; ~1.1–1.8k MT lines) |
-| 3 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  The Bindings section needs binding-identity data the self analyzer does not model |
+| 1 | **Formatting (tidy)** | `formatting`, `rangeFormatting` | host formats in `:tidy` mode: keeps `##` comments and applies blank-line rules (`\n\nextending Sample:`); self uses the trivia-less AST printer (drops comments, `enum Color: int` + explicit members).  `rangeFormatting` must format the *segment* (host `formatting.rb:667-693`); self slices both texts at the same offsets -> `"is.x + this.y…"`.  Needs the §7 tidy pipeline (lexer trivia -> `reconstruct_normalized` -> blank lines -> wrap; ~1.1–1.8k MT lines) |
+| 2 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  The Bindings section needs binding-identity data the self analyzer does not model |
+| 3 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
+| 4 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |
 
 ### Where the next session starts (LSP parity)
 
@@ -343,22 +421,59 @@ ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json --full
 tools/bootstrap.sh -j 16          # fixed point + tests, before every commit
 ```
 
-Stages 1–3 are closed; take the remaining rows in the working order, each with its
-opening files:
-1. **Diagnostics + semantic tokens** — `lsp/pull_diagnostics.mt`,
-   `lsp/diagnostics.mt`, `lsp/semantic_tokens.mt`, `loader/module_loader.mt`,
-   `parser/parser.mt` (lex diagnostics); host `diagnostics.rb` and
-   `semantic_tokens.rb` are the reference.
-2. **`milkTea/debugInfo`** — `lsp/debug_info.mt` + the `lsp/server.mt` dispatch;
-   host `tooling/debug_info_formatter.rb` is the spec.
-3. **Formatting (tidy)** — new `pretty_printer/tidy_formatter.mt` +
-   `lexer/lexer.mt` (trivia) + `lsp/formatting.mt` (segment formatting);
-   `lib/milk_tea/tooling/formatter.rb` + `lib/milk_tea/core/cst.rb` are the
-   reference, `§7` in this file is the design note.
+Stages 1–4 are closed (seven isolated entries; completion; documentSymbol;
+diagnostics + semantic tokens).  Two stages remain, in this order; both are heavy
+ports, so each is a session of its own.
+
+**Stage 5 — `milkTea/debugInfo`** (1 entry; counters 5 → 4)
+- self: `lsp/debug_info.mt` (73 lines: `build_debug_text` 11–46,
+  `handle_debug_info` 49–62) + dispatch at `lsp/server.mt:250-251`; it currently
+  returns its own workspace summary as `{formatted, content}`.
+- host: `tooling/debug_info_formatter.rb` (454 lines) renders `{text}` with seven
+  sections — Header 24–30, Tokens 32–77 (per-token kind/lexeme/line/column plus a
+  semantic-token column), AST 79–272 (tree walker with compact single-line reprs),
+  Parse Errors 274–286, Facts 288–390 (`types`/`functions`/`values`/`methods`/
+  `imports` + `local_completion_frames`, callable-value site maps,
+  `required_unsafe_lines`), Bindings 392–424, Diagnostics 426–454.  The envelope
+  itself changes: `{text: …}`, not `{formatted, content}`.
+- data the self has: content, tokens (`lexer.lex_reporting`), parse errors, AST,
+  `Analysis` facts, semantic-token entries.  Missing: the **Bindings section**
+  (`facts.binding_resolution`: `identifier_binding_ids`, `declaration_binding_ids`,
+  `binding_types` — a global binding-id counter allocated during name resolution,
+  `core/semantic_analyzer.rb:51-64,170-178`).  The self analyzer models no binding
+  identity, so this needs a semantic-model addition before the formatter port can
+  be byte-equal.  Budget ≈450–650 MT lines for the formatter plus the binding-id
+  model.
+- acceptance: `milkTea/debugInfo` byte-equal; counters move.
+
+**Stage 6 — formatting (tidy)** (2 entries: `formatting`, `rangeFormatting`;
+counters 4 → 2)
+- self: `lsp/formatting.mt` (288 lines) formats with the AST pretty-printer
+  (`pretty_printer/ast_formatter.mt`, 1432 lines), which drops comments; the
+  lexer carries no trivia (`lexer/lexer.mt` has only `lex`/`lex_reporting`).
+- host: `Formatter.format_source(mode: :tidy)` (`tooling/formatter.rb:54-59`) =
+  CST build → `reconstruct_normalized` → wrap → `normalize_blank_lines`
+  (218–316), with the wrap machinery at 71–216 + 623–766; `core/cst.rb` is 64
+  lines and `core/lexer/trivia.rb` 51 lines plus the lexer trivia hooks.
+  `rangeFormatting` must format the *segment* (`lsp/server/formatting.rb:667-693`)
+  instead of slicing both texts at the same offsets.
+- work: trivia-aware lexer → CST builder/reconstruct → tidy driver (§7's pipeline,
+  ≈1.1–1.8k MT lines).  The same CST unblocks the linter's `line-too-long` wrap
+  fix (§7.3).
+- acceptance: both entries byte-equal; counters move.
+
+**Not stages of their own:**
+- `stress/unterminated-source+diagnostic` (parser recovery, row 3) changes
+  `mtc check`'s error text too, so it belongs with the CLI-parity work (§0j
+  item 10) rather than the LSP rows.
+- `stress/unicode+semanticTokens` (host facts lag, row 4) is not actionable on
+  the self side.
 
 Each phase is done only when its harness entries are byte-equal **and** the global
 counters move; the docs in this file and in `lsp-design.md` are synced in the
-same commit as the change.
+same commit as the change.  Re-run the §5.9 gate list (bootstrap fixed point +
+self-tests, `test/mt`, `cli:parity`, the harness, valgrind on the new paths, and
+the headless-Neovim smoke test for behavior changes).
 
 ### How to re-run
 

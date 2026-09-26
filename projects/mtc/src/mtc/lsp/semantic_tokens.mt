@@ -6,6 +6,7 @@
 ## functions, types, namespaces (import aliases), and parameters.
 
 import std.fmt
+import std.fs as fs_mod
 import std.json as json
 import std.map as map_mod
 import std.str
@@ -15,10 +16,12 @@ import std.vec as vec
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk_mod
+import mtc.loader.path_resolver as resolver_mod
 import mtc.parser.parser as parser
 import mtc.parser.ast as ast
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types_mod
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -68,7 +71,10 @@ public function handle_semantic_tokens(ws: ref[workspace.Workspace], uri: str, i
 
 
 ## Handle textDocument/semanticTokens/range: the full token pass clipped to
-## whole lines of the requested range (0-based, inclusive).
+## whole lines of the requested range.  The host re-filters its entries with a
+## 1-based start line while the entries carry 0-based lines, so the requested
+## range's first line is never emitted
+## (lib/milk_tea/lsp/server/semantic_tokens.rb:105-118).
 public function handle_semantic_tokens_range(
     ws: ref[workspace.Workspace],
     uri: str,
@@ -76,7 +82,7 @@ public function handle_semantic_tokens_range(
     end_line: ptr_uint,
     id: json.Value,
 ) -> void:
-    emit_semantic_tokens(ws, uri, id, true, start_line, end_line)
+    emit_semantic_tokens(ws, uri, id, true, start_line + 1, end_line)
 
 
 ## Handle textDocument/semanticTokens/full/delta.  Computes the delta
@@ -256,8 +262,780 @@ function token_equals(old_data: ref[vec.Vec[uint]], a: ptr_uint, new_data: ref[v
     return true
 
 
-## Compute the full token data array for a source file.  Extracted from
-## emit_semantic_tokens for reuse by the delta handler.
+# =============================================================================
+#  Shared scan classification — one classifier for semanticTokens
+#  full / range / delta, mirroring the host's `classify_name_semantic`
+#  decision order (lib/milk_tea/lsp/server/semantic_tokens.rb:336-515).
+# =============================================================================
+
+## Classification tables for one scan.  `alias_*` hold "<alias>.<member>" keys
+## for members reached through a *resolved* import; unresolved imports are
+## deliberately absent, so `alias.member` degrades exactly like the host (the
+## alias is an unknown value; the member is method/property by call shape).
+struct ScanFacts:
+    functions: map_mod.Map[str, bool]
+    types: map_mod.Map[str, bool]
+    ## Struct (and other constructible) names: a call to one of these is a type
+    ## constructor (`Sample(x = 1)`), which the host reports as a type.
+    structs: map_mod.Map[str, bool]
+    interfaces: map_mod.Map[str, bool]
+    values: map_mod.Map[str, bool]
+    imports: map_mod.Map[str, bool]
+    alias_functions: map_mod.Map[str, bool]
+    alias_types: map_mod.Map[str, bool]
+    alias_interfaces: map_mod.Map[str, bool]
+    alias_values: map_mod.Map[str, bool]
+    readonly_names: map_mod.Map[str, bool]
+    param_names: map_mod.Map[str, bool]
+
+
+struct TokenClass:
+    token_type: uint
+    token_mod: uint
+
+
+## Builtin type names the host marks `defaultLibrary`
+## (`DEFAULT_LIBRARY_TYPE_NAMES` = `Types::BUILTIN_TYPE_NAMES`).
+function is_default_library_type_name(name: str) -> bool:
+    if is_builtin_type_name(name):
+        return true
+    return name.equal("Option") or name.equal("Result") or name.equal("simd") or
+        name.equal("struct_handle") or name.equal("field_handle") or
+        name.equal("callable_handle") or name.equal("attribute_handle") or
+        name.equal("member_handle") or name.equal("EventError") or
+        name.equal("Subscription")
+
+
+## Builtin functions the host marks `defaultLibrary`
+## (`BUILTIN_FUNCTION_NAMES`, lib/milk_tea/lsp/server.rb:59-61).
+function is_default_library_function_name(name: str) -> bool:
+    return name.equal("ref_of") or name.equal("const_ptr_of") or name.equal("ptr_of") or
+        name.equal("read") or name.equal("fatal") or name.equal("reinterpret") or
+        name.equal("array") or name.equal("span") or name.equal("zero") or
+        name.equal("default") or name.equal("adapt") or name.equal("get") or
+        name.equal("field_of") or name.equal("callable_of") or name.equal("has_attribute") or
+        name.equal("attribute_of") or name.equal("attribute_arg") or name.equal("fields_of") or
+        name.equal("members_of") or name.equal("attributes_of")
+
+
+function scan_is_trivia(kind: tk_mod.TokenKind) -> bool:
+    return kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
+        kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof
+
+
+function scan_kind_at(tokens: span[token_mod.Token], index: ptr_uint) -> tk_mod.TokenKind:
+    return unsafe: read(tokens.data + index).kind
+
+
+function scan_lexeme_at(tokens: span[token_mod.Token], index: ptr_uint, source: str) -> str:
+    return unsafe: token_mod.token_lexeme(read(tokens.data + index), source)
+
+
+function scan_prev_index(tokens: span[token_mod.Token], index: ptr_uint) -> Option[ptr_uint]:
+    if index == 0:
+        return Option[ptr_uint].none
+    var i = index
+    while i > 0:
+        i -= 1
+        if not scan_is_trivia(scan_kind_at(tokens, i)):
+            return Option[ptr_uint].some(value = i)
+    return Option[ptr_uint].none
+
+
+function scan_next_index(tokens: span[token_mod.Token], index: ptr_uint) -> Option[ptr_uint]:
+    var i = index + 1
+    while i < tokens.len:
+        if not scan_is_trivia(scan_kind_at(tokens, i)):
+            return Option[ptr_uint].some(value = i)
+        i += 1
+    return Option[ptr_uint].none
+
+
+## True when no significant token on the same line precedes `index`
+## (the host's `first_non_trivia_token_on_line?`).
+function scan_first_on_line(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let tok = unsafe: read(tokens.data + index)
+    var i = index
+    while i > 0:
+        i -= 1
+        if scan_is_trivia(scan_kind_at(tokens, i)):
+            continue
+        let other = unsafe: read(tokens.data + i)
+        return other.line != tok.line
+    return true
+
+
+## The `(` opening the parameter list that contains `index`, if any
+## (the host's `parameter_list_opener_index`).
+function scan_parameter_list_opener(tokens: span[token_mod.Token], index: ptr_uint) -> Option[ptr_uint]:
+    var depth: ptr_uint = 0
+    var i = index
+    while i > 0:
+        i -= 1
+        let kind = scan_kind_at(tokens, i)
+        if kind == tk_mod.TokenKind.rparen:
+            depth += 1
+        else if kind == tk_mod.TokenKind.lparen:
+            if depth == 0:
+                return Option[ptr_uint].some(value = i)
+            depth -= 1
+    return Option[ptr_uint].none
+
+
+## `name: T` immediately after `(`/`,` or a foreign mode keyword
+## (the host's `parameter_declaration_token?`).
+function scan_is_parameter_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let next_idx = scan_next_index(tokens, index) else:
+        return false
+    if scan_kind_at(tokens, next_idx) != tk_mod.TokenKind.colon:
+        return false
+    let prev_idx = scan_prev_index(tokens, index) else:
+        return false
+    let prev_kind = scan_kind_at(tokens, prev_idx)
+    return prev_kind == tk_mod.TokenKind.lparen or prev_kind == tk_mod.TokenKind.comma or
+        prev_kind == tk_mod.TokenKind.tk_out or prev_kind == tk_mod.TokenKind.tk_in or
+        prev_kind == tk_mod.TokenKind.tk_inout or prev_kind == tk_mod.TokenKind.tk_consuming
+
+
+## True when the parameter list containing `index` belongs to a callable
+## declaration (`function f(...)`, `fn(...)`, `proc(...)`)
+## (the host's `callable_parameter_declaration_token?`).
+function scan_is_callable_parameter_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    if not scan_is_parameter_declaration(tokens, index):
+        return false
+    let opener = scan_parameter_list_opener(tokens, index) else:
+        return false
+    var head_idx = scan_prev_index(tokens, opener) else:
+        return false
+    var head_kind = scan_kind_at(tokens, head_idx)
+    if head_kind == tk_mod.TokenKind.tk_fn or head_kind == tk_mod.TokenKind.tk_proc:
+        return true
+    if head_kind == tk_mod.TokenKind.rbracket:
+        let lbracket = scan_matching_opener(tokens, head_idx) else:
+            return false
+        let head_opt = scan_prev_index(tokens, lbracket) else:
+            return false
+        head_idx = head_opt
+        head_kind = scan_kind_at(tokens, head_idx)
+    if head_kind != tk_mod.TokenKind.identifier:
+        return false
+    let before = scan_prev_index(tokens, head_idx) else:
+        return false
+    return scan_kind_at(tokens, before) == tk_mod.TokenKind.tk_function
+
+
+## The `(`/`[` matching the closer at `index`.
+function scan_matching_opener(tokens: span[token_mod.Token], index: ptr_uint) -> Option[ptr_uint]:
+    let closer = scan_kind_at(tokens, index)
+    var depth: ptr_uint = 0
+    var i = index
+    while i > 0:
+        i -= 1
+        let kind = scan_kind_at(tokens, i)
+        if kind == closer:
+            depth += 1
+        else if (closer == tk_mod.TokenKind.rparen and kind == tk_mod.TokenKind.lparen) or
+                (closer == tk_mod.TokenKind.rbracket and kind == tk_mod.TokenKind.lbracket):
+            if depth == 0:
+                return Option[ptr_uint].some(value = i)
+            depth -= 1
+    return Option[ptr_uint].none
+
+
+## True when the token is a variant arm name: a first-on-line identifier whose
+## enclosing declaration line carries `variant`/`enum`/`flags`
+## (the host's `variant_enum_member_declaration?`).
+function scan_is_variant_enum_member(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let tok = unsafe: read(tokens.data + index)
+    if not scan_first_on_line(tokens, index) or tok.column <= 1:
+        return false
+    var i = index
+    while i > 0:
+        i -= 1
+        let other = unsafe: read(tokens.data + i)
+        if scan_is_trivia(other.kind) or other.line == tok.line or other.column >= tok.column:
+            continue
+        return scan_line_has_enum_header(tokens, i, other.line)
+    return false
+
+
+## True when some token on `line` (up to `index`) is `variant`/`enum`/`flags`.
+function scan_line_has_enum_header(tokens: span[token_mod.Token], index: ptr_uint, line: ptr_uint) -> bool:
+    var i: ptr_uint = 0
+    while i <= index and i < tokens.len:
+        let t = unsafe: read(tokens.data + i)
+        if t.line == line:
+            if t.kind == tk_mod.TokenKind.tk_variant or t.kind == tk_mod.TokenKind.tk_enum or
+               t.kind == tk_mod.TokenKind.tk_flags:
+                return true
+        i += 1
+    return false
+
+
+## True when the token is a struct/union field declaration: first on its line,
+## followed by `:` and not part of a parameter list or match arm
+## (the host's `field_declaration_token?`).
+function scan_is_field_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    if not scan_first_on_line(tokens, index):
+        return false
+    if scan_is_parameter_declaration(tokens, index):
+        return false
+    if scan_is_match_arm_binding(tokens, index):
+        return false
+    let next_idx = scan_next_index(tokens, index) else:
+        return false
+    return scan_kind_at(tokens, next_idx) == tk_mod.TokenKind.colon
+
+
+## `as name:` — a match arm binding (the host's `match_arm_binding_token?`).
+function scan_is_match_arm_binding(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let prev_idx = scan_prev_index(tokens, index) else:
+        return false
+    if scan_kind_at(tokens, prev_idx) != tk_mod.TokenKind.tk_as:
+        return false
+    let next_idx = scan_next_index(tokens, index) else:
+        return false
+    return scan_kind_at(tokens, next_idx) == tk_mod.TokenKind.colon
+
+
+## True when the token is a field of a variant arm's payload: a parameter-list
+## member whose list head is a variant arm name
+## (the host's `variant_payload_field_declaration_token?`).
+function scan_is_variant_payload_field(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    if not scan_is_parameter_declaration(tokens, index):
+        return false
+    let opener = scan_parameter_list_opener(tokens, index) else:
+        return false
+    let head_idx = scan_prev_index(tokens, opener) else:
+        return false
+    return scan_is_variant_enum_member(tokens, head_idx)
+
+
+## `let (a, b) =` / `let Vec2(x, y) =` destructuring binding
+## (the host's `destructure_let_binding?`).
+function scan_is_destructure_let(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let tok = unsafe: read(tokens.data + index)
+    var first_kind: tk_mod.TokenKind = tk_mod.TokenKind.eof
+    var first_found = false
+    var second_kind: tk_mod.TokenKind = tk_mod.TokenKind.eof
+    var second_found = false
+    var third_kind: tk_mod.TokenKind = tk_mod.TokenKind.eof
+    var third_found = false
+    var lparen_seen = false
+    var equal_seen = false
+    var i: ptr_uint = 0
+    while i < tokens.len:
+        let t = unsafe: read(tokens.data + i)
+        if t.line != tok.line:
+            if t.line > tok.line:
+                break
+            i += 1
+            continue
+        if not scan_is_trivia(t.kind):
+            if not first_found:
+                first_kind = t.kind
+                first_found = true
+            else if not second_found:
+                second_kind = t.kind
+                second_found = true
+            else if not third_found:
+                third_kind = t.kind
+                third_found = true
+            if t.kind == tk_mod.TokenKind.lparen and not equal_seen:
+                lparen_seen = true
+            if t.kind == tk_mod.TokenKind.equal:
+                equal_seen = true
+        i += 1
+    if not first_found or first_kind != tk_mod.TokenKind.tk_let:
+        return false
+    if not lparen_seen:
+        return false
+    if second_found and second_kind == tk_mod.TokenKind.lparen:
+        return true
+    return second_found and second_kind == tk_mod.TokenKind.identifier and third_found and third_kind == tk_mod.TokenKind.lparen
+
+
+## A named-argument label (`name =` after `(`/`,`): `property` inside a type
+## constructor call, `parameter` otherwise
+## (the host's `named_argument_label_token?`).
+function scan_is_named_argument_label(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let next_idx = scan_next_index(tokens, index) else:
+        return false
+    if scan_kind_at(tokens, next_idx) != tk_mod.TokenKind.equal:
+        return false
+    let prev_idx = scan_prev_index(tokens, index) else:
+        return false
+    let prev_kind = scan_kind_at(tokens, prev_idx)
+    return prev_kind == tk_mod.TokenKind.lparen or prev_kind == tk_mod.TokenKind.comma
+
+
+## True when the label's call is a type constructor (`Sample(x = 1)`), whose
+## labels the host reports as properties
+## (the host's `named_argument_label_in_type_constructor?`).
+function scan_named_argument_in_type_constructor(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    let opener = scan_parameter_list_opener(tokens, index) else:
+        return false
+    var callee_idx = scan_prev_index(tokens, opener) else:
+        return false
+    if scan_kind_at(tokens, callee_idx) == tk_mod.TokenKind.rbracket:
+        let lbracket = scan_matching_opener(tokens, callee_idx) else:
+            return false
+        let callee_opt = scan_prev_index(tokens, lbracket) else:
+            return false
+        callee_idx = callee_opt
+    if scan_kind_at(tokens, callee_idx) != tk_mod.TokenKind.identifier:
+        return false
+    let callee_name = scan_lexeme_at(tokens, callee_idx, source)
+    if is_known_type_name(facts, callee_name):
+        return true
+    let dot_idx = scan_prev_index(tokens, callee_idx) else:
+        return false
+    if scan_kind_at(tokens, dot_idx) != tk_mod.TokenKind.dot:
+        return false
+    let receiver_idx = scan_prev_index(tokens, dot_idx) else:
+        return false
+    if scan_kind_at(tokens, receiver_idx) != tk_mod.TokenKind.identifier:
+        return false
+    return is_known_type_name(facts, scan_lexeme_at(tokens, receiver_idx, source))
+
+
+## True when the name is a constructible type: a struct, or one of the builtin
+## constructible types (the host's `constructible_semantic_type?`).
+function is_constructible_type_name(facts: ref[ScanFacts], name: str) -> bool:
+    unsafe:
+        if read(facts).structs.contains(name):
+            return true
+    return name.equal("vec2") or name.equal("vec3") or name.equal("vec4") or
+        name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4") or
+        name.equal("mat3") or name.equal("mat4") or name.equal("quat") or
+        name.equal("Task")
+
+
+## Known type name: any declared type, struct, enum/variant (static member
+## types), alias or builtin (the host's `known_type_name?`).
+function is_known_type_name(facts: ref[ScanFacts], name: str) -> bool:
+    unsafe:
+        if read(facts).types.contains(name):
+            return true
+    return is_default_library_type_name(name)
+
+
+## True when the token carries an `import` line role; `module path` segments are
+## plain namespaces, the alias after `as` is a namespace declaration
+## (the host's `import_path_info_at`).
+function scan_import_module_path(tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    var line_start = index
+    while line_start > 0:
+        let prev_kind = scan_kind_at(tokens, line_start - 1)
+        let prev_line = unsafe: read(tokens.data + line_start - 1).line
+        let tok_line = unsafe: read(tokens.data + index).line
+        if scan_is_trivia(prev_kind) and prev_line != tok_line:
+            break
+        if prev_line != tok_line:
+            break
+        line_start -= 1
+    if scan_kind_at(tokens, line_start) != tk_mod.TokenKind.tk_import:
+        return false
+    let tok_line = unsafe: read(tokens.data + index).line
+    var seen_as = false
+    var is_module_path = false
+    var i = line_start
+    while i < tokens.len:
+        let t = unsafe: read(tokens.data + i)
+        if t.line != tok_line:
+            break
+        if not scan_is_trivia(t.kind):
+            if t.kind == tk_mod.TokenKind.tk_as:
+                seen_as = true
+            else if i == index and not seen_as:
+                is_module_path = true
+        i += 1
+    return is_module_path
+
+
+## True when the token follows `as` on an import line (the alias).
+function scan_is_import_alias(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let tok_line = unsafe: read(tokens.data + index).line
+    var line_start = index
+    while line_start > 0:
+        let prev_line = unsafe: read(tokens.data + line_start - 1).line
+        if prev_line != tok_line:
+            break
+        line_start -= 1
+    if scan_kind_at(tokens, line_start) != tk_mod.TokenKind.tk_import:
+        return false
+    let prev_idx = scan_prev_index(tokens, index) else:
+        return false
+    return scan_kind_at(tokens, prev_idx) == tk_mod.TokenKind.tk_as
+
+
+## Classify one identifier token (the host's `classify_name_semantic`).
+function classify_scan_identifier(
+    facts: ref[ScanFacts],
+    tokens: span[token_mod.Token],
+    index: ptr_uint,
+    lexeme: str,
+    source: str,
+) -> TokenClass:
+    # Import lines: path segments are namespaces, the alias declares one.
+    if scan_is_import_alias(tokens, index):
+        return TokenClass(token_type = TOKEN_NAMESPACE, token_mod = 1)
+    if scan_import_module_path(tokens, index, source):
+        return TokenClass(token_type = TOKEN_NAMESPACE, token_mod = 0)
+
+    # Declaration names, judged by the preceding keyword.
+    let prev_opt = scan_prev_index(tokens, index)
+    if prev_opt.is_some():
+        let prev_idx = prev_opt.unwrap()
+        let prev_kind = scan_kind_at(tokens, prev_idx)
+        if prev_kind == tk_mod.TokenKind.tk_function or prev_kind == tk_mod.TokenKind.tk_fn or
+           prev_kind == tk_mod.TokenKind.tk_proc:
+            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 1)
+        if prev_kind == tk_mod.TokenKind.tk_struct or prev_kind == tk_mod.TokenKind.tk_union or
+           prev_kind == tk_mod.TokenKind.tk_enum or prev_kind == tk_mod.TokenKind.tk_flags or
+           prev_kind == tk_mod.TokenKind.tk_variant or prev_kind == tk_mod.TokenKind.tk_type or
+           prev_kind == tk_mod.TokenKind.tk_opaque or prev_kind == tk_mod.TokenKind.tk_interface:
+            return TokenClass(token_type = TOKEN_TYPE, token_mod = 1)
+    if lexeme.equal("_"):
+        return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+    if prev_opt.is_some():
+        let prev_kind = scan_kind_at(tokens, prev_opt.unwrap())
+        if prev_kind == tk_mod.TokenKind.tk_event:
+            return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 1)
+        if prev_kind == tk_mod.TokenKind.tk_const:
+            return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
+        if prev_kind == tk_mod.TokenKind.tk_let:
+            let next_idx = scan_next_index(tokens, index)
+            var next_is_lparen = false
+            if next_idx.is_some():
+                next_is_lparen = scan_kind_at(tokens, next_idx.unwrap()) == tk_mod.TokenKind.lparen
+            if not next_is_lparen:
+                return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
+        if prev_kind == tk_mod.TokenKind.tk_var:
+            let next_idx = scan_next_index(tokens, index)
+            var next_is_lparen = false
+            if next_idx.is_some():
+                next_is_lparen = scan_kind_at(tokens, next_idx.unwrap()) == tk_mod.TokenKind.lparen
+            if not next_is_lparen:
+                return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 1)
+        if prev_kind == tk_mod.TokenKind.tk_for:
+            return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
+    if scan_is_match_arm_binding(tokens, index):
+        return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
+    if scan_is_callable_parameter_declaration(tokens, index):
+        return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 1)
+    if scan_is_variant_payload_field(tokens, index):
+        return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 1)
+    if scan_is_field_declaration(tokens, index):
+        return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 1)
+    if scan_is_destructure_let(tokens, index):
+        return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
+    if scan_is_named_argument_label(tokens, index):
+        if scan_named_argument_in_type_constructor(facts, tokens, index, source):
+            return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
+        return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 0)
+
+    # Variant arm names are members of the variant's member set.
+    if scan_is_variant_enum_member(tokens, index):
+        return TokenClass(token_type = TOKEN_ENUM_MEMBER, token_mod = 1)
+
+    # Dotted member access.
+    if prev_opt.is_some() and scan_kind_at(tokens, prev_opt.unwrap()) == tk_mod.TokenKind.dot:
+        let receiver_idx = scan_prev_index(tokens, prev_opt.unwrap())
+        if receiver_idx.is_some():
+            let receiver = scan_lexeme_at(tokens, receiver_idx.unwrap(), source)
+            if unsafe: read(facts).imports.contains(receiver):
+                var qualified = qualified_member_key(receiver, lexeme)
+                defer: qualified.release()
+                let key = qualified.as_str()
+                if unsafe: read(facts).alias_functions.contains(key):
+                    let next_idx = scan_next_index(tokens, index)
+                    var call_shaped = false
+                    if next_idx.is_some():
+                        let nk = scan_kind_at(tokens, next_idx.unwrap())
+                        call_shaped = nk == tk_mod.TokenKind.lparen or nk == tk_mod.TokenKind.lbracket
+                    if call_shaped:
+                        return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
+                    return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
+                if unsafe: read(facts).alias_types.contains(key):
+                    return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+                if unsafe: read(facts).alias_interfaces.contains(key):
+                    return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+                if unsafe: read(facts).alias_values.contains(key):
+                    return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+            if is_known_type_name(facts, receiver) or starts_uppercase(receiver):
+                return TokenClass(token_type = TOKEN_ENUM_MEMBER, token_mod = 0)
+        let next_idx = scan_next_index(tokens, index)
+        if next_idx.is_some() and scan_kind_at(tokens, next_idx.unwrap()) == tk_mod.TokenKind.lparen:
+            return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
+        return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
+
+    # Call sites: builtins, functions, then type constructors.
+    let next_call = scan_next_index(tokens, index)
+    if next_call.is_some() and scan_kind_at(tokens, next_call.unwrap()) == tk_mod.TokenKind.lparen:
+        if is_default_library_function_name(lexeme):
+            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512)
+        if unsafe: read(facts).functions.contains(lexeme):
+            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
+        if is_constructible_type_name(facts, lexeme):
+            return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+        return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
+
+    # Value / type / namespace references.
+    unsafe:
+        if read(facts).param_names.contains(lexeme):
+            return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 0)
+        if read(facts).readonly_names.contains(lexeme):
+            return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
+        if read(facts).functions.contains(lexeme):
+            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
+        if read(facts).types.contains(lexeme):
+            if is_default_library_type_name(lexeme):
+                return TokenClass(token_type = TOKEN_TYPE, token_mod = 512)
+            return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+        if read(facts).interfaces.contains(lexeme):
+            return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+        if read(facts).imports.contains(lexeme):
+            return TokenClass(token_type = TOKEN_NAMESPACE, token_mod = 0)
+        if read(facts).values.contains(lexeme):
+            return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+    if is_default_library_type_name(lexeme):
+        return TokenClass(token_type = TOKEN_TYPE, token_mod = 512)
+    return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+
+
+function starts_uppercase(name: str) -> bool:
+    if name.len == 0:
+        return false
+    let b = name.byte_at(0)
+    return b >= 'A' and b <= 'Z'
+
+
+function qualified_member_key(receiver: str, member: str) -> string.String:
+    var key = string.String.create()
+    key.append(receiver)
+    key.push_byte(46)
+    key.append(member)
+    return key
+
+
+## Merge the keys of a typed map into a bool set.
+function merge_type_keys(source: ref[map_mod.Map[str, types_mod.Type]], target: ref[map_mod.Map[str, bool]]) -> void:
+    var iter = source.keys()
+    while true:
+        let kp = iter.next() else:
+            break
+        unsafe:
+            target.set(read(kp), true)
+
+
+function merge_struct_keys(source: ref[map_mod.Map[str, span[analyzer.FieldEntry]]], target: ref[map_mod.Map[str, bool]]) -> void:
+    var iter = source.keys()
+    while true:
+        let kp = iter.next() else:
+            break
+        unsafe:
+            target.set(read(kp), true)
+
+
+function merge_interface_keys(source: ref[map_mod.Map[str, span[ast.InterfaceMethod]]], target: ref[map_mod.Map[str, bool]]) -> void:
+    var iter = source.keys()
+    while true:
+        let kp = iter.next() else:
+            break
+        unsafe:
+            target.set(read(kp), true)
+
+
+function merge_fn_keys(source: ref[map_mod.Map[str, analyzer.FnSig]], target: ref[map_mod.Map[str, bool]]) -> void:
+    var iter = source.keys()
+    while true:
+        let kp = iter.next() else:
+            break
+        unsafe:
+            target.set(read(kp), true)
+
+
+function merge_bool_keys(source: ref[map_mod.Map[str, bool]], target: ref[map_mod.Map[str, bool]]) -> void:
+    var iter = source.keys()
+    while true:
+        let kp = iter.next() else:
+            break
+        unsafe:
+            target.set(read(kp), true)
+
+
+## Record a module's exported surface under `alias.` keys.
+function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[analyzer.Analysis]) -> void:
+    var functions = vec.Vec[str].create()
+    defer: functions.release()
+    var types = vec.Vec[str].create()
+    defer: types.release()
+    var interfaces = vec.Vec[str].create()
+    defer: interfaces.release()
+    var values = vec.Vec[str].create()
+    defer: values.release()
+    unsafe:
+        var fkeys = read(analysis).functions.keys()
+        while true:
+            let kp = fkeys.next() else:
+                break
+            functions.push(read(kp))
+        var tkeys = read(analysis).types.keys()
+        while true:
+            let kp = tkeys.next() else:
+                break
+            types.push(read(kp))
+        var skeys = read(analysis).structs.keys()
+        while true:
+            let kp = skeys.next() else:
+                break
+            types.push(read(kp))
+        var ikeys = read(analysis).interfaces.keys()
+        while true:
+            let kp = ikeys.next() else:
+                break
+            interfaces.push(read(kp))
+        var vkeys = read(analysis).value_types.keys()
+        while true:
+            let kp = vkeys.next() else:
+                break
+            values.push(read(kp))
+    var i: ptr_uint = 0
+    while i < functions.len():
+        let fp = functions.get(i) else:
+            break
+        var key = qualified_member_key(alias, unsafe: read(fp))
+        facts.alias_functions.set(key.as_str(), true)
+        i += 1
+    i = 0
+    while i < types.len():
+        let tp = types.get(i) else:
+            break
+        var key = qualified_member_key(alias, unsafe: read(tp))
+        facts.alias_types.set(key.as_str(), true)
+        i += 1
+    i = 0
+    while i < interfaces.len():
+        let ip = interfaces.get(i) else:
+            break
+        var key = qualified_member_key(alias, unsafe: read(ip))
+        facts.alias_interfaces.set(key.as_str(), true)
+        i += 1
+    i = 0
+    while i < values.len():
+        let vp = values.get(i) else:
+            break
+        var key = qualified_member_key(alias, unsafe: read(vp))
+        facts.alias_values.set(key.as_str(), true)
+        i += 1
+
+
+## Register one import's exported surface when the module resolves.  Unresolved
+## imports contribute nothing: the alias stays unknown, matching the host.
+function register_resolved_import(
+    facts: ref[ScanFacts],
+    path: ast.QualifiedName,
+    alias_name: Option[str],
+    roots: span[str],
+) -> void:
+    var module_name = dotted_qname(path)
+    defer: module_name.release()
+    let alias = scan_import_alias_name(path, alias_name)
+    match resolver_mod.resolve_module_path(module_name.as_str(), roots, resolver_mod.Platform.linux):
+        Result.success as resolved_ok:
+            var resolved = resolved_ok.value
+            defer: resolved.release()
+            var dep_source_opt = fs_mod.read_text(resolved.as_str())
+            match dep_source_opt:
+                Result.success as payload:
+                    var dep_source = payload.value
+                    defer: dep_source.release()
+                    var dep_diags = vec.Vec[pstate.ParseDiagnostic].create()
+                    defer: dep_diags.release()
+                    let dep_file = parser.parse_source(dep_source.as_str(), ref_of(dep_diags))
+                    var dep_analysis = analyzer.check_source_file(dep_file)
+                    facts.imports.set(alias, true)
+                    collect_alias_exports(facts, alias, ref_of(dep_analysis))
+                Result.failure as fail:
+                    var err = fail.error
+                    err.release()
+        Result.failure as resolve_failure:
+            var rerr = resolve_failure.error
+            rerr.release()
+
+
+function dotted_qname(path: ast.QualifiedName) -> string.String:
+    var buf = string.String.create()
+    var i: ptr_uint = 0
+    while i < path.parts.len:
+        if i > 0:
+            buf.push_byte(46)
+        unsafe:
+            buf.append(read(path.parts.data + i))
+        i += 1
+    return buf
+
+
+function scan_import_alias_name(path: ast.QualifiedName, alias_name: Option[str]) -> str:
+    match alias_name:
+        Option.some as given:
+            return given.value
+        Option.none:
+            if path.parts.len == 0:
+                return ""
+            unsafe:
+                return read(path.parts.data + (path.parts.len - 1))
+
+
+## Build the classification tables for one scan.
+function build_scan_facts(file: ast.SourceFile, analysis: ref[analyzer.Analysis], roots: span[str]) -> ScanFacts:
+    var facts = ScanFacts(
+        functions = map_mod.Map[str, bool].create(),
+        types = map_mod.Map[str, bool].create(),
+        structs = map_mod.Map[str, bool].create(),
+        interfaces = map_mod.Map[str, bool].create(),
+        values = map_mod.Map[str, bool].create(),
+        imports = map_mod.Map[str, bool].create(),
+        alias_functions = map_mod.Map[str, bool].create(),
+        alias_types = map_mod.Map[str, bool].create(),
+        alias_interfaces = map_mod.Map[str, bool].create(),
+        alias_values = map_mod.Map[str, bool].create(),
+        readonly_names = map_mod.Map[str, bool].create(),
+        param_names = map_mod.Map[str, bool].create(),
+    )
+    collect_readonly_names(file, ref_of(facts.readonly_names))
+    var params = collect_param_names(analysis)
+    defer: params.release()
+    merge_bool_keys(ref_of(params), ref_of(facts.param_names))
+    facts.param_names.set("this", true)
+    var analysis_value = unsafe: read(analysis)
+    unsafe:
+        merge_fn_keys(ref_of(analysis_value.functions), ref_of(facts.functions))
+        merge_type_keys(ref_of(analysis_value.types), ref_of(facts.types))
+        merge_struct_keys(ref_of(analysis_value.structs), ref_of(facts.types))
+        merge_struct_keys(ref_of(analysis_value.structs), ref_of(facts.structs))
+        merge_struct_keys(ref_of(analysis_value.unions), ref_of(facts.structs))
+        merge_bool_keys(ref_of(analysis_value.static_member_types), ref_of(facts.types))
+        merge_type_keys(ref_of(analysis_value.type_alias_types), ref_of(facts.types))
+        merge_interface_keys(ref_of(analysis_value.interfaces), ref_of(facts.interfaces))
+        merge_type_keys(ref_of(analysis_value.value_types), ref_of(facts.values))
+
+    var i: ptr_uint = 0
+    while i < file.imports.len:
+        unsafe:
+            match read(file.imports.data + i):
+                ast.Decl.decl_import as imp:
+                    register_resolved_import(ref_of(facts), imp.path, imp.alias_name, roots)
+                _:
+                    pass
+        i += 1
+    return facts
+
+
+## Compute the full token data array for a source file.  One scanner serves
+## semanticTokens full, range and delta, so the three endpoints can never
+## classify the same token differently.
 function compute_token_data(
     ws: ref[workspace.Workspace],
     path: str,
@@ -275,50 +1053,27 @@ function compute_token_data(
     defer: parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
     var analysis = analyzer.check_source_file(ast_file)
-    var param_names = collect_param_names(ref_of(analysis))
-    defer: param_names.release()
-    var readonly_names = map_mod.Map[str, bool].create()
-    defer: readonly_names.release()
-    collect_readonly_names(ast_file, ref_of(readonly_names))
 
+    var roots = ws.effective_module_roots_for(path)
+    defer: roots.release()
+    var facts = build_scan_facts(ast_file, ref_of(analysis), roots.as_span())
+
+    let tokens = all_tokens.as_span()
     var data = vec.Vec[uint].create()
 
     var prev_line: uint = 0
     var prev_char: uint = 0
-    var in_import_path: bool = false
-    var prev_is_decl: bool = false
-    var prev_readonly: bool = false
-    var prev_ident_lexeme: str = ""
-    var prev_was_dot: bool = false
     var in_decorator: bool = false
     var decorator_depth: ptr_uint = 0
-    var seen_fn_keyword: bool = false
-    var seen_fn_name: bool = false
-    var in_param_list: bool = false
-    var param_paren_depth: ptr_uint = 0
     var ti: ptr_uint = 0
-    while ti < all_tokens.len():
-        let tok_ptr = all_tokens.get(ti) else:
-            break
-        let tok = unsafe: read(tok_ptr)
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
         let kind = tok.kind
-        if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.eof:
-            in_import_path = false
+        if scan_is_trivia(kind):
             in_decorator = false
             decorator_depth = 0
-            seen_fn_keyword = false
-            seen_fn_name = false
-            in_param_list = false
-            param_paren_depth = 0
             ti += 1
             continue
-        if kind == tk_mod.TokenKind.indent or kind == tk_mod.TokenKind.dedent:
-            ti += 1
-            continue
-        if kind == tk_mod.TokenKind.tk_import:
-            in_import_path = true
-        else if kind == tk_mod.TokenKind.tk_as:
-            in_import_path = false
         let line_num: uint = if tok.line > 0: uint<-(tok.line - 1) else: 0
         if clip and (line_num < uint<-clip_start_line or line_num > uint<-clip_end_line):
             ti += 1
@@ -328,37 +1083,13 @@ function compute_token_data(
         var token_type = token_kind_to_type(kind)
         var token_mod: uint = 0
         if kind == tk_mod.TokenKind.identifier:
-            var lexeme = cursor.token_text(source, tok)
-            token_type = classify_identifier(lexeme, ref_of(analysis))
-            if readonly_names.contains(lexeme) and token_type == TOKEN_VARIABLE:
-                token_mod = 4
-            if in_param_list and token_type == TOKEN_VARIABLE:
-                token_type = TOKEN_PARAMETER
-                token_mod = 0
-            else if in_decorator and decorator_depth == 1:
+            let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+            if in_decorator and decorator_depth == 1:
                 token_type = TOKEN_DECORATOR
-                token_mod = 0
-            else if in_import_path and token_type == TOKEN_VARIABLE:
-                token_type = TOKEN_NAMESPACE
-            else if prev_was_dot:
-                if prev_ident_lexeme.len > 0 and analysis.static_member_types.contains(prev_ident_lexeme):
-                    token_type = TOKEN_ENUM_MEMBER
-                    token_mod = 0
-                else if token_type != TOKEN_FUNCTION and token_type != TOKEN_NAMESPACE and token_type != TOKEN_TYPE:
-                    token_type = TOKEN_METHOD
-                    token_mod = 0
-            if prev_is_decl and not prev_was_dot:
-                if token_type == TOKEN_PARAMETER:
-                    token_type = TOKEN_VARIABLE
-                token_mod = 1
-                if prev_readonly:
-                    token_mod = 5
-                prev_is_decl = false
-                prev_readonly = false
-            if seen_fn_keyword:
-                seen_fn_name = true
-                seen_fn_keyword = false
-            prev_ident_lexeme = lexeme
+            else:
+                let cls = classify_scan_identifier(ref_of(facts), tokens, ti, lexeme, source)
+                token_type = cls.token_type
+                token_mod = cls.token_mod
         else:
             if kind == tk_mod.TokenKind.at:
                 in_decorator = true
@@ -370,34 +1101,7 @@ function compute_token_data(
                     decorator_depth -= 1
                 if decorator_depth == 0:
                     in_decorator = false
-            if seen_fn_name and kind == tk_mod.TokenKind.lparen:
-                in_param_list = true
-                param_paren_depth = 1
-                seen_fn_name = false
-            else if in_param_list and kind == tk_mod.TokenKind.lparen:
-                param_paren_depth += 1
-            else if in_param_list and kind == tk_mod.TokenKind.rparen:
-                if param_paren_depth > 0:
-                    param_paren_depth -= 1
-                if param_paren_depth == 0:
-                    in_param_list = false
-            if kind == tk_mod.TokenKind.dot:
-                prev_was_dot = true
-            else:
-                prev_was_dot = false
-            if kind == tk_mod.TokenKind.tk_import or kind == tk_mod.TokenKind.tk_enum or
-               kind == tk_mod.TokenKind.tk_extending:
-                prev_is_decl = true
-            else:
-                if in_import_path and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
-                    token_type = TOKEN_NAMESPACE
-                if snapshot_is_decl_kind(kind):
-                    prev_is_decl = true
-                    prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
-                    if kind == tk_mod.TokenKind.tk_function or kind == tk_mod.TokenKind.tk_async:
-                        seen_fn_keyword = true
-                else:
-                    prev_is_decl = false
+        # Heredoc tokens are not highlighted (mirrors the host).
         if token_type == TOKEN_STRING:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
             match lexeme.find_substring("<<-"):
@@ -451,96 +1155,8 @@ function emit_semantic_tokens(
         return
     defer: content.release()
 
-    let source = content.as_str()
-    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
-    defer: lex_diags.release()
-    var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
-    defer: all_tokens.release()
-
-    # Semantic classification facts for identifier tokens.
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var analysis = analyzer.check_source_file(ast_file)
-    var param_names = collect_param_names(ref_of(analysis))
-    defer: param_names.release()
-
-    var data = vec.Vec[uint].create()
+    var data = compute_token_data(ws, file_path.as_str(), content.as_str(), clip, clip_start_line, clip_end_line)
     defer: data.release()
-
-    var prev_line: uint = 0
-    var prev_char: uint = 0
-    var in_import: bool = false
-    var prev_is_decl: bool = false
-    var prev_readonly: bool = false
-    var ti: ptr_uint = 0
-    while ti < all_tokens.len():
-        let tok_ptr = all_tokens.get(ti) else:
-            break
-        var tok: token_mod.Token
-        unsafe:
-            tok = read(tok_ptr)
-        let kind = tok.kind
-        # Skip whitespace tokens.
-        if kind == tk_mod.TokenKind.newline or kind == tk_mod.TokenKind.indent or
-           kind == tk_mod.TokenKind.dedent or kind == tk_mod.TokenKind.eof:
-            in_import = false
-            ti += 1
-            continue
-        if kind == tk_mod.TokenKind.tk_import:
-            in_import = true
-        else if kind == tk_mod.TokenKind.tk_as:
-            in_import = false
-        let line_num: uint = if tok.line > 0: uint<-(tok.line - 1) else: 0
-        if clip and (line_num < uint<-clip_start_line or line_num > uint<-clip_end_line):
-            ti += 1
-            continue
-        let char_num: uint = uint<-tok.end_offset - uint<-tok.start_offset
-        let col_num: uint = if tok.column > 0: uint<-(tok.column - 1) else: 0
-        var token_type = token_kind_to_type(kind)
-        var token_mod: uint = 0
-        if kind == tk_mod.TokenKind.identifier:
-            token_type = classify_identifier(cursor.token_text(source, tok), ref_of(analysis))
-            if in_import and token_type == TOKEN_VARIABLE:
-                token_type = TOKEN_NAMESPACE
-            if prev_is_decl:
-                token_mod = 1
-                if prev_readonly:
-                    token_mod = 5
-                prev_is_decl = false
-                prev_readonly = false
-        else:
-            if kind == tk_mod.TokenKind.tk_import or kind == tk_mod.TokenKind.tk_enum or
-               kind == tk_mod.TokenKind.tk_extending:
-                prev_is_decl = true
-            else:
-                if in_import and token_type == TOKEN_KEYWORD and kind != tk_mod.TokenKind.tk_import and kind != tk_mod.TokenKind.tk_as:
-                    token_type = TOKEN_NAMESPACE
-                if snapshot_is_decl_kind(kind):
-                    prev_is_decl = true
-                    prev_readonly = kind == tk_mod.TokenKind.tk_const or kind == tk_mod.TokenKind.tk_let
-                else:
-                    prev_is_decl = false
-        if token_type == TOKEN_STRING:
-            let lexeme = unsafe: cursor.token_text(source, tok)
-            match lexeme.find_substring("<<-"):
-                Option.some:
-                    ti += 1
-                    continue
-                Option.none:
-                    pass
-        let delta_line = line_num - prev_line
-        var delta_char = col_num
-        if delta_line == 0:
-            delta_char = col_num - prev_char
-        data.push(delta_line)
-        data.push(delta_char)
-        data.push(char_num)
-        data.push(token_type)
-        data.push(token_mod)
-        prev_line = line_num
-        prev_char = col_num
-        ti += 1
 
     var json_text = build_tokens_json(ref_of(data))
     proto.write_response_raw(id, json_text.as_str())

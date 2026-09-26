@@ -27,10 +27,13 @@ const SYNC_FULL: double = 1.0
 
 
 ## Build a JSON Array of LSP Diagnostic objects from a loaded and checked Program.
-## Filters diagnostics to only those that belong to `root_path`.
-public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Value:
+## Only diagnostics that belong to `root_path` are returned (the loader also
+## reports on imported modules and the prelude), matching the Ruby LSP's
+## per-document pull.  `source` is the document's text — passed to the loader so
+## an unsaved editor buffer is analyzed instead of the file on disk.
+public function collect_diagnostics(root_path: str, roots: span[str], source: str) -> json.Value:
     var platform = default_platform()
-    var program = loader.check_program(root_path, roots, platform)
+    var program = loader.check_program_with_source(root_path, roots, platform, source, true)
 
     var diag_array = json.create_array_value()
     let array_ptr = diag_array.as_array() else:
@@ -43,9 +46,10 @@ public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Va
             break
         unsafe:
             let d = read(d_ptr)
-            let diag = diagnostic_from_load_diagnostic(d)
-            if not diag.is_null():
-                read(array_ptr).push(diag)
+            if d.path.as_str().equal(root_path):
+                let diag = diagnostic_from_load_diagnostic(d, source)
+                if not diag.is_null():
+                    read(array_ptr).push(diag)
 
         i += 1
 
@@ -68,11 +72,20 @@ public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Va
             return diag_array
         unsafe:
             root_source = read(root_module_ptr).source.as_str()
-            lint_warnings = linter_mod.lint_source(
+            var unresolved = vec.Vec[str].create()
+            defer: unresolved.release()
+            var ui: ptr_uint = 0
+            while ui < program.unresolved_import_paths.len():
+                let up = program.unresolved_import_paths.get(ui) else:
+                    break
+                unresolved.push(read(up).as_str())
+                ui += 1
+            lint_warnings = linter_mod.lint_source_unresolved(
                 read(last_analysis_ptr).source_file,
                 root_source,
                 root_path,
-                program.owning_type_span()
+                program.owning_type_span(),
+                unresolved.as_span()
             )
 
     var wi: ptr_uint = 0
@@ -94,8 +107,8 @@ public function collect_diagnostics(root_path: str, roots: span[str]) -> json.Va
 
 ## Publish diagnostics for a file via an LSP notification.
 ## Uses the textDocument/publishDiagnostics notification.
-public function publish_for_uri(uri: str, root_path: str, roots: span[str]) -> void:
-    var diagnostics = collect_diagnostics(root_path, roots)
+public function publish_for_uri(uri: str, root_path: str, roots: span[str], source: str) -> void:
+    var diagnostics = collect_diagnostics(root_path, roots, source)
 
     var params = json.create_object_value()
     let params_obj = params.as_object() else:
@@ -125,16 +138,28 @@ public function publish_empty_for_uri(uri: str) -> void:
     proto.write_notification("textDocument/publishDiagnostics", params)
 
 
-## Convert a LoadDiagnostic to an LSP Diagnostic JSON Value.  The range starts
-## at the diagnostic's column and spans one character, mirroring the Ruby
-## LSP's `format_error`.
-function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic) -> json.Value:
+## Convert a LoadDiagnostic to an LSP Diagnostic JSON Value, mirroring the Ruby
+## LSP's shape (`lib/milk_tea/lsp/diagnostics.rb`): the code is re-derived for the
+## client (`module/error` -> `import/load-error`), `data.stage` carries the
+## pipeline stage, the range spans the offending token, import failures anchor at
+## the module path text, and sema messages that quote identifiers become
+## MarkupContent.
+function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic, source: str) -> json.Value:
     var diag = json.create_object_value()
     let diag_obj = diag.as_object() else:
         return json.null_value()
 
     let line_zero = if d.line > 0: ptr_uint<-(int<-(d.line) - 1) else: 0z
-    let start_char = if d.column > 0: ptr_uint<-(int<-(d.column) - 1) else: 0z
+    var start_char = if d.column > 0: ptr_uint<-(int<-(d.column) - 1) else: 0z
+    var length = d.length
+    if d.code.equal("module/error") and d.symbol_name.len() > 0:
+        start_char = import_path_start(d, source)
+        length = d.symbol_name.len()
+    if length == 0:
+        length = 1
+
+    let lsp_code = lsp_code_for(d.code)
+    let stage = stage_for(d.code)
 
     var range = json.create_object_value()
     let range_obj = range.as_object() else:
@@ -158,7 +183,7 @@ function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic) -> json.Value
         read(start_obj).set("line", json.number_value(double<-line_zero))
         read(start_obj).set("character", json.number_value(double<-start_char))
         read(end_obj).set("line", json.number_value(double<-line_zero))
-        read(end_obj).set("character", json.number_value(double<-(start_char + 1)))
+        read(end_obj).set("character", json.number_value(double<-(start_char + length)))
 
         read(range_obj).set("start", start_pos)
         read(range_obj).set("end", end_pos)
@@ -168,19 +193,120 @@ function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic) -> json.Value
         var severity = SEVERITY_ERROR
         if d.severity == "warning":
             severity = SEVERITY_WARNING
-        else if d.severity == "info" or d.severity == "hint":
+        else if d.severity == "info":
             severity = SEVERITY_INFO
+        else if d.severity == "hint":
+            severity = SEVERITY_HINT
 
         read(diag_obj).set("severity", json.number_value(severity))
         read(diag_obj).set("source", json.string_from_str("milk-tea"))
 
-        if d.code.len > 0:
-            read(diag_obj).set("code", json.string_from_str(d.code))
+        if lsp_code.len > 0:
+            read(diag_obj).set("code", json.string_from_str(lsp_code))
 
         if d.message.len() > 0:
-            read(diag_obj).set("message", json.string_from_str(d.message.as_str()))
+            read(diag_obj).set("message", client_message_value(d.message.as_str(), lsp_code))
+
+        var data = json.create_object_value()
+        let data_obj = data.as_object() else:
+            return diag
+        read(data_obj).set("stage", json.string_from_str(stage))
+        read(diag_obj).set("data", data)
 
     return diag
+
+
+## The client-facing diagnostic code for a loader code: the host re-derives
+## `import/load-error` for load failures; everything else passes through.
+function lsp_code_for(code: str) -> str:
+    if code.equal("module/error"):
+        return "import/load-error"
+    return code
+
+
+## The pipeline stage for a loader code (host `diagnostic_stage`), surfaced as
+## `data.stage`.
+function stage_for(code: str) -> str:
+    if code.equal("lex/error"):
+        return "lex"
+    if code.equal("parse/error"):
+        return "parse"
+    if code.equal("module/error"):
+        return "import"
+    if code.equal("sema/error"):
+        return "sema"
+    return "tooling"
+
+
+## The client-facing `message` value.  A sema message that quotes identifiers
+## with backticks or single quotes becomes a MarkupContent object, mirroring the
+## host's `diagnostic_message_to_client`; every other message stays a string.
+function client_message_value(message: str, lsp_code: str) -> json.Value:
+    if not lsp_code.starts_with("sema") or not message_has_identifier_span(message):
+        return json.string_from_str(message)
+
+    var markup = json.create_object_value()
+    let markup_obj = markup.as_object() else:
+        return json.string_from_str(message)
+    unsafe:
+        read(markup_obj).set("kind", json.string_from_str("markdown"))
+        read(markup_obj).set("value", json.string_from_str(message))
+    return markup
+
+
+## True when the message contains a backticked span or a quoted identifier
+## (host `diagnostic_message_to_client`'s two scans).
+function message_has_identifier_span(message: str) -> bool:
+    if message.find_substring("`").is_some():
+        return true
+    var i: ptr_uint = 0
+    while i < message.len:
+        if message.byte_at(i) == 39:
+            var j = i + 1
+            if j < message.len and is_ascii_name_start(message.byte_at(j)):
+                j += 1
+                while j < message.len and is_ascii_name_or_dot(message.byte_at(j)):
+                    j += 1
+                if j < message.len and message.byte_at(j) == 39:
+                    return true
+            i = j
+        else:
+            i += 1
+    return false
+
+
+function is_ascii_name_start(b: ubyte) -> bool:
+    return (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or b == '_'
+
+
+function is_ascii_name_or_dot(b: ubyte) -> bool:
+    return is_ascii_name_start(b) or (b >= '0' and b <= '9') or b == 46
+
+
+## 0-based character column where an import's module path text starts on the
+## diagnostic's line (`import_path_span`); the diagnostic's own column when the
+## line or the text cannot be found.
+function import_path_start(d: loader.LoadDiagnostic, source: str) -> ptr_uint:
+    let fallback = if d.column > 0: ptr_uint<-(int<-(d.column) - 1) else: 0z
+    if d.symbol_name.len() == 0 or source.len == 0 or d.line == 0:
+        return fallback
+
+    var line_start: ptr_uint = 0
+    var line_no: ptr_uint = 1
+    var i: ptr_uint = 0
+    while i <= source.len:
+        if i == source.len or source.byte_at(i) == 10:
+            if line_no == d.line:
+                let line_text = source.slice(line_start, i - line_start)
+                match line_text.find_substring(d.symbol_name.as_str()):
+                    Option.some as idx:
+                        return idx.value
+                    Option.none:
+                        return fallback
+            line_start = i + 1
+            line_no += 1
+        i += 1
+    return fallback
 
 
 ## Convert a linter Warning to an LSP Diagnostic JSON Value.  Warnings carry
@@ -269,6 +395,12 @@ function diagnostic_from_warning(w: linter_mod.Warning, source: str) -> json.Val
 
         if w.message.len > 0:
             read(diag_obj).set("message", json.string_from_str(w.message))
+
+        var data = json.create_object_value()
+        let data_obj = data.as_object() else:
+            return diag
+        read(data_obj).set("stage", json.string_from_str("lint"))
+        read(diag_obj).set("data", data)
 
     return diag
 

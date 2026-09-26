@@ -64,7 +64,7 @@ public struct Warning:
 ## Lint a parsed source file, returning warnings in source (traversal) order.
 ## `source` is the original text, re-lexed for the token-based passes.
 public function lint_source(file: ast.SourceFile, source: str, path: str, owning_type_names: span[str]) -> vec.Vec[Warning]:
-    return lint_source_opts(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH)
+    return lint_source_with(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH, span[str]())
 
 
 ## lint_source with an explicit line-length limit (from `.mt-lint.yml`'s
@@ -76,6 +76,32 @@ public function lint_source_opts(
     owning_type_names: span[str],
     max_line_length: ptr_uint,
 ) -> vec.Vec[Warning]:
+    return lint_source_with(file, source, path, owning_type_names, max_line_length, span[str]())
+
+
+## lint_source_opts plus the module paths whose imports failed to resolve (the
+## LSP hands over the loader's list): `unused-import` skips those imports.
+public function lint_source_unresolved(
+    file: ast.SourceFile,
+    source: str,
+    path: str,
+    owning_type_names: span[str],
+    unresolved_import_paths: span[str],
+) -> vec.Vec[Warning]:
+    return lint_source_with(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH, unresolved_import_paths)
+
+
+## lint_source with an explicit line-length limit and the module paths whose
+## imports failed to resolve.  `unused-import` skips unresolved imports,
+## mirroring Ruby's `Linter` `unresolved_import_paths`.
+public function lint_source_with(
+    file: ast.SourceFile,
+    source: str,
+    path: str,
+    owning_type_names: span[str],
+    max_line_length: ptr_uint,
+    unresolved_import_paths: span[str],
+) -> vec.Vec[Warning]:
     var warnings = vec.Vec[Warning].create()
     var i: ptr_uint = 0
     while i < file.declarations.len:
@@ -84,7 +110,7 @@ public function lint_source_opts(
         i += 1
     # Scope-tracking pass: unused-local, unused-param, shadow, prefer-let, unused-import
     var scope_warnings = vec.Vec[scope_tracking.ScopeWarning].create()
-    scope_tracking.lint_scope_pass(file, path, ref_of(scope_warnings))
+    scope_tracking.lint_scope_pass(file, path, unresolved_import_paths, ref_of(scope_warnings))
     i = 0
     while i < scope_warnings.len():
         let sp = scope_warnings.get(i) else:
@@ -109,6 +135,7 @@ public function lint_source_opts(
     lint_doc_tags(file.declarations, source, path, ref_of(warnings))
     lint_events(file.declarations, "", path, ref_of(warnings))
     lint_trailing_commas(file.declarations, source, path, ref_of(warnings))
+    lint_prefer_inline_methods(file.declarations, path, ref_of(warnings))
     lint_line_too_long(source, path, max_line_length, ref_of(warnings))
     lint_dead_assignment(file, path, ref_of(warnings))
     lint_unreachable_code(file, path, ref_of(warnings))
@@ -126,11 +153,13 @@ public function lint_source_opts(
 
 struct DocLine:
     line: ptr_uint
+    column: ptr_uint
     text: str
 
 struct DocParamTag:
     name: str
     line: ptr_uint
+    column: ptr_uint
 
 struct DocTagParse:
     tag: str
@@ -184,7 +213,7 @@ function collect_doc_block(lines: ref[vec.Vec[str]], decl_line: ptr_uint) -> vec
         let stripped = line.trim_ascii_whitespace()
         if stripped.len == 0 or not stripped.starts_with("##"):
             break
-        collected.push(DocLine(line = idx + 1, text = strip_doc_prefix(stripped)))
+        collected.push(DocLine(line = idx + 1, column = doc_tag_column(line), text = strip_doc_prefix(stripped)))
         if idx == 0:
             break
         idx -= 1
@@ -203,6 +232,16 @@ function strip_doc_prefix(s: str) -> str:
     if i < s.len and dt_is_space(s.byte_at(i)):
         i += 1
     return s.slice(i, s.len - i)
+
+
+## The 1-based column of the `@` on a raw doc line, or 1 when absent
+## (mirrors Ruby's `doc_tag_column`).
+function doc_tag_column(line: str) -> ptr_uint:
+    match line.find_substring("@"):
+        Option.some as idx:
+            return idx.value + 1
+        Option.none:
+            return 1
 
 
 ## Parse `@tag payload` from a doc line; returns the lowercased tag + trimmed
@@ -296,6 +335,7 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
     defer: param_tags.release()
     var has_return = false
     var return_line: ptr_uint = 0
+    var return_column: ptr_uint = 0
 
     var i: ptr_uint = 0
     while i < docs.len():
@@ -308,23 +348,24 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
                 let payload = parsed.value.payload
                 if tag.equal("param"):
                     if payload.len == 0:
-                        push_warning(warnings, path, dl.line, "doc-tag", "doc tag @param requires a parameter name", "hint")
+                        push_warning_at(warnings, path, dl.line, dl.column, 6, "doc-tag", "doc tag @param requires a parameter name", "hint")
                     else:
                         match parse_param_name(payload):
                             Option.some as pn:
-                                param_tags.push(DocParamTag(name = pn.value, line = dl.line))
+                                param_tags.push(DocParamTag(name = pn.value, line = dl.line, column = dl.column))
                             Option.none:
-                                push_warning(warnings, path, dl.line, "doc-tag", "doc tag @param has an invalid parameter name", "hint")
+                                push_warning_at(warnings, path, dl.line, dl.column, 6, "doc-tag", "doc tag @param has an invalid parameter name", "hint")
                 else if tag.equal("return") or tag.equal("returns"):
                     has_return = true
                     return_line = dl.line
+                    return_column = dl.column
                 else if tag.equal("throws") or tag.equal("throw") or tag.equal("see"):
                     pass
                 else:
                     var msg = string.String.create()
                     msg.append("unknown doc tag @")
                     msg.append(tag)
-                    push_warning(warnings, path, dl.line, "doc-tag", msg.as_str(), "hint")
+                    push_warning_at(warnings, path, dl.line, dl.column, tag.len + 1, "doc-tag", msg.as_str(), "hint")
             Option.none:
                 pass
         i += 1
@@ -335,10 +376,10 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
             let ptp = param_tags.get(pi) else:
                 break
             let pt = unsafe: read(ptp)
-            push_warning(warnings, path, pt.line, "doc-tag", "callable doc tags are only valid on function and method declarations", "hint")
+            push_warning_at(warnings, path, pt.line, pt.column, 1, "doc-tag", "callable doc tags are only valid on function and method declarations", "hint")
             pi += 1
         if has_return:
-            push_warning(warnings, path, return_line, "doc-tag", "callable doc tags are only valid on function and method declarations", "hint")
+            push_warning_at(warnings, path, return_line, return_column, 1, "doc-tag", "callable doc tags are only valid on function and method declarations", "hint")
         return
 
     var pi: ptr_uint = 0
@@ -353,7 +394,7 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
             msg.append("' does not match any parameter in '")
             msg.append(decl_name)
             msg.append("'")
-            push_warning(warnings, path, pt.line, "doc-tag", msg.as_str(), "hint")
+            push_warning_at(warnings, path, pt.line, pt.column, pt.name.len, "doc-tag", msg.as_str(), "hint")
         pi += 1
 
     if has_return and is_void_type(return_type):
@@ -361,7 +402,7 @@ function process_doc_definition(lines: ref[vec.Vec[str]], decl_line: ptr_uint, d
         msg.append("doc tag @return is stale for '")
         msg.append(decl_name)
         msg.append("' because it returns void")
-        push_warning(warnings, path, return_line, "doc-tag", msg.as_str(), "hint")
+        push_warning_at(warnings, path, return_line, return_column, 7, "doc-tag", msg.as_str(), "hint")
 
 
 function lint_doc_tags(decls: span[ast.Decl], source: str, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -418,6 +459,50 @@ function lint_doc_tags(decls: span[ast.Decl], source: str, path: str, warnings: 
                     process_doc_definition(ref_of(lines), ev.line, ev.name, false, ref_of(empty_names), null, path, warnings)
                 ast.Decl.decl_attribute as at:
                     process_doc_definition(ref_of(lines), at.line, at.name, false, ref_of(empty_names), null, path, warnings)
+                _:
+                    pass
+        i += 1
+
+
+# =============================================================================
+#  prefer-inline-methods — `extending X:` blocks whose receiver struct is
+#  declared in the same file (the methods can be written inline inside the
+#  struct body, which desugars to the identical block).
+# =============================================================================
+
+function lint_prefer_inline_methods(decls: span[ast.Decl], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var struct_names = vec.Vec[str].create()
+    defer: struct_names.release()
+    var i: ptr_uint = 0
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_struct as s:
+                    struct_names.push(s.name)
+                _:
+                    pass
+        i += 1
+    if struct_names.len() == 0:
+        return
+
+    i = 0
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_extending_block as ex:
+                    if not ex.is_inline:
+                        let tr = read(ex.type_name)
+                        if tr.name.parts.len == 1 and tr.arguments.len == 0:
+                            let name = read(tr.name.parts.data)
+                            if names_contains(ref_of(struct_names), name):
+                                # The message buffer is intentionally leaked: the
+                                # warning borrows its bytes (the linter's
+                                # convention for stored messages).
+                                var msg = string.String.create()
+                                msg.append("methods on '")
+                                msg.append(name)
+                                msg.append("' can be written inline inside the struct declaration")
+                                push_warning_at(warnings, path, ex.line, ex.column, name.len, "prefer-inline-methods", msg.as_str(), "hint")
                 _:
                     pass
         i += 1

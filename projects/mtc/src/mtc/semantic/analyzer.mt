@@ -28,6 +28,9 @@ import mtc.semantic.scope as sscope
 public struct SemanticDiagnostic:
     line: ptr_uint
     column: ptr_uint
+    ## Character length of the offending token (0 when the report site has none);
+    ## the LSP falls back to 1, matching the Ruby `Diagnostic#length` default.
+    length: ptr_uint
     message: str
 
 
@@ -131,6 +134,10 @@ struct Context:
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
     import_aliases: map_mod.Map[str, str]
     imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?
+    ## True when unresolved imports must leave their alias unbound, so uses of
+    ## the alias are reported as unknown names (the LSP's `allow_missing_imports`
+    ## equivalent).  The compile path leaves it false and stays permissive.
+    require_resolved_imports: bool
     types: map_mod.Map[str, types.Type]
     attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
     field_attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
@@ -192,6 +199,17 @@ public function check_source_file(file: ast.SourceFile) -> Analysis:
 ## given import bindings (keyed by module name; may be null for single-file
 ## checks).  `imported_modules` is borrowed, not owned.
 public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str) -> Analysis:
+    return check_module_opts(file, imported_modules, module_name, source_path, false)
+
+
+## `check_module` with the LSP's unresolved-import handling: aliases whose
+## module did not resolve are left unbound (the host's `allow_missing_imports`
+## behaviour), so uses of them are reported as unknown names.
+public function check_module_requiring_resolved_imports(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str) -> Analysis:
+    return check_module_opts(file, imported_modules, module_name, source_path, true)
+
+
+public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[map_mod.Map[str, ModuleBinding]]?, module_name: str, source_path: str, require_resolved_imports: bool) -> Analysis:
     var ctx = Context(
         value_names = map_mod.Map[str, bool].create(),
         type_names = map_mod.Map[str, bool].create(),
@@ -216,6 +234,7 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
         implemented = map_mod.Map[str, span[ast.QualifiedName]].create(),
         import_aliases = map_mod.Map[str, str].create(),
         imported_modules = imported_modules,
+        require_resolved_imports = require_resolved_imports,
         types = map_mod.Map[str, types.Type].create(),
         attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
         field_attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
@@ -290,11 +309,21 @@ public function check_module(file: ast.SourceFile, imported_modules: ptr[map_mod
 
 
 function report(ctx: ref[Context], line: ptr_uint, column: ptr_uint, message: str) -> void:
-    ctx.diagnostics.push(SemanticDiagnostic(line = line, column = column, message = message))
+    ctx.diagnostics.push(SemanticDiagnostic(line = line, column = column, length = 0, message = message))
+
+
+## Like `report`, with the offending token's character length so the LSP range
+## spans the token (Ruby's sema diagnostics carry a `length`).
+function report_at(ctx: ref[Context], line: ptr_uint, column: ptr_uint, length: ptr_uint, message: str) -> void:
+    ctx.diagnostics.push(SemanticDiagnostic(line = line, column = column, length = length, message = message))
 
 
 ## Record each import's alias -> module name so member access on an alias
 ## (`alias.func(...)`) can be resolved against the imported module's bindings.
+## With `require_resolved_imports` (the LSP path, mirroring the host's
+## `allow_missing_imports` handling) an alias whose module did not resolve stays
+## unbound, so uses of it are reported as unknown names; the compile path keeps
+## the permissive aliasing that lowering relies on.
 function collect_import_aliases(ctx: ref[Context], file: ast.SourceFile) -> void:
     var i: ptr_uint = 0
     while i < file.imports.len:
@@ -303,7 +332,9 @@ function collect_import_aliases(ctx: ref[Context], file: ast.SourceFile) -> void
             d = read(file.imports.data + i)
         match d:
             ast.Decl.decl_import as imp:
-                ctx.import_aliases.set(import_alias_name(imp.path, imp.alias_name), qname_to_str(imp.path))
+                let module_name = qname_to_str(imp.path)
+                if not ctx.require_resolved_imports or lookup_binding(ctx, module_name) != null:
+                    ctx.import_aliases.set(import_alias_name(imp.path, imp.alias_name), module_name)
             _:
                 pass
         i += 1
@@ -3391,7 +3422,7 @@ function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], name: str
     # types — and thus code generation — are unchanged); only a name matching
     # nothing at all is a typo or missing import and is reported.
     if not is_known_value_identifier(ctx, name):
-        report(ctx, line, column, unknown_name_message(name))
+        report_at(ctx, line, column, name.len, unknown_name_message(name))
     return types.Type.ty_error
 
 

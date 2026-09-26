@@ -280,11 +280,11 @@ function emit_scope_flat(path: str, warnings: ref[vec.Vec[ScopeWarning]], buf: p
 #  Pass entry point
 # =============================================================================
 
-public function lint_scope_pass(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[ScopeWarning]]) -> void:
+public function lint_scope_pass(file: ast.SourceFile, path: str, unresolved_import_paths: span[str], warnings: ref[vec.Vec[ScopeWarning]]) -> void:
     var entries_buf: array[ScopeEntry, 4096]
     var sc: ScopeCtx
     ctx_init(ref_of(sc), ptr_of(entries_buf[0]))
-    check_unused_imports(file, path, warnings)
+    check_unused_imports(file, path, unresolved_import_paths, warnings)
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
@@ -297,7 +297,7 @@ public function lint_scope_pass(file: ast.SourceFile, path: str, warnings: ref[v
 #  unused-import
 # =============================================================================
 
-function check_unused_imports(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[ScopeWarning]]) -> void:
+function check_unused_imports(file: ast.SourceFile, path: str, unresolved_import_paths: span[str], warnings: ref[vec.Vec[ScopeWarning]]) -> void:
     var i: ptr_uint = 0
     while i < file.imports.len:
         unsafe:
@@ -310,18 +310,43 @@ function check_unused_imports(file: ast.SourceFile, path: str, warnings: ref[vec
                             ln = an.value
                         Option.none:
                             ln = read(parts.data + parts.len - 1)
-                    var used = false
-                    var j: ptr_uint = 0
-                    while j < file.declarations.len:
-                        if decl_uses_name(file.declarations.data + j, ln):
-                            used = true
-                            break
-                        j += 1
-                    if not used:
-                        warn_unused_import(warnings, path, ln, im.line, im.column)
+                    if not import_path_is_unresolved(im.path, unresolved_import_paths):
+                        var used = false
+                        var j: ptr_uint = 0
+                        while j < file.declarations.len:
+                            if decl_uses_name(file.declarations.data + j, ln):
+                                used = true
+                                break
+                            j += 1
+                        if not used:
+                            warn_unused_import(warnings, path, ln, im.line, im.column)
                 _:
                     pass
         i += 1
+
+
+## True when the dotted import path is one of the module paths whose import
+## failed to resolve (Ruby's `unresolved_import_paths`): those are never
+## reported as unused, because the failure is already reported elsewhere.
+function import_path_is_unresolved(path: ast.QualifiedName, unresolved_import_paths: span[str]) -> bool:
+    if unresolved_import_paths.len == 0:
+        return false
+    var dotted = string.String.create()
+    defer: dotted.release()
+    var i: ptr_uint = 0
+    while i < path.parts.len:
+        if i > 0:
+            dotted.push_byte(46)
+        unsafe:
+            dotted.append(read(path.parts.data + i))
+        i += 1
+    let name = dotted.as_str()
+    var j: ptr_uint = 0
+    while j < unresolved_import_paths.len:
+        if unsafe: read(unresolved_import_paths.data + j).equal(name):
+            return true
+        j += 1
+    return false
 
 
 function decl_uses_name(decl: ptr[ast.Decl], name: str) -> bool:

@@ -817,8 +817,21 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[pstate.ParseDia
 ## leaked (arena-style): the compiler processes one file per run and exits.
 public function parse_source(source: str, errors: ref[vec.Vec[pstate.ParseDiagnostic]]) -> ast.SourceFile:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    return parse_source_reporting(source, errors, ref_of(lex_diags))
+
+
+## Like `parse_source`, additionally surfacing the lexer's recoverable
+## diagnostics (unterminated literals, unclosed delimiters, …) to the caller.
+## The loader converts them into `lex/error` diagnostics, mirroring the Ruby
+## LSP pipeline's `lex_errors + parse_errors` collection.
+public function parse_source_reporting(
+    source: str,
+    errors: ref[vec.Vec[pstate.ParseDiagnostic]],
+    lex_errors: ref[vec.Vec[token_mod.LexDiagnostic]],
+) -> ast.SourceFile:
     var state = pstate.ParserState(
-        stream = ts.create(lexer.lex_reporting(source, ref_of(lex_diags))),
+        stream = ts.create(lexer.lex_reporting(source, lex_errors)),
         source = source,
         step_counter = 0,
         in_inline_block_body = false,
@@ -832,7 +845,6 @@ public function parse_source(source: str, errors: ref[vec.Vec[pstate.ParseDiagno
         error_suppressed = false,
         pending_decls = vec.Vec[ast.Decl].create(),
     )
-    lex_diags.release()
     seed_known_names(ref_of(state))
     return parse_source_file(ref_of(state))
 

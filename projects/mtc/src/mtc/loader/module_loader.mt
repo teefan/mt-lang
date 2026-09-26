@@ -16,6 +16,7 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
+import mtc.lexer.token as token_mod
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -33,18 +34,23 @@ public struct LoadedModule:
     source: string.String
     source_file: ast.SourceFile
     parse_diagnostics: vec.Vec[pstate.ParseDiagnostic]
+    lex_diagnostics: vec.Vec[token_mod.LexDiagnostic]
 
 
 ## A diagnostic aggregated across the whole program, tagged with the source-file
 ## path it occurs in so parse, load, and semantic errors can be reported
-## uniformly.
+## uniformly.  `length` is the offending token's character length (0 when the
+## emitter has none) and `symbol_name` the module path text for import failures;
+## both mirror the Ruby `Diagnostic` fields the LSP range logic reads.
 public struct LoadDiagnostic:
     path: string.String
     line: ptr_uint
     column: ptr_uint
+    length: ptr_uint
     message: string.String
     severity: str
     code: str
+    symbol_name: string.String
 
 
 ## The result of loading and checking a program: every parsed module, a
@@ -60,6 +66,9 @@ public struct Program:
     diagnostics: vec.Vec[LoadDiagnostic]
     owning_type_names: vec.Vec[str]
     root_index: ptr_uint
+    ## Module paths that failed to resolve (mirrors the Ruby loader's
+    ## `unresolved_import_paths`): the linter skips `unused-import` for them.
+    unresolved_import_paths: vec.Vec[string.String]
 
 
 extending LoadedModule:
@@ -68,12 +77,14 @@ extending LoadedModule:
         this.path.release()
         this.source.release()
         this.parse_diagnostics.release()
+        this.lex_diagnostics.release()
 
 
 extending LoadDiagnostic:
     public editable function release() -> void:
         this.path.release()
         this.message.release()
+        this.symbol_name.release()
 
 
 extending Program:
@@ -201,6 +212,14 @@ extending Program:
                 read(diag_ptr).release()
             d += 1
         this.diagnostics.release()
+        var u: ptr_uint = 0
+        while u < this.unresolved_import_paths.len():
+            let up = this.unresolved_import_paths.get(u) else:
+                break
+            unsafe:
+                read(up).release()
+            u += 1
+        this.unresolved_import_paths.release()
 
 
 ## Load and check the program rooted at `root_path`, resolving imports against
@@ -258,6 +277,15 @@ public function absolute_path(path: str) -> string.String:
 
 
 public function check_program(root_path: str, roots: span[str], platform: resolver.Platform) -> Program:
+    return check_program_with_source(root_path, roots, platform, "", false)
+
+
+## check_program with an explicit root-module source override.  When
+## `root_source` is non-empty it is parsed as the root module's text instead of
+## reading the file from disk — the LSP analyses unsaved editor buffers.
+## Imported modules always read from disk.  `require_resolved_imports` selects
+## the LSP's unresolved-import handling (aliases stay unbound).
+public function check_program_with_source(root_path: str, roots: span[str], platform: resolver.Platform, root_source: str, require_resolved_imports: bool) -> Program:
     # Normalize the module roots to absolute paths once so every resolved
     # module path is absolute and consistent with the Ruby loader.
     var owned_roots = vec.Vec[string.String].create()
@@ -277,6 +305,7 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     var on_stack = map_mod.Map[str, bool].create()
     var order = vec.Vec[ptr_uint].create()
     var diagnostics = vec.Vec[LoadDiagnostic].create()
+    var unresolved_import_paths = vec.Vec[string.String].create()
 
     # Absolutize the root path so module-name inference can match it against
     # the normalized (absolute) roots, like Ruby's File.expand_path in load_file.
@@ -292,8 +321,8 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
     # PreludeInstaller.  Parsing them first also makes them dependency-first in
     # `order`, so they are checked before any consumer.  A prelude that cannot be
     # resolved is skipped silently (the analyzer still synthesizes the types).
-    seed_prelude_module("std.option", norm_roots, platform, root_name_owner.as_str(), ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
-    seed_prelude_module("std.result", norm_roots, platform, root_name_owner.as_str(), ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics))
+    seed_prelude_module("std.option", norm_roots, platform, root_name_owner.as_str(), "", ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics), ref_of(unresolved_import_paths))
+    seed_prelude_module("std.result", norm_roots, platform, root_name_owner.as_str(), "", ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics), ref_of(unresolved_import_paths))
 
     # `parse_all` takes ownership of the resolved path, so keep a copy for the
     # post-parse root reordering below.
@@ -304,11 +333,14 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
         root_resolved,
         norm_roots,
         platform,
+        root_key_owner.as_str(),
+        root_source,
         ref_of(modules),
         ref_of(visited),
         ref_of(on_stack),
         ref_of(order),
         ref_of(diagnostics),
+        ref_of(unresolved_import_paths),
     )
 
     # When the requested root was already parsed as a prelude dependency
@@ -358,7 +390,7 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
         let index = unsafe: read(index_ptr)
         let module_ptr = modules.get(index) else:
             break
-        check_and_bind_module(module_ptr, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
+        check_and_bind_module(module_ptr, bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports)
         oi += 1
 
     var owning_type_names = build_owning_type_names(ref_of(analyses))
@@ -382,7 +414,7 @@ public function check_program(root_path: str, roots: span[str], platform: resolv
         ci += 1
     analyses.release()
 
-    return Program(modules = modules, order = order, analyses = canonical_analyses, diagnostics = diagnostics, owning_type_names = owning_type_names, root_index = root_index)
+    return Program(modules = modules, order = order, analyses = canonical_analyses, diagnostics = diagnostics, owning_type_names = owning_type_names, root_index = root_index, unresolved_import_paths = unresolved_import_paths)
 
 
 ## Canonical module order: depth-first post-order over the module names sorted
@@ -543,11 +575,13 @@ function seed_prelude_module(
     roots: span[str],
     platform: resolver.Platform,
     skip_path: str,
+    root_source: str,
     modules: ref[vec.Vec[LoadedModule]],
     visited: ref[map_mod.Map[str, ptr_uint]],
     on_stack: ref[map_mod.Map[str, bool]],
     order: ref[vec.Vec[ptr_uint]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
+    unresolved_import_paths: ref[vec.Vec[string.String]],
 ) -> void:
     match resolver.resolve_module_path(module_name, roots, platform):
         Result.success as resolved_ok:
@@ -558,7 +592,7 @@ function seed_prelude_module(
             if module_name == skip_path:
                 resolved_ok.value.release()
                 return
-            parse_all(resolved_ok.value, roots, platform, modules, visited, on_stack, order, diagnostics)
+            parse_all(resolved_ok.value, roots, platform, "", root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths)
         Result.failure as failure:
             var error = failure.error
             error.release()
@@ -572,11 +606,14 @@ function parse_all(
     resolved: string.String,
     roots: span[str],
     platform: resolver.Platform,
+    root_key: str,
+    root_source: str,
     modules: ref[vec.Vec[LoadedModule]],
     visited: ref[map_mod.Map[str, ptr_uint]],
     on_stack: ref[map_mod.Map[str, bool]],
     order: ref[vec.Vec[ptr_uint]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
+    unresolved_import_paths: ref[vec.Vec[string.String]],
 ) -> void:
     var owned_path = resolved
     let key = owned_path.as_str()
@@ -590,48 +627,59 @@ function parse_all(
             path = string.String.from_str(key),
             line = 0,
             column = 0,
+            length = 0,
             message = string.String.from_str("cyclic import detected"),
             severity = "error",
             code = "module/error",
+            symbol_name = string.String.from_str(""),
         ))
         owned_path.release()
         return
 
-    match fs.read_text(key):
-        Result.failure as failure:
-            var error = failure.error
-            diagnostics.push(LoadDiagnostic(
-                path = string.String.from_str(key),
-                line = 0,
-                column = 0,
-                message = string.String.from_str("source file not found"),
-                severity = "error",
-                code = "module/error",
-            ))
-            error.release()
-            owned_path.release()
-            return
-        Result.success as payload:
-            var source = payload.value
-            var parse_diagnostics = vec.Vec[pstate.ParseDiagnostic].create()
-            let source_file = parser.parse_source(source.as_str(), ref_of(parse_diagnostics))
-            let module_name = resolver.infer_module_name(key, roots)
+    var source: string.String
+    if root_source.len > 0 and key.equal(root_key):
+        source = string.String.from_str(root_source)
+    else:
+        match fs.read_text(key):
+            Result.failure as failure:
+                var error = failure.error
+                diagnostics.push(LoadDiagnostic(
+                    path = string.String.from_str(key),
+                    line = 0,
+                    column = 0,
+                    length = 0,
+                    message = string.String.from_str("source file not found"),
+                    severity = "error",
+                    code = "module/error",
+                    symbol_name = string.String.from_str(""),
+                ))
+                error.release()
+                owned_path.release()
+                return
+            Result.success as payload:
+                source = payload.value
 
-            on_stack.set(key, true)
-            modules.push(LoadedModule(
-                module_name = module_name,
-                path = owned_path,
-                source = source,
-                source_file = source_file,
-                parse_diagnostics = parse_diagnostics,
-            ))
-            let index = modules.len() - 1
+    var parse_diagnostics = vec.Vec[pstate.ParseDiagnostic].create()
+    var lex_diagnostics = vec.Vec[token_mod.LexDiagnostic].create()
+    let source_file = parser.parse_source_reporting(source.as_str(), ref_of(parse_diagnostics), ref_of(lex_diagnostics))
+    let module_name = resolver.infer_module_name(key, roots)
 
-            recurse_imports(source_file, key, roots, platform, modules, visited, on_stack, order, diagnostics)
+    on_stack.set(key, true)
+    modules.push(LoadedModule(
+        module_name = module_name,
+        path = owned_path,
+        source = source,
+        source_file = source_file,
+        parse_diagnostics = parse_diagnostics,
+        lex_diagnostics = lex_diagnostics,
+    ))
+    let index = modules.len() - 1
 
-            let _dropped = on_stack.remove(key)
-            visited.set(key, index)
-            order.push(index)
+    recurse_imports(source_file, key, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths)
+
+    let _dropped = on_stack.remove(key)
+    visited.set(key, index)
+    order.push(index)
 
 
 ## Resolve and recursively parse each `import` of a parsed module.  An import
@@ -641,11 +689,14 @@ function recurse_imports(
     importer_path: str,
     roots: span[str],
     platform: resolver.Platform,
+    root_key: str,
+    root_source: str,
     modules: ref[vec.Vec[LoadedModule]],
     visited: ref[map_mod.Map[str, ptr_uint]],
     on_stack: ref[map_mod.Map[str, bool]],
     order: ref[vec.Vec[ptr_uint]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
+    unresolved_import_paths: ref[vec.Vec[string.String]],
 ) -> void:
     var i: ptr_uint = 0
     while i < source_file.imports.len:
@@ -661,23 +712,29 @@ function recurse_imports(
                             resolved_ok.value,
                             roots,
                             platform,
+                            root_key,
+                            root_source,
                             modules,
                             visited,
                             on_stack,
                             order,
                             diagnostics,
+                            unresolved_import_paths,
                         )
                     Result.failure as resolve_failure:
                         var error = resolve_failure.error
                         var message = string.String.from_str("module not found: ")
                         message.append(module_name)
+                        unresolved_import_paths.push(string.String.from_str(module_name))
                         diagnostics.push(LoadDiagnostic(
                             path = string.String.from_str(importer_path),
                             line = imported.line,
                             column = imported.column,
+                            length = module_name.len,
                             message = message,
                             severity = "error",
                             code = "module/error",
+                            symbol_name = string.String.from_str(module_name),
                         ))
                         error.release()
             _:
@@ -688,16 +745,37 @@ function recurse_imports(
 ## Semantically check one parsed module against the accumulated import bindings,
 ## append its parse and semantic diagnostics (as owned copies) to the
 ## program-wide list, register the module's own export binding, and retain its
-## `Analysis` for the Lowering stage.  Parse errors block semantic analysis,
-## mirroring the CLI's single-file behaviour.
+## `Analysis` for the Lowering stage.  Parse and lex diagnostics are reported
+## first; semantic analysis still runs on the recovered AST, mirroring the
+## host's LSP pipeline.
 function check_and_bind_module(
     module_ptr: ptr[LoadedModule],
     bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]],
     analyses: ref[vec.Vec[analyzer.Analysis]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
+    require_resolved_imports: bool,
 ) -> void:
     unsafe:
         let loaded = read(module_ptr)
+
+        # Lexer diagnostics come first and are always reported (the host emits
+        # `lex/error` items alongside the parser's recovered errors).
+        var li: ptr_uint = 0
+        while li < loaded.lex_diagnostics.len():
+            let lex_ptr = loaded.lex_diagnostics.get(li) else:
+                break
+            let lex_diag = read(lex_ptr)
+            diagnostics.push(LoadDiagnostic(
+                path = string.String.from_str(loaded.path.as_str()),
+                line = lex_diag.line,
+                column = lex_diag.column,
+                length = 1,
+                message = string.String.from_str(text.cstr_as_str(lex_diag.message)),
+                severity = "error",
+                code = "lex/error",
+                symbol_name = string.String.from_str(""),
+            ))
+            li += 1
 
         var pi: ptr_uint = 0
         while pi < loaded.parse_diagnostics.len():
@@ -708,16 +786,22 @@ function check_and_bind_module(
                 path = string.String.from_str(loaded.path.as_str()),
                 line = parse_diag.line,
                 column = parse_diag.column,
+                length = parse_diag.lexeme.len,
                 message = string.String.from_str(text.cstr_as_str(parse_diag.message)),
                 severity = "error",
                 code = "parse/error",
+                symbol_name = string.String.from_str(""),
             ))
             pi += 1
 
-        if loaded.parse_diagnostics.len() > 0:
-            return
-
-        var analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+        # Semantic analysis runs even when the parser reported errors: the
+        # recovered AST still yields facts and diagnostics, matching the host's
+        # LSP pipeline (which continues past parse errors).
+        var analysis: analyzer.Analysis
+        if require_resolved_imports:
+            analysis = analyzer.check_module_requiring_resolved_imports(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+        else:
+            analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
         var si: ptr_uint = 0
         while si < analysis.diagnostics.len():
             let sema_ptr = analysis.diagnostics.get(si) else:
@@ -727,9 +811,11 @@ function check_and_bind_module(
                 path = string.String.from_str(loaded.path.as_str()),
                 line = sema_diag.line,
                 column = sema_diag.column,
+                length = sema_diag.length,
                 message = string.String.from_str(sema_diag.message),
                 severity = "error",
                 code = "sema/error",
+                symbol_name = string.String.from_str(""),
             ))
             si += 1
         analysis.diagnostics.release()
