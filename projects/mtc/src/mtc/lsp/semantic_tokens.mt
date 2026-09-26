@@ -29,23 +29,37 @@ const FNV_OFFSET: uint = 0x811C9DC5
 const FNV_PRIME:  uint = 0x01000193
 
 
-## Legend indices (see lifecycle.mt): namespace=0, type=1, keyword=2,
-## string=3, number=4, comment=5, operator=6, variable=7, function=8,
-## parameter=9, property=10, regexp=11, enumMember=12, method=13,
-## decorator=14.
+## Legend indices, mirroring the host's advertised legend exactly (see
+## lifecycle.mt TOKEN_TYPES_JSON): namespace=0, type=1, class=2, enum=3,
+## interface=4, struct=5, typeParameter=6, parameter=7, variable=8, property=9,
+## enumMember=10, event=11, function=12, method=13, macro=14, keyword=15,
+## modifier=16, comment=17, string=18, number=19, regexp=20, operator=21,
+## decorator=22.
+##
+## Modifier bits match the host too: declaration=1, readonly=4.
 const TOKEN_NAMESPACE:    uint = 0
 const TOKEN_TYPE:         uint = 1
-const TOKEN_KEYWORD:      uint = 2
-const TOKEN_STRING:       uint = 3
-const TOKEN_NUMBER:       uint = 4
-const TOKEN_OPERATOR:     uint = 6
-const TOKEN_VARIABLE:     uint = 7
-const TOKEN_FUNCTION:     uint = 8
-const TOKEN_PARAMETER:    uint = 9
-const TOKEN_PROPERTY:     uint = 10
-const TOKEN_ENUM_MEMBER:  uint = 12
+const TOKEN_CLASS:        uint = 2
+const TOKEN_ENUM:         uint = 3
+const TOKEN_INTERFACE:    uint = 4
+const TOKEN_STRUCT:       uint = 5
+const TOKEN_TYPE_PARAM:   uint = 6
+const TOKEN_PARAMETER:    uint = 7
+const TOKEN_VARIABLE:     uint = 8
+const TOKEN_PROPERTY:     uint = 9
+const TOKEN_ENUM_MEMBER:  uint = 10
+const TOKEN_EVENT:        uint = 11
+const TOKEN_FUNCTION:     uint = 12
 const TOKEN_METHOD:       uint = 13
-const TOKEN_DECORATOR:    uint = 14
+const TOKEN_MACRO:        uint = 14
+const TOKEN_KEYWORD:      uint = 15
+const TOKEN_MODIFIER:     uint = 16
+const TOKEN_COMMENT:      uint = 17
+const TOKEN_STRING:       uint = 18
+const TOKEN_NUMBER:       uint = 19
+const TOKEN_REGEXP:       uint = 20
+const TOKEN_OPERATOR:     uint = 21
+const TOKEN_DECORATOR:    uint = 22
 
 
 ## Handle textDocument/semanticTokens/full.
@@ -546,11 +560,11 @@ public function classify_identifier(
         if read(analysis).method_sigs.contains(lexeme):
             return TOKEN_METHOD
         if read(analysis).structs.contains(lexeme):
-            return TOKEN_TYPE
+            return TOKEN_STRUCT
         if read(analysis).static_member_types.contains(lexeme):
             return TOKEN_TYPE
         if read(analysis).interfaces.contains(lexeme):
-            return TOKEN_TYPE
+            return TOKEN_INTERFACE
         if read(analysis).type_alias_types.contains(lexeme):
             return TOKEN_TYPE
         if read(analysis).imports.contains(lexeme):
@@ -660,7 +674,9 @@ function build_tokens_json(data: ref[vec.Vec[uint]]) -> string.String:
     return result
 
 
-const SNAPSHOT_TOKEN_NAMES: array[str, 15] = ("namespace", "type", "keyword", "string", "number", "", "operator", "variable", "function", "parameter", "property", "", "enumMember", "method", "decorator")
+## Token-type names by legend index, for the HTML snapshot's CSS classes.
+## Mirrors the host's legend order (see lifecycle.mt).
+const SNAPSHOT_TOKEN_NAMES: array[str, 23] = ("namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable", "property", "enumMember", "event", "function", "method", "macro", "keyword", "modifier", "comment", "string", "number", "regexp", "operator", "decorator")
 
 
 function snapshot_utf8_continuation(b: ubyte) -> bool:
@@ -679,7 +695,7 @@ function snapshot_byte_to_char(line: str, byte_offset: ptr_uint) -> ptr_uint:
 
 
 function snapshot_token_type_name(token_type: uint) -> str:
-    if token_type >= 15:
+    if token_type >= 23:
         return "variable"
     return SNAPSHOT_TOKEN_NAMES[uint<-token_type]
 

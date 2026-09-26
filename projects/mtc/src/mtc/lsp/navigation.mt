@@ -8,6 +8,7 @@ import std.fmt
 import std.fs as fs_mod
 import std.map as map_mod
 import std.json as json
+import std.path as path_ops
 import std.str
 import std.string as string
 import std.vec as vec
@@ -51,7 +52,8 @@ public function handle_definition(
             let lz = if payload.line > 0: ptr_uint<-(int<-(payload.line) - 1) else: 0z
             var json_text = string.String.create()
             defer: json_text.release()
-            json_text.append("[{\"uri\":\"")
+            # A single definition is a bare `Location` object, as the host emits.
+            json_text.append("{\"uri\":\"")
             proto.append_escaped(ref_of(json_text), target_uri)
             json_text.append("\",\"range\":{\"start\":{\"line\":")
             json_text.append_format(f"#{lz}")
@@ -61,7 +63,7 @@ public function handle_definition(
             json_text.append_format(f"#{lz}")
             json_text.append(",\"character\":")
             json_text.append_format(f"#{payload.column + payload.name_len}")
-            json_text.append("}}}]")
+            json_text.append("}}}")
             proto.write_response_raw(id, json_text.as_str())
             payload.hover_text.release()
             payload.docs.release()
@@ -77,16 +79,17 @@ public function handle_hover(
     character: ptr_uint,
     id: json.Value,
 ) -> void:
+    var hover_token_range = hover_range_json(ws, uri, line, character)
     match resolve_non_decl_hover(ws, uri, line, character):
         Option.some as kw_result:
-            write_hover_result(id, kw_result.value)
+            write_hover_result(id, kw_result.value, uri, hover_token_range)
             return
         Option.none:
             pass
 
     match resolve_local_hover(ws, uri, line, character):
         Option.some as loc_result:
-            write_hover_result(id, loc_result.value)
+            write_hover_result(id, loc_result.value, uri, hover_token_range)
             return
         Option.none:
             pass
@@ -94,34 +97,43 @@ public function handle_hover(
     var result = resolve_cursor(ws, uri, line, character)
     match result:
         Option.some as res:
-            var payload = res.value
-            if payload.hover_text.len() > 0:
-                var value_text = string.String.create()
-                defer: value_text.release()
-                value_text.append("```milk-tea\n")
-                value_text.append(payload.hover_text.as_str())
-                value_text.append("\n```")
-                if payload.docs.len() > 0:
-                    value_text.append("\n")
-                    value_text.append(payload.docs.as_str())
-                if payload.line > 0:
-                    value_text.append("\n\n*Defined at line ")
-                    value_text.append_format(f"#{payload.line}")
-                    value_text.append("*")
-
-                var json_text = string.String.create()
-                defer: json_text.release()
-                json_text.append("{\"contents\":{\"kind\":\"markdown\",\"value\":\"")
-                proto.append_escaped(ref_of(json_text), value_text.as_str())
-                json_text.append("\"}}")
-                proto.write_response_raw(id, json_text.as_str())
-            else:
-                proto.write_response(id, json.null_value())
-            payload.hover_text.release()
-            payload.docs.release()
-            payload.target_uri.release()
+            write_hover_result(id, res.value, uri, hover_token_range)
+            return
         Option.none:
-            proto.write_response(id, json.null_value())
+            pass
+    hover_token_range.release()
+    proto.write_response(id, json.null_value())
+
+
+## The `"range":{...}` fragment for the identifier under the cursor (the host
+## includes it so the client can highlight the hovered symbol), or an empty
+## string when no identifier is there.
+function hover_range_json(ws: ref[workspace.Workspace], uri: str, line: ptr_uint, character: ptr_uint) -> string.String:
+    var empty = string.String.create()
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return empty
+    defer: file_path.release()
+    var content = ws.document_source(file_path.as_str()) else:
+        return empty
+    defer: content.release()
+    match cursor.identifier_at(content.as_str(), line, character):
+        Option.some as tok:
+            let lz = if tok.value.line > 0: tok.value.line - 1 else: 0z
+            let col = if tok.value.column > 0: tok.value.column - 1 else: 0z
+            var frag = string.String.create()
+            frag.append("\"range\":{\"start\":{\"line\":")
+            frag.append_format(f"#{lz}")
+            frag.append(",\"character\":")
+            frag.append_format(f"#{col}")
+            frag.append("},\"end\":{\"line\":")
+            frag.append_format(f"#{lz}")
+            frag.append(",\"character\":")
+            frag.append_format(f"#{col + tok.value.length}")
+            frag.append("}}")
+            empty.release()
+            return frag
+        Option.none:
+            return empty
 
 
 ## Handle textDocument/references: find all references to the symbol at the
@@ -301,7 +313,9 @@ function respond_single_location(id: json.Value, uri: str, source: str, decl_lin
 
     var json_text = string.String.create()
     defer: json_text.release()
-    json_text.append("[{\"uri\":\"")
+    # A single location is a bare `Location` object, as the host emits (an array
+    # is only used when the response can carry several locations).
+    json_text.append("{\"uri\":\"")
     proto.append_escaped(ref_of(json_text), uri)
     json_text.append("\",\"range\":{\"start\":{\"line\":")
     json_text.append_format(f"#{lz}")
@@ -311,7 +325,7 @@ function respond_single_location(id: json.Value, uri: str, source: str, decl_lin
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
     json_text.append_format(f"#{column + name.len}")
-    json_text.append("}}}]")
+    json_text.append("}}}")
     proto.write_response_raw(id, json_text.as_str())
 
 
@@ -496,7 +510,7 @@ function include_refs_from_file(
         output.append_format(f"#{lz}")
         output.append(",\"character\":")
         output.append_format(f"#{col + occ.length}")
-        output.append("}}")
+        output.append("}}}")
         oi += 1
 
     file_uri.release()
@@ -1670,9 +1684,13 @@ function find_local_in_block(
 
 
 
-## Write a CursorResult as a hover JSON-RPC response.
-function write_hover_result(id: json.Value, res: CursorResult) -> void:
+## Render a hover response in the host's markdown shape: the signature in a
+## ```milk-tea fence, the docs, then the source location as
+## `Defined at: [<basename>:<line>](<uri>#L<line>)` (`target_uri` wins over the
+## request's own uri for cross-file definitions).
+function write_hover_result(id: json.Value, res: CursorResult, request_uri: str, token_range_param: string.String) -> void:
     var payload = res
+    var token_range = token_range_param
     if payload.hover_text.len() > 0:
         var value_text = string.String.create()
         defer: value_text.release()
@@ -1682,18 +1700,39 @@ function write_hover_result(id: json.Value, res: CursorResult) -> void:
         if payload.docs.len() > 0:
             value_text.append("\n")
             value_text.append(payload.docs.as_str())
-        if payload.line > 0:
-            value_text.append("\n\n*Defined at line ")
-            value_text.append_format(f"#{payload.line}")
-            value_text.append("*")
+        append_defined_at(ref_of(value_text), payload, request_uri)
         var json_text = string.String.create()
         defer: json_text.release()
         json_text.append("{\"contents\":{\"kind\":\"markdown\",\"value\":\"")
         proto.append_escaped(ref_of(json_text), value_text.as_str())
-        json_text.append("\"}}")
+        json_text.append("\"}")
+        if token_range.len() > 0:
+            json_text.append(",")
+            json_text.append(token_range.as_str())
+        json_text.append("}")
         proto.write_response_raw(id, json_text.as_str())
     else:
         proto.write_response(id, json.null_value())
     payload.hover_text.release()
     payload.docs.release()
     payload.target_uri.release()
+    token_range.release()
+
+
+## Append the source-location line for a hover payload, when it has one.
+function append_defined_at(text: ref[string.String], payload: CursorResult, request_uri: str) -> void:
+    if payload.line == 0:
+        return
+    var source_uri: str = request_uri
+    if payload.target_uri.len() > 0:
+        source_uri = payload.target_uri.as_str()
+    text.append("\n\nDefined at: [")
+    match uri_ops.file_uri_to_path(source_uri):
+        Option.some as source_path:
+            text.append(path_ops.basename(source_path.value.as_str()))
+            source_path.value.release()
+        Option.none:
+            text.append(path_ops.basename(source_uri))
+    text.append_format(f":#{payload.line}](")
+    text.append(source_uri)
+    text.append_format(f"#L#{payload.line})")

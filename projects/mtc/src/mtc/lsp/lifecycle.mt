@@ -4,10 +4,23 @@ import std.json as json
 import std.string as string
 
 import mtc.lsp.protocol as proto
+import mtc.lsp.uri as uri_ops
+import mtc.lsp.workspace as workspace
 
 
-## Handle the `initialize` request.
-public function handle_initialize(id: json.Value) -> void:
+## The semantic-token legend, mirroring the host's exactly (23 token types,
+## 10 modifiers).  The indices are positional: `semantic_tokens.mt`'s TOKEN_*
+## constants must match this order.
+const TOKEN_TYPES_JSON: str = "\"tokenTypes\":[\"namespace\",\"type\",\"class\",\"enum\",\"interface\",\"struct\",\"typeParameter\",\"parameter\",\"variable\",\"property\",\"enumMember\",\"event\",\"function\",\"method\",\"macro\",\"keyword\",\"modifier\",\"comment\",\"string\",\"number\",\"regexp\",\"operator\",\"decorator\"]"
+const TOKEN_MODIFIERS_JSON: str = "\"tokenModifiers\":[\"declaration\",\"definition\",\"readonly\",\"static\",\"deprecated\",\"abstract\",\"async\",\"modification\",\"documentation\",\"defaultLibrary\"]"
+
+
+## Handle the `initialize` request.  The client's `rootUri` (or `rootPath`) is
+## the workspace root, exactly as the host does — the CLI argument is only a
+## fallback for clients that pass none.
+public function handle_initialize(id: json.Value, params: json.Value, ws: ref[workspace.Workspace]) -> void:
+    apply_client_root(params, ws)
+
     var r = string.String.create()
     defer: r.release()
 
@@ -16,7 +29,8 @@ public function handle_initialize(id: json.Value) -> void:
 
     # capabilities
     r.append(",\"result\":{\"capabilities\":{")
-    r.append("\"textDocumentSync\":{\"openClose\":true,\"change\":2,\"save\":{\"includeText\":true}}")
+    r.append("\"positionEncoding\":\"utf-16\"")
+    r.append(",\"textDocumentSync\":{\"openClose\":true,\"change\":2,\"save\":{\"includeText\":true},\"willSaveWaitUntil\":true}")
     r.append(",\"definitionProvider\":true")
     r.append(",\"declarationProvider\":true")
     r.append(",\"typeDefinitionProvider\":true")
@@ -35,7 +49,7 @@ public function handle_initialize(id: json.Value) -> void:
     # signatureHelp: trigger on open-paren and comma
     r.append(",\"signatureHelpProvider\":{\"triggerCharacters\":[\"(\",\",\"],\"retriggerCharacters\":[\",\"]}")
     r.append(",\"renameProvider\":{\"prepareProvider\":true}")
-    r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickfix\",\"source.fixAll\"]}")
+    r.append(",\"codeActionProvider\":{\"codeActionKinds\":[\"quickFix\",\"source.fixAll\"]}")
     r.append(",\"executeCommandProvider\":{\"commands\":[\"mtc.restartServer\"]}")
     r.append(",\"documentRangeFormattingProvider\":true")
     r.append(",\"linkedEditingRangeProvider\":true")
@@ -43,11 +57,12 @@ public function handle_initialize(id: json.Value) -> void:
     r.append(",\"codeLensProvider\":{\"resolveProvider\":true}")
     r.append(",\"typeHierarchyProvider\":true")
     r.append(",\"callHierarchyProvider\":true")
-    r.append(",\"diagnosticProvider\":{\"identifier\":\"mtc\",\"interFileDependencies\":true,\"workspaceDiagnostics\":true}")
+    r.append(",\"diagnosticProvider\":{\"interFileDependencies\":true,\"workspaceDiagnostics\":true}")
     # semantic tokens: legend + full + range + delta
     r.append(",\"semanticTokensProvider\":{\"legend\":{")
-    r.append("\"tokenTypes\":[\"namespace\",\"type\",\"keyword\",\"string\",\"number\",\"comment\",\"operator\",\"variable\",\"function\",\"parameter\",\"property\",\"regexp\",\"enumMember\",\"method\",\"decorator\"]")
-    r.append(",\"tokenModifiers\":[\"declaration\",\"defaultLibrary\",\"readonly\"]")
+    r.append(TOKEN_TYPES_JSON)
+    r.append(",")
+    r.append(TOKEN_MODIFIERS_JSON)
     r.append("},\"full\":{\"delta\":true},\"range\":true}")
     # workspace: folders + file operations + watched files
     r.append(",\"workspace\":{\"workspaceFolders\":{\"supported\":true,\"changeNotifications\":true},")
@@ -56,6 +71,30 @@ public function handle_initialize(id: json.Value) -> void:
     r.append("}}}")
 
     proto.write_framed_json(r.as_str())
+
+
+## Re-root the workspace from the client's `rootUri` (or `rootPath`).
+function apply_client_root(params: json.Value, ws: ref[workspace.Workspace]) -> void:
+    let obj_ptr = params.as_object()
+    if obj_ptr == null:
+        return
+    unsafe:
+        let root_uri_ptr = read(obj_ptr).get("rootUri")
+        if root_uri_ptr != null:
+            let root_uri = read(root_uri_ptr).as_string() else:
+                return
+            if root_uri.len > 0:
+                var path = uri_ops.file_uri_to_path(root_uri) else:
+                    return
+                defer: path.release()
+                ws.set_root(path.as_str())
+                return
+        let root_path_ptr = read(obj_ptr).get("rootPath")
+        if root_path_ptr != null:
+            let root_path = read(root_path_ptr).as_string() else:
+                return
+            if root_path.len > 0:
+                ws.set_root(root_path)
 
 
 ## Handle the `initialized` notification (no-op).

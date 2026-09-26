@@ -136,7 +136,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
     trace_msg.release()
     # Lifecycle
     if method == "initialize":
-        lifecycle.handle_initialize(msg.id)
+        lifecycle.handle_initialize(msg.id, msg.params, ws)
     else if method == "initialized":
         lifecycle.handle_initialized()
         schedule_config_request(ws)
@@ -243,7 +243,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
     # Milk Tea custom extensions
     else if method == "milkTea/documentContext":
-        doc_ctx.handle_document_context(ws, msg.params)
+        doc_ctx.handle_document_context(ws, msg.params, msg.id, req_id)
     else if method == "milkTea/debugInfo":
         debug_info.handle_debug_info(ws, msg.id)
 
@@ -367,10 +367,16 @@ function extract_position_params(params: json.Value) -> PositionParams:
 
 
 ## Determine the workspace root from CLI arguments or the current directory.
+## The workspace root to start with, before the client's `initialize` rootUri
+## arrives: an explicit non-flag argument (`mtc lsp <root>`), else the current
+## directory.  `args[0]` is the command name (`lsp`), never a root.
 function workspace_root_from_args(args: span[str]) -> str:
-    if args.len >= 1:
-        unsafe:
-            return read(args.data + 0)
+    var i: ptr_uint = 1
+    while i < args.len:
+        let arg = unsafe: read(args.data + i)
+        if not arg.starts_with("-"):
+            return arg
+        i += 1
     return "."
 
 

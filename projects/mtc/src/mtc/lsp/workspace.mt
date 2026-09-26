@@ -76,6 +76,28 @@ extending Workspace:
         )
 
 
+    ## Re-root the workspace from the client's `initialize` rootUri, mirroring
+    ## the host's `workspace_root_path=` assignment.  The workspace root itself
+    ## is a module root (imports resolve relative to it), followed by the
+    ## discovered project root (the nearest `std/` ancestor).  The index and the
+    ## diagnostic cache are dropped so they rebuild against the new root.
+    public editable function set_root(path: str) -> void:
+        if path.len == 0:
+            return
+        this.root_path.release()
+        this.root_path = string.String.from_str(path)
+        release_module_roots(ref_of(this.module_roots))
+        this.module_roots = vec.Vec[string.String].create()
+        this.module_roots.push(string.String.from_str(path))
+        discover_project_root(path, ref_of(this.module_roots))
+        release_diagnostic_cache(ref_of(this.diagnostic_cache))
+        this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
+        if this.index_built:
+            idx.release_index(ref_of(this.index))
+            this.index = idx.Index(entries = vec.Vec[idx.Entry].create())
+            this.index_built = false
+
+
     public editable function open(uri: str, text: str) -> void:
         let path_result = uri_ops.file_uri_to_path(uri)
         match path_result:

@@ -8,16 +8,21 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.workspace as workspace
 
 
-## Handle milkTea/documentContext notification.  Stores the source type
-## per-URI in the workspace so diagnostics and other features can
-## prioritize foreground documents.
-public function handle_document_context(ws: ref[workspace.Workspace], params: json.Value) -> void:
+## Handle milkTea/documentContext.  Stores the source type per-URI in the
+## workspace so diagnostics and other features can prioritize foreground
+## documents.  The host answers a *request* form with `null`, so a caller that
+## sends an id gets a reply (`request_id == 0` means a notification).
+public function handle_document_context(ws: ref[workspace.Workspace], params: json.Value, id: json.Value, request_id: ptr_uint) -> void:
     let uri = proto.extract_text_doc_uri(params)
     if uri.len == 0:
+        if request_id > 0:
+            proto.write_response(id, json.null_value())
         return
 
     let context = extract_context(params)
     ws.set_document_context(uri, context)
+    if request_id > 0:
+        proto.write_response(id, json.null_value())
 
 
 ## Extract the "type" field from documentContext params.
