@@ -471,28 +471,25 @@ function build_references_json_cross_file(ws: ref[workspace.Workspace], name: st
         Option.none:
             pass
 
-    # Search the workspace index for all matching entries.
-    var max_results = ws.index.entries.len()
-    var results = ws_idx.query_index(ref_of(ws.index), name, max_results)
-    defer: results.release()
+    # Cross-file references come from the declaration's import dependents: the
+    # host scopes them with `reverse_import_dependents_for`, so a file that
+    # merely declares the same name elsewhere in the workspace is not a
+    # reference site, while a file that imports the declaration's module is.
+    var dependents = ws_idx.dependents_of(ref_of(ws.index), uri)
+    defer: dependents.release()
 
-    var ri: ptr_uint = 0
-    while ri < results.len():
-        let rp = results.get(ri) else:
+    var di: ptr_uint = 0
+    while di < dependents.len():
+        let dp = dependents.get(di) else:
             break
-        let ei = unsafe: read(rp)
-        let ep = ws.index.entries.get(ei) else:
-            break
-        let entry = unsafe: read(ep)
-        if entry.name.as_str().equal(name):
-            let path = entry.path.as_str()
-            if not seen.contains(path):
-                match include_refs_from_file(ws, path, name, ref_of(result), ref_of(first)):
-                    Option.some as u2:
-                        seen.set(u2.value.as_str(), true)
-                    Option.none:
-                        pass
-        ri += 1
+        let path = unsafe: read(dp).as_str()
+        if not seen.contains(path):
+            match include_refs_from_file(ws, path, name, ref_of(result), ref_of(first)):
+                Option.some as u2:
+                    seen.set(u2.value.as_str(), true)
+                Option.none:
+                    pass
+        di += 1
 
     result.append("]")
     return result

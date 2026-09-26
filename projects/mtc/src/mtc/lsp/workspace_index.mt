@@ -11,6 +11,7 @@ import std.string as string_mod
 import std.vec as vec
 import std.log as log
 
+import mtc.loader.path_resolver as resolver
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -24,23 +25,59 @@ public struct Entry:
     column: ptr_uint
 
 
+## One indexed file's imports, resolved to the files they name: the host scopes
+## cross-file references to a declaration's import dependents
+## (`reverse_import_dependents_for`), which needs this graph.
+public struct FileImports:
+    path: string_mod.String
+    imports: vec.Vec[string_mod.String]
+
+
 public struct Index:
     entries: vec.Vec[Entry]
+    files: vec.Vec[FileImports]
 
 
 ## Scan all .mt files and build a fresh index.
 public function build_index(module_roots: ref[vec.Vec[string_mod.String]]) -> Index:
-    var index = Index(entries = vec.Vec[Entry].create())
+    var index = Index(entries = vec.Vec[Entry].create(), files = vec.Vec[FileImports].create())
 
     var ri: ptr_uint = 0
     while ri < module_roots.len():
         let root_ptr = module_roots.get(ri) else:
             break
         unsafe:
-            collect_directory(read(root_ptr).as_str(), ref_of(index.entries))
+            collect_directory(read(root_ptr).as_str(), ref_of(index), module_roots)
         ri += 1
 
     return index
+
+
+## The indexed files that import `decl_path` — the host's cross-file reference
+## candidate set.
+public function dependents_of(index: ref[Index], decl_path: str) -> vec.Vec[string_mod.String]:
+    var dependents = vec.Vec[string_mod.String].create()
+    var fi: ptr_uint = 0
+    while fi < index.files.len():
+        let fp = index.files.get(fi) else:
+            break
+        let file = unsafe: read(fp)
+        if file.path.as_str().equal(decl_path):
+            fi += 1
+            continue
+        var ii: ptr_uint = 0
+        var matched = false
+        while ii < file.imports.len():
+            let ip = file.imports.get(ii) else:
+                break
+            if unsafe: read(ip).as_str().equal(decl_path):
+                matched = true
+                break
+            ii += 1
+        if matched:
+            dependents.push(string_mod.String.from_str(file.path.as_str()))
+        fi += 1
+    return dependents
 
 
 ## Query the index for symbols whose name contains `query` (case-insensitive
@@ -79,9 +116,19 @@ public function release_index(index: ref[Index]) -> void:
             read(ep).path.release()
         ei += 1
     index.entries.release()
+    var fi: ptr_uint = 0
+    while fi < index.files.len():
+        let fp = index.files.get(fi) else:
+            break
+        unsafe:
+            var file = read(fp)
+            file.path.release()
+            file.imports.release()
+        fi += 1
+    index.files.release()
 
 
-function collect_directory(dir: str, output: ref[vec.Vec[Entry]]) -> void:
+function collect_directory(dir: str, index: ref[Index], roots: ref[vec.Vec[string_mod.String]]) -> void:
     match fs_mod.list_entries(dir):
         Result.failure as failure_payload:
             var err = failure_payload.error
@@ -101,17 +148,17 @@ function collect_directory(dir: str, output: ref[vec.Vec[Entry]]) -> void:
                         if not skip_entry(name):
                             var child = path_ops.join(dir, name)
                             if fs_mod.is_directory(child.as_str()):
-                                collect_directory(child.as_str(), output)
+                                collect_directory(child.as_str(), index, roots)
                                 child.release()
                             else if name.ends_with(".mt"):
-                                collect_file_symbols(child.as_str(), output)
+                                collect_file_symbols(child.as_str(), index, roots)
                                 child.release()
                             else:
                                 child.release()
                 i += 1
 
 
-function collect_file_symbols(path: str, output: ref[vec.Vec[Entry]]) -> void:
+function collect_file_symbols(path: str, index: ref[Index], roots: ref[vec.Vec[string_mod.String]]) -> void:
     match fs_mod.canonicalize(path):
         Result.success as canonical:
             var source = read_file(canonical.value.as_str())
@@ -119,6 +166,11 @@ function collect_file_symbols(path: str, output: ref[vec.Vec[Entry]]) -> void:
             var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
             defer: parse_diags.release()
             var ast_file = parser.parse_source(source.as_str(), ref_of(parse_diags))
+            index.files.push(FileImports(
+                path = string_mod.String.from_str(canonical.value.as_str()),
+                imports = collect_resolved_imports(ast_file, roots),
+            ))
+            let output = ref_of(index.entries)
 
             var di: ptr_uint = 0
             while di < ast_file.declarations.len:
@@ -159,6 +211,51 @@ function collect_file_symbols(path: str, output: ref[vec.Vec[Entry]]) -> void:
         Result.failure as failure_payload:
             var err = failure_payload.error
             err.release()
+
+
+## Resolve each import of `ast_file` to the file it names, so the reference
+## walk can find a declaration's dependents without re-parsing every file.
+function collect_resolved_imports(ast_file: ast.SourceFile, roots: ref[vec.Vec[string_mod.String]]) -> vec.Vec[string_mod.String]:
+    var resolved_paths = vec.Vec[string_mod.String].create()
+    var root_views = vec.Vec[str].create()
+    defer: root_views.release()
+    var ri: ptr_uint = 0
+    while ri < roots.len():
+        let root_ptr = roots.get(ri) else:
+            break
+        root_views.push(unsafe: read(root_ptr).as_str())
+        ri += 1
+    let roots_span = root_views.as_span()
+    var i: ptr_uint = 0
+    while i < ast_file.imports.len:
+        var import_module = string_mod.String.create()
+        unsafe:
+            match read(ast_file.imports.data + i):
+                ast.Decl.decl_import as im:
+                    append_dotted_parts(ref_of(import_module), im.path)
+                _:
+                    pass
+        if import_module.len() > 0:
+            match resolver.resolve_module_path(import_module.as_str(), roots_span, resolver.Platform.linux):
+                Result.success as resolved_ok:
+                    resolved_paths.push(resolved_ok.value)
+                Result.failure as failure_payload:
+                    var err = failure_payload.error
+                    err.release()
+        import_module.release()
+        i += 1
+    return resolved_paths
+
+
+## Append a qualified name as its dotted module path (`std.vec`).
+function append_dotted_parts(target: ref[string_mod.String], name: ast.QualifiedName) -> void:
+    var i: ptr_uint = 0
+    while i < name.parts.len:
+        if i > 0:
+            target.append(".")
+        unsafe:
+            target.append(read(name.parts.data + i))
+        i += 1
 
 
 function read_file(path: str) -> string_mod.String:

@@ -100,6 +100,22 @@ MT
 # methods (`vec.Vec[int].create()` -> `Vec[int]`, `v.get(0)` -> `ptr[int]?`) and
 # from a method another module extends onto the type (`v.iter()` in std.iter ->
 # `Iter[int]`), which the outline's `detail` must render as the host does.
+# A resolvable import pair (`helper.mt` is what `import helper` names, unlike
+# the directory-shaped `mod_alpha/lib.mt`): cross-file references must come from
+# the declaration's import dependents, as the host's
+# `reverse_import_dependents_for` does.
+HELPER_SOURCE = <<~MT
+  public function helper_sum(a: int, b: int) -> int:
+      return a + b
+MT
+
+USER_SOURCE = <<~MT
+  import helper
+
+  function user_call() -> int:
+      return int<-helper_sum(1, 2)
+MT
+
 CONTAINERS_SOURCE = <<~MT
   import std.vec as vec
 
@@ -127,12 +143,16 @@ def build_workspace(dir)
     main: File.join(dir, "main.mt"),
     scratch: File.join(dir, "scratch.mt"),
     containers: File.join(dir, "containers.mt"),
+    helper: File.join(dir, "helper.mt"),
+    user: File.join(dir, "user.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
   File.write(paths[:main], MAIN_SOURCE)
   File.write(paths[:scratch], "function scratch_fn() -> int:\n    return 1\n")
   File.write(paths[:containers], CONTAINERS_SOURCE)
+  File.write(paths[:helper], HELPER_SOURCE)
+  File.write(paths[:user], USER_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -382,6 +402,12 @@ def corpus(dir, paths)
     "position" => { "line" => 1, "character" => 16 },
     "context" => { "includeDeclaration" => true },
   }]
+  # Cross-file, resolvable import: the declaration plus the importer's call.
+  requests["references/imported-call"] = ["textDocument/references", {
+    "textDocument" => { "uri" => path_to_uri(paths[:helper]) },
+    "position" => { "line" => 0, "character" => 20 },
+    "context" => { "includeDeclaration" => true },
+  }]
   requests["documentHighlight"] = ["textDocument/documentHighlight", at.call("total += s.sum()", off: 0)]
   requests["documentSymbol"] = ["textDocument/documentSymbol", tc]
   requests["foldingRange"] = ["textDocument/foldingRange", tc]
@@ -428,6 +454,11 @@ def run_corpus(client, dir, paths)
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:beta]), "languageId" => "milk-tea", "version" => 1, "text" => BETA_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:scratch]), "languageId" => "milk-tea", "version" => 1, "text" => "function scratch_fn() -> int:\n    return 1\n" } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:containers]), "languageId" => "milk-tea", "version" => 1, "text" => CONTAINERS_SOURCE } })
+  client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:helper]), "languageId" => "milk-tea", "version" => 1, "text" => HELPER_SOURCE } })
+  # `user.mt` stays closed on purpose: the host's pull diagnostics report
+  # `unknown callable helper_sum` for the (resolvable) import, while its
+  # reference facts resolve it, so opening it would diff the workspace
+  # diagnostics entry over a host-side gap rather than a self-host one.
   # Let the background diagnostics worker settle, and pull diagnostics once per
   # document so facts are materialized in a deterministic order.
   sleep 1.0
