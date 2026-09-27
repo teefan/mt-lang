@@ -102,14 +102,21 @@ public function format_preserve(source: str) -> Option[string.String]:
     return Option[string.String].some(value = cst.reconstruct(cst_file))
 
 
-## `:safe` / `:canonical` — AST pretty printer (the pre-existing behaviour).
+## `:safe` / `:canonical` — AST pretty printer with comment reattachment
+## (trivia from a `lex_with_trivia` pass, as the host's `canonical_format` does).
 public function format_canonical(source: str) -> Option[string.String]:
     var diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: diags.release()
     var file = parser.parse_source(source, ref_of(diags))
     if diags.len() > 0:
         return Option[string.String].none
-    return Option[string.String].some(value = ast_formatter.format_source_file(file))
+    var lex_diags = vec.Vec[tok.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var lexed = lexer.lex_with_trivia(source, ref_of(lex_diags))
+    var result = ast_formatter.format_source_file_with_trivia(file, source, lexed.trivia.as_span())
+    lexed.tokens.release()
+    lexed.trivia.release()
+    return Option[string.String].some(value = result)
 
 
 ## `:tidy` — CST normalize → wrap → blank lines.
@@ -874,7 +881,7 @@ struct DelimiterEntry:
     depth: ptr_uint
 
 
-struct WrapFix:
+public struct WrapFix:
     line_index: ptr_uint
     new_text: string.String
 
@@ -896,10 +903,50 @@ function non_trivia_tokens_on_line(tokens: vec.Vec[tok.Token], line_number: ptr_
     return collected
 
 
-function wrappable_long_line_candidate_text(line: str) -> bool:
+## Host `wrappable_long_line_candidate_text?`: the line has a delimiter or a
+## logical chain to wrap.  Also the linter's `line-too-long` gate.
+public function wrappable_long_line_candidate_text(line: str) -> bool:
     if line.contains_substring("(") or line.contains_substring("["):
         return true
     return line.contains_substring(" and ") or line.contains_substring(" or ")
+
+
+# =============================================================================
+#  Single-line wrap fixes (linter `line-too-long` and the LSP quickfix)
+# =============================================================================
+
+## The wrap fix for one line of `source` (0-based `line_index`), or none.
+## `validate` mirrors the host's flag: the linter only asks whether a fix
+## exists (`validate = false`), the editor quickfix needs a fix that parses.
+public function build_long_line_wrap_fix(
+    source: str,
+    line_index: ptr_uint,
+    max_line_length: ptr_uint,
+    path: str,
+    validate: bool,
+) -> Option[WrapFix]:
+    var tokens = lexer.lex(source)
+    defer: tokens.release()
+    return build_line_wrap_fix_with_tokens(source, tokens, line_index, max_line_length, path, validate)
+
+
+## `build_long_line_wrap_fix` with the caller's already-lexed tokens.
+public function build_line_wrap_fix_with_tokens(
+    source: str,
+    tokens: vec.Vec[tok.Token],
+    line_index: ptr_uint,
+    max_line_length: ptr_uint,
+    path: str,
+    validate: bool,
+) -> Option[WrapFix]:
+    if max_line_length == 0:
+        return Option[WrapFix].none
+    var lines = split_lines_keep(source)
+    defer: lines.release()
+    let original_line = line_at(lines, line_index) else:
+        return Option[WrapFix].none
+    let line = strip_trailing_newline(original_line)
+    return build_wrap_fix_from_parts(lines, line_index, line, original_line, max_line_length, tokens, validate)
 
 
 ## Collapse long delimited argument lists / logical chains onto continuation
@@ -958,7 +1005,7 @@ function find_wrap_fix(text: str, lines: vec.Vec[str], max_line_length: ptr_uint
             break
         let line = strip_trailing_newline(original_line)
         if utf8_char_count(line) > max_line_length:
-            let fix = build_long_line_wrap_fix(text, lines, line_index, line, original_line, max_line_length, tokens)
+            let fix = build_wrap_fix_from_parts(lines, line_index, line, original_line, max_line_length, tokens, true)
             if fix.is_some():
                 return fix
         line_index += 1
@@ -966,14 +1013,14 @@ function find_wrap_fix(text: str, lines: vec.Vec[str], max_line_length: ptr_uint
     return Option[WrapFix].none
 
 
-function build_long_line_wrap_fix(
-    text: str,
+function build_wrap_fix_from_parts(
     lines: vec.Vec[str],
     line_index: ptr_uint,
     line: str,
     original_line: str,
     max_line_length: ptr_uint,
     tokens: vec.Vec[tok.Token],
+    validate: bool,
 ) -> Option[WrapFix]:
     if max_line_length == 0:
         return Option[WrapFix].none
@@ -1012,13 +1059,13 @@ function build_long_line_wrap_fix(
                 candidate_index += 1
                 continue
 
-            if validate_wrap(lines, line_index, new_text.as_str()):
+            if (not validate) or validate_wrap(lines, line_index, new_text.as_str()):
                 return Option[WrapFix].some(value = WrapFix(line_index = line_index, new_text = new_text))
 
             new_text.release()
             candidate_index += 1
 
-    return build_wrapped_logical_chain_fix(lines, line_index, line, line_tokens, line_terminator)
+    return build_wrapped_logical_chain_fix(lines, line_index, line, line_tokens, line_terminator, validate)
 
 
 ## Host `Parser.parse(updated_lines.join, path:)` validation inside the wrap
@@ -1231,6 +1278,7 @@ function build_wrapped_logical_chain_fix(
     line: str,
     line_tokens: vec.Vec[tok.Token],
     line_terminator: str,
+    validate: bool,
 ) -> Option[WrapFix]:
     let maybe_candidate = logical_chain_wrap_candidate(line, line_tokens)
     if maybe_candidate.is_none():
@@ -1252,7 +1300,7 @@ function build_wrapped_logical_chain_fix(
         new_text.release()
         return Option[WrapFix].none
 
-    if not validate_wrap(lines, line_index, new_text.as_str()):
+    if validate and not validate_wrap(lines, line_index, new_text.as_str()):
         new_text.release()
         return Option[WrapFix].none
 

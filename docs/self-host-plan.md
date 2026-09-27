@@ -48,7 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 both modes); the LSP's `formatting` and `rangeFormatting` entries are closed, and the canonical AST printer still drops comments (host reattaches trivia).**
+**Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
 **LSP logging: structured stderr, version+revision announcement, a `[LSP perf] req <method> <ms>`
@@ -3121,15 +3121,16 @@ Implementation: `registry.mt` (130 lines, hardcoded 28-binding entry list) + `im
 
 | Mode | Ruby | Self-host |
 | --- | --- | --- |
-| `:canonical` | AST pretty-print with trivia reattached | AST pretty-print, **comments dropped** (see 7.3) |
+| `:canonical` | AST pretty-print with trivia reattached | **DONE** — comments reattached (`format_source_file_with_trivia`) |
 | `:safe` | Same as canonical | Same as canonical |
 | `:preserve` | CST-based, keeps original formatting | **DONE** — `formatter/cst.mt` |
 | `:tidy` | CST normalize → wrap → blank lines | **DONE** — `formatter/tidy.mt` |
 
 Measured by `tools/format_parity.rb` (host in-process, self per file, `-j`
-workers) over the repository's 702 `.mt` files: **preserve 702/702 and tidy
-702/702 byte-identical**; canonical 302/702 (the comment-reattachment delta
-below).  The LSP's `formatting` + `rangeFormatting` entries are closed by the
+workers) over the repository's 702 `.mt` files: **preserve 702/702, tidy
+702/702 and canonical 702/702 byte-identical** (2026-09-27 session 4 — canonical
+was 302/702 before the comment reattachment and the four printer-fidelity fixes
+in §7.2b).  The LSP's `formatting` + `rangeFormatting` entries are closed by the
 same pipeline (§0k stage 5).
 
 ### 7.2 Landed 2026-09-26
@@ -3144,11 +3145,48 @@ same pipeline (§0k stage 5).
 | Sweep | `tools/format_parity.rb` | — |
 | Tests | `projects/mtc/test/tidy_formatter_test.mt` | host goldens |
 
+### 7.2b Landed 2026-09-27 session 4 — canonical comment reattachment + printer fidelity
+
+The canonical printer now takes the lexer's trivia and reattaches comments like
+the host's `PrettyPrinter.format_ast(ast, trivia:)`:
+
+- `format_source_file_with_trivia(file, source, trivia)` builds the comment
+  state (comment-per-line map + blank-line set) and emits leading comments
+  (`flush_leading_comments_before`), inline comments on the header line
+  (`attach_inline_comment`, splicing before the recorded line's newline) and the
+  remaining comments at the end (`flush_remaining_comments`); the struct case
+  re-anchors its header after attribute lines, exactly like the host, and a
+  comment/blank line between `unsafe:` and its single statement blocks the
+  inline collapse (`unsafe_inline_comment_conflict`).  Proc-body captures share
+  the parent's comment state, so comments inside procs stay inside the proc
+  text.  `mtc parse` keeps using the trivia-free entry, as the host's does.
+- `formatter/tidy.mt`'s `format_canonical` lexes with trivia and passes it in.
+
+The sweep then exposed four pre-existing printer gaps, all fixed against the
+host's `ast_formatter.rb`:
+
+1. **Format strings rendered as nothing** — `render_expression` had no
+   `expr_format_string` arm, so `draw(f"x = #{a}")` printed `draw()`.  Ported
+   `render_format_string_part` + `escape_format_text` (precision/hex/oct/bin
+   specs, `\`/quote/control escapes).
+2. **Implicit enum/flags member values** printed as `circle = 0`; the host
+   prints `circle`.  Gated on `EnumMember.value_explicit`.
+3. **Method `const`** was dropped: `const function area()` / `static const
+   function make(...)` now render through the host's
+   `visibility, async, kind, const, function` order (`Method.is_const`).
+4. **Struct lifetime parameters** (`struct SliceView[@a]`) were dropped; the
+   header now uses `render_struct_params(lifetime_params, type_params)`.
+
+Verified with `ruby tools/format_parity.rb all -j 16`: **preserve 702/702, tidy
+702/702, canonical 702/702**; `projects/mtc` self-tests 14 files / 0 failed with
+new comment/format-string tests; the canonical f-string and box2d/comptime
+fixtures diff clean against the host.
+
 ### 7.3 Remaining
 
 | Gap | Effort | Depends on |
 | --- | --- | --- |
-| Canonical-mode comment reattachment (host `PrettyPrinter.format_ast(ast, trivia:)`; 398/702 files differ by dropped comments) | Medium | the CST trivia (now available) |
+| ~~Canonical-mode comment reattachment~~ **DONE (2026-09-27 session 4, §7.2b)** | — | — |
 | Linter `line-too-long` wrap-fix (reuse `formatter.tidy.wrap_long_argument_lists` / `build_long_line_wrap_fix`) | Small | landed pipeline |
 | Linter `:fast` tier | Small | independent |
 | Formatter `--timings` profile phases | Small | independent |

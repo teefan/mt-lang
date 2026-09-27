@@ -28,6 +28,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.lexer.trivia as triv
 import mtc.parser.ast as ast
 
 
@@ -37,22 +38,55 @@ const UNARY_PRECEDENCE: int = 80
 const IS_PRECEDENCE: int = 25
 
 
+## One lexed comment, with its (1-based) source line; `consumed` marks it as
+## emitted so the map-delete semantics of the host's comment map are preserved.
+struct CommentEntry:
+    line: ptr_uint
+    text: str
+    consumed: bool
+
+
 struct Formatter:
     buffer: string.String
     indent: ptr_uint
     module_kind: ast.ModuleKind
     any_output: bool
     last_blank: bool
+    ## Comments from the lexer's trivia, in source order (host `@comment_map`).
+    comments: vec.Vec[CommentEntry]
+    ## Lines that were blank in the source (host `@blank_line_set`).
+    blank_lines: vec.Vec[ptr_uint]
+    ## Byte offset where each emitted line starts; the host's `@lines` indices.
+    line_starts: vec.Vec[ptr_uint]
 
 
-public function format_source_file(file: ast.SourceFile) -> string.String:
-    var f = Formatter(
+function new_formatter(file: ast.SourceFile) -> Formatter:
+    return Formatter(
         buffer = string.String.create(),
         indent = 0,
         module_kind = file.module_kind,
         any_output = false,
         last_blank = false,
+        comments = vec.Vec[CommentEntry].create(),
+        blank_lines = vec.Vec[ptr_uint].create(),
+        line_starts = vec.Vec[ptr_uint].create(),
     )
+
+
+public function format_source_file(file: ast.SourceFile) -> string.String:
+    var f = new_formatter(file)
+    emit_source_file(ref_of(f), file)
+    return f.buffer
+
+
+## Canonical print with comment reattachment: `trivia` comes from
+## `lexer.lex_with_trivia` and its `kind == comment` entries are re-emitted as
+## leading (above the construct) or inline (trailing the header line) comments,
+## mirroring `PrettyPrinter::ASTFormatter#format(node, trivia:)`.  `mtc parse`
+## stays trivia-free like the host's.
+public function format_source_file_with_trivia(file: ast.SourceFile, source: str, trivia: span[triv.TriviaEntry]) -> string.String:
+    var f = new_formatter(file)
+    build_comment_state(ref_of(f), source, trivia)
     emit_source_file(ref_of(f), file)
     return f.buffer
 
@@ -128,6 +162,7 @@ function indent_str(levels: ptr_uint) -> str:
 # =============================================================================
 
 function emit_line(f: ref[Formatter], text: str) -> void:
+    f.line_starts.push(f.buffer.len())
     if text.len == 0:
         f.buffer.append("\n")
         f.any_output = true
@@ -145,8 +180,245 @@ function blank_line(f: ref[Formatter]) -> void:
         return
     if f.last_blank:
         return
+    f.line_starts.push(f.buffer.len())
     f.buffer.append("\n")
     f.last_blank = true
+
+
+# =============================================================================
+#  Comment reattachment (host `ASTFormatter#build_comment_map` and friends)
+# =============================================================================
+
+function build_comment_state(f: ref[Formatter], source: str, trivia: span[triv.TriviaEntry]) -> void:
+    var i: ptr_uint = 0
+    while i < trivia.len:
+        unsafe:
+            let t = read(trivia.data + i)
+            if t.kind == triv.TriviaKind.comment:
+                let text = source.slice(t.start_offset, t.end_offset - t.start_offset).trim_ascii_whitespace()
+                f.comments.push(CommentEntry(line = t.line, text = text, consumed = false))
+            else if t.kind == triv.TriviaKind.blank_line:
+                f.blank_lines.push(t.line)
+        i += 1
+
+
+## Emit every unconsumed comment placed before `line`, in source order, at the
+## current indentation.
+function flush_leading_comments_before(f: ref[Formatter], line: ptr_uint) -> void:
+    if line == 0:
+        return
+    var i: ptr_uint = 0
+    while i < f.comments.len():
+        let cp = f.comments.get(i) else:
+            break
+        unsafe:
+            let c = read(cp)
+            if not c.consumed and c.line < line:
+                emit_line(f, c.text)
+                read(cp).consumed = true
+        i += 1
+
+
+## Append the first unconsumed comment on `line` to the end of the already
+## emitted header line at index `header_idx` (host `attach_inline_comment`).
+function attach_inline_comment(f: ref[Formatter], line: ptr_uint, header_idx: ptr_uint) -> void:
+    if line == 0 or header_idx >= f.line_starts.len():
+        return
+
+    var found = false
+    var text: str = ""
+    var i: ptr_uint = 0
+    while i < f.comments.len():
+        let cp = f.comments.get(i) else:
+            break
+        unsafe:
+            let c = read(cp)
+            if not c.consumed and c.line == line:
+                text = c.text
+                read(cp).consumed = true
+                found = true
+                break
+        i += 1
+    if not found:
+        return
+
+    var newline_offset: ptr_uint = 0
+    if header_idx + 1 < f.line_starts.len():
+        let nxt = f.line_starts.get(header_idx + 1) else:
+            return
+        let next_start = unsafe: read(nxt)
+        if next_start == 0:
+            return
+        newline_offset = next_start - 1
+    else:
+        if f.buffer.len() == 0:
+            return
+        newline_offset = f.buffer.len() - 1
+    if newline_offset >= f.buffer.len():
+        return
+    insert_at(f, newline_offset, j2("  ", text))
+
+
+## Emit all remaining comments in ascending line order.
+function flush_remaining_comments(f: ref[Formatter]) -> void:
+    var i: ptr_uint = 0
+    while i < f.comments.len():
+        let cp = f.comments.get(i) else:
+            break
+        unsafe:
+            let c = read(cp)
+            if not c.consumed:
+                emit_line(f, c.text)
+                read(cp).consumed = true
+        i += 1
+
+
+## Insert `text` at `offset`, shifting the recorded line starts after it.
+function insert_at(f: ref[Formatter], offset: ptr_uint, text: str) -> void:
+    let current = f.buffer.as_str()
+    var cut = offset
+    if cut > current.len:
+        cut = current.len
+    var rebuilt = string.String.create()
+    rebuilt.append(current.slice(0, cut))
+    rebuilt.append(text)
+    rebuilt.append(current.slice(cut, current.len - cut))
+    f.buffer.release()
+    f.buffer = rebuilt
+
+    var i: ptr_uint = 0
+    while i < f.line_starts.len():
+        let lp = f.line_starts.get(i) else:
+            break
+        unsafe:
+            if read(lp) > cut:
+                read(lp) = read(lp) + text.len
+        i += 1
+
+
+## True when a comment or blank line sits between the `unsafe:` line and its
+## single nested statement, which must block the inline collapse
+## (host `unsafe_inline_comment_conflict?`).
+function unsafe_inline_comment_conflict(f: ref[Formatter], unsafe_line: ptr_uint, nested_line: ptr_uint) -> bool:
+    if unsafe_line == 0 or nested_line == 0 or nested_line <= unsafe_line:
+        return false
+    var i: ptr_uint = 0
+    while i < f.comments.len():
+        let cp = f.comments.get(i) else:
+            break
+        unsafe:
+            let c = read(cp)
+            if not c.consumed and c.line >= unsafe_line + 1 and c.line <= nested_line:
+                return true
+        i += 1
+    i = 0
+    while i < f.blank_lines.len():
+        let bp = f.blank_lines.get(i) else:
+            break
+        unsafe:
+            let bl = read(bp)
+            if bl >= unsafe_line + 1 and bl < nested_line:
+                return true
+        i += 1
+    return false
+
+
+# =============================================================================
+#  AST line accessors (the host reads `node.line` polymorphically)
+# =============================================================================
+
+function decl_line(d: ast.Decl) -> ptr_uint:
+    match d:
+        ast.Decl.decl_const as x:
+            return x.line
+        ast.Decl.decl_var as x:
+            return x.line
+        ast.Decl.decl_function as x:
+            return x.line
+        ast.Decl.decl_struct as x:
+            return x.line
+        ast.Decl.decl_union as x:
+            return x.line
+        ast.Decl.decl_enum as x:
+            return x.line
+        ast.Decl.decl_flags as x:
+            return x.line
+        ast.Decl.decl_variant as x:
+            return x.line
+        ast.Decl.decl_opaque as x:
+            return x.line
+        ast.Decl.decl_type_alias as x:
+            return x.line
+        ast.Decl.decl_interface as x:
+            return x.line
+        ast.Decl.decl_extending_block as x:
+            return x.line
+        ast.Decl.decl_extern_function as x:
+            return x.line
+        ast.Decl.decl_foreign_function as x:
+            return x.line
+        ast.Decl.decl_event as x:
+            return x.line
+        ast.Decl.decl_static_assert as x:
+            return x.line
+        ast.Decl.decl_when as x:
+            return x.line
+        ast.Decl.decl_attribute as x:
+            return x.line
+        ast.Decl.decl_import as x:
+            return x.line
+        ast.Decl.decl_link as x:
+            return x.line
+        ast.Decl.decl_include as x:
+            return x.line
+        ast.Decl.decl_compiler_flag as x:
+            return x.line
+
+
+function stmt_line(st: ast.Stmt) -> ptr_uint:
+    match st:
+        ast.Stmt.stmt_local as x:
+            return x.line
+        ast.Stmt.stmt_assignment as x:
+            return x.line
+        ast.Stmt.stmt_if as x:
+            return x.line
+        ast.Stmt.stmt_while as x:
+            return x.line
+        ast.Stmt.stmt_for as x:
+            return x.line
+        ast.Stmt.stmt_match as x:
+            return x.line
+        ast.Stmt.stmt_ret as x:
+            return x.line
+        ast.Stmt.stmt_break as x:
+            return x.line
+        ast.Stmt.stmt_continue as x:
+            return x.line
+        ast.Stmt.stmt_pass as x:
+            return x.line
+        ast.Stmt.stmt_defer as x:
+            return x.line
+        ast.Stmt.stmt_unsafe as x:
+            return x.line
+        ast.Stmt.stmt_expression as x:
+            return x.line
+        ast.Stmt.stmt_static_assert as x:
+            return x.line
+        ast.Stmt.stmt_emit as x:
+            return x.line
+        ast.Stmt.stmt_when as x:
+            return x.line
+        ast.Stmt.stmt_parallel_block as x:
+            return x.line
+        ast.Stmt.stmt_gather as x:
+            return x.line
+        ast.Stmt.stmt_error as x:
+            return x.line
+        ast.Stmt.stmt_error_block as x:
+            return x.line
+        ast.Stmt.stmt_block:
+            return 0
 
 
 # =============================================================================
@@ -326,6 +598,27 @@ function render_type_params(type_params: span[ast.TypeParam]) -> str:
     return j3("[", join_strs(parts.as_span(), ", "), "]")
 
 
+## Host `render_struct_params`: lifetime parameters first (bare names), then the
+## type parameters' names.
+function render_struct_params(lifetime_params: span[str], type_params: span[ast.TypeParam]) -> str:
+    var parts = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < lifetime_params.len:
+        unsafe:
+            parts.push(read(lifetime_params.data + i))
+        i += 1
+    i = 0
+    while i < type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(type_params.data + i)
+        parts.push(tp.name)
+        i += 1
+    if parts.len() == 0:
+        return ""
+    return j3("[", join_strs(parts.as_span(), ", "), "]")
+
+
 function render_one_type_param(tp: ast.TypeParam) -> str:
     if tp.is_lifetime:
         return tp.name
@@ -417,7 +710,9 @@ function visibility_prefix(f: ref[Formatter], visibility: bool) -> str:
 
 function emit_source_file(f: ref[Formatter], file: ast.SourceFile) -> void:
     if file.module_kind == ast.ModuleKind.module_raw:
+        flush_leading_comments_before(f, file.line)
         emit_line(f, "external")
+        attach_inline_comment(f, file.line, f.line_starts.len() - 1)
         if file.imports.len > 0 or file.directives.len > 0 or file.declarations.len > 0:
             blank_line(f)
 
@@ -426,8 +721,13 @@ function emit_source_file(f: ref[Formatter], file: ast.SourceFile) -> void:
     if file.imports.len > 0:
         var i: ptr_uint = 0
         while i < file.imports.len:
+            var imp: ast.Decl
             unsafe:
-                emit_line(f, render_import_decl(read(file.imports.data + i)))
+                imp = read(file.imports.data + i)
+            let imp_line = decl_line(imp)
+            flush_leading_comments_before(f, imp_line)
+            emit_line(f, render_import_decl(imp))
+            attach_inline_comment(f, imp_line, f.line_starts.len() - 1)
             i += 1
         wrote_section = true
 
@@ -442,6 +742,7 @@ function emit_source_file(f: ref[Formatter], file: ast.SourceFile) -> void:
         wrote_section = true
 
     if file.declarations.len == 0:
+        flush_remaining_comments(f)
         return
 
     if wrote_section:
@@ -460,6 +761,8 @@ function emit_source_file(f: ref[Formatter], file: ast.SourceFile) -> void:
             if declaration_separator_required(f, decl, next_decl):
                 blank_line(f)
         i += 1
+
+    flush_remaining_comments(f)
 
 
 function render_import_decl(d: ast.Decl) -> str:
@@ -541,6 +844,9 @@ function raw_group(d: ast.Decl) -> int:
 # =============================================================================
 
 function emit_declaration(f: ref[Formatter], d: ast.Decl) -> void:
+    let d_line = decl_line(d)
+    flush_leading_comments_before(f, d_line)
+    var header_idx = f.line_starts.len()
     match d:
         ast.Decl.decl_const as c:
             emit_attribute_applications(f, c.attributes)
@@ -578,7 +884,8 @@ function emit_declaration(f: ref[Formatter], d: ast.Decl) -> void:
             f.indent -= 1
         ast.Decl.decl_struct as st:
             emit_attribute_applications(f, st.struct_attrs)
-            var header = j4(visibility_prefix(f, st.visibility), "struct ", st.name, render_type_params(st.type_params))
+            header_idx = f.line_starts.len()
+            var header = j4(visibility_prefix(f, st.visibility), "struct ", st.name, render_struct_params(st.lifetime_params, st.type_params))
             header = j2(header, render_implements_clause(st.impl_list))
             match st.c_name:
                 Option.some as cn:
@@ -756,6 +1063,7 @@ function emit_declaration(f: ref[Formatter], d: ast.Decl) -> void:
             emit_line(f, j3("include \"", inc.value, "\""))
         ast.Decl.decl_compiler_flag as cf:
             emit_line(f, j3("compiler_flag \"", cf.value, "\""))
+    attach_inline_comment(f, d_line, header_idx)
 
 
 function emit_enum_like(f: ref[Formatter], kind: str, name: str, backing: ptr[ast.TypeRef]?, members: span[ast.EnumMember], visibility: bool) -> void:
@@ -771,7 +1079,7 @@ function emit_enum_like(f: ref[Formatter], kind: str, name: str, backing: ptr[as
             m = read(members.data + i)
         var text = m.name
         let mv = m.value
-        if mv != null:
+        if mv != null and m.value_explicit:
             text = j3(text, " = ", rx(f, mv, 0))
         emit_line(f, text)
         i += 1
@@ -802,15 +1110,15 @@ function emit_method(f: ref[Formatter], m: ast.Method) -> void:
 
 
 function render_method_signature(f: ref[Formatter], m: ast.Method) -> str:
-    var kind_prefix = "function "
+    var kind_prefix = ""
     if m.method_kind == ast.MethodKind.mk_editable:
-        kind_prefix = "editable function "
+        kind_prefix = "editable "
     else if m.method_kind == ast.MethodKind.mk_static:
-        kind_prefix = "static function "
-    var async_prefix = ""
-    if m.is_async:
-        async_prefix = "async "
-    var text = j5(visibility_prefix(f, m.visibility), async_prefix, kind_prefix, m.name, render_type_params(m.type_params))
+        kind_prefix = "static "
+    let const_prefix = if m.is_const: "const " else: ""
+    let async_prefix = if m.is_async: "async " else: ""
+    var text = j4(visibility_prefix(f, m.visibility), async_prefix, kind_prefix, const_prefix)
+    text = j4(text, "function ", m.name, render_type_params(m.type_params))
     text = j4(text, "(", render_param_list(m.method_params), ")")
     let rt = m.return_type
     if rt != null:
@@ -852,6 +1160,9 @@ function emit_stmt_span(f: ref[Formatter], stmts: span[ast.Stmt]) -> void:
 
 
 function emit_statement(f: ref[Formatter], st: ast.Stmt) -> void:
+    let s_line = stmt_line(st)
+    flush_leading_comments_before(f, s_line)
+    let header_idx = f.line_starts.len()
     match st:
         ast.Stmt.stmt_block as b:
             emit_stmt_span(f, b.statements)
@@ -974,7 +1285,7 @@ function emit_statement(f: ref[Formatter], st: ast.Stmt) -> void:
                 emit_stmt_body(f, d.body)
                 f.indent -= 1
         ast.Stmt.stmt_unsafe as u:
-            match unsafe_inline(f, u.body):
+            match unsafe_inline(f, u.line, u.body):
                 Option.some as inl:
                     emit_line(f, j2("unsafe: ", inl.value))
                 Option.none:
@@ -999,6 +1310,7 @@ function emit_statement(f: ref[Formatter], st: ast.Stmt) -> void:
             emit_line(f, j2("gather ", render_expr_span(f, g.handles, ", ")))
         _:
             pass
+    attach_inline_comment(f, s_line, header_idx)
 
 
 function render_destructure_target(bindings: span[str], type_name: Option[str]) -> str:
@@ -1018,18 +1330,25 @@ function render_pattern(f: ref[Formatter], pattern: ptr[ast.Expr]?) -> str:
 
 ## If `body` is a block wrapping exactly one inline-renderable statement (or is
 ## itself such a statement), return its single-line rendering; otherwise none.
-## Used to collapse single-statement `unsafe:` blocks to `unsafe: <stmt>`.
-function unsafe_inline(f: ref[Formatter], body: ptr[ast.Stmt]?) -> Option[str]:
+## Used to collapse single-statement `unsafe:` blocks to `unsafe: <stmt>`;
+## a comment or blank line between the two lines blocks the collapse.
+function unsafe_inline(f: ref[Formatter], unsafe_line: ptr_uint, body: ptr[ast.Stmt]?) -> Option[str]:
     let b = body else:
         return Option[str].none
     unsafe:
         match read(b):
             ast.Stmt.stmt_block as blk:
                 if blk.statements.len == 1:
-                    return render_inline_stmt(f, read(blk.statements.data + 0))
+                    let nested = read(blk.statements.data + 0)
+                    if unsafe_inline_comment_conflict(f, unsafe_line, stmt_line(nested)):
+                        return Option[str].none
+                    return render_inline_stmt(f, nested)
                 return Option[str].none
             _:
-                return render_inline_stmt(f, read(b))
+                let nested = read(b)
+                if unsafe_inline_comment_conflict(f, unsafe_line, stmt_line(nested)):
+                    return Option[str].none
+                return render_inline_stmt(f, nested)
 
 
 function render_inline_stmt(f: ref[Formatter], st: ast.Stmt) -> Option[str]:
@@ -1083,6 +1402,16 @@ function splice_emit_prefix(f: ref[Formatter], start_offset: ptr_uint) -> void:
     rebuilt.append("emit ")
     rebuilt.append(full.slice(pos, full.len - pos))
     f.buffer = rebuilt
+
+    # The splice shifted every recorded line start after it.
+    var i: ptr_uint = 0
+    while i < f.line_starts.len():
+        let lp = f.line_starts.get(i) else:
+            break
+        unsafe:
+            if read(lp) > pos:
+                read(lp) = read(lp) + 5
+        i += 1
 
 
 function emit_when_stmt(f: ref[Formatter], discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
@@ -1226,8 +1555,66 @@ function render_expression(f: ref[Formatter], e: ast.Expr, parent: int) -> str:
             return j3("align_of(", render_type_ptr(x.target_type), ")")
         ast.Expr.expr_offsetof as x:
             return j5("offset_of(", render_type_ptr(x.target_type), ", ", x.field, ")")
+        ast.Expr.expr_format_string as x:
+            var buf = string.String.create()
+            buf.append("f\"")
+            var pi: ptr_uint = 0
+            while pi < x.parts.len:
+                unsafe:
+                    buf.append(render_format_string_part(f, read(x.parts.data + pi)))
+                pi += 1
+            buf.append("\"")
+            return buf.as_str()
         _:
             return ""
+
+
+## One `f"..."` part: literal text re-escaped, or `#{expr}` with its optional
+## format spec (host `render_format_string_part`).
+function render_format_string_part(f: ref[Formatter], part: ast.FormatStringPart) -> str:
+    match part:
+        ast.FormatStringPart.fmt_text as t:
+            return escape_format_text(t.value)
+        ast.FormatStringPart.fmt_expr as e:
+            var spec = ""
+            let fs = e.format_spec
+            if fs != null:
+                unsafe:
+                    let s = read(fs)
+                    match s.spec_kind:
+                        ast.FormatSpecKind.precision:
+                            spec = j2(":.", int_to_str(s.value))
+                        ast.FormatSpecKind.hex:
+                            spec = if s.uppercase: ":X" else: ":x"
+                        ast.FormatSpecKind.octal:
+                            spec = if s.uppercase: ":O" else: ":o"
+                        ast.FormatSpecKind.binary:
+                            spec = if s.uppercase: ":B" else: ":b"
+            return j4("#{", rx(f, e.expression, 0), spec, "}")
+
+
+## Host `escape_format_text`: backslash, quote and control escapes.
+function escape_format_text(value: str) -> str:
+    var buf = string.String.create()
+    var i: ptr_uint = 0
+    while i < value.len:
+        let b = value.byte_at(i)
+        if b == '\\':
+            buf.append("\\\\")
+        else if b == '"':
+            buf.append("\\\"")
+        else if b == 10:
+            buf.append("\\n")
+        else if b == 13:
+            buf.append("\\r")
+        else if b == 9:
+            buf.append("\\t")
+        else if b == 0:
+            buf.append("\\0")
+        else:
+            buf.push_byte(b)
+        i += 1
+    return buf.as_str()
 
 
 function render_postfix(f: ref[Formatter], ep: ptr[ast.Expr]) -> str:
@@ -1298,14 +1685,22 @@ function render_match_expr(f: ref[Formatter], scrutinee: ptr[ast.Expr], arms: sp
 
 
 function render_block_lines(f: ref[Formatter], body: ptr[ast.Stmt], indent: ptr_uint) -> str:
+    # The comment state is shared with the sub-formatter (a proc body is
+    # captured into the parent's line stream in the host), so comments inside
+    # the block are emitted and consumed here, not left for the parent.
     var sub = Formatter(
         buffer = string.String.create(),
         indent = indent,
         module_kind = f.module_kind,
         any_output = false,
         last_blank = false,
+        comments = f.comments,
+        blank_lines = f.blank_lines,
+        line_starts = vec.Vec[ptr_uint].create(),
     )
     emit_stmt_body(ref_of(sub), body)
+    f.comments = sub.comments
+    f.blank_lines = sub.blank_lines
     let raw = sub.buffer.as_str()
     if raw.len > 0 and raw.byte_at(raw.len - 1) == 10:
         return raw.slice(0, raw.len - 1)
