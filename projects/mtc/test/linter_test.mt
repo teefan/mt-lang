@@ -51,6 +51,45 @@ function lint_with_options(source: str, options: linter.LintOptions) -> vec.Vec[
     return linter.lint_source_with(file, source, "test.mt", options)
 
 
+## The message of the first warning with `code`, or "".
+function message_of(warns: ref[vec.Vec[linter.Warning]], code: str) -> str:
+    var i: ptr_uint = 0
+    while i < warns.len():
+        let wp = warns.get(i) else:
+            break
+        unsafe:
+            let w = read(wp)
+            if w.code.equal(code):
+                return w.message
+        i += 1
+    return ""
+
+
+# =============================================================================
+#  line-too-long
+# =============================================================================
+
+@[test]
+function test_line_too_long_wrappable_line_flagged_with_hint() -> void:
+    var source = "function demo(a: int) -> void:\n    consume(first_argument, second_argument, third_argument, fourth_argument, fifth_argument, sixth_argument, seventh_argument)\n"
+    var warns = lint_text(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "line-too-long")), 1)
+    expect(message_of(ref_of(warns), "line-too-long").contains_substring("; wrap the expression"), "wrap hint")
+
+
+@[test]
+function test_line_too_long_non_wrappable_line_ignored() -> void:
+    var source = "function demo(a: int) -> void:\n    let text = \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n"
+    expect_none(source, "line-too-long")
+
+
+@[test]
+function test_line_too_long_foreign_header_ignored() -> void:
+    var source = "public foreign function really_long_name(alpha: int, beta: int, gamma: int, delta: int, epsilon: int, zeta: int) -> void = c.foo\n"
+    expect_none(source, "line-too-long")
+
+
 # =============================================================================
 #  select/ignore options and `# lint: ignore` suppressions
 # =============================================================================

@@ -9,6 +9,7 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.formatter.tidy as tidy
 import mtc.linter.fix_engine as fix_engine
 import mtc.linter.linter as linter_mod
 import mtc.lsp.cursor as cursor
@@ -154,6 +155,8 @@ function append_fix_for_diagnostic(
                     append_underscore_fix(json_text, emitted, uri, source, info)
             else if info.code.equal("dead-assignment"):
                 append_dead_assignment_fix(json_text, emitted, uri, source, info)
+            else if info.code.equal("line-too-long"):
+                append_line_wrap_fix(json_text, emitted, uri, source, info)
             else if info.code.equal("shadow"):
                 append_underscore_fix(json_text, emitted, uri, source, info)
             else if fix_engine.is_fixable(info.code):
@@ -339,6 +342,42 @@ function append_dead_assignment_fix(
     json_text.append(",\"character\":0},\"end\":{\"line\":")
     json_text.append_format(f"#{info.line + 1}")
     json_text.append(",\"character\":0}},\"newText\":\"\"}]}}}")
+
+
+## `line-too-long` fix: replace the line with the formatter's wrapped version
+## (host `lsp/server/code_actions.rb:118-142`).
+function append_line_wrap_fix(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    uri: str,
+    source: str,
+    info: DiagnosticInfo,
+) -> void:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return
+    defer: file_path.release()
+    let max_line_length = tidy.resolve_max_line_length(file_path.as_str(), 0)
+    let maybe_fix = tidy.build_long_line_wrap_fix(source, info.line, max_line_length, file_path.as_str(), true)
+    if maybe_fix.is_none():
+        return
+    var fix = maybe_fix.unwrap()
+    defer: fix.new_text.release()
+
+    if unsafe: read(emitted) > 0:
+        json_text.append(",")
+    unsafe:
+        read(emitted) = read(emitted) + 1
+
+    json_text.append("{\"title\":\"Wrap long line\",\"kind\":\"quickfix\",")
+    json_text.append("\"edit\":{\"changes\":{\"")
+    proto.append_escaped(json_text, uri)
+    json_text.append("\":[{\"range\":{\"start\":{\"line\":")
+    json_text.append_format(f"#{info.line}")
+    json_text.append(",\"character\":0},\"end\":{\"line\":")
+    json_text.append_format(f"#{info.line + 1}")
+    json_text.append(",\"character\":0}},\"newText\":\"")
+    proto.append_escaped(json_text, fix.new_text.as_str())
+    json_text.append("\"}]}}}")
 
 
 ## `unused-*` fix: insert `_` before the binding name.

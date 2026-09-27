@@ -42,6 +42,7 @@ import mtc.lexer.lexer as lexer
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.lexer.trivia as triv
+import mtc.formatter.tidy as tidy
 import mtc.linter.config as lint_config
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.cfg as cfg
@@ -171,7 +172,7 @@ public function lint_source_with(
     lint_events(file.declarations, "", path, ref_of(warnings))
     lint_trailing_commas(file.declarations, lexed.tokens.as_span(), path, ref_of(warnings))
     lint_prefer_inline_methods(file.declarations, path, ref_of(warnings))
-    lint_line_too_long(source, path, max_line_length, ref_of(warnings))
+    lint_line_too_long(source, lexed.tokens, path, max_line_length, ref_of(warnings))
     lint_dead_assignment(file, path, ref_of(warnings))
     lint_unreachable_code(file, path, ref_of(warnings))
     lint_prefer_own_ptr(file, path, ref_of(warnings))
@@ -3193,37 +3194,125 @@ function uint_to_str(n: ptr_uint) -> str:
 
 public const DEFAULT_MAX_LINE_LENGTH: ptr_uint = 120
 
-function lint_line_too_long(source: str, path: str, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
+function lint_line_too_long(source: str, tokens: vec.Vec[token_mod.Token], path: str, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
     var start: ptr_uint = 0
-    var line_num: ptr_uint = 1
+    var line_index: ptr_uint = 0
     var i: ptr_uint = 0
-    while i < source.len:
-        if source.byte_at(i) == 10:
+    while i <= source.len:
+        if i == source.len or source.byte_at(i) == 10:
             let line_text = source.slice(start, i - start)
-            if should_check_line_length(line_text):
-                # Count UTF-8 characters rather than bytes for accurate column width.
-                let char_count = utf8_char_width(line_text)
-                if char_count > max_line_length:
-                    push_line_too_long(path, line_num, char_count, max_line_length, warnings)
+            lint_one_long_line(source, tokens, path, line_index, line_text, max_line_length, warnings)
+            line_index += 1
             start = i + 1
-            line_num += 1
         i += 1
-    if start < source.len:
-        let line_text = source.slice(start, source.len - start)
-        if should_check_line_length(line_text):
-            let char_count = utf8_char_width(line_text)
-            if char_count > max_line_length:
-                push_line_too_long(path, line_num, char_count, max_line_length, warnings)
 
 
-function should_check_line_length(line: str) -> bool:
+## One line: only wrappable over-long lines are reported (host
+## `emit_line_too_long_warnings`), with the host's column/length and the
+## `; wrap the expression` suffix when the formatter can wrap it.
+function lint_one_long_line(source: str, tokens: vec.Vec[token_mod.Token], path: str, line_index: ptr_uint, line: str, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
+    if line.len == 0:
+        return
+    if is_external_or_foreign_function_header_line(line):
+        return
+    # Count UTF-8 characters rather than bytes for accurate column width.
+    let char_count = utf8_char_width(line)
+    if char_count <= max_line_length:
+        return
+    if not tidy.wrappable_long_line_candidate_text(line):
+        return
+
+    var message = string.String.create()
+    message.append("line exceeds max length of ")
+    message.append(uint_to_str(max_line_length))
+    message.append(" columns (")
+    message.append(uint_to_str(char_count))
+    message.append(")")
+    let maybe_fix = tidy.build_line_wrap_fix_with_tokens(source, tokens, line_index, max_line_length, path, false)
+    if maybe_fix.is_some():
+        message.append("; wrap the expression")
+        var fix = maybe_fix.unwrap()
+        fix.new_text.release()
+
+    push_warning_at(
+        warnings,
+        path,
+        line_index + 1,
+        max_line_length + 1,
+        char_count - max_line_length,
+        "line-too-long",
+        message.as_str(),
+        "warning",
+    )
+
+
+## Host `external_or_foreign_function_header_line?`:
+## `\A(?:[A-Za-z_]\w*\s+)*(?:external|foreign)\s+function\b` on the trimmed line.
+function is_external_or_foreign_function_header_line(line: str) -> bool:
     let t = line.trim_ascii_whitespace()
-    if t.len == 0:
+    var pos: ptr_uint = 0
+    while pos < t.len:
+        var keyword = ""
+        if word_matches(t, pos, "external"):
+            keyword = "external"
+        else if word_matches(t, pos, "foreign"):
+            keyword = "foreign"
+        if keyword.len > 0:
+            let after = pos + keyword.len
+            let ws = space_run_end(t, after)
+            if ws == after:
+                return false
+            return word_matches(t, ws, "function")
+        let word_len = identifier_word_len(t, pos)
+        if word_len == 0:
+            return false
+        let ws = space_run_end(t, pos + word_len)
+        if ws == pos + word_len:
+            return false
+        pos = ws
+    return false
+
+
+function word_matches(t: str, pos: ptr_uint, word: str) -> bool:
+    if pos + word.len > t.len:
         return false
-    # Skip external/foreign function header lines, and shebang lines.
-    if t.starts_with("external") or t.starts_with("foreign function") or t.starts_with("#!"):
-        return false
-    return true
+    var i: ptr_uint = 0
+    while i < word.len:
+        if t.byte_at(pos + i) != word.byte_at(i):
+            return false
+        i += 1
+    if pos + word.len == t.len:
+        return true
+    return not is_word_byte(t.byte_at(pos + word.len))
+
+
+function identifier_word_len(t: str, pos: ptr_uint) -> ptr_uint:
+    if pos >= t.len:
+        return 0
+    if not is_word_start_byte(t.byte_at(pos)):
+        return 0
+    var i = pos + 1
+    while i < t.len and is_word_byte(t.byte_at(i)):
+        i += 1
+    return i - pos
+
+
+function is_word_start_byte(b: ubyte) -> bool:
+    return (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or b == '_'
+
+
+function is_word_byte(b: ubyte) -> bool:
+    return is_word_start_byte(b) or (b >= '0' and b <= '9')
+
+
+function space_run_end(t: str, pos: ptr_uint) -> ptr_uint:
+    var i = pos
+    while i < t.len:
+        let b = t.byte_at(i)
+        if b != ' ' and b != '\t':
+            break
+        i += 1
+    return i
 
 
 function utf8_char_width(s: str) -> ptr_uint:
@@ -3241,16 +3330,6 @@ function utf8_char_width(s: str) -> ptr_uint:
             i += 4
         count += 1
     return count
-
-
-function push_line_too_long(path: str, line: ptr_uint, length: ptr_uint, max_line_length: ptr_uint, warnings: ref[vec.Vec[Warning]]) -> void:
-    var msg = string.String.create()
-    msg.append("line exceeds max length of ")
-    msg.append(uint_to_str(max_line_length))
-    msg.append(" columns (")
-    msg.append(uint_to_str(length))
-    msg.append(")")
-    push_warning(warnings, path, line, "line-too-long", msg.as_str(), "warning")
 
 
 # =============================================================================

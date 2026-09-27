@@ -912,6 +912,30 @@ codeAction, codeLens, documentLink, formatting, rangeFormatting,
 onTypeFormatting, foldingRange, selectionRange, semanticTokens, workspaceSymbol,
 workspace/diagnostic.
 
+### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
+
+The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**
+over-long lines are reported (the host gates on
+`Formatter.wrappable_long_line_candidate_text?`), the warning carries the host's
+`column = max + 1` / `length = line.length - max`, the message gains the
+`; wrap the expression` suffix when the formatter can build a fix, and the
+external/foreign-function header predicate is the host's regex (word prefixes
+included, so `public foreign function …` is skipped).
+
+- `formatter/tidy.mt` exposes `WrapFix`, `wrappable_long_line_candidate_text`
+  and `build_long_line_wrap_fix(source, line_index, max, path, validate)` (plus
+  a token-carrying variant the linter uses) over the existing wrap machinery;
+  `validate: false` mirrors the host's linter call, the LSP quickfix uses
+  `validate: true`.
+- The LSP offers the host's `Wrap long line` quickfix from a `line-too-long`
+  diagnostic (`code_actions.rb:118-142`), with the config-resolved limit.
+- `--fix` still excludes the rule, matching the host's `AUTO_FIXABLE_RULE_CODES`.
+
+Verified: `mtc lint`'s `line-too-long` lines are byte-identical to the host's on
+`projects/mtc/src/mtc/lsp/navigation.mt` (three warnings, one non-wrappable
+without the suffix); three new linter tests; `cli:parity` 22/39/0 and the LSP
+harness's 4 entries unchanged.
+
 ### Lint options plumbing (2026-09-27 session 4, stage 8a)
 
 The linter's entry points became one options funnel (`linter.LintOptions`),
