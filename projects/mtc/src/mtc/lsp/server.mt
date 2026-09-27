@@ -5,6 +5,7 @@
 import std.json as json
 import std.str
 import std.string as string
+import std.time as time
 import std.vec as vec
 import std.cjson as cjson
 import std.mem.arena as arena
@@ -98,7 +99,24 @@ public function run(args: span[str]) -> int:
     return 0
 
 
+## Milliseconds since a `monotonic_ms()` sample.
+function elapsed_since_ms(started_ms: double) -> double:
+    return monotonic_ms() - started_ms
+
+
+## A monotonic clock reading in milliseconds.
+function monotonic_ms() -> double:
+    var ts = zero[time.TimeSpec]
+    let rc = time.monotonic(ref_of(ts))
+    if rc != 0:
+        return 0.0
+    return double<-ts.tv_sec * 1000.0 + double<-ts.tv_nsec / 1000000.0
+
+
 function parse_log_level(args: span[str]) -> void:
+    # The host's default: lifecycle, per-request timings and warnings, without
+    # the per-message trace (`trace`/`debug` stay opt-in via --log-level).
+    log.set_level(log.Level.info)
     var i: ptr_uint = 1
     while i < args.len:
         if args[i] == "--log-level":
@@ -116,7 +134,6 @@ function parse_log_level(args: span[str]) -> void:
                     log.set_level(log.Level.error)
                 return
         i += 1
-    log.set_level(log.Level.warn)
 
 
 function apply_trace_level(params: json.Value) -> void:
@@ -135,6 +152,7 @@ function apply_trace_level(params: json.Value) -> void:
 ## should exit (e.g. after a restart command).
 function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.Message) -> bool:
     let req_id = extract_request_id(msg.id)
+    let started_ms = monotonic_ms()
     var trace_msg = string.String.create()
     if req_id > 0:
         trace_msg.append_format(f"lsp: -> #{req_id} #{method}")
@@ -142,6 +160,13 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         trace_msg.append_format(f"lsp: -> #{method}")
     log.debug(trace_msg.as_str())
     trace_msg.release()
+    defer:
+        # The host's per-request line (`[LSP perf] req <method> <ms>`), so a slow
+        # request is visible in the extension's output channel without a profiler.
+        var perf = string.String.create()
+        perf.append_format(f"[LSP perf] req #{method} #{elapsed_since_ms(started_ms)}ms")
+        log.info(perf.as_str())
+        perf.release()
     # Lifecycle
     if method == "initialize":
         lifecycle.handle_initialize(msg.id, msg.params, ws)

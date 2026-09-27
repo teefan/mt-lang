@@ -754,6 +754,64 @@ not reproduce) and the host's AST/Facts/Bindings sections, which render the
 host's own data structures (Ruby AST class names, `node_ids`, `ValueBinding[id:
 N]`, object ids).
 
+### Editor responsiveness, recovery and logging (2026-09-26, stage 6g)
+
+Reported from VS Code: after fixing a syntax error the old errors stayed on
+screen, recovery felt poor, and the server felt slower than the Ruby host.
+
+**The stale errors were a publish bug.**  The host calls
+`schedule_diagnostics(uri, lint_tier: :full)` on *every* `didOpen` and
+`didChange` (`server/text_documents.rb:19,51`); the self published only on open
+and save, so a client that shows *pushed* diagnostics kept the broken state's
+errors until the file was saved.  `handle_did_change` now re-checks and
+publishes (the diagnostic cache is content-keyed, so the work is the same one
+loader run the first request after the edit would have paid anyway).  Verified
+with a push-only probe: open → clean, break → `lex/error`+`parse/error`, fix →
+clean again.
+
+**Recovery itself works** — the lexer and parser recover (they report the error
+and keep building a tree: `documentSymbol` still answers, `semanticTokens` still
+colour, and sema/lint run on the recovered AST, as the host's LSP pipeline does).
+What still differs from the host is the *error set* on broken input, not the
+ability to recover: for the probe file the host reports
+`[lex/error, parse/error, prefer-let]` where the self reports
+`[parse/error, prefer-let]` for a missing `)`, and for an unterminated string
+both report `lex/error`+`parse/error` but the self then adds its own sema/lint
+items.  Row 3 of the gaps table records the host behaviours to port
+(`consume_name` keyword-name errors, one error per function, the top-level
+`expected declaration` that ends the parse).
+
+**Measured edit cycle** (`src/main.mt` of the SimpleGame project, which imports
+`std.raylib`; per request, `[LSP perf]` lines):
+
+| step | host | self |
+| --- | --- | --- |
+| open + first `documentSymbol` | 1336 ms | 39 ms |
+| edit → pushed diagnostics | (scheduled) | 39 ms |
+| edit → `semanticTokens/full` | 11 ms | 19 ms |
+| edit → `textDocument/diagnostic` | 28 ms | 0.2 ms (cache hit) |
+| `documentSymbol` after an edit | — | 0.2 ms (cache hit) |
+
+The self's cold start is ~34× faster (Ruby parses the whole raylib closure once
+per request); per edit it pays **one** loader run for the changed content
+(~39 ms) and every other request in that version is a cache hit, where the host
+pays its facts rebuild per request.  The self's caches are content-keyed
+(loader program per root fingerprint, parse+analysis per document, semantic
+tokens per version, diagnostics per content, index per edited file); the
+remaining gap is that the loader re-parses and re-analyzes the *whole import
+closure* on each content version.  A per-module cache (content hash plus the
+analyses' versions of the module's direct imports, so a change cascades to
+dependents) would cut that 39 ms to the changed module's own work — the same
+incremental shape as the host's facts cache, and the next performance step.
+
+**Logging now matches the host's shape.**  Every request logs
+`[LSP perf] req <method> <ms>` (the host's line is
+`[LSP perf] req #{method} #{ms}ms`), the default level is `info` (lifecycle,
+timings and warnings; `trace`/`debug` add the per-message trace), and the
+extension forwards `milkTea.lsp.logLevel` to the server as `--log-level`, so the
+window-level setting now controls the server's own output as it does for the
+host.
+
 ### Measured (same corpus, both servers)
 
 The table below is the **2026-09-25/26 session's** before/after record — its

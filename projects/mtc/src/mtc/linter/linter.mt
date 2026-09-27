@@ -3169,8 +3169,10 @@ function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]],
             ast.Stmt.stmt_local as loc:
                 if loc.value != null:
                     if own_creating_call(loc.value):
-                        created.push(loc.name)
-                        created_info.set(loc.name, OwningBinding(line = loc.line, type_name = own_created_type_name(loc.value, loc.stmt_type)))
+                        let created_type = own_created_type_name(loc.value, loc.stmt_type)
+                        if is_owning_type_name(created_type, owning_type_names):
+                            created.push(loc.name)
+                            created_info.set(loc.name, OwningBinding(line = loc.line, type_name = created_type))
                     else if ownership_transfer_ctor(loc.value, loc.name):
                         transferred.push(loc.name)
                 # Also detect owning bindings from type annotations (e.g. `var m: Map[str, str]`).
@@ -3184,13 +3186,15 @@ function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]],
             ast.Stmt.stmt_expression as ex:
                 ownership_collect_expr(ex.expression, released, released_lines, transferred, path, warnings)
             ast.Stmt.stmt_assignment as asgn:
-                # If assigned from a create call, mark the target as created.
+                # If assigned from a create call of an owning type, mark the
+                # target as created.
                 if own_creating_call(asgn.value):
-                    match read(asgn.target):
-                        ast.Expr.expr_identifier as id:
-                            created.push(id.name)
-                        _:
-                            pass
+                    if is_owning_type_name(own_created_type_name(asgn.value, null), owning_type_names):
+                        match read(asgn.target):
+                            ast.Expr.expr_identifier as id:
+                                created.push(id.name)
+                            _:
+                                pass
                 # If the value is a release call, mark the target (the released var) and check double-release.
                 if is_release_call_expr(asgn.target):
                     match read(asgn.target):
@@ -3390,6 +3394,21 @@ function is_create_method_name(name: str) -> bool:
 ## True when a type annotation names an owning type (a type with a `.release()`
 ## method).  Walks the type-ref's top-level name, extracting the base type name
 ## (e.g. `Map` from `Map[str, str]`).
+## True when `type_name` names a type that owns resources (it has a `release`
+## method).  A `create` call on any other type (`Node.create(...)`) is not an
+## owning creation and must not report a leak.
+function is_owning_type_name(type_name: str, owning_type_names: span[str]) -> bool:
+    if type_name.len == 0:
+        return false
+    var i: ptr_uint = 0
+    while i < owning_type_names.len:
+        unsafe:
+            if read(owning_type_names.data + i).equal(type_name):
+                return true
+        i += 1
+    return false
+
+
 function is_owning_type_annotation(type_ref: ast.TypeRef, owning_type_names: span[str]) -> bool:
     var base_name: str
     unsafe:

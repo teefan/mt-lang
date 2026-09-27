@@ -224,8 +224,9 @@ public function handle_type_definition(
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var analysis = analyzer.check_source_file(ast_file)
+    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
+    var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
+    var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
 
     # The identifier is itself a type name: its own declaration.
     let is_type_name = analysis.structs.contains(target.text) or
@@ -238,6 +239,16 @@ public function handle_type_definition(
             return
         proto.write_response(id, json.null_value())
         return
+
+    # A local or module-level value: jump to the definition of its *type*.  The
+    # inferred type covers `var n = node.Node.create(...)` (a local whose type
+    # comes from a call), the declared TypeRef covers annotations.
+    match type_of_value(analysis, ast_file, target.text, line + 1):
+        Option.some as value_type:
+            if respond_type_location(ws, analysis, ast_file, uri, source, id, value_type.value):
+                return
+        Option.none:
+            pass
 
     # A module-level value: jump to its declared type's definition.  The
     # declared TypeRef is read straight from the AST, so `alias.Type`
@@ -262,6 +273,128 @@ public function handle_type_definition(
                             return
 
     proto.write_response(id, json.null_value())
+
+
+## The analysis to answer type questions with: the loader-backed one when the
+## document loads (imports bound, so `var n = node.Node.create(...)` types as
+## `node.Node`), else the single-file check.  `ast_file` is re-pointed at the
+## tree the analysis was built from, since `resolved_expr_types` is keyed by
+## expression pointer.
+function analysis_for_document(
+    ws: ref[workspace.Workspace],
+    file_path: str,
+    parsed_file: ast.SourceFile,
+) -> analyzer.Analysis:
+    let entry = workspace.analysis_entry_for(ws, file_path) else:
+        return analyzer.check_source_file(parsed_file)
+    return unsafe: read(entry).analysis
+
+
+## The AST the analysis above was built from.
+function ast_for_document(
+    ws: ref[workspace.Workspace],
+    file_path: str,
+    parsed_file: ast.SourceFile,
+) -> ast.SourceFile:
+    let entry = workspace.analysis_entry_for(ws, file_path) else:
+        return parsed_file
+    return unsafe: read(entry).analysis.source_file
+
+
+## Jump to a type's declaration: local types in this file, imported ones in the
+## declaring module.  False when the type has no single declaration here.
+function respond_type_location(
+    ws: ref[workspace.Workspace],
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    uri: str,
+    source: str,
+    id: json.Value,
+    ty: types.Type,
+) -> bool:
+    match ty:
+        types.Type.ty_named as named:
+            let decl_line = find_declaration_line(ast_file, named.name, "struct")
+            if decl_line > 0:
+                respond_single_location(id, uri, source, decl_line, named.name)
+                return true
+            # A bare name can come from an imported module (`var n =
+            # node.Node.create(...)` types as `Node` without an owning module),
+            # so search the visible imports before giving up.
+            var module_names = vec.Vec[string.String].create()
+            defer: module_names.release()
+            unsafe:
+                var imports = read(analysis).imports.values()
+                while true:
+                    let module_ptr = imports.next() else:
+                        break
+                    module_names.push(string.String.from_str(read(module_ptr)))
+            var mi: ptr_uint = 0
+            while mi < module_names.len():
+                let name_ptr = module_names.get(mi) else:
+                    break
+                if respond_imported_type_location(ws, id, unsafe: read(name_ptr).as_str(), named.name):
+                    return true
+                mi += 1
+            return false
+        types.Type.ty_imported as imported:
+            return respond_imported_type_location(ws, id, imported.module_name, imported.name)
+        _:
+            return false
+
+
+## The type of the value named `name`: its inferred type for a local, its
+## recorded type for a module-level value.
+function type_of_value(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    name: str,
+    target_line: ptr_uint,
+) -> Option[types.Type]:
+    unsafe:
+        let global_ptr = read(analysis).value_types.get(name)
+        if global_ptr != null:
+            return Option[types.Type].some(value = read(global_ptr))
+
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                if fun.line <= target_line and fun.body != null:
+                    match local_type_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name, analysis):
+                        Option.some as ty:
+                            return Option[types.Type].some(value = ty.value)
+                        Option.none:
+                            pass
+            _:
+                pass
+        di += 1
+
+    return Option[types.Type].none
+
+
+## The inferred type of `name` when a `let`/`var` in this block declares it.
+function local_type_in_block(block_stmt: ast.Stmt, name: str, analysis: ref[analyzer.Analysis]) -> Option[types.Type]:
+    match block_stmt:
+        ast.Stmt.stmt_block as blk:
+            var si: ptr_uint = 0
+            while si < blk.statements.len:
+                var s = unsafe: read(blk.statements.data + si)
+                match s:
+                    ast.Stmt.stmt_local as loc:
+                        if loc.name == name:
+                            if loc.stmt_type != null:
+                                return Option[types.Type].none
+                            return type_render.initializer_type(analysis, loc.value)
+                    _:
+                        pass
+                si += 1
+        _:
+            pass
+    return Option[types.Type].none
 
 
 ## The declared TypeRef of a module-level const or var, or null.
@@ -1351,6 +1484,12 @@ function find_decl_line_in(decl: ast.Decl, name: str, kind: str) -> ptr_uint:
                 ast.Decl.decl_function as fun:
                     if fun.name == name:
                         return fun.line
+                ast.Decl.decl_foreign_function as ff:
+                    # A raw/binding module (`std.stdio`) declares its API as
+                    # foreign functions: without this arm a module member's
+                    # definition/hover/references resolved to nothing.
+                    if ff.name == name:
+                        return ff.line
                 _:
                     pass
         else if kind == "value":
@@ -1657,8 +1796,9 @@ function resolve_local_hover(
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var analysis = analyzer.check_source_file(ast_file)
+    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
+    var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
+    var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
 
     # The file's own module name, so a type declared here renders qualified
     # (`main.Sample`) and the renderer can report `*From main*`, as the host

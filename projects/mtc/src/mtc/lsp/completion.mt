@@ -548,57 +548,85 @@ function module_member_completions(
             var count: ptr_uint = 0
 
             let exports_all = module_file.module_kind == ast.ModuleKind.module_raw
-            var di: ptr_uint = 0
-            while di < module_file.declarations.len and count < MAX_COMPLETION_ITEMS:
-                var d: ast.Decl
-                unsafe:
-                    d = read(module_file.declarations.data + di)
-                match d:
-                    ast.Decl.decl_function as f:
-                        if (exports_all or f.visibility) and prefix_matches(f.name, prefix):
-                            emit_module_function(
-                                ref_of(items_json), f.name, f.method_params, f.return_type,
-                                module_name, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_const as c:
-                        if (exports_all or c.visibility) and prefix_matches(c.name, prefix):
-                            emit_module_value(
-                                ref_of(items_json), c.name, c.const_type, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_var as v:
-                        if (exports_all or v.visibility) and prefix_matches(v.name, prefix):
-                            emit_module_value(
-                                ref_of(items_json), v.name, v.var_type, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_struct as s:
-                        if (exports_all or s.visibility) and prefix_matches(s.name, prefix):
-                            emit_module_type(ref_of(items_json), s.name, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_union as u:
-                        if (exports_all or u.visibility) and prefix_matches(u.name, prefix):
-                            emit_module_type(ref_of(items_json), u.name, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_enum as e:
-                        if (exports_all or e.visibility) and prefix_matches(e.name, prefix):
-                            emit_module_type(ref_of(items_json), e.name, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_flags as fl:
-                        if (exports_all or fl.visibility) and prefix_matches(fl.name, prefix):
-                            emit_module_type(ref_of(items_json), fl.name, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_variant as vr:
-                        if (exports_all or vr.visibility) and prefix_matches(vr.name, prefix):
-                            emit_module_type(ref_of(items_json), vr.name, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_type_alias as ta:
-                        if (exports_all or ta.visibility) and prefix_matches(ta.name, prefix):
-                            emit_module_type(ref_of(items_json), ta.name, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_opaque as op:
-                        if (exports_all or op.visibility) and prefix_matches(op.name, prefix):
-                            emit_module_type(ref_of(items_json), op.name, uri, ref_of(first), ref_of(count))
-                    ast.Decl.decl_interface as iface:
-                        if (exports_all or iface.visibility) and prefix_matches(iface.name, prefix):
-                            emit_module_type(ref_of(items_json), iface.name, uri, ref_of(first), ref_of(count))
-                    _:
-                        pass
-                di += 1
+            # Three passes in the host's bucket order: functions, then values,
+            # then types (each in declaration order).  Clients sort by sortText,
+            # but the host's array order is what it advertises.
+            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 0, exports_all, ref_of(first), ref_of(count))
+            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 1, exports_all, ref_of(first), ref_of(count))
+            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 2, exports_all, ref_of(first), ref_of(count))
 
             items_json.append("]")
             let alloc = heap.must_alloc[string.String](1)
             unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
             return alloc
+
+
+## One pass over a module's declarations, emitting the members of one bucket.
+## The host lists a module's members as functions, then values, then types (its
+## fact buckets); clients sort by `sortText`, but its array order is the one the
+## module advertises, so the three passes mirror it.
+function emit_module_members(
+    items_json: ref[string.String],
+    module_file: ast.SourceFile,
+    module_name: str,
+    prefix: str,
+    uri: str,
+    bucket: ptr_uint,
+    exports_all: bool,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var di: ptr_uint = 0
+    while di < module_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        var d: ast.Decl
+        unsafe:
+            d = read(module_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_function as f:
+                if bucket == 0 and (exports_all or f.visibility) and prefix_matches(f.name, prefix):
+                    emit_module_function(
+                        items_json, f.name, f.method_params, f.return_type,
+                        module_name, uri, first, count)
+            ast.Decl.decl_foreign_function as ff:
+                # A raw/binding module (`std.stdio`) declares its API as foreign
+                # functions; without this arm `io.` listed only its types.
+                if bucket == 0 and (exports_all or ff.visibility) and prefix_matches(ff.name, prefix):
+                    emit_module_foreign_function(
+                        items_json, ff.name, ff.foreign_params, ff.return_type,
+                        module_name, uri, first, count)
+            ast.Decl.decl_const as c:
+                if bucket == 1 and (exports_all or c.visibility) and prefix_matches(c.name, prefix):
+                    emit_module_value(items_json, c.name, c.const_type, uri, first, count)
+            ast.Decl.decl_var as v:
+                if bucket == 1 and (exports_all or v.visibility) and prefix_matches(v.name, prefix):
+                    emit_module_value(items_json, v.name, v.var_type, uri, first, count)
+            ast.Decl.decl_struct as s:
+                if bucket == 2 and (exports_all or s.visibility) and prefix_matches(s.name, prefix):
+                    emit_module_type(items_json, s.name, uri, first, count)
+            ast.Decl.decl_union as u:
+                if bucket == 2 and (exports_all or u.visibility) and prefix_matches(u.name, prefix):
+                    emit_module_type(items_json, u.name, uri, first, count)
+            ast.Decl.decl_enum as e:
+                if bucket == 2 and (exports_all or e.visibility) and prefix_matches(e.name, prefix):
+                    emit_module_type(items_json, e.name, uri, first, count)
+            ast.Decl.decl_flags as fl:
+                if bucket == 2 and (exports_all or fl.visibility) and prefix_matches(fl.name, prefix):
+                    emit_module_type(items_json, fl.name, uri, first, count)
+            ast.Decl.decl_variant as vr:
+                if bucket == 2 and (exports_all or vr.visibility) and prefix_matches(vr.name, prefix):
+                    emit_module_type(items_json, vr.name, uri, first, count)
+            ast.Decl.decl_type_alias as ta:
+                if bucket == 2 and (exports_all or ta.visibility) and prefix_matches(ta.name, prefix):
+                    emit_module_type(items_json, ta.name, uri, first, count)
+            ast.Decl.decl_opaque as op:
+                if bucket == 2 and (exports_all or op.visibility) and prefix_matches(op.name, prefix):
+                    emit_module_type(items_json, op.name, uri, first, count)
+            ast.Decl.decl_interface as iface:
+                if bucket == 2 and (exports_all or iface.visibility) and prefix_matches(iface.name, prefix):
+                    emit_module_type(items_json, iface.name, uri, first, count)
+            _:
+                pass
+        di += 1
 
 
 ## Emit one exported module function in the host's shape.
@@ -616,28 +644,52 @@ function emit_module_function(
     defer: params_text.release()
     append_ast_params(ref_of(params_text), params)
 
+    var snippet = string.String.create()
+    defer: snippet.release()
+    let has_snippet = append_ast_snippet(ref_of(snippet), name, params)
+    let insert_text = if has_snippet: snippet.as_str() else: name
+
+    var return_text = string.String.create()
+    defer: return_text.release()
+    append_ast_type(ref_of(return_text), return_type, "void")
+
+    emit_module_callable_item(
+        items_json, name, params_text.as_str(), return_text.as_str(), insert_text,
+        module_name, uri, first, count)
+
+
+## The shared item for an exported module function — local or foreign: detail
+## `function name(params) -> ret`, sort group `0_`, label details with the
+## parameter list and the module as the description.
+function emit_module_callable_item(
+    items_json: ref[string.String],
+    name: str,
+    params_text: str,
+    return_text: str,
+    insert_text: str,
+    module_name: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
     var detail = string.String.create()
     defer: detail.release()
     detail.append("function ")
     detail.append(name)
     detail.append("(")
-    detail.append(params_text.as_str())
+    detail.append(params_text)
     detail.append(") -> ")
-    append_ast_type(ref_of(detail), return_type, "void")
+    detail.append(return_text)
 
-    var snippet = string.String.create()
-    defer: snippet.release()
-    let has_snippet = append_ast_snippet(ref_of(snippet), name, params)
-    let insert_text = if has_snippet: snippet.as_str() else: name
     var sort_text = string.String.create()
     defer: sort_text.release()
     sort_text.append("0_")
     sort_text.append(name)
     var label_details = string.String.create()
     defer: label_details.release()
-    if params_text.len() > 0:
+    if params_text.len > 0:
         label_details.append(" (")
-        label_details.append(params_text.as_str())
+        label_details.append(params_text)
         label_details.append(")")
 
     append_item_ext(
@@ -647,7 +699,49 @@ function emit_module_function(
         read(count) = read(count) + 1
 
 
-## Emit one exported module value in the host's shape.
+## A foreign function's completion item, rendered from its foreign parameter
+## list exactly like a local one (`path: str as cstr` in the label details).
+function emit_module_foreign_function(
+    items_json: ref[string.String],
+    name: str,
+    foreign_params: span[ast.ForeignParam],
+    return_type: ptr[ast.TypeRef],
+    module_name: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var params_text = string.String.create()
+    defer: params_text.release()
+    var snippet = string.String.create()
+    defer: snippet.release()
+    snippet.append(name)
+    snippet.append("(")
+    var pi: ptr_uint = 0
+    while pi < foreign_params.len:
+        let param = unsafe: read(foreign_params.data + pi)
+        if pi > 0:
+            params_text.append(", ")
+            snippet.append(", ")
+        params_text.append(param.name)
+        params_text.append(": ")
+        params_text.append(ast_formatter.render_type(param.param_type))
+        snippet.append("${")
+        snippet.append_format(f"#{pi + 1}:")
+        snippet.append(param.name)
+        snippet.append("}")
+        pi += 1
+    snippet.append(")")
+
+    var return_text = string.String.create()
+    defer: return_text.release()
+    return_text.append(ast_formatter.render_type(unsafe: read(return_type)))
+
+    emit_module_callable_item(
+        items_json, name, params_text.as_str(), return_text.as_str(),
+        snippet.as_str(), module_name, uri, first, count)
+
+
 function emit_module_value(
     items_json: ref[string.String],
     name: str,
@@ -1147,9 +1241,13 @@ function build_completions_json(
         emit_declared_type_item(ref_of(items_json), decl2, uri, prefix, ref_of(first), ref_of(count))
         di += 1
 
-    # Imports (resolved only), the prelude pair first.
+    # Imports (resolved only), the prelude pair first.  The file's own roots are
+    # what resolve a project-local import (`import node` under `src/` with the
+    # package's `source_root`), so the bucket must not use the bare workspace
+    # root — without it `n`/`no`/`node` offered the local only and never the
+    # module alias.
     emit_import_items(
-        ws, analysis, ast_file, ref_of(items_json), uri, prefix, ref_of(first), ref_of(count))
+        ws, analysis, ast_file, file_path, ref_of(items_json), uri, prefix, ref_of(first), ref_of(count))
 
     # Module-level values.
     di = 0
@@ -1421,13 +1519,14 @@ function emit_import_items(
     ws: ref[workspace.Workspace],
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
+    file_path: str,
     items_json: ref[string.String],
     uri: str,
     prefix: str,
     first: ref[bool],
     count: ref[ptr_uint],
 ) -> void:
-    var roots = ws.effective_module_roots_for("")
+    var roots = ws.effective_module_roots_for(file_path)
     defer: roots.release()
 
     if unsafe: read(analysis).imports.contains("std.option"):
@@ -1435,17 +1534,19 @@ function emit_import_items(
     if unsafe: read(analysis).imports.contains("std.result"):
         emit_import_item(items_json, "std.result", "std.result", uri, prefix, first, count)
 
-    var di: ptr_uint = 0
-    while di < ast_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
-        var decl: ast.Decl
+    # Import declarations live in `ast_file.imports`, not in the declaration
+    # list; iterating the wrong span is why no alias was ever offered.
+    var ii: ptr_uint = 0
+    while ii < ast_file.imports.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        var imp: ast.Decl
         unsafe:
-            decl = read(ast_file.declarations.data + di)
-        match decl:
-            ast.Decl.decl_import as imp:
-                let module_name = analyzer.qname_to_str(imp.path)
+            imp = read(ast_file.imports.data + ii)
+        match imp:
+            ast.Decl.decl_import as import_decl:
+                let module_name = analyzer.qname_to_str(import_decl.path)
                 if module_resolves(module_name, roots.as_span()):
                     var label = module_name
-                    match imp.alias_name:
+                    match import_decl.alias_name:
                         Option.some as alias:
                             label = alias.value
                         Option.none:
@@ -1453,7 +1554,7 @@ function emit_import_items(
                     emit_import_item(items_json, label, module_name, uri, prefix, first, count)
             _:
                 pass
-        di += 1
+        ii += 1
 
 
 ## True when the module resolves under the workspace's roots.

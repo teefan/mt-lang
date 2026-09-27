@@ -53,11 +53,21 @@ public function handle_inlay_hint(
     # Shared with the other features through the workspace's parse cache: the
     # parse and single-file check of a large file cost more than a request's
     # own work.
-    let parsed = workspace.parsed_analysis_for(ws, file_path.as_str(), source) else:
-        proto.write_error(id, -32800, "inlay hint request failed: parse error")
-        return
-    var ast_file = parsed.ast_file
-    var analysis = parsed.analysis
+    # The loader-backed analysis types imported symbols (`node.Node.create(...)`),
+    # which the single-file check cannot; its AST is what the recorded types are
+    # keyed by.
+    var ast_file: ast.SourceFile
+    var analysis: analyzer.Analysis
+    var maybe_entry = workspace.analysis_entry_for(ws, file_path.as_str())
+    if maybe_entry.is_some():
+        let entry_ptr = maybe_entry.unwrap()
+        analysis = unsafe: read(entry_ptr).analysis
+        ast_file = analysis.source_file
+    else:
+        var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+        defer: parse_diags.release()
+        ast_file = parser.parse_source(source, ref_of(parse_diags))
+        analysis = analyzer.check_source_file(ast_file)
 
     var json_text = string.String.create()
     defer: json_text.release()

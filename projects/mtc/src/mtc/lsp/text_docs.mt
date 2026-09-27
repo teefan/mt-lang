@@ -19,10 +19,16 @@ public function handle_did_open(ws: ref[workspace.Workspace], params: json.Value
     let text = text_doc_text(params)
     ws.open(uri, text)
     diag.publish_empty_for_uri(uri)
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return
+    defer: file_path.release()
+    publish_after_change(ws, uri, file_path.as_str())
 
 
-## Handle textDocument/didChange (full-sync or incremental mode): replace content.
-## Does NOT re-check — that happens on didSave.
+## Handle textDocument/didChange (full-sync or incremental mode): apply the
+## edits, then re-check and publish — the host schedules diagnostics on every
+## change, so a client that shows pushed diagnostics sees broken code clear as
+## soon as it is fixed (publishing only on save left the old errors on screen).
 public function handle_did_change(ws: ref[workspace.Workspace], params: json.Value) -> void:
     let uri = text_doc_uri(params)
     if uri.len == 0:
@@ -44,6 +50,19 @@ public function handle_did_change(ws: ref[workspace.Workspace], params: json.Val
             var updated = apply_content_changes("", params)
             ws.change(uri, updated.as_str())
             updated.release()
+
+    publish_after_change(ws, uri, file_path.as_str())
+
+
+## Re-check the document's new content and publish its diagnostics.  The
+## diagnostic cache is content-keyed, so a document whose diagnostics were
+## already computed for this exact text (a pull that raced the change) republishes
+## without re-running the loader.
+public function publish_after_change(ws: ref[workspace.Workspace], uri: str, file_path: str) -> void:
+    var source = ws.document_source(file_path) else:
+        return
+    defer: source.release()
+    diag.publish_for_uri(ws, uri, file_path, source.as_str())
 
 
 ## Apply contentChanges from a didChange notification to a document string.
