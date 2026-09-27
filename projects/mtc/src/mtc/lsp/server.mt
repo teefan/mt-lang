@@ -258,7 +258,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
     else if method == "milkTea/documentContext":
         doc_ctx.handle_document_context(ws, msg.params, msg.id, req_id)
     else if method == "milkTea/debugInfo":
-        debug_info.handle_debug_info(ws, msg.id)
+        debug_info.handle_debug_info(ws, msg.params, msg.id)
 
     # Pull diagnostics
     else if method == "textDocument/diagnostic":

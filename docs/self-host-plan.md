@@ -723,6 +723,37 @@ shape rules with a new `documentSymbol/generics` fixture (generic struct with a
 function-typed field, variant, extending block with static/editable/async
 methods).
 
+### `milkTea/debugInfo` port (2026-09-26, stage 6f)
+
+The handler now renders the host's `DebugInfoFormatter` sections instead of a
+workspace summary, taking the request's `textDocument.uri` and answering with
+`{text}` exactly as the host does:
+
+- **Header** — `File:`/`Content: N lines, N bytes`.  The line count comes from
+  the lexer's last line, which is the same number as the host's
+  `content.count("\n") + 1`.
+- **Tokens** — the count, the per-kind histogram (counts descending) and one row
+  per token: `"%3d:%-3d  %-*s  %-16s  %s  %-22s  %s"` with the lexeme quoted the
+  way Ruby's `String#inspect` quotes it, `Ln %2d  Col %3d-%d`, and the semantic
+  class the semanticTokens endpoints would give that token (`type
+  (declaration)`, `namespace`, `keyword`, …).  Measured on the corpus file: the
+  header, the histogram counts and **245 of 246 rows are byte-identical**.
+- **Parse Errors** — `── Parse Errors  N ──` plus one `ERROR [Ln N, Col N]:
+  message` line per diagnostic.
+- **Workspace** — a self-host addition (root, module roots, open documents,
+  index state); the host has no equivalent section.
+
+`semantic_class_entries` shares the semanticTokens scanner, so the debug dump
+and the editor's colours cannot disagree; the label tables
+(`token_type_name`, `token_modifier_names`) come from the same legend the
+capabilities advertise.
+
+Two gaps, both measured and recorded in the table above: the histogram's tie
+order (MRI's qsort leaves equal counts in an order first-appearance ordering does
+not reproduce) and the host's AST/Facts/Bindings sections, which render the
+host's own data structures (Ruby AST class names, `node_ids`, `ValueBinding[id:
+N]`, object ids).
+
 ### Measured (same corpus, both servers)
 
 The table below is the **2026-09-25/26 session's** before/after record — its
@@ -823,7 +854,7 @@ cover yet (row 2).
 
 | # | Family | Entries | Evidence / target |
 | --- | --- | --- | --- |
-| 1 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | host renders `{text}` with Header/Tokens/AST/Parse Errors/Facts/Bindings/Diagnostics (`tooling/debug_info_formatter.rb`, 454 lines); self renders its own workspace summary as `{formatted,content}`.  **Measured 2026-09-26**: the host text embeds Ruby `object_id`s (`obj 992 → binding_id: 3`), binding ids in host allocation order, `ValueBinding[id: N]` reprs, Ruby AST class/member names and `node_ids: {123 entries}` counts, so literal byte-parity needs (a) harness normalization for the object ids, (b) a binding-id model in the self analyzer and (c) a Ruby-AST-shaped tree/facts renderer — re-scope its acceptance before starting it |
+| 1 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | **Partially ported (stage 6f).** The host's Header, Tokens and Parse Errors sections are implemented: the header, the token histogram and **245 of 246 token rows are byte-identical** on the corpus file (lexeme, kind, location and semantic class columns).  Two known gaps remain, both measured: (a) the histogram's *tie order* — the host's `group_by` + Ruby `sort_by` leaves equal counts in an order only MRI's qsort reproduces (e.g. `2 star, 2 float, …` where first-appearance order gives `2 import, 2 as, …`); the self order is stable and documented rather than emulated.  (b) the host's **AST** (Ruby class names plus `node_ids: {N entries}`), **Facts** (`40 types, 2 functions, 2 method_sets, 1 interfaces, 2 imports`, method sets, owning types) and **Bindings** (`ValueBinding[id: N]`, `obj <object_id> → binding_id: N`) sections are not implemented: they render the host implementation's own data structures, so matching them byte-for-byte needs a Ruby-AST-shaped renderer, a binding-id model and harness normalization for the object ids.  The self adds a `Workspace` section the host has no equivalent for. |
 | 2 | **Malformed frame: the host hangs** | `stress/malformed-frame+parseError` | a JSON-RPC frame whose body is not JSON (or carries a bogus `Content-Length`) leaves the Ruby host blocked — it never answers that frame (the probe times out) and only resumes on the next one.  The self answers `-32700` with a null id and keeps serving.  This entry differs by design and is a self-host improvement; it also locks the crash it used to cause (a malformed frame used to be treated as EOF and shut the server down) |
 | 3 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
 | 4 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |

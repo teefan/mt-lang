@@ -1173,6 +1173,155 @@ function compute_token_data(
     return data
 
 
+## The host's legend names, indexed by our legend constants.
+public function token_type_name(index: uint) -> str:
+    return match index:
+        0u:  "namespace"
+        1u:  "type"
+        2u:  "class"
+        3u:  "enum"
+        4u:  "interface"
+        5u:  "struct"
+        6u:  "typeParameter"
+        7u:  "parameter"
+        8u:  "variable"
+        9u:  "property"
+        10u: "enumMember"
+        11u: "event"
+        12u: "function"
+        13u: "method"
+        14u: "macro"
+        15u: "keyword"
+        16u: "modifier"
+        17u: "comment"
+        18u: "string"
+        19u: "number"
+        20u: "regexp"
+        21u: "operator"
+        22u: "decorator"
+        _:   ""
+
+
+## `declaration,readonly,...` for a modifier bitmask.
+public function token_modifier_names(bits: uint) -> string.String:
+    var names = string.String.create()
+    var bit: uint = 1
+    var index: ptr_uint = 0
+    while index < 10:
+        if (bits & bit) != 0:
+            if names.len() > 0:
+                names.append(",")
+            names.append(modifier_name(index))
+        bit = bit << 1
+        index += 1
+    return names
+
+
+function modifier_name(index: ptr_uint) -> str:
+    return match index:
+        0:  "declaration"
+        1:  "definition"
+        2:  "readonly"
+        3:  "static"
+        4:  "deprecated"
+        5:  "abstract"
+        6:  "async"
+        7:  "modification"
+        8:  "documentation"
+        9:  "defaultLibrary"
+        _:  ""
+
+
+## One token's semantic class, as the debug dump prints it (`type (declaration)`).
+public struct SemanticClass:
+    line: ptr_uint
+    column: ptr_uint
+    text: string.String
+
+
+## The semantic class of every token the semanticTokens endpoints would colour,
+## built by the same scanner, so the debug dump and the colours can never
+## disagree.
+public function semantic_class_entries(
+    ws: ref[workspace.Workspace],
+    path: str,
+    source: str,
+) -> vec.Vec[SemanticClass]:
+    var entries = vec.Vec[SemanticClass].create()
+
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: all_tokens.release()
+
+    let parsed = workspace.parsed_analysis_for(ws, path, source) else:
+        return entries
+    var ast_file = parsed.ast_file
+    var analysis = parsed.analysis
+
+    var roots = ws.effective_module_roots_for(path)
+    defer: roots.release()
+    var facts = build_scan_facts(ws, ast_file, ref_of(analysis), roots.as_span())
+
+    let tokens = all_tokens.as_span()
+    var in_decorator = false
+    var decorator_depth: ptr_uint = 0
+    var ti: ptr_uint = 0
+    while ti < tokens.len:
+        let tok = unsafe: read(tokens.data + ti)
+        let kind = tok.kind
+        if scan_is_trivia(kind):
+            in_decorator = false
+            decorator_depth = 0
+            ti += 1
+            continue
+
+        var token_type = token_kind_to_type(kind)
+        var token_mod: uint = 0
+        if kind == tk_mod.TokenKind.identifier:
+            let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+            if in_decorator and decorator_depth == 1:
+                token_type = TOKEN_DECORATOR
+            else:
+                let cls = classify_scan_identifier(ref_of(facts), tokens, ti, lexeme, source)
+                token_type = cls.token_type
+                token_mod = cls.token_mod
+        else:
+            if kind == tk_mod.TokenKind.at:
+                in_decorator = true
+                decorator_depth = 0
+            else if kind == tk_mod.TokenKind.lbracket and in_decorator:
+                decorator_depth += 1
+            else if kind == tk_mod.TokenKind.rbracket and in_decorator:
+                if decorator_depth > 0:
+                    decorator_depth -= 1
+
+        var class_text = string.String.create()
+        class_text.append(token_type_name(token_type))
+        if token_mod != 0:
+            class_text.append(" (")
+            var names = token_modifier_names(token_mod)
+            class_text.append(names.as_str())
+            names.release()
+            class_text.append(")")
+        entries.push(SemanticClass(line = tok.line, column = tok.column, text = class_text))
+        ti += 1
+    return entries
+
+
+## The class text for a position, or empty when the token carries none.
+public function semantic_class_at(entries: ref[vec.Vec[SemanticClass]], line: ptr_uint, column: ptr_uint) -> str:
+    var i: ptr_uint = 0
+    while i < entries.len():
+        let ep = entries.get(i) else:
+            break
+        let entry = unsafe: read(ep)
+        if entry.line == line and entry.column == column:
+            return entry.text.as_str()
+        i += 1
+    return ""
+
+
 ## FNV-1a hash of source text for result ID generation.
 function fnv1a_hash(text: str) -> uint:
     var h = FNV_OFFSET
