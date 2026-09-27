@@ -4,6 +4,7 @@
 
 import std.process as process
 import std.str
+import std.log as log
 import std.string as string
 
 import mtc.dap.handlers as handlers
@@ -15,6 +16,7 @@ import mtc.dap.wire as wire
 
 ## Entry point.  Starts the DAP message loop.
 public function run(args: span[str]) -> int:
+    announce_backend(args)
     var ses = session.create()
     defer: session.release(ref_of(ses))
 
@@ -51,6 +53,31 @@ public function run(args: span[str]) -> int:
     return 0
 
 
+## The self-host adapter implements the `process` backend only.  The VS Code
+## extension's default is `lldb-dap`, so say so instead of silently running the
+## process backend (and so the log shows why stepping is unavailable).
+function announce_backend(args: span[str]) -> void:
+    var requested = "process"
+    var i: ptr_uint = 0
+    while i < args.len:
+        let arg = args[i]
+        if arg.starts_with("--backend="):
+            requested = arg.slice(10, arg.len - 10)
+            break
+        if arg.equal("--backend") and i + 1 < args.len:
+            requested = args[i + 1]
+            break
+        i += 1
+    if requested.equal("process"):
+        return
+    var msg = string.String.create()
+    msg.append("dap: backend '")
+    msg.append(requested)
+    msg.append("' is not implemented; running the process backend (no stepping, evaluate or variables)")
+    log.warn(msg.as_str())
+    msg.release()
+
+
 ## Poll child stdout/stderr and check for exit.
 function poll_child(
     ses: ref[session.Session],
@@ -80,7 +107,15 @@ function poll_child(
                 Option.some as status:
                     let code = status.value.normalized_code()
                     let eseq = ses.reserve_seq()
-                    wire.write_event(eseq, "exited", f"{{\"exitCode\":#{code}}}")
+                    # Build the body explicitly: `{{` is not an f-string escape in
+                    # Milk Tea, it is two literal braces, which emitted
+                    # `body:{{"exitCode":0}}` and broke clients parsing the frame.
+                    var exit_body = string.String.create()
+                    exit_body.append("{\"exitCode\":")
+                    exit_body.append_format(f"#{code}")
+                    exit_body.append("}")
+                    wire.write_event(eseq, "exited", exit_body.as_str())
+                    exit_body.release()
                     let tseq = ses.reserve_seq()
                     wire.write_event(tseq, "terminated", "{}")
                     ses.terminated = true

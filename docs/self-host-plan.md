@@ -37,12 +37,18 @@ recipes complete for all 7 libraries (raylib, glfw, tracy, cjson, box2d,
 sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
-**DAP: 7 modules, ~1,050 lines, 25 handler methods dispatched.**
-**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at 1/55 harness requests and 2/15 stress probes still differing — 3 entries (§0k), plus a cross-file reference-scoping gap the corpus does not cover yet.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**DAP: 7 modules, 1,050 lines, 29 handler methods dispatched.  `tools/dap_smoke.rb`
+audits it against the host per request (2026-09-27: capabilities, launch, threads,
+stackTrace, scopes, variables, breakpoints and the whole error surface are identical
+for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
+the debug map — are §10 of `docs/dap-design.md`).**
+**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 both modes); the LSP's `formatting` and `rangeFormatting` entries are closed, and the canonical AST printer still drops comments (host reattaches trivia).**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
-**LSP logging: structured stderr, version+revision announcement, blank-line filtering.**
+**LSP logging: structured stderr, version+revision announcement, a `[LSP perf] req <method> <ms>`
+line per request (the host's shape), default level `info`, and `milkTea.lsp.logLevel`
+forwarded by the extension as `--log-level`.**
 **Diagnostic positions: lexer-based token matching; buffer-overflow warning fix (MAX_ENTRIES 16→128).**
 **Code lens: reference counts with deduplication; all index entries queried.**
 **References: cross-file via workspace index; definition: local variables supported.**
@@ -100,7 +106,7 @@ workstream doc for the area you are touching:
 | CLI behavior parity | §0j item 8, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
 | LSP feature parity (**in progress**, §0k) | §0k's gap list + the stage 6 capsule, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`), plus valgrind and the headless-Neovim smoke test for behavior changes |
 | Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (preserve/tidy must stay 702/702; canonical is the comment-reattachment delta) |
-| DAP | `docs/dap-design.md` | `build/stage2/mtc test projects/mtc` covers the compiler, not DAP; drive `mtc dap` by hand (no self-host DAP harness yet) |
+| DAP | `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both] [--json OUT]` — runs a session on both adapters and prints a per-request diff |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
 
@@ -124,8 +130,8 @@ looked correct at the CLI level broke the compiler's own bootstrap.
    resolve endpoints the harness was missing) and 6 (`codeLens/resolve`) are
    closed.  The self-host survives the whole stress corpus without a crash or
    hang, and a real VS Code session runs clean under valgrind.
-4. **DAP** — phase 1 (process backend, 25 handlers) delivered; the lldb-dap
-   bridge was assessed as not feasible without multi-threaded I/O
+4. **DAP** — phase 1 (process backend, 29 handlers) delivered; the lldb-dap
+   bridge is now feasible (`std/libuv.mt` poll + `std/async`) but unstarted
    (`dap-design.md`).
 
 ---
@@ -812,6 +818,45 @@ extension forwards `milkTea.lsp.logLevel` to the server as `--log-level`, so the
 window-level setting now controls the server's own output as it does for the
 host.
 
+### Feature audit and completion fixes (2026-09-27, stage 6h)
+
+Reported: `import std.stdio as io` then `io.` suggested nothing.  A per-feature
+audit (every advertised request, both servers, on `SimpleGame/src/main.mt`)
+found the cause and several related ones:
+
+- **Raw/binding modules declare their API as foreign functions** (`public
+  foreign function file_open(...)`), and module-member completion only knew
+  `decl_function`: `io.` listed the module's types and constants and none of its
+  56 functions.  Fixed; the item shape now matches the host byte for byte
+  (label, kind 12, `function name(params) -> ret` detail, snippet, `0_` sort
+  text, `data`, `labelDetails`), including the host's three-pass bucket order
+  (functions, values, types).
+- **The alias bucket iterated the wrong list**: imports live in
+  `ast_file.imports`, not in `declarations`, so `n`/`no`/`node` never offered
+  the module alias and the global list was 5–6 items short of the host's.
+- **`definition` / `hover` / `typeDefinition` on module members**: the
+  declaration finder had no `decl_foreign_function` arm, so F12 on
+  `io.print_format` or `rl.init_window` resolved to nothing.
+- **`typeDefinition` on a local** used the single-file analysis (imported types
+  stayed `<error>`); it now uses the loader-backed analysis, and a bare `ty_named`
+  searches the visible imports, so `var n = node.Node.create(...)` jumps to
+  `node.mt`'s `Node` (the host answers with the local's own position).
+- **False `owning-release-leak`**: any `X.create(...)` counted as an owning
+  creation; it is now gated on the owning-type set, so `Node.create(...)` no
+  longer warns (the host reports only `prefer-let` for that file).
+- **`prefer-let` on `var v` + `v.push(1)`** no longer fires (the analyzer
+  records `editable` receivers; `mtc lint`/`--fix` and `source.fixAll` are
+  analysis-backed) and `owning-release-leak`/`unused-import` match the host
+  byte-for-byte.
+
+Measured after the fixes, all requests identical to the host except the items
+listed in the handoff: completion `io.`/`rl.`/`game.`/`node.`/`s.`/argument
+counts, hover (module member, local, type), signatureHelp, definition,
+declaration, implementation, references, documentHighlight, documentSymbol,
+codeAction, codeLens, documentLink, formatting, rangeFormatting,
+onTypeFormatting, foldingRange, selectionRange, semanticTokens, workspaceSymbol,
+workspace/diagnostic.
+
 ### Measured (same corpus, both servers)
 
 The table below is the **2026-09-25/26 session's** before/after record — its
@@ -917,88 +962,118 @@ cover yet (row 2).
 | 3 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
 | 4 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |
 
-### Where the next session starts (LSP parity)
+### Where the next session starts
 
-Read this order: this §0k → `docs/lsp-design.md` (architecture; its banner points
-back here for status) → `tools/lsp_parity.rb` (the gate).  Rebuild before
-measuring — the harness silently uses a stale `build/stage2/mtc`:
+Read this order: this §0k → `docs/lsp-design.md` (LSP architecture) →
+`docs/dap-design.md` §10 (DAP gaps) → the gates below.  Rebuild before measuring
+— every harness silently uses a stale `build/stage2/mtc`:
 
 ```sh
 ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
 ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
 ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json --full
-tools/bootstrap.sh -j 16          # fixed point + tests, before every commit
+ruby tools/dap_smoke.rb --json tmp/dap.json        # DAP: per-request host/self diff
+tools/bootstrap.sh -j 16                            # fixed point + tests, before every commit
 ```
 
-Stages 1–6 are closed (seven isolated entries; completion; documentSymbol;
-diagnostics + semantic tokens; formatting/tidy — which also delivered the CST
-that §7's formatter modes and the linter's wrap fix need, plus the
-`tools/format_parity.rb` mode sweep; stage 5b, the VS Code startup crash plus
-the resolve-endpoint coverage the harness was missing; and stage 6, the
-`codeLens/resolve` count).  **Two LSP items remain**, one of which needs its
-acceptance re-scoped before work starts.
+**Closed since the stage list below was written** (details in the stage records
+above): cross-file references scoped to import dependents; generic function-call
+inference (the reported outline file is now byte-identical); the outline
+rendering rules (type parameters as children, no `static`/`mut` on methods,
+field types from the analysis, unresolved types rendering no detail); the
+linter fixes (`unused-import` initializer, `owning-release-leak` line+type, no
+false leak on `X.create(...)` for non-owning types); module-member completion
+(foreign functions, import aliases); definition/hover/typeDefinition on module
+members; diagnostics published on every change (the stale-error report);
+per-request `[LSP perf]` logging with the level forwarded from the extension;
+`milkTea/debugInfo`'s header/token-table/parse-errors sections (245 of 246 token
+rows byte-identical); and the DAP items in `dap-design.md` §10.
 
-**Stage 7 — cross-file reference scoping** (not corpus-covered yet; see the
-table row 2)
-- self: `navigation.build_references_json_cross_file` walks every
-  workspace-index entry named `name`, so a name that also appears in the `std/`
-  ancestor tree pulls in unrelated files (the probe below), and
-  `count_declaration_references` (the code-lens count) omits the host's
-  cross-file term entirely.
-- host: same-file, binding-aware locations plus `find_all_references_in(name,
-  reverse_import_dependents_for(facts.module_name))` — i.e. only files that
-  import the declaration's module.
-- work: infer the declaration's module name (`resolver.infer_module_name`),
-  collect the files under the client root plus the open documents that import
-  it (a lex-level `import <module>` scan), and use that candidate set in both
-  `build_references_json_cross_file` and the lens count.  Add a corpus entry
-  (`references` at an imported function's declaration in `mod_alpha`) so the
-  gate covers it.  Budget ≈120–200 MT lines.
+**Remaining, highest value first:**
 
-**Stage 8 — `milkTea/debugInfo`** (1 entry; counters 3 → 2)
-- self: `lsp/debug_info.mt` (73 lines: `build_debug_text` 11–46,
-  `handle_debug_info` 49–62) + dispatch at `lsp/server.mt:250-251`; it currently
-  returns its own workspace summary as `{formatted, content}`.
-- host: `tooling/debug_info_formatter.rb` (454 lines) renders `{text}` with seven
-  sections — Header 24–30, Tokens 32–77 (per-token kind/lexeme/line/column plus a
-  semantic-token column), AST 79–272 (tree walker with compact single-line reprs),
-  Parse Errors 274–286, Facts 288–390 (`types`/`functions`/`values`/`methods`/
-  `imports` + `local_completion_frames`, callable-value site maps,
-  `required_unsafe_lines`), Bindings 392–424, Diagnostics 426–454.  The envelope
-  itself changes: `{text: …}`, not `{formatted, content}`.
-- **Measured 2026-09-26** against the live recording: the text is host-internal
-  throughout — `obj 992 → binding_id: 3` are Ruby `object_id`s (not
-  reproducible), `ValueBinding[id: N]`/`binding_id: N` come from the host's
-  binding-id counter in its name-resolution order, the AST section prints Ruby
-  AST class/member names and `node_ids: {123 entries}`, and the Facts section
-  prints host `Type#to_s` reprs and analyzer counters (`local_completion_frames:
-  4`).  Literal byte-parity therefore needs (a) a harness normalizer for the
-  object ids, (b) the binding-id model in `semantic/analyzer.mt` (scope frames
-  carrying ids; `identifier_binding_ids`/`declaration_binding_ids`/
-  `binding_types` keyed by `reinterpret[ptr_uint]`; allocated in the host's
-  order) and (c) a Ruby-AST-shaped renderer over the self-host's variant AST.
-  Re-scope the acceptance (normalized comparison, and/or which sections must be
-  byte-equal) before starting it — as written ("byte-equal") it is not
-  reachable.
-- acceptance (proposed): harness `milkTea/debugInfo` equal **after the harness
-  normalizes host object ids**; counters move to 2.
+1. **Edit latency: cache loader analyses per module** (`module_loader.mt`).
+   Every content version re-parses and re-analyzes the whole import closure
+   (measured: 38 ms per edit on `SimpleGame/src/main.mt` with `std.raylib`,
+   against the host's 15–25 ms per request).  Design: a `ModuleCache` (owned by
+   the LSP `Workspace`, passed to `check_program_with_source`) keyed by
+   `(path, content hash)`, each entry recording the *versions* of the module's
+   direct imports; a module is re-analyzed when its own hash changes or any
+   direct import's version moved (the version bump cascades, so dependents of
+   dependents invalidate too, like the host's facts cache).  Entries own their
+   source text (the AST views it) — the same ownership rule as
+   `Workspace.parsed_analysis_for`.  Verify: `[LSP perf]` lines drop below
+   ~10 ms per edit, and the LSP harness plus a dependency-edit probe (edit
+   `std/vec.mt`, expect the dependent's diagnostics to refresh) stay green.
+2. **`milkTea/debugInfo` remainder** (1 of 55 requests; the acceptance re-scope
+   in the "Stage 8" record below still applies): the AST, Facts and Bindings
+   sections and the histogram's tie order.  The token table, header and parse
+   errors are done and byte-identical.
+3. **Parser recovery parity** (row 3): our lexer/parser recover (outline,
+   tokens and sema keep working, and lex/parse errors are reported), but the
+   error *set* on broken input differs from the host's.  The host behaviours to
+   port are listed in the row: `consume_name` keyword-name errors, `parse_param`
+   continuing so `expected ')'` fires, one error per function with a skeleton
+   AST, and a top-level `expected declaration` that ends the parse.  This also
+   changes `mtc check` text, so it belongs with the CLI-parity work (§0j).
+4. **DAP** (`docs/dap-design.md` §10): (a) `launch` on a `.mt` source must build
+   it (spawn `mtc build <program> -o <tmp>`), (b) the lldb-dap bridge — now
+   feasible: `std/libuv.mt` exposes `uv_poll_*` and `std/async` a libuv runtime,
+   so one event loop can watch stdin and the adapter; the host's
+   `lldb_dap_backend.rb` is the 152-line reference and the extension's default
+   backend is `lldb-dap`, (c) emit `<output>.mtdbg.json` from `mtc build` (the
+   map only has to match *our* symbol names), (d) pause diagnostics + `modules`.
+5. **Feature-audit leftovers** (measured 2026-09-27 with the audit table in this
+   section's commits; all small): `callHierarchy prepare` returns null where the
+   host resolves the callee; `linkedEditingRange` returns a result where the
+   host returns null; `typeDefinition` on a *function* returns null where the
+   host jumps to its declaration; `inlayHint` emits more argument-name hints
+   than the host (mostly correct — `rl.init_window(width, …)` — with one
+   mislabelled `text:` where the method's parameter is `name:`, i.e. the callee
+   resolved to the wrong `create`); `executeCommand` answers MethodNotFound
+   where the host answers null (deliberate: the spec allows it, and we advertise
+   only `mtc.restartServer`).
+6. **`dead-assignment` policy** (still open from earlier sessions): it is a
+   self-host-only rule, so files where it fires differ from the host by design.
+   Either keep it (documented value-add) or gate it behind a config flag so the
+   editor matches the host exactly.
+7. **Compiler-side work** is §0j (`lower` dump parity 38/650, the four example
+   build failures, CLI message parity, `deps`/`--bundle`/`--jobs`/Wasm).
+   Note for that work: `f"{{"` is **not** an escape in Milk Tea — both compilers
+   emit two literal braces (the DAP's `exited` body relied on Ruby habits and
+   broke clients; fixed 2026-09-27).
+
+**Stage records that follow are historical** (their "counters" and line numbers
+describe the tree at the time); the live counters are the header block, §0k's
+table and `dap-design.md` §10.
+
+### Stage notes (historical)
+
+**Stage 7 — cross-file reference scoping** (CLOSED 2026-09-26): the index records
+each file's resolved imports and `references` walks the declaration's import
+dependents (`reverse_import_dependents_for` in the host).
+
+**Stage 8 — `milkTea/debugInfo`** (partially ported 2026-09-26; the remainder is
+item 2 above).  The re-scope reasoning is unchanged: the host text embeds Ruby
+`object_id`s, binding ids in host allocation order, `ValueBinding[id: N]` reprs,
+Ruby AST class names and `node_ids: {N entries}`, so literal byte-parity needs
+(a) a harness normalizer for object ids, (b) a binding-id model in
+`semantic/analyzer.mt` and (c) a Ruby-AST-shaped renderer.  What landed: the
+`{text}` envelope, the header, the full token table (lexeme, kind, location and
+semantic class from the same scanner the tokens endpoints use) and the parse
+errors.
 
 **Not stages of their own:**
-- `stress/unterminated-source+diagnostic` (parser recovery, row 3) changes
-  `mtc check`'s error text too, so it belongs with the CLI-parity work (§0j
-  item 10) rather than the LSP rows.
-- `stress/unicode+semanticTokens` (host facts lag, row 4) is not actionable on
-  the self side.
-- Canonical-mode comment reattachment (the 398-file `canonical` delta in
-  `tools/format_parity.rb`) is a formatter-completeness item (§7), not an LSP
+- `stress/unterminated-source+diagnostic` (parser recovery) is item 3.
+- `stress/unicode+semanticTokens` (host facts lag) is not actionable on our side.
+- Canonical-mode comment reattachment is formatter completeness (§7), not an LSP
   entry: the LSP's configured default is `tidy`.
 
 Each phase is done only when its harness entries are byte-equal **and** the global
-counters move; the docs in this file and in `lsp-design.md` are synced in the
-same commit as the change.  Re-run the §5.9 gate list (bootstrap fixed point +
-self-tests, `test/mt`, `cli:parity`, the harness, valgrind on the new paths, and
-the headless-Neovim smoke test for behavior changes).
+counters move; the docs in this file, `lsp-design.md` and `dap-design.md` are
+synced in the same commit as the change.  Re-run the §5.9 gate list (bootstrap
+fixed point + self-tests, `test/mt`, `cli:parity`, both harnesses, valgrind on
+the new paths, and the headless-Neovim smoke test for behavior changes).
 
 ### How to re-run
 
@@ -1508,8 +1583,17 @@ All landed under a held fixed point (stage2.c == stage3.c), 177/177 tests,
 - `prefer-own-ptr` at line 1 (1 warning): scope-based rule, line tracking not stored
 
 ### DAP status
-- 7 modules, ~1,050 lines, process backend with child I/O polling
-- Lldb-dap bridge not feasible without multi-threaded I/O (§dap-design §9)
+- 7 modules, 1,050 lines, process backend with child I/O polling
+- Audited 2026-09-27 with `tools/dap_smoke.rb`: process-backend parity per request,
+  four small bugs fixed (malformed `exited` body, missing `process` event,
+  `dataBreakpointInfo`/`setExpression` undispatched, `--backend` ignored)
+- Lldb-dap bridge **is feasible now** — `std/libuv.mt` exposes `uv_poll_*` and
+  `std/async` a libuv runtime, so one event loop can watch stdin and the adapter
+  (§dap-design §9, rewritten); the extension's default backend is `lldb-dap`,
+  which is why stepping/evaluate/attach still answer with the process backend's
+  errors
+- `launch` on a `.mt` source does not build it yet (the host does), and the
+  self-host build does not emit `<output>.mtdbg.json` — §10 rows 1 and 3
 
 
 

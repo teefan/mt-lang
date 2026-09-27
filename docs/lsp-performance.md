@@ -1,5 +1,11 @@
 # LSP Performance Research
 
+> Host-side research (the Ruby LSP).  Self-host LSP measurements — the
+> `[LSP perf]` per-request log, the edit-cycle numbers and the remaining
+> per-module caching step — live in
+> [self-host-plan.md](./self-host-plan.md) (§0g "Editor responsiveness" and the
+> handoff section).
+
 Research into how to drastically improve Milk Tea LSP performance, especially
 `textDocument/completion`, grounded in the profile from
 `test/tooling/lsp/server/all_endpoints_benchmark.rb` and the industry-standard

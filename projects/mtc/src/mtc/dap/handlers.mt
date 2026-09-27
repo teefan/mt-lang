@@ -85,6 +85,10 @@ public function dispatch(
         wire.write_error(seq, msg.seq, "restart is not supported by the process backend")
     else if command == "setVariable":
         wire.write_error(seq, msg.seq, "setVariable is not supported by the process backend")
+    else if command == "setExpression":
+        wire.write_error(seq, msg.seq, "setExpression is not supported by the process backend")
+    else if command == "dataBreakpointInfo":
+        wire.write_error(seq, msg.seq, "dataBreakpointInfo is not supported by the process backend")
     else:
         wire.write_error(seq, msg.seq, "unsupported command")
 
@@ -134,6 +138,29 @@ function handle_launch(ses: ref[ses_mod.Session], child: ref[process.ChildProces
                 pass
     cmd_arr.release()
     wire.write_response(seq, msg.seq, "{}")
+
+    # The host announces the launched process (`launch.rb`), so the client can
+    # show it in the call stack / process picker.
+    let pseq = ses.reserve_seq()
+    var process_body = string.String.create()
+    process_body.append("{\"name\":\"")
+    let base = path_basename(ses.program_path.as_str())
+    process_body.append("\",\"startMethod\":\"launch\",\"isLocalProcess\":true}")
+    wire.write_event(pseq, "process", process_body.as_str())
+    process_body.release()
+
+
+## The last path segment (`/tmp/x/main` -> `main`).
+function path_basename(path: str) -> str:
+    var idx: ptr_uint = 0
+    var last: ptr_uint = 0
+    while idx < path.len:
+        if path.byte_at(idx) == 47:
+            last = idx + 1
+        idx += 1
+    if last >= path.len:
+        return path
+    return path.slice(last, path.len - last)
 
 
 ## setBreakpoints — registers line breakpoints (unverified for process backend).
