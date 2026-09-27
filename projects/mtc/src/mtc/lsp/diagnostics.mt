@@ -81,13 +81,16 @@ public function collect_diagnostics(ws: ref[workspace.Workspace], root_path: str
                     break
                 unresolved.push(read(up).as_str())
                 ui += 1
-            lint_warnings = linter_mod.lint_source_unresolved(
+            var options = linter_mod.default_lint_options()
+            options.owning_type_names = program.owning_type_span()
+            options.unresolved_import_paths = unresolved.as_span()
+            options.editable_sites = read(last_analysis_ptr).editable_receiver_sites.as_span()
+            options.analysis = last_analysis_ptr
+            lint_warnings = linter_mod.lint_source_with(
                 read(last_analysis_ptr).source_file,
                 root_source,
                 root_path,
-                program.owning_type_span(),
-                unresolved.as_span(),
-                read(last_analysis_ptr).editable_receiver_sites.as_span(),
+                options,
             )
 
     var wi: ptr_uint = 0

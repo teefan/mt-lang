@@ -11,7 +11,6 @@ import std.vec as vec
 
 import mtc.linter.fix_engine as fix_engine
 import mtc.linter.linter as linter_mod
-import mtc.semantic.analyzer as analyzer
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -50,21 +49,15 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
 
     # source.fixAll: apply all lint auto-fixes at once.
     if want_fixall:
-        var empty_sel = vec.Vec[str].create()
-        defer: empty_sel.release()
-        var empty_ign = vec.Vec[str].create()
-        defer: empty_ign.release()
-        # Lint and fix with the same analysis-backed facts the diagnostics use,
-        # so a fix can never rewrite a binding whose `var` an editable method
-        # call requires.
-        var owned: span[str] = zero[span[str]]
-        var unresolved: span[str] = zero[span[str]]
-        var editable_sites: span[analyzer.EditableSite] = zero[span[analyzer.EditableSite]]
+        # Lint and fix with the same options the diagnostics use, so a fix can
+        # never rewrite a binding whose `var` an editable method call requires,
+        # and `.mt-lint.yml` filters apply as they do everywhere else.
+        var options = linter_mod.default_lint_options()
         var maybe_entry = workspace.analysis_entry_for(ws, file_path.as_str())
         if maybe_entry.is_some():
             let entry_ptr = maybe_entry.unwrap()
             unsafe:
-                owned = read(entry_ptr).program.owning_type_span()
+                options.owning_type_names = read(entry_ptr).program.owning_type_span()
                 var unresolved_owner = vec.Vec[str].create()
                 defer: unresolved_owner.release()
                 var ui: ptr_uint = 0
@@ -73,19 +66,11 @@ public function handle_code_actions(ws: ref[workspace.Workspace], uri: str, para
                         break
                     unresolved_owner.push(read(up).as_str())
                     ui += 1
-                unresolved = unresolved_owner.as_span()
-                editable_sites = read(entry_ptr).analysis.editable_receiver_sites.as_span()
+                options.unresolved_import_paths = unresolved_owner.as_span()
+                options.editable_sites = read(entry_ptr).analysis.editable_receiver_sites.as_span()
+                options.analysis = ptr_of(read(entry_ptr).analysis)
 
-        var fixed = fix_engine.fix_source(
-            source,
-            file_path.as_str(),
-            owned,
-            ref_of(empty_sel),
-            ref_of(empty_ign),
-            linter_mod.DEFAULT_MAX_LINE_LENGTH,
-            unresolved,
-            editable_sites,
-        )
+        var fixed = fix_engine.fix_source(source, file_path.as_str(), options)
         defer: fixed.release()
         if not fixed.as_str().equal(source):
             let lines = ptr_uint<-(line_count(source))

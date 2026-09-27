@@ -27,8 +27,8 @@ import std.vec as vec
 
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
+import mtc.linter.config as lint_config
 import mtc.linter.linter as linter
-import mtc.semantic.analyzer as analyzer
 
 
 const MAX_PASSES: ptr_uint = 5
@@ -68,23 +68,22 @@ public function is_fixable(code: str) -> bool:
 
 
 ## Apply every enabled fixable rule to `source` until nothing changes.
-## `select` (empty = all) and `ignore` filter rule codes exactly like the
-## lint command's flags.  Returns the fixed source, which equals the input
-## when nothing was fixable.
+## `options.select`/`options.ignore` filter rule codes exactly like the lint
+## command's flags; when they are empty the `.mt-lint.yml` lists apply (the
+## host's `AUTO_FIXABLE_RULE_CODES.select { rule enabled }`).  Returns the
+## fixed source, which equals the input when nothing was fixable.
 public function fix_source(
     source: str,
     path: str,
-    owning_type_names: span[str],
-    select: ref[vec.Vec[str]],
-    ignore: ref[vec.Vec[str]],
-    max_line_length: ptr_uint,
-    unresolved_import_paths: span[str],
-    editable_sites: span[analyzer.EditableSite],
+    options: linter.LintOptions,
 ) -> string.String:
     var current = string.String.from_str(source)
 
     var codes = fixable_codes()
     defer: codes.release()
+
+    var config = lint_config.load_for_path(path)
+    defer: config.release()
 
     var pass_index: ptr_uint = 0
     while pass_index < MAX_PASSES:
@@ -94,8 +93,8 @@ public function fix_source(
             let code_ptr = codes.get(ci) else:
                 break
             let code = unsafe: read(code_ptr)
-            if rule_enabled(code, select, ignore):
-                if fix_rule_to_fixpoint(ref_of(current), code, path, owning_type_names, max_line_length, unresolved_import_paths, editable_sites):
+            if rule_enabled(code, options, ref_of(config)):
+                if fix_rule_to_fixpoint(ref_of(current), code, path, options):
                     changed_in_pass = true
             ci += 1
         if not changed_in_pass:
@@ -105,19 +104,39 @@ public function fix_source(
     return current
 
 
-function rule_enabled(code: str, select: ref[vec.Vec[str]], ignore: ref[vec.Vec[str]]) -> bool:
-    if select.len() > 0 and not code_in(code, select):
+## A fixable rule is applied when the effective select/ignore lists allow it:
+## explicit option lists win over the config's (the host's `select ||= cfg`).
+function rule_enabled(code: str, options: linter.LintOptions, config: ref[lint_config.LintConfig]) -> bool:
+    var lint_cfg = unsafe: read(config)
+    if options.select.len > 0:
+        if not code_in(code, options.select):
+            return false
+    else if lint_cfg.has_select and not string_vec_contains(code, ref_of(lint_cfg.select)):
         return false
-    return not code_in(code, ignore)
+    if options.ignore.len > 0:
+        return not code_in(code, options.ignore)
+    if lint_cfg.has_ignore:
+        return not string_vec_contains(code, ref_of(lint_cfg.ignore))
+    return true
 
 
-function code_in(code: str, codes: ref[vec.Vec[str]]) -> bool:
+function code_in(code: str, codes: span[str]) -> bool:
+    var i: ptr_uint = 0
+    while i < codes.len:
+        unsafe:
+            if read(codes.data + i).equal(code):
+                return true
+        i += 1
+    return false
+
+
+function string_vec_contains(code: str, codes: ref[vec.Vec[string.String]]) -> bool:
     var i: ptr_uint = 0
     while i < codes.len():
         let cp = codes.get(i) else:
             break
         unsafe:
-            if read(cp).equal(code):
+            if read(cp).as_str().equal(code):
                 return true
         i += 1
     return false
@@ -129,15 +148,12 @@ function fix_rule_to_fixpoint(
     current: ref[string.String],
     code: str,
     path: str,
-    owning_type_names: span[str],
-    max_line_length: ptr_uint,
-    unresolved_import_paths: span[str],
-    editable_sites: span[analyzer.EditableSite],
+    options: linter.LintOptions,
 ) -> bool:
     var changed = false
     var iteration: ptr_uint = 0
     while iteration < MAX_RULE_ITERATIONS:
-        var updated = fix_rule_single_pass(current.as_str(), code, path, owning_type_names, max_line_length, unresolved_import_paths, editable_sites)
+        var updated = fix_rule_single_pass(current.as_str(), code, path, options)
         if updated.as_str() == current.as_str():
             updated.release()
             break
@@ -153,10 +169,7 @@ function fix_rule_single_pass(
     source: str,
     code: str,
     path: str,
-    owning_type_names: span[str],
-    max_line_length: ptr_uint,
-    unresolved_import_paths: span[str],
-    editable_sites: span[analyzer.EditableSite],
+    options: linter.LintOptions,
 ) -> string.String:
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
@@ -167,15 +180,7 @@ function fix_rule_single_pass(
 
     # Lint the way the command did: with the analysis-backed facts, so a rule
     # that would rewrite `var v` while `v.push(1)` needs it never fires.
-    var warnings = linter.lint_source_with(
-        file,
-        source,
-        path,
-        owning_type_names,
-        max_line_length,
-        unresolved_import_paths,
-        editable_sites,
-    )
+    var warnings = linter.lint_source_with(file, source, path, options)
     defer: warnings.release()
 
     var rule_warnings = vec.Vec[linter.Warning].create()

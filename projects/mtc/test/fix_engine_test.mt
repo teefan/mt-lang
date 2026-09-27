@@ -8,16 +8,14 @@ import std.vec as vec
 
 import mtc.linter.config as lint_config
 import mtc.linter.fix_engine as fix_engine
-import mtc.semantic.analyzer as analyzer
+import mtc.linter.linter as linter
 
 
 ## Run the fix engine over `source` with no select/ignore filters.
 function fix_all(source: str) -> string.String:
-    var select = vec.Vec[str].create()
-    defer: select.release()
-    var ignore = vec.Vec[str].create()
-    defer: ignore.release()
-    return fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore), 120z, span[str](), span[analyzer.EditableSite]())
+    var options = linter.default_lint_options()
+    options.max_line_length = 120
+    return fix_engine.fix_source(source, "test.mt", options)
 
 
 function expect_fixed(source: str, expected: str) -> void:
@@ -252,12 +250,13 @@ function test_fix_respects_ignore() -> void:
             var x = a
             return x
     SRC
-    var select = vec.Vec[str].create()
-    defer: select.release()
+    var options = linter.default_lint_options()
+    options.max_line_length = 120
     var ignore = vec.Vec[str].create()
     defer: ignore.release()
     ignore.push("prefer-let")
-    var fixed = fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore), 120z, span[str](), span[analyzer.EditableSite]())
+    options.ignore = ignore.as_span()
+    var fixed = fix_engine.fix_source(source, "test.mt", options)
     defer: fixed.release()
     expect_eq(fixed.as_str(), source)
 
@@ -273,12 +272,13 @@ function test_fix_respects_select() -> void:
         function demo(a: int) -> void:
             var _x = a
     SRC
+    var options = linter.default_lint_options()
+    options.max_line_length = 120
     var select = vec.Vec[str].create()
     defer: select.release()
     select.push("redundant-return")
-    var ignore = vec.Vec[str].create()
-    defer: ignore.release()
-    var fixed = fix_engine.fix_source(source, "test.mt", span[str](), ref_of(select), ref_of(ignore), 120z, span[str](), span[analyzer.EditableSite]())
+    options.select = select.as_span()
+    var fixed = fix_engine.fix_source(source, "test.mt", options)
     defer: fixed.release()
     expect_eq(fixed.as_str(), expected)
 

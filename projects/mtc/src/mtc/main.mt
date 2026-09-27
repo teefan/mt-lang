@@ -36,7 +36,6 @@ import mtc.build as build_driver
 import mtc.build_cache as build_cache
 import mtc.pretty_printer.ast_formatter as fmt
 import mtc.linter.linter as linter
-import mtc.linter.config as lint_config
 import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
 import mtc.lsp.semantic_tokens as sem_tokens
@@ -633,24 +632,28 @@ function check_command(args: span[str]) -> int:
                     var diags = vec.Vec[pstate.ParseDiagnostic].create()
                     defer: diags.release()
                     let lfile = parser.parse_source(src.as_str(), ref_of(diags))
-                    # The root module's analysis records the receivers of
-                    # `editable` method calls, so prefer-let stays quiet on a
-                    # `var` binding that is only mutated through them.
-                    var editable_sites = span[analyzer.EditableSite]()
+                    # Same options as `mtc lint` (the host's `check` runs the full
+                    # lint): owning types, unresolved imports and the analysis'
+                    # editable receivers, with `.mt-lint.yml` applied by the
+                    # linter itself.
+                    var options = linter.default_lint_options()
+                    options.owning_type_names = program.owning_type_span()
+                    var unresolved = vec.Vec[str].create()
+                    defer: unresolved.release()
                     if program.analyses.len() > 0:
+                        var up: ptr_uint = 0
+                        while up < program.unresolved_import_paths.len():
+                            let upp = program.unresolved_import_paths.get(up) else:
+                                break
+                            unresolved.push(unsafe: read(upp).as_str())
+                            up += 1
+                        options.unresolved_import_paths = unresolved.as_span()
                         let root_analysis_ptr = program.analyses.get(program.root_index)
                         if root_analysis_ptr != null:
                             unsafe:
-                                editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
-                    var lwarns = linter.lint_source_with(
-                        lfile,
-                        src.as_str(),
-                        effective,
-                        span[str](),
-                        linter.DEFAULT_MAX_LINE_LENGTH,
-                        span[str](),
-                        editable_sites,
-                    )
+                                options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
+                                options.analysis = root_analysis_ptr
+                    var lwarns = linter.lint_source_with(lfile, src.as_str(), effective, options)
                     defer: lwarns.release()
                     if lwarns.len() > 0:
                         var lwi: ptr_uint = 0
@@ -938,18 +941,6 @@ function lint_command(args: span[str]) -> int:
                     fi += 1
                     continue
 
-                # `.mt-lint.yml` supplies select/ignore defaults (CLI flags
-                # win) and the line-length limit.
-                var cfg = lint_config.load_for_path(fp)
-                defer: cfg.release()
-                var effective_select = vec.Vec[str].create()
-                defer: effective_select.release()
-                var effective_ignore = vec.Vec[str].create()
-                defer: effective_ignore.release()
-                merge_filter_codes(ref_of(effective_select), ref_of(select_set), ref_of(cfg.select))
-                merge_filter_codes(ref_of(effective_ignore), ref_of(ignore_set), ref_of(cfg.ignore))
-                let max_line_length = if cfg.max_line_length > 0: cfg.max_line_length else: 120z
-
                 # Load the module so the lint sees what the analyzer knows: which
                 # methods are `editable` (prefer-let on `var v` + `v.push(1)`),
                 # which types own resources, and which imports failed.  The host's
@@ -980,7 +971,10 @@ function lint_command(args: span[str]) -> int:
                 var owning_names = lint_program.owning_type_span()
                 var unresolved_paths = vec.Vec[str].create()
                 defer: unresolved_paths.release()
-                var editable_sites = span[analyzer.EditableSite]()
+                var options = linter.default_lint_options()
+                options.owning_type_names = owning_names
+                options.select = select_set.as_span()
+                options.ignore = ignore_set.as_span()
                 if lint_program.analyses.len() > 0:
                     var up: ptr_uint = 0
                     while up < lint_program.unresolved_import_paths.len():
@@ -988,22 +982,15 @@ function lint_command(args: span[str]) -> int:
                             break
                         unresolved_paths.push(unsafe: read(upp).as_str())
                         up += 1
+                    options.unresolved_import_paths = unresolved_paths.as_span()
                     let root_analysis_ptr = lint_program.analyses.get(lint_program.root_index)
                     if root_analysis_ptr != null:
                         unsafe:
-                            editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
+                            options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
+                            options.analysis = root_analysis_ptr
 
                 if fix_mode:
-                    var fixed = fix_engine.fix_source(
-                        src.as_str(),
-                        fp,
-                        owning_names,
-                        ref_of(effective_select),
-                        ref_of(effective_ignore),
-                        max_line_length,
-                        unresolved_paths.as_span(),
-                        editable_sites,
-                    )
+                    var fixed = fix_engine.fix_source(src.as_str(), fp, options)
                     defer: fixed.release()
                     if not fixed.as_str().equal(src.as_str()):
                         match fs.write_text(fp, fixed.as_str()):
@@ -1021,35 +1008,16 @@ function lint_command(args: span[str]) -> int:
                 defer: diags.release()
                 let file = parser.parse_source(src.as_str(), ref_of(diags))
 
-                var warns = linter.lint_source_with(
-                    file,
-                    src.as_str(),
-                    fp,
-                    owning_names,
-                    max_line_length,
-                    unresolved_paths.as_span(),
-                    editable_sites,
-                )
+                var warns = linter.lint_source_with(file, src.as_str(), fp, options)
                 defer: warns.release()
-                var filtered = vec.Vec[linter.Warning].create()
-                defer: filtered.release()
+                if timings:
+                    print_timings_line("lint", fp, monotonic_ms() - lint_started_ms)
+                if warns.len() > 0:
+                    files_with_warnings += 1
+                total_warnings += warns.len()
                 var wi: ptr_uint = 0
                 while wi < warns.len():
                     let wp = warns.get(wi) else:
-                        break
-                    unsafe:
-                        let w = read(wp)
-                        if warning_allowed(w.code, ref_of(effective_select), ref_of(effective_ignore)):
-                            filtered.push(w)
-                    wi += 1
-                if timings:
-                    print_timings_line("lint", fp, monotonic_ms() - lint_started_ms)
-                if filtered.len() > 0:
-                    files_with_warnings += 1
-                total_warnings += filtered.len()
-                wi = 0
-                while wi < filtered.len():
-                    let wp = filtered.get(wi) else:
                         break
                     unsafe:
                         let w = read(wp)
@@ -1095,52 +1063,6 @@ function lint_command(args: span[str]) -> int:
         int<-(files_text.len), files_text.data,
     )
     return 1
-
-
-## CLI filter codes win over config-file codes; config is the fallback.
-## The output holds views into the CLI args or the (caller-kept) config.
-function merge_filter_codes(
-    output: ref[vec.Vec[str]],
-    cli_codes: ref[vec.Vec[str]],
-    config_codes: ref[vec.Vec[string.String]],
-) -> void:
-    if cli_codes.len() > 0:
-        var i: ptr_uint = 0
-        while i < cli_codes.len():
-            let cp = cli_codes.get(i) else:
-                break
-            unsafe:
-                output.push(read(cp))
-            i += 1
-        return
-    var i: ptr_uint = 0
-    while i < config_codes.len():
-        let cp = config_codes.get(i) else:
-            break
-        unsafe:
-            output.push(read(cp).as_str())
-        i += 1
-
-
-function warning_allowed(code: str, select_set: ref[vec.Vec[str]], ignore_set: ref[vec.Vec[str]]) -> bool:
-    if ignore_set.len() > 0:
-        var i: ptr_uint = 0
-        while i < ignore_set.len():
-            let ep = ignore_set.get(i) else:
-                break
-            if code.equal(unsafe: read(ep)):
-                return false
-            i += 1
-    if select_set.len() > 0:
-        var i: ptr_uint = 0
-        while i < select_set.len():
-            let ep = select_set.get(i) else:
-                break
-            if code.equal(unsafe: read(ep)):
-                return true
-            i += 1
-        return false
-    return true
 
 
 function collect_filter_codes(list: str, output: ref[vec.Vec[str]]) -> void:

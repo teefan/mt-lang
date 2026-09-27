@@ -43,6 +43,87 @@ function expect_none(source: str, code: str) -> void:
     expect_eq(int<-(count_code(ref_of(warns), code)), 0)
 
 
+## Lint `source` through the options funnel (the entry the CLI/LSP use).
+function lint_with_options(source: str, options: linter.LintOptions) -> vec.Vec[linter.Warning]:
+    var diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: diags.release()
+    let file = parser.parse_source(source, ref_of(diags))
+    return linter.lint_source_with(file, source, "test.mt", options)
+
+
+# =============================================================================
+#  select/ignore options and `# lint: ignore` suppressions
+# =============================================================================
+
+@[test]
+function test_suppression_same_line() -> void:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            var x = a  # lint: ignore(prefer-let)
+            return x
+    SRC
+    expect_none(source, "prefer-let")
+
+
+@[test]
+function test_suppression_preceding_line() -> void:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            # lint: ignore(prefer-let)
+            var x = a
+            return x
+    SRC
+    expect_none(source, "prefer-let")
+
+
+@[test]
+function test_suppression_all_rules() -> void:
+    var source = <<-SRC
+        function demo(a: int) -> void:
+            var y = a
+            y = y  # lint: ignore
+    SRC
+    expect_none(source, "self-assignment")
+
+
+@[test]
+function test_suppression_other_code_keeps_warning() -> void:
+    var source = <<-SRC
+        function demo(a: int) -> int:
+            var x = a  # lint: ignore(unused-local)
+            return x
+    SRC
+    expect_one(source, "prefer-let")
+
+
+@[test]
+function test_select_restricts_rules() -> void:
+    let source = "function demo(a: int) -> int:\n    var x = a\n    var y = a\n    y = y\n    return x\n"
+    var select = vec.Vec[str].create()
+    defer: select.release()
+    select.push("prefer-let")
+    var options = linter.default_lint_options()
+    options.select = select.as_span()
+    var warns = lint_with_options(source, options)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "prefer-let")), 1)
+    expect_eq(int<-(count_code(ref_of(warns), "self-assignment")), 0)
+
+
+@[test]
+function test_ignore_drops_rule() -> void:
+    let source = "function demo(a: int) -> int:\n    var x = a\n    var y = a\n    y = y\n    return x\n"
+    var ignore = vec.Vec[str].create()
+    defer: ignore.release()
+    ignore.push("prefer-let")
+    var options = linter.default_lint_options()
+    options.ignore = ignore.as_span()
+    var warns = lint_with_options(source, options)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "prefer-let")), 0)
+    expect_eq(int<-(count_code(ref_of(warns), "self-assignment")), 1)
+
+
 # =============================================================================
 #  self-assignment
 # =============================================================================

@@ -41,6 +41,8 @@ import mtc.semantic.analyzer as analyzer
 import mtc.lexer.lexer as lexer
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
+import mtc.lexer.trivia as triv
+import mtc.linter.config as lint_config
 import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.cfg as cfg
 import mtc.linter.nullcheck as nullcheck
@@ -62,53 +64,80 @@ public struct Warning:
     severity: str
 
 
-## Lint a parsed source file, returning warnings in source (traversal) order.
-## `source` is the original text, re-lexed for the token-based passes.
+## Options for one lint pass — the single funnel the CLI (`check`/`lint`), the
+## LSP diagnostics path and the fix engine all go through.
+##
+## `select`/`ignore` hold explicit (CLI-flag) rule filters and override
+## `.mt-lint.yml`; `max_line_length` of 0 means "resolve from the config, else
+## the default".  `analysis` carries the semantic facts the type-backed rules
+## use (`resolved_expr_types` keyed by expression pointer, `type_alias_types`,
+## `resolved_call_kinds`).
+public struct LintOptions:
+    owning_type_names: span[str]
+    unresolved_import_paths: span[str]
+    editable_sites: span[analyzer.EditableSite]
+    max_line_length: ptr_uint
+    select: span[str]
+    ignore: span[str]
+    analysis: ptr[analyzer.Analysis]?
+
+
+## All-default options: no owning types, no unresolved imports, every rule,
+## the config's (or the default) line length.
+public function default_lint_options() -> LintOptions:
+    return LintOptions(
+        owning_type_names = span[str](),
+        unresolved_import_paths = span[str](),
+        editable_sites = span[analyzer.EditableSite](),
+        max_line_length = 0,
+        select = span[str](),
+        ignore = span[str](),
+        analysis = null,
+    )
+
+
+## Lint a parsed source file with default options, returning warnings in
+## source (traversal) order.  `source` is the original text, re-lexed for the
+## token-based passes.
 public function lint_source(file: ast.SourceFile, source: str, path: str, owning_type_names: span[str]) -> vec.Vec[Warning]:
-    return lint_source_with(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH, span[str](), span[analyzer.EditableSite]())
+    var options = default_lint_options()
+    options.owning_type_names = owning_type_names
+    return lint_source_with(file, source, path, options)
 
 
-## lint_source with an explicit line-length limit (from `.mt-lint.yml`'s
-## `max_line_length`).
-public function lint_source_opts(
-    file: ast.SourceFile,
-    source: str,
-    path: str,
-    owning_type_names: span[str],
-    max_line_length: ptr_uint,
-) -> vec.Vec[Warning]:
-    return lint_source_with(file, source, path, owning_type_names, max_line_length, span[str](), span[analyzer.EditableSite]())
-
-
-## lint_source_opts plus the module paths whose imports failed to resolve (the
-## LSP hands over the loader's list): `unused-import` skips those imports.
-public function lint_source_unresolved(
-    file: ast.SourceFile,
-    source: str,
-    path: str,
-    owning_type_names: span[str],
-    unresolved_import_paths: span[str],
-    editable_sites: span[analyzer.EditableSite],
-) -> vec.Vec[Warning]:
-    return lint_source_with(file, source, path, owning_type_names, DEFAULT_MAX_LINE_LENGTH, unresolved_import_paths, editable_sites)
-
-
-## lint_source with an explicit line-length limit and the module paths whose
-## imports failed to resolve.  `unused-import` skips unresolved imports,
-## mirroring Ruby's `Linter` `unresolved_import_paths`.
-## `editable_sites` are the receivers of `editable` method calls recorded by
-## the analyzer; the scope pass treats those bindings as mutated (prefer-let),
-## which needs the analysis because method kinds are not visible in the AST.
+## Lint a parsed source file.  `options.unresolved_import_paths` are the module
+## paths whose imports failed to resolve (the LSP hands over the loader's list):
+## `unused-import` skips those imports, mirroring Ruby's `Linter`.
+## `options.editable_sites` are the receivers of `editable` method calls
+## recorded by the analyzer; the scope pass treats those bindings as mutated
+## (prefer-let), which needs the analysis because method kinds are not visible
+## in the AST.
+##
+## `.mt-lint.yml` is honored here, exactly like the host's `Linter.lint_source`:
+## explicit select/ignore win over the config's lists, the config supplies the
+## line-length limit, and `# lint: ignore` comments suppress warnings on the
+## same or the preceding line.
 public function lint_source_with(
     file: ast.SourceFile,
     source: str,
     path: str,
-    owning_type_names: span[str],
-    max_line_length: ptr_uint,
-    unresolved_import_paths: span[str],
-    editable_sites: span[analyzer.EditableSite],
+    options: LintOptions,
 ) -> vec.Vec[Warning]:
     var warnings = vec.Vec[Warning].create()
+
+    var config = lint_config.load_for_path(path)
+    defer: config.release()
+    var max_line_length = options.max_line_length
+    if max_line_length == 0:
+        max_line_length = config.max_line_length
+    if max_line_length == 0:
+        max_line_length = DEFAULT_MAX_LINE_LENGTH
+
+    # One lex for the token-based rules and the suppression comments.
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var lexed = lexer.lex_with_trivia(source, ref_of(lex_diags))
+
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
@@ -116,7 +145,7 @@ public function lint_source_with(
         i += 1
     # Scope-tracking pass: unused-local, unused-param, shadow, prefer-let, unused-import
     var scope_warnings = vec.Vec[scope_tracking.ScopeWarning].create()
-    scope_tracking.lint_scope_pass(file, path, unresolved_import_paths, editable_sites, ref_of(scope_warnings))
+    scope_tracking.lint_scope_pass(file, path, options.unresolved_import_paths, options.editable_sites, ref_of(scope_warnings))
     i = 0
     while i < scope_warnings.len():
         let sp = scope_warnings.get(i) else:
@@ -135,12 +164,12 @@ public function lint_source_with(
     scope_warnings.release()
     # Whole-file passes run after the AST visitor, matching Ruby's emission order.
     lint_prefer_let_else(file, path, ref_of(warnings))
-    lint_ownership(file, path, ref_of(warnings), owning_type_names)
+    lint_ownership(file, path, ref_of(warnings), options.owning_type_names)
     lint_reserved_names(file, path, ref_of(warnings))
     lint_borrow_mutate(file, path, ref_of(warnings))
     lint_doc_tags(file.declarations, source, path, ref_of(warnings))
     lint_events(file.declarations, "", path, ref_of(warnings))
-    lint_trailing_commas(file.declarations, source, path, ref_of(warnings))
+    lint_trailing_commas(file.declarations, lexed.tokens.as_span(), path, ref_of(warnings))
     lint_prefer_inline_methods(file.declarations, path, ref_of(warnings))
     lint_line_too_long(source, path, max_line_length, ref_of(warnings))
     lint_dead_assignment(file, path, ref_of(warnings))
@@ -150,7 +179,241 @@ public function lint_source_with(
     lint_constant_condition(file, path, ref_of(warnings))
     lint_loop_single_iteration(file, path, ref_of(warnings))
     lint_redundant_null_check(file, path, ref_of(warnings))
+
+    # `# lint: ignore` / `# lint: ignore(a, b)` comments, then the rule filter.
+    apply_suppressions(ref_of(warnings), source, lexed.trivia.as_span())
+    lexed.tokens.release()
+    lexed.trivia.release()
+    filter_rules(ref_of(warnings), options, ref_of(config))
     return warnings
+
+
+# =============================================================================
+#  Rule filtering and `# lint: ignore` suppressions (host `linter.rb`)
+# =============================================================================
+
+## Keep only warnings the effective select/ignore lists allow.  Explicit
+## option lists win over the config's (the host's `select ||= cfg[:select]`).
+function filter_rules(warnings: ref[vec.Vec[Warning]], options: LintOptions, config: ref[lint_config.LintConfig]) -> void:
+    var lint_cfg = unsafe: read(config)
+    var select = vec.Vec[str].create()
+    defer: select.release()
+    var ignore = vec.Vec[str].create()
+    defer: ignore.release()
+
+    if options.select.len > 0:
+        var i: ptr_uint = 0
+        while i < options.select.len:
+            unsafe:
+                select.push(read(options.select.data + i))
+            i += 1
+    else if lint_cfg.has_select:
+        var i: ptr_uint = 0
+        while i < lint_cfg.select.len():
+            let cp = lint_cfg.select.get(i) else:
+                break
+            unsafe:
+                select.push(read(cp).as_str())
+            i += 1
+
+    if options.ignore.len > 0:
+        var i: ptr_uint = 0
+        while i < options.ignore.len:
+            unsafe:
+                ignore.push(read(options.ignore.data + i))
+            i += 1
+    else if lint_cfg.has_ignore:
+        var i: ptr_uint = 0
+        while i < lint_cfg.ignore.len():
+            let cp = lint_cfg.ignore.get(i) else:
+                break
+            unsafe:
+                ignore.push(read(cp).as_str())
+            i += 1
+
+    if select.len() == 0 and ignore.len() == 0:
+        return
+
+    var kept = vec.Vec[Warning].create()
+    var i: ptr_uint = 0
+    while i < warnings.len():
+        let wp = warnings.get(i) else:
+            break
+        unsafe:
+            let w = read(wp)
+            if warning_allowed(w.code, ref_of(select), ref_of(ignore)):
+                kept.push(w)
+        i += 1
+    warnings.release()
+    unsafe:
+        read(warnings) = kept
+
+
+## One rule code's verdict: `ignore` rejects, a non-empty `select` restricts.
+function warning_allowed(code: str, select: ref[vec.Vec[str]], ignore: ref[vec.Vec[str]]) -> bool:
+    if code_list_contains(code, ignore):
+        return false
+    if select.len() > 0 and not code_list_contains(code, select):
+        return false
+    return true
+
+
+function code_list_contains(code: str, codes: ref[vec.Vec[str]]) -> bool:
+    var i: ptr_uint = 0
+    while i < codes.len():
+        let cp = codes.get(i) else:
+            break
+        unsafe:
+            if read(cp).equal(code):
+                return true
+        i += 1
+    return false
+
+
+struct Suppression:
+    line: ptr_uint
+    all: bool
+    codes: vec.Vec[string.String]
+
+
+struct SuppressionBody:
+    all: bool
+    codes: vec.Vec[string.String]
+
+
+## Drop warnings carrying a `# lint: ignore` suppression on their own line or
+## the line before them (the host's `apply_suppressions`).
+function apply_suppressions(warnings: ref[vec.Vec[Warning]], source: str, trivia: span[triv.TriviaEntry]) -> void:
+    if not source.contains_substring("lint:"):
+        return
+    var suppressions = collect_suppressions(source, trivia)
+    defer: release_suppressions(ref_of(suppressions))
+    if suppressions.len() == 0:
+        return
+
+    var kept = vec.Vec[Warning].create()
+    var i: ptr_uint = 0
+    while i < warnings.len():
+        let wp = warnings.get(i) else:
+            break
+        unsafe:
+            let w = read(wp)
+            var suppressed = false
+            var si: ptr_uint = 0
+            while si < suppressions.len():
+                let sp = suppressions.get(si) else:
+                    break
+                var s = read(sp)
+                if s.line == w.line or (w.line > 0 and s.line + 1 == w.line):
+                    if s.all or string_list_contains(w.code, ref_of(s.codes)):
+                        suppressed = true
+                        break
+                si += 1
+            if not suppressed:
+                kept.push(w)
+        i += 1
+    warnings.release()
+    unsafe:
+        read(warnings) = kept
+
+
+function collect_suppressions(source: str, trivia: span[triv.TriviaEntry]) -> vec.Vec[Suppression]:
+    var result = vec.Vec[Suppression].create()
+    var i: ptr_uint = 0
+    while i < trivia.len:
+        unsafe:
+            let t = read(trivia.data + i)
+            if t.kind == triv.TriviaKind.comment:
+                let text = source.slice(t.start_offset, t.end_offset - t.start_offset)
+                match parse_suppression(text):
+                    Option.some as body:
+                        result.push(Suppression(line = t.line, all = body.value.all, codes = body.value.codes))
+                    Option.none:
+                        pass
+        i += 1
+    return result
+
+
+## `# lint: ignore` (all rules) or `# lint: ignore(a, b)` (those codes), after
+## leading whitespace — the host's two `parse_suppressions` regexes.
+function parse_suppression(text: str) -> Option[SuppressionBody]:
+    var t = text.trim_ascii_whitespace()
+    if t.len == 0 or t.byte_at(0) != '#':
+        return Option[SuppressionBody].none
+    var rest = t.slice(1, t.len - 1)
+    rest = skip_spaces(rest)
+    if not rest.starts_with("lint:"):
+        return Option[SuppressionBody].none
+    rest = skip_spaces(rest.slice(5, rest.len - 5))
+    if not rest.starts_with("ignore"):
+        return Option[SuppressionBody].none
+    rest = rest.slice(6, rest.len - 6)
+    if rest.len == 0:
+        return Option[SuppressionBody].some(value = SuppressionBody(all = true, codes = vec.Vec[string.String].create()))
+    if rest.len >= 3 and rest.byte_at(0) == '(' and rest.byte_at(rest.len - 1) == ')':
+        let inner = rest.slice(1, rest.len - 2)
+        var codes = vec.Vec[string.String].create()
+        var start: ptr_uint = 0
+        var i: ptr_uint = 0
+        while i <= inner.len:
+            if i == inner.len or inner.byte_at(i) == ',':
+                let item = inner.slice(start, i - start).trim_ascii_whitespace()
+                if item.len == 0:
+                    release_strings(ref_of(codes))
+                    return Option[SuppressionBody].none
+                codes.push(string.String.from_str(item))
+                start = i + 1
+            i += 1
+        if codes.len() == 0:
+            release_strings(ref_of(codes))
+            return Option[SuppressionBody].none
+        return Option[SuppressionBody].some(value = SuppressionBody(all = false, codes = codes))
+    return Option[SuppressionBody].none
+
+
+function skip_spaces(text: str) -> str:
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if b != ' ' and b != '\t':
+            break
+        i += 1
+    return text.slice(i, text.len - i)
+
+
+function string_list_contains(code: str, codes: ref[vec.Vec[string.String]]) -> bool:
+    var i: ptr_uint = 0
+    while i < codes.len():
+        let cp = codes.get(i) else:
+            break
+        unsafe:
+            if read(cp).as_str().equal(code):
+                return true
+        i += 1
+    return false
+
+
+function release_suppressions(suppressions: ref[vec.Vec[Suppression]]) -> void:
+    var i: ptr_uint = 0
+    while i < suppressions.len():
+        let sp = suppressions.get(i) else:
+            break
+        unsafe:
+            var s = read(sp)
+            release_strings(ref_of(s.codes))
+        i += 1
+    suppressions.release()
+
+
+function release_strings(strings: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < strings.len():
+        let sp = strings.get(i) else:
+            break
+        unsafe:
+            read(sp).release()
+        i += 1
+    strings.release()
 
 
 # =============================================================================
@@ -730,10 +993,7 @@ function location_key(line: ptr_uint, column: ptr_uint) -> ptr_uint:
     return line * 1000000 + column
 
 
-function lint_trailing_commas(decls: span[ast.Decl], source: str, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var tokens = lexer.lex(source)
-    defer: tokens.release()
-    let ts = tokens.as_span()
+function lint_trailing_commas(decls: span[ast.Decl], ts: span[token_mod.Token], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
 
     # Map each token's (line, column) to its index, first-occurrence wins.
     var loc_index = map_mod.Map[ptr_uint, ptr_uint].create()

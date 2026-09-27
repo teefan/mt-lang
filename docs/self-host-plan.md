@@ -912,6 +912,37 @@ codeAction, codeLens, documentLink, formatting, rangeFormatting,
 onTypeFormatting, foldingRange, selectionRange, semanticTokens, workspaceSymbol,
 workspace/diagnostic.
 
+### Lint options plumbing (2026-09-27 session 4, stage 8a)
+
+The linter's entry points became one options funnel (`linter.LintOptions`),
+mirroring the host's `Linter.lint_source` (`linter.rb:209-260`): the CLI
+(`check`/`lint`), the LSP diagnostics path and the fix engine all pass the same
+struct — owning types, unresolved imports, the analyzer's editable receivers,
+the analysis pointer itself (for the type-backed rules that follow), the
+line-length limit and explicit select/ignore lists.
+
+- **`.mt-lint.yml` is honored on every path now**, not just `mtc lint`: the
+  config supplies the line-length limit and the select/ignore lists when the
+  caller passes none (explicit CLI flags still win, as the host's
+  `select ||= cfg[:select]` does), and `mtc lint` no longer merges the config
+  itself.  This also closes the documented divergence where the LSP path ignored
+  the config (and therefore ran `dead-assignment` ungated).
+- **`# lint: ignore` / `# lint: ignore(a, b)` suppressions** are ported
+  (`linter.rb:703-736`): comments come from a single `lex_with_trivia` pass whose
+  tokens are shared with the trailing-comma rule; a suppression drops warnings on
+  its own line or the following one.
+- **`mtc check` runs the full lint** (owning types, unresolved imports, the root
+  analysis' editable receivers, the config), matching the host's `check`.
+- `lint_source_opts` / `lint_source_unresolved` are gone; `lint_source_with`
+  takes the options struct, and `fix_engine.fix_source(source, path, options)`
+  resolves the enabled rule set from the same lists.
+
+Counters: `projects/mtc` self-tests 14 files / 0 failed (6 new linter tests:
+suppression same-line / preceding-line / all / other-code and select/ignore
+filtering); `test/mt` 60 files / 0 failed; `rake "cli:parity"` unchanged at
+22 match / 39 differ / 0 pending; LSP harness unchanged at 4 differing entries
+(the two documented host artifacts, parser recovery and debugInfo).
+
 ### Measured (same corpus, both servers)
 
 The table below is the **2026-09-25/26 session's** before/after record — its
