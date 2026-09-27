@@ -12,6 +12,7 @@ import mtc.lexer.token as token_mod
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 import mtc.linter.linter as linter_mod
+import mtc.linter.scope_tracking as scope_tracking
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.workspace as workspace
@@ -86,6 +87,12 @@ public function collect_diagnostics(ws: ref[workspace.Workspace], root_path: str
             options.unresolved_import_paths = unresolved.as_span()
             options.editable_sites = read(last_analysis_ptr).editable_receiver_sites.as_span()
             options.analysis = last_analysis_ptr
+            var providers = scope_tracking.build_import_method_providers(
+                read(last_analysis_ptr).source_file,
+                program.analyses.as_span()
+            )
+            defer: providers.release()
+            options.method_providers = providers.as_span()
             lint_warnings = linter_mod.lint_source_with(
                 read(last_analysis_ptr).source_file,
                 root_source,

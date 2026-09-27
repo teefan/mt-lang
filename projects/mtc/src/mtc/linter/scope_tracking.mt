@@ -12,9 +12,11 @@
 import std.vec as vec
 import std.string as string
 import std.str
+import std.map as map_mod
 
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
 
 
 public struct ScopeWarning:
@@ -318,13 +320,17 @@ public function lint_scope_pass(
     path: str,
     unresolved_import_paths: span[str],
     editable_sites: span[analyzer.EditableSite],
+    providers: span[ImportMethodProvider],
+    analysis: ptr[analyzer.Analysis]?,
     warnings: ref[vec.Vec[ScopeWarning]],
 ) -> void:
     var entries_buf: array[ScopeEntry, 4096]
     var sc: ScopeCtx
     ctx_init(ref_of(sc), ptr_of(entries_buf[0]))
     unsafe: read(ref_of(sc)).editable_sites = editable_sites
-    check_unused_imports(file, path, unresolved_import_paths, warnings)
+    var credited = collect_import_credits(file, providers, analysis)
+    defer: credited.release()
+    check_unused_imports(file, path, unresolved_import_paths, credited.as_span(), warnings)
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
@@ -337,7 +343,7 @@ public function lint_scope_pass(
 #  unused-import
 # =============================================================================
 
-function check_unused_imports(file: ast.SourceFile, path: str, unresolved_import_paths: span[str], warnings: ref[vec.Vec[ScopeWarning]]) -> void:
+function check_unused_imports(file: ast.SourceFile, path: str, unresolved_import_paths: span[str], credited: span[bool], warnings: ref[vec.Vec[ScopeWarning]]) -> void:
     var i: ptr_uint = 0
     while i < file.imports.len:
         unsafe:
@@ -352,17 +358,35 @@ function check_unused_imports(file: ast.SourceFile, path: str, unresolved_import
                             ln = read(parts.data + parts.len - 1)
                     if not import_path_is_unresolved(im.path, unresolved_import_paths):
                         var used = false
-                        var j: ptr_uint = 0
-                        while j < file.declarations.len:
-                            if decl_uses_name(file.declarations.data + j, ln):
-                                used = true
-                                break
-                            j += 1
+                        # Credit by index: `credited` has one flag per import, in
+                        # this same order (see collect_import_credits).
+                        if i < credited.len:
+                            used = read(credited.data + i)
+                        if not used:
+                            var j: ptr_uint = 0
+                            while j < file.declarations.len:
+                                if decl_uses_name(file.declarations.data + j, ln):
+                                    used = true
+                                    break
+                                j += 1
                         if not used:
                             warn_unused_import(warnings, path, ln, im.line, im.column)
                 _:
                     pass
         i += 1
+
+
+## The dotted module path of an import (`std.linear_algebra`).
+function import_path_dotted(path: ast.QualifiedName) -> string.String:
+    var dotted = string.String.create()
+    var i: ptr_uint = 0
+    while i < path.parts.len:
+        if i > 0:
+            dotted.push_byte(46)
+        unsafe:
+            dotted.append(read(path.parts.data + i))
+        i += 1
+    return dotted
 
 
 ## True when the dotted import path is one of the module paths whose import
@@ -371,15 +395,8 @@ function check_unused_imports(file: ast.SourceFile, path: str, unresolved_import
 function import_path_is_unresolved(path: ast.QualifiedName, unresolved_import_paths: span[str]) -> bool:
     if unresolved_import_paths.len == 0:
         return false
-    var dotted = string.String.create()
+    var dotted = import_path_dotted(path)
     defer: dotted.release()
-    var i: ptr_uint = 0
-    while i < path.parts.len:
-        if i > 0:
-            dotted.push_byte(46)
-        unsafe:
-            dotted.append(read(path.parts.data + i))
-        i += 1
     let name = dotted.as_str()
     var j: ptr_uint = 0
     while j < unresolved_import_paths.len:
@@ -534,6 +551,517 @@ function expr_contains_name(expr: ptr[ast.Expr], name: str) -> bool:
                 return expr_contains_name(us.expression, name)
             _:
                 return false
+
+
+# =============================================================================
+#  unused-import credit (Ruby's `collect_method_only_import_uses`)
+# =============================================================================
+
+## One imported module's method surface: the dotted module name plus the
+## module's own analysis, whose `method_keys` (`"Type.method"`) are consulted
+## when a receiver-typed method call or a canonical hook builtin could be
+## provided by that import.
+public struct ImportMethodProvider:
+    module_name: str
+    analysis: ptr[analyzer.Analysis]?
+
+
+## One provider per entry of `file.imports`, in the same order (so a credit
+## flag index matches the import index).  The dotted path resolves against the
+## loaded program's analyses; an unresolved import gets a null analysis.
+public function build_import_method_providers(file: ast.SourceFile, analyses: span[analyzer.Analysis]) -> vec.Vec[ImportMethodProvider]:
+    var providers = vec.Vec[ImportMethodProvider].create()
+    var i: ptr_uint = 0
+    while i < file.imports.len:
+        unsafe:
+            match read(file.imports.data + i):
+                ast.Decl.decl_import as im:
+                    var dotted = import_path_dotted(im.path)
+                    var found: ptr[analyzer.Analysis]? = null
+                    var ai: ptr_uint = 0
+                    while ai < analyses.len:
+                        let ap = analyses.data + ai
+                        if read(ap).module_name.equal(dotted.as_str()):
+                            found = ap
+                            break
+                        ai += 1
+                    if found != null:
+                        providers.push(ImportMethodProvider(
+                            module_name = read(ptr[analyzer.Analysis]<-found).module_name,
+                            analysis = found
+                        ))
+                    else:
+                        providers.push(ImportMethodProvider(module_name = "", analysis = null))
+                    dotted.release()
+                _:
+                    providers.push(ImportMethodProvider(module_name = "", analysis = null))
+        i += 1
+    return providers
+
+
+## Which imports are used without naming them: a `recv.method(...)` call
+## credits every import whose module declares that method on the receiver's
+## resolved type name (and the import owning the receiver's type), a canonical
+## hook builtin credits every import that defines such a method at all, and an
+## identifier or type-reference segment naming an import's local binding credits
+## that import (Ruby's `collect_used_names`).  One flag per `providers` entry.
+public function collect_import_credits(file: ast.SourceFile, providers: span[ImportMethodProvider], analysis: ptr[analyzer.Analysis]?) -> vec.Vec[bool]:
+    var credited = vec.Vec[bool].create()
+    var i: ptr_uint = 0
+    while i < providers.len:
+        credited.push(false)
+        i += 1
+    var import_names = vec.Vec[str].create()
+    defer: import_names.release()
+    var ii: ptr_uint = 0
+    while ii < file.imports.len:
+        unsafe:
+            match read(file.imports.data + ii):
+                ast.Decl.decl_import as im:
+                    import_names.push(import_local_name(im.path, im.alias_name))
+                _:
+                    import_names.push("")
+        ii += 1
+    if providers.len == 0:
+        return credited
+    let credit_flags = credited.as_span().data
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        unsafe:
+            credit_walk_decl(file.declarations.data + di, providers, credit_flags, analysis, import_names.as_span())
+        di += 1
+    return credited
+
+
+## The local binding name of an import (its alias, else the path's last part).
+function import_local_name(path: ast.QualifiedName, alias_name: Option[str]) -> str:
+    match alias_name:
+        Option.some as an:
+            return an.value
+        Option.none:
+            return unsafe: read(path.parts.data + path.parts.len - 1)
+
+
+## Credit every import whose local name occurs in `name` (a bare identifier or
+## a type-path segment).
+function credit_name(name: str, import_names: span[str], credit_flags: ptr[bool]) -> void:
+    var i: ptr_uint = 0
+    while i < import_names.len:
+        if unsafe: read(import_names.data + i).equal(name):
+            unsafe: read(credit_flags + i) = true
+        i += 1
+
+
+## Prelude/builtin method keys (`Option.*`, `Result.*`, `EventError.*`,
+## `Subscription.*`) are merged into *every* module's method set, so only the
+## module that owns the type may be credited for them — otherwise calling any
+## prelude method would credit every import (`fmt`, `log`, …).
+function provider_owns_prelude_key(leaf: str, module_name: str) -> bool:
+    if leaf.equal("Option"):
+        return module_name.equal("std.option")
+    if leaf.equal("Result"):
+        return module_name.equal("std.result")
+    if leaf.equal("EventError") or leaf.equal("Subscription"):
+        return false
+    return true
+
+
+## Credit the imports named anywhere in a type reference: the root name of the
+## qualified path (`ref[arena.Arena]`, `vec.Vec[int]`), generic arguments,
+## function-type parameters/returns and dyn interface names (Ruby's
+## `collect_names_from_type`).
+function credit_typeref(tr: ast.TypeRef, import_names: span[str], credit_flags: ptr[bool]) -> void:
+    if tr.name.parts.len > 0:
+        credit_name(unsafe: read(tr.name.parts.data + 0), import_names, credit_flags)
+    var qi: ptr_uint = 0
+    while qi < tr.name.type_arguments.len:
+        credit_typeref(unsafe: read(tr.name.type_arguments.data + qi), import_names, credit_flags)
+        qi += 1
+    var ai: ptr_uint = 0
+    while ai < tr.arguments.len:
+        credit_typeref(unsafe: read(tr.arguments.data + ai), import_names, credit_flags)
+        ai += 1
+    var fi: ptr_uint = 0
+    while fi < tr.fn_params.len:
+        credit_typeref(unsafe: read(tr.fn_params.data + fi).param_type, import_names, credit_flags)
+        fi += 1
+    if tr.fn_return != null:
+        credit_typeref(unsafe: read(ptr[ast.TypeRef]<-tr.fn_return), import_names, credit_flags)
+    var di: ptr_uint = 0
+    while di < tr.dyn_interface.parts.len:
+        credit_name(unsafe: read(tr.dyn_interface.parts.data + di), import_names, credit_flags)
+        di += 1
+
+
+function credit_typeref_opt(tr: ptr[ast.TypeRef]?, import_names: span[str], credit_flags: ptr[bool]) -> void:
+    let tp = tr else:
+        return
+    credit_typeref(unsafe: read(tp), import_names, credit_flags)
+
+
+function credit_walk_decl(decl: ptr[ast.Decl], providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+    unsafe:
+        match read(decl):
+            ast.Decl.decl_function as fun:
+                var pi: ptr_uint = 0
+                while pi < fun.method_params.len:
+                    credit_typeref(read(fun.method_params.data + pi).param_type, import_names, credit_flags)
+                    pi += 1
+                credit_typeref_opt(fun.return_type, import_names, credit_flags)
+                credit_walk_stmt_opt(fun.body, providers, credit_flags, analysis, import_names)
+            ast.Decl.decl_extending_block as ex:
+                var j: ptr_uint = 0
+                while j < ex.methods.len:
+                    let m = read(ex.methods.data + j)
+                    var pi: ptr_uint = 0
+                    while pi < m.method_params.len:
+                        credit_typeref(read(m.method_params.data + pi).param_type, import_names, credit_flags)
+                        pi += 1
+                    credit_typeref_opt(m.return_type, import_names, credit_flags)
+                    credit_walk_stmt(m.body, providers, credit_flags, analysis, import_names)
+                    j += 1
+            ast.Decl.decl_const as c:
+                credit_typeref(read(c.const_type), import_names, credit_flags)
+                credit_walk_expr_opt(c.value, providers, credit_flags, analysis, import_names)
+                credit_walk_stmt_opt(c.block_body, providers, credit_flags, analysis, import_names)
+            ast.Decl.decl_var as v:
+                credit_typeref_opt(v.var_type, import_names, credit_flags)
+                credit_walk_expr_opt(v.value, providers, credit_flags, analysis, import_names)
+            ast.Decl.decl_struct as st:
+                var fi: ptr_uint = 0
+                while fi < st.struct_fields.len:
+                    credit_typeref(read(st.struct_fields.data + fi).field_type, import_names, credit_flags)
+                    fi += 1
+                var ni: ptr_uint = 0
+                while ni < st.nested_types.len:
+                    credit_walk_decl(st.nested_types.data + ni, providers, credit_flags, analysis, import_names)
+                    ni += 1
+            ast.Decl.decl_union as un:
+                var fi: ptr_uint = 0
+                while fi < un.union_fields.len:
+                    credit_typeref(read(un.union_fields.data + fi).field_type, import_names, credit_flags)
+                    fi += 1
+            ast.Decl.decl_enum as en:
+                credit_typeref_opt(en.backing_type, import_names, credit_flags)
+            ast.Decl.decl_flags as fl:
+                credit_typeref_opt(fl.backing_type, import_names, credit_flags)
+            ast.Decl.decl_variant as va:
+                var ai: ptr_uint = 0
+                while ai < va.variant_arms.len:
+                    let arm = read(va.variant_arms.data + ai)
+                    var fi: ptr_uint = 0
+                    while fi < arm.arm_fields.len:
+                        credit_typeref(read(arm.arm_fields.data + fi).field_type, import_names, credit_flags)
+                        fi += 1
+                    ai += 1
+            ast.Decl.decl_type_alias as ta:
+                credit_typeref(read(ta.target), import_names, credit_flags)
+            ast.Decl.decl_interface as itf:
+                var mi: ptr_uint = 0
+                while mi < itf.interface_methods.len:
+                    let m = read(itf.interface_methods.data + mi)
+                    var pi: ptr_uint = 0
+                    while pi < m.method_params.len:
+                        credit_typeref(read(m.method_params.data + pi).param_type, import_names, credit_flags)
+                        pi += 1
+                    credit_typeref_opt(m.return_type, import_names, credit_flags)
+                    mi += 1
+            ast.Decl.decl_extern_function as ef:
+                var pi: ptr_uint = 0
+                while pi < ef.extern_params.len:
+                    credit_typeref(read(ef.extern_params.data + pi).param_type, import_names, credit_flags)
+                    pi += 1
+                credit_typeref_opt(ef.return_type, import_names, credit_flags)
+                credit_walk_expr_opt(ef.mapping, providers, credit_flags, analysis, import_names)
+            ast.Decl.decl_foreign_function as ff:
+                var pi: ptr_uint = 0
+                while pi < ff.foreign_params.len:
+                    credit_typeref(read(ff.foreign_params.data + pi).param_type, import_names, credit_flags)
+                    pi += 1
+                credit_typeref(read(ff.return_type), import_names, credit_flags)
+                credit_walk_expr(ff.mapping, providers, credit_flags, analysis, import_names)
+            ast.Decl.decl_when as w:
+                var bi: ptr_uint = 0
+                while bi < w.branches.len:
+                    let body = read(w.branches.data + bi).body
+                    var di: ptr_uint = 0
+                    while di < body.len:
+                        credit_walk_decl(body.data + di, providers, credit_flags, analysis, import_names)
+                        di += 1
+                    bi += 1
+            _:
+                pass
+
+
+function credit_walk_stmt_opt(stmt: ptr[ast.Stmt]?, providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+    let sp = stmt else:
+        return
+    credit_walk_stmt(sp, providers, credit_flags, analysis, import_names)
+
+
+function credit_walk_stmt(stmt: ptr[ast.Stmt], providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_block as blk:
+                var i: ptr_uint = 0
+                while i < blk.statements.len:
+                    credit_walk_stmt(blk.statements.data + i, providers, credit_flags, analysis, import_names)
+                    i += 1
+            ast.Stmt.stmt_local as loc:
+                credit_typeref_opt(loc.stmt_type, import_names, credit_flags)
+                credit_walk_expr_opt(loc.value, providers, credit_flags, analysis, import_names)
+                credit_walk_stmt_opt(loc.else_body, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_assignment as asgn:
+                credit_walk_expr(asgn.target, providers, credit_flags, analysis, import_names)
+                credit_walk_expr(asgn.value, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    let br = read(iff.branches.data + bi)
+                    credit_walk_expr(br.condition, providers, credit_flags, analysis, import_names)
+                    credit_walk_stmt(br.body, providers, credit_flags, analysis, import_names)
+                    bi += 1
+                credit_walk_stmt_opt(iff.else_body, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_while as wh:
+                credit_walk_expr(wh.condition, providers, credit_flags, analysis, import_names)
+                credit_walk_stmt_opt(wh.body, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_for as fr:
+                var ii: ptr_uint = 0
+                while ii < fr.iterables.len:
+                    credit_walk_expr(fr.iterables.data + ii, providers, credit_flags, analysis, import_names)
+                    ii += 1
+                credit_walk_stmt_opt(fr.body, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_match as mt:
+                credit_walk_expr(mt.scrutinee, providers, credit_flags, analysis, import_names)
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    let arm = read(mt.arms.data + ai)
+                    credit_walk_expr_opt(arm.pattern, providers, credit_flags, analysis, import_names)
+                    credit_walk_stmt_opt(arm.body, providers, credit_flags, analysis, import_names)
+                    ai += 1
+            ast.Stmt.stmt_ret as r:
+                credit_walk_expr_opt(r.value, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_defer as df:
+                credit_walk_expr_opt(df.expression, providers, credit_flags, analysis, import_names)
+                credit_walk_stmt_opt(df.body, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_unsafe as un:
+                credit_walk_stmt_opt(un.body, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_expression as ex:
+                credit_walk_expr(ex.expression, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_static_assert as sa:
+                credit_walk_expr(sa.condition, providers, credit_flags, analysis, import_names)
+                credit_walk_expr_opt(sa.message, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_when as w:
+                credit_walk_expr(w.discriminant, providers, credit_flags, analysis, import_names)
+                var bi: ptr_uint = 0
+                while bi < w.branches.len:
+                    let body = read(w.branches.data + bi).body
+                    var si: ptr_uint = 0
+                    while si < body.len:
+                        credit_walk_stmt(body.data + si, providers, credit_flags, analysis, import_names)
+                        si += 1
+                    bi += 1
+                credit_walk_stmt_opt(w.else_body, providers, credit_flags, analysis, import_names)
+            ast.Stmt.stmt_error_block as eb:
+                credit_walk_stmt(eb.body, providers, credit_flags, analysis, import_names)
+            _:
+                pass
+
+
+function credit_walk_expr_opt(expr: ptr[ast.Expr]?, providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+    let ep = expr else:
+        return
+    credit_walk_expr(ep, providers, credit_flags, analysis, import_names)
+
+
+function credit_walk_expr(expr: ptr[ast.Expr], providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_identifier as id:
+                credit_name(id.name, import_names, credit_flags)
+            ast.Expr.expr_binary_op as b:
+                credit_walk_expr(b.left, providers, credit_flags, analysis, import_names)
+                credit_walk_expr(b.right, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_unary_op as u:
+                credit_walk_expr(u.operand, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_member_access as m:
+                credit_walk_expr(m.receiver, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_member_access as m:
+                        credit_member_call(m.receiver, m.member_name, providers, credit_flags, analysis, import_names)
+                    _:
+                        pass
+                credit_walk_expr(call.callee, providers, credit_flags, analysis, import_names)
+                var i: ptr_uint = 0
+                while i < call.args.len:
+                    credit_walk_expr(read(call.args.data + i).arg_value, providers, credit_flags, analysis, import_names)
+                    i += 1
+            ast.Expr.expr_index_access as ix:
+                credit_walk_expr(ix.receiver, providers, credit_flags, analysis, import_names)
+                credit_walk_expr(ix.index, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_specialization as sp:
+                credit_hook_call(sp.callee, providers, credit_flags)
+                credit_walk_expr(sp.callee, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_if as iff:
+                credit_walk_expr(iff.condition, providers, credit_flags, analysis, import_names)
+                credit_walk_expr(iff.then_expr, providers, credit_flags, analysis, import_names)
+                credit_walk_expr(iff.else_expr, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_match as mm:
+                credit_walk_expr(mm.scrutinee, providers, credit_flags, analysis, import_names)
+                var ai: ptr_uint = 0
+                while ai < mm.arms.len:
+                    let arm = read(mm.arms.data + ai)
+                    credit_walk_expr_opt(arm.pattern, providers, credit_flags, analysis, import_names)
+                    credit_walk_expr(arm.value, providers, credit_flags, analysis, import_names)
+                    ai += 1
+            ast.Expr.expr_proc as pr:
+                var pi: ptr_uint = 0
+                while pi < pr.method_params.len:
+                    credit_typeref(read(pr.method_params.data + pi).param_type, import_names, credit_flags)
+                    pi += 1
+                credit_typeref_opt(pr.return_type, import_names, credit_flags)
+                credit_walk_stmt(pr.body, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_await as aw:
+                credit_walk_expr(aw.expression, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_detach as dt:
+                credit_walk_expr(dt.expression, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_expression_list as el:
+                var ei: ptr_uint = 0
+                while ei < el.elements.len:
+                    credit_walk_expr(el.elements.data + ei, providers, credit_flags, analysis, import_names)
+                    ei += 1
+            ast.Expr.expr_named as nm:
+                credit_walk_expr(nm.value, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_range as rg:
+                credit_walk_expr(rg.start_expr, providers, credit_flags, analysis, import_names)
+                credit_walk_expr(rg.end_expr, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_prefix_cast as pc:
+                credit_typeref(read(pc.target_type), import_names, credit_flags)
+                credit_walk_expr(pc.expression, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_unsafe as us:
+                credit_walk_expr(us.expression, providers, credit_flags, analysis, import_names)
+            ast.Expr.expr_format_string as fs:
+                var pi: ptr_uint = 0
+                while pi < fs.parts.len:
+                    match read(fs.parts.data + pi):
+                        ast.FormatStringPart.fmt_expr as fe:
+                            credit_walk_expr(fe.expression, providers, credit_flags, analysis, import_names)
+                        _:
+                            pass
+                    pi += 1
+            ast.Expr.expr_sizeof as sz:
+                credit_typeref(read(sz.target_type), import_names, credit_flags)
+            ast.Expr.expr_alignof as al:
+                credit_typeref(read(al.target_type), import_names, credit_flags)
+            ast.Expr.expr_offsetof as off:
+                credit_typeref(read(off.target_type), import_names, credit_flags)
+            _:
+                pass
+
+
+## Credit the imports that could provide `recv.member(...)`: every provider
+## whose module declares `member` on the receiver's resolved type name, plus
+## the import that owns the receiver's type module.
+function credit_member_call(receiver: ptr[ast.Expr], member: str, providers: span[ImportMethodProvider], credit_flags: ptr[bool], analysis: ptr[analyzer.Analysis]?, import_names: span[str]) -> void:
+    let ap = analysis else:
+        return
+    let ty_ptr = unsafe: read(ap).resolved_expr_types.get(unsafe: reinterpret[ptr_uint](receiver)) else:
+        return
+    let recv_type = unsafe: read(ty_ptr)
+    let leaf = type_leaf_name(recv_type)
+    let recv_module = type_module_name(recv_type)
+    var key = string.String.create()
+    defer: key.release()
+    var has_key = false
+    if leaf.len > 0:
+        key.append(leaf)
+        key.push_byte(46)
+        key.append(member)
+        has_key = true
+    let key_str = key.as_str()
+    var i: ptr_uint = 0
+    while i < providers.len:
+        unsafe:
+            let p = read(providers.data + i)
+            var hit = false
+            if p.analysis != null and has_key and provider_owns_prelude_key(leaf, p.module_name):
+                if read(ptr[analyzer.Analysis]<-p.analysis).method_keys.contains(key_str):
+                    hit = true
+            if not hit and recv_module.len > 0 and p.module_name.len > 0 and p.module_name.equal(recv_module):
+                hit = true
+            if hit:
+                read(credit_flags + i) = true
+        i += 1
+
+
+## Credit every import that defines a canonical hook associated function
+## (`Type.hash` / `.equal` / `.order` / `.default`) when a hook builtin is
+## used: the type argument may be reflective, so the provider cannot be
+## resolved more precisely.
+function credit_hook_call(callee: ptr[ast.Expr], providers: span[ImportMethodProvider], credit_flags: ptr[bool]) -> void:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if is_hook_builtin_name(id.name):
+                    var i: ptr_uint = 0
+                    while i < providers.len:
+                        let p = read(providers.data + i)
+                        if p.analysis != null:
+                            if method_keys_define_hook(read(ptr[analyzer.Analysis]<-p.analysis).method_keys):
+                                read(credit_flags + i) = true
+                        i += 1
+            _:
+                pass
+
+
+function is_hook_builtin_name(name: str) -> bool:
+    return name.equal("hash") or name.equal("equal") or name.equal("order") or name.equal("default")
+
+
+function method_keys_define_hook(keys: map_mod.Map[str, bool]) -> bool:
+    var it = keys.keys()
+    while true:
+        let kp = it.next() else:
+            break
+        let key = unsafe: read(kp)
+        if key.ends_with(".hash") or key.ends_with(".equal") or key.ends_with(".order") or key.ends_with(".default"):
+            return true
+    return false
+
+
+function type_leaf_name(ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_primitive as p:
+            return p.name
+        types.Type.ty_str:
+            return "str"
+        types.Type.ty_named as n:
+            return n.name
+        types.Type.ty_imported as im:
+            return im.name
+        types.Type.ty_generic as g:
+            return g.name
+        types.Type.ty_opaque as op:
+            return op.name
+        types.Type.ty_var as v:
+            return v.name
+        types.Type.ty_nullable as nb:
+            return type_leaf_name(unsafe: read(nb.base))
+        _:
+            return ""
+
+
+function type_module_name(ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_named as n:
+            return n.module_name
+        types.Type.ty_imported as im:
+            return im.module_name
+        types.Type.ty_opaque as op:
+            return op.module_name
+        _:
+            return ""
 
 
 # =============================================================================

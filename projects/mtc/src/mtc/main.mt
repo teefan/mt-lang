@@ -36,6 +36,7 @@ import mtc.build as build_driver
 import mtc.build_cache as build_cache
 import mtc.pretty_printer.ast_formatter as fmt
 import mtc.linter.linter as linter
+import mtc.linter.scope_tracking as scope_tracking
 import mtc.linter.fix_engine as fix_engine
 import mtc.lsp.server as lsp
 import mtc.lsp.semantic_tokens as sem_tokens
@@ -657,6 +658,9 @@ function check_command(args: span[str]) -> int:
                     if maybe_analysis != null:
                         unsafe:
                             lfile = read(maybe_analysis).source_file
+                    var providers = scope_tracking.build_import_method_providers(lfile, program.analyses.as_span())
+                    defer: providers.release()
+                    options.method_providers = providers.as_span()
                     var lwarns = linter.lint_source_with(lfile, src.as_str(), effective, options)
                     defer: lwarns.release()
                     if lwarns.len() > 0:
@@ -1019,6 +1023,9 @@ function lint_command(args: span[str]) -> int:
                     unsafe:
                         file = read(maybe_analysis).source_file
 
+                var providers = scope_tracking.build_import_method_providers(file, lint_program.analyses.as_span())
+                defer: providers.release()
+                options.method_providers = providers.as_span()
                 var warns = linter.lint_source_with(file, src.as_str(), fp, options)
                 defer: warns.release()
                 if timings:

@@ -130,6 +130,10 @@ workstream doc for the area you are touching:
 compiler self-test) plus the sweep that covers the area — several changes that
 looked correct at the CLI level broke the compiler's own bootstrap.
 
+One command for every counter: `rake "parity:scoreboard"` (cheap sections:
+cli/lex/parse/lint; add `FULL=1` for lower/format/LSP/DAP).  Lint parity has
+its own sweep: `ruby tools/unused_import_parity.rb`.
+
 ### Phase order and current position
 
 0. **Hard build parity** — **complete (2026-09-27)**: the self-host builds every
@@ -946,6 +950,61 @@ Measured on `examples/language_baseline.mt`: **redundant-cast 0 -> 1, the
 identical line and message as the host** (`424: implicit widening makes this
 cast redundant: int<-`); 6 new linter tests; projects/mtc 14 files / 0 failed;
 test/mt 60 / 0; the `lower` sweep unchanged (39/613/50/0).
+
+### Linter `unused-import` credit parity (2026-09-27 session 5)
+
+`unused-import` now ports both of the host's collectors
+(`linter/imports_platform.rb`):
+
+- **`collect_used_names`** — lexical root names: type refs (annotations, casts,
+  `sizeof`/`alignof`/`offsetof`, proc/function types), expression identifiers,
+  match patterns.  The walker (`scope_tracking.mt`'s `credit_walk_*` /
+  `credit_typeref`) mirrors the host's statement/expression list exactly —
+  notably it does *not* credit specialization type arguments, enum-member
+  initializers, or `parallel`/`gather`/`emit` statements, because the host's
+  collector does not (those are the host's own omissions; matching them keeps
+  the warning sets byte-identical).
+- **`collect_method_only_import_uses`** — `credit_member_call` credits the
+  import owning the receiver's resolved type module and every import whose
+  module declares the receiver method; `credit_hook_call` credits every import
+  providing a canonical hook method (`hash`/`equal`/`order`/`default`) when a
+  hook builtin is used.  Providers come from
+  `build_import_method_providers` (one entry per `file.imports` entry, in
+  order, resolving each dotted import against the loader program's analyses)
+  and are threaded through `LintOptions.method_providers`; `mtc check`,
+  `mtc lint` and the LSP diagnostics path build them from their program.
+
+Pitfalls found while driving the sweep to zero:
+
+1. **Prelude keys are merged into every module's `method_keys`**
+   (`install_prelude_types` → `merge_prelude_binding_methods`), so a naive
+   provider check credits *every* import whenever a prelude method is called
+   (`fmt`/`log` went un-flagged in `navigation.mt`).  `provider_owns_prelude_key`
+   gates `Option.*`/`Result.*` to their owning prelude module and excludes the
+   builtin `EventError.*`/`Subscription.*` keys.
+2. **Receiver types**: `ty_str` is its own type variant (not `ty_primitive`),
+   and builtin receivers (`vec3`) are primitives — `type_leaf_name` covers
+   primitives, `ty_str`, `ty_named`, `ty_imported`, `ty_generic`, `ty_opaque`,
+   `ty_var` and nullable unwrapping, so `s.starts_with(...)` and `v.dot(...)`
+   credit their provider imports.
+
+Counters: `examples/language_baseline.mt` unused-import **1 → 0** (host 0);
+repo sweep (`tools/unused_import_parity.rb`, 606 files: `std/`, `examples/`,
+`projects/mtc/src/`) **605 agree / 1 differ**.  The residual is
+`examples/async_network_lobby.mt`: its `Vec` value arrives through a match-arm
+payload binding (`Result.success as servers_p`), which our analyzer types
+`ty_error`, so the receiver cannot be attributed to `import std.vec`; the host
+types the binding from the variant payload.  **Follow-up:** variant payload
+typing for match-arm bindings (also improves LSP hover/outline on arm
+bindings).
+
+New tooling: `tools/parity_scoreboard.rb` + `rake "parity:scoreboard"` (one
+counter table; `FULL=1` adds lower/format/LSP/DAP) and
+`tools/unused_import_parity.rb` (the lint sweep above).
+
+Gates for this change: bootstrap fixed point + 14/14 self-tests, `test/mt`
+60/0, `cli:parity` 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0,
+LSP harness unchanged (4 documented entries), `examples/sdl3` 34/34.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
@@ -2768,16 +2827,15 @@ Current constprop removes variables from the tracking map on compound assignment
 2. **B.** For `+=`/`-=` etc., look up the current value from the map, evaluate the RHS, compute new value, and store it.
 3. **C.** For assignments where either operand is not constant, remove from map (NAC — current behavior).
 
-##### 4. `unused-import` (1→0): extension method import detection
+##### 4. `unused-import` — **DONE (2026-09-27 session 5)**
 
-`import std.linear_algebra` provides `vec3.dot()`, `vec3.length()`, etc. as extension methods, but the import name `linear_algebra` is never directly referenced.
-
-**Ruby's approach:** Ruby doesn't flag this import as unused because the extension methods it provides ARE used in the file.
-
-**Self-host changes needed:**
-1. **A.** In `check_unused_imports`, when an import has no alias, check if any method call in any function body matches a method from the imported module's extending blocks.
-2. **B.** Load the imported module's extending blocks and check their method names against function body method calls.
-3. **C.** Simpler alternative: when an import's exported module provides any extending blocks, conservatively treat the import as used.
+The self-host now ports both of the host's collectors: `collect_used_names`
+(lexical: root names of type refs, identifiers in expressions, match patterns)
+and `collect_method_only_import_uses` (receiver-type module, method-provider
+modules, canonical hook providers).  See §0k's "Linter `unused-import` credit
+parity" record: `language_baseline` 1 → 0, and 605 of 606 sampled files agree
+with the host; the one residual (`examples/async_network_lobby.mt`) needs
+match-arm payload typing in the analyzer (follow-up).
 
 ##### 5. `dead-assignment` (32→0): self-host-only feature
 

@@ -292,6 +292,17 @@ namespace :cli do
   end
 end
 
+namespace :parity do
+  desc 'Run every parity sweep and print one counter table (env: SELF, FULL, JSON)'
+  task :scoreboard do
+    cmd = ['ruby', 'tools/parity_scoreboard.rb']
+    cmd.concat(['--self', ENV['SELF']]) if ENV['SELF']
+    cmd << '--full' if ENV['FULL']
+    cmd.concat(['--json', ENV['JSON']]) if ENV['JSON']
+    sh(*cmd)
+  end
+end
+
 namespace :imported_bindings do
   desc 'Regenerate all checked-in imported binding modules'
   task all: IMPORTED_BINDINGS.task_names

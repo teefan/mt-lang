@@ -81,6 +81,10 @@ public struct LintOptions:
     select: span[str]
     ignore: span[str]
     analysis: ptr[analyzer.Analysis]?
+    ## One entry per import of the linted file (same order), built from the
+    ## loader program's analyses: `unused-import` credits imports whose methods
+    ## or hook functions are used indirectly.
+    method_providers: span[scope_tracking.ImportMethodProvider]
 
 
 ## All-default options: no owning types, no unresolved imports, every rule,
@@ -94,6 +98,7 @@ public function default_lint_options() -> LintOptions:
         select = span[str](),
         ignore = span[str](),
         analysis = null,
+        method_providers = span[scope_tracking.ImportMethodProvider](),
     )
 
 
@@ -146,7 +151,7 @@ public function lint_source_with(
         i += 1
     # Scope-tracking pass: unused-local, unused-param, shadow, prefer-let, unused-import
     var scope_warnings = vec.Vec[scope_tracking.ScopeWarning].create()
-    scope_tracking.lint_scope_pass(file, path, options.unresolved_import_paths, options.editable_sites, ref_of(scope_warnings))
+    scope_tracking.lint_scope_pass(file, path, options.unresolved_import_paths, options.editable_sites, options.method_providers, options.analysis, ref_of(scope_warnings))
     i = 0
     while i < scope_warnings.len():
         let sp = scope_warnings.get(i) else:
