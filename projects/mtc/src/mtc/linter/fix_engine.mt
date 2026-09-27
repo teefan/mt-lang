@@ -29,6 +29,7 @@ import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.linter.config as lint_config
 import mtc.linter.linter as linter
+import mtc.semantic.analyzer as analyzer
 
 
 const MAX_PASSES: ptr_uint = 5
@@ -180,7 +181,12 @@ function fix_rule_single_pass(
 
     # Lint the way the command did: with the analysis-backed facts, so a rule
     # that would rewrite `var v` while `v.push(1)` needs it never fires.
-    var warnings = linter.lint_source_with(file, source, path, options)
+    # The semantic maps are keyed by expression pointer, so the analysis must
+    # belong to THIS parse (the fix passes re-parse after every edit).
+    var analysis = analyzer.check_source_file(file)
+    var local_options = options
+    local_options.analysis = ptr_of(analysis)
+    var warnings = linter.lint_source_with(file, source, path, local_options)
     defer: warnings.release()
 
     var rule_warnings = vec.Vec[linter.Warning].create()
@@ -207,7 +213,7 @@ function fix_rule_single_pass(
         let wp = rule_warnings.get(ri) else:
             break
         let w = unsafe: read(wp)
-        match edits_for_warning(ref_of(lines), code, w.line, w.column):
+        match edits_for_warning(ref_of(lines), code, w.line, w.column, w.message):
             Option.some as edit:
                 apply_edit(ref_of(lines), edit.value)
             Option.none:
@@ -259,6 +265,7 @@ public function edits_for_warning(
     code: str,
     line: ptr_uint,
     column: ptr_uint,
+    message: str,
 ) -> Option[FixEdit]:
     if line == 0:
         return Option[FixEdit].none
@@ -275,7 +282,7 @@ public function edits_for_warning(
     if code.equal("trailing-list-comma"):
         return trailing_comma_edit(lines, line_index, column)
     if code.equal("redundant-cast"):
-        return redundant_cast_edit(lines, line_index, column)
+        return redundant_cast_edit(lines, line_index, column, message)
     if code.equal("redundant-bool-compare"):
         return redundant_bool_compare_edit(lines, line_index)
     if code.equal("redundant-type-annotation"):
@@ -441,11 +448,15 @@ function trailing_comma_edit(
 
 ## Delete the `Type<-` prefix of a redundant cast; the warning column points
 ## at the cast target type.  When the cast is the payload of an inline
-## `unsafe:` prefix, the wrapper is removed too (mirrors Ruby).
+## `unsafe:` prefix, the wrapper is removed too, and when the inner expression
+## is left parenthesized with no top-level operators the orphaned parens go
+## with it.  A "parentheses are redundant" warning removes only the parens
+## (mirrors Ruby's `redundant_cast_edits`).
 function redundant_cast_edit(
     lines: ref[vec.Vec[string.String]],
     line_index: ptr_uint,
     column: ptr_uint,
+    message: str,
 ) -> Option[FixEdit]:
     if column == 0:
         return Option[FixEdit].none
@@ -458,6 +469,22 @@ function redundant_cast_edit(
         return Option[FixEdit].none
     if arrow < start:
         return Option[FixEdit].none
+    let arrow_end = arrow + 2
+
+    # Parens-only fix: `T<-(x)` -> `T<-x`.
+    if message_contains(message, "parentheses"):
+        if arrow_end >= text.len or text.byte_at(arrow_end) != '(':
+            return Option[FixEdit].none
+        let close = cast_match_paren(text, arrow_end) else:
+            return Option[FixEdit].none
+        let inner_text = text.slice(arrow_end + 1, close - (arrow_end + 1))
+        return Option[FixEdit].some(value = FixEdit(
+            start_line = line_index,
+            start_char = arrow_end,
+            end_line = line_index,
+            end_char = close + 1,
+            new_text = string.String.from_str(inner_text)
+        ))
 
     # Extend backwards over a directly preceding `unsafe:` wrapper.
     var new_start = start
@@ -475,6 +502,22 @@ function redundant_cast_edit(
         Option.none:
             pass
 
+    # The cast removal can orphan a parenthesized inner expression.
+    if arrow_end < text.len and text.byte_at(arrow_end) == '(':
+        match cast_match_paren(text, arrow_end):
+            Option.some as close:
+                let inner_text = text.slice(arrow_end + 1, close.value - (arrow_end + 1))
+                if not cast_inner_has_top_level_operators(inner_text):
+                    return Option[FixEdit].some(value = FixEdit(
+                        start_line = line_index,
+                        start_char = new_start,
+                        end_line = line_index,
+                        end_char = close.value + 1,
+                        new_text = string.String.from_str(inner_text)
+                    ))
+            Option.none:
+                pass
+
     return Option[FixEdit].some(value = FixEdit(
         start_line = line_index,
         start_char = new_start,
@@ -482,6 +525,51 @@ function redundant_cast_edit(
         end_char = arrow + 2,
         new_text = string.String.create()
     ))
+
+
+function message_contains(message: str, needle: str) -> bool:
+    return message.contains_substring(needle)
+
+
+## The index of the `)` matching the `(` at `open_pos`, or none.
+function cast_match_paren(line: str, open_pos: ptr_uint) -> Option[ptr_uint]:
+    var depth: int = 0
+    var i = open_pos
+    while i < line.len:
+        let b = line.byte_at(i)
+        if b == '(':
+            depth += 1
+        else if b == ')':
+            depth -= 1
+            if depth == 0:
+                return Option[ptr_uint].some(value = i)
+        i += 1
+    return Option[ptr_uint].none
+
+
+function cast_binary_op_char(b: ubyte) -> bool:
+    return (
+        b == '+' or b == '-' or b == '*' or b == '/' or b == '%'
+        or b == '&' or b == '|' or b == '^' or b == '<' or b == '>'
+        or b == '=' or b == '!' or b == '?' or b == ':'
+    )
+
+
+function cast_inner_has_top_level_operators(inner: str) -> bool:
+    var depth: int = 0
+    var i: ptr_uint = 0
+    while i < inner.len:
+        let b = inner.byte_at(i)
+        if b == '(' or b == '[' or b == '{':
+            depth += 1
+        else if b == ')' or b == ']' or b == '}':
+            if depth > 0:
+                depth -= 1
+        else if cast_binary_op_char(b):
+            if depth == 0:
+                return true
+        i += 1
+    return false
 
 
 ## Rewrite an identifier compared against a boolean literal: `x == true` →
@@ -571,10 +659,10 @@ public struct LspFixEdit:
     new_text: string.String
 
 
-public function lsp_edit_for_warning(source: str, code: str, line: ptr_uint, column: ptr_uint) -> Option[LspFixEdit]:
+public function lsp_edit_for_warning(source: str, code: str, line: ptr_uint, column: ptr_uint, message: str) -> Option[LspFixEdit]:
     var lines = split_lines(source)
     defer: release_lines(ref_of(lines))
-    match edits_for_warning(ref_of(lines), code, line, column):
+    match edits_for_warning(ref_of(lines), code, line, column, message):
         Option.some as edit:
             var e = edit.value
             if e.start_line == e.end_line:

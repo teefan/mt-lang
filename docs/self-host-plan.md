@@ -912,6 +912,41 @@ codeAction, codeLens, documentLink, formatting, rangeFormatting,
 onTypeFormatting, foldingRange, selectionRange, semanticTokens, workspaceSymbol,
 workspace/diagnostic.
 
+### Linter `redundant-cast` is sema-backed (2026-09-27 session 4, stage 8c)
+
+`linter/redundant_cast.mt` was rewritten as a complete AST walker with the
+host's six checks (`visitors.rb:1079-1364` and its boundary call sites):
+
+- cast to same type / `own`->ptr (resolved-type comparison over the
+  self-host's type model), with the host's literal-name fallback when the
+  inner expression is untyped;
+- redundant parentheses (source-line based, no sema needed);
+- implicit widening at a coercion slot (typed `let`/`var`, `return`, plain
+  `=`) and integer-literal coercion at the same slots;
+- implicit float widening inside an arithmetic/comparison operand and
+  integer-literal coercion inside a comparison (enum siblings included).
+
+Messages now carry the host's `: <target><-` suffix, and the fix engine
+removes the orphaned parens with a cast (single spanning edit) and handles
+the parentheses-only warning through the message it now receives
+(`edits_for_warning`/`lsp_edit_for_warning` take the warning message).
+
+Two structural fixes the port needed:
+
+- **`str[i]` types as `ubyte`** in the analyzer (it was `ty_error`), matching
+  the host's `infer_index_access` — this is what makes
+  `int<-text[0]`'s widening visible;
+- **the CLI `lint`/`check` paths lint the analysis' AST**
+  (`read(analysis).source_file`) instead of a fresh parse: the expression-type
+  maps are keyed by expression pointer, so a different parse instance can never
+  match (the LSP already did this).  The fix engine builds a fresh single-file
+  analysis per re-parse for the same reason.
+
+Measured on `examples/language_baseline.mt`: **redundant-cast 0 -> 1, the
+identical line and message as the host** (`424: implicit widening makes this
+cast redundant: int<-`); 6 new linter tests; projects/mtc 14 files / 0 failed;
+test/mt 60 / 0; the `lower` sweep unchanged (39/613/50/0).
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**
@@ -2595,10 +2630,10 @@ asymmetry and a shared libuv crash, neither compiler-specific):
 
 `redundant-null-check` is **DONE** (2026-07-17, §0.5/§3.3). Tooling
 (`--fix`, `.mt-lint.yml`) is **DONE** (2026-07-18, §3.4). Fix engine
-expanded to 10 auto-fixable rules (2026-07-19, §0f). Remaining linter
-delta: sema-based `redundant-cast` (requires analyzer type resolution);
-`reserved-primitive-name` use-site renaming (declaration-only today);
-formatter wrap-fix machinery for `line-too-long`.
+expanded to 10 auto-fixable rules (2026-07-19, §0f). **Sema-based
+`redundant-cast` is DONE (2026-09-27 session 4, stage 8c).** Remaining linter
+delta: `reserved-primitive-name` use-site renaming (declaration-only today);
+`constant-condition` compound-assignment tracking.
 
 ### 5.3a RESOLVED: 5 language examples failed the sema gate (found + fixed 2026-07-17)
 
@@ -3211,6 +3246,6 @@ fixtures diff clean against the host.
 | Gap | Effort | Depends on |
 | --- | --- | --- |
 | ~~Canonical-mode comment reattachment~~ **DONE (2026-09-27 session 4, §7.2b)** | — | — |
-| Linter `line-too-long` wrap-fix (reuse `formatter.tidy.wrap_long_argument_lists` / `build_long_line_wrap_fix`) | Small | landed pipeline |
+| ~~Linter `line-too-long` wrap-fix~~ **DONE (2026-09-27 session 4, stage 8b: wrappable gate + message suffix + LSP `Wrap long line` quickfix)** | — | — |
 | Linter `:fast` tier | Small | independent |
 | Formatter `--timings` profile phases | Small | independent |

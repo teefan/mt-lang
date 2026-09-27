@@ -176,7 +176,7 @@ public function lint_source_with(
     lint_dead_assignment(file, path, ref_of(warnings))
     lint_unreachable_code(file, path, ref_of(warnings))
     lint_prefer_own_ptr(file, path, ref_of(warnings))
-    lint_redundant_cast(file, path, ref_of(warnings))
+    lint_redundant_cast(file, source, path, options.analysis, ref_of(warnings))
     lint_constant_condition(file, path, ref_of(warnings))
     lint_loop_single_iteration(file, path, ref_of(warnings))
     lint_redundant_null_check(file, path, ref_of(warnings))
@@ -4445,8 +4445,8 @@ function lint_prefer_own_ptr(file: ast.SourceFile, path: str, warnings: ref[vec.
         di += 1
 
 
-function lint_redundant_cast(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var diags = redundant_cast.check(file)
+function lint_redundant_cast(file: ast.SourceFile, source: str, path: str, analysis: ptr[analyzer.Analysis]?, warnings: ref[vec.Vec[Warning]]) -> void:
+    var diags = redundant_cast.check(file, source, analysis)
     defer: diags.release()
     var di: ptr_uint = 0
     while di < diags.len():

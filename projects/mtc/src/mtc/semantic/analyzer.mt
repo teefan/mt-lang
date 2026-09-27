@@ -3321,7 +3321,10 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                                     pass
                         _:
                             pass
-                let elem = types.pointer_element(rt)
+                var elem = types.pointer_element(rt)
+                if types.is_error(elem) and types.type_to_string(rt) == "str":
+                    # `str[i]` reads a byte (host `infer_index_access`).
+                    elem = types.primitive("ubyte")
                 if not types.is_error(elem):
                     return elem
                 return types.Type.ty_error

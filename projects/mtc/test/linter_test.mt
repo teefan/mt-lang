@@ -7,6 +7,7 @@ import std.str
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.linter.linter as linter
+import mtc.semantic.analyzer as analyzer
 
 
 ## Parse and lint `source`, returning its warnings.
@@ -88,6 +89,72 @@ function test_line_too_long_non_wrappable_line_ignored() -> void:
 function test_line_too_long_foreign_header_ignored() -> void:
     var source = "public foreign function really_long_name(alpha: int, beta: int, gamma: int, delta: int, epsilon: int, zeta: int) -> void = c.foo\n"
     expect_none(source, "line-too-long")
+
+
+# =============================================================================
+#  redundant-cast (sema-backed)
+# =============================================================================
+
+## Lint `source` with a single-file analysis — the type-backed rules need it.
+function lint_text_with_analysis(source: str) -> vec.Vec[linter.Warning]:
+    var diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: diags.release()
+    let file = parser.parse_source(source, ref_of(diags))
+    var analysis = analyzer.check_source_file(file)
+    var options = linter.default_lint_options()
+    options.analysis = ptr_of(analysis)
+    return linter.lint_source_with(file, source, "test.mt", options)
+
+
+@[test]
+function test_redundant_cast_same_type() -> void:
+    let source = "function demo(a: int) -> int:\n    let x: int = a\n    return int<-x\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
+    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("same type is redundant: int<-"), "same type")
+
+
+@[test]
+function test_redundant_cast_widening_slot() -> void:
+    let source = "function demo(a: int) -> long:\n    let b: long = long<-a\n    return b\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
+    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("implicit widening makes this cast redundant: long<-"), "widening")
+
+
+@[test]
+function test_redundant_cast_literal_slot() -> void:
+    let source = "function demo() -> ubyte:\n    let e: ubyte = ubyte<-200\n    return e\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
+    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("integer literal coercion makes this cast redundant: ubyte<-"), "literal")
+
+
+@[test]
+function test_redundant_cast_parens() -> void:
+    let source = "function demo(a: int) -> byte:\n    let b: byte = byte<-(a)\n    return b\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
+    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("parentheses around cast expression are redundant: byte<-"), "parens")
+
+
+@[test]
+function test_redundant_cast_float_operand() -> void:
+    let source = "function demo(a: int, f: float) -> float:\n    return f + float<-a\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
+    expect(message_of(ref_of(warns), "redundant-cast").contains_substring("implicit float widening makes this cast redundant: float<-"), "float operand")
+
+
+@[test]
+function test_redundant_cast_narrowing_clean() -> void:
+    let source = "function demo(a: long) -> int:\n    return int<-a\n"
+    expect_none(source, "redundant-cast")
 
 
 # =============================================================================
@@ -780,7 +847,9 @@ function test_redundant_cast_flagged() -> void:
             var y: int = x
             return int<-y
     SRC
-    expect_one(source, "redundant-cast")
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 1)
 
 
 @[test]
@@ -789,7 +858,9 @@ function test_valid_cast_clean() -> void:
         function demo(x: float) -> int:
             return int<-x
     SRC
-    expect_none(source, "redundant-cast")
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 0)
 
 
 # =============================================================================

@@ -160,7 +160,13 @@ function append_fix_for_diagnostic(
             else if info.code.equal("shadow"):
                 append_underscore_fix(json_text, emitted, uri, source, info)
             else if fix_engine.is_fixable(info.code):
-                append_engine_fix(json_text, emitted, uri, source, info)
+                var diag_message: str = ""
+                match extract_diagnostic_message(diag):
+                    Option.some as m:
+                        diag_message = m.value
+                    Option.none:
+                        pass
+                append_engine_fix(json_text, emitted, uri, source, info, diag_message)
             else:
                 match extract_diagnostic_message(diag):
                     Option.some as msg:
@@ -411,8 +417,9 @@ function append_engine_fix(
     uri: str,
     source: str,
     info: DiagnosticInfo,
+    message: str,
 ) -> void:
-    match fix_engine.lsp_edit_for_warning(source, info.code, info.line + 1, info.start_char + 1):
+    match fix_engine.lsp_edit_for_warning(source, info.code, info.line + 1, info.start_char + 1, message):
         Option.none:
             return
         Option.some as edit_payload:

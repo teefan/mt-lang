@@ -631,7 +631,7 @@ function check_command(args: span[str]) -> int:
                     defer: src.release()
                     var diags = vec.Vec[pstate.ParseDiagnostic].create()
                     defer: diags.release()
-                    let lfile = parser.parse_source(src.as_str(), ref_of(diags))
+                    var lfile = parser.parse_source(src.as_str(), ref_of(diags))
                     # Same options as `mtc lint` (the host's `check` runs the full
                     # lint): owning types, unresolved imports and the analysis'
                     # editable receivers, with `.mt-lint.yml` applied by the
@@ -653,6 +653,10 @@ function check_command(args: span[str]) -> int:
                             unsafe:
                                 options.editable_sites = read(root_analysis_ptr).editable_receiver_sites.as_span()
                                 options.analysis = root_analysis_ptr
+                    let maybe_analysis = options.analysis
+                    if maybe_analysis != null:
+                        unsafe:
+                            lfile = read(maybe_analysis).source_file
                     var lwarns = linter.lint_source_with(lfile, src.as_str(), effective, options)
                     defer: lwarns.release()
                     if lwarns.len() > 0:
@@ -1006,7 +1010,14 @@ function lint_command(args: span[str]) -> int:
 
                 var diags = vec.Vec[pstate.ParseDiagnostic].create()
                 defer: diags.release()
-                let file = parser.parse_source(src.as_str(), ref_of(diags))
+                var file = parser.parse_source(src.as_str(), ref_of(diags))
+                # The analysis' expression-type maps are keyed by expression
+                # pointer, so lint the AST the analysis was built from (the host
+                # lints `facts.ast` too); the fresh parse is the fallback.
+                let maybe_analysis = options.analysis
+                if maybe_analysis != null:
+                    unsafe:
+                        file = read(maybe_analysis).source_file
 
                 var warns = linter.lint_source_with(file, src.as_str(), fp, options)
                 defer: warns.release()
