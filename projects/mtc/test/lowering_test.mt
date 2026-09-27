@@ -16,6 +16,7 @@ import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
 import mtc.lowering.lowering as lowering
 import mtc.pretty_printer.ir_formatter as irfmt
+import mtc.sexpr as sexpr
 
 
 ## Remove a temp directory tree and release its owned path string.
@@ -71,6 +72,20 @@ function lower_source(source: str) -> string.String:
 
     var ir_program = lowering.lower(program)
     return irfmt.format_program(ir_program)
+
+
+## Write `content` to `dir/name` (the directory must exist).
+function write_source_file(dir: str, name: str, content: str) -> bool:
+    var file_path = path_ops.join(dir, name)
+    defer: file_path.release()
+
+    match fs.write_text(file_path.as_str(), content):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return false
+        Result.success:
+            return true
 
 
 # =============================================================================
@@ -252,6 +267,83 @@ function test_struct_aggregate_lowering_does_not_crash() -> void:
     # Concrete instances print as the generic form with their arguments
     # (`Vec[int]`), not a mangled `Vec_int` C name.
     expect(text.contains_substring("Vec[int]"))
+
+
+# =============================================================================
+#  Constant aggregates of a re-exported type alias — the SimpleGame shape.
+# =============================================================================
+
+@[test]
+function test_const_aggregate_through_imported_type_alias() -> void:
+    ## `public const MIDNIGHT: rl.Color = rl.Color.from_hex_str("#10121c")` with
+    ## `type Color = c.Color` re-exported by the binding module must fold to the
+    ## aggregate literal of the *declaring* module's struct (a call cannot
+    ## initialize a C constant), with each field typed by the field's own type.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_alias_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var main_source = <<-SRC
+        import lib as lib
+
+
+        extending lib.Color:
+            static const function hex_digit(c: ubyte) -> ubyte:
+                return c - '0'
+
+
+            static const function from_hex_str(color: str) -> lib.Color:
+                return lib.Color(
+                    r = lib.Color.hex_digit(color[1]) * 16 + lib.Color.hex_digit(color[2]),
+                    g = 3,
+                    b = 4,
+                    a = 255
+                )
+
+        public const LITERAL: lib.Color = lib.Color(r = 1, g = 2, b = 3, a = 4)
+        public const PARSED: lib.Color = lib.Color.from_hex_str("#12")
+    SRC
+    if not write_main_file(root.as_str(), main_source):
+        return
+
+    var raw_source = <<-SRC
+        public struct Color:
+            r: ubyte
+            g: ubyte
+            b: ubyte
+            a: ubyte
+    SRC
+    if not write_source_file(root.as_str(), "raw.mt", raw_source):
+        return
+
+    var lib_source = <<-SRC
+        import raw as raw
+
+        public type Color = raw.Color
+    SRC
+    if not write_source_file(root.as_str(), "lib.mt", lib_source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var text = irfmt.format_program(ir_program)
+    defer: text.release()
+    let formatted = text.as_str()
+    expect(formatted.contains_substring("const LITERAL as main_LITERAL: Color = Color(r = 1, g = 2, b = 3, a = 4)"))
+    expect(formatted.contains_substring("const PARSED as main_PARSED: Color = Color(r = 18, g = 3, b = 4, a = 255)"))
+
+    # The aggregate's type is the alias chain's end (raw.mt's Color), not the
+    # naming module, and the interpreted values are typed by the field's type.
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring(":value (IR::AggregateLiteral :type (Types::Struct :name \"Color\" :module_name \"raw\")"))
+    expect(dumped.contains_substring("(IR::AggregateField :name \"r\" :value (IR::IntegerLiteral :value 18 :type (Types::Primitive :name \"ubyte\")))"))
 
 
 # =============================================================================

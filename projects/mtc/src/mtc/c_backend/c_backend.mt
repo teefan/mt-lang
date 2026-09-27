@@ -2080,7 +2080,12 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_opaque as op:
             if op.module_name.starts_with("std.c."):
                 return op.name
-            return naming.qualified_c_name(op.module_name, op.name)
+            # A re-exported opaque (`public opaque Window = c"SDL_Window"`) names
+            # a C struct that is never defined, so a *value* of the type is
+            # represented as a pointer to it (host parity: `Types::Opaque`
+            # renders `base*` for values).  The module-qualified typedef emitted
+            # by `emit_opaque_typedefs` gives that pointer a name.
+            return j2(naming.qualified_c_name(op.module_name, op.name), "*")
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_event as ev:
@@ -2138,8 +2143,13 @@ function c_type(t: types.Type) -> str:
                 let base = read(nl.base)
                 if is_pointer_like_for_nullable(base):
                     match base:
-                        types.Type.ty_opaque:
-                            return j2(c_type(base), "*")
+                        types.Type.ty_opaque as op:
+                            # A re-exported opaque already renders as a pointer
+                            # for values, so nullability adds nothing; a raw
+                            # module's opaque C name is the struct itself.
+                            if op.module_name.starts_with("std.c."):
+                                return j2(c_type(base), "*")
+                            return c_type(base)
                         _:
                             return c_type(base)
                 return j2("mt_opt_", naming.type_c_key(base))
@@ -3473,6 +3483,14 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             return Option[str].none
         types.Type.ty_tuple:
             return Option[str].some(value = tuple_type_name(ty))
+        # A match-arm payload binding (`Result[T, E].success as p`) is typed as
+        # the arm-payload struct (`<variant>_success`) and embeds it by value —
+        # e.g. an async frame field spilling the binding across an await.  The
+        # arm name is registered as an alias of the owning variant node
+        # (`register_variant_arm_aliases`), so this edge orders the variant's
+        # full definition first.
+        types.Type.ty_variant_arm_payload as ap:
+            return Option[str].some(value = ap.c_name)
         _:
             return Option[str].none
 
@@ -4825,6 +4843,12 @@ function render_zero_initializer(t: types.Type) -> str:
     match t:
         types.Type.ty_str:
             return "{ 0 }"
+        types.Type.ty_opaque as op:
+            # A re-exported opaque's value is a pointer (host parity:
+            # `ZeroInit` renders `NULL` for a non-external opaque).
+            if op.module_name.starts_with("std.c."):
+                return "{ 0 }"
+            return "NULL"
         types.Type.ty_primitive as p:
             if p.name == "bool":
                 return "false"
@@ -4842,6 +4866,10 @@ function render_zero_initializer(t: types.Type) -> str:
 ## The zero value of a type in expression position.
 function render_zero_expression(t: types.Type) -> str:
     match t:
+        types.Type.ty_opaque as op:
+            if op.module_name.starts_with("std.c."):
+                return j4("(", c_declaration(t, ""), ") ", render_zero_initializer(t))
+            return "NULL"
         types.Type.ty_primitive as p:
             # vec2/vec3/vec4/mat*/quat are struct-like aggregates: a bare
             # `{ 0 }` is only valid as an initializer, so expression position
@@ -5081,8 +5109,20 @@ function is_variant_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Ex
 
 ## Return the C struct name for a type if it corresponds to a variant, or the
 ## empty string otherwise.  Uses the same `c_type` path as variant struct
-## emission.
+## emission, but only for nominally-named types: a literal's type (`null[T]`, a
+## primitive, `str`) names no C struct and `c_type` rejects several of them.
 function variant_c_name_for_type(ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_named:
+            pass
+        types.Type.ty_imported:
+            pass
+        types.Type.ty_generic:
+            pass
+        types.Type.ty_variant_arm_payload:
+            pass
+        _:
+            return ""
     let name = c_type(ty)
     # `c_type` for a variant type (ty_named / ty_imported) returns the qualified
     # C struct name, e.g. `language_baseline_TokenKind`.  For primitive/str/etc.

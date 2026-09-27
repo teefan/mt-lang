@@ -1714,6 +1714,11 @@ function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> voi
             ast.Decl.decl_extending_block as ex:
                 var this_type: types.Type = types.Type.ty_error
                 enter_suppressed_extending_target(ctx, ex.type_name)
+                # The block's own type parameters must be in scope while the
+                # receiver type resolves, or `extending StateMachine[State,
+                # Event, Context]:` types `this` as `StateMachine[<error>, …]`
+                # and every expression recording that type loses the bindings.
+                enter_extending_type_params(ctx, ex.type_name)
                 unsafe:
                     this_type = resolve_type_value(ctx, read(ex.type_name))
                 ctx.suppressed_type_names.clear()

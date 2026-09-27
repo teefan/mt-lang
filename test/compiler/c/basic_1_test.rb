@@ -895,6 +895,86 @@ function main() -> int:
     assert_match(/Inspect\(\(const void\*\) &__mt_foreign_in_\d+\);/, generated)
   end
 
+  def test_generate_c_for_nullable_pointer_through_const_void_boundary
+    source = <<~MT
+      # module demo.main
+
+      import std.sample as sample
+
+      function main() -> int:
+          let guarded = sample.load() else:
+              return 1
+          sample.fill(guarded)
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        # module std.c.sample
+        external
+        external function Fill(value: const_ptr[void]) -> void
+        external function Load() -> ptr[int]
+      MT
+      "std/sample.mt" => <<~MT,
+        # module std.sample
+
+        import std.c.sample as c
+
+        public foreign function fill(value: ptr[int] as const_ptr[void]) -> void = c.Fill
+        public foreign function load() -> ptr[int]? = c.Load
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/int32_t\* guarded = Load\(\);/, generated)
+    assert_match(/Fill\(\(const void\*\) guarded\);/, generated)
+  end
+
+  def test_generate_c_for_nested_foreign_call_in_variadic_argument
+    source = <<~MT
+      # module demo.main
+
+      import std.sample as sample
+
+      struct Message:
+          text: str
+
+      function wrap(value: int) -> int:
+          return value
+
+      function main() -> int:
+          let message = Message(text = "hello")
+          let formatted = wrap(sample.print_count(message.text, sample.count(message.text)))
+          return formatted
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        # module std.c.sample
+        external
+        external function Count(text: cstr) -> int
+        external function PrintCount(format: cstr, ...) -> int
+      MT
+      "std/sample.mt" => <<~MT,
+        # module std.sample
+
+        import std.c.sample as c
+
+        public foreign function count(text: str as cstr) -> int = c.Count
+        public foreign function print_count(format: str as cstr, ...) -> int = c.PrintCount
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/const char\* __mt_foreign_arg_\d+ = mt_foreign_str_to_cstr_temp\(message\.text\);/, generated)
+    assert_match(/int32_t __mt_foreign_result_\d+ = Count\(__mt_foreign_arg_\d+\);/, generated)
+    assert_match(/PrintCount\(__mt_foreign_arg_\d+, __mt_foreign_result_\d+\);/, generated)
+    assert_equal 2, generated.scan(/mt_foreign_str_to_cstr_temp\(message\.text\)/).length
+    assert_equal 2, generated.scan(/mt_free_foreign_cstr_temp\(__mt_foreign_arg_\d+\);/).length
+  end
+
   def test_generate_c_for_external_out_params
     source = <<~MT
       # module demo.external_out_surface

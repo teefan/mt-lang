@@ -935,6 +935,127 @@ function main() -> int:
     assert_match(/if \(\(\*mt_checked_index_array_uint_4\(palette, 0\)\) != 1\)/, generated)
   end
 
+  def test_generate_c_for_checked_index_through_ref_array
+    source = <<~MT
+
+# module demo.ref_array_index
+
+struct Slot:
+    index: int
+
+const COUNT: int = 4
+
+function fill(slots: ref[array[Slot, COUNT]]) -> void:
+    var i = 0
+    while i < COUNT:
+        read(slots)[i].index = i
+        i += 1
+
+function main() -> int:
+    var slots: array[Slot, COUNT]
+    fill(ref_of(slots))
+    return slots[2].index
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static inline demo_ref_array_index_Slot \*mt_checked_index_array_demo_ref_array_index_Slot_4\(demo_ref_array_index_Slot \*array, uintptr_t index\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_demo_ref_array_index_Slot_4\(\*slots, i\)\)\.index = i;/, generated)
+    assert_match(/\(\*mt_checked_index_array_demo_ref_array_index_Slot_4\(slots, 2\)\)\.index/, generated)
+  end
+
+  def test_run_program_writes_array_through_ref
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.ref_array_index_run
+
+      struct Slot:
+          index: int
+
+      const COUNT: int = 4
+
+      function fill(slots: ref[array[Slot, COUNT]]) -> void:
+          var i = 0
+          while i < COUNT:
+              read(slots)[i].index = i * 2
+              i += 1
+
+      function main() -> int:
+          var slots: array[Slot, COUNT]
+          fill(ref_of(slots))
+          var i = 0
+          while i < COUNT:
+              if slots[i].index != i * 2:
+                  return 1
+              i += 1
+          return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
+  def test_generate_c_for_array_field_initialized_from_array_call
+    source = <<~MT
+
+# module demo.array_field_copy
+
+struct Holder:
+    colors: array[float, 4]
+
+function make() -> array[float, 4]:
+    return array[float, 4](1.0, 2.0, 3.0, 4.0)
+
+function main() -> int:
+    let holder = Holder(colors = make())
+    return int<-holder.colors[2]
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/\.colors = \{ __mt_array_call_\d+\[0\], __mt_array_call_\d+\[1\], __mt_array_call_\d+\[2\], __mt_array_call_\d+\[3\] \}/, generated)
+  end
+
+  def test_run_program_copies_array_field_from_array_call
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.array_field_copy_run
+
+      struct Holder:
+          colors: array[float, 4]
+
+      function make() -> array[float, 4]:
+          return array[float, 4](1.0, 2.0, 3.0, 4.0)
+
+      function main() -> int:
+          let holder = Holder(colors = make())
+          if holder.colors[0] != 1.0:
+              return 1
+          if holder.colors[2] != 3.0:
+              return 2
+          let grid = array[array[float, 2], 2](pair(), pair())
+          if grid[1][1] != 7.0:
+              return 3
+          return 0
+
+      function pair() -> array[float, 2]:
+          return array[float, 2](6.0, 7.0)
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
   def test_generate_c_for_zero_initialization
     source = <<~MT
 

@@ -600,13 +600,29 @@ module MilkTea
 
         false_refinements = {}
         branch_entries = []
+        runtime_branches = statement.branches
 
         unless statement.branches.empty?
           if @bypass_sema_type_cache
-            ct_cond = compile_time_const_value(statement.branches.first.condition, env: local_env)
-            if ct_cond == true
+            chosen_branch = nil
+            first_runtime_index = statement.branches.length
+
+            statement.branches.each_with_index do |branch, index|
+              ct_cond = compile_time_const_value(branch.condition, env: local_env)
+              if ct_cond == true
+                chosen_branch = branch
+                break
+              elsif ct_cond == false
+                next
+              else
+                first_runtime_index = index
+                break
+              end
+            end
+
+            if chosen_branch
               lowered.concat(lower_block(
-                statement.branches.first.body,
+                chosen_branch.body,
                 env: local_env,
                 active_defers: active_defers + local_defers,
                 return_type:,
@@ -614,7 +630,9 @@ module MilkTea
                 allow_return:,
               ))
               return
-            elsif ct_cond == false
+            end
+
+            if first_runtime_index == statement.branches.length
               if statement.else_body
                 lowered.concat(lower_block(
                   statement.else_body,
@@ -627,10 +645,15 @@ module MilkTea
               end
               return
             end
+
+            # Branches before the first runtime condition folded to compile-time
+            # false; lower only the remaining branches (their conditions are
+            # compile-time-only expressions and cannot be emitted at runtime).
+            runtime_branches = statement.branches[first_runtime_index..]
           end
         end
 
-        statement.branches.each do |branch|
+        runtime_branches.each do |branch|
           branch_env = env_with_refinements(local_env, false_refinements)
           condition_setup, prepared_condition, condition_cleanups = prepare_expression_with_cleanups(
             branch.condition,
@@ -681,7 +704,7 @@ module MilkTea
 
         merge_cstr_metadata_after_if_statement!(statement, local_env)
 
-        if statement.else_body.nil? && statement.branches.all? { |branch| cfg_block_always_terminates?(branch.body) }
+        if statement.else_body.nil? && runtime_branches.all? { |branch| cfg_block_always_terminates?(branch.body) }
           local_env[:scopes] = scopes_with_refinements(local_env[:scopes], false_refinements)
         end
       end

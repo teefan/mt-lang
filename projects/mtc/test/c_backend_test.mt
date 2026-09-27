@@ -375,3 +375,103 @@ function test_stateful_event_listener_receives_state_pointer() -> void:
     # Self-host emits: ((void (*)(void*)) event->slots[i].listener)(event->slots[i].state)
     expect_contains(text, "listener)(event->slots")
     return
+
+
+# =============================================================================
+#  Opaque values are pointers; recursive arm payloads dereference
+# =============================================================================
+
+@[test]
+function test_opaque_value_renders_as_pointer() -> void:
+    # A re-exported opaque names a C struct that is never defined, so a value of
+    # the type is represented as a pointer (host parity) and zeroes to NULL.
+    var source = <<-SRC
+        opaque Handle = c"HANDLE"
+
+        function main() -> int:
+            var h: Handle = zero[Handle]
+            return 0
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect_contains(text, "typedef HANDLE ")
+    expect_contains(text, "Handle* h = NULL;")
+    return
+
+
+@[test]
+function test_ptr_of_raw_pointer_takes_address() -> void:
+    # `ptr_of(p)` on a raw-pointer variable is the address of the slot (`&p`),
+    # not the pointer value itself, matching the host's lower_addr_expression.
+    var source = <<-SRC
+        function main() -> int:
+            var p: ptr[int] = null
+            let pp = ptr_of(p)
+            return 0
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect_contains(text, "*pp = &p;")
+    return
+
+
+@[test]
+function test_recursive_variant_field_dereferences_on_read() -> void:
+    # An arm payload that embeds the enclosing variant (`Expr.bin(left: Expr)`)
+    # is stored as a pointer; reading the field dereferences it.
+    var source = <<-SRC
+        variant Expr:
+            num(value: int)
+            bin(left: Expr, right: Expr)
+
+        function eval_expr(expr: Expr) -> int:
+            match expr:
+                Expr.num as n:
+                    return n.value
+                Expr.bin as b:
+                    return eval_expr(b.left) + eval_expr(b.right)
+
+        function main() -> int:
+            let a = Expr.num(value = 1)
+            let tree = Expr.bin(left = a, right = a)
+            return eval_expr(tree)
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect_contains(text, ".left = &a")
+    expect_contains(text, "eval_expr(*b.left)")
+    expect_contains(text, "eval_expr(*b.right)")
+    return
+
+
+# =============================================================================
+#  Generic extending blocks keep the block's type parameters
+# =============================================================================
+
+struct Box[T]:
+    value: T
+
+
+function peek[T](slot: ref[Box[T]]) -> T:
+    return slot.value
+
+
+extending Box[T]:
+    public function round_trip() -> T:
+        # An inferred generic call (`peek`) whose argument is a `ref_of(this)`
+        # builtin: the specialization must be created from the substituted
+        # receiver type.  (The equivalent regression for an extending block on
+        # an *imported* generic type is the fsm/htn/goap family in `test/mt`.)
+        return peek(ref_of(this))
+
+
+@[test]
+function test_generic_extending_block_type_parameters() -> void:
+    let boxed = Box[int](value = 7)
+    expect_eq(boxed.round_trip(), 7)
+    let text = Box[str](value = "milk")
+    expect_eq(text.round_trip(), "milk")
+

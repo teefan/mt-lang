@@ -130,6 +130,19 @@ function test_members_of_exposes_values() -> void:
 
 
 @[test]
+function test_members_of_name_selection_chain() -> void:
+    var total: int = 0
+    inline for member in members_of(Palette):
+        if member.name == "red":
+            total += 1
+        else if member.name == "green":
+            total += 10
+        else:
+            total += 100
+    expect_eq(total, 111)
+
+
+@[test]
 function test_attributes_of_counts_declaration_attributes() -> void:
     var all: int = 0
     inline for attr in attributes_of(Labeled):

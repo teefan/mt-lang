@@ -72,8 +72,10 @@ Added, and passing under both compilers:
 * `tools/bootstrap.sh -j 16` → `stage2.c == stage3.c (fixed point holds)`,
   compiler self-test `12 test file(s), 0 failed`.
 * `build/stage2/mtc test test/mt -I . --timeout 60` → after this workstream and
-  the follow-up parse fixes (§0j of the plan) the suite runs **60 files, 315
-  tests pass, 7 fail to build**. Two things changed since the fixes landed:
+  the follow-up parse fixes (§0j of the plan) the suite ran **60 files, 315
+  tests pass, 7 fail to build** — those seven are fixed since 2026-09-27 (the
+  suite is now 60 files / 0 failed; see "Known gaps" below and §0j's 2026-09-27
+  section of the plan). Two things changed since the fixes landed:
   four files (`binary_test`, `blackboard_test`, `input_test`, `pool_test`) had
   empty match-arm bodies, so the runner silently *skipped* them (56 of 60 files
   reported); they now parse and run, which exposed one more pre-existing
@@ -91,22 +93,29 @@ Added, and passing under both compilers:
 
 ## Known gaps (pre-existing, out of scope here)
 
-* Seven `test/mt` files fail to *build* under the self-host compiler:
+* ~~Seven `test/mt` files fail to *build* under the self-host compiler:
   `behavior_tree_test`, `blackboard_test`, `fsm_test`, `goap_test`, `htn_test`,
-  `net_sync_test`, `spatial_test`. The failure family is generic-instance
-  naming/typing when the type argument is declared in a generated module — e.g.
-  the diagnostic `std_goap_find_node_index__error__error__error` specialization
-  key collapsing to `error` type names, `std_blackboard_find_entry__error`
-  passed a `Blackboard_bool *`, and `Tree[<runner>Context]` instances whose C
-  name is qualified with the generated test-runner module. Six of the seven were
-  verified identical with a compiler built from the pre-change tree; the seventh
-  (`blackboard_test`) was previously skipped and fails in the same family.
+  `net_sync_test`, `spatial_test`.~~ **FIXED (2026-09-27); the suite is 60 files
+  / 0 failed.**  The failure family was generic-instance naming/typing when the
+  type argument is declared in a generated module — e.g. the diagnostic
+  `std_goap_find_node_index__error__error__error` specialization key collapsing
+  to `error` type names, `std_blackboard_find_entry__error` passed a
+  `Blackboard_bool *`, and `Tree[<runner>Context]` instances whose C name is
+  qualified with the generated test-runner module.  Two root causes:
+  `check_extending_methods` (the analyzer) resolved `this` before entering the
+  extending block's type parameters, so every recorded type inside the block
+  lost the bindings (`semantic/analyzer.mt`), and an async frame field typed as
+  a match-arm payload had no ordering edge in `c_backend.mt`
+  (`by_value_dep_key`).  Both are recorded in §0j's 2026-09-27 section of the
+  plan.
 * `rake "cli:parity"` divergence set (39 cases, e.g. `build-library`,
   `build-broken-entry`, `build-unknown-option` diagnostics text/ordering) is
   unchanged by this work.
 * Host-only quirk found while writing the reflection tests: inside
-  `inline for member in members_of(...)`, the Ruby host folds `if name == "..."`
-  with a stale per-iteration binding and silently drops the branch for every
-  iteration after the first. The self-host substitutes each iteration's own
-  value, so the two agree only when the name is consumed at runtime. Worth a
-  separate look on the host side.
+  `inline for member in members_of(...)`, the Ruby host used to fold only the
+  *first* `if` branch and, when it was compile-time false, lower `else` for the
+  whole chain — silently dropping every `else if` for the later iterations.
+  **Fixed 2026-09-27** (`lower_if_stmt` now walks the branches in order, folds
+  each compile-time condition and lowers only the remaining runtime branches;
+  the first runtime condition stops the fold).  Locked by
+  `test/mt/reflect_test.mt`'s `test_members_of_name_selection_chain`.

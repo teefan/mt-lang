@@ -254,7 +254,12 @@ module MilkTea
         end
 
         return foreign_identity_projection_cast_compatible?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
-        return false if actual_type.is_a?(Types::Nullable)
+
+        if actual_type.is_a?(Types::Nullable)
+          return false unless pointer_represented_nullable_base?(actual_type.base)
+
+          return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type)
+        end
 
         return true if same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
 
@@ -418,6 +423,17 @@ module MilkTea
 
       def own_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "own" && type.arguments.length == 1
+      end
+
+      # A nullable whose base lowers to a raw C pointer (`ptr[T]?`, `own[T]?`,
+      # `opaque?`, `cstr?`, function/proc values) has the same C representation
+      # as its base, so foreign boundary projections treat it as that base.
+      # Optional-boxed bases (`int?`, structs) keep their wrapper struct and
+      # stay incompatible with non-nullable targets.
+      def pointer_represented_nullable_base?(type)
+        pointer_type?(type) || opaque_type?(type) || proc_type?(type) ||
+          type.is_a?(Types::Function) ||
+          (type.is_a?(Types::Primitive) && type.name == "cstr")
       end
 
       def owned_referent_type(type)

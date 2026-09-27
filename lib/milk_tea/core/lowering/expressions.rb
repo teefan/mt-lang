@@ -25,9 +25,7 @@ module MilkTea
         if expression.is_a?(AST::Call) &&
             (foreign_call = foreign_call_info(expression, env)) && !allow_root_statement_foreign &&
             foreign_call_requires_statement_lowering?(expression, foreign_call[:binding], env:)
-          type = infer_expression_type(expression, env:, expected_type:)
-          setup, value = lower_foreign_call_statement(foreign_call, env:, expected_type: type, statement_position: false)
-          return materialize_prepared_expression(setup, value, env:, type:, prefix: "foreign_expr")
+          return prepare_statement_lowered_foreign_call(foreign_call, env:, expected_type:)
         end
 
         case expression
@@ -77,9 +75,7 @@ module MilkTea
         kind, _callee_name, _receiver, callee_type, binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
         if binding && binding.respond_to?(:ast) && kind != :variant_arm_ctor && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
-          type = infer_expression_type(expression, env:, expected_type:)
-          setup, value = lower_foreign_call_statement({ call: expression, binding: binding }, env:, expected_type: type, statement_position: false)
-          return materialize_prepared_expression(setup, value, env:, type:, prefix: "foreign_expr")
+          return prepare_statement_lowered_foreign_call({ call: expression, binding: binding }, env:, expected_type:)
         end
 
         callee_setup, callee = prepare_expression_for_inline_lowering(expression.callee, env:)
@@ -106,6 +102,42 @@ module MilkTea
           type: call_type,
           prefix: "array_call",
         )
+      end
+
+      def prepare_statement_lowered_foreign_call(foreign_call, env:, expected_type:)
+        call = foreign_call.fetch(:call)
+        type = infer_expression_type(call, env:, expected_type:)
+        argument_setup, prepared_call = prepare_foreign_call_arguments_for_statement_lowering(call, env:)
+        setup, value = lower_foreign_call_statement(
+          { call: prepared_call, binding: foreign_call.fetch(:binding) },
+          env:,
+          expected_type: type,
+          statement_position: false,
+        )
+        materialize_prepared_expression(argument_setup + setup, value, env:, type:, prefix: "foreign_expr")
+      end
+
+      # A foreign call that must be lowered as a statement still lowers its own
+      # arguments inline while the call is emitted; prepare them first so nested
+      # calls that need temporaries are hoisted ahead of the call instead of
+      # failing the inline-only check.
+      def prepare_foreign_call_arguments_for_statement_lowering(call, env:)
+        return [[], call] if call.arguments.empty?
+
+        setup = []
+        arguments = call.arguments.map do |argument|
+          value = argument.value
+          if value.is_a?(AST::UnaryOp) && ["out", "in", "inout"].include?(value.operator)
+            operand_setup, operand = prepare_expression_for_inline_lowering(value.operand, env:)
+            setup.concat(operand_setup)
+            AST::Argument.new(name: argument.name, value: AST::UnaryOp.new(operator: value.operator, operand:))
+          else
+            value_setup, prepared_value = prepare_expression_for_inline_lowering(value, env:)
+            setup.concat(value_setup)
+            AST::Argument.new(name: argument.name, value: prepared_value)
+          end
+        end
+        [setup, AST::Call.new(callee: call.callee, arguments:)]
       end
 
       def prepare_format_string_expression_for_inline_lowering(format_string, env:)

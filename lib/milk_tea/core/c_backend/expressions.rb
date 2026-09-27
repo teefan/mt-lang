@@ -223,6 +223,8 @@ module MilkTea
       end
 
       def emit_initializer(expression)
+        return emit_array_copy_initializer(expression.type, expression) if array_value_copy_needed?(expression)
+
         case expression
         when IR::ArrayLiteral
           emit_array_initializer(expression)
@@ -237,6 +239,22 @@ module MilkTea
         else
           emit_expression(expression)
         end
+      end
+
+      # C has no array assignment, so an embedded array initialized from an
+      # array-valued expression (a materialized array temp, another aggregate's
+      # array field) is copied element by element.
+      def array_value_copy_needed?(expression)
+        array_type?(expression.type) &&
+          !expression.is_a?(IR::ArrayLiteral) &&
+          !expression.is_a?(IR::ZeroInit) &&
+          !expression.is_a?(IR::StringLiteral)
+      end
+
+      def emit_array_copy_initializer(type, value)
+        source = wrap_expression(value)
+        elements = (0...array_length(type)).map { |index| "#{source}[#{index}]" }.join(", ")
+        "{ #{elements} }"
       end
 
       def emit_aggregate_initializer(expression)
@@ -344,14 +362,20 @@ module MilkTea
         "(void)#{wrap_expression(expression)}"
       end
 
+      # The checked-index helpers take a pointer to the array's first element.
       def emit_checked_array_index_argument(receiver)
         if receiver.is_a?(IR::Unary) && receiver.operator == "*"
-          emit_expression(receiver.operand)
-        elsif c_expression_lvalue?(receiver)
-          emit_expression(receiver)
-        else
-          "&(#{c_type(receiver.type)}[1]){ #{emit_expression(receiver)} }[0]"
+          operand = receiver.operand
+          # A cyclic array field is stored as its element pointer but typed as
+          # the array, so the operand is already the array's first element. A
+          # deref of a reference to an array (`ref[array[T, N]]`) is the array
+          # itself, which only decays when the `*` is kept.
+          return emit_expression(operand) if array_type?(operand.type)
         end
+
+        return emit_expression(receiver) if c_expression_lvalue?(receiver)
+
+        "&(#{c_type(receiver.type)}[1]){ #{emit_expression(receiver)} }[0]"
       end
 
       def emit_address_of_operand(expression)

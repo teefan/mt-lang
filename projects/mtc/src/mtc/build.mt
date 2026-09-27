@@ -1420,6 +1420,10 @@ function collect_vendored_link_flags(program: loader.Program, roots: span[str]) 
                 search_flag.append(lib_dir.as_str())
                 lib_dir.release()
                 result.push(search_flag)
+                # The static SDL3 archive's own dependencies (the vendored
+                # build's `sdl3.pc` lists `Libs: -lSDL3 -pthread -lm`).
+                result.push(string.String.from_str("-pthread"))
+                result.push(string.String.from_str("-lm"))
             Option.none:
                 pass
 

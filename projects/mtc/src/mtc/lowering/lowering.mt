@@ -1267,6 +1267,11 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     # as capturing stale bindings.
                     ctx.locals.clear()
                     g_val = lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
+                    # A literal initializer takes the global's declared type, as
+                    # the host's contextual literal inference gives it one
+                    # (`var shorts: short = 0` is a `short` literal, not `int`).
+                    g_val = int_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                    g_val = float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                     g_val = string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                 globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
             ast.Decl.decl_const as c:
@@ -2599,14 +2604,16 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             ty = ir_expr_type(value_expr)
                     else:
                         ty = qualify_type(ctx, ir_expr_type(value_expr))
-                # A float or bare string literal in a declared `float`/`double`
-                # or `cstr` position takes that type (the host's contextual
-                # literal inference).
+                # A float, integer or bare string literal in a declared `float`/
+                # `double`, integer (`ptr_uint`, `ubyte`, …) or `cstr` position
+                # takes that type (the host's contextual literal inference).
                 if init != null:
                     unsafe:
                         match read(ptr[ast.Expr]<-init):
                             ast.Expr.expr_float_literal:
                                 value_expr = float_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
+                            ast.Expr.expr_integer_literal:
+                                value_expr = int_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
                             ast.Expr.expr_string_literal:
                                 value_expr = string_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
                             _:
@@ -3408,8 +3415,14 @@ function guard_success_type(ctx: ref[LowerCtx], kind: str, storage_ty: types.Typ
         let inner = types.unwrap_nullable(storage_ty)
         if is_nullable_pointer_like(storage_ty):
             match inner:
-                types.Type.ty_opaque:
-                    return types.Type.ty_generic(name = "ptr", args = sp_type(inner))
+                types.Type.ty_opaque as op:
+                    # A re-exported opaque's value representation already is a
+                    # pointer (`<module>_<Name>*`), so the guard's success type
+                    # is the opaque itself; a raw module's opaque needs the
+                    # explicit `ptr[T]` wrapper to reach the pointer form.
+                    if op.module_name.starts_with("std.c."):
+                        return types.Type.ty_generic(name = "ptr", args = sp_type(inner))
+                    return inner
                 _:
                     return inner
         return inner
@@ -5684,6 +5697,13 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_binary_op as bin:
                 var left = lower_expr(ctx, bin.left)
                 var right = lower_expr(ctx, bin.right)
+                # A bare `null` compared against a nullable value takes the other
+                # operand's type — the host propagates the left operand's type as
+                # the right operand's expected type — so `source == null` types
+                # the literal `Nullable(ptr[ubyte])` rather than `void`.
+                if bin.operator == "==" or bin.operator == "!=":
+                    right = null_literal_to_context_type(bin.right, ir_expr_type(left), right)
+                    left = null_literal_to_context_type(bin.left, ir_expr_type(right), left)
                 # Struct equality on a raw-binding struct (`s_drag_body !=
                 # b3.b3_nullBodyId`): the C backend builds `mt_struct_eq_<T>`
                 # helpers from `Program.structs`, which raw modules never lower
@@ -5877,7 +5897,11 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
             ast.Expr.expr_range as rng:
                 let start = lower_expr(ctx, rng.start_expr)
                 return start
-            ast.Expr.expr_null_literal:
+            ast.Expr.expr_null_literal as nl:
+                let nl_target = nl.target_type
+                if nl_target != null:
+                    let target = resolve_type_ref(ctx, nl_target)
+                    return alloc_expr(ir.Expr.expr_null_literal(ty = types.Type.ty_null(target = types.alloc_type(target))))
                 return alloc_expr(ir.Expr.expr_null_literal(ty = ctx.void_ty))
             ast.Expr.expr_named as nm:
                 return lower_expr(ctx, nm.value)
@@ -6775,15 +6799,21 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         # Mirrors Ruby's ref_of/ptr_of/const_ptr_of handling.
                         match read(inner):
                             ir.Expr.expr_name as nm:
-                                if nm.pointer or types.is_raw_pointer(nm.ty) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
-                                    # The operand is already a pointer, so the
-                                    # builtin returns it directly.  Rebuild the
-                                    # result type from the lowered pointer's
-                                    # element type: a monomorphized `this` is a
-                                    # concrete collapsed struct, whereas the
-                                    # analyzer recorded the bare generic-body
-                                    # type (`ref[StateMachine]`), which would
-                                    # break type-parameter inference at call sites.
+                                if nm.pointer or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
+                                    # The operand is already a pointer *value* whose
+                                    # MT type is a reference (`ref[T]`), or the
+                                    # binding itself is pointer-lowered, so the
+                                    # builtin returns it directly.  A mere
+                                    # raw-pointer MT type (`var p: ptr[int]`) is a
+                                    # stored pointer value: `ptr_of(p)` must take
+                                    # its address (`&p`), like the host's
+                                    # `lower_addr_expression`.  Rebuild the result
+                                    # type from the lowered pointer's element type:
+                                    # a monomorphized `this` is a concrete
+                                    # collapsed struct, whereas the analyzer
+                                    # recorded the bare generic-body type
+                                    # (`ref[StateMachine]`), which would break
+                                    # type-parameter inference at call sites.
                                     var direct_ty = result_ty
                                     if types.is_raw_pointer(nm.ty) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
                                         let elem = types.pointer_element(nm.ty)
@@ -7489,27 +7519,38 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                 if id.name == "adapt" and type_args.len == 1:
                     return lower_adapt_call(ctx, read(type_args.data + 0).value, call_args)
                 if id.name == "array" and type_args.len == 2:
+                    let element_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
                     var array_args = vec.Vec[types.Type].create()
-                    array_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
+                    array_args.push(element_ty)
                     array_args.push(resolve_array_length_type(ctx, read(type_args.data + 1).value))
                     let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
                     var elements = vec.Vec[ir.Expr].create()
                     var ai: ptr_uint = 0
                     while ai < call_args.len:
                         let arg = read(call_args.data + ai)
-                        elements.push(read(lower_expr(ctx, arg.arg_value)))
+                        # Elements take the element type contextually, as the
+                        # host's `lower_contextual_expression` gives it to them:
+                        # `array[ubyte, 4](0, 0, 0, 0)` keeps ubyte elements.
+                        var element_value = lower_expr(ctx, arg.arg_value)
+                        element_value = int_literal_to_context_type(arg.arg_value, element_ty, element_value)
+                        element_value = float_literal_to_context_type(arg.arg_value, element_ty, element_value)
+                        elements.push(read(element_value))
                         ai += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
                 if id.name == "simd" and type_args.len == 2:
+                    let simd_element_ty = resolve_type_ref(ctx, read(type_args.data + 0).value)
                     var simd_args = vec.Vec[types.Type].create()
-                    simd_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
+                    simd_args.push(simd_element_ty)
                     simd_args.push(resolve_array_length_type(ctx, read(type_args.data + 1).value))
                     let simd_ty = types.Type.ty_generic(name = "simd", args = simd_args.as_span())
                     var simd_elements = vec.Vec[ir.Expr].create()
                     var sei: ptr_uint = 0
                     while sei < call_args.len:
                         let arg = read(call_args.data + sei)
-                        simd_elements.push(read(lower_expr(ctx, arg.arg_value)))
+                        var element_value = lower_expr(ctx, arg.arg_value)
+                        element_value = int_literal_to_context_type(arg.arg_value, simd_element_ty, element_value)
+                        element_value = float_literal_to_context_type(arg.arg_value, simd_element_ty, element_value)
+                        simd_elements.push(read(element_value))
                         sei += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = simd_ty, elements = simd_elements.as_span()))
                 if id.name == "str_buffer" and type_args.len == 1:
@@ -9062,7 +9103,7 @@ function ensure_dyn_vtable(ctx: ref[LowerCtx], concrete_name: str, concrete_type
 
     # Generate wrapper functions and vtable constant.
     var wrappers = gen_dyn_vtable_wrappers(ctx, concrete_name, concrete_type, iface_name, methods, type_args, type_params)
-    gen_dyn_vtable_constant(ctx, iface_name, vtable_type_c_name, vtable_c_name, ref_of(wrappers), methods)
+    gen_dyn_vtable_constant(ctx, iface_name, vtable_type_c_name, vtable_c_name, ref_of(wrappers), methods, type_args, type_params)
 
     # Ensure the dyn struct type exists (once per interface).
     ensure_dyn_struct_type(ctx, iface_name)
@@ -9281,7 +9322,7 @@ function find_dyn_method(ctx: ref[LowerCtx], type_name: str, method_name: str, c
 
 ## Generate a vtable global constant of type `mt_vtable_{iface}`, holding pointers
 ## to the wrapper functions.
-function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_type_name: str, vtable_c_name: str, wrappers: ref[map_mod.Map[str, str]], methods: span[ast.InterfaceMethod]) -> void:
+function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_type_name: str, vtable_c_name: str, wrappers: ref[map_mod.Map[str, str]], methods: span[ast.InterfaceMethod], type_args: span[types.Type], type_params: span[ast.TypeParam]) -> void:
     # The vtable constant's type is the `DynVtable` type (`mt_vtable_<Iface>` in
     # C), matching the host.
     let const_ty = types.Type.ty_dyn_vtable(interface_name = iface_name, linkage_name = vtable_type_name)
@@ -9294,7 +9335,10 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
         let wrapper_ptr = unsafe: read(wrappers).get(m.name) else:
             fatal(c"dyn lowering: missing wrapper for method")
         let wrapper_c_name = unsafe: read(wrapper_ptr)
-        # Use the function type for the field so the constant matches the struct decl.
+        # Use the function type for the field so the constant matches the struct
+        # decl — with the interface's type parameters substituted, as the struct
+        # and the wrapper functions already are (a `DoublerMap[int]` vtable's
+        # `map` slot takes `int`, not the interface's `T`).
         var fn_params = vec.Vec[types.Type].create()
         var fn_names = vec.Vec[str].create()
         fn_params.push(types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)))
@@ -9304,10 +9348,11 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
             var p: ast.Param
             unsafe:
                 p = read(m.method_params.data + pi)
-            fn_params.push(resolve_field_type_ref(ctx, p.param_type))
+            fn_params.push(substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params))
             fn_names.push(p.name)
             pi += 1
-        let ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
+        var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
+        ret = substitute_interface_type_params(ret, type_args, type_params)
         let fn_ty = types.Type.ty_function(params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_names.as_span())
         fields.push(ir.AggregateField(name = m.name, value = alloc_expr(ir.Expr.expr_name(name = wrapper_c_name, ty = fn_ty, pointer = false))))
         mi += 1
@@ -12049,16 +12094,18 @@ function lower_call_with_callee(ctx: ref[LowerCtx], c_name: str, callee_expr: Op
 
 ## Re-type a bare `null` literal against `context_ty` when the literal's own type
 ## is not already nullable (the analyzer records `void` for a bare `null`).
-## Mirrors the host's `infer_null_literal_type` taking the expected type.
+## Mirrors the host's `infer_null_literal_type` taking the expected type; a typed
+## `null[T]` keeps its `Types::Null :target_type T` (the host returns it before
+## consulting the expected type).
 function null_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
-    var is_null = false
+    var is_bare_null = false
     unsafe:
         match read(arg_ast):
-            ast.Expr.expr_null_literal:
-                is_null = true
+            ast.Expr.expr_null_literal as nl:
+                is_bare_null = nl.target_type == null
             _:
                 pass
-    if not is_null:
+    if not is_bare_null:
         return value
     if types.is_nullable_type(ir_expr_type(value)):
         return value
@@ -12564,6 +12611,17 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
                 temp_ty = ptr_ty
             else:
                 projected = lower_foreign_arg(ctx, param, arg.arg_value)
+                # An `array[T, N]` argument for a `span[T]` parameter (e.g.
+                # `render_lines(renderer, line_points)`) coerces to the span
+                # aggregate `{ data = &arr[0], len = N }` so the mapping's
+                # `points.data` / `points.len` resolve, mirroring the analyzer's
+                # array→span boundary rule.  The span's element type comes from
+                # the argument: the declared name (`FPoint`) is an alias of the
+                # binding's module and is not resolvable from the caller.
+                let projected_ty = ir_expr_type(projected)
+                if param_type_is_span(param.param_type) and is_array_type(projected_ty):
+                    let span_ty = types.Type.ty_generic(name = "span", args = sp_type(generic_first_arg(projected_ty)))
+                    projected = array_value_to_span(projected, projected_ty, span_ty)
                 temp_ty = ir_expr_type(projected)
             let tc = fresh_c_temp_name(ctx, "foreign_arg")
             setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = temp_ty, value = projected, line = 0, source_path = ""))
@@ -12838,6 +12896,15 @@ function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
         return false
     unsafe:
         return read(boundary.name.parts.data + 0) == "cstr"
+
+
+## True when a declared foreign parameter type is spelled `span[T]`, i.e. the
+## array→span boundary coercion applies to its argument.
+function param_type_is_span(type_ref: ast.TypeRef) -> bool:
+    if type_ref.name.parts.len != 1:
+        return false
+    unsafe:
+        return read(type_ref.name.parts.data + 0) == "span"
 
 
 # =============================================================================
@@ -13739,6 +13806,9 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
             if ctx.arm_payload_fields.contains(naming.qualified_c_name(ri.module_name, ri.name)):
                 if is_recursive_variant_field(recv_ty, member_ty):
                     return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = result, ty = member_ty))
+        types.Type.ty_variant_arm_payload:
+            if is_recursive_variant_field(recv_ty, member_ty):
+                return alloc_expr(ir.Expr.expr_unary(operator = "*", operand = result, ty = member_ty))
         _:
             pass
     return result
@@ -15969,6 +16039,11 @@ function is_recursive_variant_field(recv_ty: types.Type, field_ty: types.Type) -
             recv_c = rn.name
         types.Type.ty_imported as ri:
             recv_c = naming.qualified_c_name(ri.module_name, ri.name)
+        # A match binding is typed as the arm payload struct directly
+        # (`Result.success as p` → `ty_variant_arm_payload`), which already
+        # carries the payload's C name.
+        types.Type.ty_variant_arm_payload as rap:
+            recv_c = rap.c_name
         _:
             return false
     var field_c: str
@@ -18806,8 +18881,13 @@ function try_const_call_ir(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span
     unsafe:
         match read(callee):
             ast.Expr.expr_identifier as id:
-                if ctx.analysis.structs.contains(id.name):
-                    return try_const_struct_literal_ir(ctx, id.name, args, env)
+                # A struct of this module, or a local type alias re-exporting one
+                # (`type Color = c.Color`), constructs an aggregate literal.
+                match const_aggregate_target_type(ctx, ctx.module_name, id.name):
+                    Option.some as target:
+                        return try_const_struct_literal_ir(ctx, target.value, args, env)
+                    Option.none:
+                        pass
                 return try_const_function_value(ctx, id.name, args, env)
             ast.Expr.expr_specialization as bare_spec:
                 match read(bare_spec.callee):
@@ -18829,8 +18909,16 @@ function try_const_call_ir(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span
                         # Qualified struct literal through an import alias
                         # (`rl.Color(r = …)`), which the bare-name branch above
                         # already handles for an unqualified `Color(r = …)`.
-                        if ctx.analysis.imports.contains(rid.name) and struct_exists_in_imports(ctx, ma.member_name):
-                            return try_const_struct_literal_ir(ctx, ma.member_name, args, env)
+                        # The member may be a type alias re-exporting a struct
+                        # (`type Color = c.Color`), so the target resolves through
+                        # the alias chain like the runtime construction path.
+                        let alias_module_ptr = ctx.analysis.imports.get(rid.name)
+                        if alias_module_ptr != null:
+                            match const_aggregate_target_type(ctx, read(alias_module_ptr), ma.member_name):
+                                Option.some as target:
+                                    return try_const_struct_literal_ir(ctx, target.value, args, env)
+                                Option.none:
+                                    pass
                     ast.Expr.expr_specialization as spec:
                         match read(spec.callee):
                             ast.Expr.expr_identifier as sid:
@@ -18926,9 +19014,10 @@ function try_const_method_value(ctx: ref[LowerCtx], caller_env: ref[map_mod.Map[
 function try_const_array_literal_ir(ctx: ref[LowerCtx], type_args: span[ast.TypeArgument], args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
     if type_args.len != 2:
         return Option[ptr[ir.Expr]].none
+    let element_ty = resolve_type_ref(ctx, unsafe: read(type_args.data + 0).value)
     var array_args = vec.Vec[types.Type].create()
     unsafe:
-        array_args.push(resolve_type_ref(ctx, read(type_args.data + 0).value))
+        array_args.push(element_ty)
         array_args.push(resolve_array_length_type(ctx, read(type_args.data + 1).value))
     let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
     var elements = vec.Vec[ir.Expr].create()
@@ -18936,7 +19025,10 @@ function try_const_array_literal_ir(ctx: ref[LowerCtx], type_args: span[ast.Type
     while i < args.len:
         match try_const_value_ir(ctx, unsafe: read(args.data + i).arg_value, env):
             Option.some as ev:
-                elements.push(unsafe: read(ev.value))
+                # Elements take the element type contextually too: a folded
+                # `array[ubyte, 4](0, 0, 0, 0)` keeps ubyte elements.
+                let retyped = const_value_to_field_type(ev.value, element_ty)
+                elements.push(unsafe: read(retyped))
             Option.none:
                 return Option[ptr[ir.Expr]].none
         i += 1
@@ -19114,7 +19206,141 @@ function attribute_arg_value_to_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], ty: ty
     return Option[ptr[ir.Expr]].none
 
 
-function try_const_struct_literal_ir(ctx: ref[LowerCtx], struct_name: str, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+## Resolve the struct a constant aggregate constructor names, following the same
+## alias routing the runtime construction path uses
+## (`lower_aggregate_literal_impl`): `rl.Color(r = 1)` with
+## `type Color = c.Color` in std.raylib constructs std.c.raylib's struct Color,
+## so the folded literal carries that type and its field types come from it.
+function const_aggregate_target_type(ctx: ref[LowerCtx], owner_module: str, name: str) -> Option[types.Type]:
+    match find_imported_analysis(ctx, owner_module):
+        Option.some as owner:
+            if owner.value.structs.contains(name):
+                if owner_module == ctx.module_name:
+                    return Option[types.Type].some(value = types.Type.ty_named(module_name = ctx.module_name, name = name))
+                return Option[types.Type].some(value = types.Type.ty_imported(module_name = owner_module, name = name, args = span[types.Type]()))
+            let alias_ptr = owner.value.type_alias_types.get(name)
+            if alias_ptr != null:
+                var base = unsafe: read(alias_ptr)
+                if types.is_nullable_type(base):
+                    base = types.unwrap_nullable(base)
+                match const_struct_alias_target(ctx, base):
+                    Option.some as target:
+                        return Option[types.Type].some(value = target.value)
+                    Option.none:
+                        pass
+        Option.none:
+            pass
+    return Option[types.Type].none
+
+
+## The struct a type alias re-exports (`type Color = c.Color` names std.c.raylib's
+## struct Color).  Only a struct target is an aggregate constructor; an alias of
+## an enum/flags/opaque is not folded.
+function const_struct_alias_target(ctx: ref[LowerCtx], t: types.Type) -> Option[types.Type]:
+    match t:
+        types.Type.ty_named as nm:
+            if nm.module_name.len == 0 or nm.module_name == ctx.module_name:
+                if ctx.analysis.structs.contains(nm.name):
+                    return Option[types.Type].some(value = t)
+                return Option[types.Type].none
+            match find_imported_analysis(ctx, nm.module_name):
+                Option.some as owner:
+                    if owner.value.structs.contains(nm.name):
+                        return Option[types.Type].some(value = t)
+                Option.none:
+                    pass
+            return Option[types.Type].none
+        types.Type.ty_imported as im:
+            match find_imported_analysis(ctx, im.module_name):
+                Option.some as owner:
+                    if owner.value.structs.contains(im.name):
+                        return Option[types.Type].some(value = t)
+                Option.none:
+                    pass
+            return Option[types.Type].none
+        _:
+            return Option[types.Type].none
+    return Option[types.Type].none
+
+
+## Re-type a folded constant value by the type of the aggregate field it
+## initializes, mirroring the host's `lower_compile_time_literal`
+## (`lowering/utils.rb:361-395`): the interpreted value carries no type of its
+## own, so the field decides the literal's kind — `hex_digit(c) * 16 +
+## hex_digit(c)` folds to a `ubyte` literal in a `ubyte` field, and an integer
+## value in a `float` field becomes a float literal.
+function const_value_to_field_type(value: ptr[ir.Expr], field_ty: types.Type) -> ptr[ir.Expr]:
+    var target = field_ty
+    if types.is_nullable_type(target):
+        target = types.unwrap_nullable(target)
+    # The host recurses into an array target (`lower_compile_time_literal`'s
+    # Array case): each element takes the *element* type, so a zeroed
+    # `array[ubyte, 4](0, 0, 0, 0)` field keeps ubyte elements.
+    match target:
+        types.Type.ty_generic as ag:
+            if ag.name == "array" and ag.args.len == 2:
+                let element_ty = unsafe: read(ag.args.data + 0)
+                unsafe:
+                    match read(value):
+                        ir.Expr.expr_array_literal as al:
+                            var elements = vec.Vec[ir.Expr].create()
+                            var ei: ptr_uint = 0
+                            while ei < al.elements.len:
+                                let retyped = const_value_to_field_type(alloc_expr(read(al.elements.data + ei)), element_ty)
+                                elements.push(unsafe: read(retyped))
+                                ei += 1
+                            return alloc_expr(ir.Expr.expr_array_literal(ty = target, elements = elements.as_span()))
+                        _:
+                            pass
+        _:
+            pass
+    var target_is_str = false
+    var target_is_cstr = false
+    match target:
+        types.Type.ty_str:
+            target_is_str = true
+        types.Type.ty_primitive as p:
+            if p.name == "str" or p.name == "cstr":
+                target_is_str = true
+            target_is_cstr = p.name == "cstr"
+        _:
+            pass
+    unsafe:
+        match read(value):
+            ir.Expr.expr_integer_literal as lit:
+                if types.is_integer_type(target):
+                    return alloc_expr(ir.Expr.expr_integer_literal(value = lit.value, ty = target))
+                if types.is_float_type(target):
+                    return alloc_expr(ir.Expr.expr_float_literal(value = double<-lit.value, ty = target))
+            ir.Expr.expr_float_literal as fl:
+                if types.is_float_type(target):
+                    return alloc_expr(ir.Expr.expr_float_literal(value = fl.value, ty = target))
+            ir.Expr.expr_boolean_literal as b:
+                if types.is_bool(target):
+                    return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = target))
+            ir.Expr.expr_string_literal as s:
+                if target_is_str:
+                    return alloc_expr(ir.Expr.expr_string_literal(value = s.value, ty = target, cstring = target_is_cstr))
+            _:
+                pass
+    return value
+
+
+## Fold a struct construction into an aggregate literal of `target`'s type.  The
+## target is the struct the constructor names, resolved through its alias chain
+## by `const_aggregate_target_type`, so the fields come from the declaring module.
+function try_const_struct_literal_ir(ctx: ref[LowerCtx], target: types.Type, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:
+    var struct_name = ""
+    var field_module = ctx.module_name
+    match target:
+        types.Type.ty_named as nm:
+            struct_name = nm.name
+            field_module = nm.module_name
+        types.Type.ty_imported as im:
+            struct_name = im.name
+            field_module = im.module_name
+        _:
+            return Option[ptr[ir.Expr]].none
     var fields = vec.Vec[ir.AggregateField].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -19129,17 +19355,17 @@ function try_const_struct_literal_ir(ctx: ref[LowerCtx], struct_name: str, args:
                 # folder types an integer literal `int`, while the host renders
                 # e.g. `LIGHTGRAY`'s fields as `ubyte`.
                 var field_value = fv.value
-                match find_struct_field_type(ctx, struct_name, ctx.module_name, field_name):
+                match find_struct_field_type(ctx, struct_name, field_module, field_name):
                     Option.some as field_ty:
                         field_value = int_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
+                        field_value = const_value_to_field_type(field_value, field_ty.value)
                     Option.none:
                         pass
                 fields.push(ir.AggregateField(name = field_name, value = field_value))
             Option.none:
                 return Option[ptr[ir.Expr]].none
         i += 1
-    let agg_ty = types.Type.ty_named(module_name = ctx.module_name, name = struct_name)
-    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = agg_ty, fields = fields.as_span())))
+    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = target, fields = fields.as_span())))
 
 
 function try_const_variant_literal_ir(ctx: ref[LowerCtx], variant_name: str, arm_name: str, args: span[ast.Argument], env: ref[map_mod.Map[str, ptr[ir.Expr]]]) -> Option[ptr[ir.Expr]]:

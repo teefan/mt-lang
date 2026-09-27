@@ -1,11 +1,10 @@
 # Self-Host Plan
 
 > **Starting a session?** Read **"How to start a work session"** below (phase
-> order, per-workstream entry points and gates), then **§0k** for the active LSP-
-> parity phase (live counters, the remaining entries, and the **stage 5/6
-> capsules** — `milkTea/debugInfo`, then formatting/tidy — with opening files,
-> host references and budgets) and **§0j** for the compiler-side remaining work
-> (`lower`, builds, CLI).
+> order, per-workstream entry points and gates), then **"First steps for the next
+> session (2026-09-27 handoff)"** — the builds are at parity, so what remains is
+> `lower` dump fidelity (§0j's ranked table), CLI message parity, and the LSP
+> (§0k) / DAP (`dap-design.md` §10) leftovers.
 
 > **Workstream status (self-host vs `projects/stress`)**: **DONE** — the
 > self-host compiler builds, links and runs `projects/stress` with output and
@@ -16,16 +15,22 @@
 > [self-host-stress-todo.md](./self-host-stress-todo.md).
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**
-Stage2 == stage3 byte-identical; `tools/bootstrap.sh` self-test: **506 tests
-across 14 files, 511 tests, 0 failed** (measured 2026-09-26).
+**A real user project outside the repository builds and runs under the
+self-host** (`~/Projects/MilkTea/SimpleGame`, the const-aggregate blocker of
+§0j item 12 — fixed in session 2; the binary initializes raylib and audio and
+runs).
+Stage2 == stage3 byte-identical; `tools/bootstrap.sh` self-test: **516 tests
+across 14 files, 0 failed** (measured 2026-09-27 session 2);
+the self-host also builds every example and `test/mt` file the host does (see
+§0j's 2026-09-27 section).
 **Linter parity: 14/16 common rules byte-identical with Ruby on language_baseline.mt.**
 **Raylib parity: 217/219 build and run** (2026-07-16 sweep).
-**Language examples: 11/15 build under `--no-cache`** (measured 2026-09-25:
-`async_network_lobby`, `async_stress_test`, `data_structures`,
-`nullable_and_variant_test` fail on the self-host while the host builds all
-four — see §0j); every example that builds also matches the host's
-stdout+exit (sampled: `integration_test`, `reflection_advanced`,
-`language_baseline`, `event_stress_test`). **The vendored example families now
+**Language examples: 15/15 build under `--no-cache`** (2026-09-27; the four that
+failed — `async_network_lobby`, `async_stress_test`, `data_structures`,
+`nullable_and_variant_test` — are fixed, see §0j's 2026-09-27 section) and
+**the `examples/sdl3` family is 34/34** (it built none before); every example
+that builds also matches the host's stdout+exit (sampled: `integration_test`,
+`reflection_advanced`, `language_baseline`, `event_stress_test`). **The vendored example families now
 build and run at parity**: `box2d/drop`, `box2d/explosion`, `box3d/ragdoll` and
 `box3d/box_stack` produce byte-identical stdout under both compilers, and
 `examples/sdl3` files `check` clean (§0j items 5–13). **`mtc lint` has 37 rules plus `--fix`
@@ -66,11 +71,14 @@ on 2026-09-26 (§7).
 message text/channel/argument-precedence differences, not missing commands
 (§0j).  Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-**`--sexpr` parity (measured 2026-09-26 over 702 files): lex 700/700 comparable
-byte-identical (1 host-side rejection); parse 696 comparable files byte-identical
-with 0 differences (5 host-side rejections: external files, platform-pinned); `lower` 38 match /
-604 differ / 52 host-rejected / 0 self-rejected.**  The ref/lifetime and dyn
-vtable categories are closed, and so are the three levers §0j ranked first —
+**`--sexpr` parity (measured 2026-09-27 session 2 over 702 files): lex 702/702
+comparable byte-identical; parse 698 comparable files byte-identical with 0
+differences (4 host-side rejections: external files, platform-pinned); `lower`
+39 match / 613 differ / 50 host-rejected / 0 self-rejected** (the host-rejected
+bucket is only `external` and platform-pinned files; one file became
+byte-identical in session 2 and every family whose first difference was closed
+moved 15–63 KB deeper into its dump).  The ref/lifetime and dyn vtable
+categories are closed, and so are the three levers §0j ranked first —
 **raw-module method linkage naming**, **unsigned literals in the unsigned
 domain** (`18446744073709551615`, provenance-tracked so `~0` still prints `-1`)
 and **`:path` attribution for statements lowered from AST nodes** (a 19-file
@@ -79,17 +87,22 @@ sample went from 138 pathless `return` statements to 0, matching the host), and
 (`0.2f`, not `0.20000000000000001`; shortest round-trip form plus the `f` suffix
 for `float` literals).
 **Same-module foreign calls returning a nominal type** no longer lower to
-`Types::Error`.  The remaining `lower` deltas start 30–40 KB into the dumps for
-those families; they are dominated by opaque declarations (the sdl3 family's
-first difference *and* its build failure), zero-valued aggregate field types,
-`null` contextual typing, event-field modelling and generic-specialization
-parameter types (§0j).
+`Types::Error`, and session 2 closed the four ranked items that followed:
+**alias-qualified const aggregates** (the `MilkTea/SimpleGame` blocker),
+**zero-valued aggregate field/element types**, **`null` contextual typing** and
+**`dyn` vtable method-slot substitution**, plus integer literals in local/global
+declarations.  The remaining `lower` deltas are dominated by opaque declaration
+*fields* (the sdl3 family's first difference), globals initialized from imported
+constants, refined nullable operand types, event-field modelling, function-type
+names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
+(2026-09-27) — the dump-level differences above remain.
 
-Last updated: 2026-09-26 (LSP parity stage 5: the formatting family — trivia-aware
-lexing, the CST reconstruct, the tidy wrap + blank-line pipeline, and the LSP mode
-dispatch — leaves the harness at 4 differing entries (stage 6d added the malformed-frame probe), and `tools/format_parity.rb`
-measures tidy 702/702 and preserve 702/702 byte-identical; catalogue and working
-order in §0k; `lower`/CLI remaining work unchanged in §0j)
+Last updated: 2026-09-27 session 2 (the reported `MilkTea/SimpleGame` project
+now builds and runs under the self-host — const aggregates through an imported
+type alias fold like the host; §0j items 2, 3, 5 and 12 are closed, `lower` is
+39/613/50/0, and the fixed point holds with 14 files / 516 tests / 0 failed.
+Remaining work: §0j item 1 (opaque declarations, 34 sdl3 files) and items 13–15,
+CLI message parity, and the LSP/DAP items)
 
 ---
 
@@ -101,9 +114,9 @@ workstream doc for the area you are touching:
 
 | Workstream | Read | Verify with |
 | --- | --- | --- |
-| `lower` dump parity | §0j "Remaining work" 1–6, §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
-| Hard build failures (`examples/*`, `test/mt`) | §0j item 7 | `build/stage2/mtc test test/mt -I .` and building the four examples |
-| CLI behavior parity | §0j item 8, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
+| `lower` dump parity | §0j "Remaining work" (items 1, 4, 6–8, 13–15), §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
+| Example / vendored-family builds (no known failures since 2026-09-27) | §0j's 2026-09-27 section | the 15 top-level examples, `find examples/sdl3 -name '*.mt'`, a raylib sample |
+| CLI behavior parity | §0j item 10, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
 | LSP feature parity (**in progress**, §0k) | §0k's gap list + the stage 6 capsule, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`), plus valgrind and the headless-Neovim smoke test for behavior changes |
 | Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (preserve/tidy must stay 702/702; canonical is the comment-reattachment delta) |
 | DAP | `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both] [--json OUT]` — runs a session on both adapters and prints a per-request diff |
@@ -116,13 +129,18 @@ looked correct at the CLI level broke the compiler's own bootstrap.
 
 ### Phase order and current position
 
-1. **`lower` dump parity** — paused: 0 self-rejections, 38/694 byte-identical,
+0. **Hard build parity** — **complete (2026-09-27)**: the self-host builds every
+   example and test the host builds (15/15 language examples, 34/34 `examples/sdl3`,
+   a 40-file raylib sample, `test/mt` 60/60 with 0 failures).  Six root causes are
+   recorded in §0j's 2026-09-27 section; regressions should show up as a build
+   failure in those sweeps.
+1. **`lower` dump parity** — paused: 0 self-rejections, 38/702 byte-identical,
    the remaining categories ranked in §0j.
-2. **CLI behavior parity** — 21/61 harness cases match; the 39 differ on message
-   text, output channel and argument precedence (§0j item 8).
+2. **CLI behavior parity** — 22/61 harness cases match; the 39 differ on message
+   text, output channel and argument precedence (§0j item 10).
 3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
-   harness (`tools/lsp_parity.rb`) measures 330/30 capability keys, 1 of 55 request
-   entries and 2 of 15 stress probes differing (3 entries), and 0 semantic-token
+   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 1 of 55 request
+   entries and 3 of 19 stress probes differing (4 entries), and 0 semantic-token
    comparisons; the remaining families and the working order are in §0k.  Stages 1
    (seven isolated entries), 2 (completion), 3 (documentSymbol), 4
    (diagnostics + semantic tokens), 5 (formatting/tidy — plus the
@@ -132,7 +150,41 @@ looked correct at the CLI level broke the compiler's own bootstrap.
    hang, and a real VS Code session runs clean under valgrind.
 4. **DAP** — phase 1 (process backend, 29 handlers) delivered; the lldb-dap
    bridge is now feasible (`std/libuv.mt` poll + `std/async`) but unstarted
-   (`dap-design.md`).
+   (`dap-design.md` §10).
+
+### First steps for the next session (2026-09-27 session-2 handoff)
+
+Nothing is broken: the builds are at parity and the reported `MilkTea/SimpleGame`
+project builds and runs, so every remaining item is a *fidelity* or *breadth*
+item, and each one is verified by a counter moving (not by a new passing
+program).  Suggested order:
+
+1. **Re-measure before changing anything** (a stale binary is the classic false
+   result; note the bootstrap rewrites `version_info.mt` after stage2 is built,
+   which makes `sexpr_parity`'s staleness warning fire harmlessly):
+   ```sh
+   ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
+   ruby tools/sexpr_parity.rb lower -q -j 16      # baseline 39 match / 613 differ / 50 host-rejected / 0 self-rejected
+   rake "cli:parity"                              # baseline 22 match / 39 differ / 0 pending
+   ```
+2. **The biggest single mover** — §0j item 1 (opaque `IR::OpaqueDecl`
+   naming/`forward_declarable`: the first difference for all 34 sdl3 files; the
+   C backend's opaque typedef emission moves with it).
+3. **The two localized next-first-differences** — §0j item 13 (a global
+   initialized from an imported constant: `box3d/ragdoll` + `box_stack`) and item
+   14 (refined non-null operand types after a null check: `data_structures` +
+   `reflection_advanced`).
+4. **Then the residue** — items 4, 6, 7, 8 (event fields, function-type names,
+   include sets, declaration ordering/const-folding) and item 15 (proc
+   representation, §0i item 2 — the largest single item).
+5. **CLI message parity** (§0j item 10) and the **LSP leftovers** (§0k: the
+   `debugInfo` remainder, parser-recovery parity, the feature-audit items) and
+   **DAP** (`dap-design.md` §10) are independent tracks; pick by user value.
+
+Each change still ends with `tools/bootstrap.sh -j 16` (fixed point + compiler
+self-test) plus the sweep that covers the area — `sexpr_parity` for lowering,
+`rake "cli:parity"` for CLI text, `tools/lsp_parity.rb` for LSP,
+`tools/dap_smoke.rb` for DAP.
 
 ---
 
@@ -1037,8 +1089,9 @@ rows byte-identical); and the DAP items in `dap-design.md` §10.
    self-host-only rule, so files where it fires differ from the host by design.
    Either keep it (documented value-add) or gate it behind a config flag so the
    editor matches the host exactly.
-7. **Compiler-side work** is §0j (`lower` dump parity 38/650, the four example
-   build failures, CLI message parity, `deps`/`--bundle`/`--jobs`/Wasm).
+7. **Compiler-side work** is §0j (`lower` dump parity 39/613, CLI message parity,
+   `deps`/`--bundle`/`--jobs`/Wasm); the example and `test/mt` build failures it
+   used to list are fixed (2026-09-27).
    Note for that work: `f"{{"` is **not** an escape in Milk Tea — both compilers
    emit two literal braces (the DAP's `exited` body relied on Ruby habits and
    broke clients; fixed 2026-09-27).
@@ -1329,6 +1382,10 @@ count does not move — every one of the 604 still differs in some later categor
 
 ### Measured status (2026-09-25)
 
+> Historical table (the counters describe the tree at that date).  The live
+> numbers are the header block and §0j's 2026-09-27 session-2 section: 15/15
+> language examples, 34/34 sdl3 files, 60/60 `test/mt`, `lower` 39/613/50/0.
+
 | Gate | Result |
 | --- | --- |
 | `tools/bootstrap.sh -j 16` | fixed point holds (`stage2.c == stage3.c`), self-test 12 files / 498 tests / 0 failed |
@@ -1341,70 +1398,237 @@ count does not move — every one of the 604 still differs in some later categor
 | `sexpr_parity lower` | 38 match / 604 differ / 52 host-rejected / **0 self-rejected** — every file the host lowers, the self-host lowers too (start of session: 35 / 520 / 53 / 86) |
 | Vendored families (sample) | `box2d/drop`, `box2d/explosion`, `box3d/ragdoll`, `box3d/box_stack` build and run with byte-identical stdout in both compilers |
 
+### 2026-09-27 session — self-host hard-build fixes (sdl3 family, `test/mt`, language examples)
+
+Goal: remove the self-host's remaining *hard* failures — the places where it
+cannot build what the host builds.  The self-host now builds **15/15 top-level
+language examples**, **34/34 `examples/sdl3` files** (it built none), runs
+**60/60 `test/mt` files with 0 failures** (seven failed to build), and the
+bootstrap fixed point holds with 14/14 test files green.
+
+The fixes, each a distinct root cause:
+
+1. **`extending` block type parameters were not in scope while the receiver
+   resolved** (`semantic/analyzer.mt` `check_extending_methods`).  `this` inside
+   `extending StateMachine[State, Event, Context]:` was typed
+   `StateMachine[<error>, <error>, <error>]`, so every expression recording that
+   type (e.g. `ref_of(this)`) lost the bindings and an *inferred* generic call
+   specialized under a collapsed `__error__error__error` name with a mismatched
+   signature.  The block's type parameters are now entered before the receiver
+   type resolves.  This closed six of the seven `test/mt` build failures
+   (`behavior_tree`, `blackboard`, `fsm`, `goap`, `htn`, `spatial`) and
+   `examples/async_network_lobby`/`async_stress_test`/`data_structures`.
+2. **Async frame fields typed as a match-arm payload had no ordering edge**
+   (`c_backend.mt` `by_value_dep_key`).  `Result[T, E].success as p` spilled
+   across an `await` stores `<variant>_success` in the frame struct, but the key
+   function had no `ty_variant_arm_payload` case, so the frame was emitted before
+   the variant that defines the payload struct (`field 'local_success_kp' has
+   incomplete type`).  The arm name is already registered as an alias of the
+   owning variant node; the dependency edge now uses it.  Closed `net_sync` and
+   the async frame family.
+3. **Opaque values were emitted as values** (`c_backend.mt` `c_type`,
+   `render_zero_initializer`/`_expression`, and `guard_success_type` in the
+   lowering).  A re-exported opaque (`public opaque Window = c"SDL_Window"`)
+   names a C struct that is never defined, so a *value* must be a pointer — the
+   host's `Types::Opaque` model (`base*`).  `var window: sdl.Window` now emits
+   `std_sdl3_Window* window = NULL;` instead of a value of an incomplete type,
+   and a nullable opaque keeps that same pointer form.  Also: the vendored SDL3
+   link line now carries `-pthread -lm` (the flags in the vendored build's
+   `sdl3.pc`), which the family needs for `fmod`/`atan`.
+4. **`ptr_of` on a raw-pointer variable returned the pointer instead of its
+   address** (`lowering.mt`).  The "already a pointer" shortcut applied to any
+   `ptr[T]`-typed name; the host only short-circuits pointer-lowered bindings
+   and `ref[T]`.  `ptr_of(wav_data)` now takes the address (`&wav_data`) as
+   `lower_addr_expression` does, which `sdl3/audio/load_wav` needs.
+5. **`array[T, N]` arguments at a foreign `span[T]` boundary were materialized
+   as arrays** (`lowering.mt` `lower_inline_foreign_mapping`): the mapping's
+   `points.data` / `points.len` then addressed an array temp.  The projection now
+   coerces through `array_value_to_span` (`{ data = &arr[0], len = N }`), taking
+   the element type from the argument because the declared name is an alias of
+   the binding's module.
+6. **Recursive variant arm fields were read without the dereference**
+   (`lowering.mt` `lower_member_access`): a field that embeds the enclosing
+   variant is stored as a pointer (`.left = &a`), so reads must be `*b.left`.
+   The auto-deref handled `ty_named`/`ty_imported` receivers; a match *binding*
+   is typed `ty_variant_arm_payload`, which is now handled too.  Closed
+   `examples/nullable_and_variant_test`.
+
+Verification: `tools/bootstrap.sh -j 16` (fixed point holds, 14/14 files),
+`build/dev/mtc test test/mt -I .` (**60 files, 0 failed**), the 15 language
+examples, the full sdl3 sweep, a 40-file raylib sample (40/40), runtime
+stdout+exit parity against host-built binaries for `data_structures`,
+`nullable_and_variant_test` and `option_and_result_surface`, `cli:parity`
+(22/39/0, unchanged), `sexpr_parity` lex 702/702, parse 698 comparable / 0
+differ, `lower` 38/615/49/0 (unchanged).  New self-host tests live in
+`projects/mtc/test/c_backend_test.mt` (opaque-as-pointer, `ptr_of` address,
+recursive-payload deref, generic extending block); the fsm/htn/goap family in
+`test/mt` locks fix 1 under both compilers.
+
+### 2026-09-27 session 2 — `lower` fidelity: const aggregates, literal typing, dyn vtables
+
+Goal: work §0j's ranked table from the top, starting with the reported blocker.
+Five fixes, each verified against the host's `--sexpr lower` output; the
+before → after figures are the affected file's *first difference* depth.
+
+1. **Const aggregates of an alias-qualified type** (item 12 — the reported
+   `MilkTea/SimpleGame` blocker).  `public const MIDNIGHT: rl.Color =
+   rl.Color.from_hex_str("#10121c")` with `type Color = c.Color` in std.raylib now
+   folds to the host's `(IR::AggregateLiteral :type (Types::Struct :name "Color"
+   :module_name "std.c.raylib") …)` with `ubyte` fields instead of staying an
+   `IR::Call` (which the C compiler rejects as a non-constant initializer).
+   Three pieces, all in `lowering.mt`: `const_aggregate_target_type` resolves a
+   constructor's target through the same alias chain the runtime construction
+   path uses (`lower_aggregate_literal_impl`), `try_const_struct_literal_ir` now
+   takes the *resolved* type plus its declaring module (so the field lookups
+   follow the alias), and `const_value_to_field_type` types every folded field
+   value by the field's own type (the host's `lower_compile_time_literal`),
+   recursing into `array[T, N]` elements.  **Verified end-to-end**:
+   `mtc build .` on `~/Projects/MilkTea/SimpleGame` prints
+   `built ./src/main.mt -> build/simple_game` and the binary runs (raylib and
+   audio initialize; no crash); `colors.mt`'s dump matches the host's
+   byte-for-byte up to an unrelated foreign-cstr temp-naming difference (first
+   difference 20.7 KB → 63.2 KB).  Regression test:
+   `projects/mtc/test/lowering_test.mt`
+   `test_const_aggregate_through_imported_type_alias` — a three-module fixture
+   (raw struct module, alias re-export, extending block + consts in the root)
+   asserting both the formatted IR and the sexpr type/field shape.
+
+2. **Zero-valued aggregate fields and array elements typed by field/element
+   type** (item 2).  The same typing makes `b3_emptyDistanceCache`'s
+   `metric = 0` a `float` literal and `indexA = array[ubyte, 4](0, 0, 0, 0)`
+   keep `ubyte` elements, and the runtime `array`/`simd` constructors type their
+   elements contextually (the host's `lower_contextual_expression`).
+   `box3d/ragdoll` 15.5 KB → 50.4 KB, `box3d/box_stack` → 50.7 KB.
+
+3. **`null` contextual typing** (item 3).  A bare `null` operand of `==`/`!=`
+   takes the other operand's type (`source == null` types the literal
+   `Nullable(ptr[ubyte])`), and the runtime path gives a *typed* `null[T]` its
+   `Types::Null :target_type T` instead of `void`.  The second half needed a
+   matching C-backend guard: `variant_c_name_for_type` fed every operand type to
+   `c_type`, which has no `Types::Null` arm (the host decides variant-ness by
+   type class, never by `c_type`), so `null[ptr[T]]` in a comparison aborted the
+   backend (`async_network_lobby`, `async_stress_test`); it now returns the empty
+   name for non-nominal types, mirroring the host's type-class check.
+   `data_structures` 37.1 KB → 38.9 KB, `reflection_advanced` 32.1 KB → 32.8 KB.
+   **Documented divergence:** for a *left-hand* bare null (`null == x`) the host
+   records `bool` on the literal node — an artifact of a later inference pass
+   recording the comparison's expected type there — while the self-host types it
+   from the other operand; no corpus file uses that shape
+   (`tmp/probes/reversed_null.mt` is the only probe).
+
+4. **Integer literals take the declared type in local and global declarations.**
+   `var index: ptr_uint = 0` (`std/mem/heap.mt`) and `var shorts: short = 0`
+   (`language_baseline`) now carry the declared type, mirroring the host's
+   contextual literal inference for local declarations and module-level `var`s.
+   These were the next first differences for the data-structures/reflection
+   families and for `language_baseline` after fixes 3 and 5.
+
+5. **`dyn` vtable constants substitute the interface's type parameters** (item
+   5).  `mt_vtable_DoublerMap_Mapper`'s method slot is
+   `fn(ptr[void], int) -> int` rather than the interface's bare `T`:
+   `gen_dyn_vtable_constant` now substitutes exactly as the vtable struct and the
+   wrapper functions already did.  `language_baseline` 33.0 KB → 34.2 KB (its
+   next first difference is the proc representation, §0i item 2).
+
+Gates: `tools/bootstrap.sh -j 16` (fixed point holds; 14 files / 516 tests / 0
+failed — the bootstrap exits non-zero on a broken fixed point, and it exited 0),
+`sexpr_parity` lex/parse unchanged, `lower` **39 match / 613 differ /
+50 host-rejected / 0 self-rejected** (was 38/614/50/0 — one more file is
+byte-identical, the rest moved deeper), `cli:parity` unchanged at 22/39/0, and
+the SimpleGame build + run above.
+
 ### Why the `lower` sweep's "HOST-FAIL" bucket is not a host bug
 
 The sweep reports files the *host* refuses to lower separately instead of
-counting them as differences.  Of 56 rejections: 44 are `external` files (raw C
-bindings such as `std/c/*.mt` — no IR exists to dump), 4 are platform-pinned
-(`*.wasm.mt`, `*.windows.mt`), 4 were our own unparseable test files (fixed
-above), 1 is a compile-fail fixture (`test/examples/compile_fail/*`), and 3 are
-genuine host-side bugs/limitations: a `double` literal rejected where a `float`
-is expected (`examples/raylib/core/custom_frame_control.mt`), an inline foreign
-call that needs temporary text storage (`unicode_emojis.mt`), and an unsupported
-foreign boundary mapping `ptr[Color] as const_ptr[void]`
-(`image_processing.mt`).  The last three belong to the §5.2 family and are
-independent of the self-host work.
+counting them as differences.  The bucket is now (2026-09-27 session 2, 702
+files: 39 match / 613 differ / **50 host-rejected** / 0 self-rejected) entirely
+`external` files (raw C bindings such as `std/c/*.mt` — no IR exists to dump)
+and platform-pinned files (`*.wasm.mt`, `*.windows.mt`), i.e. *not* host bugs.
+The previous three genuine host-side rejections are fixed:
+
+- `examples/raylib/core/custom_frame_control.mt` — the host's
+  implicit-conversion rule is deliberate (`double` → `float` needs a cast, see
+  `test_explicit_double_to_float_is_rejected`); the example now annotates its
+  time variables `double` and casts where it narrows, so both compilers build it.
+- `examples/raylib/text/unicode_emojis.mt` — a foreign call that must be lowered
+  as a statement now prepares its own arguments first, so a nested foreign call
+  that needs a temporary is hoisted ahead of it instead of failing the
+  inline-only check.
+- `examples/raylib/textures/image_processing.mt` — a nullable pointer
+  (`ptr[Color]?`) now projects as its base at a foreign boundary, because a
+  nullable pointer has the same C representation (`pointer_represented_nullable_base?`).
+
+Fixing those exposed two further host bugs, both fixed in the same pass:
+
+- a checked-index argument for a pointer-to-array receiver emitted the *array*
+  pointer where the helper takes the *element* pointer
+  (`read(ref[array[T, N]])[i]` produced invalid C);
+- an embedded array field initialized from an array-valued expression emitted
+  an invalid array assignment (`Holder(colors = make())`, and the same for
+  `array[array[T, N], M](f(), g())`); it now copies element by element.
 
 ### Remaining work (planned for the next session)
 
-There are **no self-rejections left**: the self-host analyzes and lowers all 694
-corpus files the host can.  What remains is *dump fidelity* (604 files differ
-somewhere) plus the hard build failures in four top-level examples and seven
-`test/mt` files.  Ranking after the third pass (items 18–19 closed the former
-#1 and #2); 1–3 below are the categories the current first differences are
-dominated by, and 1 is the only item that also fixes hard build failures:
+There are **no self-rejections left**: the self-host analyzes and lowers every
+corpus file the host can.  What remains is *dump fidelity*; **all hard build
+failures are closed** (2026-09-27: 15/15 language examples, 34/34 sdl3 files,
+60/60 `test/mt`, and the reported `MilkTea/SimpleGame` project).  Ranking after
+the fourth pass (the second 2026-09-27 session closed items 2, 3, 5 and 12 —
+see "2026-09-27 session 2" below); item 1 plus the three items it uncovered
+(13–15) are the categories the current first differences are dominated by:
 
 | # | Item | Evidence | Approach |
 | --- | --- | --- | --- |
-| 1 | **Opaque declarations** (`IR::OpaqueDecl`) | the first difference for the whole `examples/sdl3` family *and* its build failure: host `(IR::OpaqueDecl :name "Window" :linkage_name "SDL_Window" :forward_declarable true :source_module "std.sdl3")` vs self `(:name "std_sdl3_Window" :forward_declarable false)`; the emitted C is `typedef struct SDL_Window SDL_Window;` vs `typedef SDL_Window std_sdl3_Window;`, which leaves `SDL_Window` incomplete and fails the build | a re-exported opaque keeps its *declared* name and forwards `typedef struct <c_name> <name>;`; mirror the host's `OpaqueDecl` naming/`forward_declarable` (roadmap #6, now ranked first because it gates a whole family's builds) |
-| 2 | **Zero-valued aggregate fields typed by field type** | `box3d/ragdoll`'s first difference: host `(IR::AggregateField :name "metric" :value (IR::FloatLiteral :value 0.0 :type (Types::Primitive :name "float")))` vs self `(IR::IntegerLiteral :value 0 :type (Types::Primitive :name "int"))` | an omitted/zeroed field must take the *field's* type and literal kind (float field → `0.0` float); the self-host emits an untyped int 0 |
-| 3 | **`null` literal contextual typing** | `data_structures` / `reflection_advanced`'s first difference: host `(IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name "ptr" :arguments ((Types::Primitive :name "ubyte")))))` vs self `(IR::NullLiteral :type (Types::Primitive :name "void"))` | a `null` in a typed position takes the expected nullable pointer type, as the host's `infer_null_literal_type` does; the existing `null_literal_to_context_type` helper covers only part of the sites (comparisons here) |
+| 1 | **Opaque declarations** (`IR::OpaqueDecl`) — *dump difference only; the builds are FIXED (2026-09-27)* | the first difference for the whole `examples/sdl3` family: host `(IR::OpaqueDecl :name "Window" :linkage_name "SDL_Window" :forward_declarable true :source_module "std.sdl3")` vs self `(:name "std_sdl3_Window" :forward_declarable false)`.  The family's *build* failure had a different root cause (opaque values emitted as values, plus missing SDL3 private link flags) and is fixed — all 34 sdl3 files build | a re-exported opaque keeps its *declared* name and forwards `typedef struct <c_name> <name>;`; mirror the host's `OpaqueDecl` naming/`forward_declarable` (roadmap #6).  `collect_opaque_decls` builds the entry; the C backend's opaque typedef emission must move with it |
+| 2 | ~~**Zero-valued aggregate fields typed by field type**~~ **FIXED (2026-09-27 session 2)** | `box3d/ragdoll`'s first difference was host `(IR::AggregateField :name "metric" :value (IR::FloatLiteral :value 0.0 :type (Types::Primitive :name "float")))` vs self `(IR::IntegerLiteral :value 0 :type (Types::Primitive :name "int"))` | `const_value_to_field_type` re-types every folded field value by the *field's* type (the host's `lower_compile_time_literal`), recursing into `array[T, N]` elements, and the runtime `array`/`simd` constructors type their elements contextually.  The family's first difference moved from ~15.5 KB to ~50 KB into the dump (now item 13) |
+| 3 | ~~**`null` literal contextual typing**~~ **FIXED (2026-09-27 session 2)** | `data_structures` / `reflection_advanced`'s first difference was host `(IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name "ptr" …)))` vs self `(IR::NullLiteral :type (Types::Primitive :name "void"))` | comparisons now re-type a bare `null` operand from the other side (the host propagates the left operand's type to the right), and the runtime path gives a typed `null[T]` its `Types::Null :target_type T`.  **Documented divergence:** the host types a *left-hand* bare null (`null == x`) as `bool` — an artifact of a later inference pass recording the comparison's expected type on the literal node; the self-host types it from the other operand.  No corpus file has that shape (`tmp/probes/reversed_null.mt` is the only probe).  Both files' first differences moved deeper (now item 14) |
 | 4 | **Event fields in event-carrying structs** | `event_stress_test`'s first difference: host `(IR::Field :name "__event_closed" :type (Types::Event :name "closed" :capacity 4 …))` vs self `(IR::Field :name "closed" :type (Types::Struct :name "mt_event_…_closed_4"))` | the event runtime models each `event` field as `__event_<name>` typed `Types::Event`; the self-host emits the listener-slot struct under the bare name.  Mirror the host's field naming/type in the event-declaration lowering |
-| 5 | **Generic-specialization parameter types** | `language_baseline`'s first difference: host `(Types::Parameter :name "x" :type (Types::Primitive :name "int"))` vs self `(Types::Struct :name "T" :module_name "")` | a specialization's parameter types must be substituted like its body/locals; same family as the 7 `test/mt` build failures (item 9).  Check `lower_specialized_function`'s param path for `type_substitution` |
+| 5 | ~~**Generic-specialization parameter types**~~ **FIXED (2026-09-27 session 2)** | `language_baseline`'s first difference was `(Types::Parameter :name "x" :type (Types::Struct :name "T" :module_name ""))` where the host has `int` | `gen_dyn_vtable_constant` now substitutes the interface's type parameters like the vtable struct and the wrapper functions already do (the const is a `DynVtable`'s method slot).  `language_baseline`'s first difference moved past it (now the proc-representation gap, §0i item 2) |
 | 6 | **Function-type names** (`Types::Function :name ""`) | visible in the sdl3 dumps right after item 1's first difference: host `:name "run_app_no_args_uninitialized"` vs self `:name ""` | the function *type* of a function reference carries the callee's name in the host; thread it through the analyzer/lowering type construction |
 | 7 | **Include set** (`math_bindgen.h` vs `raymath.h`, box2d/drop.mt) | the first difference for `examples/box2d` | the binding's include directives must match the host's registry (std.math → raymath) |
 | 8 | **Struct/declaration ordering**, **const-folding shape**, **enum-member const folding**, **variant-match goto** | `ClockSync` vs `std_net_recv_impl_frame`; `IR::IntegerLiteral` vs `IR::Cast` (`errno_test.mt`); 4 / 1 files | mirror the host's decl ordering in the C backend's sort; fold `T<-literal` casts in constant position; roadmap #7/#13 |
-| 9 | **Four example build failures** (`async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test`) and the 7 `test/mt` build failures | verified failing with the pre-change compiler too | two are `field 'local_*' has incomplete type` — a value-optional/RESULT frame field is emitted before the struct it embeds; one is `unknown type name 'mt_span_error'` (a `span` of the permissive error type reaching C — the analyzer should reject or type it concretely); one is a recursive variant payload mismatch (`incompatible type for argument 1 of eval_expr`); the `test/mt` seven are all the generic-instance naming/typing family (`std_goap_find_node_index__error__error__error`, `std_blackboard_find_entry__error` given a `Blackboard_bool *`, `Tree[<runner>Context]`) — item 5 above is likely the same root cause |
+| 9 | ~~**Four example build failures** (`async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test`) and the 7 `test/mt` build failures~~ **FIXED (2026-09-27)** | all four examples build and run at stdout+exit parity with the host; `test/mt` is 60 files / 0 failed | four root causes: the analyzer's extending-block type parameters (three examples + six `test/mt` files), an async frame field typed as a match-arm payload with no ordering edge (`net_sync`), opaque values emitted as values, and recursive variant arm reads missing their dereference.  Details in the 2026-09-27 section above |
 | 10 | **CLI message parity** | `rake "cli:parity"` 39/61 differ, set unchanged all session | message text, stdout-vs-stderr channel and argument-precedence differences (e.g. `std show` prints to stdout instead of stderr; `build --bogus` reports "accepts a single source path" instead of "unknown build option") |
-| 11 | **Host-side bugs (report, not fix here)** | 3 files | `double` literal rejected where `float` is expected (`custom_frame_control.mt`), inline foreign call needing temporary storage (`unicode_emojis.mt`), unsupported foreign boundary mapping (`image_processing.mt`); plus the `inline for` const-folding quirk noted in the stress doc |
-| 12 | **Const functions returning alias-qualified aggregates** (2026-09-26, found building `MilkTea/SimpleGame`) | `public const MIDNIGHT: rl.Color = rl.Color.from_hex_str("#10121c")` | host folds to `{ .r = 16, .g = 18, .b = 28, .a = 255 }`; self emits the call, so the C compiler rejects the non-constant initializer (`initializer element is not constant`).  The const evaluator is reached for scalar-returning const methods and for `alias.Type.method(...)` (fixed 2026-09-26), but the aggregate path needs the **type-alias chain**: `rl.Color` is `public type Color = c.Color` in `std.raylib`, so `struct_exists_in_imports("Color")` is false in `try_const_call_ir`, and `try_const_struct_literal_ir` would also need the field types and the named type from the alias's owner module (the same alias routing `lower_call` and `find_struct_field_type` already do at runtime).  Reproduce with the probe in the stage-5c notes (`rl.Color.literal()` — a const method returning `rl.Color(r = 1, …)`)|
+| 11 | ~~**Host-side bugs (report, not fix here)**~~ **FIXED (2026-09-27)** | 3 files + the `inline for` quirk | `custom_frame_control.mt` (implicit double→float is rejected by design — the *example* now annotates its time variables `double` and casts where it narrows), `unicode_emojis.mt` (a statement-lowered foreign call now prepares its arguments so nested calls with temporaries hoist ahead of it), `image_processing.mt` (a nullable pointer projects as its base at a foreign boundary).  Two further bugs exposed and fixed: the checked-index argument for a pointer-to-array receiver, and an embedded array field initialized from an array-valued expression.  Regression tests: `test/compiler/c/basic_1_test.rb` (`nullable_pointer_through_const_void_boundary`, `nested_foreign_call_in_variadic_argument`), `test/compiler/c/basic_2_test.rb` (`checked_index_through_ref_array`, `writes_array_through_ref`, `array_field_initialized_from_array_call`, `copies_array_field_from_array_call`), and the `inline for` name-selection chain in `test/mt/reflect_test.mt` |
+| 12 | ~~**Const functions returning alias-qualified aggregates**~~ **FIXED (2026-09-27 session 2)** — the reported `MilkTea/SimpleGame` blocker | `public const MIDNIGHT: rl.Color = rl.Color.from_hex_str("#10121c")` with `type Color = c.Color` in std.raylib | `const_aggregate_target_type` resolves the constructor's target through the same alias chain the runtime path uses, `try_const_struct_literal_ir` takes the resolved type plus its declaring module for field lookups, and `const_value_to_field_type` types each folded field.  Verified: SimpleGame builds and runs under the self-host, and the file's dump matches the host up to an unrelated foreign-cstr temp-naming difference.  Regression test: `projects/mtc/test/lowering_test.mt` `test_const_aggregate_through_imported_type_alias` |
+| 13 | **A global initialized from an imported constant** | `box3d/ragdoll`/`box_stack`'s first difference: host `(IR::Global :name "s_world_id" … :value (IR::AggregateLiteral :type b3WorldId :fields …))` vs self `(IR::Name :name "std_box3d_b3_nullWorldId" :type (Types::Error))` | `examples/box3d/common.mt`'s `var s_world_id: b3.b3WorldId = b3.b3_nullWorldId`: the host inlines the referenced constant's value into the global's static initializer; the self-host resolves the name but cannot type it (`Types::Error`).  Port the host's `lower_static_storage_initializer` (`utils.rb:336`: `compile_time_const_value` → `lower_compile_time_literal`) for module-level globals |
+| 14 | **Refined (non-null) operand types after a null check** | `data_structures`/`reflection_advanced`'s first difference after item 3: host `:left (… :type (Types::Generic :name "ptr" …))` vs self `:type (Types::Nullable :base (Types::Generic :name "ptr" …))` | the host narrows a nullable binding's *expression* type after an `is null`/`!= null` guard (flow refinement); the self-host keeps the storage type.  Port the refinement's refined-type recording into `expr_type` for guarded uses |
+| 15 | **Proc representation** (host `Types::Proc` + `__proc_N__env` vs self `Types::Struct mt_proc_T`) | `language_baseline`'s first difference after item 5 | §0i roadmap item 2 — the largest remaining item; **not started** (27 corpus files use proc literals) |
 
-### `lower` differences, by first difference (after items 18–19)
+### `lower` differences, by first difference (after the 2026-09-27 session-2 fixes)
 
 | Files (sampled) | First difference |
 | --- | --- |
-| 34 (`examples/sdl3/**`) | opaque declaration naming/`forward_declarable` (was the unsigned literal, then the function-type name) — item 1 |
-| 2 (`box3d/ragdoll`, `box3d/box_stack`) | zero-valued aggregate field typed `int 0` instead of the field's `float 0.0` — item 2 |
-| 2+ (`data_structures`, `reflection_advanced`) | `null` literal typed `void` instead of the expected nullable pointer — item 3 |
+| 34 (`examples/sdl3/**`) | opaque declaration naming/`forward_declarable` — item 1 |
+| 2 (`box3d/ragdoll`, `box3d/box_stack`) | a global initialized from an imported constant (`b3.b3_nullWorldId`): the host inlines the aggregate, the self emits a `Types::Error` name — item 13 |
+| 2+ (`data_structures`, `reflection_advanced`) | a guarded nullable operand keeps `Types::Nullable` where the host's flow refinement narrowed it to `ptr[...]` — item 14 |
 | 1 (`event_stress_test`) | event field naming/type (`__event_closed` typed `Types::Event`) — item 4 |
-| 1 (`language_baseline`) | generic-specialization parameter type not substituted (`T` instead of `int`) — item 5 |
+| 1 (`language_baseline`) | proc representation (`Types::Proc` vs `mt_proc_T`) — item 15 |
 | 1 (`box2d/drop`) | include set (`math_bindgen.h` vs `raymath.h`) — item 7 |
 | remainder | declaration ordering, const-folding shape, enum-member const folding, variant-match goto, plus cases beyond each file's first difference |
 
-Contextual literal typing (the dominant category at the start of the session,
-213 files), raw-module linkage naming, unsigned-literal rendering and void-return
-`:path` attribution all now match the host; the vendored families' linkage-name
-*sets* equal the host's, and a 19-file sample has **0** pathless `return`
-statements (host: 0, before: 138) and all 5 huge-literal constants the host
-dumps.  The remaining `lower` mismatches start 30–40 KB into the dumps for the
-families this session touched (they were at ~1.5–2.3 KB).
+Contextual literal typing (the dominant category at the start of that session,
+213 files), raw-module linkage naming, unsigned-literal rendering, void-return
+`:path` attribution, alias-qualified const aggregates, aggregate field/element
+literal typing, `null`/typed-null contextual typing and the `dyn` vtable's
+substituted method slots all now match the host; the vendored families'
+linkage-name *sets* equal the host's, and a 19-file sample has **0** pathless
+`return` statements (host: 0, before: 138) and all 5 huge-literal constants the
+host dumps.  The remaining `lower` mismatches start 35–63 KB into the dumps for
+the families these sessions touched (they were at ~1.5–2.3 KB at the start).
 
 ### Next, ranked by files moved per unit of work
 
-Item 1 is the only remaining item that fixes *builds* as well as dumps (the
-whole sdl3 family), and item 2/3 are each a handful of lines that clear the
-first difference of the box3d and data-structures families.  Item 5 is the
-lever for the `test/mt` build failures.
+No build blockers remain (2026-09-27), so the remaining items move *dumps* only —
+except item 1, which also unblocks the sdl3 family's C-side naming.  Item 1
+(opaque `IR::OpaqueDecl` naming/`forward_declarable`) is the single biggest
+mover (34 files) and the first difference for that whole family; item 13 (a
+global initialized from an imported constant) and item 14 (refined nullable
+operands) are the box3d and data-structures families' next first differences and
+are each localized; then item 4 (event fields), items 6–8 (function-type names,
+include sets, declaration ordering) and item 15 (proc representation, the
+largest single item).  CLI message parity (item 10) and the LSP/DAP leftovers
+(§0k, `dap-design.md` §10) are independent tracks.
 
 ---
 
@@ -2178,15 +2402,16 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 
 ## 5. Remaining Gaps (2026-07-19, re-measured 2026-09-25 in §0j)
 
-The compiler is at a held fixed point (511 tests across 14 files as of
-2026-09-26; 217/219 raylib — the 2 non-builds are correct rejections).
+The compiler is at a held fixed point (516 tests across 14 files as of
+2026-09-27; 217/219 raylib — the 2 non-builds are correct rejections).
 **Corrected 2026-09-25:** the "13/13 language examples" figure below was stale —
-the self-host builds **11 of the 15 top-level examples** today (§0j), and four
-`test/mt` files had been silently skipped by the test runner, which hid one more
-pre-existing build failure.  The LSP is at capability parity with Ruby (29
-advertised, all 53 handler methods dispatched).  Remaining gaps are
-infrastructure-depth items plus the four example build bugs and the analyzer
-false positives listed in §0j:
+the self-host built **11 of the 15 top-level examples** then, and four `test/mt`
+files had been silently skipped by the test runner, which hid one more
+pre-existing build failure.  **Both are closed (2026-09-27):** the examples are
+15/15, `test/mt` is 60/60, and the sdl3 family is 34/34 (see §0j's 2026-09-27
+section).  The LSP is at capability parity with Ruby (29 advertised, all 53
+handler methods dispatched).  Remaining gaps are infrastructure-depth items, the
+`lower` dump differences and the analyzer false positives listed in §0j:
 
 ### 5.1 Analyzer false positives → semantic-error gate (DONE — 2026-07-16)
 
@@ -2400,8 +2625,10 @@ message text/channel/argument precedence, not command coverage — §0j).
 
 Package-graph resolution (`--locked`/`--frozen`, Large), `--bundle` /
 `--archive` (Medium), wasm/emcc + preview server (Large), `--jobs` parallel
-tests (Medium). Additional vendored-library recipes (box2d, sdl3, flecs,
-pcre2, steamworks) follow the §2.6 pattern when an example needs them.
+tests (Medium).  The vendored-library recipes (raylib, glfw, tracy, cjson, box2d,
+box3d, sdl3, flecs, pcre2, steamworks, libuv) all exist in the self-host's
+`build.mt`; the sdl3 family's private link flags (`-pthread -lm`) were the last
+gap and landed 2026-09-27.
 
 ~~Imported bindings pipeline~~ **DONE (§6.8)** — 6 modules, ~2,300 lines, byte-identical
 raymath output.  Structurally complete for all 28 bindings with 3 known
@@ -2498,11 +2725,15 @@ All landed under a held fixed point (177/177 tests), 13/13 language examples.
 
 ### 5.8 Next-session candidates (updated 2026-07-20)
 
+> Historical list — the live ranking is §0j's "Remaining work" table (compiler/
+> CLI) and §0k's gap table (LSP).  As of 2026-09-27 there are no hard build
+> failures left, so 1–3 and 5 below are the remaining *breadth* items.
+
 1. **`deps` package management** (Large) — the biggest remaining CLI gap;
    `--locked`/`--frozen` resolution depends on it.
 2. **`--bundle` / `--archive`** (Medium) — native package distribution.
 3. **Wasm/emcc + preview server** (Large) — platform reach.
-4. **Formatter CST modes** (Large, §7) — `--tidy` (CST normalize + wrap + blank lines) and `--preserve` (CST-based, keeps original style).
+4. ~~**Formatter CST modes**~~ **DONE (2026-09-26, §7)** — `--tidy` and `--preserve` are self-hosted and byte-identical across the repository; the remaining formatter gap is canonical-mode comment reattachment.
 5. **Linter depth** (Medium) — sema-based `redundant-cast`, formatter wrap-fix for `line-too-long`, `:fast` lint tier.
 
 ### 5.8b 2026-07-20 session — LSP completion depth + code actions
@@ -2552,10 +2783,10 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb --no-cache
 # raylib parity sweep (per-file build, compare against the passing baseline)
 ```
 
-A change is safe only if: stage2.c == stage3.c, **14 test files / 511 tests pass
+A change is safe only if: stage2.c == stage3.c, **14 test files / 516 tests pass
 with 0 failures** (`tools/bootstrap.sh -j 16` reports the count), the language
-examples do not regress (live baseline: **11 of 15** build — the four failures and
-their causes are §0j item 9), and the raylib passing set does not shrink
+examples do not regress (live baseline: **15 of 15** build, and `examples/sdl3`
+is 34/34), and the raylib passing set does not shrink
 (currently 217; the 2 non-builds must remain clean rejections with Ruby's
 messages).  LSP changes additionally require the self-vs-host harness
 (`tools/lsp_parity.rb`, §0k — it drives the resolve endpoints a real editor
@@ -2617,11 +2848,14 @@ Exit status is 0 only when every comparable file matches; host-side rejections
 (e.g. external raw bindings, platform-pinned files, compile-fail fixtures) are
 reported but not counted as failures.
 
-**Live baseline (2026-09-25, §0j):** lex 694/694; parse 690 comparable files with
-0 differences; `lower` 38/694 byte-identical with **0 self-rejections** — the
-remaining differences are the mechanical categories ranked in §0j's "Remaining
-work" table (raw-module linkage naming, `:path` attribution, declaration
-ordering, const-folding shape, include set, opaques/const folding).
+**Live baseline (2026-09-27 session 2, §0j):** lex 702/702; parse 698 comparable
+files with 0 differences (4 host-side rejections); `lower` **39 match / 613
+differ / 50 host-rejected / 0 self-rejected** over 702 files — the host-rejected
+bucket is only external and platform-pinned files, and the differing files are
+the mechanical categories ranked in §0j's "Remaining work" table (opaque
+declaration fields, globals initialized from imported constants, refined
+nullable operands, event fields, function-type names, include sets, declaration
+ordering, proc representation).
 
 ---
 
