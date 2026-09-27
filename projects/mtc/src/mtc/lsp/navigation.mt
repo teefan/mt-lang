@@ -8,7 +8,6 @@ import std.fmt
 import std.fs as fs_mod
 import std.map as map_mod
 import std.json as json
-import std.path as path_ops
 import std.str
 import std.string as string
 import std.vec as vec
@@ -51,6 +50,15 @@ public function handle_definition(
     match result:
         Option.some as res:
             var payload = res.value
+            # A payload without a location (a parameter) has no definition to
+            # jump to; the host answers null for it.
+            if payload.line == 0:
+                payload.hover_text.release()
+                payload.docs.release()
+                payload.target_uri.release()
+                payload.from_modules.release()
+                proto.write_response(id, json.null_value())
+                return
             let target_uri = if payload.target_uri.len() > 0: payload.target_uri.as_str() else: uri
             let lz = if payload.line > 0: ptr_uint<-(int<-(payload.line) - 1) else: 0z
             var json_text = string.String.create()
@@ -83,16 +91,25 @@ public function handle_hover(
     id: json.Value,
 ) -> void:
     var hover_token_range = hover_range_json(ws, uri, line, character)
+    # An `import` line's path or alias resolves to the module file, ahead of the
+    # keyword/builtin tables: `str` in `import std.str` is the module, not the
+    # builtin type.
+    match resolve_import_cursor(ws, uri, line, character):
+        Option.some as import_result:
+            write_hover_result(ws, id, import_result.value, uri, hover_token_range)
+            return
+        Option.none:
+            pass
     match resolve_non_decl_hover(ws, uri, line, character):
         Option.some as kw_result:
-            write_hover_result(id, kw_result.value, uri, hover_token_range)
+            write_hover_result(ws, id, kw_result.value, uri, hover_token_range)
             return
         Option.none:
             pass
 
     match resolve_local_hover(ws, uri, line, character):
         Option.some as loc_result:
-            write_hover_result(id, loc_result.value, uri, hover_token_range)
+            write_hover_result(ws, id, loc_result.value, uri, hover_token_range)
             return
         Option.none:
             pass
@@ -100,7 +117,7 @@ public function handle_hover(
     var result = resolve_cursor(ws, uri, line, character)
     match result:
         Option.some as res:
-            write_hover_result(id, res.value, uri, hover_token_range)
+            write_hover_result(ws, id, res.value, uri, hover_token_range)
             return
         Option.none:
             pass
@@ -163,18 +180,25 @@ public function handle_references(
     id: json.Value,
 ) -> void:
     var file_path = uri_ops.file_uri_to_path(uri) else:
-        proto.write_error(id, -32602, "invalid uri")
+        proto.write_response_raw(id, "[]")
         return
     defer: file_path.release()
 
     var content = ws.document_source(file_path.as_str()) else:
-        proto.write_response(id, json.null_value())
+        proto.write_response_raw(id, "[]")
         return
     defer: content.release()
 
     let source = content.as_str()
     let target = cursor.identifier_at(source, line, character) else:
-        proto.write_response(id, json.null_value())
+        proto.write_response_raw(id, "[]")
+        return
+
+    # A bare type name resolves to the type's *methods* in the host (empty for a
+    # builtin primitive, which has none); scanning for same-named occurrences
+    # would report unrelated uses of `int`/`str`.
+    if hover_docs.builtin_type(target.text).is_some():
+        proto.write_response_raw(id, "[]")
         return
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
@@ -222,11 +246,49 @@ public function handle_type_definition(
         proto.write_response(id, json.null_value())
         return
 
+    # An `import` path segment's type definition is the module file itself.
+    match resolve_import_cursor(ws, uri, line, character):
+        Option.some as import_result:
+            var import_payload = import_result.value
+            respond_module_location(id, import_payload.target_uri.as_str())
+            import_payload.hover_text.release()
+            import_payload.docs.release()
+            import_payload.target_uri.release()
+            import_payload.from_modules.release()
+            return
+        Option.none:
+            pass
+
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     var parsed_file = parser.parse_source(source, ref_of(parse_diags))
     var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
     var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
+
+    # A local (`let`/`var`) jumps to its own declaration, as the host's binding
+    # facts do; a parameter answers null (also the host's result).
+    match enclosing_local_decl_line(source, ast_file, target.text, line + 1):
+        Option.some as local_line:
+            respond_single_location(id, uri, source, local_line.value, target.text)
+            return
+        Option.none:
+            pass
+
+    # A function or method name jumps to its own declaration (the host's
+    # `typeDefinition` on a callable answers the callable's declaration).
+    var fdi: ptr_uint = 0
+    while fdi < ast_file.declarations.len:
+        var fdecl: ast.Decl
+        unsafe:
+            fdecl = read(ast_file.declarations.data + fdi)
+        match fdecl:
+            ast.Decl.decl_function as fun:
+                if fun.name == target.text:
+                    respond_single_location(id, uri, source, fun.line, target.text)
+                    return
+            _:
+                pass
+        fdi += 1
 
     # The identifier is itself a type name: its own declaration.
     let is_type_name = analysis.structs.contains(target.text) or
@@ -462,6 +524,17 @@ function respond_imported_type_location(
             target_uri.append(absolute_path.as_str())
             respond_single_location(id, target_uri.as_str(), module_source.as_str(), decl_line, type_name)
             return true
+
+
+## Respond with the host's module Location: the module file's start (0:0-0:0),
+## which is how an import path, an alias or a module declaration navigates.
+function respond_module_location(id: json.Value, target_uri: str) -> void:
+    var json_text = string.String.create()
+    defer: json_text.release()
+    json_text.append("{\"uri\":\"")
+    proto.append_escaped(ref_of(json_text), target_uri)
+    json_text.append("\",\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":0}}}")
+    proto.write_response_raw(id, json_text.as_str())
 
 
 ## Respond with a one-element Location array pointing at `name` on its
@@ -733,6 +806,10 @@ function build_references_json(source: str, name: str, target_line: ptr_uint, ur
     defer: bindings.release()
 
     var oi: ptr_uint = 0
+    # The separator follows what was *emitted*, not the occurrence index: an
+    # out-of-scope occurrence is skipped, so `oi > 0` would emit a leading comma
+    # after a skipped first occurrence (malformed JSON the client rejects).
+    var first_emitted = true
     while oi < all_occurrences.len():
         let op = all_occurrences.get(oi) else:
             break
@@ -740,8 +817,9 @@ function build_references_json(source: str, name: str, target_line: ptr_uint, ur
         if not scope_mod.is_in_same_scope(ref_of(bindings), name, target_line, occ.line):
             oi += 1
             continue
-        if oi > 0:
+        if not first_emitted:
             result.append(",")
+        first_emitted = false
         let lz = if occ.line > 0: occ.line - 1 else: 0z
         let col = if occ.column > 0: occ.column - 1 else: 0z
         result.append("{\"uri\":\"")
@@ -853,6 +931,14 @@ function resolve_non_decl_hover(
                 Option.none:
                     pass
 
+            # A builtin type name (`int`, `str`, `ptr`, …) renders the host's
+            # `type <name>` signature with its documentation table.
+            match hover_docs.builtin_type(lexeme):
+                Option.some as bt:
+                    return Option[CursorResult].some(value = quick_hover_doc(bt.value))
+                Option.none:
+                    pass
+
             match builtin_specialization_hover(tokens, ti, lexeme):
                 Option.some as bs:
                     return Option[CursorResult].some(value = quick_hover(bs.value))
@@ -908,6 +994,15 @@ function resolve_cursor(
 
     let target = cursor.identifier_at(source, line, character) else:
         return Option[CursorResult].none
+
+    # A segment of an `import a.b.c` path resolves to that module's file, as the
+    # alias itself does (the host's `import_path_info_at`).
+    match import_module_name_at(source, line, character):
+        Option.some as import_name:
+            defer: import_name.value.release()
+            return resolve_module_reference(ws, import_name.value.as_str())
+        Option.none:
+            pass
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
@@ -998,6 +1093,89 @@ function resolve_module_source_path(ws: ref[workspace.Workspace], module_name: s
             return Option[string.String].none
         Result.success as path_payload:
             return Option[string.String].some(value = path_payload.value)
+
+
+## True for the structural tokens that never belong to a logical line.
+function is_structural_token_kind(kind: tk.TokenKind) -> bool:
+    return kind == tk.TokenKind.newline or kind == tk.TokenKind.indent or kind == tk.TokenKind.dedent or kind == tk.TokenKind.eof
+
+
+## The module an `import` statement names when the cursor sits on one of its
+## module-path segments or on its `as` alias (the host's `import_path_info_at`):
+## `import std.vec as vec` names `std.vec` for a cursor on `std`, on the path's
+## `vec`, and on the alias.  Any other line or token returns none, so the
+## keyword/builtin tables never answer for a path segment.
+function import_module_name_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[string.String]:
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: tokens.release()
+
+    let target_line = line + 1
+    let target_col = character + 1
+
+    var line_tokens = vec.Vec[token_mod.Token].create()
+    defer: line_tokens.release()
+    var ti: ptr_uint = 0
+    while ti < tokens.len():
+        let tp = tokens.get(ti) else:
+            break
+        let tok = unsafe: read(tp)
+        if tok.line == target_line and not is_structural_token_kind(tok.kind):
+            line_tokens.push(tok)
+        ti += 1
+    if line_tokens.len() < 2:
+        return Option[string.String].none
+    let head_ptr = line_tokens.get(0) else:
+        return Option[string.String].none
+    let head = unsafe: read(head_ptr)
+    if head.kind != tk.TokenKind.tk_import:
+        return Option[string.String].none
+
+    var module_name = string.String.create()
+    var on_target = false
+    var past_alias = false
+    var ci: ptr_uint = 1
+    while ci < line_tokens.len():
+        let tp = line_tokens.get(ci) else:
+            break
+        let tok = unsafe: read(tp)
+        let len = tok.end_offset - tok.start_offset
+        let hit = target_col >= tok.column and target_col < tok.column + len
+        match tok.kind:
+            tk.TokenKind.tk_as:
+                past_alias = true
+            tk.TokenKind.identifier:
+                if not past_alias:
+                    if module_name.len() > 0:
+                        module_name.append(".")
+                    module_name.append(cursor.token_text(source, tok))
+                if hit:
+                    on_target = true
+            _:
+                pass
+        ci += 1
+    if not on_target or module_name.len() == 0:
+        module_name.release()
+        return Option[string.String].none
+    return Option[string.String].some(value = module_name)
+
+
+## The module-file navigation result for a cursor on an `import` line's path or
+## alias, or none when the cursor is anywhere else.
+function resolve_import_cursor(ws: ref[workspace.Workspace], uri: str, line: ptr_uint, character: ptr_uint) -> Option[CursorResult]:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return Option[CursorResult].none
+    defer: file_path.release()
+    var content = ws.document_source(file_path.as_str()) else:
+        return Option[CursorResult].none
+    defer: content.release()
+    match import_module_name_at(content.as_str(), line, character):
+        Option.some as module_name:
+            defer: module_name.value.release()
+            return resolve_module_reference(ws, module_name.value.as_str())
+        Option.none:
+            return Option[CursorResult].none
 
 
 ## An absolute file:// URI for a workspace-relative or absolute path.
@@ -1808,7 +1986,48 @@ function resolve_local_hover(
     var current_module = resolver.infer_module_name(file_path.as_str(), module_roots.as_span())
     defer: current_module.release()
 
-    # 3. AST walk: let/var declarations in enclosing function body.
+    # 3. The innermost binding that encloses the cursor — the host's scope-aware
+    # binding resolution.  Its declaration line comes from the scope bindings, so
+    # a same-named local in another function (or an unrelated block) cannot win,
+    # and a parameter resolves as `parameter <name>: <type>`.
+    var bindings = scope_mod.collect_bindings(source, ast_file)
+    defer: bindings.release()
+    match scope_mod.local_binding_line(ref_of(bindings), name.as_str(), target_line):
+        Option.some as want:
+            var si: ptr_uint = 0
+            while si < ast_file.declarations.len:
+                var sdecl: ast.Decl
+                unsafe:
+                    sdecl = read(ast_file.declarations.data + si)
+                match sdecl:
+                    ast.Decl.decl_function as sfun:
+                        if sfun.body != null:
+                            match find_local_decl_in_body(sfun.body, name.as_str(), want.value):
+                                Option.some as found_decl:
+                                    match found_decl.value:
+                                        ast.Stmt.stmt_local as fl:
+                                            return Option[CursorResult].some(value = local_hover_result(
+                                                fl.is_let, name.as_str(), fl.line, fl.stmt_type, fl.value,
+                                                source, ref_of(analysis), current_module.as_str()))
+                                        _:
+                                            pass
+                                Option.none:
+                                    pass
+                        var pi: ptr_uint = 0
+                        while pi < sfun.method_params.len:
+                            let sp = unsafe: read(sfun.method_params.data + pi)
+                            if sp.name == name.as_str() and sp.line == want.value:
+                                return Option[CursorResult].some(value = parameter_hover_result(
+                                    name.as_str(), sp.param_type))
+                            pi += 1
+                    _:
+                        pass
+                si += 1
+        Option.none:
+            pass
+
+    # 4. Fallback for the declarations the scope walk does not model (the flat
+    # per-function scan): any enclosing function's top-level local.
     var di: ptr_uint = 0
     while di < ast_file.declarations.len:
         var decl: ast.Decl
@@ -1951,6 +2170,158 @@ function find_local_in_block(
     return Option[CursorResult].none
 
 
+## The declaration line of the innermost `let`/`var` local named `name` that
+## encloses `cursor_line` (1-based).  None when the cursor is not on a local:
+## module-level names and parameters both yield none (matching the host's
+## `typeDefinition`, which resolves a local's own binding but not a parameter).
+function enclosing_local_decl_line(source: str, ast_file: ast.SourceFile, name: str, cursor_line: ptr_uint) -> Option[ptr_uint]:
+    var bindings = scope_mod.collect_bindings(source, ast_file)
+    defer: bindings.release()
+    match scope_mod.local_binding_line(ref_of(bindings), name, cursor_line):
+        Option.some as want:
+            var di: ptr_uint = 0
+            while di < ast_file.declarations.len:
+                var decl: ast.Decl
+                unsafe:
+                    decl = read(ast_file.declarations.data + di)
+                match decl:
+                    ast.Decl.decl_function as fun:
+                        if fun.body != null:
+                            match find_local_decl_in_body(fun.body, name, want.value):
+                                Option.some:
+                                    return Option[ptr_uint].some(value = want.value)
+                                Option.none:
+                                    pass
+                    _:
+                        pass
+                di += 1
+        Option.none:
+            pass
+    return Option[ptr_uint].none
+
+
+## The declaration line of a `stmt_local` (a destructuring `let (a, b) = …`
+## declares its names on the statement's own line).
+function local_stmt_decl_line(loc: ast.Stmt) -> ptr_uint:
+    match loc:
+        ast.Stmt.stmt_local as l:
+            return l.line
+        _:
+            return 0
+    return 0
+
+
+## True when a `stmt_local` declares `name`, directly or through a destructuring
+## binding list (`let (a, b) = …`).
+function local_stmt_declares(loc: ast.Stmt, name: str) -> bool:
+    match loc:
+        ast.Stmt.stmt_local as l:
+            if l.name == name:
+                return true
+            match l.destructure_bindings:
+                Option.some as binds:
+                    var bi: ptr_uint = 0
+                    while bi < binds.value.len:
+                        if unsafe: read(binds.value.data + bi) == name:
+                            return true
+                        bi += 1
+                Option.none:
+                    pass
+        _:
+            pass
+    return false
+
+
+## The `stmt_local` that declares `name` on line `want_line` (1-based), searching
+## nested blocks so a local declared inside an `if`/`while`/`for`/`match` body
+## resolves like the host's scope-aware binding lookup.
+function find_local_decl_at_line(stmt: ast.Stmt, name: str, want_line: ptr_uint) -> Option[ast.Stmt]:
+    unsafe:
+        if local_stmt_declares(stmt, name) and local_stmt_decl_line(stmt) == want_line:
+            return Option[ast.Stmt].some(value = stmt)
+        match stmt:
+            ast.Stmt.stmt_block as blk:
+                return find_local_decl_in_stmts(blk.statements, name, want_line)
+            ast.Stmt.stmt_if as iff:
+                var ib: ptr_uint = 0
+                while ib < iff.branches.len:
+                    let branch = read(iff.branches.data + ib)
+                    match find_local_decl_in_body(branch.body, name, want_line):
+                        Option.some as found:
+                            return Option[ast.Stmt].some(value = found.value)
+                        Option.none:
+                            pass
+                    ib += 1
+                if iff.else_body != null:
+                    return find_local_decl_in_body(iff.else_body, name, want_line)
+            ast.Stmt.stmt_while as w:
+                return find_local_decl_in_body(w.body, name, want_line)
+            ast.Stmt.stmt_for as f:
+                return find_local_decl_in_body(f.body, name, want_line)
+            ast.Stmt.stmt_match as m:
+                var mi: ptr_uint = 0
+                while mi < m.arms.len:
+                    let arm = read(m.arms.data + mi)
+                    match find_local_decl_in_body(arm.body, name, want_line):
+                        Option.some as found:
+                            return Option[ast.Stmt].some(value = found.value)
+                        Option.none:
+                            pass
+                    mi += 1
+            _:
+                pass
+    return Option[ast.Stmt].none
+
+
+## `find_local_decl_at_line` for a maybe-absent body pointer.
+function find_local_decl_in_body(body_node: ptr[ast.Stmt]?, name: str, want_line: ptr_uint) -> Option[ast.Stmt]:
+    let b = body_node else:
+        return Option[ast.Stmt].none
+    return find_local_decl_at_line(unsafe: read(b), name, want_line)
+
+
+## `find_local_decl_at_line` over a statement list.
+function find_local_decl_in_stmts(stmts: span[ast.Stmt], name: str, want_line: ptr_uint) -> Option[ast.Stmt]:
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        match find_local_decl_at_line(unsafe: read(stmts.data + si), name, want_line):
+            Option.some as found:
+                return Option[ast.Stmt].some(value = found.value)
+            Option.none:
+                pass
+        si += 1
+    return Option[ast.Stmt].none
+
+
+## The hover result for one parameter: `parameter <name>: <type> (immutable)`,
+## the shape the host renders from its binding facts.  The host attaches no
+## source location to a parameter hover, so `line` stays 0 (which also keeps
+## go-to-definition on a parameter a null result, as the host answers).
+function parameter_hover_result(name: str, param_type: ast.TypeRef) -> CursorResult:
+    var signature = string.String.create()
+    signature.append("parameter ")
+    signature.append(name)
+    if param_type.name.parts.len > 0:
+        signature.append(": ")
+        signature.append(unsafe: read(param_type.name.parts.data))
+        if param_type.nullable:
+            signature.append("?")
+        signature.append(" (immutable)")
+
+    var shortened = type_render.shorten_signature(signature.as_str())
+    signature.release()
+
+    return CursorResult(
+        line = 0,
+        column = 0,
+        name_len = name.len,
+        hover_text = shortened.text,
+        docs = string.String.create(),
+        target_uri = string.String.create(),
+        from_modules = shortened.modules
+    )
+
+
 ## The hover result for one local declaration.
 function local_hover_result(
     is_let: bool,
@@ -2020,9 +2391,11 @@ function local_hover_result(
 
 ## Render a hover response in the host's markdown shape: the signature in a
 ## ```milk-tea fence, the docs, then the source location as
-## `Defined at: [<basename>:<line>](<uri>#L<line>)` (`target_uri` wins over the
-## request's own uri for cross-file definitions).
-function write_hover_result(id: json.Value, res: CursorResult, request_uri: str, token_range_param: string.String) -> void:
+## `Defined at: [<path>:<line>](<uri>#L<line>)` (`target_uri` wins over the
+## request's own uri for cross-file definitions).  The label's path is the
+## host's: relative to the workspace root, or absolute when the file is outside
+## it (a std-library declaration in a project workspace).
+function write_hover_result(ws: ref[workspace.Workspace], id: json.Value, res: CursorResult, request_uri: str, token_range_param: string.String) -> void:
     var payload = res
     var token_range = token_range_param
     if payload.hover_text.len() > 0:
@@ -2038,7 +2411,7 @@ function write_hover_result(id: json.Value, res: CursorResult, request_uri: str,
         if payload.docs.len() > 0:
             value_text.append("\n\n")
             value_text.append(payload.docs.as_str())
-        append_defined_at(ref_of(value_text), payload, request_uri)
+        append_defined_at(ws, ref_of(value_text), payload, request_uri)
         var json_text = string.String.create()
         defer: json_text.release()
         json_text.append("{\"contents\":{\"kind\":\"markdown\",\"value\":\"")
@@ -2059,7 +2432,7 @@ function write_hover_result(id: json.Value, res: CursorResult, request_uri: str,
 
 
 ## Append the source-location line for a hover payload, when it has one.
-function append_defined_at(text: ref[string.String], payload: CursorResult, request_uri: str) -> void:
+function append_defined_at(ws: ref[workspace.Workspace], text: ref[string.String], payload: CursorResult, request_uri: str) -> void:
     if payload.line == 0:
         return
     var source_uri: str = request_uri
@@ -2068,10 +2441,27 @@ function append_defined_at(text: ref[string.String], payload: CursorResult, requ
     text.append("\n\nDefined at: [")
     match uri_ops.file_uri_to_path(source_uri):
         Option.some as source_path:
-            text.append(path_ops.basename(source_path.value.as_str()))
+            var label = hover_path_label(ws, source_path.value.as_str())
+            defer: label.release()
+            text.append(label.as_str())
             source_path.value.release()
         Option.none:
-            text.append(path_ops.basename(source_uri))
+            var fallback_label = hover_path_label(ws, source_uri)
+            defer: fallback_label.release()
+            text.append(fallback_label.as_str())
     text.append_format(f":#{payload.line}](")
     text.append(source_uri)
     text.append_format(f"#L#{payload.line})")
+
+
+## The path a hover link labels its target with, as the host renders it
+## (`hover_source_label`): relative to the workspace root when the file is
+## inside it, the absolute path otherwise.
+function hover_path_label(ws: ref[workspace.Workspace], path: str) -> string.String:
+    let root = ws.root_path.as_str()
+    if root.len > 0 and path.len > root.len and path.starts_with(root):
+        var start = root.len
+        if unsafe: path.byte_at(start) == '/':
+            start += 1
+        return string.String.from_str(path.slice(start, path.len - start))
+    return string.String.from_str(path)

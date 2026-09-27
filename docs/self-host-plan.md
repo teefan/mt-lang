@@ -97,12 +97,15 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: 2026-09-27 session 2 (the reported `MilkTea/SimpleGame` project
-now builds and runs under the self-host — const aggregates through an imported
-type alias fold like the host; §0j items 2, 3, 5 and 12 are closed, `lower` is
-39/613/50/0, and the fixed point holds with 14 files / 516 tests / 0 failed.
-Remaining work: §0j item 1 (opaque declarations, 34 sdl3 files) and items 13–15,
-CLI message parity, and the LSP/DAP items)
+Last updated: 2026-09-27 session 3 (project-audited the LSP against
+`~/Projects/MilkTea/SimpleGame` with `tools/lsp_project_audit.rb`: a malformed
+`references` frame plus six behavioural gaps — highlight scoping, hover label
+paths, import-path navigation, local/parameter resolution, builtin type hovers,
+four linter severities — are fixed, and the fixture is at 1 deliberate
+difference of 19.  The reported `MilkTea/SimpleGame` builds and runs under the
+self-host (§0j items 2, 3, 5, 12 closed, `lower` 39/613/50/0, fixed point with 14
+files / 516 tests / 0 failed).  Remaining work: §0j item 1 (opaque declarations,
+34 sdl3 files) and items 13–15, CLI message parity, and the LSP/DAP leftovers)
 
 ---
 
@@ -117,7 +120,7 @@ workstream doc for the area you are touching:
 | `lower` dump parity | §0j "Remaining work" (items 1, 4, 6–8, 13–15), §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
 | Example / vendored-family builds (no known failures since 2026-09-27) | §0j's 2026-09-27 section | the 15 top-level examples, `find examples/sdl3 -name '*.mt'`, a raylib sample |
 | CLI behavior parity | §0j item 10, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
-| LSP feature parity (**in progress**, §0k) | §0k's gap list + the stage 6 capsule, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`), plus valgrind and the headless-Neovim smoke test for behavior changes |
+| LSP feature parity (**in progress**, §0k) | §0k's gap list + the stage 6 capsule, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`), `tools/lsp_project_audit.rb --workspace DIR` (per-file, every position, both servers live), plus valgrind and the headless-Neovim smoke test for behavior changes |
 | Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (preserve/tidy must stay 702/702; canonical is the comment-reattachment delta) |
 | DAP | `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both] [--json OUT]` — runs a session on both adapters and prints a per-request diff |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
@@ -1000,6 +1003,84 @@ comparisons differ (16 entries)**; 0 timeouts; 0 crashes.  The stage-1 root caus
   `discover_project_root` appends the nearest `std/` ancestor to the module
   roots.  Worth a follow-up (an editor session is long-lived), but it is not a
   correctness bug and not new.
+
+### Project audit — SimpleGame, every file (2026-09-27 session 3)
+
+`tools/lsp_project_audit.rb` (new) drives both servers **live** against an
+existing project: every `.mt` file is opened, the file-level endpoints (outline,
+folding, lenses, hints, links, tokens, pull diagnostics) run once per file, and
+the position endpoints (hover, definition, declaration, typeDefinition,
+implementation, references, documentHighlight) run at every identifier position
+(evenly sampled above `--cap`).  Per file it warms the facts first (the host
+recomputes them lazily, the self answers settled immediately), records each
+response, and diffs per method; a malformed frame or a dead server restarts that
+side and retries, so one bad frame cannot hide the rest.
+
+Run against `~/Projects/MilkTea/SimpleGame` (7 files, 3 104 lines) it found one
+protocol bug and six behavioural gaps, all fixed in this session:
+
+1. **Malformed `references` JSON** (the stream-desynchronizing bug): the element
+   separator followed the *occurrence index*, so a skipped out-of-scope
+   occurrence emitted a leading comma (`[,{…}]`) — a frame a real client
+   rejects.  The separator now follows what was emitted.
+2. **`documentHighlight` was not scope-aware**: it lit every same-named
+   occurrence in the file, including another function's local (`v` in two
+   demos).  It now uses the same scope rule as `references`.
+3. **Hover source labels** printed the *basename*; the host prints the path
+   relative to the workspace root, absolute when the file is outside it (a
+   `std/` declaration in a user project).  `hover_path_label` mirrors
+   `hover_source_label`.
+4. **Import paths**: hover/definition/declaration/typeDefinition on a module
+   path segment or an import alias (`import std.str`, `import std.vec as vec`)
+   answered null — or the *builtin type* docs for `str` — and now resolve to the
+   module file exactly as the host's `import_path_info_at` +
+   `module_definition_location` do.
+5. **Locals and parameters**: `resolve_local_hover` returned the first same-named
+   local in *any* earlier function (`s.contains(1)` in one demo answered another
+   demo's `s`).  It now resolves through the scope bindings
+   (`local_binding_line`) to the innermost enclosing binding and its declaration
+   node — nested blocks included — and a parameter answers the host's
+   `parameter <name>: <type> (immutable)`.  `typeDefinition` on a local answers
+   its own declaration and on a callable its declaration, as the host does.
+6. **Builtin type hovers**: the host's `BUILTIN_TYPE_DOCS` (46 entries,
+   `type int` + docs) is ported verbatim into `lsp/hover_docs.mt`;
+   `int`/`str`/`ptr`/… answered null before.
+7. **Linter severities**: four rules were hints where the host (and its LSP
+   mapping) emits warnings — `unused-import`, `constant-condition`,
+   `redundant-else`, `loop-single-iteration`.
+
+Verified with `tools/lsp_project_audit.rb`: the isolated fixture (locals,
+parameters, types, references) is at **1 differing entry of 19**, and that one is
+a deliberate extension (the host answers `workspace/symbol` for an empty query
+with *every* symbol including locals; the self requires a non-empty query).
+A targeted probe on the audited file (`docs/data_structures.mt`: import path
+segments and the alias, a method receiver in a *sibling* function, a local's
+highlight scope, `_first`, a comment position, a builtin type name) matches the
+host at **11 of 12 positions**; the remaining one is the host's own lazy-facts
+artifact — on a partially warmed server it resolves `s.contains(1)` to another
+function's `s`, where both the settled host and the self answer the innermost
+binding.  `tools/bootstrap.sh -j 16` stays green (fixed point + 14 files / 516
+tests).
+
+Remaining differences on the real project, all documented and none a crash:
+
+- **Host facts lag** (the existing row): the host's *first* answer after
+  `didOpen` classifies `vec.Vec[int]`/`create` with its fallback
+  (`variable`/`property`/`enumMember`) and drops the `defaultLibrary` modifier on
+  `int`; a warm re-request matches the self-host, which answers the settled
+  classes immediately.
+- **`static_type_method_references` is still unported** (the stage-5b note):
+  references on a *declared type* name answer the host's method references there
+  and the name's occurrences here.  Builtin type names (`int`, `str`) now answer
+  `[]` exactly like the host.
+- **`dead-assignment`** remains a self-host-only rule (extra hints), the item-6
+  policy decision.
+- **Parameter references** resolve here and answer `[]` on the host — a
+  deliberate "at least as good" extension, as is the empty-query
+  `workspace/symbol` rule above.
+- **`documentSymbol` for a file outside the package source root** (`docs/` in
+  this project) nests under a module symbol in the host; the self returns the
+  flat symbol list.
 
 ### Remaining LSP gaps (all reproducible with the harness)
 

@@ -1653,7 +1653,7 @@ function check_redundant_else(branches: span[ast.IfBranch], else_body: ptr[ast.S
     var line = else_line
     if line == 0:
         line = first_block_statement_line(else_body)
-    push_warning(warnings, path, line, "redundant-else", "else block is redundant because all preceding branches return", "hint")
+    push_warning(warnings, path, line, "redundant-else", "else block is redundant because all preceding branches return", "warning")
 
 
 # =============================================================================
@@ -3950,7 +3950,7 @@ function lint_constant_condition(file: ast.SourceFile, path: str, warnings: ref[
             buf.append(c.kind)
             buf.append(" condition is always ")
             buf.append(c.value)
-            push_warning(warnings, path, c.line, "constant-condition", buf.as_str(), "hint")
+            push_warning(warnings, path, c.line, "constant-condition", buf.as_str(), "warning")
         ci += 1
     # Fall back to the trivial check for literal true/false and self-comparisons.
     for_each_func_body(file, path, warnings, 2)
@@ -3978,13 +3978,13 @@ function lint_const_cond_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Ve
                 while bi < iff.branches.len:
                     let br = read(iff.branches.data + bi)
                     if is_constant_condition(br.condition):
-                        push_warning_stmt(warnings, path, iff.line, 0, "constant-condition", "if condition is always a constant boolean", "hint")
+                        push_warning_stmt(warnings, path, iff.line, 0, "constant-condition", "if condition is always a constant boolean", "warning")
                     lint_const_cond_in_body(br.body, path, warnings)
                     bi += 1
                 lint_const_cond_in_body(iff.else_body, path, warnings)
             ast.Stmt.stmt_while as wh:
                 if is_constant_condition(wh.condition):
-                    push_warning_stmt(warnings, path, wh.line, 0, "constant-condition", "while condition is always a constant boolean", "hint")
+                    push_warning_stmt(warnings, path, wh.line, 0, "constant-condition", "while condition is always a constant boolean", "warning")
                 lint_const_cond_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
                 lint_const_cond_in_body(fr.body, path, warnings)
@@ -4060,12 +4060,12 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
             ast.Stmt.stmt_while as wh:
                 let always_exits = always_returns_body(wh.body)
                 if always_exits and not is_true_literal(wh.condition):
-                    push_warning(warnings, path, wh.line, "loop-single-iteration", "while loop body always exits on first iteration", "hint")
+                    push_warning(warnings, path, wh.line, "loop-single-iteration", "while loop body always exits on first iteration", "warning")
                 lint_loop_single_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
                 let always_exits = always_returns_body(fr.body)
                 if always_exits:
-                    push_warning(warnings, path, fr.line, "loop-single-iteration", "for loop body always exits on first iteration", "hint")
+                    push_warning(warnings, path, fr.line, "loop-single-iteration", "for loop body always exits on first iteration", "warning")
                 lint_loop_single_in_body(fr.body, path, warnings)
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0

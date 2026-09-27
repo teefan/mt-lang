@@ -129,6 +129,105 @@ public function language_keyword(name: str) -> Option[HoverDoc]:
     return Option[HoverDoc].none
 
 
+## Look up a builtin type name in the host's `BUILTIN_TYPE_DOCS` table
+## (`lib/milk_tea/lsp/server/hover.rb`); rendered as `type <name>`.
+public function builtin_type(name: str) -> Option[HoverDoc]:
+    if name.equal("bool"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type bool", docs = "1-byte boolean: `true` or `false`."))
+    if name.equal("byte"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type byte", docs = "8-bit signed integer. Range: -128 to 127."))
+    if name.equal("ubyte"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ubyte", docs = "8-bit unsigned integer. Range: 0 to 255. Also used for `char` literals like `'A'`."))
+    if name.equal("char"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type char", docs = "8-bit character type (alias for `ubyte`)."))
+    if name.equal("short"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type short", docs = "16-bit signed integer. Range: -32,768 to 32,767."))
+    if name.equal("ushort"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ushort", docs = "16-bit unsigned integer. Range: 0 to 65,535."))
+    if name.equal("int"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type int", docs = "32-bit signed integer. Range: -2,147,483,648 to 2,147,483,647. Default enum backing type."))
+    if name.equal("uint"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type uint", docs = "32-bit unsigned integer. Range: 0 to 4,294,967,295."))
+    if name.equal("long"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type long", docs = "64-bit signed integer."))
+    if name.equal("ulong"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ulong", docs = "64-bit unsigned integer."))
+    if name.equal("ptr_int"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ptr_int", docs = "Pointer-sized signed integer. Width matches the target platform pointer size."))
+    if name.equal("ptr_uint"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ptr_uint", docs = "Pointer-sized unsigned integer. Return type for `size_of`, `align_of`, `offset_of`."))
+    if name.equal("float"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type float", docs = "32-bit IEEE 754 single-precision float."))
+    if name.equal("double"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type double", docs = "64-bit IEEE 754 double-precision float."))
+    if name.equal("void"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type void", docs = "Empty type for functions with no return value. Not a storable type."))
+    if name.equal("str"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type str", docs = "Non-owning UTF-8 string view (pointer + length). Not null-terminated."))
+    if name.equal("cstr"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type cstr", docs = "Null-terminated C string. Used at FFI boundaries."))
+    if name.equal("vec2"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type vec2", docs = "2-component float vector. Fields: `.x`, `.y`. Supports component-wise arithmetic."))
+    if name.equal("vec3"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type vec3", docs = "3-component float vector. Fields: `.x`, `.y`, `.z`. Supports component-wise arithmetic and `dot`/`cross`/`length` via `std.linear_algebra`."))
+    if name.equal("vec4"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type vec4", docs = "4-component float vector. Fields: `.x`, `.y`, `.z`, `.w`. Supports component-wise arithmetic."))
+    if name.equal("ivec2"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ivec2", docs = "2-component integer vector. Fields: `.x`, `.y`. Supports component-wise arithmetic."))
+    if name.equal("ivec3"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ivec3", docs = "3-component integer vector. Fields: `.x`, `.y`, `.z`. Supports component-wise arithmetic."))
+    if name.equal("ivec4"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ivec4", docs = "4-component integer vector. Fields: `.x`, `.y`, `.z`, `.w`. Supports component-wise arithmetic."))
+    if name.equal("mat3"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type mat3", docs = "3×3 column-major float matrix. Columns: `.col0`–`.col2` (each `vec3`). Supports `identity`, `transpose` via `std.linear_algebra`."))
+    if name.equal("mat4"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type mat4", docs = "4×4 column-major float matrix. Columns: `.col0`–`.col3` (each `vec4`). Supports `identity`, `transpose` via `std.linear_algebra`."))
+    if name.equal("quat"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type quat", docs = "Quaternion. Fields: `.x`, `.y`, `.z`, `.w`. Layout-compatible with `vec4`. Supports `identity`, `conjugate` via `std.linear_algebra`."))
+    if name.equal("ptr"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ptr", docs = "Generic pointer type: `ptr[T]`. Raw mutable pointer. Requires `unsafe` for indexing, dereference, and arithmetic."))
+    if name.equal("const_ptr"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type const_ptr", docs = "Read-only pointer type: `const_ptr[T]`. Immutable pointer, does not require `unsafe` for dereference."))
+    if name.equal("own"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type own", docs = "Owning heap pointer: `own[T]`. Auto-dereferences like `ref`. Storable, returnable, and nullable. Allocated via `heap.must_alloc[T](count)`."))
+    if name.equal("ref"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type ref", docs = "Non-null borrow reference: `ref[T]`. Auto-dereferences for member access and method calls. Cannot be stored in module variables or constants."))
+    if name.equal("span"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type span", docs = "Borrowed pointer-plus-length view: `span[T]`. Constructed via `span[T](data = ..., len = ...)`. Arrays coerce implicitly."))
+    if name.equal("array"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type array", docs = "Fixed-length array: `array[T, N]`. Constructed via `array[T, N](elements...)`. Omitted trailing elements default to zero."))
+    if name.equal("str_buffer"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type str_buffer", docs = "Fixed-capacity mutable UTF-8 text buffer: `str_buffer[N]`. Methods: `assign`, `append`, `assign_format`, `append_format`, `clear`, `as_str`, `as_cstr`."))
+    if name.equal("atomic"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type atomic", docs = "Atomic value for lock-free concurrent access: `atomic[T]`. `T` must be a primitive integer or `bool`. Methods: `load`, `store`, `add`, `sub`, `exchange`. Uses C11 `_Atomic`."))
+    if name.equal("Task"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type Task", docs = "Async task future: `Task[T]`. Returned by `async function`. Use `await` to unwrap, or `aio.wait`/`aio.run` to drive."))
+    if name.equal("Option"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type Option", docs = "Built-in optional type: `Option[T]`. Arms: `some(value: T)` and `none`. Use `let ... else:` or `?` for safe unwrapping."))
+    if name.equal("Result"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type Result", docs = "Built-in result type: `Result[T, E]`. Arms: `success(value: T)` and `failure(error: E)`. Use `let ... else:` or `?` for error propagation."))
+    if name.equal("SoA"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type SoA", docs = "Struct-of-Arrays: `SoA[T, N]`. Each struct field becomes a separate array of length `N`. Access `soa[i].field` reads from column `field` at row `i`."))
+    if name.equal("simd"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type simd", docs = "SIMD vector type: `simd[T, N]`. Fixed-width vector of `N` lanes of numeric primitive type `T`. Supports component-wise arithmetic, lane access via `[i]`, and explicit aligned/unaligned load/store. Lowers to GCC/Clang vector extensions for portable, readable C output."))
+    if name.equal("struct_handle"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type struct_handle", docs = "Compile-time handle for a struct type. Obtained via reflection builtins like `fields_of`."))
+    if name.equal("field_handle"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type field_handle", docs = "Compile-time handle for a struct field. Exposes `.name` and `.type`. Obtained via `field_of` and `fields_of`."))
+    if name.equal("callable_handle"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type callable_handle", docs = "Compile-time handle for a callable declaration. Obtained via `callable_of`. Used with `has_attribute`, `attribute_of`."))
+    if name.equal("attribute_handle"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type attribute_handle", docs = "Compile-time handle for an applied attribute. Obtained via `attribute_of` and `attributes_of`. Use `attribute_arg[T]` to read arguments."))
+    if name.equal("member_handle"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type member_handle", docs = "Compile-time handle for an enum or flags member. Exposes `.name` and `.value`. Obtained via `members_of`."))
+    if name.equal("EventError"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type EventError", docs = "Built-in enum returned when event listener capacity is exhausted. Single member: `full`."))
+    if name.equal("Subscription"):
+        return Option[HoverDoc].some(value = HoverDoc(signature = "type Subscription", docs = "Opaque handle returned by `event.subscribe`. Pass to `event.unsubscribe` to remove a listener."))
+    return Option[HoverDoc].none
+
+
+
 ## Look up a builtin call name in the host's builtin-call table.
 public function builtin_call(name: str) -> Option[HoverDoc]:
     if name.equal("fatal"):

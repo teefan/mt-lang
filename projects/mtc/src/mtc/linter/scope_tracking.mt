@@ -97,7 +97,7 @@ function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, nam
     buf.append("unused import '")
     buf.append(name)
     buf.append("'")
-    push_w(warnings, path, line, column, "unused-import", buf.as_str(), "hint")
+    push_w(warnings, path, line, column, "unused-import", buf.as_str(), "warning")
 
 
 # =============================================================================
