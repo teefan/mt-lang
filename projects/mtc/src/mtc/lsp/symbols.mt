@@ -8,6 +8,9 @@ import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.lexer.lexer as lexer_mod
+import mtc.lexer.token as token_mod
+import mtc.lexer.token_kinds as tk
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -81,8 +84,133 @@ public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, 
             decl = read(ast_file.declarations.data + di)
         emit_declaration_symbol(ref_of(json_text), ref_of(analysis), source, decl, ref_of(first))
         di += 1
+    append_missing_token_anchors(ref_of(json_text), source, ast_file, ref_of(first))
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
+
+
+## The host's outline is anchored on `keyword identifier` token pairs, so a
+## declaration the parser dropped (a file mid-edit, an unterminated source) still
+## gets a symbol — without children or detail, because the host's enrichment has
+## no AST declaration to attach.  Emit a bare symbol for every top-level anchor
+## the AST walk above did not already produce; nested anchors are excluded (the
+## host removes them from its token base via the AST's local/member sets).
+function append_missing_token_anchors(
+    json_out: ref[string.String],
+    source: str,
+    file: ast.SourceFile,
+    first: ref[bool],
+) -> void:
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: tokens.release()
+    var ti: ptr_uint = 0
+    while ti + 1 < tokens.len:
+        let kwp = tokens.get(ti) else:
+            break
+        let idp = tokens.get(ti + 1) else:
+            break
+        var kw: token_mod.Token
+        var idt: token_mod.Token
+        unsafe:
+            kw = read(kwp)
+            idt = read(idp)
+        let kind = anchor_keyword_kind(kw.kind)
+        if kind >= 0 and kw.column == 1 and idt.kind == tk.TokenKind.identifier:
+            let name = token_mod.token_lexeme(idt, source)
+            if name.len > 0 and not anchor_covered(file, name, idt.line):
+                var no_detail = string.String.create()
+                var no_children = vec.Vec[string.String].create()
+                emit_symbol(json_out, name, kind, idt.line, idt.column, no_detail.as_str(), ref_of(no_children), first)
+                no_detail.release()
+        ti += 1
+
+
+## The LSP SymbolKind for a host definition keyword, or -1 when the token is not
+## one (host `DEFINITION_KEYWORDS`).
+function anchor_keyword_kind(kind: tk.TokenKind) -> int:
+    if kind == tk.TokenKind.tk_function:
+        return SYMBOLKIND_FUNCTION
+    if (
+        kind == tk.TokenKind.tk_struct or kind == tk.TokenKind.tk_union
+        or kind == tk.TokenKind.tk_variant or kind == tk.TokenKind.tk_opaque
+        or kind == tk.TokenKind.tk_extending
+    ):
+        return SYMBOLKIND_STRUCT
+    if kind == tk.TokenKind.tk_enum or kind == tk.TokenKind.tk_flags:
+        return SYMBOLKIND_ENUM
+    if kind == tk.TokenKind.tk_interface:
+        return SYMBOLKIND_INTERFACE
+    if kind == tk.TokenKind.tk_type:
+        return SYMBOLKIND_CLASS
+    if kind == tk.TokenKind.tk_const:
+        return SYMBOLKIND_CONST
+    if kind == tk.TokenKind.tk_var or kind == tk.TokenKind.tk_let:
+        return SYMBOLKIND_VARIABLE
+    if kind == tk.TokenKind.tk_event:
+        return SYMBOLKIND_EVENT
+    return -1
+
+
+## True when a top-level declaration in `file` matches the token anchor `name` on
+## `line` (the host's enrichment matches symbols by name and line).
+function anchor_covered(file: ast.SourceFile, name: str, line: ptr_uint) -> bool:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + i)
+        match decl:
+            ast.Decl.decl_function as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_const as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_var as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_struct as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_union as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_enum as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_flags as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_variant as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_interface as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_opaque as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_type_alias as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_event as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_extern_function as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_foreign_function as d:
+                if d.name == name and d.line == line:
+                    return true
+            ast.Decl.decl_extending_block as d:
+                if last_name_part(d.type_name) == name and d.line == line:
+                    return true
+            _:
+                pass
+        i += 1
+    return false
 
 
 ## Emit one declaration symbol, with its children where the host has them.

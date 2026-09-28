@@ -88,10 +88,11 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
 - **Rebuild before measuring**: `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc`.
   A stale `build/stage2/mtc` is the classic false result.
 - **Gates for every change**: `tools/bootstrap.sh -j 16` (fixed point + 14/14 self-tests),
-  `build/stage2/mtc test test/mt -I .` (60 files / 0 failed), `rake "cli:parity"` (22 match / 39 differ / 0 pending),
-  `ruby tools/sexpr_parity.rb lex -q` (703/703) and `parse -q` (699 comparable / 0 differ),
-  `ruby tools/unused_import_parity.rb` (606/607, the one documented residual),
-  `ruby tools/lsp_parity.rb record|compare` (30/30 capability keys, 4 documented entries).
+  `build/stage2/mtc test test/mt -I .` (60 files / 0 failed), `rake "cli:parity"` (23 match / 38 differ / 0 pending),
+  `ruby tools/sexpr_parity.rb lex -q` (705/705) and `parse -q` (701 comparable / 0 differ),
+  `ruby tools/unused_import_parity.rb` (609/608, the one documented residual),
+  `ruby tools/lsp_parity.rb record|compare` (30/30 capability keys, 4 documented entries),
+  `ruby tools/lsp_recovery_probe.rb --check` (mid-edit recovery parity, byte-compared).
   C-backend changes additionally get the example sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34,
   a raylib sample); behaviour changes get valgrind on the touched path plus the headless-Neovim smoke.
 - **Never edit sources while a gate runs**: `bootstrap.sh` compiles the working tree, so an edit

@@ -38,6 +38,15 @@ public struct ParserState:
     current_type_param_names: vec.Vec[str]
     suppress_errors: bool
     error_suppressed: bool
+    ## Set by the first recorded error of a statement or declaration: later
+    ## errors are ignored and the enclosing recovery point rewinds to
+    ## `panic_index` before synchronizing — the host's ParseError unwinding,
+    ## emulated without exceptions.
+    panic: bool
+    panic_index: ptr_uint
+    panic_line: ptr_uint
+    panic_column: ptr_uint
+    panic_message: cstr
     ## Declarations synthesized while parsing another declaration (inline struct
     ## methods desugar to an extending block).  The enclosing declaration block
     ## drains this into its declaration list after each parse.
@@ -147,6 +156,8 @@ public function parser_error_naked(s: ref[ParserState], msg: cstr) -> void:
 
 
 public function parser_error_at(s: ref[ParserState], msg: cstr, line: ptr_uint, col: ptr_uint, lexeme: str, kind: str) -> void:
+    if s.panic:
+        return
     if s.suppress_errors:
         s.error_suppressed = true
         return
@@ -163,3 +174,8 @@ public function parser_error_at(s: ref[ParserState], msg: cstr, line: ptr_uint, 
         let diag = ParseDiagnostic(line = line, column = col, message = msg, lexeme = lexeme, kind = kind)
         errs.push(diag)
         read(errs_ptr) = errs
+    s.panic = true
+    s.panic_index = s.stream.current
+    s.panic_line = line
+    s.panic_column = col
+    s.panic_message = msg

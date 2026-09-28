@@ -63,7 +63,7 @@ public function handle_document_diagnostic(
     # Compute new diagnostics.
     var roots = ws.effective_module_roots_for(file_path.as_str())
     defer: roots.release()
-    var diagnostics = diag.collect_diagnostics(ws, file_path.as_str(), source)
+    var diagnostics = diag.collect_diagnostics(ws, uri, file_path.as_str(), source)
 
     var diag_json = string.String.create()
     append_json_value_into(ref_of(diag_json), diagnostics)
@@ -141,8 +141,12 @@ public function handle_workspace_diagnostic(
                     result_json.append(",")
                 first = false
 
-                result_json.append("{\"uri\":\"file://")
-                proto.append_escaped(ref_of(result_json), path)
+                var doc_uri = string.String.from_str("file://")
+                defer: doc_uri.release()
+                doc_uri.append(path)
+
+                result_json.append("{\"uri\":\"")
+                proto.append_escaped(ref_of(result_json), doc_uri.as_str())
 
                 if hit:
                     result_json.append("\",\"kind\":\"unchanged\",\"resultId\":\"")
@@ -152,7 +156,7 @@ public function handle_workspace_diagnostic(
 
                 var roots = ws.effective_module_roots_for(path)
                 defer: roots.release()
-                var diagnostics = diag.collect_diagnostics(ws, path, source)
+                var diagnostics = diag.collect_diagnostics(ws, doc_uri.as_str(), path, source)
 
                 var diag_json = string.String.create()
                 append_json_value_into(ref_of(diag_json), diagnostics)

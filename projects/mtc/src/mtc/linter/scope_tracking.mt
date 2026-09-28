@@ -1179,7 +1179,15 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[ScopeW
                 visit_stmt_opt(loc.else_body, path, warnings, ctx)
             ast.Stmt.stmt_assignment as asgn:
                 visit_expr(asgn.value, path, warnings, ctx)
-                visit_expr(asgn.target, path, warnings, ctx)
+                visit_assignment_target(asgn.target, path, warnings, ctx)
+                # A compound assignment reads the target (host
+                # `mark_assignment_target_reads`); a plain `=` does not.
+                if not asgn.operator.equal("="):
+                    match read(asgn.target):
+                        ast.Expr.expr_identifier as id:
+                            ctx_mark_used(ctx, id.name)
+                        _:
+                            pass
                 ctx_mark_mutated(ctx, asgn.target)
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0
@@ -1274,6 +1282,23 @@ function visit_expr_opt(expr: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[S
     let ep = expr else:
         return
     visit_expr(ep, path, warnings, ctx)
+
+
+## Assignment targets that read their sub-expressions (host
+## `visit_assignment_target`): a member/index target reads its receiver, a bare
+## identifier is a write only.
+function visit_assignment_target(target: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[ScopeWarning]], ctx: ref[ScopeCtx]) -> void:
+    unsafe:
+        match read(target):
+            ast.Expr.expr_identifier:
+                pass
+            ast.Expr.expr_member_access as m:
+                visit_expr(m.receiver, path, warnings, ctx)
+            ast.Expr.expr_index_access as ix:
+                visit_expr(ix.receiver, path, warnings, ctx)
+                visit_expr(ix.index, path, warnings, ctx)
+            _:
+                visit_expr(target, path, warnings, ctx)
 
 
 function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[ScopeWarning]], ctx: ref[ScopeCtx]) -> void:

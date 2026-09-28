@@ -474,18 +474,33 @@ fixed the same day.
 ## 9. Real-project readiness and recovery (2026-09-28)
 
 The focused plan for making the self-hosted server a daily driver lives in
-`docs/lsp-parity-plan.md`.  Its starting evidence, recorded here so the design
-doc carries the findings:
+`docs/lsp-parity-plan.md`.  Its starting evidence is kept below, then the
+recovery result:
 
-- **Recovery is not at parity yet.**  Driving both servers through the
-  "declare `var n = Sample(…)`, then type `n.`" edit (`tools/lsp_recovery_probe.rb`)
-  shows six divergences for that one edit: parse-error messages miss the host's
-  ` at <uri>:<line>:<col>` suffix; `expected end of statement` is extra and
-  mispositioned (host `9:12`, self `9:0`); the recovered ASTs differ
-  (`unknown name v` vs `unknown field Sample.`); the lint set differs
-  (`unused-local` vs `prefer-let`); `missing-return` timing differs; and one
-  self diagnostic's `message` is a JSON blob (`{"kind"=>"markdown",…}`) — a
-  serializer bug.
+- **Recovery was not at parity** when the plan was written.  Driving both servers
+  through the "declare `var n = Sample(…)`, then type `n.`" edit
+  (`tools/lsp_recovery_probe.rb`) showed six divergences for that one edit:
+  parse-error messages missing the host's ` at <uri>:<line>:<col>` suffix;
+  `expected end of statement` extra and mispositioned (host `9:12`, self `9:0`);
+  different recovered ASTs (`unknown name v` vs `unknown field Sample.`); a
+  different lint set (`unused-local` vs `prefer-let`); `missing-return` timing;
+  and one self diagnostic whose `message` was a JSON blob
+  (`{"kind"=>"markdown",…}`) — a serializer bug, not a parity gap.
+- **Recovery is at parity now** (session 9).  The blob was the analyzer's
+  duplicate `missing-return` sema error (the host has only the linter rule); the
+  suffix is emitted by the LSP's diagnostic conversion from the document URI;
+  and the parser unwinds like the host — `ParserState.panic` records the first
+  error's token, later errors in the same unit are ignored, and the recovery
+  point (`recover_statement` / `recover_top_level` / `recover_match_arm`, the
+  local-decl and function rescues) rewinds and synchronizes or substitutes the
+  host's node (an `expr_error` value, a partial `FunctionDef`).  The lints on
+  recovered code followed from the AST rather than being special-cased; the
+  outline keeps the host's token anchoring, so a dropped declaration still
+  appears as a bare symbol.  `tools/lsp_recovery_probe.rb --check` covers the
+  corpus: truncated `n.`/`a.inner.`, unterminated string/block, half-typed
+  `import`, cut-off expression, plus an incremental edit.  Not yet emulated: the
+  host's *nested* declaration rescues (methods, the local-decl `else` variant,
+  the field loops).
 - **Readiness beyond parity** (Track C of the plan): the workspace index walks
   *module roots*, which for a project outside the compiler tree includes the
   whole compiler tree (cold-start latency and memory); the reference index keeps

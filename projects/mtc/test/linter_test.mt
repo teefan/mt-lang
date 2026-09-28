@@ -634,11 +634,28 @@ function test_doc_tag_on_struct_flagged() -> void:
 function test_dead_assignment_flagged() -> void:
     var source = <<-SRC
         function demo() -> int:
-            var x = 1
+            var x: int
+            x = 1
             x = 2
             return x
     SRC
     expect_one(source, "dead-assignment")
+    var warns = lint_text(source)
+    defer: warns.release()
+    expect(message_of(ref_of(warns), "dead-assignment").contains_substring("value assigned to 'x' is never read"), "host message")
+
+
+@[test]
+function test_dead_assignment_skips_never_read_binding() -> void:
+    # A binding that is never read is `unused-local`'s business (host guard).
+    var source = <<-SRC
+        function demo() -> int:
+            var x = 1
+            x = 2
+            return 0
+    SRC
+    expect_none(source, "dead-assignment")
+    expect_one(source, "unused-local")
 
 
 @[test]
@@ -660,6 +677,98 @@ function test_dead_assignment_reused_clean() -> void:
             return y
     SRC
     expect_none(source, "dead-assignment")
+
+
+# =============================================================================
+#  missing-return
+# =============================================================================
+
+@[test]
+function test_missing_return_flagged() -> void:
+    var source = <<-SRC
+        function compute() -> int:
+            let x = 1
+    SRC
+    expect_one(source, "missing-return")
+    var warns = lint_text(source)
+    defer: warns.release()
+    expect(message_of(ref_of(warns), "missing-return").contains_substring("'compute' does not always return a value"), "host message")
+
+
+@[test]
+function test_missing_return_if_without_else_flagged() -> void:
+    var source = <<-SRC
+        function pick(flag: bool) -> int:
+            if flag:
+                return 1
+    SRC
+    expect_one(source, "missing-return")
+
+
+@[test]
+function test_missing_return_method_flagged() -> void:
+    var source = <<-SRC
+        struct C:
+            v: int
+        extending C:
+            function read() -> int:
+                let x = this.v
+    SRC
+    expect_one(source, "missing-return")
+
+
+@[test]
+function test_missing_return_clean_when_always_returns() -> void:
+    var source = <<-SRC
+        function pick(flag: bool) -> int:
+            if flag:
+                return 1
+            else:
+                return 2
+    SRC
+    expect_none(source, "missing-return")
+
+
+@[test]
+function test_missing_return_clean_for_void_function() -> void:
+    var source = <<-SRC
+        function setup():
+            let x = 1
+    SRC
+    expect_none(source, "missing-return")
+
+
+@[test]
+function test_missing_return_clean_when_other_path_fatals() -> void:
+    var source = <<-SRC
+        function pick(flag: bool) -> int:
+            if flag:
+                fatal(c"boom")
+            else:
+                return 1
+    SRC
+    expect_none(source, "missing-return")
+
+
+@[test]
+function test_missing_return_clean_for_while_true() -> void:
+    var source = <<-SRC
+        function spin() -> int:
+            while true:
+                pass
+    SRC
+    expect_none(source, "missing-return")
+
+
+@[test]
+function test_missing_return_clean_for_static_assert_false() -> void:
+    var source = <<-SRC
+        function pick(n: int) -> int:
+            if n == 8:
+                return 1
+            static_assert(false, "unsupported")
+    SRC
+    expect_none(source, "missing-return")
 
 
 # =============================================================================

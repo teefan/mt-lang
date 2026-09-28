@@ -5,21 +5,24 @@ with the Ruby host on everything an editor can observe (diagnostics included), p
 readiness properties parity alone does not test — cold start, steady-state memory, large
 files, long sessions, real clients (Neovim/VS Code).
 
-**Where we are** (branch `selfhost`, commits `c15594c3`, `daaefd19`, 2026-09-28):
-SimpleGame audit 6456 entries / **336 differ** (hover 83, definition/declaration 72 each,
+**Where we are** (branch `selfhost`, session 9, 2026-09-28): SimpleGame audit
+6456 entries / **335 differ** (hover 83, definition/declaration 72 each,
 typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5,
-semanticTokens 5, diagnostic 3, codeLens 1, implementation 1, workspace/symbol 1);
-references-only audit **1**; synthetic harness 30/30 capabilities + 4 documented entries;
-probe fixtures 0 (references) / 0–8 (small classes); bootstrap fixed point + 14/14.
+semanticTokens 5, diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1);
+references-only audit **0**; synthetic harness 30/30 capabilities + 4 documented
+entries; probe fixtures 0 (references) / 0–8 (small classes); bootstrap fixed
+point + 14/14; `cli:parity` 23/38/0.
 
-**New evidence this session — recovery is not at parity.** The `n.` mid-edit probe
-(scratchpad `lsp_recovery_probe.rb`, to be committed as `tools/lsp_recovery_probe.rb`)
-shows 6 divergences for one edit: (1) parse-error messages miss the host's
-` at <uri>:<line>:<col>` suffix; (2) extra/mispositioned `expected end of statement`
-(host `9:12`, self `9:0`); (3) different recovered AST (`unknown name v` vs
-`unknown field Sample.`); (4) different lint set (`unused-local` vs `prefer-let`);
-(5) `missing-return` timing differs; (6) **one self diagnostic's `message` is a JSON
-blob** (`{"kind"=>"markdown","value"=>…}`) — a serializer bug, not a parity gap.
+**Track A is closed** (session 9): `tools/lsp_recovery_probe.rb --check` reports
+recovery parity — all six mid-edit cases byte-equal.  A1 (the JSON-blob message)
+was the analyzer's duplicate `missing-return` sema error; A2 is the ` at
+<uri>:<line>:<col>` suffix on parse/lex messages (added in the diagnostic
+conversion, from the document URI); A3/A4 are the parser's panic-based
+unwinding (`ParserState.panic` + rewind-to-error + the host's recovery points and
+partial nodes), which the statement/declaration/local/match-arm fixtures pin.
+The lints on recovered code followed (scope-pass reads, dead-assignment, the
+`missing-return` emission order) — recorded in `docs/self-host-plan.md` §0k,
+session 9.
 
 **This file is the durable plan** (checked in; the session plan file
 `~/.commandcode/plans/lsp-real-project-parity.md` is a copy).  `docs/lsp-design.md`
@@ -29,7 +32,14 @@ the multi-session ledger.
 
 ---
 
-## Track A — recovery & diagnostics parity (highest priority)
+## Track A — recovery & diagnostics parity (CLOSED, session 9)
+
+`ruby tools/lsp_recovery_probe.rb --check` passes: the six mid-edit cases are
+byte-equal.  The bullets below are kept as the record of what each item was; the
+one piece deliberately not emulated yet is the host's *nested* declaration
+rescues (its `parse_method_def`, the local-decl `else` variant, the field loops) —
+a nested declaration dropped inside a block still recovers as a dropped
+declaration rather than the host's partial node (§0k, session 9).
 
 - **A1. The message-as-JSON blob.** Find where `mtc`'s diagnostics serializer forwards a
   *content object* into `message` (the entry appears as `sema/error` at the missing-return
@@ -51,9 +61,9 @@ the multi-session ledger.
   differing cases and the in-flight plan's stage-12 note), fix the recovery shape, then let
   the *lint on recovered code* follow (`unused-local` vs `prefer-let`, `missing-return`
   timing) — re-check both after each parser fix rather than special-casing the linter.
-- **A5. Harness.** Commit `tools/lsp_recovery_probe.rb` with a `--check` mode (compare
-  byte-for-byte, non-zero exit on diff) and a fixture corpus under `tmp/` created by the
-  tool itself; run it in the session gates.
+- **A5. Harness.** Done: `tools/lsp_recovery_probe.rb` with `--check` (byte
+  compare, non-zero exit on diff) and its corpus under `tmp/lsp-recovery/`
+  (created by the tool).  Run in the session gates.
 
 ## Track B — the audit residue (336 entries)
 

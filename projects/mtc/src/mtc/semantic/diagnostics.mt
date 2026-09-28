@@ -52,14 +52,6 @@ public function editable_on_immutable_message(name: str, method: str) -> str:
     return buf.as_str()
 
 
-public function missing_return_message(name: str) -> str:
-    var buf = string.String.create()
-    buf.append("function '")
-    buf.append(name)
-    buf.append("' does not always return a value")
-    return buf.as_str()
-
-
 public function def_assign_message(name: str) -> str:
     var buf = string.String.create()
     buf.append("variable '")

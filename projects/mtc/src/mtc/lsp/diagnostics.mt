@@ -2,6 +2,7 @@
 ## converts errors/warnings into LSP Diagnostic JSON.  Reuses check_program()
 ## from the module loader, mirroring the CLI's `mtc check` path.
 
+import std.fmt
 import std.json as json
 import std.str
 import std.string as string
@@ -31,9 +32,11 @@ const SYNC_FULL: double = 1.0
 ## Build a JSON Array of LSP Diagnostic objects from a loaded and checked Program.
 ## Only diagnostics that belong to `root_path` are returned (the loader also
 ## reports on imported modules and the prelude), matching the Ruby LSP's
-## per-document pull.  `source` is the document's text — passed to the loader so
-## an unsaved editor buffer is analyzed instead of the file on disk.
-public function collect_diagnostics(ws: ref[workspace.Workspace], root_path: str, source: str) -> json.Value:
+## per-document pull.  `uri` is the document's client URI — parse/lex messages
+## embed it in their location suffix.  `source` is the document's text — passed
+## to the loader so an unsaved editor buffer is analyzed instead of the file on
+## disk.
+public function collect_diagnostics(ws: ref[workspace.Workspace], uri: str, root_path: str, source: str) -> json.Value:
     # Reuse the workspace's loader-backed analysis: it is the same program the
     # other requests see, built once per content version instead of once per
     # request (a large file's import closure costs ~70 ms).
@@ -52,7 +55,7 @@ public function collect_diagnostics(ws: ref[workspace.Workspace], root_path: str
         unsafe:
             let d = read(d_ptr)
             if d.path.as_str().equal(root_path):
-                let diag = diagnostic_from_load_diagnostic(d, source)
+                let diag = diagnostic_from_load_diagnostic(d, source, uri)
                 if not diag.is_null():
                     read(array_ptr).push(diag)
 
@@ -120,7 +123,7 @@ public function collect_diagnostics(ws: ref[workspace.Workspace], root_path: str
 ## Publish diagnostics for a file via an LSP notification.
 ## Uses the textDocument/publishDiagnostics notification.
 public function publish_for_uri(ws: ref[workspace.Workspace], uri: str, root_path: str, source: str) -> void:
-    var diagnostics = collect_diagnostics(ws, root_path, source)
+    var diagnostics = collect_diagnostics(ws, uri, root_path, source)
 
     var params = json.create_object_value()
     let params_obj = params.as_object() else:
@@ -154,9 +157,9 @@ public function publish_empty_for_uri(uri: str) -> void:
 ## LSP's shape (`lib/milk_tea/lsp/diagnostics.rb`): the code is re-derived for the
 ## client (`module/error` -> `import/load-error`), `data.stage` carries the
 ## pipeline stage, the range spans the offending token, import failures anchor at
-## the module path text, and sema messages that quote identifiers become
-## MarkupContent.
-function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic, source: str) -> json.Value:
+## the module path text, parse/lex messages carry the error's own location
+## suffix, and sema messages that quote identifiers become MarkupContent.
+function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic, source: str, uri: str) -> json.Value:
     var diag = json.create_object_value()
     let diag_obj = diag.as_object() else:
         return json.null_value()
@@ -217,7 +220,7 @@ function diagnostic_from_load_diagnostic(d: loader.LoadDiagnostic, source: str) 
             read(diag_obj).set("code", json.string_from_str(lsp_code))
 
         if d.message.len() > 0:
-            read(diag_obj).set("message", client_message_value(d.message.as_str(), lsp_code))
+            read(diag_obj).set("message", client_message_value(d.message.as_str(), lsp_code, uri, d.line, d.column))
 
         var data = json.create_object_value()
         let data_obj = data.as_object() else:
@@ -250,10 +253,18 @@ function stage_for(code: str) -> str:
     return "tooling"
 
 
-## The client-facing `message` value.  A sema message that quotes identifiers
-## with backticks or single quotes becomes a MarkupContent object, mirroring the
-## host's `diagnostic_message_to_client`; every other message stays a string.
-function client_message_value(message: str, lsp_code: str) -> json.Value:
+## The client-facing `message` value.  A parse/lex message keeps its plain text
+## plus the host's ` at <uri>:<line>:<col>` suffix (its error constructors embed
+## the path they were built with — the document URI under the LSP).  A sema
+## message that quotes identifiers with backticks or single quotes becomes a
+## MarkupContent object, mirroring the host's `diagnostic_message_to_client`;
+## every other message stays a string.
+function client_message_value(message: str, lsp_code: str, uri: str, line: ptr_uint, column: ptr_uint) -> json.Value:
+    if lsp_code.equal("parse/error") or lsp_code.equal("lex/error"):
+        var suffixed = with_location_suffix(message, uri, line, column)
+        defer: suffixed.release()
+        return json.string_from_str(suffixed.as_str())
+
     if not lsp_code.starts_with("sema") or not message_has_identifier_span(message):
         return json.string_from_str(message)
 
@@ -264,6 +275,17 @@ function client_message_value(message: str, lsp_code: str) -> json.Value:
         read(markup_obj).set("kind", json.string_from_str("markdown"))
         read(markup_obj).set("value", json.string_from_str(message))
     return markup
+
+
+## `<message> at <uri>:<line>:<column>` — the host builds this in `ParseError`
+## and `LexError` from the path and 1-based token position.
+function with_location_suffix(message: str, uri: str, line: ptr_uint, column: ptr_uint) -> string.String:
+    var buf = string.String.create()
+    buf.append(message)
+    buf.append(" at ")
+    buf.append(uri)
+    buf.append_format(f":#{line}:#{column}")
+    return buf
 
 
 ## True when the message contains a backticked span or a quoted identifier

@@ -15,7 +15,7 @@
 ##   - event-capacity                 (warning)  event capacity >= 128
 ##   - trailing-list-comma            (hint)     redundant comma before a call's `)`
 ##   - doc-tag                        (hint)     malformed / mismatched `## @param` / `## @return`
-##   - dead-assignment                (hint)     assigned value is never read
+##   - dead-assignment                (warning)  value assigned is never read
 ##   - unreachable-code               (warning)  statement after return/fatal
 ##   - constant-condition             (hint)     `if true` / `while false`
 ##   - loop-single-iteration          (hint)     loop body always breaks/returns
@@ -174,6 +174,7 @@ public function lint_source_with(
         i += 1
     scope_warnings.release()
     # Whole-file passes run after the AST visitor, matching Ruby's emission order.
+    lint_missing_return(file, path, ref_of(warnings))
     lint_prefer_let_else(file, path, ref_of(warnings))
     lint_ownership(file, path, ref_of(warnings), options.owning_type_names)
     lint_reserved_names(file, path, ref_of(warnings))
@@ -1937,14 +1938,12 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[Warnin
             ast.Decl.decl_function as fun:
                 visit_stmt_opt(fun.body, path, warnings)
                 check_redundant_return(fun.return_type, fun.body, path, warnings)
-                check_missing_return(fun.name, fun.line, fun.return_type, fun.body, path, warnings)
             ast.Decl.decl_extending_block as ex:
                 var j: ptr_uint = 0
                 while j < ex.methods.len:
                     let m = read(ex.methods.data + j)
                     visit_stmt(m.body, path, warnings)
                     check_redundant_return(m.return_type, m.body, path, warnings)
-                    check_missing_return(m.name, m.line, m.return_type, m.body, path, warnings)
                     j += 1
             ast.Decl.decl_const as c:
                 visit_expr_opt(c.value, path, warnings)
@@ -2349,6 +2348,37 @@ function identifier_name_of(expr: ptr[ast.Expr]) -> Option[str]:
 # =============================================================================
 #  missing-return — non-void function whose body does not always return.
 # =============================================================================
+
+## Emitted after the scope pass: the host checks each function once its scope
+## frame has popped, so the function's `unused-local`/`prefer-let` warnings come
+## first.
+function lint_missing_return(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    lint_missing_return_decls(file.declarations, path, warnings)
+
+
+function lint_missing_return_decls(decls: span[ast.Decl], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_function as fun:
+                    check_missing_return(fun.name, fun.line, fun.return_type, fun.body, path, warnings)
+                ast.Decl.decl_extending_block as ex:
+                    var j: ptr_uint = 0
+                    while j < ex.methods.len:
+                        let m = read(ex.methods.data + j)
+                        check_missing_return(m.name, m.line, m.return_type, m.body, path, warnings)
+                        j += 1
+                ast.Decl.decl_when as w:
+                    var bi: ptr_uint = 0
+                    while bi < w.branches.len:
+                        let br = read(w.branches.data + bi)
+                        lint_missing_return_decls(br.body, path, warnings)
+                        bi += 1
+                _:
+                    pass
+        i += 1
+
 
 function check_missing_return(name: str, line: ptr_uint, return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     if return_type == null:
@@ -4217,10 +4247,10 @@ function lint_dead_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Ve
         unsafe:
             let dw = read(dp)
             var buf = string.String.create()
-            buf.append("assigned value '")
+            buf.append("value assigned to '")
             buf.append(dw.name)
             buf.append("' is never read")
-            push_warning_at(warnings, path, if dw.line > 0: dw.line else: 1, if dw.column > 0: dw.column else: 0, 0, "dead-assignment", buf.as_str(), "hint")
+            push_warning_at(warnings, path, if dw.line > 0: dw.line else: 1, if dw.column > 0: dw.column else: 0, 0, "dead-assignment", buf.as_str(), "warning")
         di += 1
 
 

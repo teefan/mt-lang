@@ -48,7 +48,8 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **336 differ** after the session-6/7/8 LSP work (hover 83, definition/declaration 72 each, typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5, semanticTokens 5, diagnostic 3, codeLens 1, implementation 1, workspace/symbol 1) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The references-only audit is at **1 differing entry** (a lazy-facts fallthrough, §0k) and the definition/typeDefinition counters carry 6 deliberate self-better entries (§0k).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`), and so are their references.  Residue classified in §0k; the largest class is now `hover` (member/binding resolution).**
+**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **335 differ** after the session-6/7/8/9 LSP work (hover 83, definition/declaration 72 each, typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The references-only audit is at **0 differing entries** and the definition/typeDefinition counters carry 6 deliberate self-better entries (§0k).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`), and so are their references.  Residue classified in §0k; the largest class is now `hover` (member/binding resolution).**
+**LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
@@ -66,9 +67,10 @@ Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (r
 list), `--bundle`/`--archive`, `--jobs`, Wasm/emcc.**  `snapshot` and `debug`
 are implemented (§5.8a); the formatter CST modes (`--tidy`, `--preserve`) landed
 on 2026-09-26 (§7).
-`rake "cli:parity"` (measured 2026-09-26) is
-**22 match / 39 differ / 0 pending of 61 cases** (the pending case was the
-`format` mode-flag case, now matching); the differing cases are
+`rake "cli:parity"` (measured 2026-09-28, session 9) is
+**23 match / 38 differ / 0 pending of 61 cases** (the pending case was the
+`format` mode-flag case, now matching; the session-9 `dead-assignment` rule
+closed `lint-warns`); the differing cases are
 message text/channel/argument-precedence differences, not missing commands
 (§0j).  Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
@@ -1559,6 +1561,65 @@ typeDefinition 70 (the same member shapes), documentHighlight 14, the small
 classes (documentSymbol 5, semanticTokens 5, diagnostic 3, codeLens 1,
 implementation 1, workspace/symbol 1), and references 9 (gated on the hover
 residue).
+
+### Recovery parity: the parser's unwinding, the diagnostic suffix and the blob (2026-09-28 session 9)
+
+`tools/lsp_recovery_probe.rb` (the focused plan's A5) drives both servers through
+a six-edit corpus of mid-edit states — the `n.` truncation (plus an incremental
+`.`), an `a.inner.` truncation, an unterminated string, an unterminated block, a
+half-typed `import`, and a cut-off expression — and byte-compares the pull
+diagnostics of every state.  `--check` exits non-zero on any difference.  The
+corpus workspace is written by the tool under `tmp/lsp-recovery/`.  All six cases
+match now; the divergences were one root cause each:
+
+- **A1 — the JSON-blob `message`.**  The self's *analyzer* reported its own
+  `missing-return` sema error; because that message quotes `'main'`, the LSP
+  conversion turned it into MarkupContent (`{"kind":"markdown",…}`).  The host
+  has only the linter rule, so the analyzer check and its now-dead termination
+  helpers are gone — which also fixes `mtc build`: the self used to *refuse* a
+  program the host builds (a non-void function that does not always return).
+- **A2 — the location suffix.**  `parse/error` and `lex/error` messages carry the
+  host's ` at <uri>:<line>:<col>` (its `ParseError`/`LexError` constructors embed
+  the path they were built with — the document URI under the LSP).
+  `collect_diagnostics` now takes the URI, so push and pull agree; the CLI text
+  is unchanged (the host strips the suffix there too).
+- **A3/A4 — the recovery points and the recovered AST.**  The self's parser used
+  to skip to a sync point *inside* the failing rule and keep parsing the garbage
+  (hence the extra `expected end of statement` at the wrong position, the bogus
+  `unknown field Sample.` node, and the lint set that followed it).  The host
+  raises and unwinds to the nearest rescue instead, which substitutes a sentinel.
+  `ParserState.panic` now marks a statement/declaration broken: the first error
+  records the token it happened at, later errors in the same unit are ignored
+  (the host's exception never runs them), and the recovery point —
+  `recover_statement`, `recover_top_level`, `recover_match_arm`, the local-decl
+  rescue, or the function rescue — rewinds to that token and synchronizes, or
+  substitutes the host's node: a `LocalDecl` whose value is an `expr_error`, or a
+  function declaration keeping its name (the host's partial `FunctionDef`).
+- **The lints on recovered code followed**, not special-cased: the scope pass no
+  longer counts a plain assignment target as a *use* (the host marks reads only),
+  the dead-assignment rule skips declaration-origin writes and never-read
+  bindings and carries the host's message and `warning` severity, and
+  `missing-return` is emitted after the scope pass (the host checks each function
+  once its scope frame pops).  The outline keeps the host's token anchoring: a
+  declaration the parser drops still appears (a bare symbol, like the host's
+  base pass), and a partial `FunctionDef` renders `-> void`.
+
+Measured: recovery probe **OK** (6/6); `cli:parity` **23 match / 38 differ** (was
+22/39 — the dead-assignment rule closed `lint-warns`); `sexpr_parity` lex
+705/705 + parse 701 comparable / 0 differ; `unused_import_parity` 609/608 (the
+documented `async_network_lobby.mt` residual); LSP harness 30/30 capabilities +
+the same 4 documented entries; project audit **335 differ** (diagnostic 3 → 2,
+every other counter unchanged); references-only audit **0**; fixtures at 0 for
+hover/definition/declaration/typeDefinition/references (`probe2` keeps its 2
+deliberate hovers); `test/mt` 60/0; bootstrap fixed point + 14/14; valgrind 0
+errors on the recovery drive; the headless-Neovim smoke renders hovers.
+
+Not emulated yet (the host has ~30 per-production rescues): the *nested*
+declaration rescues (`parse_method_def`, the local-decl `else` variant, the
+struct/union field loops) — a nested declaration dropped inside a block recovers
+as a dropped declaration, not as the host's partial node.  The corpus and the
+harness do not cover that shape yet; the focused plan's A3 keeps it as the next
+recovery item.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 

@@ -173,6 +173,45 @@ function synchronize_to_top_level_boundary(s: ref[pstate.ParserState]) -> void:
                     return
         advance(s)
 
+## Rewind to the first error's token and clear the panic — the host's exception
+## unwinding, emulated: the recovery points below then synchronize from the
+## error's own position, exactly as `synchronize_to_*_boundary` would after a
+## raised ParseError.
+function rewind_to_panic(s: ref[pstate.ParserState]) -> void:
+    s.stream.current = s.panic_index
+    s.panic = false
+
+
+## The `expr_error` the host substitutes for a failed initializer
+## (`recovery_error_expr`): positioned at the error's own token.
+function panic_error_expr(s: ref[pstate.ParserState]) -> ptr[ast.Expr]:
+    var node = alloc_expr(s)
+    unsafe:
+        read(node) = ast.Expr.expr_error(line = s.panic_line, column = s.panic_column, message = str.cstr_as_str(s.panic_message))
+    return node
+
+
+## Drop the partial statement and resume at the next statement boundary
+## (host: `parse_statement_block_body`'s rescue).
+function recover_statement(s: ref[pstate.ParserState]) -> void:
+    rewind_to_panic(s)
+    synchronize_to_statement_boundary(s)
+
+
+## Drop the partial declaration and resume at the next top-level boundary
+## (host: `parse_source_file`'s rescue).
+function recover_top_level(s: ref[pstate.ParserState]) -> void:
+    rewind_to_panic(s)
+    synchronize_to_top_level_boundary(s)
+
+
+## Drop the partial match arm and resume at the next arm boundary
+## (host: `parse_match_arm_body`'s rescue).
+function recover_match_arm(s: ref[pstate.ParserState]) -> void:
+    rewind_to_panic(s)
+    synchronize_to_match_arm_boundary(s)
+
+
 function is_declaration_start(s: ref[pstate.ParserState]) -> bool:
     return (
         check(s, tk.TokenKind.tk_const) or check(s, tk.TokenKind.tk_var)
@@ -738,6 +777,11 @@ function parse_embedded_expr(s: ref[pstate.ParserState], source: str, line: ptr_
         suppress_errors = s.suppress_errors,
         total_steps = 0,
         error_suppressed = false,
+        panic = false,
+        panic_index = 0,
+        panic_line = 0,
+        panic_column = 0,
+        panic_message = c"",
         pending_decls = vec.Vec[ast.Decl].create(),
     )
     return parse_expression(ref_of(sub))
@@ -780,6 +824,11 @@ public function parse(source: str) -> bool:
         suppress_errors = false,
         total_steps = 0,
         error_suppressed = false,
+        panic = false,
+        panic_index = 0,
+        panic_line = 0,
+        panic_column = 0,
+        panic_message = c"",
         pending_decls = vec.Vec[ast.Decl].create(),
     )
     lex_diags.release()
@@ -803,6 +852,11 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[pstate.ParseDia
         suppress_errors = false,
         total_steps = 0,
         error_suppressed = false,
+        panic = false,
+        panic_index = 0,
+        panic_line = 0,
+        panic_column = 0,
+        panic_message = c"",
         pending_decls = vec.Vec[ast.Decl].create(),
     )
     lex_diags.release()
@@ -843,6 +897,11 @@ public function parse_source_reporting(
         suppress_errors = false,
         total_steps = 0,
         error_suppressed = false,
+        panic = false,
+        panic_index = 0,
+        panic_line = 0,
+        panic_column = 0,
+        panic_message = c"",
         pending_decls = vec.Vec[ast.Decl].create(),
     )
     seed_known_names(ref_of(state))
@@ -876,16 +935,22 @@ function parse_source_file(s: ref[pstate.ParserState]) -> ast.SourceFile:
 
     while match_kind(s, tk.TokenKind.tk_import):
         let imp = parse_import(s)
-        unsafe:
-            imports.push(read(imp))
+        if s.panic:
+            recover_top_level(s)
+        else:
+            unsafe:
+                imports.push(read(imp))
         skip_newlines(s)
 
     while not eof(s):
         step(s)
         let decl = parse_declaration(s)
-        unsafe:
-            declarations.push(read(decl))
-        drain_pending_decls(s, ref_of(declarations))
+        if s.panic:
+            recover_top_level(s)
+        else:
+            unsafe:
+                declarations.push(read(decl))
+            drain_pending_decls(s, ref_of(declarations))
         skip_newlines(s)
 
     return ast.SourceFile(
@@ -904,8 +969,11 @@ function parse_raw_module_body(s: ref[pstate.ParserState], module_line: ptr_uint
 
     while match_kind(s, tk.TokenKind.tk_import):
         let imp = parse_import(s)
-        unsafe:
-            imports.push(read(imp))
+        if s.panic:
+            recover_top_level(s)
+        else:
+            unsafe:
+                imports.push(read(imp))
         skip_newlines(s)
     while check(s, tk.TokenKind.tk_link) or check(s, tk.TokenKind.tk_include) or check(s, tk.TokenKind.tk_compiler_flag):
         let directive = parse_raw_module_directive(s)
@@ -915,8 +983,11 @@ function parse_raw_module_body(s: ref[pstate.ParserState], module_line: ptr_uint
     while not eof(s):
         step(s)
         let decl = parse_external_declaration(s)
-        unsafe:
-            declarations.push(read(decl))
+        if s.panic:
+            recover_top_level(s)
+        else:
+            unsafe:
+                declarations.push(read(decl))
         skip_newlines(s)
 
     return ast.SourceFile(
@@ -1251,6 +1322,7 @@ function parse_function_def(s: ref[pstate.ParserState], attrs: span[ast.Attribut
         unsafe:
             ln = read(tok).line
             cn = read(tok).column
+    let panic_before_name = s.panic
     consume_name(s, c"expected function name")
     let name = previous_lexeme(s)
     var type_params = span[ast.TypeParam]()
@@ -1274,6 +1346,18 @@ function parse_function_def(s: ref[pstate.ParserState], attrs: span[ast.Attribut
     if match_kind(s, tk.TokenKind.arrow):
         return_type = parse_type_ref(s)
     let body = parse_block(s)
+    # The host's `parse_function_def` rescue: a signature or body that fails
+    # still yields the declaration with its name and no params or body, so the
+    # outline and the declaration list keep the declaration (the host's partial
+    # `FunctionDef`).
+    if s.panic and not panic_before_name and name.len > 0:
+        s.panic = false
+        var partial = alloc_decl(s)
+        unsafe:
+            read(partial) = ast.Decl.decl_function(name = name, type_params = span[ast.TypeParam](), method_params = span[ast.Param](),
+                return_type = null, body = null, visibility = visibility, is_async = is_async,
+                is_const = is_const, attributes = attrs, line = ln, column = cn)
+        return partial
     var node = alloc_decl(s)
     unsafe:
         read(node) = ast.Decl.decl_function(name = name, type_params = type_params, method_params = params,
@@ -1715,10 +1799,12 @@ function parse_block_body(s: ref[pstate.ParserState]) -> span[ast.Stmt]:
             advance(s)
             skip_newlines(s)
             continue
-        var saved = s.stream.current
         let stmt = parse_statement(s)
-        unsafe:
-            stmts.push(read(stmt))
+        if s.panic:
+            recover_statement(s)
+        else:
+            unsafe:
+                stmts.push(read(stmt))
         skip_newlines(s)
     let result = stmts.as_span()
     return result
@@ -1906,6 +1992,12 @@ function parse_local_decl(s: ref[pstate.ParserState], is_let: bool) -> ptr[ast.S
         parser_error_naked(s, c"local declaration requires an explicit type or initializer")
     if value != null and not block_expression(value):
         consume_end_of_statement(s)
+    # The host's `parse_local_decl` rescue: a binding whose initializer or
+    # terminator failed keeps its name with an error-expression value, and the
+    # partial statement's remainder is skipped.
+    if s.panic and name_str.len > 0:
+        value = panic_error_expr(s)
+        recover_statement(s)
     var node = alloc_stmt(s)
     unsafe:
         read(node) = ast.Stmt.stmt_local(is_let = is_let, name = name_str, stmt_type = stmt_type, value = value,
@@ -2138,6 +2230,8 @@ function parse_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         skip_newlines(s)
         parse_match_arm_into(s, ref_of(arms))
+        if s.panic:
+            recover_match_arm(s)
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of match body")
     var arms_span = arms.as_span()
@@ -2199,12 +2293,16 @@ function parse_match_arm_into(s: ref[pstate.ParserState], arms: ref[vec.Vec[ast.
         unsafe:
             read(body) = ast.Stmt.stmt_block(statements = body_span)
     if is_wild:
+        if s.panic:
+            return
         arms.push(ast.MatchArm(pattern = null, binding_name = binding_name, binding_line = binding_line, binding_column = binding_column, body = body,
             wildcard_line = wild_ln, wildcard_column = wild_cn))
         return
     # Expand `p1 | p2 | ...` into one arm per alternative sharing the body.
     var i: ptr_uint = 0
     while i < patterns.len():
+        if s.panic:
+            return
         let pp = patterns.get(i) else:
             break
         unsafe:
@@ -2560,6 +2658,8 @@ function parse_inline_match_stmt(s: ref[pstate.ParserState]) -> ptr[ast.Stmt]:
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         skip_newlines(s)
         parse_match_arm_into(s, ref_of(arms))
+        if s.panic:
+            recover_match_arm(s)
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of match body")
     var arms_span = arms.as_span()
@@ -4464,9 +4564,13 @@ function parse_declaration_block(s: ref[pstate.ParserState]) -> span[ast.Decl]:
     var decls = vec.Vec[ast.Decl].create()
     while not check(s, tk.TokenKind.dedent) and not eof(s):
         step(s)
-        unsafe:
-            decls.push(read(parse_declaration(s)))
-        drain_pending_decls(s, ref_of(decls))
+        let decl = parse_declaration(s)
+        if s.panic:
+            recover_top_level(s)
+        else:
+            unsafe:
+                decls.push(read(decl))
+            drain_pending_decls(s, ref_of(decls))
         skip_newlines(s)
     consume(s, tk.TokenKind.dedent, c"expected end of body")
     return decls.as_span()
