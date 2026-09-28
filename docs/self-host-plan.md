@@ -1113,6 +1113,35 @@ Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
 30/30 capabilities + 4 documented entries.
 
+### LSP hover: parameters render their resolved signature type (2026-09-28 session 6, plan fix 2)
+
+`parameter_hover_result` rendered the written TypeRef's **first name part**, so
+`function tint(c: rl.Color)` hovered as `parameter c: rl (immutable)` where the
+host answers `parameter c: Color (immutable)` + `*From std.c.raylib*`; a
+parameter whose type the host cannot resolve rendered the same bogus `rl` where
+the host renders `<error>`.  The hover now takes the enclosing callable's
+**resolved** parameter type — this is what makes an imported type render its
+short name plus the From line — via `parameter_hover_in_decl`, which reads the
+`FnSig` (`analysis.functions` for a function, `method_signature_for` for an
+extending-block method, matched by parameter list because one name can be
+extended on several types).
+
+Parameters of `extending` methods had no hover at all: `scope.mt`'s binding walk
+only modelled `decl_function`, so `local_binding_line` never matched inside an
+`extending` block and `resolve_local_hover` never reached its parameter arm.
+`collect_decl_bindings` now gives each extending method its own parameter and
+body scopes, and `resolve_local_hover` / `enclosing_local_decl_line` scan
+`decl_extending_block` methods alongside functions (so a *local* declared inside
+an extending method also resolves to its own declaration).
+
+Measured (`tmp/probe-ws`, hover only): 10 → 8 differing entries of 25; the two
+parameter hovers are byte-identical.  Verified through a real client
+(`nvim --headless`).
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
+30/30 capabilities + 4 documented entries.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**

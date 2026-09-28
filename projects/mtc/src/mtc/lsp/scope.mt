@@ -35,6 +35,22 @@ public function collect_bindings(source_text: str, ast_file: ast.SourceFile) -> 
 
 
 function collect_decl_bindings(bindings: ref[vec.Vec[Binding]], dp: ptr[ast.Decl], source_text: str) -> void:
+    # An `extending` block declares one method per entry: each method's
+    # parameters and body get their own scopes, as a plain function's do.
+    unsafe:
+        match read(dp):
+            ast.Decl.decl_extending_block as ex:
+                var mi: ptr_uint = 0
+                while mi < ex.methods.len:
+                    let method = read(ex.methods.data + mi)
+                    let method_end = body_end_of(method.body)
+                    collect_params(bindings, method.method_params, method_end)
+                    walk_body(bindings, method.body, method_end, source_text)
+                    mi += 1
+                return
+            _:
+                pass
+
     let body_end = decl_body_end(dp)
     let params = decl_params(dp)
     var par_end = body_end

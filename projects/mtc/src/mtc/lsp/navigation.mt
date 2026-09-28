@@ -2066,13 +2066,37 @@ function resolve_local_hover(
                                             pass
                                 Option.none:
                                     pass
-                        var pi: ptr_uint = 0
-                        while pi < sfun.method_params.len:
-                            let sp = unsafe: read(sfun.method_params.data + pi)
-                            if sp.name == name.as_str() and sp.line == want.value:
-                                return Option[CursorResult].some(value = parameter_hover_result(
-                                    name.as_str(), sp.param_type))
-                            pi += 1
+                        match parameter_hover_in_decl(
+                            name.as_str(), sfun.method_params, analysis.functions.get(sfun.name),
+                            want.value, current_module.as_str()):
+                            Option.some as param_result:
+                                return Option[CursorResult].some(value = param_result.value)
+                            Option.none:
+                                pass
+                    ast.Decl.decl_extending_block as sext:
+                        var mei: ptr_uint = 0
+                        while mei < sext.methods.len:
+                            let method = unsafe: read(sext.methods.data + mei)
+                            match find_local_decl_in_body(method.body, name.as_str(), want.value):
+                                Option.some as found_method_decl:
+                                    match found_method_decl.value:
+                                        ast.Stmt.stmt_local as flm:
+                                            return Option[CursorResult].some(value = local_hover_result(
+                                                flm.is_let, name.as_str(), flm.line, flm.stmt_type, flm.value,
+                                                source, ref_of(analysis), current_module.as_str()))
+                                        _:
+                                            pass
+                                Option.none:
+                                    pass
+                            match parameter_hover_in_decl(
+                                name.as_str(), method.method_params,
+                                method_signature_for(ref_of(analysis), method.name, method.method_params),
+                                want.value, current_module.as_str()):
+                                Option.some as method_param_result:
+                                    return Option[CursorResult].some(value = method_param_result.value)
+                                Option.none:
+                                    pass
+                            mei += 1
                     _:
                         pass
                 si += 1
@@ -2245,6 +2269,16 @@ function enclosing_local_decl_line(source: str, ast_file: ast.SourceFile, name: 
                                     return Option[ptr_uint].some(value = want.value)
                                 Option.none:
                                     pass
+                    ast.Decl.decl_extending_block as ext:
+                        var mi: ptr_uint = 0
+                        while mi < ext.methods.len:
+                            let method = unsafe: read(ext.methods.data + mi)
+                            match find_local_decl_in_body(method.body, name, want.value):
+                                Option.some:
+                                    return Option[ptr_uint].some(value = want.value)
+                                Option.none:
+                                    pass
+                            mi += 1
                     _:
                         pass
                 di += 1
@@ -2349,17 +2383,18 @@ function find_local_decl_in_stmts(stmts: span[ast.Stmt], name: str, want_line: p
 ## The hover result for one parameter: `parameter <name>: <type> (immutable)`,
 ## the shape the host renders from its binding facts.  The host attaches no
 ## source location to a parameter hover, so `line` stays 0 (which also keeps
-## go-to-definition on a parameter a null result, as the host answers).
-function parameter_hover_result(name: str, param_type: ast.TypeRef) -> CursorResult:
+## go-to-definition on a parameter a null result, as the host answers).  The type
+## is the *resolved* signature type, so an imported one renders its short name
+## plus the host's `*From <module>*` line.
+function parameter_hover_result(name: str, param_type: types.Type, current_module: str) -> CursorResult:
     var signature = string.String.create()
     signature.append("parameter ")
     signature.append(name)
-    if param_type.name.parts.len > 0:
-        signature.append(": ")
-        signature.append(unsafe: read(param_type.name.parts.data))
-        if param_type.nullable:
-            signature.append("?")
-        signature.append(" (immutable)")
+    signature.append(": ")
+    var type_text = type_render.qualified_name(param_type, current_module)
+    signature.append(type_text.as_str())
+    type_text.release()
+    signature.append(" (immutable)")
 
     var shortened = type_render.shorten_signature(signature.as_str())
     signature.release()
@@ -2373,6 +2408,59 @@ function parameter_hover_result(name: str, param_type: ast.TypeRef) -> CursorRes
         target_uri = string.String.create(),
         from_modules = shortened.modules
     )
+
+
+## The hover for a parameter of an enclosing function or method declared on
+## `want_line`.  `sig` is the enclosing callable's resolved signature: the
+## parameter's type comes from it rather than from the written TypeRef, whose
+## first name part (`rl` for `rl.Color`) is not a type.
+function parameter_hover_in_decl(
+    name: str,
+    ast_params: span[ast.Param],
+    sig: ptr[analyzer.FnSig]?,
+    want_line: ptr_uint,
+    current_module: str,
+) -> Option[CursorResult]:
+    var pi: ptr_uint = 0
+    while pi < ast_params.len:
+        let ast_param = unsafe: read(ast_params.data + pi)
+        if ast_param.name.equal(name) and ast_param.line == want_line:
+            var param_type = types.Type.ty_error
+            if sig != null:
+                let resolved = unsafe: read(ptr[analyzer.FnSig]<-sig)
+                if pi < resolved.params.len:
+                    param_type = unsafe: read(resolved.params.data + pi).ty
+            return Option[CursorResult].some(value = parameter_hover_result(name, param_type, current_module))
+        pi += 1
+    return Option[CursorResult].none
+
+
+## The resolved signature of the method named `name` whose parameters match
+## `ast_params`.  Extending-block methods are keyed `<Type>.<name>` in
+## `method_sigs` and the same name can be extended on several types, so the
+## parameter list identifies the declaration.
+function method_signature_for(analysis: ref[analyzer.Analysis], name: str, ast_params: span[ast.Param]) -> ptr[analyzer.FnSig]?:
+    var entries = unsafe: read(analysis).method_sigs.entries()
+    while entries.next():
+        let entry = entries.current()
+        let key = unsafe: read(entry.key)
+        if key.len <= name.len or not key.ends_with(name):
+            continue
+        let sig = unsafe: read(entry.value)
+        if sig.params.len < ast_params.len:
+            continue
+        var matches = true
+        var pi: ptr_uint = 0
+        while pi < ast_params.len:
+            let ast_param = unsafe: read(ast_params.data + pi)
+            let resolved = unsafe: read(sig.params.data + pi)
+            if not ast_param.name.equal(resolved.name):
+                matches = false
+                break
+            pi += 1
+        if matches:
+            return entry.value
+    return null
 
 
 ## The hover result for one local declaration.
