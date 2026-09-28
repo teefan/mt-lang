@@ -36,16 +36,23 @@ public function collect_bindings(source_text: str, ast_file: ast.SourceFile) -> 
 
 
 ## The last source line belonging to the declaration at `index`: the line before
-## the next top-level declaration, or the file's last line.  Statement nodes
-## record only their *first* line, so a body whose last statement spans several
-## lines would otherwise truncate the scope of everything declared in it.
+## the declaration that *starts* next in source order, or the file's last line.
+## Statement nodes record only their *first* line, so a body whose last
+## statement spans several lines would otherwise truncate the scope of
+## everything declared in it.  The declaration list is not always source-ordered
+## — the analyzer appends the `emit`-expanded declarations at its end — so the
+## boundary is the nearest later start line, not the next list entry.
 function declaration_region_end(ast_file: ast.SourceFile, index: ptr_uint, source_text: str) -> ptr_uint:
-    var next = index + 1
-    while next < ast_file.declarations.len:
-        let line = unsafe: decl_start_line(read(ast_file.declarations.data + next))
-        if line > 0:
-            return line - 1
-        next += 1
+    let start = unsafe: decl_start_line(read(ast_file.declarations.data + index))
+    var nearest: ptr_uint = 0
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        let line = unsafe: decl_start_line(read(ast_file.declarations.data + di))
+        if line > start and (nearest == 0 or line < nearest):
+            nearest = line
+        di += 1
+    if nearest > 0:
+        return nearest - 1
     return last_line(source_text)
 
 
@@ -258,6 +265,21 @@ function walk_stmts(bindings: ref[vec.Vec[Binding]], stmts: span[ast.Stmt], pare
                         mi += 1
                 ast.Stmt.stmt_block as blk:
                     walk_stmts(bindings, blk.statements, parent_end, source_text)
+                ast.Stmt.stmt_unsafe as uns:
+                    walk_stmt(bindings, uns.body, parent_end, source_text)
+                ast.Stmt.stmt_defer as dfr:
+                    walk_stmt(bindings, dfr.body, parent_end, source_text)
+                ast.Stmt.stmt_when as whn:
+                    var wi: ptr_uint = 0
+                    while wi < whn.branches.len:
+                        let branch = unsafe: read(whn.branches.data + wi)
+                        walk_stmts(bindings, branch.body, parent_end, source_text)
+                        wi += 1
+                    walk_stmt(bindings, whn.else_body, parent_end, source_text)
+                ast.Stmt.stmt_parallel_block as pb:
+                    walk_stmts(bindings, pb.bodies, parent_end, source_text)
+                ast.Stmt.stmt_error_block as eb:
+                    walk_stmt(bindings, eb.body, parent_end, source_text)
                 _:
                     pass
         si += 1
@@ -283,6 +305,15 @@ function walk_stmt(bindings: ref[vec.Vec[Binding]], sp: ptr[ast.Stmt]?, parent_e
                 if iff.else_body != null:
                     let else_end = branch_body_end(iff.else_body, parent_end)
                     walk_stmt(bindings, iff.else_body, else_end, source_text)
+            ast.Stmt.stmt_unsafe as uns:
+                walk_stmt(bindings, uns.body, parent_end, source_text)
+            ast.Stmt.stmt_defer as dfr:
+                walk_stmt(bindings, dfr.body, parent_end, source_text)
+            ast.Stmt.stmt_while as wh:
+                walk_stmt(bindings, wh.body, branch_body_end(wh.body, parent_end), source_text)
+            ast.Stmt.stmt_for as fr:
+                collect_for_bindings(bindings, fr.bindings, branch_body_end(fr.body, parent_end), fr.line)
+                walk_stmt(bindings, fr.body, branch_body_end(fr.body, parent_end), source_text)
             _:
                 pass
 
@@ -320,17 +351,84 @@ function block_last_line(stmts: span[ast.Stmt]) -> ptr_uint:
     return last + 1
 
 
+## The last source line a statement occupies, 0 when it carries none.  A
+## declaration's scope runs to the last line of its body, so every statement
+## kind's *last* line matters: a body whose final statement is an assignment, a
+## call or a loop would otherwise end the scope early and hide the enclosing
+## binding from `is_in_same_scope`.
 function stmt_line(sp: ptr[ast.Stmt]) -> ptr_uint:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_local as loc:
-                return loc.line
+                return max_line(loc.line, stmt_line_opt(loc.else_body))
             ast.Stmt.stmt_ret as r:
                 return r.line
             ast.Stmt.stmt_block as blk:
                 return block_last_line(blk.statements)
+            ast.Stmt.stmt_assignment as asn:
+                return asn.line
+            ast.Stmt.stmt_if as iff:
+                var last = iff.line
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    let branch = read(iff.branches.data + bi)
+                    last = max_line(last, max_line(branch.line, stmt_line_opt(branch.body)))
+                    bi += 1
+                return max_line(last, stmt_line_opt(iff.else_body))
+            ast.Stmt.stmt_while as wh:
+                return max_line(wh.line, stmt_line_opt(wh.body))
+            ast.Stmt.stmt_for as fr:
+                return max_line(fr.line, stmt_line_opt(fr.body))
+            ast.Stmt.stmt_match as mt:
+                var last = mt.line
+                var mi: ptr_uint = 0
+                while mi < mt.arms.len:
+                    let arm = read(mt.arms.data + mi)
+                    last = max_line(last, stmt_line_opt(arm.body))
+                    mi += 1
+                return last
+            ast.Stmt.stmt_defer as dfr:
+                return max_line(dfr.line, stmt_line_opt(dfr.body))
+            ast.Stmt.stmt_unsafe as uns:
+                return max_line(uns.line, stmt_line_opt(uns.body))
+            ast.Stmt.stmt_expression as ex:
+                return ex.line
+            ast.Stmt.stmt_static_assert as sa:
+                return sa.line
+            ast.Stmt.stmt_error_block as eb:
+                return max_line(eb.line, stmt_line_opt(eb.body))
+            ast.Stmt.stmt_when as wh:
+                var last = wh.line
+                var wi: ptr_uint = 0
+                while wi < wh.branches.len:
+                    let branch = read(wh.branches.data + wi)
+                    var bi2: ptr_uint = 0
+                    while bi2 < branch.body.len:
+                        last = max_line(last, stmt_line(branch.body.data + bi2))
+                        bi2 += 1
+                    wi += 1
+                return max_line(last, stmt_line_opt(wh.else_body))
+            ast.Stmt.stmt_parallel_block as pb:
+                var last = pb.line
+                var pi: ptr_uint = 0
+                while pi < pb.bodies.len:
+                    last = max_line(last, stmt_line(pb.bodies.data + pi))
+                    pi += 1
+                return last
             _:
                 return 0
+
+
+function stmt_line_opt(sp: ptr[ast.Stmt]?) -> ptr_uint:
+    let node = sp else:
+        return 0
+    return stmt_line(node)
+
+
+function max_line(left: ptr_uint, right: ptr_uint) -> ptr_uint:
+    if right > left:
+        return right
+    return left
 
 
 function last_line(source: str) -> ptr_uint:

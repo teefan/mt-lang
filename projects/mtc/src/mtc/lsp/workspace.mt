@@ -22,6 +22,7 @@ import mtc.loader.path_resolver as resolver_mod
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.lsp.definition_index as defidx
+import mtc.lsp.reference_index as refidx
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace_index as idx
 
@@ -100,6 +101,9 @@ public struct Workspace:
     ## The host's cross-file definition index (the last-resort definition and
     ## hover-location lookup).
     definition_index: defidx.DefinitionIndex
+    ## The host's identifier index: every document whose tokens a request has
+    ## asked for, with its identifier tokens.  `references` answers out of it.
+    reference_index: refidx.ReferenceIndex
     format_mode: string.String
     dependency_resolution_mode: string.String
     platform_override: string.String
@@ -128,6 +132,7 @@ extending Workspace:
             index_built = false,
             index = idx.Index(entries = vec.Vec[idx.Entry].create()),
             definition_index = defidx.create(),
+            reference_index = refidx.create(),
             format_mode = string.String.create(),
             dependency_resolution_mode = string.String.create(),
             platform_override = string.String.create(),
@@ -159,6 +164,8 @@ extending Workspace:
         release_dirty_paths(ref_of(this.index_dirty))
         defidx.release(ref_of(this.definition_index))
         this.definition_index = defidx.create()
+        refidx.release(ref_of(this.reference_index))
+        this.reference_index = refidx.create()
         if this.index_built:
             idx.release_index(ref_of(this.index))
             this.index = idx.Index(entries = vec.Vec[idx.Entry].create())
@@ -173,6 +180,7 @@ extending Workspace:
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
                 this.mark_index_dirty(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
+                refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
             Option.none:
                 pass
 
@@ -185,6 +193,7 @@ extending Workspace:
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
                 this.mark_index_dirty(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
+                refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
             Option.none:
                 pass
 
@@ -196,6 +205,7 @@ extending Workspace:
                 this.untrack_open_path(path_payload.value.as_str())
                 this.open_docs.remove(path_payload.value)
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
+                refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
                 # The buffer is gone: re-read the file (its saved content).
                 this.mark_index_dirty(path_payload.value.as_str())
             Option.none:
@@ -263,6 +273,28 @@ extending Workspace:
             i += 1
         return result
 
+
+    ## Index the document's identifier tokens from the text the caller already
+    ## has — the host's `index_identifier_tokens` reached through
+    ## `lex_document`.
+    public editable function note_document_source(path: str, source: str) -> void:
+        refidx.note(ref_of(this.reference_index), path, source)
+
+    ## Index the document's identifier tokens, reading its current text (the
+    ## open buffer or disk).  A document whose text is unchanged is a no-op.
+    public editable function note_document_tokens(path: str) -> void:
+        if path.len == 0:
+            return
+        var content = this.document_source(path) else:
+            return
+        defer: content.release()
+        refidx.note(ref_of(this.reference_index), path, content.as_str())
+
+    ## True when `path` is an open document.
+    public function is_open_path(path: str) -> bool:
+        var key = string.String.from_str(path)
+        defer: key.release()
+        return this.open_docs.contains(key)
 
     ## Record `path` as needing re-indexing (idempotent).
     public editable function mark_index_dirty(path: str) -> void:
@@ -487,6 +519,7 @@ extending Workspace:
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         defidx.release(ref_of(this.definition_index))
+        refidx.release(ref_of(this.reference_index))
         this.open_docs.release()
         var oi: ptr_uint = 0
         while oi < this.open_doc_order.len():

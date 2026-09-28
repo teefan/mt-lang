@@ -48,7 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **696 differ** after the session-6/7 LSP work (hover 121, references 267, typeDefinition 91, definition/declaration 93 each, documentHighlight 15) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`).  Residue classified in §0k; the largest class is now `references` (reverse-import occurrences).**
+**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **443 differ** after the session-6/7/8 LSP work (hover 121, definition/declaration 95 each, typeDefinition 93, documentHighlight 14, references 9, documentSymbol 5, semanticTokens 5, diagnostic 3, codeLens 1, implementation 1, workspace/symbol 1) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The references-only audit is at **1 differing entry** (a lazy-facts fallthrough, §0k) and the definition/typeDefinition counters carry 6 deliberate self-better entries (§0k).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`), and so are their references.  Residue classified in §0k; the largest class is now `hover` (member/binding resolution).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
@@ -1425,6 +1425,93 @@ Measured: hover 131 → **121**, definition/declaration 94 → 93, typeDefinitio
 4. **documentHighlight 15 / documentSymbol 5 / semanticTokens 5 / diagnostic 3 /
    codeLens 1 / implementation 1 / workspace/symbol 1** — small, independent
    classes.
+
+### LSP references: the host's pipeline, index and arm order (2026-09-28 session 8)
+
+`handle_references` is now a literal port of the host's pipeline
+(`lsp/server/references.rb`) in a new `lsp/references.mt`, and the workspace
+keeps the identifier index the host keeps (`lsp/reference_index.mt`).  Both
+halves matter: the *arms* decide which occurrences are correct, the *index*
+decides which documents exist to be searched — and the host's index grows with
+the session, because every `get_tokens` call tokenizes a document.
+
+**The pipeline**, in the host's order: the identifier under the cursor; a
+*static* method reached through a type receiver (`Vec[int].create()`,
+`rl.Color.hex_digit(...)`) or through its own declaration; a scoped local
+binding; a module-level name of this document (an AST scan of this file plus the
+identifier tokens of every file that imports it); and finally the workspace
+identifier index (`find_all_references`).
+
+Ported pieces and the host details they carry:
+
+- **The identifier index** (new `lsp/reference_index.mt`): lexeme → (path, line,
+  column) in *tokenization order*, because `find_all_references` returns the
+  indexed entries in that order and only then scans the documents it has not
+  seen.  A document is noted when a request lexes it: the current document of a
+  hover/references request, and the definition file a facts-based hover resolves
+  into (the host's `hover_definition_entry_from_location` → `find_token_at`).
+  Import-line, field-declaration, named-argument-label and keyword/builtin
+  hovers resolve no such entry in the host — they render their own `source_uri`
+  — so the hooks sit on the same arms and those files stay out of the index.
+- **Candidates**: `reverse_import_dependents_for` is built over the documents
+  the server knows — open, content-/token-touched, and (because `initialized`
+  starts the background `index_workspace` thread) every `.mt` file under the
+  workspace root.  A workspace-index hit outside that set is not a candidate.
+- **The static arm** reproduces the host's artifact: the location pairs the
+  resolved module's *file* with the method-name position in the file that
+  *declares* it, so `rl.Color.hex_digit` reached through a receiver reports
+  `std/raylib.mt` with the line inside `colors.mt`; each candidate reference is
+  re-resolved the same way and kept only when it lands on the same location.
+- **The same-file AST scan** walks identifier expressions (skipping ones a local
+  binding owns), member accesses and module-level declaration names — so type
+  positions (`ptr[Node]`, `i: int`) and named-argument labels are *not*
+  occurrences, which a token scan cannot know.  An enum's or flags' member
+  values are not walked either: the host's reflection walk reads `node.members`,
+  which `EnumDecl`/`FlagsDecl` shadow with their own member list, so no
+  descendant of those declarations is ever visited.
+- **The scoped arm** is the same walk restricted to the binding's scope: a
+  call's callee is not an occurrence (the host never binds `p` in `p(x)` to the
+  parameter), and neither are labels, member names, destructuring bindings or
+  nested-proc uses the host's binding resolution misses.
+- **Builtins**: only the names the host's `facts.types` registers
+  (`INSTALLABLE_BUILTIN_TYPE_NAMES` — the primitives and the handle types) make
+  a name module-level.  The *generic* constructors (`ptr`, `array`, `own`,
+  `ref`, `span`, `const_ptr`) do not, so a search on one of those falls through
+  to the token index and finds type-position occurrences.
+- **`includeDeclaration`** is honored per arm the way the host does it (the
+  declaration arm, the static location filter, and the fallback's
+  `find_definition_token_global` rejection).
+
+**Scope-tracking follow-ups** the port forced, all general improvements in
+`lsp/scope.mt`: a declaration's region end is now the nearest *later start line*
+rather than the next list entry (the analyzer appends `emit`-expanded
+declarations at the end of the file's list, out of source order); a statement's
+last line covers every statement kind (an assignment, call or loop used to end
+its scope early and hide the enclosing binding); and the binding walk descends
+into `unsafe`/`defer`/`while`/`for`/`when` bodies.
+
+Measured (SimpleGame, full matrix `--max-diffs 0`): references **267 → 9**,
+documentHighlight 15 → 14, total **696 → 443**.  The references-only audit (915
+requests, `--only references`) is at **1** (was 255): the one entry is a file's
+first request, where the host's lazy facts are still nil and its handler falls
+through to the token index while the self's synchronous facts take the
+module-level arm — the documented "synchronous facts, no lag" difference.  The
+full matrix's 9 are a knock-on of the remaining *hover* diffs: the host's hovers
+resolve `Option.unwrap`, `Option.value` and `vec3.x`, which tokenizes `option.mt`
+and `linear_algebra.mt`, while the self's hovers at those positions return null
+or a local, so those files never enter its index.
+
+**Two definition entries stay deliberately better.**  Where the host's binding
+resolution misses a local (`total` inside `main`'s long body, `code` from a
+destructuring `let`), its definition path falls back to the file's *first*
+declaration of the name or to null; the self resolves the real binding.  That is
+6 audit entries (2 positions × definition/declaration/typeDefinition); the same
+positions' *hovers* agree with the host.
+
+**Probe fixtures**: `tmp/probe-ws` (25 positions), `probe4`, `probe5`,
+`probe6` are at **0 differing entries for references** in the full matrix, and
+hover/definition/declaration/typeDefinition stay at 0; `probe2` keeps its 2
+deliberate hover self-answers.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 

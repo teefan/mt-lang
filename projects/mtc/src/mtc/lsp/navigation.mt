@@ -31,7 +31,6 @@ import mtc.lsp.scope as scope_mod
 import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
-import mtc.lsp.workspace_index as ws_idx
 import mtc.pretty_printer.ast_formatter as ast_formatter
 
 
@@ -147,6 +146,13 @@ public function handle_hover(
     id: json.Value,
 ) -> void:
     var hover_token_range = hover_range_json(ws, uri, line, character)
+    # The host's `find_token_at(uri, …)` tokenizes the hovered document.
+    match uri_ops.file_uri_to_path(uri):
+        Option.some as hover_path:
+            ws.note_document_tokens(hover_path.value.as_str())
+            hover_path.value.release()
+        Option.none:
+            pass
     # An `import` line's path or alias resolves to the module file, ahead of the
     # keyword/builtin tables: `str` in `import std.str` is the module, not the
     # builtin type.
@@ -173,6 +179,7 @@ public function handle_hover(
             # — not from the binding: a `for` or `match` binding, or a local the
             # index does not know, ends up with no `Defined at` line.
             apply_hover_index_location(ws, uri, line, character, ref_of(loc_payload))
+            note_hover_definition_file(ws, loc_payload)
             write_hover_result(ws, id, loc_payload, uri, hover_token_range)
             return
         Option.none:
@@ -180,6 +187,7 @@ public function handle_hover(
 
     match resolve_cursor(ws, uri, line, character):
         Option.some as res:
+            note_hover_definition_file(ws, res.value)
             write_hover_result(ws, id, res.value, uri, hover_token_range)
             return
         Option.none:
@@ -200,6 +208,25 @@ public function handle_hover(
 
     hover_token_range.release()
     proto.write_response(id, json.null_value())
+
+
+## A hover that resolves a definition through the facts reports a cross-file
+## location and the host tokenizes that file while rendering it
+## (`hover_definition_entry_from_location` calls `find_token_at` on it) — which
+## is how a member's defining module enters the workspace identifier index.  The
+## arms the host renders from their own `source_uri` — an import line, a field
+## declaration or a named-argument label, a keyword or a builtin — resolve no
+## such entry and leave the index alone, and the self-host's hooks sit on the
+## same arms.
+function note_hover_definition_file(ws: ref[workspace.Workspace], payload: CursorResult) -> void:
+    if payload.target_uri.len() == 0:
+        return
+    match uri_ops.file_uri_to_path(payload.target_uri.as_str()):
+        Option.some as target_path:
+            ws.note_document_tokens(target_path.value.as_str())
+            target_path.value.release()
+        Option.none:
+            pass
 
 
 ## Point `payload` at the workspace token index's declaration for the name under
@@ -288,57 +315,6 @@ function hover_range_fragment(tok: cursor.CursorToken) -> string.String:
     return frag
 
 
-## Handle textDocument/references: find all references to the symbol at the
-## cursor position within the same file.
-public function handle_references(
-    ws: ref[workspace.Workspace],
-    uri: str,
-    line: ptr_uint,
-    character: ptr_uint,
-    id: json.Value,
-) -> void:
-    var file_path = uri_ops.file_uri_to_path(uri) else:
-        proto.write_response_raw(id, "[]")
-        return
-    defer: file_path.release()
-
-    var content = ws.document_source(file_path.as_str()) else:
-        proto.write_response_raw(id, "[]")
-        return
-    defer: content.release()
-
-    let source = content.as_str()
-    let target = cursor.identifier_at(source, line, character) else:
-        proto.write_response_raw(id, "[]")
-        return
-
-    # A bare type name resolves to the type's *methods* in the host (empty for a
-    # builtin primitive, which has none); scanning for same-named occurrences
-    # would report unrelated uses of `int`/`str`.
-    if hover_docs.builtin_type(target.text).is_some():
-        proto.write_response_raw(id, "[]")
-        return
-
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var bindings = scope_mod.collect_bindings(source, ast_file)
-    defer: bindings.release()
-
-    # A local binding resolves within its scope in this file; every other
-    # name is resolved through the workspace index.
-    match scope_mod.local_binding_line(ref_of(bindings), target.text, target.line):
-        Option.some as binding_line:
-            var local_json = build_references_json(source, target.text, binding_line.value, uri)
-            proto.write_response_raw(id, local_json.as_str())
-            local_json.release()
-        Option.none:
-            ws.build_index_if_needed()
-            var refs_json = build_references_json_cross_file(ws, target.text, file_path.as_str())
-            proto.write_response_raw(id, refs_json.as_str())
-            refs_json.release()
-
-
 ## Handle textDocument/typeDefinition — the host's
 ## `resolve_type_definition_location`.  A type or interface the document itself
 ## declares answers its own declaration; a type reached through a module alias
@@ -423,7 +399,7 @@ public function handle_type_definition(
 ## `node.Node`), else the single-file check.  `ast_file` is re-pointed at the
 ## tree the analysis was built from, since `resolved_expr_types` is keyed by
 ## expression pointer.
-function analysis_for_document(
+public function analysis_for_document(
     ws: ref[workspace.Workspace],
     file_path: str,
     parsed_file: ast.SourceFile,
@@ -434,7 +410,7 @@ function analysis_for_document(
 
 
 ## The AST the analysis above was built from.
-function ast_for_document(
+public function ast_for_document(
     ws: ref[workspace.Workspace],
     file_path: str,
     parsed_file: ast.SourceFile,
@@ -739,190 +715,6 @@ function append_location(json_text: ref[string.String], uri: str, source: str, d
     json_text.append("}}}")
 
 
-## Build a JSON array of Location objects for all references to `name` in
-## `source` that are in the same scope as the declaration at `target_line`.
-## Occurrences are identifier tokens, so text inside string literals and
-## comments never matches.  Scope-aware via lsp.scope.
-## Cross-file reference search using the workspace index.
-function build_references_json_cross_file(ws: ref[workspace.Workspace], name: str, uri: str) -> string.String:
-    var result = string.String.create()
-    result.append("[")
-    var first = true
-    var seen = map_mod.Map[str, bool].create()
-    defer: seen.release()
-
-    # Always include the current file first (open editor buffer).
-    match include_refs_from_file(ws, uri, name, ref_of(result), ref_of(first)):
-        Option.some as u:
-            seen.set(u.value.as_str(), true)
-        Option.none:
-            pass
-
-    # Cross-file references come from the declaration's import dependents: the
-    # host scopes them with `reverse_import_dependents_for`, so a file that
-    # merely declares the same name elsewhere in the workspace is not a
-    # reference site, while a file that imports the declaration's module is.
-    var dependents = ws_idx.dependents_of(ref_of(ws.index), uri)
-    defer: dependents.release()
-
-    var di: ptr_uint = 0
-    while di < dependents.len():
-        let dp = dependents.get(di) else:
-            break
-        let path = unsafe: read(dp).as_str()
-        if not seen.contains(path):
-            match include_refs_from_file(ws, path, name, ref_of(result), ref_of(first)):
-                Option.some as u2:
-                    seen.set(u2.value.as_str(), true)
-                Option.none:
-                    pass
-        di += 1
-
-    result.append("]")
-    return result
-
-
-## The reference count the host reports for the symbol declared at `line`:
-## `module_level_reference_locations(..., include_declaration: true).length` —
-## the same-file, scope-aware occurrences of the declared name.  (The host also
-## adds occurrences from files that import the declaration's module; the
-## self-host does not track reverse import dependents yet — §0k.)
-public function count_declaration_references(ws: ref[workspace.Workspace], name: str, file_path: str, line: ptr_uint) -> ptr_uint:
-    if name.len == 0 or file_path.len == 0:
-        return 0
-
-    var maybe_content = ws.document_source(file_path)
-    if maybe_content.is_none():
-        return 0
-    var content = maybe_content.unwrap()
-    defer: content.release()
-
-    return count_same_scope_occurrences(content.as_str(), name, line)
-
-
-## Count the same-file, scope-aware occurrences (`build_references_json`'s rule).
-function count_same_scope_occurrences(source: str, name: str, target_line: ptr_uint) -> ptr_uint:
-    var occurrences = cursor.identifier_occurrences(source, name)
-    defer: occurrences.release()
-
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var bindings = scope_mod.collect_bindings(source, ast_file)
-    defer: bindings.release()
-
-    var total: ptr_uint = 0
-    var oi: ptr_uint = 0
-    while oi < occurrences.len():
-        let op = occurrences.get(oi) else:
-            break
-        let occ = unsafe: read(op)
-        if scope_mod.is_in_same_scope(ref_of(bindings), name, target_line, occ.line):
-            total += 1
-        oi += 1
-    return total
-
-
-## Scan a single file for identifier occurrences of `name` and append
-## location JSON to `output`. Returns the file path for dedup tracking.
-function include_refs_from_file(
-    ws: ref[workspace.Workspace],
-    file_ref: str,
-    name: str,
-    output: ref[string.String],
-    first_ref: ref[bool],
-) -> Option[string.String]:
-    var cw = ws.document_source(file_ref) else:
-        return Option[string.String].none
-    defer: cw.release()
-    let source = cw.as_str()
-    if source.len == 0:
-        return Option[string.String].none
-
-    var occurrences = cursor.identifier_occurrences(source, name)
-    defer: occurrences.release()
-
-    var file_uri = string.String.create()
-    file_uri.append("file://")
-    file_uri.append(file_ref)
-
-    var oi: ptr_uint = 0
-    while oi < occurrences.len():
-        let op = occurrences.get(oi) else:
-            break
-        let occ = unsafe: read(op)
-        if not unsafe: read(first_ref):
-            output.append(",")
-        unsafe: read(first_ref) = false
-        let lz = if occ.line > 0: occ.line - 1 else: 0z
-        let col = if occ.column > 0: occ.column - 1 else: 0z
-        output.append("{\"uri\":\"")
-        proto.append_escaped(output, file_uri.as_str())
-        output.append("\",\"range\":{\"start\":{\"line\":")
-        output.append_format(f"#{lz}")
-        output.append(",\"character\":")
-        output.append_format(f"#{col}")
-        output.append("},\"end\":{\"line\":")
-        output.append_format(f"#{lz}")
-        output.append(",\"character\":")
-        output.append_format(f"#{col + occ.length}")
-        output.append("}}}")
-        oi += 1
-
-    file_uri.release()
-    return Option[string.String].some(value = string.String.from_str(file_ref))
-
-
-function build_references_json(source: str, name: str, target_line: ptr_uint, uri: str) -> string.String:
-    var result = string.String.create()
-    result.append("[")
-
-    var all_occurrences = cursor.identifier_occurrences(source, name)
-    defer: all_occurrences.release()
-
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var bindings = scope_mod.collect_bindings(source, ast_file)
-    defer: bindings.release()
-
-    var oi: ptr_uint = 0
-    # The separator follows what was *emitted*, not the occurrence index: an
-    # out-of-scope occurrence is skipped, so `oi > 0` would emit a leading comma
-    # after a skipped first occurrence (malformed JSON the client rejects).
-    var first_emitted = true
-    while oi < all_occurrences.len():
-        let op = all_occurrences.get(oi) else:
-            break
-        let occ = unsafe: read(op)
-        if not scope_mod.is_in_same_scope(ref_of(bindings), name, target_line, occ.line):
-            oi += 1
-            continue
-        if not first_emitted:
-            result.append(",")
-        first_emitted = false
-        let lz = if occ.line > 0: occ.line - 1 else: 0z
-        let col = if occ.column > 0: occ.column - 1 else: 0z
-        result.append("{\"uri\":\"")
-        proto.append_escaped(ref_of(result), uri)
-        result.append("\",\"range\":{\"start\":{\"line\":")
-        result.append_format(f"#{lz}")
-        result.append(",\"character\":")
-        result.append_format(f"#{col}")
-        result.append("},\"end\":{\"line\":")
-        result.append_format(f"#{lz}")
-        result.append(",\"character\":")
-        result.append_format(f"#{col + occ.length}")
-        result.append("}}}")
-        oi += 1
-    result.append("]")
-    return result
-
-
-function append_ref_escaped(output: ref[string.String], text: str) -> void:
-    proto.append_escaped(output, text)
-
-
 ## Cursor resolution result — the definition position (1-based line, 0-based
 ## name column), the signature rendered for hover, and any attached `##`
 ## documentation lines.  `target_uri` carries a cross-file definition target;
@@ -976,7 +768,7 @@ function alias_member_module_path(
 ## every other open document in didOpen order, first declaration wins.  Only
 ## identifiers a declaration keyword introduces are indexed, so an ordinary
 ## reference or a parameter answers none, as the host's does.
-function find_definition_global(
+public function find_definition_global(
     ws: ref[workspace.Workspace],
     name: str,
     preferred_uri: str,
@@ -1683,7 +1475,7 @@ function resolve_module_reference(ws: ref[workspace.Workspace], module_name: str
 
 
 ## The resolved source path of `module_name` against the workspace roots.
-function resolve_module_source_path(ws: ref[workspace.Workspace], module_name: str) -> Option[string.String]:
+public function resolve_module_source_path(ws: ref[workspace.Workspace], module_name: str) -> Option[string.String]:
     var roots = ws.effective_module_roots_for("")
     defer: roots.release()
     match resolver.resolve_module_path(module_name, roots.as_span(), resolver.Platform.linux):
@@ -1779,7 +1571,7 @@ function resolve_import_cursor(ws: ref[workspace.Workspace], uri: str, line: ptr
 
 
 ## An absolute file:// URI for a workspace-relative or absolute path.
-function file_uri_for_path(path: str) -> string.String:
+public function file_uri_for_path(path: str) -> string.String:
     var absolute_path = string.String.from_str(path)
     match fs_mod.canonicalize(path):
         Result.success as canonical:

@@ -13,7 +13,7 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.lsp.cursor as cursor
-import mtc.lsp.navigation as nav_mod
+import mtc.lsp.references as refs
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
@@ -129,7 +129,7 @@ public function handle_code_lens_resolve(
                 pass
 
     ws.build_index_if_needed()
-    let count = nav_mod.count_declaration_references(ws, name, file_path.as_str(), data_line)
+    let count = refs.count_declaration_references(ws, name, file_path.as_str(), data_line)
     log.info(f"code_lens resolve: name=#{name} count=#{count}")
     if count == 0:
         proto.write_response(id, params)

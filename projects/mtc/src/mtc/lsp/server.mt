@@ -31,6 +31,7 @@ import mtc.lsp.linked_editing_range as linked_range
 import mtc.lsp.navigation as nav
 import mtc.lsp.on_type_formatting as on_type
 import mtc.lsp.protocol as proto
+import mtc.lsp.references as refs
 import mtc.lsp.pull_diagnostics as pull_diag
 import mtc.lsp.rename as rename_mod
 import mtc.lsp.selection as selection
@@ -220,7 +221,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
             nav.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/references":
         var pos = extract_position_params(msg.params)
-        nav.handle_references(ws, pos.uri, pos.line, pos.character, msg.id)
+        refs.handle_references(ws, pos.uri, pos.line, pos.character, refs.include_declaration_param(msg.params), msg.id)
     else if method == "textDocument/documentHighlight":
         var pos = extract_position_params(msg.params)
         highlight.handle_document_highlight(ws, pos.uri, pos.line, pos.character, msg.id)
