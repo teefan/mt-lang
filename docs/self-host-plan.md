@@ -1006,6 +1006,54 @@ Gates for this change: bootstrap fixed point + 14/14 self-tests, `test/mt`
 60/0, `cli:parity` 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0,
 LSP harness unchanged (4 documented entries), `examples/sdl3` 34/34.
 
+### Linter `prefer-let` mutation facts (2026-09-27 session 5b)
+
+`language_baseline`'s last two prefer-let false positives (`var buf` passed to an
+`out` foreign parameter; `var buffer: str_buffer[64]` mutated by
+`assign`/`append`) are closed, and both mechanisms are ported:
+
+- **`out`/`inout` foreign arguments** (host `mutating_argument_identifier_ids`,
+  `calls.rb:802-807`): `record_mutating_param_indices` stores each foreign
+  function's out/inout parameter indices at declaration time;
+  `record_mutating_argument_sites` records identifier arguments at the call site
+  into `Analysis.mutating_argument_sites`, and `mutating_param_indices` is
+  exported on `Analysis` **and `ModuleBinding`** so *imported* `alias.fn(...)`
+  calls record too (raygui's `check_box(..., inout checked)` — the raylib-example
+  case).  The scope pass consumes the sites by `(name, line)` and additionally
+  marks explicit `out x`/`inout x` unary arguments.
+- **str_buffer mutating builtins**: `clear`/`assign`/`append`/`assign_format`/
+  `append_format` now resolve as `editable` (the host's
+  `check_str_buffer_method_call`), so the receiver site is recorded and a `let`
+  receiver is rejected like the host.
+- **Alias sources**: `ref_of(x)`/`ptr_of(x)` with exactly one argument mark the
+  argument through `mark_mutated`'s index/member recursion (`ptr_of(arr[0])`
+  marks `arr`) — the host's `mark_alias_source_mutated`; `const_ptr_of` no
+  longer marks.
+
+Measured: `language_baseline` prefer-let **21 → 19** (identical set to the
+host); `examples/raylib/shapes/ring_drawing.mt` 8 → 0.
+
+**Repo-wide prefer-let is 507/606** (99 files differ).  The residual is
+dominated by two analyzer gaps, both scheduled:
+
+1. **Match-arm payload bindings are `ty_error`** (`bind_match_arm_names`), so a
+   `match … as payload` binding and its field accesses have no type, no
+   editable-receiver sites are recorded, and prefer-let fires where the host
+   stays silent (plan stage 11c; also the one remaining `unused-import`
+   residual).
+2. **Editable receivers inside generic/static contexts**: `std/vec.mt`'s
+   `with_capacity` (`var result = Vec[T].create(); result.reserve(…)`) is clean
+   on the host but ours reports prefer-let — the receiver does not reach the
+   editable method from an `extending Type[T]` *static* method (same family as
+   the extending-type-param work; to diagnose).
+
+Rendering follow-up: our str_buffer receiver types render without the size
+(`str_buffer` vs the host's `str_buffer[64]`), so the new `let`-receiver error
+text differs even though rule and position match.
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+22/39/0, `sexpr_parity` lex 702/702 + parse 698/0.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**
@@ -2776,7 +2824,14 @@ Extensive parity work brought the self-host linter output on `language_baseline.
 
 #### Remaining gaps — architectural plan
 
-##### 1. `prefer-let` remaining (16→13): sema-side editable receiver + out/inout tracking
+##### 1. `prefer-let` mutation facts — **DONE (2026-09-27 session 5b)**
+
+Landed (see §0k's "Linter `prefer-let` mutation facts" record): `out`/`inout`
+foreign arguments are recorded by the analyzer and exported so *imported*
+`alias.fn(...)` calls credit them too, str_buffer's mutating builtins resolve as
+`editable`, and `ref_of`/`ptr_of` alias sources mark their argument with the
+host's exact rule.  `language_baseline` is 19/19 against the host.  The
+historical plan follows.
 
 The self-host's `ctx_mark_mutated` now handles AST-level mutation patterns (direct assignment, index access, member access, `read()` calls, `ref_of`/`ptr_of` aliases). Three false positives remain that require **sema-side tracking**, matching Ruby's approach:
 

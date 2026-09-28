@@ -77,6 +77,10 @@ public struct LintOptions:
     owning_type_names: span[str]
     unresolved_import_paths: span[str]
     editable_sites: span[analyzer.EditableSite]
+    ## Identifier arguments passed to `out`/`inout` foreign parameters (the
+    ## analyzer's `mutating_argument_sites`): those bindings are mutated by the
+    ## call, so prefer-let must not fire on them.
+    mutating_sites: span[analyzer.EditableSite]
     max_line_length: ptr_uint
     select: span[str]
     ignore: span[str]
@@ -94,6 +98,7 @@ public function default_lint_options() -> LintOptions:
         owning_type_names = span[str](),
         unresolved_import_paths = span[str](),
         editable_sites = span[analyzer.EditableSite](),
+        mutating_sites = span[analyzer.EditableSite](),
         max_line_length = 0,
         select = span[str](),
         ignore = span[str](),
@@ -151,7 +156,7 @@ public function lint_source_with(
         i += 1
     # Scope-tracking pass: unused-local, unused-param, shadow, prefer-let, unused-import
     var scope_warnings = vec.Vec[scope_tracking.ScopeWarning].create()
-    scope_tracking.lint_scope_pass(file, path, options.unresolved_import_paths, options.editable_sites, options.method_providers, options.analysis, ref_of(scope_warnings))
+    scope_tracking.lint_scope_pass(file, path, options.unresolved_import_paths, options.editable_sites, options.mutating_sites, options.method_providers, options.analysis, ref_of(scope_warnings))
     i = 0
     while i < scope_warnings.len():
         let sp = scope_warnings.get(i) else:

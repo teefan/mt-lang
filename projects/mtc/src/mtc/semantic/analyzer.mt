@@ -107,6 +107,10 @@ public struct ModuleBinding:
     ## Declared generic parameters per exported function (`iter_filter` -> `[T]`),
     ## so an imported call can infer its type arguments from the arguments.
     function_type_params: map_mod.Map[str, span[ast.TypeParam]]
+    ## Per foreign function name, the `out`/`inout` parameter indices, so an
+    ## imported `alias.fn(...)` call can record its mutating identifier
+    ## arguments (the host's `mutating_argument_identifier_ids`).
+    mutating_param_indices: map_mod.Map[str, map_mod.Map[ptr_uint, bool]]
     private_interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
 
@@ -135,6 +139,13 @@ struct Context:
     ## `editable_receiver_expression_ids`), which the linter's prefer-let needs
     ## because it cannot resolve method kinds itself.
     editable_receiver_sites: vec.Vec[EditableSite]
+    ## Identifier arguments passed to an `out`/`inout` foreign parameter, with
+    ## the argument's line: the call mutates that binding (the host's
+    ## `mutating_argument_identifier_ids`), which the linter's prefer-let needs.
+    mutating_argument_sites: vec.Vec[EditableSite]
+    ## Per foreign function name, the parameter indices carrying an `out`/`inout`
+    ## passing mode, so a call site can record its mutating identifier arguments.
+    mutating_param_indices: map_mod.Map[str, map_mod.Map[ptr_uint, bool]]
     # Names known to be generic type/value parameters in the current
     # declaration context (struct fields, `extending Type[T]` methods, foreign
     # value params, interface methods).  Used ONLY to suppress "unknown type"
@@ -203,6 +214,13 @@ public struct Analysis:
     type_param_names: map_mod.Map[str, span[ast.TypeParam]]
     ## Receiver identifiers of `editable` method calls, with their lines.
     editable_receiver_sites: vec.Vec[EditableSite]
+    ## Identifier arguments passed to `out`/`inout` foreign parameters, with
+    ## their lines (the host's `mutating_argument_identifier_ids`).
+    mutating_argument_sites: vec.Vec[EditableSite]
+    ## Per foreign function name, the parameter indices carrying an `out`/`inout`
+    ## passing mode (exported so importing modules can record mutating arguments
+    ## of `alias.fn(...)` calls too).
+    mutating_param_indices: map_mod.Map[str, map_mod.Map[ptr_uint, bool]]
     # The module's source file path, propagated so lowering can emit `#line`
     # directives that map generated C back to the .mt source (debug builds).
     source_path: str
@@ -247,6 +265,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
         type_param_names = map_mod.Map[str, span[ast.TypeParam]].create(),
         editable_receiver_sites = vec.Vec[EditableSite].create(),
+        mutating_argument_sites = vec.Vec[EditableSite].create(),
+        mutating_param_indices = map_mod.Map[str, map_mod.Map[ptr_uint, bool]].create(),
         suppressed_type_names = map_mod.Map[str, bool].create(),
         function_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
         method_type_params = map_mod.Map[str, span[ast.TypeParam]].create(),
@@ -325,6 +345,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         extending_canonical_names = ctx.extending_canonical_names,
         type_param_names = ctx.type_param_names,
         editable_receiver_sites = ctx.editable_receiver_sites,
+        mutating_argument_sites = ctx.mutating_argument_sites,
+        mutating_param_indices = ctx.mutating_param_indices,
         source_path = source_path,
     )
 
@@ -1294,12 +1316,14 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 let sig = build_foreign_fn_sig(ctx, ef.name, ef.extern_params, extern_ret)
                 ctx.suppressed_type_names.clear()
                 ctx.functions.set(ef.name, sig)
+                record_mutating_param_indices(ctx, ef.name, ef.extern_params)
                 declare_value(ctx, ef.name, ef.line, 1)
             ast.Decl.decl_foreign_function as ff:
                 enter_suppressed_type_params(ctx, ff.type_params)
                 let sig = build_foreign_fn_sig(ctx, ff.name, ff.foreign_params, resolve_type(ctx, ff.return_type))
                 ctx.suppressed_type_names.clear()
                 ctx.functions.set(ff.name, sig)
+                record_mutating_param_indices(ctx, ff.name, ff.foreign_params)
                 declare_value(ctx, ff.name, ff.line, 1)
             ast.Decl.decl_event as ev:
                 if declare_value(ctx, ev.name, ev.line, ev.column):
@@ -4247,6 +4271,9 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                         if sig_ptr != null:
                             let sig = read(sig_ptr)
                             check_signature_call(ctx, ma.member_name, sig, args, arg_types, any_named, ma.line, ma.column)
+                            let mpi_ptr = read(binding_ptr).mutating_param_indices.get(ma.member_name)
+                            if mpi_ptr != null:
+                                record_mutating_args_for_indices(ctx, ptr[map_mod.Map[ptr_uint, bool]]<-mpi_ptr, args)
                             # A generic exported function infers its type arguments
                             # from the call's arguments (`iter.iter_filter(it, pred)`
                             # -> `Iter[int]`), exactly as a local call does.
@@ -4536,10 +4563,15 @@ function str_buffer_method_sig(args: span[types.Type], method_name: str) -> Opti
     let cstr_ty = types.primitive("cstr")
     var params = vec.Vec[ParamEntry].create()
     var return_type = void_ty
+    # `clear`/`assign`/`append`/`assign_format`/`append_format` mutate the
+    # receiver (the host's `check_str_buffer_method_call` records them as
+    # editable receivers); the readable methods do not.
+    var kind = ast.MethodKind.mk_plain
     if method_name == "clear":
-        pass
+        kind = ast.MethodKind.mk_editable
     else if method_name == "assign" or method_name == "append" or method_name == "assign_format" or method_name == "append_format":
         params.push(ParamEntry(name = "text", ty = str_ty))
+        kind = ast.MethodKind.mk_editable
     else if method_name == "len":
         return_type = ptr_uint_ty
     else if method_name == "capacity":
@@ -4555,7 +4587,7 @@ function str_buffer_method_sig(args: span[types.Type], method_name: str) -> Opti
         params = params.as_span(),
         return_type = return_type,
         has_return_type = true,
-        method_kind = ast.MethodKind.mk_plain,
+        method_kind = kind,
         is_async = false,
         is_variadic = false,
         is_extern = false,
@@ -5394,6 +5426,7 @@ function check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast
                 if sigp == null:
                     return types.Type.ty_error
                 let sig = read(sigp)
+                record_mutating_argument_sites(ctx, id.name, args)
                 check_signature_call(ctx, id.name, sig, args, arg_types, any_named, id.line, id.column)
                 let tps_ptr = ctx.function_type_params.get(id.name)
                 if tps_ptr != null:
@@ -5430,6 +5463,43 @@ function check_signature_call(ctx: ref[Context], display_name: str, sig: FnSig, 
                 arg_expr = read(args.data + i).arg_value
             if incompatible_value(pe.ty, atype, arg_expr):
                 report(ctx, line, column, argument_message(pe.name, display_name, pe.ty, atype))
+        i += 1
+
+
+## Record which parameter indices of a foreign function carry an `out`/`inout`
+## passing mode, so call sites can mark their identifier arguments as mutated.
+function record_mutating_param_indices(ctx: ref[Context], name: str, params: span[ast.ForeignParam]) -> void:
+    var indices = map_mod.Map[ptr_uint, bool].create()
+    var i: ptr_uint = 0
+    while i < params.len:
+        unsafe:
+            let mode = read(params.data + i).param_mode
+            if mode == ast.ForeignParamMode.fmode_out or mode == ast.ForeignParamMode.fmode_inout:
+                indices.set(i, true)
+        i += 1
+    if indices.len() > 0:
+        ctx.mutating_param_indices.set(name, indices)
+
+
+## Mark the identifier arguments passed to a foreign function's `out`/`inout`
+## parameters (the host's `mutating_argument_identifier_ids`): the call mutates
+## those bindings, so prefer-let must not fire on them.
+function record_mutating_argument_sites(ctx: ref[Context], name: str, args: span[ast.Argument]) -> void:
+    let indices_ptr = ctx.mutating_param_indices.get(name) else:
+        return
+    record_mutating_args_for_indices(ctx, indices_ptr, args)
+
+
+function record_mutating_args_for_indices(ctx: ref[Context], indices: ptr[map_mod.Map[ptr_uint, bool]], args: span[ast.Argument]) -> void:
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            if read(indices).contains(i):
+                match read(read(args.data + i).arg_value):
+                    ast.Expr.expr_identifier as arg_id:
+                        ctx.mutating_argument_sites.push(EditableSite(name = arg_id.name, line = arg_id.line))
+                    _:
+                        pass
         i += 1
 
 

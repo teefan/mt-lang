@@ -58,6 +58,10 @@ struct ScopeCtx:
     ## Receivers of `editable` method calls, recorded by the analyzer: a call on
     ## one of them mutates the binding, so prefer-let must not fire.
     editable_sites: span[analyzer.EditableSite]
+    ## Identifier arguments passed to `out`/`inout` foreign parameters
+    ## (recorded by the analyzer): the call mutates them, so prefer-let must
+    ## not fire.
+    mutating_sites: span[analyzer.EditableSite]
 
 
 # =============================================================================
@@ -111,6 +115,7 @@ function ctx_init(ctx: ref[ScopeCtx], buf: ptr[ScopeEntry]) -> void:
     read(ctx).scope_count = 0
     read(ctx).generic_function_depth = 0
     read(ctx).editable_sites = span[analyzer.EditableSite]()
+    read(ctx).mutating_sites = span[analyzer.EditableSite]()
 
 
 function ctx_push_scope(ctx: ref[ScopeCtx]) -> void:
@@ -252,16 +257,50 @@ function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> 
                 pass
 
 
-## When a call creates a writable alias (ref_of / ptr_of / out / inout), mark
-## the source identifier as potentially mutated through the alias.
+## Mark bindings mutated by a call's arguments: an identifier the analyzer
+## recorded as passed to an `out`/`inout` foreign parameter, or an explicit
+## `out x` / `inout x` argument (the host's `mutating_argument_identifier?` and
+## its `out`/`inout` write-target rule).
+function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+    unsafe:
+        match read(call):
+            ast.Expr.expr_call as cl:
+                var ai: ptr_uint = 0
+                while ai < cl.args.len:
+                    let value = read(cl.args.data + ai).arg_value
+                    match read(value):
+                        ast.Expr.expr_identifier as id:
+                            var si: ptr_uint = 0
+                            let sites = read(ctx).mutating_sites
+                            while si < sites.len:
+                                let site = read(sites.data + si)
+                                if site.line == id.line and site.name.equal(id.name):
+                                    ctx_mark_mutated(ctx, value)
+                                    break
+                                si += 1
+                        ast.Expr.expr_unary_op as u:
+                            if u.operator.equal("out") or u.operator.equal("inout"):
+                                ctx_mark_mutated(ctx, u.operand)
+                        _:
+                            pass
+                    ai += 1
+            _:
+                pass
+
+
+## When a `ref_of(x)` / `ptr_of(x)` call creates a writable alias, mark the
+## source as potentially mutated through it (the host's
+## `mark_alias_source_mutated`): exactly one argument, and `mark_mutated`
+## recurses through index/member receivers to the root binding, so
+## `ptr_of(arr[0])` marks `arr`.
 function ctx_mark_alias_source(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
     unsafe:
         match read(call):
             ast.Expr.expr_call as cl:
                 match read(cl.callee):
                     ast.Expr.expr_identifier as callee_id:
-                        if callee_id.name.equal("ref_of") or callee_id.name.equal("ptr_of") or callee_id.name.equal("const_ptr_of"):
-                            if cl.args.len >= 1:
+                        if cl.args.len == 1:
+                            if callee_id.name.equal("ref_of") or callee_id.name.equal("ptr_of"):
                                 ctx_mark_mutated(ctx, read(cl.args.data + 0).arg_value)
                     _:
                         pass
@@ -320,6 +359,7 @@ public function lint_scope_pass(
     path: str,
     unresolved_import_paths: span[str],
     editable_sites: span[analyzer.EditableSite],
+    mutating_sites: span[analyzer.EditableSite],
     providers: span[ImportMethodProvider],
     analysis: ptr[analyzer.Analysis]?,
     warnings: ref[vec.Vec[ScopeWarning]],
@@ -327,7 +367,9 @@ public function lint_scope_pass(
     var entries_buf: array[ScopeEntry, 4096]
     var sc: ScopeCtx
     ctx_init(ref_of(sc), ptr_of(entries_buf[0]))
-    unsafe: read(ref_of(sc)).editable_sites = editable_sites
+    unsafe:
+        read(ref_of(sc)).editable_sites = editable_sites
+        read(ref_of(sc)).mutating_sites = mutating_sites
     var credited = collect_import_credits(file, providers, analysis)
     defer: credited.release()
     check_unused_imports(file, path, unresolved_import_paths, credited.as_span(), warnings)
@@ -1254,6 +1296,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[ScopeW
                     i += 1
                 ctx_mark_alias_source(expr, ctx)
                 ctx_mark_editable_receiver(expr, ctx)
+                ctx_mark_mutating_args(expr, ctx)
             ast.Expr.expr_index_access as ix:
                 visit_expr(ix.receiver, path, warnings, ctx)
                 visit_expr(ix.index, path, warnings, ctx)
