@@ -48,6 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1).  Hover's imported-type resolution and the module-level value signature are closed (§0k); the residue is the host's global declaration-index fallback and imported-member navigation, ranked in the plan file.**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
@@ -1053,6 +1054,64 @@ text differs even though rule and position match.
 
 Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0, `sexpr_parity` lex 702/702 + parse 698/0.
+
+### LSP hover: imported types resolve through the module-aware analysis (2026-09-28 session 6, plan fix 1)
+
+**Symptom** (SimpleGame report): hover on `MIDNIGHT` in `SimpleGame/src/colors.mt`
+rendered `const MIDNIGHT: <error>`, and every signature that named an
+alias-qualified imported type degraded the same way
+(`function tint(c: <error>) -> <error>`).
+
+**Root cause — not the alias chain.** `resolve_cursor` (the shared resolver
+behind hover, definition and typeDefinition) built its facts with
+`analyzer.check_source_file(ast_file)`, a *standalone* check whose
+`imported_modules` is null.  With no bindings, `resolve_imported_type`
+(`analyzer.mt:1497`) answers none for every `alias.Type` reference, and
+`resolve_named`'s dotted-name arm then returns `ty_error` — so the analysis the
+LSP read carried `ty_error` for exactly the types that named an imported alias.
+The recorded alias target was already correct: a loader-backed test
+(`projects/mtc/test/semantic_test.mt`, `test_alias_of_alias_records_the_declaring_module`)
+pins `type Color = c.Color` re-exported through a second module to
+`ty_imported("base", "Color")`, for the alias map, the const's `value_types`
+entry and the enclosing `FnSig`'s parameter and return types.
+
+**Fix.** `resolve_cursor` now takes its `Analysis` and AST from
+`analysis_for_document` / `ast_for_document` (the loader-backed, import-resolving
+path the other LSP features already used), and `resolve_module_member` does the
+same for the imported module's own file (so a member's signature types resolve
+through *its* imports too).  The hover signatures that render types now use
+`type_render.qualified_name` + `shorten_signature` instead of the bare
+`types.type_to_string`, which restores the host's `*From <module>*` line, and a
+module-level value renders the host's `value_hover_signature` shape —
+`const MIDNIGHT: Color (immutable)` / `var counter: int (mutable)` (the
+mutability suffix was missing entirely).
+
+**Measured** (`tools/lsp_project_audit.rb --workspace tmp/probe-ws --only textDocument/hover`):
+12 → 10 differing entries of 25 — `const MIDNIGHT` and `function tint` are now
+byte-identical to the host, and the same fix removed the `<error>` from every
+signature hover in the SimpleGame audit.  Verified through a real client
+(`nvim --headless` + `vim.lsp.start`, hover on both positions) and valgrind
+(0 errors).
+
+**Audit baseline for the rest of the program** (new, full matrix, first run):
+`tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame
+--json tmp/audit-all.json --max-diffs 0` → 6456 entries, **1328 differ**:
+typeDefinition 334/915, hover 286/915, references 278/915, definition 194/915,
+declaration 194/915, documentHighlight 26/915, documentSymbol 5/7,
+semanticTokens/full 5/7, diagnostic 3/7, codeLens 1/7, implementation 1/915,
+workspace/symbol 1/1.  By file: `src/colors.mt` 410, `docs/data_structures.mt`
+321, `docs/language_baseline.mt` 240, `docs/memory_stress_test.mt` 181,
+`src/main.mt` 107, `src/node.mt` 43, `src/game.mt` 11.
+
+**Audit tool fix.** The full run used to deadlock: the audit never drained a
+server's stderr, and the self-host's one-line-per-request `[LSP perf]` log fills
+the 64 KiB pipe and blocks the server mid-`write` (reproduced: the server stalls
+after ~1229 requests with 65224 bytes buffered).  `tools/lsp_project_audit.rb`
+now drains stderr on its own thread, as a real client does.
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
+30/30 capabilities + 4 documented entries.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 

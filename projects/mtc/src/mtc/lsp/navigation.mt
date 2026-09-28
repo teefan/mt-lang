@@ -1006,11 +1006,19 @@ function resolve_cursor(
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
     if parse_diags.len() > 0:
         return Option[CursorResult].none
 
-    var analysis = analyzer.check_source_file(ast_file)
+    # The facts come from the loader-backed analysis, as the host's do: a
+    # standalone check carries no import bindings, so every `alias.Type` and
+    # `alias.member` reference would resolve to `<error>`.
+    var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
+    var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
+    var module_roots = ws.effective_module_roots_for(file_path.as_str())
+    defer: module_roots.release()
+    var current_module = resolver.infer_module_name(file_path.as_str(), module_roots.as_span())
+    defer: current_module.release()
 
     # `alias.member`: resolve the member inside the imported module's file.
     match cursor.dot_receiver_at(source, line, character):
@@ -1031,12 +1039,12 @@ function resolve_cursor(
         if alias_module_ptr != null:
             return resolve_module_reference(ws, read(alias_module_ptr))
 
-    return resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source)
+    return resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source, current_module.as_str())
 
 
-## Resolve `member` inside imported module `module_name`: parse and check the
-## module's file, reuse the same-file resolver there, and stamp the result
-## with the module file's URI.
+## Resolve `member` inside imported module `module_name`: check the module's
+## file with its own imports bound, reuse the same-file resolver there, and
+## stamp the result with the module file's URI.
 function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, member: str) -> Option[CursorResult]:
     var module_path = resolve_module_source_path(ws, module_name) else:
         return Option[CursorResult].none
@@ -1048,10 +1056,11 @@ function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, m
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
-    var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
-    var module_analysis = analyzer.check_source_file(module_file)
+    var parsed_module = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
+    var module_file = ast_for_document(ws, module_path.as_str(), parsed_module)
+    var module_analysis = analysis_for_document(ws, module_path.as_str(), parsed_module)
 
-    match resolve_name_in_analysis(module_file, ref_of(module_analysis), member, module_source.as_str()):
+    match resolve_name_in_analysis(module_file, ref_of(module_analysis), member, module_source.as_str(), module_name):
         Option.some as res:
             var stamped = res.value
             stamped.target_uri.release()
@@ -1229,11 +1238,15 @@ function resolve_enum_member(type_name: str, member: str, source: str, analysis:
 
 ## Resolve `name` against the semantic analysis maps.  Returns the definition
 ## location, rendered signature, and attached docs, or none if unresolvable.
+## `current_module` names the file being resolved, so a type the analysis
+## recorded without an owning module still renders its qualifier and reports
+## the host's `*From <module>*` line.
 function resolve_name_in_analysis(
     file: ast.SourceFile,
     analysis: ref[analyzer.Analysis],
     name: str,
     source: str,
+    current_module: str,
 ) -> Option[CursorResult]:
     unsafe:
         # Function: render the full signature.
@@ -1241,12 +1254,10 @@ function resolve_name_in_analysis(
         if sig_ptr != null:
             let decl_line = find_declaration_line(file, name, "function")
             if decl_line > 0:
-                return Option[CursorResult].some(value = make_result(
-                    decl_line,
-                    name,
-                    source,
-                    format_fn_signature(read(sig_ptr), name)
-                ))
+                var fn_text = format_fn_signature(read(sig_ptr), name, current_module)
+                let fn_result = make_shortened_result(decl_line, name, source, fn_text.as_str())
+                fn_text.release()
+                return Option[CursorResult].some(value = fn_result)
 
         # Extending-block or interface method: search method_keys for "*.name".
         var method_entries = read(analysis).method_keys.entries()
@@ -1276,27 +1287,40 @@ function resolve_name_in_analysis(
                                 full.append(", ")
                             full.append(p.name)
                             full.append(": ")
-                            full.append(types.type_to_string(p.ty))
+                            var param_text = type_render.qualified_name(p.ty, current_module)
+                            full.append(param_text.as_str())
+                            param_text.release()
                             pi += 1
                         full.append(")")
                         if m_sig.has_return_type:
                             full.append(" -> ")
-                            full.append(types.type_to_string(m_sig.return_type))
-                        return Option[CursorResult].some(value = make_result(mline, name, source, full))
+                            var return_text = type_render.qualified_name(m_sig.return_type, current_module)
+                            full.append(return_text.as_str())
+                            return_text.release()
+                        let method_result = make_shortened_result(mline, name, source, full.as_str())
+                        full.release()
+                        return Option[CursorResult].some(value = method_result)
             m_next = method_entries.next()
 
-        # Module-level const or var: render name and type.
+        # Module-level const or var: the host's `value_hover_signature`.
         let value_ptr = read(analysis).value_types.get(name)
         if value_ptr != null:
             let decl_line = find_declaration_line(file, name, "value")
             if decl_line > 0:
+                let keyword = value_decl_keyword(file, name)
+                let mutability = if keyword.equal("var"): " (mutable)" else: " (immutable)"
                 var hover = string.String.create()
-                hover.append(value_decl_keyword(file, name))
+                hover.append(keyword)
                 hover.append(" ")
                 hover.append(name)
                 hover.append(": ")
-                hover.append(types.type_to_string(read(value_ptr)))
-                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
+                var value_text = type_render.qualified_name(read(value_ptr), current_module)
+                hover.append(value_text.as_str())
+                value_text.release()
+                hover.append(mutability)
+                let value_result = make_shortened_result(decl_line, name, source, hover.as_str())
+                hover.release()
+                return Option[CursorResult].some(value = value_result)
 
         # Struct: render the field list.
         let fields_ptr = read(analysis).structs.get(name)
@@ -1350,8 +1374,12 @@ function resolve_name_in_analysis(
                 let aliased_ptr = read(analysis).type_alias_types.get(name)
                 if aliased_ptr != null:
                     hover.append(" = ")
-                    hover.append(types.type_to_string(read(aliased_ptr)))
-                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
+                    var alias_text = type_render.qualified_name(read(aliased_ptr), current_module)
+                    hover.append(alias_text.as_str())
+                    alias_text.release()
+                let alias_result = make_shortened_result(decl_line, name, source, hover.as_str())
+                hover.release()
+                return Option[CursorResult].some(value = alias_result)
 
         # Interface: render member signatures.
         if read(analysis).interfaces.contains(name):
@@ -1437,9 +1465,32 @@ function make_result(decl_line: ptr_uint, name: str, source: str, hover: string.
     )
 
 
+## `make_result` for a signature that carries module-qualified type names: the
+## signature is shortened (the host's `shorten_qualified_types`) and the stripped
+## modules ride along for the hover's `*From <module>*` line.
+function make_shortened_result(decl_line: ptr_uint, name: str, source: str, signature: str) -> CursorResult:
+    var shortened = type_render.shorten_signature(signature)
+    var column: ptr_uint = 0
+    let line_text = cursor.source_line(source, decl_line)
+    match cursor.token_start_in_line(line_text, name):
+        Option.some as pos:
+            column = pos.value
+        Option.none:
+            pass
+    return CursorResult(
+        line = decl_line,
+        column = column,
+        name_len = name.len,
+        hover_text = shortened.text,
+        docs = doc_lines_above(source, decl_line),
+        target_uri = string.String.create(),
+        from_modules = shortened.modules
+    )
+
+
 ## Render a function signature from its FnSig:
 ## `async function name(a: int, b: str) -> int`.
-function format_fn_signature(sig: analyzer.FnSig, name: str) -> string.String:
+function format_fn_signature(sig: analyzer.FnSig, name: str, current_module: str) -> string.String:
     var sig_text = string.String.create()
     if sig.is_async:
         sig_text.append("async ")
@@ -1453,7 +1504,9 @@ function format_fn_signature(sig: analyzer.FnSig, name: str) -> string.String:
             sig_text.append(", ")
         sig_text.append(param.name)
         sig_text.append(": ")
-        sig_text.append(types.type_to_string(param.ty))
+        var param_text = type_render.qualified_name(param.ty, current_module)
+        sig_text.append(param_text.as_str())
+        param_text.release()
         pi += 1
     if sig.is_variadic:
         if sig.params.len > 0:

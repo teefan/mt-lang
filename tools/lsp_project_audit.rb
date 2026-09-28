@@ -75,8 +75,28 @@ class LspClient
     @timeout_s = timeout_s
     @next_id = 1
     @stderr_lines = []
+    @stderr_mutex = Mutex.new
     @malformed_frames = []
     @dead = false
+    drain_stderr
+  end
+
+  ## Consume stderr continuously on its own thread.  A server that logs to
+  ## stderr blocks once the pipe's 64 KiB buffer fills, and a client that only
+  ## reads stderr at the end of the run would deadlock against it (the audit
+  ## drives thousands of requests).
+  def drain_stderr
+    return unless @stderr_read
+
+    reader = @stderr_read
+    @stderr_thread = Thread.new do
+      begin
+        reader.each_line { |line| @stderr_mutex.synchronize { @stderr_lines << line } }
+      rescue IOError, Errno::EIO
+        nil
+      end
+    end
+    @stderr_thread.abort_on_exception = false
   end
 
   def request(method, params)
@@ -168,13 +188,12 @@ class LspClient
     end
   end
 
+  ## Stderr is consumed by the drain thread; give it a moment to catch up.
   def collect_stderr
-    return unless @stderr_read
+    return unless @stderr_thread
 
-    while (line = @stderr_read.read_nonblock(65_536, exception: false)) && line != :wait_readable
-      @stderr_lines.concat(line.lines)
-    end
-  rescue IOError, EOFError, Errno::EIO
+    @stderr_thread.join(0.5)
+  rescue StandardError
     nil
   end
 end

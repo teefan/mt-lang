@@ -1,11 +1,50 @@
 # In-language semantic analyzer tests for the self-hosted mtc compiler.
 # Run with: mtc test projects/mtc
 
+import std.fs as fs
+import std.path as path_ops
+import std.string as string
 import std.vec as vec
 
+import mtc.loader.module_loader as loader
+import mtc.loader.path_resolver as resolver
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
+
+
+## Remove a temp directory tree and release its owned path string.
+function cleanup_dir(dir: ref[string.String]) -> void:
+    match fs.remove_tree(dir.as_str()):
+        Result.success:
+            pass
+        Result.failure as f:
+            var e = f.error
+            e.release()
+    dir.release()
+
+
+## Write `content` to `dir/relative`, creating parent directories as needed.
+function write_file(dir: str, relative: str, content: str) -> bool:
+    var full = path_ops.join(dir, relative)
+    defer: full.release()
+
+    match fs.create_directories(path_ops.dirname(full.as_str())):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return false
+        Result.success:
+            pass
+
+    match fs.write_text(full.as_str(), content):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return false
+        Result.success:
+            return true
 
 
 ## Parse then semantically analyze `source`, returning the diagnostic count.
@@ -2216,3 +2255,83 @@ function test_resolved_types_recording_does_not_crash() -> void:
             return y
     SRC
     expect_clean(source)
+
+
+# =============================================================================
+#  Imported type aliases: an alias whose target is itself an imported alias
+#  (`type Color = c.Color` re-exported as `w.Color`) must resolve through the
+#  chain to the declaring module's type, not degrade to a bare name.  The LSP
+#  hover path reads these recorded targets, so a regression here shows up as
+#  `<error>` (or an unqualified name) in hover and in signature types.
+# =============================================================================
+
+const ALIAS_BASE: str = <<-SRC
+public struct Color:
+    r: int
+SRC
+
+const ALIAS_WRAPPER: str = <<-SRC
+import base as c
+
+public type Color = c.Color
+SRC
+
+const ALIAS_MAIN: str = <<-SRC
+import wrap as w
+
+public const MIDNIGHT: w.Color = w.Color(r = 1)
+
+function tint(c: w.Color) -> w.Color:
+    return c
+SRC
+
+
+@[test]
+function test_alias_of_alias_records_the_declaring_module() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_alias_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+
+    if not write_file(root.as_str(), "base.mt", ALIAS_BASE):
+        expect(false, "could not write base")
+    if not write_file(root.as_str(), "wrap.mt", ALIAS_WRAPPER):
+        expect(false, "could not write wrap")
+    if not write_file(root.as_str(), "main.mt", ALIAS_MAIN):
+        expect(false, "could not write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    expect_eq(int<-program.diagnostic_count(), 0)
+
+    var saw_wrap = false
+    var saw_main = false
+    var wi: ptr_uint = 0
+    while wi < program.analyses.len():
+        let a_ptr = program.analyses.get(wi) else:
+            break
+        let a = unsafe: read(a_ptr)
+        if a.module_name == "wrap":
+            saw_wrap = true
+            let alias_ptr = a.type_alias_types.get("Color") else:
+                expect(false, "wrap.Color alias missing")
+            let alias_key = types.nominal_key(unsafe: read(alias_ptr))
+            expect_eq(alias_key, "base.Color")
+        else if a.module_name == "main":
+            saw_main = true
+            let value_ptr = a.value_types.get("MIDNIGHT") else:
+                expect(false, "MIDNIGHT value type missing")
+            expect_eq(types.nominal_key(unsafe: read(value_ptr)), "base.Color")
+            let sig_ptr = a.functions.get("tint") else:
+                expect(false, "tint signature missing")
+            let sig = unsafe: read(sig_ptr)
+            let param = unsafe: read(sig.params.data + 0)
+            expect_eq(types.nominal_key(param.ty), "base.Color")
+            expect_eq(types.nominal_key(sig.return_type), "base.Color")
+        wi += 1
+
+    expect(saw_wrap, "wrap module was not analyzed")
+    expect(saw_main, "main module was not analyzed")
