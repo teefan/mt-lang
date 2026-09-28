@@ -239,7 +239,10 @@ public function type_to_string(t: Type) -> str:
             return buf.as_str()
         Type.ty_function as fnt:
             var buf = string.String.create()
-            buf.append("fn(")
+            if fnt.is_proc:
+                buf.append("proc(")
+            else:
+                buf.append("fn(")
             var i: ptr_uint = 0
             while i < fnt.params.len:
                 if i > 0:

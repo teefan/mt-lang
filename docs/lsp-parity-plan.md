@@ -6,12 +6,19 @@ readiness properties parity alone does not test — cold start, steady-state mem
 files, long sessions, real clients (Neovim/VS Code).
 
 **Where we are** (branch `selfhost`, session 9, 2026-09-28): SimpleGame audit
-6456 entries / **335 differ** (hover 83, definition/declaration 72 each,
+6456 entries / **332 differ** (hover 80, definition/declaration 72 each,
 typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5,
 semanticTokens 5, diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1);
 references-only audit **0**; synthetic harness 30/30 capabilities + 4 documented
 entries; probe fixtures 0 (references) / 0–8 (small classes); bootstrap fixed
 point + 14/14; `cli:parity` 23/38/0.
+
+**Track B started**: hover 83 → 80 (the `proc`-vs-`fn` rendering), and the
+residue is classified for the next batch in `docs/self-host-plan.md` §0k
+(session 9, Track B first batch): 17 analyzer-`<error>` locals, 15 `*From*`
+module-rendering entries, 19 self-null member/attribute/`this` entries, 5
+nullability renderings, the tuple/alias renderings, and the member-location
+artifacts.
 
 **Track A is closed** (session 9): `tools/lsp_recovery_probe.rb --check` reports
 recovery parity — all six mid-edit cases byte-equal.  A1 (the JSON-blob message)

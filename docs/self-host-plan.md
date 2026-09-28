@@ -48,7 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **335 differ** after the session-6/7/8/9 LSP work (hover 83, definition/declaration 72 each, typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The references-only audit is at **0 differing entries** and the definition/typeDefinition counters carry 6 deliberate self-better entries (§0k).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`), and so are their references.  Residue classified in §0k; the largest class is now `hover` (member/binding resolution).**
+**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **332 differ** after the session-6/7/8/9 LSP work (hover 80, definition/declaration 72 each, typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The references-only audit is at **0 differing entries** and the definition/typeDefinition counters carry 6 deliberate self-better entries (§0k).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`), and so are their references.  Residue classified in §0k; the largest class is now `hover` (member/binding resolution).**
 **LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
@@ -1620,6 +1620,26 @@ struct/union field loops) — a nested declaration dropped inside a block recove
 as a dropped declaration, not as the host's partial node.  The corpus and the
 harness do not cover that shape yet; the focused plan's A3 keeps it as the next
 recovery item.
+
+**Track B, first batch (same session).**  Hover **83 → 80**: `Types.type_to_string`
+rendered every function type as `fn(...)`, so a `proc`-typed local or parameter
+read `fn(int) -> int` where the host prints `proc(int) -> int` (three entries in
+`docs/language_baseline.mt`).  `ty_function.is_proc` now selects the keyword.
+The hover residue is classified for the next batch (measured from the session-9
+recording, 80 entries): **17** locals whose initializer the analyzer leaves
+`<error>` (specialized calls `heap.must_alloc[ubyte](64)`, builtin generic
+arm calls `Result[int,int].success(…)` / `Option[float].some(…)`, unary ops
+`~mask_a`, tuple literals `(1, 2)`, method calls on `Result`); **15** where the
+`*From <module>*` line differs (the annotation is rendered from the source text,
+so an import alias leaks in as `vec` instead of `std.vec`, and a specialization
+like `SoA[Point, 4]` loses the owner module); **19** self-null (enum/flags
+members in a declaration body `Mask.a = 1`, bare variant-arm constructors
+`Result.success(value: T)` with their named-argument labels, attribute targets
+and applications, `type parameter T`, fields read through a `ref` receiver, the
+implicit `this`, prelude/inherent methods on builtin generics); **5** nullability
+(the host prints the *storage* type where the self prints the flow type: `var
+handle: null (mutable)` vs `ptr[int]?`); 3 tuple/alias renderings, and the rest
+the member-location artifacts.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
