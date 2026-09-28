@@ -1175,6 +1175,40 @@ Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
 30/30 capabilities + 4 documented entries.
 
+### LSP hover: field labels, in literals and in declarations (2026-09-28 session 6, plan fix 4)
+
+Hover on a named-argument label of a struct aggregate literal
+(`rl.Color(r = 1, …)`) returned null; the host answers `field r: ubyte` with the
+field's declaration (`std/c/raylib.mt:45`).  The self-host already had the shape
+for a struct declared in the hovered file, but it looked the receiver up in the
+local AST only, so an *imported* struct never resolved — and `std.raylib` does
+not declare `struct Color` at all, it re-exports `type Color = c.Color`.
+
+`named_argument_label_hover` now resolves the receiver the way the host resolves
+a type receiver: the head identifier before the literal's `(` (optionally
+`alias.`-qualified) is looked up in that module's **type table**, and a
+re-exported alias is followed through `nominal_module`/`nominal_name` to the
+module that *declares* the struct — the field (its line, column and semantic
+type) is then read from that module's own file, and the result carries the
+module's URI so the hover's `Defined at` line links across files.  A head that
+is not a type (an ordinary call) stays unresolved, as before
+(`types.nominal_name` is public for the renderer).
+
+The declaration-site sibling had a byte-level bug: `field_declaration_hover`
+compared the AST's 1-based `Field.column` against the request's 0-based
+`character`, so hovering a field name **in its own declaration** (`field x: int`
+in `struct Point:`) matched nothing.  Both compare 0-based now.
+
+Measured (`tools/lsp_project_audit.rb --only textDocument/hover`): the probe
+fixture is at **0 differing entries of 25** (was 4), and the second fixture
+(`struct Point` + `Deque` locals) 4 → 2 — the residue is the host answering
+*twice* as `null` where the self resolves the same `let` through an unresolved
+`vec.Deque[int]`: a deliberate "answers where the host gives up" extension.
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
+30/30 capabilities + 4 documented entries, valgrind 0 errors.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**

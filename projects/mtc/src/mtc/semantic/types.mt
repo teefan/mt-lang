@@ -729,7 +729,7 @@ public function nominal_key(t: Type) -> str:
 
 
 ## Bare (unqualified) nominal type name, "" for non-nominal types.
-function nominal_name(t: Type) -> str:
+public function nominal_name(t: Type) -> str:
     match t:
         Type.ty_named as n:
             return n.name

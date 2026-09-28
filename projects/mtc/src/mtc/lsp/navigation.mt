@@ -1779,7 +1779,9 @@ function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uin
                 var fi: ptr_uint = 0
                 while fi < s.struct_fields.len:
                     var f = unsafe: read(s.struct_fields.data + fi)
-                    if f.line == target_line and f.column <= character and f.column + f.name.len > character:
+                    # `Field.column` is 1-based; the request's character is 0-based.
+                    let field_column = if f.column > 0: f.column - 1 else: 0z
+                    if f.line == target_line and field_column <= character and field_column + f.name.len > character:
                         var hover = string.String.create()
                         hover.append("field ")
                         hover.append(f.name)
@@ -1800,9 +1802,14 @@ function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uin
 
 
 ## Hover for a named-argument label inside a struct aggregate literal
-## (`Sample(x = 1, …)`, hovering `x`): the field's declaration line and its
-## type, rendered as the host's `field x: int`.  A label of an ordinary call
-## (whose head is not a struct declared in this file) stays unresolved.
+## (`Sample(x = 1, …)` or `rl.Color(r = 1, …)`, hovering `r`): the field's
+## declaration and its resolved type, rendered as the host's `field r: ubyte`.
+## The receiver is the identifier before the literal's `(` — optionally
+## `alias.`-qualified — resolved the way the host resolves a type receiver:
+## through the aliased module's own type table, and then through a re-exported
+## alias (`std.raylib`'s `type Color = c.Color`) to the module that declares the
+## struct.  A label of an ordinary call (whose head is not a type) stays
+## unresolved.
 function named_argument_label_hover(
     ws: ref[workspace.Workspace],
     source: str,
@@ -1845,12 +1852,80 @@ function named_argument_label_hover(
     let head = unsafe: read(head_ptr)
     if head.kind != tk.TokenKind.identifier:
         return Option[CursorResult].none
-    let type_name = cursor.token_text(source, head)
+    var type_name = cursor.token_text(source, head)
     let field_name = cursor.token_text(source, label_tok)
+
+    # An `alias.Type(...)` literal names its type through a module alias.
+    var module_alias: str = ""
+    if opener >= 3:
+        let dot_ptr = tokens.get(ptr_uint<-(opener - 2)) else:
+            return Option[CursorResult].none
+        if unsafe: read(dot_ptr).kind == tk.TokenKind.dot:
+            let alias_ptr = tokens.get(ptr_uint<-(opener - 3)) else:
+                return Option[CursorResult].none
+            let alias_tok = unsafe: read(alias_ptr)
+            if alias_tok.kind == tk.TokenKind.identifier:
+                module_alias = cursor.token_text(source, alias_tok)
 
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
+    var ast_file = ast_for_document(ws, file_path, parsed_file)
+    var analysis = analysis_for_document(ws, file_path, parsed_file)
+
+    var module_roots = ws.effective_module_roots_for(file_path)
+    defer: module_roots.release()
+    var current_module = resolver.infer_module_name(file_path, module_roots.as_span())
+    defer: current_module.release()
+
+    # Which module's type table the head is looked up in: this file, or the
+    # module the alias names.
+    var lookup_module: str = current_module.as_str()
+    if module_alias.len > 0:
+        let module_name_ptr = unsafe: analysis.imports.get(module_alias) else:
+            return Option[CursorResult].none
+        lookup_module = unsafe: read(module_name_ptr)
+
+    var lookup_path = resolve_module_source_path(ws, lookup_module) else:
+        return Option[CursorResult].none
+    defer: lookup_path.release()
+    var lookup_source = ws.document_source(lookup_path.as_str()) else:
+        return Option[CursorResult].none
+    defer: lookup_source.release()
+    var lookup_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: lookup_diags.release()
+    var lookup_parsed = parser.parse_source(lookup_source.as_str(), ref_of(lookup_diags))
+    var lookup_analysis = analysis_for_document(ws, lookup_path.as_str(), lookup_parsed)
+
+    # The head must name a type; a re-exported alias (`type Color = c.Color`)
+    # moves the lookup to the module that declares the type.
+    let head_type_ptr = lookup_analysis.types.get(type_name) else:
+        return Option[CursorResult].none
+    let head_type = unsafe: read(ptr[types.Type]<-head_type_ptr)
+    var declaring_module: str = lookup_module
+    let owner = types.nominal_module(head_type)
+    if owner.len > 0 and not owner.equal(lookup_module):
+        declaring_module = owner
+        type_name = types.nominal_name(head_type)
+
+    # The declaring module's file: this document, or the module's own file.
+    var decl_file = ast_file
+    var decl_analysis = analysis
+    var target_uri = string.String.create()
+    if not declaring_module.equal(current_module.as_str()):
+        var decl_path = resolve_module_source_path(ws, declaring_module) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        defer: decl_path.release()
+        var decl_source = ws.document_source(decl_path.as_str()) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        var decl_diags = vec.Vec[pstate.ParseDiagnostic].create()
+        defer: decl_diags.release()
+        var decl_parsed = parser.parse_source(decl_source.as_str(), ref_of(decl_diags))
+        decl_file = ast_for_document(ws, decl_path.as_str(), decl_parsed)
+        decl_analysis = analysis_for_document(ws, decl_path.as_str(), decl_parsed)
+        target_uri = file_uri_for_path(decl_path.as_str())
 
     var field_line: ptr_uint = 0
     var field_column: ptr_uint = 0
@@ -1859,10 +1934,10 @@ function named_argument_label_hover(
     defer: type_text.release()
 
     var di: ptr_uint = 0
-    while di < ast_file.declarations.len:
+    while di < decl_file.declarations.len:
         var decl: ast.Decl
         unsafe:
-            decl = read(ast_file.declarations.data + di)
+            decl = read(decl_file.declarations.data + di)
         match decl:
             ast.Decl.decl_struct as s:
                 if s.name.equal(type_name):
@@ -1883,16 +1958,12 @@ function named_argument_label_hover(
         di += 1
 
     if not found:
+        target_uri.release()
         return Option[CursorResult].none
 
     # The host renders the field's semantic type, module-qualified and then
     # shortened, so a user-defined field type reports a `*From <module>*` line.
-    var module_roots = ws.effective_module_roots_for(file_path)
-    defer: module_roots.release()
-    var current_module = resolver.infer_module_name(file_path, module_roots.as_span())
-    defer: current_module.release()
-    var analysis = analyzer.check_source_file(ast_file)
-    let entry_fields_ptr = analysis.structs.get(type_name)
+    let entry_fields_ptr = decl_analysis.structs.get(type_name)
     if entry_fields_ptr != null:
         let entry_fields = unsafe: read(entry_fields_ptr)
         var fi: ptr_uint = 0
@@ -1900,7 +1971,7 @@ function named_argument_label_hover(
             let entry = unsafe: read(entry_fields.data + fi)
             if entry.name.equal(field_name):
                 type_text.release()
-                type_text = type_render.qualified_name(entry.ty, current_module.as_str())
+                type_text = type_render.qualified_name(entry.ty, declaring_module)
             fi += 1
 
     var signature = string.String.create()
@@ -1918,9 +1989,10 @@ function named_argument_label_hover(
         name_len = field_name.len,
         hover_text = shortened.text,
         docs = string.String.create(),
-        target_uri = string.String.create(),
+        target_uri = target_uri,
         from_modules = shortened.modules
     ))
+
 
 function resolve_local_hover(
     ws: ref[workspace.Workspace],
