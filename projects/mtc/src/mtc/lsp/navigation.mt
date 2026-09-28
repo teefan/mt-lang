@@ -195,13 +195,7 @@ public function handle_hover(
 
     match resolve_keyword_or_builtin_hover(ws, uri, line, character):
         Option.some as kw_result:
-            var kw_payload = kw_result.value
-            # A keyword or builtin carries no source location of its own; the
-            # host fills one in from its token index when the name is declared
-            # somewhere in the workspace.
-            if kw_payload.line == 0:
-                apply_hover_index_location(ws, uri, line, character, ref_of(kw_payload))
-            write_hover_result(ws, id, kw_payload, uri, hover_token_range)
+            write_hover_result(ws, id, kw_result.value, uri, hover_token_range)
             return
         Option.none:
             pass
@@ -932,7 +926,22 @@ function resolve_keyword_or_builtin_hover(
 
     match hover_docs.language_keyword(lexeme):
         Option.some as kw:
-            return Option[CursorResult].some(value = quick_hover_doc(kw.value))
+            var keyword_result = quick_hover_doc(kw.value)
+            # The host prints a keyword's location from its token index when the
+            # name is declared somewhere in the workspace; a builtin's arm
+            # carries no location at all.
+            apply_hover_index_location(ws, uri, line, character, ref_of(keyword_result))
+            return Option[CursorResult].some(value = keyword_result)
+        Option.none:
+            pass
+
+    # A specialization answers before the type table: the host's
+    # `builtin_hover_info` runs its value, hook and type-constructor arms for a
+    # name followed by `[`, and only a *registered* type (`int`, `str`, …)
+    # reaches the `type <name>` shape.
+    match builtin_specialization_hover(tokens, source, matched_index, lexeme):
+        Option.some as bs:
+            return Option[CursorResult].some(value = quick_hover_doc(bs.value))
         Option.none:
             pass
 
@@ -941,12 +950,6 @@ function resolve_keyword_or_builtin_hover(
     match hover_docs.builtin_type(lexeme):
         Option.some as bt:
             return Option[CursorResult].some(value = quick_hover_doc(bt.value))
-        Option.none:
-            pass
-
-    match builtin_specialization_hover(tokens, matched_index, lexeme):
-        Option.some as bs:
-            return Option[CursorResult].some(value = quick_hover(bs.value))
         Option.none:
             pass
 
@@ -1038,6 +1041,36 @@ function resolve_cursor(
         Option.none:
             pass
 
+    # The host resolves a *member access* before its name tables
+    # (`resolve_member_access_hover_info` runs ahead of the signature lookup),
+    # so `d.push_back(…)` and `rl.Color.hex_digit(…)` report their defining
+    # module rather than a same-named local declaration.
+    match cursor.dot_receiver_at(source, line, character):
+        Option.some as recv:
+            match resolve_member_method_hover(
+                ws, ast_file, ref_of(analysis), source, file_path.as_str(), recv.value, target.text,
+                line + 1, current_module.as_str()):
+                Option.some as member_result:
+                    return Option[CursorResult].some(value = member_result.value)
+                Option.none:
+                    pass
+        Option.none:
+            pass
+
+    # `Type.method(...)` / `Type[T].method(...)` / `alias.Type.method(...)`: a
+    # *type* receiver, whose method lives in the type's own module.
+    match cursor.type_receiver_at(source, line, character):
+        Option.some as type_recv:
+            match resolve_type_method_hover(
+                ws, ast_file, ref_of(analysis), source, type_recv.value, target.text,
+                current_module.as_str()):
+                Option.some as type_result:
+                    return Option[CursorResult].some(value = type_result.value)
+                Option.none:
+                    pass
+        Option.none:
+            pass
+
     # A builtin primitive type name (`str`, `int`, `vec3`, …) is a *registered*
     # type in the host's facts, so it answers its `type <name>` docs before the
     # import-alias arm — `import std.str` does not shadow `str`.  The generic
@@ -1058,29 +1091,7 @@ function resolve_cursor(
         if alias_module_ptr != null:
             return resolve_module_reference(ws, read(alias_module_ptr))
 
-    # `value.method(...)`: the method's resolved signature from its defining
-    # module (this one, or the module that declares the receiver's type).
-    match cursor.dot_receiver_at(source, line, character):
-        Option.some as recv:
-            match resolve_member_method_hover(
-                ws, ast_file, ref_of(analysis), source, file_path.as_str(), recv.value, target.text,
-                line + 1, current_module.as_str()):
-                Option.some as member_result:
-                    return Option[CursorResult].some(value = member_result.value)
-                Option.none:
-                    pass
-        Option.none:
-            pass
-
-    # `Type.method(...)` / `Type[T].method(...)` / `alias.Type.method(...)`: a
-    # *type* receiver, whose method lives in the type's own module.
-    match cursor.type_receiver_at(source, line, character):
-        Option.some as type_recv:
-            return resolve_type_method_hover(
-                ws, ast_file, ref_of(analysis), source, type_recv.value, target.text,
-                current_module.as_str())
-        Option.none:
-            return Option[CursorResult].none
+    return Option[CursorResult].none
 
 
 ## Hover for the method of a *type* receiver (`Vec[int].create()`): the static
@@ -1142,6 +1153,19 @@ function resolve_type_method_hover(
     if decl_line == 0:
         target_uri.release()
         return Option[CursorResult].none
+
+    # The host pairs the receiver's *module* file with the declaring file's line
+    # (`module_member_binding_location` resolves the path from the module name),
+    # so a method an `extending` block in this document adds to an imported type
+    # reports `std/raylib.mt` with the line here — the same artifact the
+    # references static arm reproduces.
+    if target_uri.len() == 0 and owner.len > 0 and not owner.equal(current_module):
+        match resolve_module_source_path(ws, owner):
+            Option.some as owner_path:
+                target_uri = file_uri_for_path(owner_path.value.as_str())
+                owner_path.value.release()
+            Option.none:
+                pass
 
     var hover = method_signature_text(signature, method_name, owner_or(current_module, owner))
     let result = make_shortened_result(decl_line, method_name, decl_source, hover.as_str())
@@ -1401,6 +1425,19 @@ function resolve_member_method_hover(
     if decl_line == 0:
         target_uri.release()
         return Option[CursorResult].none
+
+    # The host pairs the receiver's *module* file with the declaring file's line
+    # (`module_member_binding_location` resolves the path from the module name),
+    # so a method an `extending` block in this document adds to an imported type
+    # reports `std/raylib.mt` with the line here — the same artifact the
+    # references static arm reproduces.
+    if target_uri.len() == 0 and owner.len > 0 and not owner.equal(current_module):
+        match resolve_module_source_path(ws, owner):
+            Option.some as owner_path:
+                target_uri = file_uri_for_path(owner_path.value.as_str())
+                owner_path.value.release()
+            Option.none:
+                pass
 
     var hover = method_signature_text(signature, method_name, owner_or(current_module, owner))
     let result = make_shortened_result(decl_line, method_name, decl_source, hover.as_str())
@@ -2158,22 +2195,257 @@ function find_token_str(source: str, line: ptr_uint, character: ptr_uint) -> Opt
 ## Specialization-form hover for `zero`/`default`/`reinterpret` and the
 ## container constructors: only when the identifier is followed by `[`, as the
 ## host's specialization paths require.
-function builtin_specialization_hover(tokens: vec.Vec[token_mod.Token], ti: ptr_uint, lexeme: str) -> Option[str]:
-    var is_spec = false
-    if lexeme.equal("zero") or lexeme.equal("default") or lexeme.equal("reinterpret") or lexeme.equal("array") or lexeme.equal("span"):
-        is_spec = true
-    if not is_spec:
-        return Option[str].none
+## The host's `builtin_hover_info`, in its order: a *value* specialization
+## (`zero[T]`, `default[T]`, `reinterpret[T]`), an associated-hook call
+## specialization (`hash[T](…)`, `equal[T](…)`, `order[T](…)`), a *type
+## constructor* (`ptr[T]`, `array[T, N]`, `Option[T]`, …) and nothing else —
+## each arm needs the `[…]` group that follows the name.
+function builtin_specialization_hover(tokens: vec.Vec[token_mod.Token], source: str, ti: ptr_uint, lexeme: str) -> Option[hover_docs.HoverDoc]:
+    if lexeme.equal("zero") or lexeme.equal("default") or lexeme.equal("reinterpret"):
+        return builtin_value_specialization_hover(tokens, source, ti, lexeme)
+    if lexeme.equal("hash") or lexeme.equal("equal") or lexeme.equal("order"):
+        return builtin_hook_specialization_hover(tokens, source, ti, lexeme)
+    return builtin_type_constructor_hover(tokens, source, ti, lexeme)
 
-    var next_idx = ti + 1
-    if next_idx >= tokens.len:
-        return Option[str].none
-    let np = tokens.get(next_idx) else:
-        return Option[str].none
-    let nt = unsafe: read(np)
-    if nt.kind == tk.TokenKind.lbracket:
-        return Option[str].some(value = f"builtin {lexeme}[...]")
-    return Option[str].none
+
+## `zero[T] -> T` / `default[T] -> T` / `reinterpret[T](value) -> T`.
+function builtin_value_specialization_hover(tokens: vec.Vec[token_mod.Token], source: str, ti: ptr_uint, lexeme: str) -> Option[hover_docs.HoverDoc]:
+    if is_member_access_token(tokens.as_span(), ti):
+        return Option[hover_docs.HoverDoc].none
+    let lb = next_code_index(tokens.as_span(), ti + 1) else:
+        return Option[hover_docs.HoverDoc].none
+    if not token_kind_at(tokens.as_span(), lb, tk.TokenKind.lbracket):
+        return Option[hover_docs.HoverDoc].none
+    let rb = matching_bracket_index(tokens.as_span(), lb) else:
+        return Option[hover_docs.HoverDoc].none
+    var target = render_builtin_specialization(tokens.as_span(), source, lb + 1, rb - 1)
+    defer: target.release()
+    if target.len() == 0:
+        return Option[hover_docs.HoverDoc].none
+
+    var signature = string.String.create()
+    defer: signature.release()
+    signature.append("builtin ")
+    var whole = render_builtin_specialization(tokens.as_span(), source, ti, rb)
+    defer: whole.release()
+    signature.append(whole.as_str())
+    if lexeme.equal("reinterpret"):
+        signature.append("(value) -> ")
+    else:
+        signature.append(" -> ")
+    signature.append(target.as_str())
+    return Option[hover_docs.HoverDoc].some(value = hover_docs.HoverDoc(signature = string.String.from_str(signature.as_str()).as_str(), docs = specialization_docs(lexeme)))
+
+
+## `hash[T](value) -> uint` / `equal[T](left, right) -> bool` /
+## `order[T](left, right) -> int` — the host's associated-hook specializations.
+function builtin_hook_specialization_hover(tokens: vec.Vec[token_mod.Token], source: str, ti: ptr_uint, lexeme: str) -> Option[hover_docs.HoverDoc]:
+    if is_member_access_token(tokens.as_span(), ti):
+        return Option[hover_docs.HoverDoc].none
+    let lb = next_code_index(tokens.as_span(), ti + 1) else:
+        return Option[hover_docs.HoverDoc].none
+    if not token_kind_at(tokens.as_span(), lb, tk.TokenKind.lbracket):
+        return Option[hover_docs.HoverDoc].none
+    let rb = matching_bracket_index(tokens.as_span(), lb) else:
+        return Option[hover_docs.HoverDoc].none
+    let after = next_code_index(tokens.as_span(), rb + 1) else:
+        return Option[hover_docs.HoverDoc].none
+    if not token_kind_at(tokens.as_span(), after, tk.TokenKind.lparen):
+        return Option[hover_docs.HoverDoc].none
+
+    var signature = string.String.create()
+    defer: signature.release()
+    signature.append("builtin ")
+    var whole = render_builtin_specialization(tokens.as_span(), source, ti, rb)
+    defer: whole.release()
+    signature.append(whole.as_str())
+    if lexeme.equal("hash"):
+        signature.append("(value) -> uint")
+    else if lexeme.equal("equal"):
+        signature.append("(left, right) -> bool")
+    else:
+        signature.append("(left, right) -> int")
+    return Option[hover_docs.HoverDoc].some(value = hover_docs.HoverDoc(signature = string.String.from_str(signature.as_str()).as_str(), docs = specialization_docs(lexeme)))
+
+
+## `builtin type ptr[int]` and, at a construction call, the host's per-name
+## callable shapes (`builtin ptr[int](...) -> ptr[int]`, `builtin
+## Option[int](some: value = ...) / Option[int](none:)`, …).
+function builtin_type_constructor_hover(tokens: vec.Vec[token_mod.Token], source: str, ti: ptr_uint, lexeme: str) -> Option[hover_docs.HoverDoc]:
+    if not is_builtin_type_constructor_name(lexeme):
+        return Option[hover_docs.HoverDoc].none
+    let lb = next_code_index(tokens.as_span(), ti + 1) else:
+        return Option[hover_docs.HoverDoc].none
+    if not token_kind_at(tokens.as_span(), lb, tk.TokenKind.lbracket):
+        return Option[hover_docs.HoverDoc].none
+    let rb = matching_bracket_index(tokens.as_span(), lb) else:
+        return Option[hover_docs.HoverDoc].none
+    let after = next_code_index(tokens.as_span(), rb + 1)
+
+    var signature = string.String.create()
+    defer: signature.release()
+    var whole = render_builtin_specialization(tokens.as_span(), source, ti, rb)
+    defer: whole.release()
+    var called = false
+    match after:
+        Option.some as after_index:
+            called = token_kind_at(tokens.as_span(), after_index.value, tk.TokenKind.lparen)
+        Option.none:
+            pass
+    if not called:
+        signature.append("builtin type ")
+        signature.append(whole.as_str())
+        return Option[hover_docs.HoverDoc].some(value = hover_docs.HoverDoc(signature = string.String.from_str(signature.as_str()).as_str(), docs = specialization_docs(lexeme)))
+    if lexeme.equal("Option"):
+        signature.append("builtin ")
+        signature.append(whole.as_str())
+        signature.append("(some: value = ...) / ")
+        signature.append(whole.as_str())
+        signature.append("(none:)")
+    else if lexeme.equal("Result"):
+        signature.append("builtin ")
+        signature.append(whole.as_str())
+        signature.append("(success: value = ...) / ")
+        signature.append(whole.as_str())
+        signature.append("(failure: error = ...)")
+    else if lexeme.equal("span"):
+        signature.append("builtin ")
+        signature.append(whole.as_str())
+        signature.append("(data = ..., len = ...) -> ")
+        signature.append(whole.as_str())
+    else:
+        signature.append("builtin ")
+        signature.append(whole.as_str())
+        signature.append("(...) -> ")
+        signature.append(whole.as_str())
+    return Option[hover_docs.HoverDoc].some(value = hover_docs.HoverDoc(signature = string.String.from_str(signature.as_str()).as_str(), docs = specialization_docs(lexeme)))
+
+
+## The host's docs for a builtin specialization (`builtin_hover_info`'s
+## per-name `docs` cases).
+function specialization_docs(name: str) -> str:
+    if name.equal("array"):
+        return "`array[T, N]` is the built-in fixed-length array type."
+    if name.equal("span"):
+        return "`span[T]` is the built-in non-owning contiguous view type."
+    if name.equal("SoA"):
+        return "`SoA[T, N]` is the built-in Struct-of-Arrays type. Each struct field is stored in a separate contiguous array of `N` elements, improving SIMD/cache behavior for parallel field access."
+    if name.equal("simd"):
+        return "`simd[T, N]` is the built-in SIMD vector type. Fixed-width vector of `N` numeric lanes. Supports component-wise arithmetic, lane access via `[i]`, and explicit aligned/unaligned load/store."
+    if name.equal("Option"):
+        return "`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms."
+    if name.equal("Result"):
+        return "`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms."
+    if name.equal("str_buffer"):
+        return "`str_buffer[N]` is a fixed-capacity mutable UTF-8 text buffer. Methods: `assign`, `append`, `assign_format`, `append_format`, `clear`, `len`, `as_str`, `as_cstr`."
+    if name.equal("ref"):
+        return "`ref[T]` is a non-null borrow reference. Auto-dereferences for member access and method calls. Cannot be stored in module-level variables, constants, or nested containers."
+    if name.equal("ptr"):
+        return "`ptr[T]` is a raw mutable pointer. Indexing, dereference, and arithmetic require `unsafe`. Nullable via `ptr[T]?`."
+    if name.equal("const_ptr"):
+        return "`const_ptr[T]` is a read-only pointer. Does not require `unsafe` for dereference."
+    if name.equal("own"):
+        return "`own[T]` is an owning heap pointer. Auto-dereferences like `ref`. Storable, returnable, and nullable. Allocated via `heap.must_alloc[T](count)`."
+    if name.equal("Task"):
+        return "`Task[T]` is an async task future. Returned by `async function`. Use `await` to unwrap, or `aio.wait`/`aio.run` to drive."
+    if name.equal("atomic"):
+        return "`atomic[T]` is an atomic value for lock-free concurrent access. `T` must be a primitive integer or `bool`. Methods: `load`, `store`, `add`, `sub`, `exchange`."
+    if name.equal("zero"):
+        return "`zero[T]` returns the raw zero-initialized value for `T`. It is a value form, not a callable."
+    if name.equal("default"):
+        return "`default[T]` returns the semantic default value for `T` and requires an accessible zero-argument associated function `T.default()` that returns `T`. It is a value form, not a callable."
+    if name.equal("reinterpret"):
+        return "`reinterpret[T](value)` bit-casts a value to `T`; it requires `unsafe` and compatible concrete sized types."
+    if name.equal("hash"):
+        return "`hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint` after borrowing safe lvalues or forwarding existing refs and pointers."
+    if name.equal("equal"):
+        return "`equal[T](left, right)` lowers to `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool` after borrowing safe lvalues or forwarding existing refs and pointers."
+    if name.equal("order"):
+        return "`order[T](left, right)` lowers to `T.order(left: const_ptr[T], right: const_ptr[T]) -> int` after borrowing safe lvalues or forwarding existing refs and pointers."
+    return ""
+
+
+## The host's `BUILTIN_TYPE_CONSTRUCTOR_NAMES`.
+function is_builtin_type_constructor_name(name: str) -> bool:
+    if name.equal("array") or name.equal("span") or name.equal("Option") or name.equal("Result"):
+        return true
+    if name.equal("SoA") or name.equal("str_buffer") or name.equal("ref") or name.equal("ptr"):
+        return true
+    if name.equal("const_ptr") or name.equal("own") or name.equal("Task") or name.equal("atomic"):
+        return true
+    return name.equal("simd")
+
+
+## The host's `render_builtin_specialization`: the lexemes joined, with a comma
+## rendered as `, `.
+function render_builtin_specialization(tokens: span[token_mod.Token], source: str, from_index: ptr_uint, to_index: ptr_uint) -> string.String:
+    var text = string.String.create()
+    var i = from_index
+    while i <= to_index and i < tokens.len:
+        var t: token_mod.Token
+        unsafe:
+            t = read(tokens.data + i)
+        if t.kind == tk.TokenKind.comma:
+            text.append(", ")
+        else:
+            let lexeme = unsafe: token_mod.token_lexeme(t, source)
+            text.append(lexeme)
+        i += 1
+    return text
+
+
+## The index of the token that closes the `[` at `lb`, counting nesting.
+function matching_bracket_index(tokens: span[token_mod.Token], lb: ptr_uint) -> Option[ptr_uint]:
+    var depth: int = 0
+    var i = lb
+    while i < tokens.len:
+        var t: token_mod.Token
+        unsafe:
+            t = read(tokens.data + i)
+        if t.kind == tk.TokenKind.lbracket:
+            depth += 1
+        else if t.kind == tk.TokenKind.rbracket:
+            depth -= 1
+            if depth == 0:
+                return Option[ptr_uint].some(value = i)
+        i += 1
+    return Option[ptr_uint].none
+
+
+## The next token index at or after `from` that is not a structural token.
+function next_code_index(tokens: span[token_mod.Token], from: ptr_uint) -> Option[ptr_uint]:
+    var i = from
+    while i < tokens.len:
+        var t: token_mod.Token
+        unsafe:
+            t = read(tokens.data + i)
+        if not is_structural_token_kind(t.kind):
+            return Option[ptr_uint].some(value = i)
+        i += 1
+    return Option[ptr_uint].none
+
+
+function token_kind_at(tokens: span[token_mod.Token], index: ptr_uint, kind: tk.TokenKind) -> bool:
+    if index >= tokens.len:
+        return false
+    return unsafe: read(tokens.data + index).kind == kind
+
+
+## True when the token at `index` follows a `.` (the host's
+## `builtin_in_member_access_context?`).
+function is_member_access_token(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    var i = index
+    while i > 0:
+        i -= 1
+        if i >= tokens.len:
+            continue
+        var t: token_mod.Token
+        unsafe:
+            t = read(tokens.data + i)
+        if is_structural_token_kind(t.kind):
+            continue
+        return t.kind == tk.TokenKind.dot
+    return false
 
 
 function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorResult]:

@@ -48,7 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **443 differ** after the session-6/7/8 LSP work (hover 121, definition/declaration 95 each, typeDefinition 93, documentHighlight 14, references 9, documentSymbol 5, semanticTokens 5, diagnostic 3, codeLens 1, implementation 1, workspace/symbol 1) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The references-only audit is at **1 differing entry** (a lazy-facts fallthrough, §0k) and the definition/typeDefinition counters carry 6 deliberate self-better entries (§0k).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`), and so are their references.  Residue classified in §0k; the largest class is now `hover` (member/binding resolution).**
+**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **336 differ** after the session-6/7/8 LSP work (hover 83, definition/declaration 72 each, typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5, semanticTokens 5, diagnostic 3, codeLens 1, implementation 1, workspace/symbol 1) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The references-only audit is at **1 differing entry** (a lazy-facts fallthrough, §0k) and the definition/typeDefinition counters carry 6 deliberate self-better entries (§0k).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`), and so are their references.  Residue classified in §0k; the largest class is now `hover` (member/binding resolution).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
@@ -1512,6 +1512,53 @@ positions' *hovers* agree with the host.
 `probe6` are at **0 differing entries for references** in the full matrix, and
 hover/definition/declaration/typeDefinition stay at 0; `probe2` keeps its 2
 deliberate hover self-answers.
+
+### LSP hover: the member-access order, the type-receiver location and the builtin arms (2026-09-28 session 8, second batch)
+
+Three host behaviors `resolve_cursor` did not follow:
+
+- **Member accesses resolve before the name tables.**  The host's
+  `resolve_hover_info` runs `resolve_member_access_hover_info` *ahead* of the
+  signature lookup, so a method reached through a receiver reports its defining
+  module even when the name also resolves in this file.  The self-host ran the
+  name lookup first, so `rl.Color.from_hex_str(…)` answered the local
+  `extending` block's location; `resolve_cursor` now tries the value- and
+  type-receiver arms first (and no longer returns early on a failed
+  type-receiver lookup, so the name tables still get their turn).
+- **The type-receiver location artifact.**  `module_member_binding_location`
+  resolves the path from the receiver's *module name*, so a method an
+  `extending` block in this document adds to an imported type reports
+  `std/raylib.mt` (the module) with the line inside `colors.mt` (the
+  declaration) — `resolve_type_method_hover` and `resolve_member_method_hover`
+  now pair the module's file with the declaring line the same way.
+- **The builtin specialization arms** (`builtin_hover_info`): `zero[T]` /
+  `default[T]` / `reinterpret[T](value)`, the associated hooks
+  (`hash[T](value) -> uint`, `equal[…]`, `order[…]`), and the type constructors
+  (`builtin type ptr[int]`, `array[int, 3]`, `own[int]`, …) — with the host's
+  per-name docs.  They answer *before* the `type <name>` table (only a
+  *registered* type reaches that shape), and, unlike a language keyword, they
+  carry no token-index location: `handle_hover` now applies
+  `apply_hover_index_location` to keywords only.
+
+Measured (full matrix, `--max-diffs 0`): hover **121 → 83**, definition and
+declaration **95 → 72** each, typeDefinition **93 → 70**, total **443 → 336**
+(the same member pipeline feeds all four).  The probe fixtures and the LSP
+harness are unchanged (references 0; 30/30 capabilities + the 4 documented
+entries).
+
+**Residue, ranked** (336 entries): hover 83 — the prelude/inherent methods of
+generic types (`Option.unwrap()` is still null: `resolve_member_method_hover`
+has no signature for a type with no owning module, where the host's
+`methods_for_receiver_type` merges `facts.methods`), `field name: cstr`-style
+fields of workspace types (the host prints no `Defined at` where the self
+prints one), `type parameter T`, attribute hovers, bare variant-arm
+constructors (`Result.success(value: T)`, `MyOption.some(value: T)`) and enum
+members (`Kind.c = 6`), and `let x: <error>` locals whose initializer is
+`own[…]`/`Result[…]` (an analyzer gap); then definition/declaration 72 and
+typeDefinition 70 (the same member shapes), documentHighlight 14, the small
+classes (documentSymbol 5, semanticTokens 5, diagnostic 3, codeLens 1,
+implementation 1, workspace/symbol 1), and references 9 (gated on the hover
+residue).
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 

@@ -67,7 +67,7 @@ public function qualified_name(ty: types.Type, current_module: str) -> string.St
         types.Type.ty_primitive as p:
             buf.append(p.name)
         types.Type.ty_named as n:
-            append_module_prefix(ref_of(buf), n.module_name, current_module)
+            append_module_prefix(ref_of(buf), module_or_prelude(n.module_name, n.name), current_module)
             buf.append(n.name)
         types.Type.ty_opaque as o:
             append_module_prefix(ref_of(buf), o.module_name, current_module)
@@ -79,6 +79,13 @@ public function qualified_name(ty: types.Type, current_module: str) -> string.St
             buf.append(im.name)
             append_qualified_args(ref_of(buf), im.args, current_module)
         types.Type.ty_generic as g:
+            # A generic instance carries no module of its own: only the prelude
+            # names acquire one (`std.option.Option[int]`), so that a signature
+            # mentioning them shortens to the host's `Option[int]` plus its
+            # `*From std.option*` line.
+            let prelude_module = prelude_type_module(g.name)
+            if prelude_module.len > 0:
+                append_module_prefix(ref_of(buf), prelude_module, current_module)
             buf.append(g.name)
             append_qualified_args(ref_of(buf), g.args, current_module)
         types.Type.ty_nullable as nl:
@@ -89,6 +96,28 @@ public function qualified_name(ty: types.Type, current_module: str) -> string.St
         _:
             buf.append(types.type_to_string(ty))
     return buf
+
+
+## The module a type renders against, with the prelude types supplied: the
+## host's analyzer installs `Option` and `Result` from the standard library, so
+## their declarations carry `std.option` / `std.result` and a signature that
+## mentions them reports the host's `*From std.option*` line and the
+## `type Result = Result` hover shape.  The self-host's prelude registers them
+## with an empty module name (a single-file check has no std module to bind), so
+## the renderer supplies it.
+function module_or_prelude(module_name: str, type_name: str) -> str:
+    if module_name.len > 0:
+        return module_name
+    return prelude_type_module(type_name)
+
+
+## The declaration module of a prelude type name, "" for everything else.
+function prelude_type_module(type_name: str) -> str:
+    if type_name.equal("Option"):
+        return "std.option"
+    if type_name.equal("Result"):
+        return "std.result"
+    return ""
 
 
 ## A signature with its module qualifiers stripped plus the modules that were
