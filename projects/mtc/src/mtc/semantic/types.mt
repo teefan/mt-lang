@@ -740,7 +740,7 @@ function nominal_name(t: Type) -> str:
 
 
 ## Module qualifier of a nominal type, "" when unqualified/unknown.
-function nominal_module(t: Type) -> str:
+public function nominal_module(t: Type) -> str:
     match t:
         Type.ty_named as n:
             return n.module_name

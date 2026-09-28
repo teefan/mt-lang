@@ -1060,6 +1060,20 @@ function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, m
     var module_file = ast_for_document(ws, module_path.as_str(), parsed_module)
     var module_analysis = analysis_for_document(ws, module_path.as_str(), parsed_module)
 
+    # A type the module exports: the host's `module_binding.types` arm renders
+    # `type <name>` (with no `=` target, unlike a file-local type hover) and
+    # points at the declaration inside the module.
+    if module_analysis.types.contains(member):
+        let decl_line = type_declaration_line(module_file, member)
+        if decl_line > 0:
+            var hover = string.String.create()
+            hover.append("type ")
+            hover.append(member)
+            var type_result = make_result(decl_line, member, module_source.as_str(), hover)
+            type_result.target_uri.release()
+            type_result.target_uri = file_uri_for_path(module_path.as_str())
+            return Option[CursorResult].some(value = type_result)
+
     match resolve_name_in_analysis(module_file, ref_of(module_analysis), member, module_source.as_str(), module_name):
         Option.some as res:
             var stamped = res.value
@@ -1322,65 +1336,6 @@ function resolve_name_in_analysis(
                 hover.release()
                 return Option[CursorResult].some(value = value_result)
 
-        # Struct: render the field list.
-        let fields_ptr = read(analysis).structs.get(name)
-        if fields_ptr != null:
-            let decl_line = find_declaration_line(file, name, "struct")
-            if decl_line > 0:
-                var hover = string.String.create()
-                hover.append("struct ")
-                hover.append(name)
-                if not append_struct_fields_from_ast(ref_of(hover), file, name):
-                    # Fallback to resolved field types when the AST decl is
-                    # not found (should not happen for same-file structs).
-                    hover.append(":")
-                    let fields = read(fields_ptr)
-                    var fi: ptr_uint = 0
-                    while fi < fields.len:
-                        let fe = read(fields.data + fi)
-                        hover.append("\n    ")
-                        hover.append(fe.name)
-                        hover.append(": ")
-                        hover.append(types.type_to_string(fe.ty))
-                        fi += 1
-                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
-
-        # Enum, flags, or variant: render the member list.
-        if read(analysis).static_member_types.contains(name):
-            let decl_line = find_declaration_line(file, name, "struct")
-            if decl_line > 0:
-                var hover = string.String.create()
-                hover.append(static_type_keyword(file, name))
-                hover.append(" ")
-                hover.append(name)
-                let members_ptr = read(analysis).match_case_names.get(name)
-                if members_ptr != null:
-                    hover.append(":")
-                    let members = read(members_ptr)
-                    var mi: ptr_uint = 0
-                    while mi < members.len:
-                        hover.append("\n    ")
-                        hover.append(read(members.data + mi))
-                        mi += 1
-                return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
-
-        # Type alias: render the type and its target.
-        if read(analysis).types.contains(name):
-            let decl_line = find_declaration_line(file, name, "alias")
-            if decl_line > 0:
-                var hover = string.String.create()
-                hover.append("type ")
-                hover.append(name)
-                let aliased_ptr = read(analysis).type_alias_types.get(name)
-                if aliased_ptr != null:
-                    hover.append(" = ")
-                    var alias_text = type_render.qualified_name(read(aliased_ptr), current_module)
-                    hover.append(alias_text.as_str())
-                    alias_text.release()
-                let alias_result = make_shortened_result(decl_line, name, source, hover.as_str())
-                hover.release()
-                return Option[CursorResult].some(value = alias_result)
-
         # Interface: render member signatures.
         if read(analysis).interfaces.contains(name):
             let decl_line = find_declaration_line(file, name, "struct")
@@ -1417,13 +1372,21 @@ function resolve_name_in_analysis(
                         mi += 1
                 return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
 
-        # Union type.
-        let decl_line_u = find_declaration_line(file, name, "union")
-        if decl_line_u > 0:
-            var hover_u = string.String.create()
-            hover_u.append("union ")
-            hover_u.append(name)
-            return Option[CursorResult].some(value = make_result(decl_line_u, name, source, hover_u))
+        # Every other type — struct, union, opaque, enum, flags, variant, or a
+        # `type` alias — through the host's `type_hover_signature`: `type Name`,
+        # or `type Name = <module-qualified target>` when the type carries an
+        # owning module.  A struct hover is *not* its field list.
+        if read(analysis).types.contains(name):
+            let decl_line = type_declaration_line(file, name)
+            if decl_line > 0:
+                var ty = types.Type.ty_error
+                let ty_ptr = read(analysis).types.get(name)
+                if ty_ptr != null:
+                    ty = read(ptr[types.Type]<-ty_ptr)
+                var hover = type_hover_signature(name, ty, current_module)
+                let result = make_shortened_result(decl_line, name, source, hover.as_str())
+                hover.release()
+                return Option[CursorResult].some(value = result)
 
         # Event declaration.
         let decl_line_ev = find_declaration_line(file, name, "event")
@@ -1519,44 +1482,30 @@ function format_fn_signature(sig: analyzer.FnSig, name: str, current_module: str
     return sig_text
 
 
-## Append `[T, ...]` type params, `:`, and per-field lines rendered from the
-## struct's AST declaration (accurate for generic field types, which resolve
-## permissively in the analysis).  False when the declaration is not found.
-function append_struct_fields_from_ast(hover: ref[string.String], file: ast.SourceFile, name: str) -> bool:
-    var di: ptr_uint = 0
-    while di < file.declarations.len:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(file.declarations.data + di)
-        match decl:
-            ast.Decl.decl_struct as s:
-                if s.name == name:
-                    if s.type_params.len > 0:
-                        hover.append("[")
-                        var ti: ptr_uint = 0
-                        while ti < s.type_params.len:
-                            if ti > 0:
-                                hover.append(", ")
-                            unsafe:
-                                hover.append(read(s.type_params.data + ti).name)
-                            ti += 1
-                        hover.append("]")
-                    hover.append(":")
-                    var fi: ptr_uint = 0
-                    while fi < s.struct_fields.len:
-                        var field: ast.Field
-                        unsafe:
-                            field = read(s.struct_fields.data + fi)
-                        hover.append("\n    ")
-                        hover.append(field.name)
-                        hover.append(": ")
-                        hover.append(ast_formatter.render_type(field.field_type))
-                        fi += 1
-                    return true
-            _:
-                pass
-        di += 1
-    return false
+## The host's `type_hover_signature`: `type <name>` for a type that renders as
+## its own bare name (a built-in or a primitive), else
+## `type <name> = <module-qualified type>` — the caller shortens it, so a type
+## with an owning module also reports the host's `*From <module>*` line.
+function type_hover_signature(name: str, ty: types.Type, current_module: str) -> string.String:
+    var hover = string.String.create()
+    hover.append("type ")
+    hover.append(name)
+    if types.nominal_module(ty).len > 0:
+        var rendered = type_render.qualified_name(ty, current_module)
+        hover.append(" = ")
+        hover.append(rendered.as_str())
+        rendered.release()
+    return hover
+
+
+## The declaration line of a type named `name`: the aggregate and interface
+## wording through `find_declaration_line`'s "struct" kind, a `type X = …`
+## alias through the "alias" kind.
+function type_declaration_line(file: ast.SourceFile, name: str) -> ptr_uint:
+    let aggregate = find_declaration_line(file, name, "struct")
+    if aggregate > 0:
+        return aggregate
+    return find_declaration_line(file, name, "alias")
 
 
 ## The declaration keyword for a module-level value: "const" or "var".
@@ -1577,29 +1526,6 @@ function value_decl_keyword(file: ast.SourceFile, name: str) -> str:
                 pass
         di += 1
     return "const"
-
-
-## The declaration keyword for an enum-like type: "enum", "flags", or "variant".
-function static_type_keyword(file: ast.SourceFile, name: str) -> str:
-    var di: ptr_uint = 0
-    while di < file.declarations.len:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(file.declarations.data + di)
-        match decl:
-            ast.Decl.decl_enum as e:
-                if e.name == name:
-                    return "enum"
-            ast.Decl.decl_flags as fl:
-                if fl.name == name:
-                    return "flags"
-            ast.Decl.decl_variant as vr:
-                if vr.name == name:
-                    return "variant"
-            _:
-                pass
-        di += 1
-    return "enum"
 
 
 ## Find the line number of a method named `name` inside any `extending` block.
@@ -1771,6 +1697,13 @@ function find_decl_line_in(decl: ast.Decl, name: str, kind: str) -> ptr_uint:
                 ast.Decl.decl_union as u:
                     if u.name == name:
                         return u.line
+                _:
+                    pass
+        else if kind == "alias":
+            match decl:
+                ast.Decl.decl_type_alias as ta:
+                    if ta.name == name:
+                        return ta.line
                 _:
                     pass
         else if kind == "event":

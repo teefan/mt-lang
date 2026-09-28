@@ -1142,6 +1142,39 @@ Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
 30/30 capabilities + 4 documented entries.
 
+### LSP hover: type members and type names render the host's `type` shape (2026-09-28 session 6, plan fix 3)
+
+Hover on the `Color` segment of `rl.Color` returned null; the host answers
+`type Color` with the declaration in the importing module
+(`std/raylib.mt:11`).  Two independent gaps produced that:
+
+- `find_decl_line_in` had **no `alias` kind**, so a `type X = …` declaration was
+  never located: the alias arm of `resolve_name_in_analysis` could not fire and
+  the location-bearing hovers/definitions on an alias were empty.  Added, behind
+  the new `type_declaration_line` helper (aggregates first, then aliases).
+- A type reached through a module alias is a *module member*: the host's
+  `module_binding.types` arm renders the bare `type <name>` (no `=` target) and
+  points at the declaration inside that module.  `resolve_module_member` now
+  answers that shape before delegating to the generic name resolver.
+
+The same host rule applies to a type named in the file itself: every
+`facts.types` entry goes through `type_hover_signature` — `type Name`, or
+`type Name = <module-qualified type>` (shortened, so the file's own struct
+reports `*From <module>*`) — **never** a declaration body.  The self-host was
+rendering `struct Stack[T]:` + its field list (and `enum X:` + members) where the
+host renders `type Stack`; both arms now use `type_hover_signature`, and the
+now-dead `append_struct_fields_from_ast` / `static_type_keyword` helpers are
+gone.  `types.nominal_module` is public for the renderer.
+
+Measured: `tmp/probe-ws` hover 8 → **4** differing entries of 25 (the residue is
+plan fix 4); the second fixture (`tmp/probe2/basics.mt`) 13 → 4.  `definition`,
+`declaration` and `typeDefinition` on `alias.Type` gain the same location, so
+those classes move too.
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
+30/30 capabilities + 4 documented entries.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**
