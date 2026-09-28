@@ -27,23 +27,78 @@ public function collect_bindings(source_text: str, ast_file: ast.SourceFile) -> 
 
     var di: ptr_uint = 0
     while di < ast_file.declarations.len:
+        let region_end = declaration_region_end(ast_file, di, source_text)
         unsafe:
-            collect_decl_bindings(bindings, ast_file.declarations.data + di, source_text)
+            collect_decl_bindings(bindings, ast_file.declarations.data + di, source_text, region_end)
         di += 1
 
     return bindings
 
 
-function collect_decl_bindings(bindings: ref[vec.Vec[Binding]], dp: ptr[ast.Decl], source_text: str) -> void:
+## The last source line belonging to the declaration at `index`: the line before
+## the next top-level declaration, or the file's last line.  Statement nodes
+## record only their *first* line, so a body whose last statement spans several
+## lines would otherwise truncate the scope of everything declared in it.
+function declaration_region_end(ast_file: ast.SourceFile, index: ptr_uint, source_text: str) -> ptr_uint:
+    var next = index + 1
+    while next < ast_file.declarations.len:
+        let line = unsafe: decl_start_line(read(ast_file.declarations.data + next))
+        if line > 0:
+            return line - 1
+        next += 1
+    return last_line(source_text)
+
+
+## The first source line of a declaration, 0 for a declaration without one.
+function decl_start_line(candidate: ast.Decl) -> ptr_uint:
+    match candidate:
+        ast.Decl.decl_function as fun:
+            return fun.line
+        ast.Decl.decl_foreign_function as ff:
+            return ff.line
+        ast.Decl.decl_extern_function as ext:
+            return ext.line
+        ast.Decl.decl_struct as s:
+            return s.line
+        ast.Decl.decl_union as u:
+            return u.line
+        ast.Decl.decl_enum as e:
+            return e.line
+        ast.Decl.decl_flags as fl:
+            return fl.line
+        ast.Decl.decl_variant as vr:
+            return vr.line
+        ast.Decl.decl_const as c:
+            return c.line
+        ast.Decl.decl_var as v:
+            return v.line
+        ast.Decl.decl_type_alias as ta:
+            return ta.line
+        ast.Decl.decl_opaque as op:
+            return op.line
+        ast.Decl.decl_interface as iface:
+            return iface.line
+        ast.Decl.decl_extending_block as ex:
+            return ex.line
+        ast.Decl.decl_event as ev:
+            return ev.line
+        _:
+            return 0
+
+
+function collect_decl_bindings(bindings: ref[vec.Vec[Binding]], dp: ptr[ast.Decl], source_text: str, region_end: ptr_uint) -> void:
     # An `extending` block declares one method per entry: each method's
-    # parameters and body get their own scopes, as a plain function's do.
+    # parameters and body get their own scopes, as a plain function's do, and a
+    # method's scope ends where the next method begins.
     unsafe:
         match read(dp):
             ast.Decl.decl_extending_block as ex:
                 var mi: ptr_uint = 0
                 while mi < ex.methods.len:
                     let method = read(ex.methods.data + mi)
-                    let method_end = body_end_of(method.body)
+                    var method_end = region_end
+                    if mi + 1 < ex.methods.len:
+                        method_end = read(ex.methods.data + mi + 1).line - 1
                     collect_params(bindings, method.method_params, method_end)
                     walk_body(bindings, method.body, method_end, source_text)
                     mi += 1
@@ -51,15 +106,8 @@ function collect_decl_bindings(bindings: ref[vec.Vec[Binding]], dp: ptr[ast.Decl
             _:
                 pass
 
-    let body_end = decl_body_end(dp)
-    let params = decl_params(dp)
-    var par_end = body_end
-    if par_end == 0:
-        par_end = last_line(source_text)
-    collect_params(bindings, params, par_end)
-    if body_end > 0:
-        let body = decl_body(dp)
-        walk_body(bindings, body, body_end, source_text)
+    collect_params(bindings, decl_params(dp), region_end)
+    walk_body(bindings, decl_body(dp), region_end, source_text)
 
 
 function decl_params(dp: ptr[ast.Decl]) -> span[ast.Param]:

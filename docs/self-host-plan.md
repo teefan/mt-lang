@@ -1252,6 +1252,32 @@ Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
 30/30 capabilities + 4 documented entries.
 
+### LSP scope tracking: a declaration's region, not its first statement's line (2026-09-28 session 6, follow-up)
+
+Giving extending methods their own scopes (fix 2 above) exposed a latent bug in
+`scope.mt`: `block_last_line` sums each statement's **first** line
+(`stmt_ret.line`), so a body whose last statement spans several lines ended its
+bindings early.  For `from_hex_str`'s one multi-line `return`, the parameter
+`color` got `scope_end` = the `return` line, so `references` and
+`documentHighlight` dropped its uses on the following lines — one position
+regressed (the parameter's own uses) while everything else about fix 2 held.
+
+A declaration's region is now derived from the source layout instead:
+`declaration_region_end` ends it at the line before the next top-level
+declaration (or the file's last line), and each extending method ends at the
+next method's line.  That is the model the scope walk wants — a body cannot
+extend past the next declaration — and it is independent of how many lines a
+statement happens to occupy.  `body_end_of`/`stmt_line` stay as they are for the
+branch-local scopes they were written for.
+
+Measured: `src/colors.mt@14:71` (references + documentHighlight) is back to the
+host's seven occurrences; the SimpleGame references/documentHighlight/definition
+counters are unchanged otherwise, and the probe fixtures keep their counts.
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
+30/30 capabilities + 4 documented entries.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**
