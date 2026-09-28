@@ -1039,7 +1039,172 @@ function resolve_cursor(
         if alias_module_ptr != null:
             return resolve_module_reference(ws, read(alias_module_ptr))
 
-    return resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source, current_module.as_str())
+    match resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source, current_module.as_str()):
+        Option.some as named:
+            return Option[CursorResult].some(value = named.value)
+        Option.none:
+            pass
+
+    # `receiver.method(...)`: the method's resolved signature from its defining
+    # module (this one, or the module that declares the receiver's type).
+    match cursor.dot_receiver_at(source, line, character):
+        Option.some as recv:
+            return resolve_member_method_hover(
+                ws, ast_file, ref_of(analysis), source, recv.value, target.text,
+                line + 1, current_module.as_str())
+        Option.none:
+            return Option[CursorResult].none
+
+
+## The bare type name a method receiver resolves to (`Vec`, `Color`), "" for a
+## type that is not nominal.
+function receiver_type_name(ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_imported as im:
+            return im.name
+        types.Type.ty_named as n:
+            return n.name
+        types.Type.ty_generic as g:
+            return g.name
+        types.Type.ty_nullable as nl:
+            return receiver_type_name(unsafe: read(nl.base))
+        _:
+            return ""
+
+
+## True when a `method_sigs` key's type part names `type_name`: the keys carry
+## the type as written in its `extending` block (`Vec[T]`) or its canonical
+## name, and a call site sees `Vec`.
+function method_key_names_type(key_prefix: str, type_name: str) -> bool:
+    if key_prefix.equal(type_name):
+        return true
+    match key_prefix.find_byte('['):
+        Option.some as bracket:
+            return key_prefix.slice(0, bracket.value).equal(type_name)
+        Option.none:
+            return false
+
+
+## The signature of `type_name`'s method `method_name` in `analysis`.
+function method_sig_for_type(analysis: ref[analyzer.Analysis], type_name: str, method_name: str) -> Option[analyzer.FnSig]:
+    var entries = unsafe: read(analysis).method_sigs.entries()
+    while entries.next():
+        let entry = entries.current()
+        let key = unsafe: read(entry.key)
+        if key.len <= method_name.len + 1 or not key.ends_with(method_name):
+            continue
+        let split = key.len - method_name.len - 1
+        if key.byte_at(split) != '.':
+            continue
+        if method_key_names_type(key.slice(0, split), type_name):
+            return Option[analyzer.FnSig].some(value = unsafe: read(entry.value))
+    return Option[analyzer.FnSig].none
+
+
+## The host's `method_signature`: `[async ]<keyword> function name(params) -> ret`
+## with the method-kind keyword and the return type always rendered.
+function method_signature_text(sig: analyzer.FnSig, name: str, current_module: str) -> string.String:
+    var text = string.String.create()
+    if sig.is_async:
+        text.append("async ")
+    match sig.method_kind:
+        ast.MethodKind.mk_editable:
+            text.append("editable function ")
+        ast.MethodKind.mk_static:
+            text.append("static function ")
+        _:
+            text.append("function ")
+    text.append(name)
+    text.append("(")
+    var pi: ptr_uint = 0
+    while pi < sig.params.len:
+        let param = unsafe: read(sig.params.data + pi)
+        if pi > 0:
+            text.append(", ")
+        text.append(param.name)
+        text.append(": ")
+        var param_text = type_render.qualified_name(param.ty, current_module)
+        text.append(param_text.as_str())
+        param_text.release()
+        pi += 1
+    text.append(") -> ")
+    var return_text = type_render.qualified_name(sig.return_type, current_module)
+    text.append(return_text.as_str())
+    return_text.release()
+    return text
+
+
+## The module a receiver's types render against: the declaring module when the
+## receiver type carries one, else the file's own module.
+function owner_or(current_module: str, owner: str) -> str:
+    if owner.len > 0:
+        return owner
+    return current_module
+
+
+## Hover for the method name of a member call (`v.push(1)`, `d.push_back(x)`):
+## the method's declaration signature, the module that declares it, and — through
+## the shortened signature — that module's `*From <module>*` line.  The receiver
+## type comes from the analysis (a local, parameter or module-level value); the
+## method is looked up in this module's `extending` blocks and then in the module
+## that declares the receiver's type.  None when the receiver is not a value or
+## no such method is declared, so `EnumType.member` and `alias.member` keep their
+## own paths.
+function resolve_member_method_hover(
+    ws: ref[workspace.Workspace],
+    ast_file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    source: str,
+    receiver_name: str,
+    method_name: str,
+    target_line: ptr_uint,
+    current_module: str,
+) -> Option[CursorResult]:
+    let receiver_ty = type_of_value(analysis, ast_file, receiver_name, target_line) else:
+        return Option[CursorResult].none
+    let type_name = receiver_type_name(receiver_ty)
+    if type_name.len == 0:
+        return Option[CursorResult].none
+
+    let owner = types.nominal_module(receiver_ty)
+    var decl_file = ast_file
+    var decl_source = source
+    var decl_signature = method_sig_for_type(analysis, type_name, method_name)
+    var target_uri = string.String.create()
+
+    if decl_signature.is_none() and owner.len > 0 and not owner.equal(current_module):
+        var owner_path = resolve_module_source_path(ws, owner) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        defer: owner_path.release()
+        let owner_source = ws.document_source(owner_path.as_str()) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        var owner_diags = vec.Vec[pstate.ParseDiagnostic].create()
+        defer: owner_diags.release()
+        var owner_parsed = parser.parse_source(owner_source.as_str(), ref_of(owner_diags))
+        decl_file = ast_for_document(ws, owner_path.as_str(), owner_parsed)
+        var owner_analysis = analysis_for_document(ws, owner_path.as_str(), owner_parsed)
+        decl_signature = method_sig_for_type(ref_of(owner_analysis), type_name, method_name)
+        decl_source = owner_source.as_str()
+        target_uri.release()
+        target_uri = file_uri_for_path(owner_path.as_str())
+
+    let signature = decl_signature else:
+        target_uri.release()
+        return Option[CursorResult].none
+    let decl_line = find_method_line(decl_file, method_name)
+    if decl_line == 0:
+        target_uri.release()
+        return Option[CursorResult].none
+
+    var hover = method_signature_text(signature, method_name, owner_or(current_module, owner))
+    let result = make_shortened_result(decl_line, method_name, decl_source, hover.as_str())
+    hover.release()
+    var stamped = result
+    stamped.target_uri.release()
+    stamped.target_uri = target_uri
+    return Option[CursorResult].some(value = stamped)
 
 
 ## Resolve `member` inside imported module `module_name`: check the module's

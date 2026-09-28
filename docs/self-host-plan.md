@@ -48,7 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1).  Hover's imported-type resolution and the module-level value signature are closed (§0k); the residue is the host's global declaration-index fallback and imported-member navigation, ranked in the plan file.**
+**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1); after the session-6 hover fixes **hover 286 → 181** (`--only textDocument/hover`), and the probe fixtures `tmp/probe-ws` (0 of 25) and `tmp/probe2` (2 of 41) are at parity.  The hover residue is classified in §0k; the rest is the host's global declaration-index fallback and imported-member navigation.**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
@@ -1208,6 +1208,49 @@ fixture is at **0 differing entries of 25** (was 4), and the second fixture
 Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
 30/30 capabilities + 4 documented entries, valgrind 0 errors.
+
+### LSP hover: member methods resolve to their defining module (2026-09-28 session 6, plan fix 5)
+
+Hover on a method name at a call site (`d.push_back(1)`, `q.dequeue()`)
+returned null — the largest hover class in the audit (119 of 286).  The host's
+member-access arm resolves the receiver's *type* from its facts and then looks
+the method up in the local module and in every imported binding, rendering
+`method_signature(binding)`.  `resolve_member_method_hover` does the same from
+the analyzer's tables: the receiver's type comes from `type_of_value` (a local,
+parameter or module-level value — the same source `local_hover_result` uses),
+the method from `method_sigs` keyed `<Type>.<method>` (matching `Vec[T]` for a
+receiver seen as `Vec`), first in this module's `extending` blocks and then in
+the module that declares the receiver's type — whose file supplies the
+declaration line, the hover's source URI, and the docs.  `method_signature_text`
+renders the host's `[async ]<keyword> function name(params) -> ret` (the
+keyword from the method kind, the return type always present), so `dequeue()`
+reports `*From std.option*` through its `Option[T]` return type exactly as the
+host does.
+
+It runs **after** `resolve_name_in_analysis` in `resolve_cursor`, so
+`EnumType.member` and `alias.member` keep their paths and a local declaration
+that already answered still wins.
+
+Measured (full SimpleGame hover matrix, `--only textDocument/hover`):
+**286 → 181** differing entries of 915.
+
+**Hover residue after fixes 1–5** (181 entries; the audit's per-classes, with
+the cause):
+
+| Class | Entries | Cause |
+| --- | --- | --- |
+| same signature, `Defined at` differs | 62 | the host's `find_definition_token_global` fallback (a per-file token-pair definition index over the *whole workspace*, then `candidate_definition_uris`); not ported |
+| `var particles: SoA[Point, 4]` vs `SoA`; `interface X:` wording; `module std.mem.ptr` vs `type ptr` | 66 | generic-argument rendering for a builtin generic, the interface hover shape, and builtin-vs-member-alias precedence |
+| method `self-null` | 17 + 11 | imported generic constructors through a **type alias** record `ty_error` (`var s = hset.Set[int].create()` → `var s: <error>`; `vec.Deque` the host also fails on), and *static* receivers (`Vec[int].create()`, whose receiver is a type, not a value) |
+| `parameter self-null` | 9 | the implicit `this` binding of an editable method, and parameters whose enclosing signature the scope walk does not reach |
+| `field self-null` | 7 | member-access fields (`p.radius` → `field radius: float`), the member analogue of fix 4 |
+| `type parameter T` | 2 | the host's `type_parameter_hover_signature` |
+| builtin table wins over a member of the same name | 6 | `resolve_non_decl_hover` consults its builtin tables before `resolve_cursor`, where the host's member arm runs first (`get`, `default`) |
+| self answers where the host gives up | 1 | deliberate |
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
+30/30 capabilities + 4 documented entries.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
