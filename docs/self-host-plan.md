@@ -48,7 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **1092 differ** after the session-6 LSP work (hover 176, references 267, definition/declaration 142 each, documentHighlight 15, typeDefinition 334) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The probe fixtures `tmp/probe-ws` (0 of 25 hover) and `tmp/probe2` (2 of 41) are at hover parity.  Residue classified in §0k; the largest class is the host's global declaration-index fallback.**
+**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **709 differ** after the session-6/7 LSP work (hover 131, references 267, typeDefinition 92, definition/declaration 94 each, documentHighlight 15) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`).  Residue classified in §0k; the largest class is now `references` (reverse-import occurrences).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
@@ -1277,6 +1277,133 @@ counters are unchanged otherwise, and the probe fixtures keep their counts.
 Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
 30/30 capabilities + 4 documented entries.
+
+### LSP definition and member pipeline: the host's global index, typeDefinition, location rule (2026-09-28 session 7)
+
+One root runs through this batch: the host answers `definition`, `declaration`,
+`typeDefinition` and every member access from its **binding facts**, falls back
+to a workspace-wide *declaration-token index* when those have nothing, and takes
+a binding's hover location from that same index.  The self-host had neither the
+index nor the host's shapes.
+
+**The definition index** (new `lsp/definition_index.mt`; the host's
+`lsp/workspace/definition_index.rb` plus the `definition_token_index` pair scan
+in `lsp/workspace/utilities.rb`).  A *definition identifier* is an identifier
+immediately preceded by a declaration keyword (`function`, `struct`, `type`,
+`const`, `let`, …).  The index keeps that pair list per document plus the names
+each document's declaration lines introduce, and answers over a candidate list
+the caller orders: the requesting document first (there, the last declaration
+*strictly* before the cursor wins, falling back to its **first** when the
+position filter matches nothing — which is what happens when the cursor sits on
+the declaration itself), then every other open document in didOpen order (first
+declaration wins).  `Workspace` owns it and invalidates a document on
+didOpen/didChange/didClose.  The host's `@definition_index` / miss / candidate
+caches are deliberately not ported: they cache the same answers for speed, and
+the per-document indexes already avoid rescanning.
+
+`handle_definition` now mirrors the host's order — facts-based resolution
+(`resolve_cursor`), then the local/parameter binding, then the index — so a
+parameter or a plain reference that no other rule covers answers where the host
+answers.  `definition` and `declaration` share the handler, as the host shares
+`handle_definition_request`.
+
+**`typeDefinition`** was resolving the *type of* the symbol under the cursor — a
+different question, and the audit's largest class (334 entries).  The host's
+`resolve_type_definition_location` is now ported literally: an `import` path
+segment answers the module file; a type or interface **the document itself
+declares** answers its own declaration; an `alias.Member` answers that member's
+declaration in the aliased module (or the module file when the member is not a
+declaration there); everything else answers exactly as `definition` does.
+`respond_imported_type_location` locates a member through the module's *token
+index* (the host's `module_member_definition_location` →
+`find_definition_token_in_file`), so a function, a const or a re-exported
+`type Color = c.Color` all resolve — and it emits a bare `Location`, like the
+host, not a one-element array.
+
+**Hover locations** follow the host's rule: a result that carries no
+facts-based source location (a local, a parameter, a `for`/`match` binding, a
+keyword, a builtin) takes its location from the same index — the last
+declaration strictly before the cursor, else the first — and prints **no**
+`Defined at` line when the index has nothing.  That is why a hover on a local's
+own declaration points at the *previous* same-named declaration (or itself when
+it is the first), exactly as the host's does.
+
+**Member access** gained the two shapes the host resolves from a receiver type:
+a *type* receiver (`Vec[int].create()`, `alias.Type.method()`) resolves the
+static method in the type's own module — `cursor.type_receiver_at` skips the
+receiver's `[…]` argument list, which is what made `dot_receiver_at` miss these —
+and a *field* (`p.radius`) answers `field radius: float` with the field's
+declaration in the declaring module before the method lookup, as the host's
+member chain checks fields first.
+
+**`type_of_value`** (the receiver-type lookup hover and the member hovers share)
+walked the first declaration that passed `line <= target`, so a same-named local
+in an *earlier* function answered for a later one — SimpleGame has
+`var q = fifo.Queue[…]` and `var q = pq.PriorityQueue[…]` in different
+functions, and the second's methods resolved against `std/queue.mt`.  The
+binding now comes from the scope walk (`local_binding_line` +
+`find_local_decl_at_line`), with parameters resolved from the enclosing
+signature.
+
+**Interface hovers** render the host's `interface_signature`: `interface <name>`
+(no colon) followed by `    [async ][editable ]function <name>(<params>) -> <ret>`
+per method, the return type always present.
+
+Measured (full SimpleGame matrix, `--max-diffs 0`):
+
+| Method | Before | After |
+| --- | --- | --- |
+| typeDefinition | 334 | 92 |
+| hover | 181 | 131 |
+| definition | 142 | 94 |
+| declaration | 142 | 94 |
+| references | 267 | 267 |
+| documentHighlight | 15 | 15 |
+| **total** | **1092** | **709** |
+
+The probe fixtures are all at **0 differing entries** for
+hover/definition/declaration/typeDefinition: `tmp/probe-ws` (25 positions), the
+`probe4` container fixture `pq.PriorityQueue`/`fifo.Queue`, the `probe5`
+cross-file definition fixture, and the new `probe6` field fixture; `tmp/probe2`
+keeps its 2 deliberate self-answers (the host gives up on an unresolved
+`vec.Deque` type where the self resolves the `let`).
+
+**Compiler bug exposed by this batch — nested span typedefs (C backend).**
+`collect_span_types` walked only the *emitted* functions while the generic
+instance and struct collection walk **all** lowered functions, so a pruned
+function's `Option[span[DefinitionToken]]` instance was emitted with its span
+embedded by value and no `mt_span_…` typedef — an "unknown type name" C error in
+that test runner.  `maybe_add_span` now recurses into a type's arguments
+(generics, imported generics, nullable, tuple, callable) and the span collection
+reads `program.functions`, matching the instance collection.  This was the
+bootstrap's `14 test file(s), 1 failed`.
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
+30/30 capabilities + 4 documented entries, valgrind 0 errors.
+
+**Residue after this batch, ranked** (709 entries):
+
+1. **references 267** — the largest class, untouched here.  210 are
+   `self-fewer`: the host lists occurrences from every file that *imports* the
+   declaring module (its dependency graph / open-document set), which the self
+   does not track; 56 are `self-more`: for a method, the host answers the
+   method's declaration plus its call sites from the defining module, while the
+   self answers a name/scope-based occurrence list.
+2. **hover 131** — annotation rendering (`var particles: SoA[Point, 4]` renders
+   `SoA` because `local_hover_result` prints the TypeRef's first name part),
+   builtin-vs-module-alias precedence (`ptr` as an import alias answers the
+   builtin `type ptr`; the host's member arm runs before its builtin table), the
+   implicit `this` binding of editable methods, `type parameter T`, attribute
+   hovers and enum members.
+3. **typeDefinition 92 / definition 94** — the same member-access shapes plus
+   the host's `module_member_binding_location` artifact: for a method reached
+   through an imported type receiver the host reports the *binding's* line with
+   the *canonical module's* URI (`rl.Color.hex_digit` → `std/raylib.mt:5`), an
+   artifact the self does not reproduce.
+4. **documentHighlight 15 / documentSymbol 5 / semanticTokens 5 / diagnostic 3 /
+   codeLens 1 / implementation 1 / workspace/symbol 1** — small, independent
+   classes.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 

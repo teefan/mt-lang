@@ -21,6 +21,7 @@ import mtc.loader.package_manifest as package_manifest
 import mtc.loader.path_resolver as resolver_mod
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
+import mtc.lsp.definition_index as defidx
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace_index as idx
 
@@ -96,6 +97,9 @@ public struct Workspace:
     config_received: bool
     index_built: bool
     index: idx.Index
+    ## The host's cross-file definition index (the last-resort definition and
+    ## hover-location lookup).
+    definition_index: defidx.DefinitionIndex
     format_mode: string.String
     dependency_resolution_mode: string.String
     platform_override: string.String
@@ -123,6 +127,7 @@ extending Workspace:
             config_received = false,
             index_built = false,
             index = idx.Index(entries = vec.Vec[idx.Entry].create()),
+            definition_index = defidx.create(),
             format_mode = string.String.create(),
             dependency_resolution_mode = string.String.create(),
             platform_override = string.String.create(),
@@ -152,6 +157,8 @@ extending Workspace:
         release_parse_cache(ref_of(this.parse_cache))
         this.parse_cache = map_mod.Map[string.String, ParseCacheEntry].create()
         release_dirty_paths(ref_of(this.index_dirty))
+        defidx.release(ref_of(this.definition_index))
+        this.definition_index = defidx.create()
         if this.index_built:
             idx.release_index(ref_of(this.index))
             this.index = idx.Index(entries = vec.Vec[idx.Entry].create())
@@ -165,6 +172,7 @@ extending Workspace:
                 this.track_open_path(path_payload.value.as_str())
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
                 this.mark_index_dirty(path_payload.value.as_str())
+                defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
             Option.none:
                 pass
 
@@ -176,6 +184,7 @@ extending Workspace:
                 this.track_open_path(path_payload.value.as_str())
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
                 this.mark_index_dirty(path_payload.value.as_str())
+                defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
             Option.none:
                 pass
 
@@ -186,6 +195,7 @@ extending Workspace:
             Option.some as path_payload:
                 this.untrack_open_path(path_payload.value.as_str())
                 this.open_docs.remove(path_payload.value)
+                defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
                 # The buffer is gone: re-read the file (its saved content).
                 this.mark_index_dirty(path_payload.value.as_str())
             Option.none:
@@ -476,6 +486,7 @@ extending Workspace:
     public editable function release() -> void:
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
+        defidx.release(ref_of(this.definition_index))
         this.open_docs.release()
         var oi: ptr_uint = 0
         while oi < this.open_doc_order.len():

@@ -24,6 +24,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
+import mtc.lsp.definition_index as defidx
 import mtc.lsp.hover_docs as hover_docs
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
@@ -34,8 +35,10 @@ import mtc.lsp.workspace_index as ws_idx
 import mtc.pretty_printer.ast_formatter as ast_formatter
 
 
-## Handle textDocument/definition: find the definition of the symbol at the
-## given cursor position and return its location.
+## Handle textDocument/definition (and `declaration`, which the host answers
+## with the same pipeline): resolve the symbol at the cursor, then — when that
+## yields no source location, as it does for a parameter — fall back to the
+## workspace-wide definition index, exactly as the host's last resort does.
 public function handle_definition(
     ws: ref[workspace.Workspace],
     uri: str,
@@ -47,40 +50,93 @@ public function handle_definition(
     var result = resolve_cursor(ws, uri, line, character)
     if result.is_none():
         result = resolve_local_hover(ws, uri, line, character)
+
+    var target_uri = string.String.create()
+    defer: target_uri.release()
+    var target_line: ptr_uint = 0
+    var target_column: ptr_uint = 0
+    var target_len: ptr_uint = 0
+    var located = false
+
     match result:
         Option.some as res:
             var payload = res.value
-            # A payload without a location (a parameter) has no definition to
-            # jump to; the host answers null for it.
-            if payload.line == 0:
-                payload.hover_text.release()
-                payload.docs.release()
-                payload.target_uri.release()
-                payload.from_modules.release()
-                proto.write_response(id, json.null_value())
-                return
-            let target_uri = if payload.target_uri.len() > 0: payload.target_uri.as_str() else: uri
-            let lz = if payload.line > 0: ptr_uint<-(int<-(payload.line) - 1) else: 0z
-            var json_text = string.String.create()
-            defer: json_text.release()
-            # A single definition is a bare `Location` object, as the host emits.
-            json_text.append("{\"uri\":\"")
-            proto.append_escaped(ref_of(json_text), target_uri)
-            json_text.append("\",\"range\":{\"start\":{\"line\":")
-            json_text.append_format(f"#{lz}")
-            json_text.append(",\"character\":")
-            json_text.append_format(f"#{payload.column}")
-            json_text.append("},\"end\":{\"line\":")
-            json_text.append_format(f"#{lz}")
-            json_text.append(",\"character\":")
-            json_text.append_format(f"#{payload.column + payload.name_len}")
-            json_text.append("}}}")
-            proto.write_response_raw(id, json_text.as_str())
+            if payload.line > 0:
+                located = true
+                target_uri.release()
+                if payload.target_uri.len() > 0:
+                    target_uri = string.String.from_str(payload.target_uri.as_str())
+                else:
+                    target_uri = string.String.from_str(uri)
+                target_line = payload.line
+                target_column = payload.column
+                target_len = payload.name_len
             payload.hover_text.release()
             payload.docs.release()
             payload.target_uri.release()
+            payload.from_modules.release()
         Option.none:
-            proto.write_response(id, json.null_value())
+            pass
+
+    # `alias.Member` where the member is not a declaration of that module: the
+    # host's definition pipeline answers the module file itself (the same
+    # position's hover stays null, so this is the definition path only).
+    if not located:
+        match alias_member_module_path(ws, uri, line, character):
+            Option.some as member_module_path:
+                var member_module_uri = file_uri_for_path(member_module_path.value.as_str())
+                respond_module_location(id, member_module_uri.as_str())
+                member_module_uri.release()
+                member_module_path.value.release()
+                return
+            Option.none:
+                pass
+
+    if not located:
+        match uri_ops.file_uri_to_path(uri):
+            Option.some as file_path:
+                var content_opt = ws.document_source(file_path.value.as_str())
+                if content_opt.is_some():
+                    var content = content_opt.unwrap()
+                    match cursor.identifier_at(content.as_str(), line, character):
+                        Option.some as name:
+                            match find_definition_global(ws, name.value.text, uri, line + 1, character + 1):
+                                Option.some as found:
+                                    located = true
+                                    target_uri.release()
+                                    target_uri = file_uri_for_path(found.value.path.as_str())
+                                    found.value.path.release()
+                                    target_line = found.value.line
+                                    target_column = if found.value.column > 0: found.value.column - 1 else: 0z
+                                    target_len = found.value.length
+                                Option.none:
+                                    pass
+                        Option.none:
+                            pass
+                    content.release()
+            Option.none:
+                pass
+
+    if not located:
+        proto.write_response(id, json.null_value())
+        return
+
+    let lz = if target_line > 0: ptr_uint<-(int<-(target_line) - 1) else: 0z
+    var json_text = string.String.create()
+    defer: json_text.release()
+    # A single definition is a bare `Location` object, as the host emits.
+    json_text.append("{\"uri\":\"")
+    proto.append_escaped(ref_of(json_text), target_uri.as_str())
+    json_text.append("\",\"range\":{\"start\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{target_column}")
+    json_text.append("},\"end\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{target_column + target_len}")
+    json_text.append("}}}")
+    proto.write_response_raw(id, json_text.as_str())
 
 
 public function handle_hover(
@@ -102,14 +158,26 @@ public function handle_hover(
             pass
     match resolve_non_decl_hover(ws, uri, line, character):
         Option.some as kw_result:
-            write_hover_result(ws, id, kw_result.value, uri, hover_token_range)
+            var kw_payload = kw_result.value
+            # A keyword or builtin carries no source location of its own; the
+            # host fills one in from its token index when the name is declared
+            # somewhere in the workspace.
+            if kw_payload.line == 0:
+                apply_hover_index_location(ws, uri, line, character, ref_of(kw_payload))
+            write_hover_result(ws, id, kw_payload, uri, hover_token_range)
             return
         Option.none:
             pass
 
     match resolve_local_hover(ws, uri, line, character):
         Option.some as loc_result:
-            write_hover_result(ws, id, loc_result.value, uri, hover_token_range)
+            var loc_payload = loc_result.value
+            # The host prints a binding's hover location from its token index —
+            # the last declaration of the name before the cursor, else the first
+            # — not from the binding: a `for` or `match` binding, or a local the
+            # index does not know, ends up with no `Defined at` line.
+            apply_hover_index_location(ws, uri, line, character, ref_of(loc_payload))
+            write_hover_result(ws, id, loc_payload, uri, hover_token_range)
             return
         Option.none:
             pass
@@ -123,6 +191,47 @@ public function handle_hover(
             pass
     hover_token_range.release()
     proto.write_response(id, json.null_value())
+
+
+## Point `payload` at the workspace token index's declaration for the name under
+## the cursor — the host's hover location for everything that carries no
+## facts-based source location (bindings, keywords, builtins).  With nothing
+## indexed the payload loses its location, so the hover prints no `Defined at`
+## line, exactly as the host's does.
+function apply_hover_index_location(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+    payload: ref[CursorResult],
+) -> void:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        payload.line = 0
+        payload.column = 0
+        return
+    defer: file_path.release()
+    var content = ws.document_source(file_path.as_str()) else:
+        payload.line = 0
+        payload.column = 0
+        return
+    defer: content.release()
+    match cursor.identifier_at(content.as_str(), line, character):
+        Option.some as name:
+            match find_definition_global(ws, name.value.text, uri, line + 1, character + 1):
+                Option.some as found:
+                    payload.line = found.value.line
+                    payload.column = if found.value.column > 0: found.value.column - 1 else: 0z
+                    payload.name_len = found.value.length
+                    payload.target_uri.release()
+                    payload.target_uri = file_uri_for_path(found.value.path.as_str())
+                    found.value.path.release()
+                    return
+                Option.none:
+                    pass
+        Option.none:
+            pass
+    payload.line = 0
+    payload.column = 0
 
 
 ## The `"range":{...}` fragment for the identifier under the cursor (the host
@@ -221,9 +330,12 @@ public function handle_references(
             refs_json.release()
 
 
-## Handle textDocument/typeDefinition: for a type name, its own declaration;
-## for a module-level value, the declaration of its type — including types
-## re-exported from imported modules.
+## Handle textDocument/typeDefinition — the host's
+## `resolve_type_definition_location`.  A type or interface the document itself
+## declares answers its own declaration; a type reached through a module alias
+## answers that member's declaration, or the module file when the member is not a
+## declaration there; everything else answers exactly as `definition` does (the
+## host delegates to its definition pipeline).
 public function handle_type_definition(
     ws: ref[workspace.Workspace],
     uri: str,
@@ -246,7 +358,7 @@ public function handle_type_definition(
         proto.write_response(id, json.null_value())
         return
 
-    # An `import` path segment's type definition is the module file itself.
+    # An `import` path segment names the module file itself.
     match resolve_import_cursor(ws, uri, line, character):
         Option.some as import_result:
             var import_payload = import_result.value
@@ -265,76 +377,36 @@ public function handle_type_definition(
     var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
     var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
 
-    # A local (`let`/`var`) jumps to its own declaration, as the host's binding
-    # facts do; a parameter answers null (also the host's result).
-    match enclosing_local_decl_line(source, ast_file, target.text, line + 1):
-        Option.some as local_line:
-            respond_single_location(id, uri, source, local_line.value, target.text)
-            return
-        Option.none:
-            pass
-
-    # A function or method name jumps to its own declaration (the host's
-    # `typeDefinition` on a callable answers the callable's declaration).
-    var fdi: ptr_uint = 0
-    while fdi < ast_file.declarations.len:
-        var fdecl: ast.Decl
-        unsafe:
-            fdecl = read(ast_file.declarations.data + fdi)
-        match fdecl:
-            ast.Decl.decl_function as fun:
-                if fun.name == target.text:
-                    respond_single_location(id, uri, source, fun.line, target.text)
-                    return
-            _:
-                pass
-        fdi += 1
-
-    # The identifier is itself a type name: its own declaration.
-    let is_type_name = analysis.structs.contains(target.text) or
-        analysis.static_member_types.contains(target.text) or
-        analysis.interfaces.contains(target.text)
-    if is_type_name:
-        let decl_line = find_declaration_line(ast_file, target.text, "struct")
+    # A type or interface this document declares: its own declaration.
+    if analysis.types.contains(target.text) or analysis.interfaces.contains(target.text):
+        let decl_line = type_declaration_line(ast_file, target.text)
         if decl_line > 0:
             respond_single_location(id, uri, source, decl_line, target.text)
             return
-        proto.write_response(id, json.null_value())
-        return
 
-    # A local or module-level value: jump to the definition of its *type*.  The
-    # inferred type covers `var n = node.Node.create(...)` (a local whose type
-    # comes from a call), the declared TypeRef covers annotations.
-    match type_of_value(analysis, ast_file, target.text, line + 1):
-        Option.some as value_type:
-            if respond_type_location(ws, analysis, ast_file, uri, source, id, value_type.value):
-                return
+    # `alias.Member`: the member's declaration inside the aliased module, or the
+    # module file itself when the member is not a declaration there.
+    match cursor.dot_receiver_at(source, line, character):
+        Option.some as recv:
+            unsafe:
+                let module_ptr = analysis.imports.get(recv.value)
+                if module_ptr != null:
+                    let module_name = read(module_ptr)
+                    if respond_imported_type_location(ws, id, module_name, target.text):
+                        return
+                    match resolve_module_source_path(ws, module_name):
+                        Option.some as module_path:
+                            var module_uri = file_uri_for_path(module_path.value.as_str())
+                            respond_module_location(id, module_uri.as_str())
+                            module_uri.release()
+                            module_path.value.release()
+                            return
+                        Option.none:
+                            pass
         Option.none:
             pass
 
-    # A module-level value: jump to its declared type's definition.  The
-    # declared TypeRef is read straight from the AST, so `alias.Type`
-    # annotations resolve through the import map without needing bindings.
-    let tref = type_ref_of_value(ast_file, target.text)
-    if tref != null:
-        let t = unsafe: read(tref)
-        if not t.is_fn and not t.is_proc and not t.is_tuple:
-            if t.name.parts.len == 1:
-                let type_name = unsafe: read(t.name.parts.data + 0)
-                let decl_line = find_declaration_line(ast_file, type_name, "struct")
-                if decl_line > 0:
-                    respond_single_location(id, uri, source, decl_line, type_name)
-                    return
-            else if t.name.parts.len == 2:
-                let alias_name = unsafe: read(t.name.parts.data + 0)
-                let type_name = unsafe: read(t.name.parts.data + 1)
-                unsafe:
-                    let module_ptr = analysis.imports.get(alias_name)
-                    if module_ptr != null:
-                        if respond_imported_type_location(ws, id, read(module_ptr), type_name):
-                            return
-
-    proto.write_response(id, json.null_value())
+    handle_definition(ws, uri, line, character, id)
 
 
 ## The analysis to answer type questions with: the loader-backed one when the
@@ -363,60 +435,27 @@ function ast_for_document(
     return unsafe: read(entry).analysis.source_file
 
 
-## Jump to a type's declaration: local types in this file, imported ones in the
-## declaring module.  False when the type has no single declaration here.
-function respond_type_location(
-    ws: ref[workspace.Workspace],
-    analysis: ref[analyzer.Analysis],
-    ast_file: ast.SourceFile,
-    uri: str,
-    source: str,
-    id: json.Value,
-    ty: types.Type,
-) -> bool:
-    match ty:
-        types.Type.ty_named as named:
-            let decl_line = find_declaration_line(ast_file, named.name, "struct")
-            if decl_line > 0:
-                respond_single_location(id, uri, source, decl_line, named.name)
-                return true
-            # A bare name can come from an imported module (`var n =
-            # node.Node.create(...)` types as `Node` without an owning module),
-            # so search the visible imports before giving up.
-            var module_names = vec.Vec[string.String].create()
-            defer: module_names.release()
-            unsafe:
-                var imports = read(analysis).imports.values()
-                while true:
-                    let module_ptr = imports.next() else:
-                        break
-                    module_names.push(string.String.from_str(read(module_ptr)))
-            var mi: ptr_uint = 0
-            while mi < module_names.len():
-                let name_ptr = module_names.get(mi) else:
-                    break
-                if respond_imported_type_location(ws, id, unsafe: read(name_ptr).as_str(), named.name):
-                    return true
-                mi += 1
-            return false
-        types.Type.ty_imported as imported:
-            return respond_imported_type_location(ws, id, imported.module_name, imported.name)
-        _:
-            return false
-
-
-## The type of the value named `name`: its inferred type for a local, its
-## recorded type for a module-level value.
+## The type of the value named `name` at `target_line`: its inferred type for a
+## local or parameter, its recorded type for a module-level value.  The binding
+## comes from the scope walk, so the innermost enclosing declaration answers — a
+## same-named local in another function cannot (the host resolves a member
+## receiver from its scope snapshot the same way).
 function type_of_value(
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
     name: str,
     target_line: ptr_uint,
+    source_text: str,
 ) -> Option[types.Type]:
     unsafe:
         let global_ptr = read(analysis).value_types.get(name)
         if global_ptr != null:
             return Option[types.Type].some(value = read(global_ptr))
+
+    var bindings = scope_mod.collect_bindings(source_text, ast_file)
+    defer: bindings.release()
+    let decl_line = scope_mod.local_binding_line(ref_of(bindings), name, target_line) else:
+        return Option[types.Type].none
 
     var di: ptr_uint = 0
     while di < ast_file.declarations.len:
@@ -425,58 +464,70 @@ function type_of_value(
             decl = read(ast_file.declarations.data + di)
         match decl:
             ast.Decl.decl_function as fun:
-                if fun.line <= target_line and fun.body != null:
-                    match local_type_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name, analysis):
-                        Option.some as ty:
-                            return Option[types.Type].some(value = ty.value)
+                if fun.body != null:
+                    match local_type_at_line(unsafe: read(ptr[ast.Stmt]<-fun.body), name, decl_line, analysis):
+                        Option.some as local_ty:
+                            return Option[types.Type].some(value = local_ty.value)
                         Option.none:
                             pass
-            _:
-                pass
-        di += 1
-
-    return Option[types.Type].none
-
-
-## The inferred type of `name` when a `let`/`var` in this block declares it.
-function local_type_in_block(block_stmt: ast.Stmt, name: str, analysis: ref[analyzer.Analysis]) -> Option[types.Type]:
-    match block_stmt:
-        ast.Stmt.stmt_block as blk:
-            var si: ptr_uint = 0
-            while si < blk.statements.len:
-                var s = unsafe: read(blk.statements.data + si)
-                match s:
-                    ast.Stmt.stmt_local as loc:
-                        if loc.name == name:
-                            if loc.stmt_type != null:
-                                return Option[types.Type].none
-                            return type_render.initializer_type(analysis, loc.value)
-                    _:
+                match resolved_param_type(fun.method_params, read(analysis).functions.get(fun.name), name, decl_line):
+                    Option.some as param_ty:
+                        return Option[types.Type].some(value = param_ty.value)
+                    Option.none:
                         pass
-                si += 1
-        _:
-            pass
-    return Option[types.Type].none
-
-
-## The declared TypeRef of a module-level const or var, or null.
-function type_ref_of_value(file: ast.SourceFile, name: str) -> ptr[ast.TypeRef]?:
-    var di: ptr_uint = 0
-    while di < file.declarations.len:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(file.declarations.data + di)
-        match decl:
-            ast.Decl.decl_const as c:
-                if c.name == name:
-                    return c.const_type
-            ast.Decl.decl_var as v:
-                if v.name == name:
-                    return v.var_type
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    let method = unsafe: read(ext.methods.data + mi)
+                    match local_type_at_line(unsafe: read(method.body), name, decl_line, analysis):
+                        Option.some as method_ty:
+                            return Option[types.Type].some(value = method_ty.value)
+                        Option.none:
+                            pass
+                    match resolved_param_type(method.method_params,
+                        method_signature_for(analysis, method.name, method.method_params), name, decl_line):
+                        Option.some as method_param_ty:
+                            return Option[types.Type].some(value = method_param_ty.value)
+                        Option.none:
+                            pass
+                    mi += 1
             _:
                 pass
         di += 1
-    return null
+
+    return Option[types.Type].none
+
+
+## The type of the local named `name` declared on `want_line`: the inferred type
+## of its initializer (an annotated local has no inferred type here).
+function local_type_at_line(stmt: ast.Stmt, name: str, want_line: ptr_uint, analysis: ref[analyzer.Analysis]) -> Option[types.Type]:
+    match find_local_decl_at_line(stmt, name, want_line):
+        Option.some as found:
+            match found.value:
+                ast.Stmt.stmt_local as loc:
+                    if loc.stmt_type != null:
+                        return Option[types.Type].none
+                    return type_render.initializer_type(analysis, loc.value)
+                _:
+                    return Option[types.Type].none
+        Option.none:
+            return Option[types.Type].none
+
+
+## The resolved type of the parameter declared on `want_line` in `ast_params`.
+## None when no such parameter (or no resolved signature) exists.
+function resolved_param_type(ast_params: span[ast.Param], sig: ptr[analyzer.FnSig]?, name: str, want_line: ptr_uint) -> Option[types.Type]:
+    var pi: ptr_uint = 0
+    while pi < ast_params.len:
+        let ast_param = unsafe: read(ast_params.data + pi)
+        if ast_param.name.equal(name) and ast_param.line == want_line:
+            if sig != null:
+                let resolved = unsafe: read(ptr[analyzer.FnSig]<-sig)
+                if pi < resolved.params.len:
+                    return Option[types.Type].some(value = unsafe: read(resolved.params.data + pi).ty)
+            return Option[types.Type].none
+        pi += 1
+    return Option[types.Type].none
 
 
 ## Locate `type_name`'s declaration inside `module_name`'s source file and
@@ -502,11 +553,11 @@ function respond_imported_type_location(
                 return false
             defer: module_source.release()
 
-            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: parse_diags.release()
-            var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
-            let decl_line = find_declaration_line(module_file, type_name, "struct")
-            if decl_line == 0:
+            # The host's `module_member_definition_location` reads the module's
+            # own declaration-token index, so a function, a const or a type all
+            # resolve — not only type declarations.
+            let token = defidx.document_declaration_token(
+                ref_of(ws.definition_index), module_path.as_str(), module_source.as_str(), type_name) else:
                 return false
 
             var absolute_path = string.String.from_str(module_path.as_str())
@@ -522,7 +573,7 @@ function respond_imported_type_location(
             var target_uri = string.String.from_str("file://")
             defer: target_uri.release()
             target_uri.append(absolute_path.as_str())
-            respond_single_location(id, target_uri.as_str(), module_source.as_str(), decl_line, type_name)
+            respond_token_location(id, target_uri.as_str(), token)
             return true
 
 
@@ -537,8 +588,29 @@ function respond_module_location(id: json.Value, target_uri: str) -> void:
     proto.write_response_raw(id, json_text.as_str())
 
 
-## Respond with a one-element Location array pointing at `name` on its
-## declaration line.
+## Respond with a `Location` pointing at a definition token (1-based
+## line/column — the host's `token_to_range`, emitted as a bare Location object
+## like `respond_single_location`).
+function respond_token_location(id: json.Value, target_uri: str, token: defidx.DefinitionToken) -> void:
+    let lz = if token.line > 0: token.line - 1 else: 0z
+    let col = if token.column > 0: token.column - 1 else: 0z
+    var json_text = string.String.create()
+    defer: json_text.release()
+    json_text.append("{\"uri\":\"")
+    proto.append_escaped(ref_of(json_text), target_uri)
+    json_text.append("\",\"range\":{\"start\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{col}")
+    json_text.append("},\"end\":{\"line\":")
+    json_text.append_format(f"#{lz}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{col + token.length}")
+    json_text.append("}}}")
+    proto.write_response_raw(id, json_text.as_str())
+
+
+## Respond with a `Location` pointing at `name` on its declaration line.
 function respond_single_location(id: json.Value, uri: str, source: str, decl_line: ptr_uint, name: str) -> void:
     let lz = if decl_line > 0: decl_line - 1 else: 0z
     var column: ptr_uint = 0
@@ -858,6 +930,105 @@ struct CursorResult:
     from_modules: string.String
 
 
+## The module an `alias.Member` reference names, when the cursor is on the
+## member: the aliased module's source path.  None when the receiver is not an
+## import alias.
+function alias_member_module_path(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+) -> Option[string.String]:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return Option[string.String].none
+    defer: file_path.release()
+    var content = ws.document_source(file_path.as_str()) else:
+        return Option[string.String].none
+    defer: content.release()
+    let source = content.as_str()
+
+    match cursor.dot_receiver_at(source, line, character):
+        Option.some as recv:
+            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer: parse_diags.release()
+            var parsed_file = parser.parse_source(source, ref_of(parse_diags))
+            var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
+            unsafe:
+                let module_ptr = analysis.imports.get(recv.value)
+                if module_ptr != null:
+                    return resolve_module_source_path(ws, read(module_ptr))
+        Option.none:
+            pass
+    return Option[string.String].none
+
+
+## The host's last-resort global definition lookup (`find_definition_token_global`):
+## the requesting document first with the cursor as the position filter, then
+## every other open document in didOpen order, first declaration wins.  Only
+## identifiers a declaration keyword introduces are indexed, so an ordinary
+## reference or a parameter answers none, as the host's does.
+function find_definition_global(
+    ws: ref[workspace.Workspace],
+    name: str,
+    preferred_uri: str,
+    before_line: ptr_uint,
+    before_char: ptr_uint,
+) -> Option[defidx.DefinitionEntry]:
+    var preferred_path = uri_ops.file_uri_to_path(preferred_uri) else:
+        return Option[defidx.DefinitionEntry].none
+    defer: preferred_path.release()
+
+    var owned_sources = vec.Vec[string.String].create()
+    defer: release_owned_sources(ref_of(owned_sources))
+    var candidates = vec.Vec[defidx.CandidateDocument].create()
+    defer: candidates.release()
+
+    add_definition_candidate(ws, ref_of(owned_sources), ref_of(candidates), preferred_path.as_str())
+    var i: ptr_uint = 0
+    while i < ws.open_doc_order.len():
+        let path_ptr = ws.open_doc_order.get(i) else:
+            break
+        add_definition_candidate(ws, ref_of(owned_sources), ref_of(candidates), unsafe: read(path_ptr).as_str())
+        i += 1
+
+    return defidx.lookup(ref_of(ws.definition_index), name, preferred_path.as_str(), before_line, before_char, candidates.as_span())
+
+
+## Append `path`'s text (kept alive by `owned_sources`) to the candidate list,
+## once, when the document can be read.
+function add_definition_candidate(
+    ws: ref[workspace.Workspace],
+    owned_sources: ref[vec.Vec[string.String]],
+    candidates: ref[vec.Vec[defidx.CandidateDocument]],
+    path: str,
+) -> void:
+    if path.len == 0:
+        return
+    var i: ptr_uint = 0
+    while i < candidates.len():
+        let existing = candidates.get(i) else:
+            break
+        if unsafe: read(existing).uri.equal(path):
+            return
+        i += 1
+    let source = ws.document_source(path) else:
+        return
+    owned_sources.push(source)
+    let stored = owned_sources.last() else:
+        return
+    candidates.push(defidx.CandidateDocument(uri = path, source = unsafe: read(stored).as_str()))
+
+
+function release_owned_sources(sources: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < sources.len():
+        let entry = sources.get(i) else:
+            break
+        unsafe: read(entry).release()
+        i += 1
+    sources.release()
+
+
 ## Quick hover result — no declaration source line, no docs.
 function quick_hover(text: str) -> CursorResult:
     return CursorResult(
@@ -1045,15 +1216,98 @@ function resolve_cursor(
         Option.none:
             pass
 
-    # `receiver.method(...)`: the method's resolved signature from its defining
+    # `value.method(...)`: the method's resolved signature from its defining
     # module (this one, or the module that declares the receiver's type).
     match cursor.dot_receiver_at(source, line, character):
         Option.some as recv:
-            return resolve_member_method_hover(
-                ws, ast_file, ref_of(analysis), source, recv.value, target.text,
-                line + 1, current_module.as_str())
+            match resolve_member_method_hover(
+                ws, ast_file, ref_of(analysis), source, file_path.as_str(), recv.value, target.text,
+                line + 1, current_module.as_str()):
+                Option.some as member_result:
+                    return Option[CursorResult].some(value = member_result.value)
+                Option.none:
+                    pass
+        Option.none:
+            pass
+
+    # `Type.method(...)` / `Type[T].method(...)` / `alias.Type.method(...)`: a
+    # *type* receiver, whose method lives in the type's own module.
+    match cursor.type_receiver_at(source, line, character):
+        Option.some as type_recv:
+            return resolve_type_method_hover(
+                ws, ast_file, ref_of(analysis), source, type_recv.value, target.text,
+                current_module.as_str())
         Option.none:
             return Option[CursorResult].none
+
+
+## Hover for the method of a *type* receiver (`Vec[int].create()`): the static
+## method's declaration signature from the module that declares the type — the
+## aliased module for `alias.Type`, else the module the type's name resolves to.
+## None when the receiver is not a type of the program or declares no such
+## method, so a value receiver keeps its own path.
+function resolve_type_method_hover(
+    ws: ref[workspace.Workspace],
+    ast_file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    source: str,
+    receiver: cursor.TypeReceiver,
+    method_name: str,
+    current_module: str,
+) -> Option[CursorResult]:
+    var decl_file = ast_file
+    var decl_source = source
+    var target_uri = string.String.create()
+    var decl_signature = method_sig_for_type(analysis, receiver.name, method_name)
+    var owner: str = ""
+
+    if receiver.module_alias.len > 0:
+        let module_ptr = unsafe: read(analysis).imports.get(receiver.module_alias) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        owner = unsafe: read(module_ptr)
+    else if unsafe: read(analysis).types.contains(receiver.name):
+        let type_ptr = unsafe: read(analysis).types.get(receiver.name) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        owner = types.nominal_module(unsafe: read(ptr[types.Type]<-type_ptr))
+    else:
+        target_uri.release()
+        return Option[CursorResult].none
+
+    if decl_signature.is_none() and owner.len > 0 and not owner.equal(current_module):
+        var owner_path = resolve_module_source_path(ws, owner) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        defer: owner_path.release()
+        let owner_source = ws.document_source(owner_path.as_str()) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        var owner_diags = vec.Vec[pstate.ParseDiagnostic].create()
+        defer: owner_diags.release()
+        var owner_parsed = parser.parse_source(owner_source.as_str(), ref_of(owner_diags))
+        decl_file = ast_for_document(ws, owner_path.as_str(), owner_parsed)
+        var owner_analysis = analysis_for_document(ws, owner_path.as_str(), owner_parsed)
+        decl_signature = method_sig_for_type(ref_of(owner_analysis), receiver.name, method_name)
+        decl_source = owner_source.as_str()
+        target_uri.release()
+        target_uri = file_uri_for_path(owner_path.as_str())
+
+    let signature = decl_signature else:
+        target_uri.release()
+        return Option[CursorResult].none
+    let decl_line = find_method_line(decl_file, method_name)
+    if decl_line == 0:
+        target_uri.release()
+        return Option[CursorResult].none
+
+    var hover = method_signature_text(signature, method_name, owner_or(current_module, owner))
+    let result = make_shortened_result(decl_line, method_name, decl_source, hover.as_str())
+    hover.release()
+    var stamped = result
+    stamped.target_uri.release()
+    stamped.target_uri = target_uri
+    return Option[CursorResult].some(value = stamped)
 
 
 ## The bare type name a method receiver resolves to (`Vec`, `Color`), "" for a
@@ -1142,6 +1396,104 @@ function owner_or(current_module: str, owner: str) -> str:
     return current_module
 
 
+## The hover for a field of the receiver's type: `field <name>: <resolved type>`
+## with the field's declaration in the module that declares the struct (this
+## file when the type is declared here).  None when the type has no such field,
+## so the caller's method lookup still applies.
+function field_hover_result(
+    ws: ref[workspace.Workspace],
+    file_path: str,
+    owner: str,
+    type_name: str,
+    field_name: str,
+    current_module: str,
+) -> Option[CursorResult]:
+    var decl_path = file_path
+    var owner_path_owner: Option[string.String] = Option[string.String].none
+    if owner.len > 0 and not owner.equal(current_module):
+        var resolved_path = resolve_module_source_path(ws, owner) else:
+            return Option[CursorResult].none
+        owner_path_owner = Option[string.String].some(value = resolved_path)
+        decl_path = resolved_path.as_str()
+    defer:
+        match owner_path_owner:
+            Option.some as owned_path:
+                owned_path.value.release()
+            Option.none:
+                pass
+
+    var decl_source = ws.document_source(decl_path) else:
+        return Option[CursorResult].none
+    defer: decl_source.release()
+
+    var decl_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: decl_diags.release()
+    var decl_parsed = parser.parse_source(decl_source.as_str(), ref_of(decl_diags))
+    var decl_file = ast_for_document(ws, decl_path, decl_parsed)
+    var decl_analysis = analysis_for_document(ws, decl_path, decl_parsed)
+
+    var field_line: ptr_uint = 0
+    var field_column: ptr_uint = 0
+    var field_type = types.Type.ty_error
+    var found = false
+    var di: ptr_uint = 0
+    while di < decl_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(decl_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_struct as st:
+                if st.name.equal(type_name):
+                    var fi: ptr_uint = 0
+                    while fi < st.struct_fields.len:
+                        let field = unsafe: read(st.struct_fields.data + fi)
+                        if field.name.equal(field_name):
+                            field_line = field.line
+                            field_column = field.column
+                            found = true
+                        fi += 1
+            _:
+                pass
+        di += 1
+    if not found or field_line == 0:
+        return Option[CursorResult].none
+
+    let entries_ptr = decl_analysis.structs.get(type_name)
+    if entries_ptr != null:
+        let entries = unsafe: read(entries_ptr)
+        var fi: ptr_uint = 0
+        while fi < entries.len:
+            let entry = unsafe: read(entries.data + fi)
+            if entry.name.equal(field_name):
+                field_type = entry.ty
+            fi += 1
+
+    var hover = string.String.create()
+    hover.append("field ")
+    hover.append(field_name)
+    hover.append(": ")
+    var rendered = type_render.qualified_name(field_type, current_module)
+    hover.append(rendered.as_str())
+    rendered.release()
+    var shortened = type_render.shorten_signature(hover.as_str())
+    hover.release()
+
+    var target_uri = string.String.create()
+    if not decl_path.equal(file_path):
+        target_uri = file_uri_for_path(decl_path)
+
+    let column_zero = if field_column > 0: field_column - 1 else: 0z
+    return Option[CursorResult].some(value = CursorResult(
+        line = field_line,
+        column = column_zero,
+        name_len = field_name.len,
+        hover_text = shortened.text,
+        docs = string.String.create(),
+        target_uri = target_uri,
+        from_modules = shortened.modules
+    ))
+
+
 ## Hover for the method name of a member call (`v.push(1)`, `d.push_back(x)`):
 ## the method's declaration signature, the module that declares it, and — through
 ## the shortened signature — that module's `*From <module>*` line.  The receiver
@@ -1155,18 +1507,28 @@ function resolve_member_method_hover(
     ast_file: ast.SourceFile,
     analysis: ref[analyzer.Analysis],
     source: str,
+    file_path: str,
     receiver_name: str,
     method_name: str,
     target_line: ptr_uint,
     current_module: str,
 ) -> Option[CursorResult]:
-    let receiver_ty = type_of_value(analysis, ast_file, receiver_name, target_line) else:
+    let receiver_ty = type_of_value(analysis, ast_file, receiver_name, target_line, source) else:
         return Option[CursorResult].none
     let type_name = receiver_type_name(receiver_ty)
     if type_name.len == 0:
         return Option[CursorResult].none
 
     let owner = types.nominal_module(receiver_ty)
+
+    # A field of the receiver's type comes first (the host checks a member's
+    # field before its methods): `p.radius` → `field radius: float`.
+    match field_hover_result(ws, file_path, owner, type_name, method_name, current_module):
+        Option.some as field_result:
+            return Option[CursorResult].some(value = field_result.value)
+        Option.none:
+            pass
+
     var decl_file = ast_file
     var decl_source = source
     var decl_signature = method_sig_for_type(analysis, type_name, method_name)
@@ -1501,7 +1863,9 @@ function resolve_name_in_analysis(
                 hover.release()
                 return Option[CursorResult].some(value = value_result)
 
-        # Interface: render member signatures.
+        # Interface: the host's `interface_signature` — `interface <name>`, then
+        # one `    [async ][editable ]function <name>(<params>) -> <ret>` line per
+        # method (no colon, and the return type is always rendered).
         if read(analysis).interfaces.contains(name):
             let decl_line = find_declaration_line(file, name, "struct")
             if decl_line > 0:
@@ -1510,30 +1874,32 @@ function resolve_name_in_analysis(
                 hover.append(name)
                 let methods_ptr = read(analysis).interfaces.get(name)
                 if methods_ptr != null:
-                    hover.append(":")
                     let methods = read(methods_ptr)
                     var mi: ptr_uint = 0
                     while mi < methods.len:
-                        var m = unsafe: read(methods.data + mi)
+                        let m = unsafe: read(methods.data + mi)
                         hover.append("\n    ")
+                        if m.is_async:
+                            hover.append("async ")
+                        if m.method_kind == ast.MethodKind.mk_editable:
+                            hover.append("editable ")
+                        hover.append("function ")
                         hover.append(m.name)
                         hover.append("(")
                         var pi: ptr_uint = 0
                         while pi < m.method_params.len:
-                            var p = unsafe: read(m.method_params.data + pi)
+                            let p = unsafe: read(m.method_params.data + pi)
                             if pi > 0:
                                 hover.append(", ")
                             hover.append(p.name)
                             hover.append(": ")
-                            if p.param_type.name.parts.len > 0:
-                                hover.append(unsafe: read(p.param_type.name.parts.data))
+                            hover.append(ast_formatter.render_type(p.param_type))
                             pi += 1
-                        hover.append(")")
+                        hover.append(") -> ")
                         if m.return_type != null:
-                            let rt = unsafe: read(ptr[ast.TypeRef]<-m.return_type)
-                            hover.append(" -> ")
-                            if rt.name.parts.len > 0:
-                                hover.append(unsafe: read(rt.name.parts.data))
+                            hover.append(ast_formatter.render_type(unsafe: read(ptr[ast.TypeRef]<-m.return_type)))
+                        else:
+                            hover.append("void")
                         mi += 1
                 return Option[CursorResult].some(value = make_result(decl_line, name, source, hover))
 

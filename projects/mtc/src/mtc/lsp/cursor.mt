@@ -260,6 +260,63 @@ public function dot_receiver_at(source: str, line: ptr_uint, character: ptr_uint
     return Option[str].some(value = line_text.slice(start, pos - start))
 
 
+## The receiver of a *type* member access at the cursor: `Type.method`,
+## `Type[T].method`, or `alias.Type.method`.  The name is the type (or value)
+## identifier before the `.`, with any `[…]` argument list on the receiver
+## skipped; the alias is set when the access is `alias.`-qualified.  The caller
+## decides whether the name is a value (a method on a value) or a type (a static
+## method), exactly as the host's receiver resolution does.
+public struct TypeReceiver:
+    name: str
+    module_alias: str
+
+
+public function type_receiver_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[TypeReceiver]:
+    let line_text = source_line(source, line + 1)
+    var pos = character
+    if pos > line_text.len:
+        pos = line_text.len
+
+    # Skip back over the identifier being hovered.
+    while pos > 0 and utils.is_word_byte(line_text.byte_at(pos - 1)):
+        pos -= 1
+    if pos == 0 or line_text.byte_at(pos - 1) != '.':
+        return Option[TypeReceiver].none
+    pos -= 1
+
+    # A receiver argument list (`Type[T]`) sits between the name and the dot.
+    if pos > 0 and line_text.byte_at(pos - 1) == ']':
+        var depth = 1
+        pos -= 1
+        while pos > 0 and depth > 0:
+            let bracket_byte = line_text.byte_at(pos - 1)
+            if bracket_byte == ']':
+                depth += 1
+            else if bracket_byte == '[':
+                depth -= 1
+            pos -= 1
+        if depth != 0:
+            return Option[TypeReceiver].none
+        while pos > 0 and (line_text.byte_at(pos - 1) == ' ' or line_text.byte_at(pos - 1) == '\t'):
+            pos -= 1
+
+    let name_end = pos
+    while pos > 0 and utils.is_word_byte(line_text.byte_at(pos - 1)):
+        pos -= 1
+    if pos == name_end:
+        return Option[TypeReceiver].none
+    let name = line_text.slice(pos, name_end - pos)
+
+    var module_alias: str = ""
+    if pos > 0 and line_text.byte_at(pos - 1) == '.':
+        var alias_end = pos - 1
+        while alias_end > 0 and utils.is_word_byte(line_text.byte_at(alias_end - 1)):
+            alias_end -= 1
+        if alias_end < pos - 1:
+            module_alias = line_text.slice(alias_end, pos - 1 - alias_end)
+    return Option[TypeReceiver].some(value = TypeReceiver(name = name, module_alias = module_alias))
+
+
 ## The text of 1-based line `line_no` in `source`, without the newline.
 public function source_line(source: str, line_no: ptr_uint) -> str:
     if line_no == 0:

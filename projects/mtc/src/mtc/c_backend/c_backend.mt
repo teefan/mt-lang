@@ -280,7 +280,11 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         emit_str_equality_helper(ref_of(e))
         emit_line(ref_of(e), "")
 
-    var span_types = collect_span_types(funcs)
+    # Span types are collected over *all* lowered functions, matching the
+    # generic-instance and struct collection: an instance (a pruned function's
+    # `Option[span[X]]`, say) embeds the span by value, so its typedef must exist
+    # even when the function that named it is not emitted.
+    var span_types = collect_span_types(program.functions)
     collect_struct_span_types(program, ref_of(span_types))
     collect_variant_span_types(program, ref_of(span_types))
 
@@ -2472,6 +2476,10 @@ function collect_span_types(functions: span[ir.Function]) -> vec.Vec[types.Type]
 
 function maybe_add_span(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
     if not is_span_type(t):
+        # A span nested inside another type (`Option[span[X]]`, a struct field, a
+        # variant arm, a proc signature) still needs its `mt_span_…` typedef: the
+        # container's C struct embeds it by value.
+        add_nested_spans(t, seen, collected)
         return
     let elem = array_element_type(t)
     if types.is_error(elem):
@@ -2488,6 +2496,32 @@ function maybe_add_span(t: types.Type, seen: ref[map_mod.Map[str, bool]], collec
     if not seen.contains(name):
         seen.set(name, true)
         collected.push(t)
+
+
+## Recurse into a type's arguments so a span behind a generic, a nullable, a
+## tuple, or a callable signature is collected too.
+function add_nested_spans(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    match t:
+        types.Type.ty_generic as g:
+            add_span_args(g.args, seen, collected)
+        types.Type.ty_imported as im:
+            add_span_args(im.args, seen, collected)
+        types.Type.ty_nullable as nl:
+            maybe_add_span(unsafe: read(nl.base), seen, collected)
+        types.Type.ty_tuple as tup:
+            add_span_args(tup.elements, seen, collected)
+        types.Type.ty_function as fnt:
+            add_span_args(fnt.params, seen, collected)
+            maybe_add_span(unsafe: read(fnt.return_type), seen, collected)
+        _:
+            pass
+
+
+function add_span_args(args: span[types.Type], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
+    var i: ptr_uint = 0
+    while i < args.len:
+        maybe_add_span(unsafe: read(args.data + i), seen, collected)
+        i += 1
 
 ## True when `name` is a single-letter type parameter used in generic bodies.
 function is_raw_type_param_name(name: str) -> bool:
