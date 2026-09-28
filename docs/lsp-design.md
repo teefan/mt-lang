@@ -470,3 +470,28 @@ fixed the same day.
 | Multi-root workspace reindex (didChangeWorkspaceFolders) | **DONE** — cache clear + index stale flag |
 | Workspace index rename (willRenameFiles) | **DONE** — per-oldUri cache clearing + index stale flag |
 | Sporadic SIGSEGV | **NO REPRODUCTIONS** — the 2026-09-26 stress corpus (15 adversarial probes) plus a valgrind run over a full request sweep completed with zero crashes, invalid reads/writes or invalid frees |
+
+## 9. Real-project readiness and recovery (2026-09-28)
+
+The focused plan for making the self-hosted server a daily driver lives in
+`docs/lsp-parity-plan.md`.  Its starting evidence, recorded here so the design
+doc carries the findings:
+
+- **Recovery is not at parity yet.**  Driving both servers through the
+  "declare `var n = Sample(…)`, then type `n.`" edit (`tools/lsp_recovery_probe.rb`)
+  shows six divergences for that one edit: parse-error messages miss the host's
+  ` at <uri>:<line>:<col>` suffix; `expected end of statement` is extra and
+  mispositioned (host `9:12`, self `9:0`); the recovered ASTs differ
+  (`unknown name v` vs `unknown field Sample.`); the lint set differs
+  (`unused-local` vs `prefer-let`); `missing-return` timing differs; and one
+  self diagnostic's `message` is a JSON blob (`{"kind"=>"markdown",…}`) — a
+  serializer bug.
+- **Readiness beyond parity** (Track C of the plan): the workspace index walks
+  *module roots*, which for a project outside the compiler tree includes the
+  whole compiler tree (cold-start latency and memory); the reference index keeps
+  an owned copy of every noted document's text (unbounded in long sessions);
+  `note_document_tokens` re-reads and re-hashes a file per request; and there is
+  no large-file/long-session soak in the gates yet.
+- **Deliberate differences** (kept, and to be listed here as one table once
+  Track C lands): malformed-frame recovery (`-32700` + keep serving where the
+  host hangs), synchronous facts with no lag, and a faster cold start.
