@@ -1682,7 +1682,7 @@ public function qname_to_str(q: ast.QualifiedName) -> str:
     return buf.as_str()
 
 
-function is_primitive_type_name(name: str) -> bool:
+public function is_primitive_type_name(name: str) -> bool:
     return (
         name == "bool" or name == "byte" or name == "ubyte" or name == "char"
         or name == "short" or name == "ushort" or name == "int" or name == "uint"

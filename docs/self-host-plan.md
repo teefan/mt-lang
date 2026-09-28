@@ -48,7 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **709 differ** after the session-6/7 LSP work (hover 131, references 267, typeDefinition 92, definition/declaration 94 each, documentHighlight 15) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`).  Residue classified in §0k; the largest class is now `references` (reverse-import occurrences).**
+**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **696 differ** after the session-6/7 LSP work (hover 121, references 267, typeDefinition 91, definition/declaration 93 each, documentHighlight 15) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`).  Residue classified in §0k; the largest class is now `references` (reverse-import occurrences).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 18/25 declaration types covered (up from 5/25).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
@@ -1382,7 +1382,28 @@ Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
 30/30 capabilities + 4 documented entries, valgrind 0 errors.
 
-**Residue after this batch, ranked** (709 entries):
+**Hover dispatch order and annotation/location rendering (same session, second batch).**
+The host's hover dispatch runs *field declarations and named-argument labels*,
+then bindings, then names, then members, and its **keyword/builtin tables last**.
+The self-host had the builtin tables first, so a builtin name shadowed a
+declared one: `m.get(…)` answered `builtin get(collection, index)` where the
+host answers the declared method, and `ptr` as an import alias answered
+`type ptr` where the host answers `module std.mem.ptr`.  `handle_hover` now
+follows the host's order (`resolve_field_or_label_hover` →
+`resolve_local_hover` → `resolve_cursor` → `resolve_keyword_or_builtin_hover`),
+and inside `resolve_cursor` the import-alias arm moved *after* the name tables,
+because the host's `facts.types` registers the primitives: `str` answers
+`type str` with its docs even in a file whose `import std.str` shares the name
+(and `vec3` answers `type vec3` + the `extending vec3:` declaration, which
+`type_declaration_line` now also locates).  A `type X = …`-style annotation on a
+local renders its resolved spelling with the owning module's qualifier
+(`var particles: SoA[Point, 4]` + `*From docs.data_structures*`) instead of the
+TypeRef's first name part, and a primitive renders bare.
+
+Measured: hover 131 → **121**, definition/declaration 94 → 93, typeDefinition
+92 → 91 (total 709 → **696**).
+
+**Residue after this batch, ranked** (696 entries):
 
 1. **references 267** — the largest class, untouched here.  210 are
    `self-fewer`: the host lists occurrences from every file that *imports* the

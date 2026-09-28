@@ -156,15 +156,11 @@ public function handle_hover(
             return
         Option.none:
             pass
-    match resolve_non_decl_hover(ws, uri, line, character):
-        Option.some as kw_result:
-            var kw_payload = kw_result.value
-            # A keyword or builtin carries no source location of its own; the
-            # host fills one in from its token index when the name is declared
-            # somewhere in the workspace.
-            if kw_payload.line == 0:
-                apply_hover_index_location(ws, uri, line, character, ref_of(kw_payload))
-            write_hover_result(ws, id, kw_payload, uri, hover_token_range)
+    # The host's dispatch order: field declarations and named-argument labels,
+    # then bindings, then names and members, and the keyword/builtin tables last.
+    match resolve_field_or_label_hover(ws, uri, line, character):
+        Option.some as field_result:
+            write_hover_result(ws, id, field_result.value, uri, hover_token_range)
             return
         Option.none:
             pass
@@ -182,13 +178,26 @@ public function handle_hover(
         Option.none:
             pass
 
-    var result = resolve_cursor(ws, uri, line, character)
-    match result:
+    match resolve_cursor(ws, uri, line, character):
         Option.some as res:
             write_hover_result(ws, id, res.value, uri, hover_token_range)
             return
         Option.none:
             pass
+
+    match resolve_keyword_or_builtin_hover(ws, uri, line, character):
+        Option.some as kw_result:
+            var kw_payload = kw_result.value
+            # A keyword or builtin carries no source location of its own; the
+            # host fills one in from its token index when the name is declared
+            # somewhere in the workspace.
+            if kw_payload.line == 0:
+                apply_hover_index_location(ws, uri, line, character, ref_of(kw_payload))
+            write_hover_result(ws, id, kw_payload, uri, hover_token_range)
+            return
+        Option.none:
+            pass
+
     hover_token_range.release()
     proto.write_response(id, json.null_value())
 
@@ -1057,10 +1066,51 @@ function quick_hover_doc(doc: hover_docs.HoverDoc) -> CursorResult:
     )
 
 
-## Resolve hover for builtin keywords, builtin callables, and field
-## declarations — cases that do not involve named declarations.
-## Returns `none` to fall through to `resolve_cursor`.
-function resolve_non_decl_hover(
+## The hover for a field name in its own declaration and for a named-argument
+## label — the host's arms that run *ahead* of every name and member lookup.
+function resolve_field_or_label_hover(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+) -> Option[CursorResult]:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return Option[CursorResult].none
+    defer: file_path.release()
+    var content = ws.document_source(file_path.as_str()) else:
+        return Option[CursorResult].none
+    defer: content.release()
+    let source = content.as_str()
+    if source.len == 0:
+        return Option[CursorResult].none
+
+    match field_declaration_hover(source, line, character):
+        Option.some as fd:
+            return Option[CursorResult].some(value = fd.value)
+        Option.none:
+            pass
+
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: tokens.release()
+    match token_index_at(ref_of(tokens), line, character):
+        Option.some as matched_index:
+            match named_argument_label_hover(ws, source, file_path.as_str(), ref_of(tokens), matched_index.value):
+                Option.some as label_hover:
+                    return Option[CursorResult].some(value = label_hover.value)
+                Option.none:
+                    pass
+        Option.none:
+            pass
+    return Option[CursorResult].none
+
+
+## The hover for a language keyword, a builtin type, a builtin specialization or
+## a builtin callable — the host's *last* arm, after every name and member
+## lookup has declined (`get` resolves to a declared method, not the builtin
+## table; an import alias named `ptr` resolves to its module).
+function resolve_keyword_or_builtin_hover(
     ws: ref[workspace.Workspace],
     uri: str,
     line: ptr_uint,
@@ -1081,64 +1131,56 @@ function resolve_non_decl_hover(
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: tokens.release()
 
-    var ti: ptr_uint = 0
-    var matched_index: ptr_uint = 0
-    var matched = false
+    let matched_index = token_index_at(ref_of(tokens), line, character) else:
+        return Option[CursorResult].none
+    let tp = tokens.get(matched_index) else:
+        return Option[CursorResult].none
+    let t = unsafe: read(tp)
+    let lexeme = unsafe: token_mod.token_lexeme(t, source)
+
+    match hover_docs.language_keyword(lexeme):
+        Option.some as kw:
+            return Option[CursorResult].some(value = quick_hover_doc(kw.value))
+        Option.none:
+            pass
+
+    # A builtin type name (`int`, `str`, `ptr`, …) renders the host's
+    # `type <name>` signature with its documentation table.
+    match hover_docs.builtin_type(lexeme):
+        Option.some as bt:
+            return Option[CursorResult].some(value = quick_hover_doc(bt.value))
+        Option.none:
+            pass
+
+    match builtin_specialization_hover(tokens, matched_index, lexeme):
+        Option.some as bs:
+            return Option[CursorResult].some(value = quick_hover(bs.value))
+        Option.none:
+            pass
+
+    match hover_docs.builtin_call(lexeme):
+        Option.some as bu:
+            return Option[CursorResult].some(value = quick_hover_doc(bu.value))
+        Option.none:
+            pass
+
+    return Option[CursorResult].none
+
+
+## The index of the token covering the 0-based position, or none.
+function token_index_at(tokens: ref[vec.Vec[token_mod.Token]], line: ptr_uint, character: ptr_uint) -> Option[ptr_uint]:
     let target_line = line + 1
-    while ti < tokens.len:
+    var ti: ptr_uint = 0
+    while ti < tokens.len():
         let tp = tokens.get(ti) else:
             break
         let t = unsafe: read(tp)
         if t.line > target_line:
             break
         if t.line == target_line and t.column - 1 <= character and t.column - 1 + t.end_offset - t.start_offset > character:
-            matched_index = ti
-            matched = true
-            let lexeme = unsafe: token_mod.token_lexeme(t, source)
-
-            match hover_docs.language_keyword(lexeme):
-                Option.some as kw:
-                    return Option[CursorResult].some(value = quick_hover_doc(kw.value))
-                Option.none:
-                    pass
-
-            # A builtin type name (`int`, `str`, `ptr`, …) renders the host's
-            # `type <name>` signature with its documentation table.
-            match hover_docs.builtin_type(lexeme):
-                Option.some as bt:
-                    return Option[CursorResult].some(value = quick_hover_doc(bt.value))
-                Option.none:
-                    pass
-
-            match builtin_specialization_hover(tokens, ti, lexeme):
-                Option.some as bs:
-                    return Option[CursorResult].some(value = quick_hover(bs.value))
-                Option.none:
-                    pass
-
-            match hover_docs.builtin_call(lexeme):
-                Option.some as bu:
-                    return Option[CursorResult].some(value = quick_hover_doc(bu.value))
-                Option.none:
-                    pass
-
-            break
+            return Option[ptr_uint].some(value = ti)
         ti += 1
-
-    match field_declaration_hover(source, line, character):
-        Option.some as fd:
-            return Option[CursorResult].some(value = fd.value)
-        Option.none:
-            pass
-
-    if matched:
-        match named_argument_label_hover(ws, source, file_path.as_str(), ref_of(tokens), matched_index):
-            Option.some as label_hover:
-                return Option[CursorResult].some(value = label_hover.value)
-            Option.none:
-                pass
-
-    return Option[CursorResult].none
+    return Option[ptr_uint].none
 
 
 ## Resolve the symbol at the given cursor position.  Parses the file, runs
@@ -1204,17 +1246,25 @@ function resolve_cursor(
         Option.none:
             pass
 
-    # The identifier is an import alias: the module file itself.
-    unsafe:
-        let alias_module_ptr = analysis.imports.get(target.text)
-        if alias_module_ptr != null:
-            return resolve_module_reference(ws, read(alias_module_ptr))
-
+    # A builtin primitive type name (`str`, `int`, `vec3`, …) is a *registered*
+    # type in the host's facts, so it answers its `type <name>` docs before the
+    # import-alias arm — `import std.str` does not shadow `str`.  The generic
+    # builtin constructors (`ptr`, `ref`, `span`, …) are not registered types and
+    # stay with the keyword/builtin table, which runs last.
+    # The host resolves a bare name through its facts before the import aliases:
+    # a registered type (`str`, `int`, `vec3`) answers its own declaration or its
+    # builtin docs even when an `import std.str` alias shares the name.
     match resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source, current_module.as_str()):
         Option.some as named:
             return Option[CursorResult].some(value = named.value)
         Option.none:
             pass
+
+    # The identifier is an import alias: the module file itself.
+    unsafe:
+        let alias_module_ptr = analysis.imports.get(target.text)
+        if alias_module_ptr != null:
+            return resolve_module_reference(ws, read(alias_module_ptr))
 
     # `value.method(...)`: the method's resolved signature from its defining
     # module (this one, or the module that declares the receiver's type).
@@ -1917,7 +1967,23 @@ function resolve_name_in_analysis(
                 var hover = type_hover_signature(name, ty, current_module)
                 let result = make_shortened_result(decl_line, name, source, hover.as_str())
                 hover.release()
-                return Option[CursorResult].some(value = result)
+                # A registered *builtin* (`vec3`) carries its own documentation;
+                # the host appends its builtin docs to the signature.
+                var with_docs = result
+                if with_docs.docs.len() == 0:
+                    match hover_docs.builtin_type(name):
+                        Option.some as builtin_doc:
+                            with_docs.docs = string.String.from_str(builtin_doc.value.docs)
+                        Option.none:
+                            pass
+                return Option[CursorResult].some(value = with_docs)
+            # A registered builtin without a declaration in this file (`str`,
+            # `int`): its builtin docs, and no location.
+            match hover_docs.builtin_type(name):
+                Option.some as builtin_type_doc:
+                    return Option[CursorResult].some(value = quick_hover_doc(builtin_type_doc.value))
+                Option.none:
+                    pass
 
         # Event declaration.
         let decl_line_ev = find_declaration_line(file, name, "event")
@@ -2036,7 +2102,33 @@ function type_declaration_line(file: ast.SourceFile, name: str) -> ptr_uint:
     let aggregate = find_declaration_line(file, name, "struct")
     if aggregate > 0:
         return aggregate
-    return find_declaration_line(file, name, "alias")
+    let alias = find_declaration_line(file, name, "alias")
+    if alias > 0:
+        return alias
+    # A type whose only declaration here is the `extending X:` block that gives
+    # it methods (`extending vec3:` for a native vector type) — the host's token
+    # index matches any declaration keyword, so it finds that too.
+    return find_extending_line(file, name)
+
+
+## The line of the `extending <name>:` block, 0 when there is none.
+function find_extending_line(file: ast.SourceFile, name: str) -> ptr_uint:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                if unsafe: read(ext.type_name).name.parts.len > 0:
+                    let parts = unsafe: read(ext.type_name).name.parts
+                    let last = unsafe: read(parts.data + (parts.len - 1))
+                    if last.equal(name):
+                        return ext.line
+            _:
+                pass
+        di += 1
+    return 0
 
 
 ## The declaration keyword for a module-level value: "const" or "var".
@@ -2999,6 +3091,27 @@ function method_signature_for(analysis: ref[analyzer.Analysis], name: str, ast_p
     return null
 
 
+## The text for a local's declared type.  The host renders the resolved type's
+## `to_s` — its name with the owning module's qualifier and the type arguments as
+## written — so a local struct type reports the file's `*From <module>*` line
+## (`var particles: SoA[Point, 4]` in `docs.data_structures`); a type the module
+## does not register (a builtin generic such as `ptr[int]`) renders unqualified.
+function annotated_type_text(tref: ast.TypeRef, analysis: ref[analyzer.Analysis], current_module: str) -> string.String:
+    var text = string.String.create()
+    if not tref.is_fn and not tref.is_proc and not tref.is_tuple and tref.name.parts.len > 0:
+        let first = unsafe: read(tref.name.parts.data + 0)
+        let type_ptr = unsafe: read(analysis).types.get(first)
+        if type_ptr != null and tref.name.parts.len == 1:
+            # Only a *nominal* type carries the host's `module.name` spelling; a
+            # primitive (`int`) renders bare, without a qualifier.
+            let module_name = types.nominal_module(unsafe: read(ptr[types.Type]<-type_ptr))
+            if module_name.len > 0:
+                text.append(module_name)
+                text.append(".")
+    text.append(ast_formatter.render_type(tref))
+    return text
+
+
 ## The hover result for one local declaration.
 function local_hover_result(
     is_let: bool,
@@ -3013,11 +3126,8 @@ function local_hover_result(
     var type_text = string.String.create()
 
     if stmt_type != null:
-        let ty = unsafe: read(ptr[ast.TypeRef]<-stmt_type)
-        if ty.name.parts.len > 0:
-            type_text.append(unsafe: read(ty.name.parts.data))
-            if ty.nullable:
-                type_text.append("?")
+        type_text.release()
+        type_text = annotated_type_text(unsafe: read(ptr[ast.TypeRef]<-stmt_type), analysis, current_module)
     else:
         match type_render.initializer_type(analysis, value):
             Option.some as init_ty:
