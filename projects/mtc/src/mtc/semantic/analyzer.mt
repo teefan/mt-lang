@@ -127,6 +127,10 @@ struct Context:
     static_member_types: map_mod.Map[str, bool]
     match_case_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
+    ## The static-member types that are *variants* rather than enums or flags
+    ## (`Option`, `Result`, a declared `variant`): an arm resolves the
+    ## constructor form `Type.arm(field: T)`, never an enum member's value.
+    variant_types: map_mod.Map[str, bool]
     functions: map_mod.Map[str, FnSig]
     value_types: map_mod.Map[str, types.Type]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
@@ -188,6 +192,8 @@ public struct Analysis:
     method_sigs: map_mod.Map[str, FnSig]
     static_member_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
+    ## See `Context.variant_types`.
+    variant_types: map_mod.Map[str, bool]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
@@ -258,6 +264,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         static_member_types = map_mod.Map[str, bool].create(),
         match_case_types = map_mod.Map[str, bool].create(),
         match_case_names = map_mod.Map[str, span[str]].create(),
+        variant_types = map_mod.Map[str, bool].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
         interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create(),
@@ -325,6 +332,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         method_sigs = ctx.method_sigs,
         static_member_types = ctx.static_member_types,
         match_case_names = ctx.match_case_names,
+        variant_types = ctx.variant_types,
         interfaces = ctx.interfaces,
         resolved_expr_types = ctx.resolved_expr_types,
         resolved_call_kinds = ctx.resolved_call_kinds,
@@ -779,6 +787,7 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
     ctx.types.set(name, types.Type.ty_named(module_name = "", name = name))
     ctx.static_member_types.set(name, true)
     ctx.match_case_types.set(name, true)
+    ctx.variant_types.set(name, true)
     ctx.method_keys.set(method_key(name, arm_a), true)
     ctx.method_keys.set(method_key(name, arm_b), true)
     var arms = vec.Vec[str].create()
@@ -1212,6 +1221,7 @@ function collect_enum_variant_members(ctx: ref[Context], file: ast.SourceFile) -
             ast.Decl.decl_variant as vr:
                 ctx.static_member_types.set(vr.name, true)
                 ctx.match_case_types.set(vr.name, true)
+                ctx.variant_types.set(vr.name, true)
                 ctx.match_case_names.set(vr.name, variant_arm_names(vr.variant_arms))
                 register_arm_names(ctx, vr.name, vr.variant_arms)
             _:
@@ -3065,6 +3075,15 @@ function is_comparison_or_logical_op(op: str) -> bool:
 
 
 function const_eval_int_expr(ctx: ref[Context], ep: ptr[ast.Expr]) -> Option[long]:
+    return const_eval_int(ref_of(ctx.const_values), ep)
+
+
+## Integer evaluation of a constant expression against a `const` table: integer
+## and char literals, other constants by name, and the unary/arithmetic/bitwise
+## operators.  Public so a consumer outside the analysis pass folds a value the
+## way the host does — the LSP's enum/flags member hover renders the host's
+## `member_value`, which is this fold of the member's declared expression.
+public function const_eval_int(const_values: ref[map_mod.Map[str, ptr[ast.Expr]]], ep: ptr[ast.Expr]) -> Option[long]:
     unsafe:
         match read(ep):
             ast.Expr.expr_integer_literal as lit:
@@ -3072,12 +3091,12 @@ function const_eval_int_expr(ctx: ref[Context], ep: ptr[ast.Expr]) -> Option[lon
             ast.Expr.expr_char_literal as ch:
                 return Option[long].some(value = long<-ch.value)
             ast.Expr.expr_identifier as id:
-                let chain = ctx.const_values.get(id.name)
+                let chain = const_values.get(id.name)
                 if chain != null:
-                    return const_eval_int_expr(ctx, read(chain))
+                    return const_eval_int(const_values, read(chain))
                 return Option[long].none
             ast.Expr.expr_unary_op as un:
-                let v = const_eval_int_expr(ctx, un.operand) else:
+                let v = const_eval_int(const_values, un.operand) else:
                     return Option[long].none
                 if un.operator == "-":
                     return Option[long].some(value = -v)
@@ -3085,9 +3104,9 @@ function const_eval_int_expr(ctx: ref[Context], ep: ptr[ast.Expr]) -> Option[lon
                     return Option[long].some(value = ~v)
                 return Option[long].some(value = v)
             ast.Expr.expr_binary_op as bin:
-                let l = const_eval_int_expr(ctx, bin.left) else:
+                let l = const_eval_int(const_values, bin.left) else:
                     return Option[long].none
-                let r = const_eval_int_expr(ctx, bin.right) else:
+                let r = const_eval_int(const_values, bin.right) else:
                     return Option[long].none
                 if bin.operator == "+":
                     return Option[long].some(value = l + r)

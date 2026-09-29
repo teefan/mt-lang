@@ -57,7 +57,7 @@ function declaration_region_end(ast_file: ast.SourceFile, index: ptr_uint, sourc
 
 
 ## The first source line of a declaration, 0 for a declaration without one.
-function decl_start_line(candidate: ast.Decl) -> ptr_uint:
+public function decl_start_line(candidate: ast.Decl) -> ptr_uint:
     match candidate:
         ast.Decl.decl_function as fun:
             return fun.line

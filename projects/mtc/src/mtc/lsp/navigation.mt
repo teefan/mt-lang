@@ -1044,8 +1044,10 @@ function resolve_cursor(
                 let module_ptr = analysis.imports.get(recv.value)
                 if module_ptr != null:
                     return resolve_module_member(ws, read(module_ptr), target.text)
-            # `EnumType.member`: render the enum member.
-            if analysis.static_member_types.contains(recv.value):
+            # `EnumType.member`: render the enum member — but a *variant*'s arms
+            # are not members with values; they resolve through the arm-name arms
+            # below, which render the constructor form (`Kind.ident(name: str)`).
+            if analysis.static_member_types.contains(recv.value) and not analysis.variant_types.contains(recv.value):
                 return resolve_enum_member(recv.value, target.text, source, ref_of(analysis))
         Option.none:
             pass
@@ -1102,6 +1104,16 @@ function resolve_cursor(
     match resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source, current_module.as_str()):
         Option.some as named:
             return Option[CursorResult].some(value = named.value)
+        Option.none:
+            pass
+
+    # A bare enum/flags member name (`Kind.a = 0`): the host's
+    # `find_member_in_types` runs after every name lookup and renders
+    # `Type.member = value` — the member's value *folded* to an integer, so an
+    # implicit member reports the auto-incremented value.
+    match bare_member_hover(ast_file, ref_of(analysis), target.text):
+        Option.some as member_hit:
+            return Option[CursorResult].some(value = member_hit.value)
         Option.none:
             pass
 
@@ -2914,6 +2926,77 @@ function variant_arm_name_in_file(file: ast.SourceFile, name: str) -> Option[Cur
     return Option[CursorResult].none
 
 
+## The hover for a bare enum or flags *member* name — the host's
+## `find_member_in_types`, which scans its types in reverse declaration order and
+## renders `Type.member = value` for the first type that declares the member.
+## The value is the member's declared expression folded to an integer, so an
+## implicit member reports the value the parser synthesized for it
+## (`Kind.c = 6` after `b = 5`).  No location: the host renders this arm from the
+## type's member table, not from a token.
+function bare_member_hover(file: ast.SourceFile, analysis: ref[analyzer.Analysis], name: str) -> Option[CursorResult]:
+    var di: int = int<-file.declarations.len - 1
+    while di >= 0:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + ptr_uint<-di)
+        match decl:
+            ast.Decl.decl_enum as en:
+                match member_hover_in_members(en.name, en.enum_members, analysis, name):
+                    Option.some as enum_hit:
+                        return Option[CursorResult].some(value = enum_hit.value)
+                    Option.none:
+                        pass
+            ast.Decl.decl_flags as fl:
+                match member_hover_in_members(fl.name, fl.flags_members, analysis, name):
+                    Option.some as flags_hit:
+                        return Option[CursorResult].some(value = flags_hit.value)
+                    Option.none:
+                        pass
+            _:
+                pass
+        di -= 1
+    return Option[CursorResult].none
+
+
+## `Type.member = value` for `name` among one enum/flags declaration's members.
+function member_hover_in_members(
+    type_name: str,
+    members: span[ast.EnumMember],
+    analysis: ref[analyzer.Analysis],
+    name: str,
+) -> Option[CursorResult]:
+    var mi: ptr_uint = 0
+    while mi < members.len:
+        let member = unsafe: read(members.data + mi)
+        if member.name.equal(name):
+            var hover = string.String.create()
+            hover.append(type_name)
+            hover.append(".")
+            hover.append(member.name)
+            let value_expr = member.value
+            if value_expr != null:
+                match analyzer.const_eval_int(ref_of(analysis.const_values), unsafe: ptr[ast.Expr]<-value_expr):
+                    Option.some as value:
+                        var value_text = string.String.create()
+                        value_text.append_format(f"#{value.value}")
+                        defer: value_text.release()
+                        hover.append(" = ")
+                        hover.append(value_text.as_str())
+                    Option.none:
+                        pass
+            return Option[CursorResult].some(value = CursorResult(
+                line = 0,
+                column = 0,
+                name_len = member.name.len,
+                hover_text = hover,
+                docs = string.String.create(),
+                target_uri = string.String.create(),
+                from_modules = string.String.create()
+            ))
+        mi += 1
+    return Option[CursorResult].none
+
+
 ## The `Type.arm(field: T, …)` hover payload (the host's
 ## `find_variant_arm_in_types` rendering: the fields in declaration order, no
 ## location).
@@ -3383,24 +3466,30 @@ function resolve_local_hover(
             pass
 
     # 4. Fallback for the declarations the scope walk does not model (the flat
-    # per-function scan): any enclosing function's top-level local.
-    var di: ptr_uint = 0
-    while di < ast_file.declarations.len:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(ast_file.declarations.data + di)
-        match decl:
-            ast.Decl.decl_function as fun:
-                if fun.line <= target_line and fun.body != null:
-                    var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str(), source, ref_of(analysis), current_module.as_str())
-                    match body_loc:
-                        Option.some as loc:
-                            return Option[CursorResult].some(value = loc.value)
-                        Option.none:
-                            pass
-            _:
-                pass
-        di += 1
+    # per-function scan) — only inside the declaration that *contains* the
+    # cursor.  The file's top-level declarations are ordered and a declaration's
+    # region runs to the next one, so the last declaration starting at or before
+    # the cursor is the enclosing one; a local of some earlier function must not
+    # answer for a position in a later one (the host resolves a binding only
+    # through the cursor's own completion frame).
+    match enclosing_decl_index(ast_file, target_line):
+        Option.some as enclosing_index:
+            var edecl: ast.Decl
+            unsafe:
+                edecl = read(ast_file.declarations.data + enclosing_index.value)
+            match edecl:
+                ast.Decl.decl_function as fun:
+                    if fun.body != null:
+                        var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str(), source, ref_of(analysis), current_module.as_str())
+                        match body_loc:
+                            Option.some as loc:
+                                return Option[CursorResult].some(value = loc.value)
+                            Option.none:
+                                pass
+                _:
+                    pass
+        Option.none:
+            pass
 
     # 4. Lexical fallback: search source text for any "let/var/const name"
     #    declaration (including module-level) appearing before the cursor.
@@ -3411,6 +3500,24 @@ function resolve_local_hover(
             pass
 
     return Option[CursorResult].none
+
+
+## The index of the top-level declaration that contains `target_line` (1-based):
+## the last one that starts at or before it.  The file's declarations are
+## ordered, so that is the enclosing declaration for a position inside a body.
+function enclosing_decl_index(file: ast.SourceFile, target_line: ptr_uint) -> Option[ptr_uint]:
+    var nearest: ptr_uint = 0
+    var found = false
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        let line = scope_mod.decl_start_line(unsafe: read(file.declarations.data + di))
+        if line > 0 and line <= target_line:
+            nearest = di
+            found = true
+        di += 1
+    if found:
+        return Option[ptr_uint].some(value = nearest)
+    return Option[ptr_uint].none
 
 
 
