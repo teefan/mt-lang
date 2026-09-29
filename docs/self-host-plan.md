@@ -1899,6 +1899,65 @@ field table loses the signature); a **member chain's third segment**
 binding inside **nested `unsafe` blocks** (`let b = read(inner)` under a second
 `unsafe:`).
 
+### Track B, eleventh and twelfth batch (2026-09-29 session 12): the definition pipeline
+
+The session started by *classifying* definition/declaration/typeDefinition instead
+of guessing: 181 of the 224 remaining entries, and 45–49 of the 61 per class were
+one shape.  Classifying paid: the audit went **224 → 60**.
+
+1. **The host's *local* definition rule.**  Its completion bindings
+   (`Bindings::ValueBinding`) carry no AST node, so a definition request for a
+   name bound in scope goes through `find_local_declaration_ast_node`, which walks
+   the whole file and answers the **first** `let`/`var`/`for` declaration of that
+   name *before* the cursor — not the enclosing binding.  An editor therefore
+   jumps to an unrelated same-named local earlier in the file; that artefact is
+   what the port reproduces.  `resolve_local_definition` gates on the scope walk
+   (`local_binding_line`, the same region model the hover's own rendering uses)
+   and then walks the AST (`first_local_declaration` → `first_local_in_stmt(s)`):
+   declarations in order, statements in source order including nested bodies, the
+   `for` bindings before their body, and — as in the host — destructured names and
+   `as` bindings are not a `LocalDecl`'s own name, so they never match.
+2. **The hover-only arms must not answer a definition.**  `resolve_cursor`'s
+   `for_hover` flag (from session 11's attribute fix) now also gates the bare
+   member arm (`flags Mask`'s `b` used to answer for a local `let b`) and the
+   variant-arm arm; the definition pipeline has neither, so a definition request
+   for such a name keeps resolving through the local rule and the index.
+3. **The builtin gate.**  The host answers *nothing* for a name that resolves
+   through `builtin_hover_info` (`is_builtin_name?`) — before both its binding arm
+   and its index arm.  `builtin_name_at` shares the self's builtin
+   specialization/hook/type-constructor arms with the hover, and
+   `handle_definition` responds null there instead of letting the index answer
+   another open document's `let ptr: ptr[int]?`.
+4. **An import alias's member declaration.**  The host's definition tries
+   `module_member_definition_location` for the alias's *own* name first
+   (`find_definition_token_in_file`: the first token a definition keyword
+   introduces with that lexeme) and only then the module file: `hash` finds
+   `function hash` in `std/hash.mt`, `ptr` the `extending ptr[T]:` block in
+   `std/mem/ptr.mt`.  `import_alias_member_declaration` ports the token-pair scan
+   behind the alias arm (definition-only: a hover answers the module, as the
+   host's hover does).  The alias arm for `alias.Member` now also requires an
+   identifier token under the cursor, so an `alias.member` spelled inside a
+   comment defines nothing.
+5. **A method's declaration line follows the receiver's type.**
+   `resolve_member_method_hover` and `resolve_type_method_hover` resolved the
+   receiver's type for the signature but used the type-blind `find_method_line`
+   for the location, so `dg.release()` on a `DenseGraph[str]` pointed at
+   `extending Graph[T]`'s `release` (std/graph.mt:345) instead of
+   `extending DenseGraph[T]`'s (:699).  Both tails call
+   `find_method_line_in_type` now.
+
+Measured (full matrix, authoritative): the audit **224 → 60 → 56** —
+definition **61 → 5**, declaration **61 → 5**, typeDefinition **59 → 4**
+(closed 56/56/55 in total, none added), hover **32 → 13** (the last one the same
+`release()` position), the small classes unchanged, references **0**.  The
+navigation residue is five positions in all three classes, all cross-file/index
+location shapes: an interface method's own token (`lb@181:22`, take_damage),
+`type quat`'s missing `std/linear_algebra.mt:237` and `parameter idx`'s
+`std/spatial.mt:125` (the host's cross-file definition index reaching files the
+audit never opened), `start` (`lb@412:24`, `std/graph.mt:363`) and a field's
+`parent` (`node.mt@2:4`, the host answering `std/binary_heap.mt:49`) — the last
+four are the same index-scope family.  These are Track C1's work.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**
