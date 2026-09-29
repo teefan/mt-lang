@@ -668,8 +668,30 @@ module MilkTea
 
       def emit_str_literal_constants(literals)
         literals.each_with_index.map do |value, i|
-          "static const mt_str #{str_literal_name(i)} = { .data = #{value.inspect}, .len = #{value.bytesize} };"
+          "static const mt_str #{str_literal_name(i)} = { .data = #{c_string_literal(value)}, .len = #{value.bytesize} };"
         end
+      end
+
+      # A C double-quoted string literal for `value`.  Bytes >= 0x80 (UTF-8
+      # text) are emitted raw: Ruby's `String#inspect` escapes them as `\xNN`,
+      # and C's hex escape absorbs every following hex digit, so `"4\xC3\x974"`
+      # compiles to `4`, 0xC3, `t` — corrupting the text and its byte length.
+      # Mirrors the self-host's `c_string_literal`.
+      def c_string_literal(value)
+        out = String.new('"', encoding: Encoding::BINARY)
+        value.bytes.each do |byte|
+          case byte
+          when 0x22 then out << '\\"'
+          when 0x5c then out << '\\\\'
+          when 0x0a then out << '\\n'
+          when 0x0d then out << '\\r'
+          when 0x09 then out << '\\t'
+          when 0x00 then out << '\\0'
+          else out << byte
+          end
+        end
+        out << '"'
+        out.force_encoding(value.encoding)
       end
 
       def str_literal_name(index)

@@ -70,7 +70,7 @@ module MilkTea
         when IR::FloatLiteral
           emit_float_literal(expression)
         when IR::StringLiteral
-          expression.type.is_a?(Types::StringView) ? emit_str_literal(expression) : expression.value.inspect
+          expression.type.is_a?(Types::StringView) ? emit_str_literal(expression) : c_string_literal(expression.value)
         when IR::BooleanLiteral
           expression.value ? "true" : "false"
         when IR::NullLiteral
@@ -281,7 +281,7 @@ module MilkTea
         if @str_literal_map && @str_literal_map[expression.value]
           @str_literal_map[expression.value]
         else
-          "{ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
+          "{ .data = #{c_string_literal(expression.value)}, .len = #{expression.value.bytesize} }"
         end
       end
 
@@ -559,7 +559,7 @@ module MilkTea
         if @str_literal_map && @str_literal_map[expression.value]
           @str_literal_map[expression.value]
         else
-          "(mt_str){ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
+          "(mt_str){ .data = #{c_string_literal(expression.value)}, .len = #{expression.value.bytesize} }"
         end
       end
 

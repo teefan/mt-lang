@@ -670,7 +670,7 @@ module MilkTea
 
       def emit_static_assert(statement)
         message = if statement.message.is_a?(IR::StringLiteral)
-          statement.message.value.inspect
+          c_string_literal(statement.message.value)
         else
           emit_expression(statement.message)
         end
