@@ -35,6 +35,17 @@ public struct DefinitionToken:
     length: ptr_uint
 
 
+## LSP SymbolKinds, as the host's `symbol_kind` maps them.
+const KIND_TYPE_ALIAS: int = 5
+const KIND_ENUM:       int = 10
+const KIND_INTERFACE:  int = 11
+const KIND_FUNCTION:   int = 12
+const KIND_VARIABLE:   int = 13
+const KIND_CONSTANT:   int = 14
+const KIND_STRUCT:     int = 23
+const KIND_EVENT:      int = 24
+
+
 ## A resolved cross-file hit: the token and the document (by path) that
 ## declares it.
 public struct DefinitionEntry:
@@ -51,11 +62,23 @@ public struct CandidateDocument:
     source: str
 
 
-## Per-document state: the token-pair index (name → tokens, document order) and
-## the names the document's declaration lines introduce.
+## One token-pair declaration as the host's `extract_symbols_from_tokens`
+## reports it: the identifier's name, the LSP SymbolKind of the keyword that
+## introduced it, and its 1-based position.
+public struct SymbolEntry:
+    name: string.String
+    kind: int
+    line: ptr_uint
+    column: ptr_uint
+
+
+## Per-document state: the token-pair index (name → tokens, document order), the
+## names the document's declaration lines introduce, and the declaration symbols
+## in document order (the host's `get_symbols`).
 public struct DocumentIndex:
     tokens: map_mod.Map[string.String, vec.Vec[DefinitionToken]]
     names: map_mod.Map[string.String, bool]
+    symbols: vec.Vec[SymbolEntry]
 
 
 public struct DefinitionIndex:
@@ -66,6 +89,10 @@ public struct DefinitionIndex:
     ## The host's `@definition_names_by_uri`: the names each warmed document
     ## registered, so a re-warm can drop the stale ones first.
     names_by_uri: map_mod.Map[string.String, vec.Vec[string.String]]
+    ## Every warmed document's path in warm order — the host's
+    ## `@indexed_documents.keys` order, which `workspace/symbol` reports in.
+    warm_order: vec.Vec[string.String]
+    warm_seen: map_mod.Map[string.String, bool]
 
 
 public function create() -> DefinitionIndex:
@@ -73,7 +100,15 @@ public function create() -> DefinitionIndex:
         documents = map_mod.Map[string.String, DocumentIndex].create(),
         candidates = map_mod.Map[string.String, vec.Vec[string.String]].create(),
         names_by_uri = map_mod.Map[string.String, vec.Vec[string.String]].create(),
+        warm_order = vec.Vec[string.String].create(),
+        warm_seen = map_mod.Map[string.String, bool].create(),
     )
+
+
+## The documents the index knows, in warm order (the host's
+## `@indexed_documents` keys).  Borrowed from the index.
+public function warmed_paths(index: ref[DefinitionIndex]) -> span[string.String]:
+    return index.warm_order.as_span()
 
 
 ## The documents known to declare `name`, in warm order — the host's
@@ -107,6 +142,9 @@ public function warm_names(index: ref[DefinitionIndex], uri: str, source: str) -
     if index.names_by_uri.contains(key):
         key.release()
         return
+    if not index.warm_seen.contains(key):
+        index.warm_order.push(string.String.from_str(uri))
+        index.warm_seen.set(string.String.from_str(uri), true)
 
     var names = map_mod.Map[string.String, bool].create()
     defer: names.release()
@@ -235,6 +273,19 @@ public function release(index: ref[DefinitionIndex]) -> void:
             release_string_vec(ref_of(paths))
     index.candidates.release()
 
+    release_string_vec(ref_of(index.warm_order))
+    release_map_keys_bool(ref_of(index.warm_seen))
+    index.warm_seen.release()
+
+
+## Release a map's stored string keys (the values are released by the caller).
+function release_map_keys_bool(values: ref[map_mod.Map[string.String, bool]]) -> void:
+    var iter = values.keys()
+    while true:
+        let key_ptr = iter.next() else:
+            break
+        unsafe: read(key_ptr).release()
+
 
 ## Release a map's stored string keys (the values are released by the caller).
 function release_map_keys(values: ref[map_mod.Map[string.String, DocumentIndex]]) -> void:
@@ -349,8 +400,19 @@ function document_tokens(index: ref[DefinitionIndex], doc: CandidateDocument, na
     return Option[span[DefinitionToken]].some(value = unsafe: read(tokens_ptr).as_span())
 
 
+## The declaration symbols of `doc` in document order, warming its token index
+## first — the host's `get_symbols(uri)` → `extract_symbols_from_tokens`.
+public function symbols_for(index: ref[DefinitionIndex], path: str, source: str) -> span[SymbolEntry]:
+    let doc = CandidateDocument(uri = path, source = source)
+    warm_document(index, doc)
+    let stored = stored_document(index, path) else:
+        return span[SymbolEntry]()
+    return stored.symbols.as_span()
+
+
 ## Warm `doc` when it is not indexed yet: the pair index of its declaration
-## identifiers and the set of names its declaration lines introduce.
+## identifiers, the set of names its declaration lines introduce, and its
+## declaration symbols.
 function warm_document(index: ref[DefinitionIndex], doc: CandidateDocument) -> void:
     var key = string.String.from_str(doc.uri)
     defer: key.release()
@@ -358,12 +420,13 @@ function warm_document(index: ref[DefinitionIndex], doc: CandidateDocument) -> v
         return
 
     var tokens = map_mod.Map[string.String, vec.Vec[DefinitionToken]].create()
-    index_tokens(ref_of(tokens), doc.source)
+    var symbols = vec.Vec[SymbolEntry].create()
+    index_tokens(ref_of(tokens), ref_of(symbols), doc.source)
 
     var names = map_mod.Map[string.String, bool].create()
     collect_declared_names(ref_of(names), doc.source)
 
-    index.documents.set(string.String.from_str(doc.uri), DocumentIndex(tokens = tokens, names = names))
+    index.documents.set(string.String.from_str(doc.uri), DocumentIndex(tokens = tokens, names = names, symbols = symbols))
 
 
 function stored_document(index: ref[DefinitionIndex], uri: str) -> Option[DocumentIndex]:
@@ -384,24 +447,36 @@ function release_document_index(doc_index: ref[DocumentIndex]) -> void:
         unsafe: read(cell).release()
     doc_index.tokens.release()
     doc_index.names.release()
+    var si: ptr_uint = 0
+    while si < doc_index.symbols.len():
+        let entry = doc_index.symbols.get(si) else:
+            break
+        unsafe: read(entry).name.release()
+        si += 1
+    doc_index.symbols.release()
 
 
 ## Index every identifier that immediately follows a declaration keyword — the
 ## host's `definition_token_index` token-pair scan (structural tokens included,
-## since they are part of the stream).
-function index_tokens(tokens: ref[map_mod.Map[string.String, vec.Vec[DefinitionToken]]], source: str) -> void:
+## since they are part of the stream) — and collect the same pairs as declaration
+## symbols, in document order (`extract_symbols_from_tokens`).
+function index_tokens(
+    tokens: ref[map_mod.Map[string.String, vec.Vec[DefinitionToken]]],
+    symbols: ref[vec.Vec[SymbolEntry]],
+    source: str,
+) -> void:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
     var lexed = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: lexed.release()
 
-    var previous_was_keyword = false
+    var previous_kind: int = -1
     var ti: ptr_uint = 0
     while ti < lexed.len():
         let token_ptr = lexed.get(ti) else:
             break
         let token = unsafe: read(token_ptr)
-        if previous_was_keyword and token.kind == tk.TokenKind.identifier:
+        if previous_kind >= 0 and token.kind == tk.TokenKind.identifier:
             let lexeme = unsafe: token_mod.token_lexeme(token, source)
             var map_key = string.String.from_str(lexeme)
             let entry = tokens.get(map_key)
@@ -412,8 +487,38 @@ function index_tokens(tokens: ref[map_mod.Map[string.String, vec.Vec[DefinitionT
             else:
                 map_key.release()
                 unsafe: read(entry).push(DeclarationTokenOf(token))
-        previous_was_keyword = is_definition_keyword(token.kind)
+            # `_` is a discard, never a symbol (the host's extraction skips it).
+            if not (previous_kind == KIND_VARIABLE and lexeme.equal("_")):
+                symbols.push(SymbolEntry(
+                    name = string.String.from_str(lexeme),
+                    kind = previous_kind,
+                    line = token.line,
+                    column = token.column,
+                ))
+        previous_kind = symbol_kind_for_keyword(token.kind)
         ti += 1
+
+
+## The LSP SymbolKind of a declaration keyword, or -1 for every other token —
+## the host's kind table (`function`/`struct`/… → `symbol_kind`).
+function symbol_kind_for_keyword(kind: tk.TokenKind) -> int:
+    if not is_definition_keyword(kind):
+        return -1
+    if kind == tk.TokenKind.tk_function:
+        return KIND_FUNCTION
+    if kind == tk.TokenKind.tk_interface:
+        return KIND_INTERFACE
+    if kind == tk.TokenKind.tk_type:
+        return KIND_TYPE_ALIAS
+    if kind == tk.TokenKind.tk_const:
+        return KIND_CONSTANT
+    if kind == tk.TokenKind.tk_let or kind == tk.TokenKind.tk_var:
+        return KIND_VARIABLE
+    if kind == tk.TokenKind.tk_enum or kind == tk.TokenKind.tk_flags:
+        return KIND_ENUM
+    if kind == tk.TokenKind.tk_event:
+        return KIND_EVENT
+    return KIND_STRUCT
 
 
 function DeclarationTokenOf(token: token_mod.Token) -> DefinitionToken:

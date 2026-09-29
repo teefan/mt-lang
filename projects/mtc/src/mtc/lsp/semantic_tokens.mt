@@ -673,7 +673,7 @@ function scan_import_module_path(tokens: span[token_mod.Token], index: ptr_uint,
         if not scan_is_trivia(t.kind):
             if t.kind == tk_mod.TokenKind.tk_as:
                 seen_as = true
-            else if i == index and not seen_as:
+            else if i == index and not seen_as and i != line_start:
                 is_module_path = true
         i += 1
     return is_module_path
@@ -693,6 +693,102 @@ function scan_is_import_alias(tokens: span[token_mod.Token], index: ptr_uint) ->
     let prev_idx = scan_prev_index(tokens, index) else:
         return false
     return scan_kind_at(tokens, prev_idx) == tk_mod.TokenKind.tk_as
+
+
+## The index of the closer matching the opener at `opener_index`, or none.
+function scan_matching_closer_index(
+    tokens: span[token_mod.Token],
+    opener_index: ptr_uint,
+    open_kind: tk_mod.TokenKind,
+    close_kind: tk_mod.TokenKind,
+) -> Option[ptr_uint]:
+    var depth: ptr_uint = 0
+    var i = opener_index
+    while i < tokens.len:
+        let kind = scan_kind_at(tokens, i)
+        if kind == open_kind:
+            depth += 1
+        else if kind == close_kind:
+            if depth > 0:
+                depth -= 1
+            if depth == 0:
+                return Option[ptr_uint].some(value = i)
+        i += 1
+    return Option[ptr_uint].none
+
+
+## True when the identifier sits inside a type-argument list (`Vec[int]`,
+## `SoA[Point, 4]`) — the host's `identifier_in_type_argument_position?`: the
+## previous significant token is `[`, or a `,` whose enclosing opener is `[`,
+## and a matching `]` follows the identifier.
+function scan_identifier_in_type_argument_position(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    var opener = scan_prev_index(tokens, index) else:
+        return false
+
+    if scan_kind_at(tokens, opener) == tk_mod.TokenKind.comma:
+        var depth: ptr_uint = 0
+        var found = false
+        var i = opener
+        while i > 0:
+            i -= 1
+            let kind = scan_kind_at(tokens, i)
+            if kind == tk_mod.TokenKind.rbracket:
+                depth += 1
+            else if kind == tk_mod.TokenKind.lbracket:
+                if depth == 0:
+                    opener = i
+                    found = true
+                    break
+                depth -= 1
+        if not found:
+            return false
+
+    if scan_kind_at(tokens, opener) != tk_mod.TokenKind.lbracket:
+        return false
+    let closer = scan_matching_closer_index(
+        tokens, opener, tk_mod.TokenKind.lbracket, tk_mod.TokenKind.rbracket) else:
+        return false
+    let next_idx = scan_next_index(tokens, index) else:
+        return false
+    return next_idx <= closer
+
+
+## True when a keyword token is a module-path segment (`import std.async as aio`)
+## — the host's `namespace_keyword_token?`, whose name classifier answers
+## `namespace` for it.
+function scan_keyword_namespace_token(tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    return scan_import_module_path(tokens, index, source)
+
+
+## True for a character literal: the host's classifier has no arm for one, so it
+## emits no entry.
+function scan_is_char_literal(kind: tk_mod.TokenKind) -> bool:
+    return kind == tk_mod.TokenKind.char_literal
+
+
+## True when a keyword is a declaration name followed by a colon and is not a
+## standalone block keyword — the host's `keyword_field_declaration_token?`
+## (which is what colors a `null` ending an `if …:` line as a field
+## declaration).
+function scan_is_keyword_field_declaration(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let kind = scan_kind_at(tokens, index)
+    if kind == tk_mod.TokenKind.tk_unsafe or kind == tk_mod.TokenKind.tk_else or
+       kind == tk_mod.TokenKind.tk_defer or kind == tk_mod.TokenKind.tk_parallel:
+        return false
+    if scan_is_match_arm_binding(tokens, index):
+        return false
+    if scan_is_destructure_let(tokens, index):
+        return false
+    let next_idx = scan_next_index(tokens, index) else:
+        return false
+    return scan_kind_at(tokens, next_idx) == tk_mod.TokenKind.colon
+
+
+## True when the previous significant token is a dot.
+function scan_prev_is_dot(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let prev_idx = scan_prev_index(tokens, index) else:
+        return false
+    return scan_kind_at(tokens, prev_idx) == tk_mod.TokenKind.dot
 
 
 ## Classify one identifier token (the host's `classify_name_semantic`).
@@ -764,6 +860,15 @@ function classify_scan_identifier(
     # Variant arm names are members of the variant's member set.
     if scan_is_variant_enum_member(tokens, index):
         return TokenClass(token_type = TOKEN_ENUM_MEMBER, token_mod = 1)
+
+    # A type argument renders a *declared* type name without the defaultLibrary
+    # modifier (`Vec[int]`, `SoA[Point, 4]`) — the host's
+    # `identifier_in_type_argument_position?` arm, whose `known_type_name?`
+    # counts only the facts' declared types, so a builtin constructor (`ptr` in
+    # `null[ptr[int]]`) keeps its `type` + defaultLibrary entry.
+    if scan_identifier_in_type_argument_position(tokens, index):
+        if unsafe: read(facts).types.contains(lexeme) or read(facts).interfaces.contains(lexeme):
+            return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
 
     # Dotted member access.
     if prev_opt.is_some() and scan_kind_at(tokens, prev_opt.unwrap()) == tk_mod.TokenKind.dot:
@@ -1138,6 +1243,25 @@ function compute_token_data(
                 token_type = cls.token_type
                 token_mod = cls.token_mod
         else:
+            # A keyword inside an `import` path is a namespace segment, as the
+            # host's `namespace_keyword_token?` routes it through the name
+            # classifier before the keyword arm.
+            if token_type == TOKEN_KEYWORD and scan_keyword_namespace_token(tokens, ti, source):
+                token_type = TOKEN_NAMESPACE
+            if scan_is_char_literal(kind):
+                # The host's classifier has no arm for a character literal, so
+                # it emits no entry for one.
+                ti += 1
+                continue
+            if token_type == TOKEN_KEYWORD:
+                # The host's keyword arm: `name` before a colon declares a field
+                # (`null` ending an `if …:` line included), a keyword after a dot
+                # is a property.
+                if scan_is_keyword_field_declaration(tokens, ti):
+                    token_type = TOKEN_PROPERTY
+                    token_mod = 1
+                else if scan_prev_is_dot(tokens, ti):
+                    token_type = TOKEN_PROPERTY
             if kind == tk_mod.TokenKind.at:
                 in_decorator = true
                 decorator_depth = 0
@@ -1148,15 +1272,17 @@ function compute_token_data(
                     decorator_depth -= 1
                 if decorator_depth == 0:
                     in_decorator = false
-        # Heredoc tokens are not highlighted (mirrors the host).
+        # A heredoc body is emitted one entry per line — the host splits a
+        # multi-line string token (`token_semantic_entries`) — except for the
+        # embedded-language tags it leaves to the editor's grammar
+        # (`embedded_heredoc_token?`).
         if token_type == TOKEN_STRING:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
-            match lexeme.find_substring("<<-"):
-                Option.some:
-                    ti += 1
-                    continue
-                Option.none:
-                    pass
+            if scan_is_heredoc(lexeme):
+                if not scan_heredoc_embedded_tag(lexeme):
+                    emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char))
+                ti += 1
+                continue
         let delta_line = line_num - prev_line
         var delta_char = col_num
         if delta_line == 0:
@@ -1171,6 +1297,76 @@ function compute_token_data(
         ti += 1
 
     return data
+
+
+## The offset of a heredoc's tag inside its lexeme (`<<-TAG` or `f<<-TAG`), or 0
+## when the lexeme is no heredoc.
+function heredoc_tag_start(lexeme: str) -> ptr_uint:
+    if lexeme.starts_with("<<-"):
+        return 3
+    if lexeme.len > 4 and (lexeme.byte_at(0) == 'f' or lexeme.byte_at(0) == 'c') and
+       lexeme.byte_at(1) == '<' and lexeme.byte_at(2) == '<' and lexeme.byte_at(3) == '-':
+        return 4
+    return 0
+
+
+## True when the lexeme is a heredoc string.
+function scan_is_heredoc(lexeme: str) -> bool:
+    return heredoc_tag_start(lexeme) > 0
+
+
+## True for the embedded-language heredoc tags the host leaves to the editor's
+## grammar (`embedded_heredoc_token?`).
+function scan_heredoc_embedded_tag(lexeme: str) -> bool:
+    let start = heredoc_tag_start(lexeme)
+    if start == 0:
+        return false
+    var end = start
+    while end < lexeme.len and not scan_is_heredoc_tag_end(lexeme.byte_at(end)):
+        end += 1
+    let tag = lexeme.slice(start, end - start)
+    return tag.equal("GLSL") or tag.equal("VERT") or tag.equal("FRAG") or tag.equal("COMP") or
+        tag.equal("JSON") or tag.equal("JSONC") or tag.equal("SQL") or tag.equal("HTML") or tag.equal("MT")
+
+
+function scan_is_heredoc_tag_end(b: ubyte) -> bool:
+    return b == '\n' or b == ' ' or b == '\t' or b == '\r'
+
+
+## Emit one entry per non-empty line of a multi-line heredoc token — the host's
+## `token_semantic_entries`: the first segment starts at the token's column,
+## every later segment at column 0.
+function emit_heredoc_lines(
+    data: ref[vec.Vec[uint]],
+    lexeme: str,
+    first_line: uint,
+    first_col: uint,
+    prev_line: ref[uint],
+    prev_char: ref[uint],
+) -> void:
+    var segment_start: ptr_uint = 0
+    var line_index: uint = 0
+    var i: ptr_uint = 0
+    while i <= lexeme.len:
+        if i == lexeme.len or lexeme.byte_at(i) == '\n':
+            let length: uint = uint<-(i - segment_start)
+            if length > 0:
+                let line = first_line + line_index
+                let col: uint = if line_index == 0: first_col else: 0
+                let delta_line = line - unsafe: read(prev_line)
+                var delta_char = col
+                if delta_line == 0:
+                    delta_char = col - unsafe: read(prev_char)
+                data.push(delta_line)
+                data.push(delta_char)
+                data.push(length)
+                data.push(TOKEN_STRING)
+                data.push(0)
+                unsafe: read(prev_line) = line
+                unsafe: read(prev_char) = col
+            segment_start = i + 1
+            line_index += 1
+        i += 1
 
 
 ## The host's legend names, indexed by our legend constants.

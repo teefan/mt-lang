@@ -1,76 +1,95 @@
-## Workspace symbols — builds a persistent index of all top-level
-## declarations across every .mt file under the workspace roots on first
-## query, then serves queries from the index.  Supports empty-query
-## "list all symbols" (up to the result cap).
+## Workspace symbols — the host's `handle_workspace_symbol`: every document the
+## server knows (`all_documents` = the indexed documents plus the open ones),
+## each contributing its *token-pair* declaration symbols (the same extraction
+## code lenses use), filtered by a case-insensitive name substring.  There is no
+## result cap and no workspace-root filter: the host reports whatever its
+## document set holds.
 
-import std.fmt
 import std.json as json
 import std.str
 import std.string as string
 import std.vec as vec
 
+import mtc.lsp.definition_index as defidx
 import mtc.lsp.protocol as proto
 import mtc.lsp.workspace as workspace
-import mtc.lsp.workspace_index as idx
-
-
-const MAX_RESULTS: ptr_uint = 200
-
-
-const KIND_FUNCTION:  int = 12
-const KIND_STRUCT:    int = 23
-const KIND_ENUM:      int = 10
-const KIND_VARIABLE:  int = 13
-const KIND_CONSTANT:  int = 14
-const KIND_INTERFACE: int = 11
-const KIND_CLASS:     int = 5
 
 
 public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str, id: json.Value) -> void:
     ws.build_index_if_needed()
-
-    var results = idx.query_index(ref_of(ws.index), query, MAX_RESULTS)
-    defer: results.release()
 
     var json_text = string.String.create()
     defer: json_text.release()
     json_text.append("[")
     var first = true
 
-    var ri: ptr_uint = 0
-    while ri < results.len():
-        let rp = results.get(ri) else:
-            break
-        let ei = unsafe: read(rp)
-        let ep = ws.index.entries.get(ei) else:
-            break
-        let entry = unsafe: read(ep)
-        # The host's symbol index covers the client root only; the module
-        # roots also carry the project/std ancestor used for imports.
-        if not under_root(entry.path.as_str(), ws.root_path.as_str()):
-            ri += 1
-            continue
-        if not first:
-            json_text.append(",")
-        first = false
-        emit_symbol_json(ref_of(json_text), ep)
-        ri += 1
+    var emitted = vec.Vec[string.String].create()
+    defer: release_paths(ref_of(emitted))
+
+    # The indexed documents in warm order, then the open ones — the host's
+    # `@indexed_documents.keys + @open_documents.keys`, deduplicated.
+    append_document_symbols(ws, defidx.warmed_paths(ref_of(ws.definition_index)), query, json_text, first, emitted)
+    append_document_symbols(ws, ws.open_paths_in_order(), query, json_text, first, emitted)
 
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
 
 
-function emit_symbol_json(json_text: ref[string.String], entry: ptr[idx.Entry]) -> void:
-    let e = unsafe: read(entry)
-    let lz = if e.line > 0: e.line - 1 else: 0z
-    let colz = if e.column > 0: e.column - 1 else: 0z
+## Emit the symbols of every path in `paths`, skipping documents already
+## emitted and symbols whose name does not contain `query`.
+function append_document_symbols(
+    ws: ref[workspace.Workspace],
+    paths: span[string.String],
+    query: str,
+    json_text: ref[string.String],
+    first: ref[bool],
+    emitted: ref[vec.Vec[string.String]],
+) -> void:
+    var pi: ptr_uint = 0
+    while pi < paths.len:
+        let path = unsafe: read(paths.data + pi).as_str()
+        pi += 1
+        if path.len == 0 or already_emitted(emitted, path):
+            continue
+        var content = ws.document_source(path) else:
+            continue
+        defer: content.release()
+        emitted.push(string.String.from_str(path))
 
+        let symbols = defidx.symbols_for(ref_of(ws.definition_index), path, content.as_str())
+        var si: ptr_uint = 0
+        while si < symbols.len:
+            let symbol = unsafe: read(symbols.data + si)
+            si += 1
+            if query.len > 0 and not contains_case_insensitive(symbol.name.as_str(), query):
+                continue
+            var uri = string.String.create()
+            uri.append("file://")
+            uri.append(path)
+            emit_symbol_json(json_text, first, uri.as_str(), symbol)
+            uri.release()
+
+
+## The host's `format_symbol`: a `{name, kind, location}` entry at the symbol's
+## own token.
+function emit_symbol_json(
+    json_text: ref[string.String],
+    first: ref[bool],
+    uri: str,
+    symbol: defidx.SymbolEntry,
+) -> void:
+    if not unsafe: read(first):
+        json_text.append(",")
+    unsafe: read(first) = false
+
+    let lz = if symbol.line > 0: symbol.line - 1 else: 0z
+    let colz = if symbol.column > 0: symbol.column - 1 else: 0z
     json_text.append("{\"name\":\"")
-    proto.append_escaped(json_text, e.name.as_str())
+    proto.append_escaped(json_text, symbol.name.as_str())
     json_text.append("\",\"kind\":")
-    json_text.append_format(f"#{e.kind}")
-    json_text.append(",\"location\":{\"uri\":\"file://")
-    proto.append_escaped(json_text, e.path.as_str())
+    json_text.append_format(f"#{symbol.kind}")
+    json_text.append(",\"location\":{\"uri\":\"")
+    proto.append_escaped(json_text, uri)
     json_text.append("\",\"range\":{\"start\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
@@ -78,16 +97,53 @@ function emit_symbol_json(json_text: ref[string.String], entry: ptr[idx.Entry]) 
     json_text.append("},\"end\":{\"line\":")
     json_text.append_format(f"#{lz}")
     json_text.append(",\"character\":")
-    json_text.append_format(f"#{colz + e.name.len()}")
+    json_text.append_format(f"#{colz + symbol.name.len()}")
     json_text.append("}}}}")
 
 
-## True when `path` lies inside the workspace root directory.
-function under_root(path: str, root: str) -> bool:
-    if root.len == 0:
+function already_emitted(emitted: ref[vec.Vec[string.String]], path: str) -> bool:
+    var i: ptr_uint = 0
+    while i < emitted.len():
+        let entry = emitted.get(i) else:
+            break
+        if unsafe: read(entry).as_str().equal(path):
+            return true
+        i += 1
+    return false
+
+
+function release_paths(paths: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let entry = paths.get(i) else:
+            break
+        unsafe: read(entry).release()
+        i += 1
+    paths.release()
+
+
+function contains_case_insensitive(text: str, needle: str) -> bool:
+    if needle.len == 0:
         return true
-    if not path.starts_with(root):
+    if needle.len > text.len:
         return false
-    if path.len == root.len:
-        return true
-    return path.byte_at(root.len) == '/'
+    let limit = text.len - needle.len
+    var n: ptr_uint = 0
+    while n <= limit:
+        var matched = true
+        var mi: ptr_uint = 0
+        while mi < needle.len:
+            if ascii_fold(text.byte_at(n + mi)) != ascii_fold(needle.byte_at(mi)):
+                matched = false
+                break
+            mi += 1
+        if matched:
+            return true
+        n += 1
+    return false
+
+
+function ascii_fold(value: ubyte) -> ubyte:
+    if value >= 'A' and value <= 'Z':
+        return value + ('a' - 'A')
+    return value

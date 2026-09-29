@@ -12,6 +12,7 @@ import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
+import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 
@@ -53,6 +54,12 @@ public function handle_document_highlight(
     defer: bindings.release()
     scoped_line = scope_mod.local_binding_line(ref_of(bindings), target.text, line + 1)
 
+    # The implicit receiver: the host binds `this` as a parameter of the
+    # enclosing method, so only that method's occurrences answer.
+    var this_span = Option[MethodSpan].none
+    if target.text.equal("this"):
+        this_span = enclosing_method_span(ast_file, line + 1)
+
     var json_text = string.String.create()
     defer: json_text.release()
     json_text.append("[")
@@ -76,6 +83,13 @@ public function handle_document_highlight(
                     continue
             Option.none:
                 pass
+        match this_span:
+            Option.some as method_span:
+                if occ.line < method_span.value.start or occ.line > method_span.value.end:
+                    oi += 1
+                    continue
+            Option.none:
+                pass
         if emitted > 0:
             json_text.append(",")
         emitted += 1
@@ -93,6 +107,64 @@ public function handle_document_highlight(
         oi += 1
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
+
+
+## The line span (1-based, inclusive) of the enclosing `extending` block's
+## instance method — the scope the host binds `this` in.  None when the cursor
+## is outside an `extending` block or in one of its `static` methods (which have
+## no receiver).
+public struct MethodSpan:
+    start: ptr_uint
+    end: ptr_uint
+
+
+function enclosing_method_span(file: ast.SourceFile, target_line: ptr_uint) -> Option[MethodSpan]:
+    var enclosing: ptr_uint = 0
+    var enclosing_line: ptr_uint = 0
+    var found = false
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        let line = scope_mod.decl_start_line(unsafe: read(file.declarations.data + di))
+        if line > 0 and line <= target_line and line >= enclosing_line:
+            enclosing_line = line
+            enclosing = di
+            found = true
+        di += 1
+    if not found:
+        return Option[MethodSpan].none
+
+    var decl: ast.Decl
+    unsafe:
+        decl = read(file.declarations.data + enclosing)
+    match decl:
+        ast.Decl.decl_extending_block as ext:
+            var start: ptr_uint = 0
+            var next_line: ptr_uint = 0
+            var mi: ptr_uint = 0
+            while mi < ext.methods.len:
+                let method = unsafe: read(ext.methods.data + mi)
+                if method.line <= target_line and method.method_kind != ast.MethodKind.mk_static:
+                    start = method.line
+                    next_line = 0
+                    if mi + 1 < ext.methods.len:
+                        next_line = unsafe: read(ext.methods.data + mi + 1).line
+                mi += 1
+            if start == 0:
+                return Option[MethodSpan].none
+            if next_line == 0:
+                # The block's last method: the next top-level declaration bounds
+                # the span, else the rest of the file.
+                var dj: ptr_uint = 0
+                while dj < file.declarations.len:
+                    let line = scope_mod.decl_start_line(unsafe: read(file.declarations.data + dj))
+                    if line > enclosing_line and (next_line == 0 or line < next_line):
+                        next_line = line
+                    dj += 1
+            let end = if next_line > 0: next_line - 1 else: 1000000000z
+            return Option[MethodSpan].some(value = MethodSpan(start = start, end = end))
+        _:
+            pass
+    return Option[MethodSpan].none
 
 
 ## True when the identifier at 1-based (`line`, `column`) is an occurrence the

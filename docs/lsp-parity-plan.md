@@ -6,14 +6,25 @@ readiness properties parity alone does not test — cold start, steady-state mem
 files, long sessions, real clients (Neovim/VS Code).
 
 **Where we are** (branch `selfhost`, session 13, 2026-09-29): SimpleGame audit
-6456 entries / **25 differ** (hover 9, documentHighlight 2, documentSymbol 5,
-semanticTokens 5, diagnostic 2, codeLens 1, workspace/symbol 1;
+6456 entries / **22 differ** (hover 9, documentSymbol 5, semanticTokens 5,
+diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and
 definition/declaration/typeDefinition/implementation/**references 0**);
 synthetic harness 30/30 capabilities + 4 documented entries; probe fixtures at
 their session-12 diff sets (`hover-probe4` closed 6 navigation entries);
 bootstrap fixed point + 14/14; `cli:parity` 23/38/0.  Per-class
 numbers measured with `--only` drift ±10 against the full matrix (the host
 warms its caches as the audit proceeds); the full matrix is authoritative.
+
+**Track B, fifteenth batch** (session 13, continued): code lenses and workspace
+symbols from the host's token-pair symbol list (`extract_symbols_from_tokens` →
+`SymbolEntry`/`symbols_for` in the definition index, plus `warmed_paths` for the
+document set) — codeLens **1 → 0** (145 lenses, including the nested `when`-branch
+and `emit`-expanded declarations an AST walk missed) and workspace/symbol
+**1 → 0** (the 3374-entry answer byte-equal, no cap, no root filter) —
+documentHighlight **2 → 1** (`this` scoped to its method), and the token scanner
+gained the keyword-module-path, character-literal, keyword-before-colon,
+per-line-heredoc and type-argument rules (the five files' differing positions
+**952 → 676**; the streams still differ as a whole).
 
 **Track C1 landed** (session 13): the host's cross-file definition index is
 ported — the `@definition_candidate_uris` / `@definition_names_by_uri` registry,
@@ -148,7 +159,7 @@ declaration rather than the host's partial node (§0k, session 9).
   compare, non-zero exit on diff) and its corpus under `tmp/lsp-recovery/`
   (created by the tool).  Run in the session gates.
 
-## Track B — the audit residue (25 entries, was 332)
+## Track B — the audit residue (22 entries, was 332)
 
 - **B1. hover 80 → 9.** Sessions 10–12 closed the
   analyzer-`<error>` locals with the renderings they exposed, the member
@@ -178,13 +189,15 @@ declaration rather than the host's partial node (§0k, session 9).
 - **B3. references 0 (closed, session 10).** The 9 full-matrix entries were the
   hover residue's knock-on (files the host's hovers tokenized and the self's did
   not); typing the analyzer's `<error>` locals closed them.
-- **B4. small classes.** documentHighlight **2** (14 closed in session 13's
-  second batch — the two survivors need the host's non-local binding
-  resolution: a field label's declaration, and `this` scoped to its method),
-  documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, workspace/symbol
-  1 — independent, mostly rendering/order (the two remaining `diagnostic`
-  entries are lint *ordering*: the host interleaves scope/flow/whole-file rules
-  per function, the self is pass-major).  `implementation` closed in session 13.
+- **B4. small classes.** documentHighlight **1** (13 closed in session 13;
+  the survivor needs the host's carried-forward binding resolution for a label
+  token), documentSymbol 5 (host answers are timing-coupled: the module wrapper
+  appears only once its module-name index is warm; the self's outline matches
+  the unwrapped shape's symbol set), semanticTokens 5 (the streams differ in 676
+  positions, from 952), diagnostic 2 (the two remaining `diagnostic` entries are
+  lint *ordering*: the host interleaves scope/flow/whole-file rules per function,
+  the self is pass-major) — codeLens, workspace/symbol and `implementation`
+  closed in session 13.
 
 ## Track C — real-project readiness (what parity alone does not test)
 
@@ -253,13 +266,12 @@ left is *analyzer* work the LSP only measures, so the compiler stages the
 multi-session plan already queues (Phase 2 item 3, stage 11c) come first for
 those entries:
 
-1. **documentHighlight 2** (B4).  Both need the host's *non-local* binding
-   resolution: `lb@704:67` is a named-argument label whose binding is a struct
-   field (its answer is the field declaration alone, 598:15), and `lb@1545:33`
-   is `this`, whose answer is scoped to the enclosing method.  The self's scoped
-   arm resolves locals only, so it falls back to the token scan for both; the
-   first needs the label → declaration resolution the hover already has
-   (`named_argument_label_hover`), the second a method-span filter for `this`.
+1. **documentHighlight 1** (B4).  `lb@704:67` is a named-argument label that the
+   host resolves through its *carried-forward* snapshot bindings to a binding
+   which is out of scope at that line (a match-arm binding declared 100 lines
+   earlier); the self's region-based scope walk answers the whole-file token scan
+   instead.  Reproducing it means emulating the host's completion-snapshot
+   carry-forward, not a local rule.
 2. **hover's 9, grouped by root cause:**
    - the **nullability** four (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`) — the
      host prints the *flow-refined* type where the self prints the declared one:
@@ -308,10 +320,12 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
     (gates, drift, fixtures).
 
     This session is LSP-only.  State at session-13 close: the SimpleGame full
-    matrix is 6456 entries / 37 differ — hover 9, documentHighlight 14,
-    documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1,
-    workspace/symbol 1; definition/declaration/typeDefinition/implementation/
-    references 0; the harness 30/30 capability keys + the 4 documented entries;
+    matrix is 6456 entries / 22 differ — hover 9, documentSymbol 5,
+    semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens,
+    workspace/symbol and definition/declaration/typeDefinition/implementation/
+    references 0 (codeLens and workspace/symbol closed via the host's token-pair
+    symbol list, which also reaches `when`-branch and `emit`-expanded
+    declarations); the harness 30/30 capability keys + the 4 documented entries;
     recovery probe OK; cli:parity 23/38/0; sexpr lex 705/705 and parse 701
     comparable / 0 differ; unused-import 609/608; bootstrap fixed point + 14/14;
     test/mt 60/0.  Note: the synthetic `--only references` mode is
@@ -339,15 +353,11 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
 
     STEP 2 — the residue, grouped by root cause, largest first:
 
-    1. **documentHighlight 14** (the largest class).  The host's arm resolves a
-       *binding* and lists only the AST identifier nodes bound to it; named-
-       argument labels, member names after a dot (`Mask.a`), destructuring
-       declaration names and a second method's `this` are excluded, where the
-       self's token scan with a line-range scope filter includes them.
-       `lb@1545:33` is a scope-region difference; `lb@704:67`/`lb@750:33` are
-       label tokens whose host answer is the field/variant declaration alone;
-       `node.mt@6:20`, `lb@1861:23`, `lb@1931:25` are the label/destructuring
-       exclusions.
+    1. **documentHighlight 1** (B4): `lb@704:67`, a label token the host resolves
+       through its carried-forward snapshot bindings to a binding out of scope at
+       that line (a match-arm binding 100 lines earlier); the self's region-based
+       scope walk answers the whole-file token scan instead.  The same
+       carry-forward artefact drives hover's nullability family.
     2. **hover's 9:**
        - the four nullability entries (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`):
          the host prints the *flow-refined* type where the self prints the
@@ -360,11 +370,13 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
          `fn ` in the host — `Types::Function#to_s`, the compiler stages'
          function-type names item), `lb@1653:24` (`type quat`'s cross-file
          location), `lb@1958:16` (a member chain's third segment).
-    3. **B4's other classes** — documentSymbol 5 (the host's module hierarchy and
-       its token-based per-document symbols), semanticTokens 5 (an import path's
-       `namespace` segment, heredoc string tokens), diagnostic 2 (the lint
-       emission order), codeLens 1, workspace/symbol 1 (the host's
-       `all_documents` symbol list, no 200 cap).
+    3. **B4's other classes** — documentSymbol 5 (timing-coupled on the host: the
+       module wrapper appears only once its module-name index is warm; the self's
+       unwrapped outline matches the symbol set) and semanticTokens 5 (676
+       differing positions left, from 952: import-alias receivers,
+       `emit`-expanded declarations, variant payload fields, `typeParameter`
+       renderings, scope-aware binding resolution), then diagnostic 2 (the lint
+       emission order).
     4. Then C2–C5 (reference-index memory, note-document caching, the large-file
        soak, client behaviours), the deliberate-difference table in
        docs/lsp-design.md §8, and D2/D3 (audit determinism, scoreboard row).

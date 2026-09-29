@@ -1,22 +1,17 @@
-## Code lens handler.  Emits CodeLens entries for each function declaration
-## in the document and resolves them to show reference counts via the
-## workspace symbol index.
+## Code lens handler.  Emits CodeLens entries for each function declaration in
+## the document — the host's token-pair symbol list, which also reaches the
+## nested declarations of a `when` branch and the `emit`-expanded functions —
+## and resolves them to show reference counts via the workspace symbol index.
 
-import std.fmt
 import std.json as json
 import std.log as log
 import std.str
 import std.string as string
-import std.vec as vec
 
-import mtc.parser.ast as ast
-import mtc.parser.parser as parser
-import mtc.parser.state as pstate
-import mtc.lsp.cursor as cursor
+import mtc.lsp.definition_index as defidx
 import mtc.lsp.references as refs
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
-import mtc.lsp.utils as utils
 import mtc.lsp.workspace as workspace
 
 
@@ -43,61 +38,24 @@ public function handle_code_lens(
     defer: content.release()
 
     let source = content.as_str()
-    let parsed = workspace.parsed_analysis_for(ws, file_path.as_str(), source) else:
-        proto.write_error(id, -32800, "code lens request failed: parse error")
-        return
-    var ast_file = parsed.ast_file
 
     var result = string.String.create()
     defer: result.release()
     result.append("[")
     var first = true
 
-    var di: ptr_uint = 0
-    while di < ast_file.declarations.len:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(ast_file.declarations.data + di)
-        match decl:
-            ast.Decl.decl_function as fun:
-                append_lens(ref_of(result), uri, fun.name, fun.line, fun.column, ref_of(first))
-            ast.Decl.decl_extern_function as ef:
-                append_lens(
-                    ref_of(result),
-                    uri,
-                    ef.name,
-                    ef.line,
-                    token_column(source, ef.line, ef.name),
-                    ref_of(first)
-                )
-            ast.Decl.decl_foreign_function as ff:
-                append_lens(
-                    ref_of(result),
-                    uri,
-                    ff.name,
-                    ff.line,
-                    token_column(source, ff.line, ff.name),
-                    ref_of(first)
-                )
-            ast.Decl.decl_interface as iface:
-                var mi: ptr_uint = 0
-                while mi < iface.interface_methods.len:
-                    var mfn: ast.InterfaceMethod
-                    unsafe:
-                        mfn = read(iface.interface_methods.data + mi)
-                    append_lens(ref_of(result), uri, mfn.name, mfn.line, mfn.column, ref_of(first))
-                    mi += 1
-            ast.Decl.decl_extending_block as ext:
-                var mi: ptr_uint = 0
-                while mi < ext.methods.len:
-                    var mfn: ast.Method
-                    unsafe:
-                        mfn = read(ext.methods.data + mi)
-                    append_lens(ref_of(result), uri, mfn.name, mfn.line, mfn.column, ref_of(first))
-                    mi += 1
-            _:
-                pass
-        di += 1
+    # The host lists the document's *token-pair* function symbols
+    # (`get_symbols` filtered to `function`), which also reaches the nested
+    # declarations of a `when` branch and the `emit`-expanded functions an AST
+    # walk over the top level misses.
+    let symbols = defidx.symbols_for(ref_of(ws.definition_index), file_path.as_str(), source)
+    var si: ptr_uint = 0
+    while si < symbols.len:
+        let symbol = unsafe: read(symbols.data + si)
+        if symbol.kind == KIND_FUNCTION:
+            append_lens(
+                ref_of(result), uri, symbol.name.as_str(), symbol.line, symbol.column, ref_of(first))
+        si += 1
 
     result.append("]")
     proto.write_response_raw(id, result.as_str())
@@ -158,17 +116,6 @@ public function handle_code_lens_resolve(
         read(obj_ptr).set("command", command)
 
     proto.write_response(id, params)
-
-
-## The 1-based column of `name` on `line` of `source`, or 0 when absent.
-## Extern and foreign declarations do not carry a name column in the AST,
-## so it is recovered from the token on the line, as the host does.
-function token_column(source: str, line: ptr_uint, name: str) -> ptr_uint:
-    match cursor.token_start_in_line(utils.source_line(source, line), name):
-        Option.some as col:
-            return col.value + 1
-        Option.none:
-            return 0
 
 
 ## Extract `value[outer][inner]` as a non-negative integer (0 when absent).

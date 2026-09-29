@@ -48,7 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **4 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **25 differ** (session 13 close): hover 9, documentHighlight 2, documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, workspace/symbol 1; definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's two survivors need the host's non-local binding resolution (a field label's declaration, and `this` scoped to the enclosing method).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
+**LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **22 differ** (session 13 close): hover 9, documentSymbol 5, semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set) → 22 (session 13's third: codeLens and workspace/symbol 1 → 0 each via the host's token-pair symbol list, documentHighlight 2 → 1, and the token scanner's keyword/heredoc/type-argument rules).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's single survivor needs the host's carried-forward binding resolution (a label token resolving a binding that is out of scope at that line).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
 **LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 9 entries left (session 13 close; §0k classifies them — the four
@@ -2070,10 +2070,54 @@ answer never contains them; the self's token scan with a line-range scope filter
 listed all four (that was 12 of the 14 entries, `lb@704:67` and `lb@1545:33`
 aside).  `unbound_occurrence` now filters them out of the scoped arm's
 occurrences, mirroring the host's node kinds.  Measured (full matrix): the audit
-**37 → 25**, documentHighlight **14 → 2** (12 closed, none added); the two
-survivors need the host's non-local binding resolution — a *field* label
-(`lb@704:67`, whose answer is the field declaration alone) and `this`
-(`lb@1545:33`, whose answer is scoped to the enclosing method).
+**37 → 25**, documentHighlight **14 → 2** (12 closed, none added); the single
+survivor (`lb@704:67`) needs the host's *carried-forward* binding resolution — a
+label token resolves to a binding that is out of scope at that line — which the
+self's region-based scope walk deliberately does not reproduce.
+
+### Track B, fifteenth batch (same session): code lenses, workspace symbols, `this`, and the token scanner
+
+1. **`this` is scoped to its method** (`enclosing_method_span`): the host binds the
+   implicit receiver per method, so only the enclosing `extending` block's instance
+   method's occurrences answer — the earlier token scan lit up every method of every
+   receiver.  documentHighlight **2 → 1**.
+2. **Code lenses and workspace symbols are one port.**  The host's
+   `extract_symbols_from_tokens` — every identifier a declaration keyword introduces,
+   with its LSP SymbolKind, in document order — now lives in `lsp/definition_index.mt`
+   (`SymbolEntry`, built while the token-pair index is warmed, `symbols_for`), together
+   with the warm order of its documents (`warmed_paths`, the host's
+   `@indexed_documents.keys`).  `handle_code_lens` lists the document's `function`
+   symbols, which also reaches the nested declarations of a `when` branch and the
+   `emit`-expanded functions an AST walk over the top level missed (4 lenses), and
+   `handle_workspace_symbol` walks the indexed documents then the open ones, filtering
+   by a case-insensitive name substring — the host's `all_documents`, with no cap and no
+   root filter.  Measured: codeLens **1 → 0** (145 lenses byte-equal) and
+   `workspace/symbol` **1 → 0** (the 3374-entry answer byte-equal).  The codeLens
+   handler no longer parses (the host's symbol list is lexical), which also drops its
+   `-32800` error path for a mid-edit file.
+3. **The token scanner** (`compute_token_data`): a *keyword* module-path segment
+   (`import std.async as aio`) renders `namespace`; a character literal gets no entry
+   (the host's classifier has no arm for one, and the self used to emit `string`); a
+   keyword before a colon — a declaration name, or a `null` ending an `if …:` line — is
+   a property, as is a keyword after a dot; a heredoc is emitted **one entry per line**
+   (only the embedded-language tags the host leaves to the editor grammar are skipped;
+   the self dropped every heredoc); and a *declared* type name in a type-argument
+   position drops the `defaultLibrary` modifier (`Vec[int]`), while a builtin
+   constructor keeps it (`null[ptr[int]]` — the host's `known_type_name?` counts only
+   the facts' types).  The five files still differ as whole streams, so the class
+   counter stays 5; a position-keyed comparison of the full matrix (a token-index diff
+   misleads once the streams shift) shows the differing positions **952 → 676** (276
+   fixed, 0 traded).  The residue is a longer list of shapes — import-alias receivers,
+   `emit`-expanded declarations, variant payload fields, `typeParameter` renderings,
+   and scope-aware binding resolution for a name that is both a parameter and a local.
+
+Measured (full matrix, authoritative): the audit **25 → 22** — codeLens 1 → 0,
+workspace/symbol 1 → 0, documentHighlight 2 → 1; hover 9, documentSymbol 5,
+semanticTokens 5, diagnostic 2 unchanged.  `documentSymbol`'s host answers are
+*timing-coupled*: the module hierarchy (`docs` → file) appears only once the host's
+module-name index is warm, so its five entries alternate between "wrapped" and
+"unwrapped" shapes between runs; the self's outline matches the unwrapped shape's
+symbol set exactly (118 symbols on `data_structures.mt`, same names and kinds).
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
