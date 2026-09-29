@@ -1978,11 +1978,12 @@ function resolve_name_in_analysis(
                             param_text.release()
                             pi += 1
                         full.append(")")
-                        if m_sig.has_return_type:
-                            full.append(" -> ")
-                            var return_text = type_render.qualified_name(m_sig.return_type, current_module)
-                            full.append(return_text.as_str())
-                            return_text.release()
+                        # The host's `method_signature` always prints the return
+                        # type, `-> void` for a method whose declaration omits it.
+                        full.append(" -> ")
+                        var return_text = type_render.qualified_name(m_sig.return_type, current_module)
+                        full.append(return_text.as_str())
+                        return_text.release()
                         let method_result = make_shortened_result(mline, name, source, full.as_str())
                         full.release()
                         return Option[CursorResult].some(value = method_result)
@@ -3903,7 +3904,9 @@ function find_local_in_block(
                 var s = unsafe: read(blk.statements.data + si)
                 match s:
                     ast.Stmt.stmt_local as loc:
-                        if loc.name == name:
+                        # `_` is a discard, not a binding: the host's analyzer
+                        # never registers it, so no hover resolves through it.
+                        if loc.name == name and loc.name != "_":
                             return Option[CursorResult].some(value = local_hover_result(
                                 loc.is_let, name, loc.line, loc.stmt_type, loc.value, loc.else_body != null,
                                 source, analysis, current_module))
@@ -3971,7 +3974,7 @@ function local_stmt_decl_line(loc: ast.Stmt) -> ptr_uint:
 function local_stmt_declares(loc: ast.Stmt, name: str) -> bool:
     match loc:
         ast.Stmt.stmt_local as l:
-            if l.name == name:
+            if l.name == name and l.name != "_":
                 return true
             match l.destructure_bindings:
                 Option.some as binds:
