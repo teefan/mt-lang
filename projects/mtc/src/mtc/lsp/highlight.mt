@@ -67,6 +67,13 @@ public function handle_document_highlight(
                 if not scope_mod.is_in_same_scope(ref_of(bindings), target.text, binding_line.value, occ.line):
                     oi += 1
                     continue
+                # The host's arm lists the AST identifier nodes bound to the
+                # binding; a named-argument label, a member name after a dot, a
+                # call's callee and a destructuring pattern's name are not
+                # identifiers it binds, so they never appear.
+                if unbound_occurrence(source, occ.line, occ.column, occ.length):
+                    oi += 1
+                    continue
             Option.none:
                 pass
         if emitted > 0:
@@ -86,3 +93,80 @@ public function handle_document_highlight(
         oi += 1
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
+
+
+## True when the identifier at 1-based (`line`, `column`) is an occurrence the
+## host's binding resolution never binds: a member name after a dot, a call's
+## callee, a named-argument label (`name = value` starting an argument) or a
+## name inside a `let (a, b) = …` destructuring pattern.
+function unbound_occurrence(source: str, line: ptr_uint, column: ptr_uint, length: ptr_uint) -> bool:
+    let start = byte_offset_at(source, line, column)
+    if start >= source.len or line == 0 or column == 0:
+        return false
+    let end = start + length
+
+    # A member name: the previous significant byte is a dot.
+    var before = start
+    while before > 0 and is_space_byte(source.byte_at(before - 1)):
+        before -= 1
+    if before > 0 and source.byte_at(before - 1) == '.':
+        return true
+
+    # A callee: the next significant byte opens an argument list.
+    var after = end
+    while after < source.len and is_space_byte(source.byte_at(after)):
+        after += 1
+    if after < source.len and source.byte_at(after) == '(':
+        return true
+
+    # A named-argument label: `name = ` (not `==`) and the name starts an
+    # argument (`(` or `,` before it, ignoring spaces).
+    if after < source.len and source.byte_at(after) == '=' and (after + 1 >= source.len or source.byte_at(after + 1) != '='):
+        if before > 0:
+            let previous = source.byte_at(before - 1)
+            if previous == '(' or previous == ',':
+                return true
+
+    # A destructuring pattern's name: the nearest unclosed `(` before the name is
+    # introduced by `let` or `var` (`let (a, b) = …`), unlike a call's arguments.
+    if before == 0:
+        return false
+    let previous = source.byte_at(before - 1)
+    if previous != '(' and previous != ',':
+        return false
+    var paren = before
+    while paren > 0 and source.byte_at(paren - 1) != '(' and source.byte_at(paren - 1) != ')':
+        paren -= 1
+    if paren == 0 or source.byte_at(paren - 1) != '(':
+        return false
+    var word_end = paren - 1
+    while word_end > 0 and is_space_byte(source.byte_at(word_end - 1)):
+        word_end -= 1
+    var word_start = word_end
+    while word_start > 0 and is_identifier_byte(source.byte_at(word_start - 1)):
+        word_start -= 1
+    let word = source.slice(word_start, word_end - word_start)
+    return word.equal("let") or word.equal("var")
+
+
+## The byte offset of 1-based (`line`, `column`) in `source`.
+function byte_offset_at(source: str, line: ptr_uint, column: ptr_uint) -> ptr_uint:
+    if line == 0 or column == 0:
+        return source.len
+    var current_line: ptr_uint = 1
+    var offset: ptr_uint = 0
+    while offset < source.len and current_line < line:
+        if source.byte_at(offset) == '\n':
+            current_line += 1
+        offset += 1
+    if offset >= source.len:
+        return source.len
+    return offset + (column - 1)
+
+
+function is_space_byte(b: ubyte) -> bool:
+    return b == ' ' or b == '\t' or b == '\r'
+
+
+function is_identifier_byte(b: ubyte) -> bool:
+    return (b >= 'a' and b <= 'z') or (b >= 'A' and b <= 'Z') or (b >= '0' and b <= '9') or b == '_'

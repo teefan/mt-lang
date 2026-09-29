@@ -6,7 +6,7 @@ readiness properties parity alone does not test — cold start, steady-state mem
 files, long sessions, real clients (Neovim/VS Code).
 
 **Where we are** (branch `selfhost`, session 13, 2026-09-29): SimpleGame audit
-6456 entries / **37 differ** (hover 9, documentHighlight 14, documentSymbol 5,
+6456 entries / **25 differ** (hover 9, documentHighlight 2, documentSymbol 5,
 semanticTokens 5, diagnostic 2, codeLens 1, workspace/symbol 1;
 definition/declaration/typeDefinition/implementation/**references 0**);
 synthetic harness 30/30 capabilities + 4 documented entries; probe fixtures at
@@ -29,12 +29,16 @@ project.  The session also closed the interface method's own declaration line
 (hover/definition/declaration/typeDefinition), the implementation pipeline, the
 typeDefinition arm's early return and bindings inside `unsafe`/`defer`/`when`
 blocks — the audit **56 → 37**, definition **5 → 0**, declaration **5 → 0**,
-typeDefinition **4 → 0**, implementation **1 → 0**, hover **13 → 9**.  The
-synthetic references-only mode moved 0 → 56 without changing a single self
-answer (all 916 are byte-identical): its counts are pacing-coupled, since the
-audit alternates host/self requests and the host's background indexing progress
-depends on the self's speed.  The record is `docs/self-host-plan.md` §0k,
-"Track B, thirteenth batch + Track C1".
+typeDefinition **4 → 0**, implementation **1 → 0**, hover **13 → 9**, and its
+second batch closed documentHighlight **14 → 2** (`unbound_occurrence`: the
+host's binding node set excludes named-argument labels, member names, call
+callees and destructuring pattern names) — the audit **56 → 37 → 25** with no
+entry ever added back.  The synthetic references-only mode moved 0 → 56 without
+changing a single self answer (all 916 are byte-identical): its counts are
+pacing-coupled, since the audit alternates host/self requests and the host's
+background indexing progress depends on the self's speed.  The record is
+`docs/self-host-plan.md` §0k, "Track B, thirteenth batch + Track C1" and
+"Track B, fourteenth batch".
 
 **Track B, batches 11–12** (session 12): the **definition pipeline** — definition
 **61 → 5**, declaration **61 → 5**, typeDefinition **59 → 4**, hover **14 → 13**
@@ -144,7 +148,7 @@ declaration rather than the host's partial node (§0k, session 9).
   compare, non-zero exit on diff) and its corpus under `tmp/lsp-recovery/`
   (created by the tool).  Run in the session gates.
 
-## Track B — the audit residue (37 entries, was 332)
+## Track B — the audit residue (25 entries, was 332)
 
 - **B1. hover 80 → 9.** Sessions 10–12 closed the
   analyzer-`<error>` locals with the renderings they exposed, the member
@@ -174,11 +178,13 @@ declaration rather than the host's partial node (§0k, session 9).
 - **B3. references 0 (closed, session 10).** The 9 full-matrix entries were the
   hover residue's knock-on (files the host's hovers tokenized and the self's did
   not); typing the analyzer's `<error>` locals closed them.
-- **B4. small classes.** documentHighlight 14, documentSymbol 5, semanticTokens 5,
-  diagnostic 2, codeLens 1, workspace/symbol 1 — independent, mostly
-  rendering/order (the two remaining `diagnostic` entries are lint *ordering*: the host
-  interleaves scope/flow/whole-file rules per function, the self is pass-major).
-  `implementation` closed in session 13.
+- **B4. small classes.** documentHighlight **2** (14 closed in session 13's
+  second batch — the two survivors need the host's non-local binding
+  resolution: a field label's declaration, and `this` scoped to its method),
+  documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, workspace/symbol
+  1 — independent, mostly rendering/order (the two remaining `diagnostic`
+  entries are lint *ordering*: the host interleaves scope/flow/whole-file rules
+  per function, the self is pass-major).  `implementation` closed in session 13.
 
 ## Track C — real-project readiness (what parity alone does not test)
 
@@ -247,14 +253,13 @@ left is *analyzer* work the LSP only measures, so the compiler stages the
 multi-session plan already queues (Phase 2 item 3, stage 11c) come first for
 those entries:
 
-1. **documentHighlight 14** (the largest class; B4).  The shapes measured in
-   session 13: the host's arm resolves a *binding* and lists only the AST
-   identifier nodes bound to it — named-argument labels, member names after a
-   dot (`Mask.a`), destructuring declaration names and a second method's `this`
-   are excluded — where the self's token scan with a line-range scope filter
-   includes them; `lb@1545:33` is a scope-region difference (the self reports the
-   same tokens in another function), and `lb@704:67`/`lb@750:33` are label tokens
-   whose host answer is the field/variant declaration alone.
+1. **documentHighlight 2** (B4).  Both need the host's *non-local* binding
+   resolution: `lb@704:67` is a named-argument label whose binding is a struct
+   field (its answer is the field declaration alone, 598:15), and `lb@1545:33`
+   is `this`, whose answer is scoped to the enclosing method.  The self's scoped
+   arm resolves locals only, so it falls back to the token scan for both; the
+   first needs the label → declaration resolution the hover already has
+   (`named_argument_label_hover`), the second a method-span filter for `this`.
 2. **hover's 9, grouped by root cause:**
    - the **nullability** four (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`) — the
      host prints the *flow-refined* type where the self prints the declared one:
