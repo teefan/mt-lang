@@ -870,7 +870,7 @@ function resolve_field_or_label_hover(
     if source.len == 0:
         return Option[CursorResult].none
 
-    match field_declaration_hover(source, line, character):
+    match field_declaration_hover(ws, file_path.as_str(), source, line, character):
         Option.some as fd:
             return Option[CursorResult].some(value = fd.value)
         Option.none:
@@ -1298,6 +1298,97 @@ function owner_or(current_module: str, owner: str) -> str:
     return current_module
 
 
+## True when the token at `index` is the first non-structural token on its line
+## (the host's `first_non_trivia_token_on_line?`).
+function first_non_trivia_on_line(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    var target_line: ptr_uint = 0
+    unsafe:
+        target_line = read(tokens.data + index).line
+    var i = index
+    while i > 0:
+        i -= 1
+        var prev: token_mod.Token
+        unsafe:
+            prev = read(tokens.data + i)
+        if prev.kind == tk.TokenKind.newline:
+            return true
+        if prev.line == target_line and prev.kind != tk.TokenKind.indent and prev.kind != tk.TokenKind.dedent:
+            return false
+    return true
+
+
+## The host's `find_field_token_in_body` (`lsp/server/definition.rb`): the token
+## declaring `field_name` inside the body whose header keyword is at
+## `header_index`, or none.  The scan is indentation-sensitive — it stops at the
+## first line-leading token at or left of the header keyword's column — so a
+## field indented less than its header's keyword is never reached.
+function find_field_token_in_body(
+    tokens: span[token_mod.Token],
+    source: str,
+    header_index: ptr_uint,
+    field_name: str,
+) -> Option[token_mod.Token]:
+    var header: token_mod.Token
+    unsafe:
+        header = read(tokens.data + header_index)
+    var i = header_index + 1
+    while i < tokens.len:
+        var tok: token_mod.Token
+        unsafe:
+            tok = read(tokens.data + i)
+        if tok.line > header.line and not is_structural_token_kind(tok.kind) and first_non_trivia_on_line(tokens, i) and tok.column <= header.column:
+            break
+        if tok.kind == tk.TokenKind.identifier and tok.line > header.line and first_non_trivia_on_line(tokens, i) and tok.column > header.column:
+            let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+            if lexeme.equal(field_name):
+                match next_code_index(tokens, i + 1):
+                    Option.some as colon_index:
+                        if token_kind_at(tokens, colon_index.value, tk.TokenKind.colon):
+                            return Option[token_mod.Token].some(value = tok)
+                    Option.none:
+                        pass
+        i += 1
+    return Option[token_mod.Token].none
+
+
+## The host's `find_field_token_in_type`: the token declaring `field_name` inside
+## `type_name`'s struct or union, or none.  Because `find_field_token_in_body`
+## stops at a line-leading token at or left of the `struct`/`union` keyword's
+## column, a field of a `public struct X:` is never found — its declaration sits
+## at column 5 while the `struct` keyword sits at column 8 — and the host prints
+## no `Defined at` line for it.  The artefact must be reproduced, so a field's
+## hover location comes from this scan and never from the AST's field position.
+function find_field_token_in_type(source: str, type_name: str, field_name: str) -> Option[token_mod.Token]:
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: tokens.release()
+
+    var ti: ptr_uint = 0
+    while ti < tokens.len():
+        let tp = tokens.get(ti) else:
+            break
+        let tok = unsafe: read(tp)
+        if tok.kind == tk.TokenKind.tk_struct or tok.kind == tk.TokenKind.tk_union:
+            match next_code_index(tokens.as_span(), ti + 1):
+                Option.some as name_index:
+                    let np = tokens.get(name_index.value) else:
+                        break
+                    let name_tok = unsafe: read(np)
+                    if name_tok.kind == tk.TokenKind.identifier:
+                        let lexeme = unsafe: token_mod.token_lexeme(name_tok, source)
+                        if lexeme.equal(type_name):
+                            match find_field_token_in_body(tokens.as_span(), source, ti, field_name):
+                                Option.some as found:
+                                    return Option[token_mod.Token].some(value = found.value)
+                                Option.none:
+                                    pass
+                Option.none:
+                    pass
+        ti += 1
+    return Option[token_mod.Token].none
+
+
 ## The hover for a field of the receiver's type: `field <name>: <resolved type>`
 ## with the field's declaration in the module that declares the struct (this
 ## file when the type is declared here).  None when the type has no such field,
@@ -1334,8 +1425,6 @@ function field_hover_result(
     var decl_file = ast_for_document(ws, decl_path, decl_parsed)
     var decl_analysis = analysis_for_document(ws, decl_path, decl_parsed)
 
-    var field_line: ptr_uint = 0
-    var field_column: ptr_uint = 0
     var field_type = types.Type.ty_error
     var found = false
     var di: ptr_uint = 0
@@ -1350,14 +1439,12 @@ function field_hover_result(
                     while fi < st.struct_fields.len:
                         let field = unsafe: read(st.struct_fields.data + fi)
                         if field.name.equal(field_name):
-                            field_line = field.line
-                            field_column = field.column
                             found = true
                         fi += 1
             _:
                 pass
         di += 1
-    if not found or field_line == 0:
+    if not found:
         # A builtin vector/matrix/quaternion field (`v.x`, `m.col0`) has no
         # declaration to point at: the hover is the field's own type, with no
         # location (the host's `Types::Vector#field`).
@@ -1404,6 +1491,19 @@ function field_hover_result(
     var target_uri = string.String.create()
     if not decl_path.equal(file_path):
         target_uri = file_uri_for_path(decl_path)
+
+    # The location is the *token* declaring the field, not the AST field's
+    # position: the host's `find_field_token_in_type` scan stops at a line-leading
+    # token at or left of the `struct` keyword's column, so a field of a
+    # `public struct` has no location to report and the hover prints none.
+    var field_line: ptr_uint = 0
+    var field_column: ptr_uint = 0
+    match find_field_token_in_type(decl_source.as_str(), type_name, field_name):
+        Option.some as field_token:
+            field_line = field_token.value.line
+            field_column = field_token.value.column
+        Option.none:
+            pass
 
     let column_zero = if field_column > 0: field_column - 1 else: 0z
     return Option[CursorResult].some(value = CursorResult(
@@ -2663,7 +2763,17 @@ function is_member_access_token(tokens: span[token_mod.Token], index: ptr_uint) 
     return false
 
 
-function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uint) -> Option[CursorResult]:
+## The hover for a field name in its own declaration — the host's
+## `resolve_field_declaration_hover_info`: `field <name>: <resolved type>`, the
+## *semantic* type of the field (module-qualified, then shortened), with the
+## location the host's indentation-sensitive field-token scan reports.
+function field_declaration_hover(
+    ws: ref[workspace.Workspace],
+    file_path: str,
+    source: str,
+    line: ptr_uint,
+    character: ptr_uint,
+) -> Option[CursorResult]:
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
@@ -2684,17 +2794,61 @@ function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uin
                     # `Field.column` is 1-based; the request's character is 0-based.
                     let field_column = if f.column > 0: f.column - 1 else: 0z
                     if f.line == target_line and field_column <= character and field_column + f.name.len > character:
-                        var hover = string.String.create()
-                        hover.append("field ")
-                        hover.append(f.name)
-                        hover.append(": ")
-                        if true:
+                        var analysis = analysis_for_document(ws, file_path, ast_file)
+                        var module_roots = ws.effective_module_roots_for(file_path)
+                        defer: module_roots.release()
+                        var current_module = resolver.infer_module_name(file_path, module_roots.as_span())
+                        defer: current_module.release()
+
+                        var type_text = string.String.create()
+                        var type_resolved = false
+                        let entries_ptr = analysis.structs.get(s.name)
+                        if entries_ptr != null:
+                            let entries = unsafe: read(entries_ptr)
+                            var ei: ptr_uint = 0
+                            while ei < entries.len:
+                                let entry = unsafe: read(entries.data + ei)
+                                if entry.name.equal(f.name):
+                                    var qualified = type_render.qualified_name(entry.ty, current_module.as_str())
+                                    type_text.append(qualified.as_str())
+                                    qualified.release()
+                                    type_resolved = true
+                                ei += 1
+                        if not type_resolved:
                             let ty = f.field_type
                             if ty.name.parts.len > 0:
-                                hover.append(unsafe: read(ty.name.parts.data))
+                                type_text.append(unsafe: read(ty.name.parts.data))
                             if ty.nullable:
-                                hover.append("?")
-                        return Option[CursorResult].some(value = make_result(target_line, f.name, source, hover))
+                                type_text.append("?")
+
+                        var signature = string.String.create()
+                        signature.append("field ")
+                        signature.append(f.name)
+                        signature.append(": ")
+                        signature.append(type_text.as_str())
+                        type_text.release()
+                        var shortened = type_render.shorten_signature(signature.as_str())
+                        signature.release()
+
+                        # The location is the field's declaration *token*: the
+                        # host's scan finds none under a `public struct` header,
+                        # so such a field's hover carries no `Defined at` line.
+                        var decl_line: ptr_uint = 0
+                        match find_field_token_in_type(source, s.name, f.name):
+                            Option.some as ft:
+                                decl_line = ft.value.line
+                            Option.none:
+                                pass
+
+                        return Option[CursorResult].some(value = CursorResult(
+                            line = decl_line,
+                            column = 0,
+                            name_len = f.name.len,
+                            hover_text = shortened.text,
+                            docs = string.String.create(),
+                            target_uri = string.String.create(),
+                            from_modules = shortened.modules
+                        ))
                     fi += 1
             _:
                 pass
@@ -3020,6 +3174,7 @@ function named_argument_label_hover(
     # The declaring module's file: this document, or the module's own file.
     var decl_file = ast_file
     var decl_analysis = analysis
+    var field_token: Option[token_mod.Token] = Option[token_mod.Token].none
     var target_uri = string.String.create()
     if not declaring_module.equal(current_module.as_str()):
         var decl_path = resolve_module_source_path(ws, declaring_module) else:
@@ -3029,16 +3184,26 @@ function named_argument_label_hover(
         var decl_source = ws.document_source(decl_path.as_str()) else:
             target_uri.release()
             return Option[CursorResult].none
+        defer: decl_source.release()
         var decl_diags = vec.Vec[pstate.ParseDiagnostic].create()
         defer: decl_diags.release()
         var decl_parsed = parser.parse_source(decl_source.as_str(), ref_of(decl_diags))
         decl_file = ast_for_document(ws, decl_path.as_str(), decl_parsed)
         decl_analysis = analysis_for_document(ws, decl_path.as_str(), decl_parsed)
+        field_token = find_field_token_in_type(decl_source.as_str(), type_name, field_name)
         target_uri = file_uri_for_path(decl_path.as_str())
+    else:
+        field_token = find_field_token_in_type(source, type_name, field_name)
 
     var field_line: ptr_uint = 0
     var field_column: ptr_uint = 0
-    var found = false
+    match field_token:
+        Option.some as ft:
+            field_line = ft.value.line
+            field_column = ft.value.column
+        Option.none:
+            pass
+    var field_found = false
     var type_text = string.String.create()
     defer: type_text.release()
 
@@ -3054,9 +3219,7 @@ function named_argument_label_hover(
                     while fi < s.struct_fields.len:
                         let field = unsafe: read(s.struct_fields.data + fi)
                         if field.name.equal(field_name):
-                            field_line = field.line
-                            field_column = field.column
-                            found = true
+                            field_found = true
                             if field.field_type.name.parts.len > 0:
                                 type_text.append(unsafe: read(field.field_type.name.parts.data))
                                 if field.field_type.nullable:
@@ -3066,7 +3229,7 @@ function named_argument_label_hover(
                 pass
         di += 1
 
-    if not found:
+    if not field_found:
         target_uri.release()
         return Option[CursorResult].none
 
@@ -3248,6 +3411,9 @@ function resolve_local_hover(
             pass
 
     return Option[CursorResult].none
+
+
+
 
 
 ## Token-level heuristic: is this identifier a for-loop binding?
