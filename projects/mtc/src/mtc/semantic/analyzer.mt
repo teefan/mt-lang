@@ -2898,7 +2898,9 @@ function bind_for_names(scope: ref[sscope.Scope], bindings: span[ast.ForBinding]
 
 ## If `t` is a nullable, Option, or Result wrapper, return the unwrapped
 ## success/payload type (the type the guard binding exposes).  Otherwise t itself.
-function unwrap_nullable_type(t: types.Type) -> types.Type:
+## A `let`/`var` guard's success type — what a binding guarded with `else:`
+## narrows to.  `T?`, `Option[T]` and `Result[T, E]` all yield their payload.
+public function unwrap_nullable_type(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_nullable as n:
             return unsafe: read(n.base)
@@ -3316,7 +3318,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                                 report(ctx, det.line, det.column, "detach target must be a global function call")
                     _:
                         report(ctx, det.line, det.column, "detach target must be a function call")
-                return types.Type.ty_error
+                return types.Type.ty_named(module_name = "", name = "Handle")
             ast.Expr.expr_sizeof:
                 return types.primitive("ptr_uint")
             ast.Expr.expr_alignof:
@@ -3324,7 +3326,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_offsetof:
                 return types.primitive("ptr_uint")
             ast.Expr.expr_expression_list:
-                return types.Type.ty_error
+                return infer_tuple_literal(ctx, scope, ep)
             ast.Expr.expr_range:
                 return types.Type.ty_error
             ast.Expr.expr_named as nm:
@@ -3536,11 +3538,41 @@ function is_comparison_op(op: str) -> bool:
     )
 
 
+## A tuple literal `(1, "x")` / `(a = 1, b = 2)`.  Mirrors the host's
+## `Types::Registry.tuple(element_types, field_names:)`: the element types in
+## order, with the field names when any element is named.
+function infer_tuple_literal(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[ast.Expr]) -> types.Type:
+    var elements = vec.Vec[types.Type].create()
+    var names = vec.Vec[str].create()
+    var has_named = false
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_expression_list as el:
+                var i: ptr_uint = 0
+                while i < el.elements.len:
+                    let elem_ptr: ptr[ast.Expr] = el.elements.data + i
+                    match read(elem_ptr):
+                        ast.Expr.expr_named as nm:
+                            elements.push(infer_expr(ctx, scope, nm.value))
+                            names.push(nm.name)
+                            has_named = true
+                        _:
+                            elements.push(infer_expr(ctx, scope, elem_ptr))
+                            names.push("")
+                    i += 1
+            _:
+                return types.Type.ty_error
+    var field_names: Option[span[str]] = Option[span[str]].none
+    if has_named:
+        field_names = Option[span[str]].some(value = names.as_span())
+    return types.Type.ty_tuple(elements = elements.as_span(), field_names = field_names)
+
+
 function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, operand: ptr[ast.Expr]) -> types.Type:
     let ot = infer_expr(ctx, scope, operand)
     if op == "not":
         return types.primitive("bool")
-    if op == "-":
+    if op == "-" or op == "+" or op == "~":
         return ot
     return types.Type.ty_error
 
@@ -3616,7 +3648,53 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                     let sigp = ctx.functions.get(id.name)
                     if sigp != null:
                         return substitute_type(read(sigp).return_type, ref_of(subs))
+                # A generic struct construction with explicit type arguments
+                # (`Pair[int, bool](first = 10, second = true)`): the value is an
+                # instance of the named type.
+                if scope_get(scope, id.name) == null:
+                    let fieldsp = ctx.structs.get(id.name)
+                    if fieldsp != null:
+                        check_construction(ctx, scope, id.name, read(fieldsp), arg_exprs, id.line, id.column)
+                        return types.Type.ty_imported(
+                            module_name = type_owner_module(ctx, id.name),
+                            name = id.name,
+                            args = resolve_type_arguments(ctx, type_args),
+                        )
                 return types.Type.ty_error
+            ast.Expr.expr_member_access:
+                # `alias.fn[T](...)`: an imported generic function called with
+                # explicit type arguments (`heap.must_alloc[ubyte](64)`).
+                return check_imported_specialization_call(ctx, scope, spec_callee, type_args)
+            _:
+                return types.Type.ty_error
+
+
+## An imported generic function called with explicit type arguments
+## (`heap.must_alloc[ubyte](64)`): validate the type arguments against the
+## declared parameters and substitute them into the return type, as the
+## identifier arm does for a local generic function.
+function check_imported_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], type_args: span[ast.TypeArgument]) -> types.Type:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as alias_id:
+                        if scope_get(scope, alias_id.name) != null:
+                            return types.Type.ty_error
+                        let module_name_ptr = ctx.import_aliases.get(alias_id.name) else:
+                            return types.Type.ty_error
+                        let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
+                            return types.Type.ty_error
+                        let tps_ptr = read(binding_ptr).function_type_params.get(ma.member_name) else:
+                            return types.Type.ty_error
+                        let sigp = read(binding_ptr).functions.get(ma.member_name) else:
+                            return types.Type.ty_error
+                        var subs = map_mod.Map[str, types.Type].create()
+                        defer: subs.release()
+                        validate_explicit_type_args(ctx, read(tps_ptr), type_args, ref_of(subs), ma.line, ma.column)
+                        return substitute_type(read(sigp).return_type, ref_of(subs))
+                    _:
+                        return types.Type.ty_error
             _:
                 return types.Type.ty_error
 
@@ -4260,14 +4338,65 @@ function check_member_call(ctx: ref[Context], scope: ref[sscope.Scope], receiver
         Option.none:
             pass
 
+    # A specialization of a locally-known type is an instance of that type
+    # (`Result[int, int].success(value = 7)`); for a variant, enum or flags the
+    # member is an arm or member and the call's type is the instance itself.
+    # A struct's member is an associated function instead
+    # (`BinaryHeap[T].parent_index(child)`), so it resolves like any other
+    # method on the instance.
+    match type_instance_receiver(ctx, scope, receiver):
+        Option.some as instance:
+            match instance.value:
+                types.Type.ty_imported as im:
+                    if ctx.static_member_types.contains(im.name):
+                        check_static_member(ctx, im.name, method_name, line, column)
+                        return instance.value
+                    return check_typed_method_call(ctx, instance.value, method_name, args, arg_types, any_named, line, column)
+                _:
+                    pass
+        Option.none:
+            pass
+
+    # A bare builtin type name as receiver (`mat4.identity()`, `str.len()`):
+    # resolve the member against the type's methods, wherever an `extending`
+    # block declares them (std.linear_algebra's `extending mat4:`).
+    match static_builtin_type_name(ctx, scope, receiver):
+        Option.some as builtin_name:
+            return check_typed_method_call(ctx, types.Type.ty_named(module_name = "", name = builtin_name.value), method_name, args, arg_types, any_named, line, column)
+        Option.none:
+            pass
+
+    # Builtin event methods (`ready.subscribe(listener)`, `ready.emit(value)`).
+    match event_value_receiver(ctx, scope, receiver):
+        Option.some as event_name:
+            let _ = event_name
+            # The lowering resolves the event method from the receiver's
+            # recorded type, so it must be inferred here too (this arm returns
+            # before the generic path below would).
+            let _recv_ty = infer_expr(ctx, scope, receiver)
+            return event_method_call_type(method_name)
+        Option.none:
+            pass
+
     let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
-    check_editable_receiver_immutable(ctx, scope, receiver, recv, method_name, line, column)
-    match imported_method_call_type(ctx, recv, method_name, args, arg_types, any_named, line, column):
+    # A raw/mutable pointer receiver projects to its pointee only when the
+    # pointer type itself declares no method of that name (the host's
+    # `project_method_receiver_type`): `ptr[T].load()` resolves on the pointer
+    # (`extending ptr[T]` in std.mem.ptr), `own[SleepState].ready` on the pointee.
+    var member_recv = recv
+    match resolve_method_sig(ctx, recv, method_name):
+        Option.some:
+            pass
+        Option.none:
+            if not generic_receiver_has_method(ctx, recv, method_name):
+                member_recv = project_pointer_receiver(recv)
+    check_editable_receiver_immutable(ctx, scope, receiver, member_recv, method_name, line, column)
+    match imported_method_call_type(ctx, member_recv, method_name, args, arg_types, any_named, line, column):
         Option.some as substituted_method:
             return substituted_method.value
         Option.none:
             pass
-    return check_typed_method_call(ctx, recv, method_name, args, arg_types, any_named, line, column)
+    return check_typed_method_call(ctx, member_recv, method_name, args, arg_types, any_named, line, column)
 
 
 ## See through a `ref[T]` receiver to `T` for member access and method calls,
@@ -4279,6 +4408,41 @@ function unwrap_ref(t: types.Type) -> types.Type:
         types.Type.ty_generic as g:
             if g.name == "ref" and g.args.len >= 1:
                 return unsafe: read(g.args.data + (g.args.len - 1))
+            return t
+        _:
+            return t
+
+
+## True when a generic receiver's own type declares `method_name` among the
+## visible bindings — `extending ptr[T]` lives in an imported std module, and
+## such a receiver must not be projected to its pointee.
+function generic_receiver_has_method(ctx: ref[Context], t: types.Type, method_name: str) -> bool:
+    match t:
+        types.Type.ty_generic as g:
+            match lookup_method_anywhere(ctx, g.name, method_name):
+                Option.some:
+                    return true
+                Option.none:
+                    return false
+        _:
+            return false
+
+
+## A member or method receiver projects through a pointer-like type: `ref[T]`
+## to its referent, `ptr[T]`/`own[T]`/`const_ptr[T]` to their pointee (the
+## host's `project_field_receiver_type` / `project_method_receiver_type`), so
+## `state.ready` on an `own[SleepState]` resolves the field.
+function project_pointer_receiver(t: types.Type) -> types.Type:
+    match t:
+        types.Type.ty_generic as g:
+            if g.name == "ref" and g.args.len >= 1:
+                return unsafe: read(g.args.data + (g.args.len - 1))
+            if (g.name == "ptr" or g.name == "own" or g.name == "const_ptr") and g.args.len >= 1:
+                var element: types.Type
+                unsafe:
+                    element = read(g.args.data + 0)
+                if not types.is_error(element):
+                    return element
             return t
         _:
             return t
@@ -4691,6 +4855,90 @@ function specialization_imported_receiver(ctx: ref[Context], scope: ref[sscope.S
                 return Option[types.Type].none
 
 
+## The module that declares a type name, for rendering an instance of it
+## (`*From <module>*`): the prelude types Option/Result are owned by their real
+## std modules, everything else by the module being analyzed.
+function type_owner_module(ctx: ref[Context], name: str) -> str:
+    if name == "Option":
+        return "std.option"
+    if name == "Result":
+        return "std.result"
+    return ctx.module_name
+
+
+## A receiver that is a specialization of a locally-known type —
+## `Result[int, int].success(value = 7)`, `Option[float].none`,
+## `Pair[A, B](…)` — denotes an instance of that type.  Returns the instance
+## type (module-qualified, type arguments included); none for any other
+## receiver.  Imported receivers are handled by `specialization_imported_receiver`.
+function type_instance_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_specialization as spec:
+                match read(spec.callee):
+                    ast.Expr.expr_identifier as id:
+                        if scope_get(scope, id.name) != null:
+                            return Option[types.Type].none
+                        if not ctx.structs.contains(id.name) and not ctx.static_member_types.contains(id.name):
+                            return Option[types.Type].none
+                        return Option[types.Type].some(value = types.Type.ty_imported(
+                            module_name = type_owner_module(ctx, id.name),
+                            name = id.name,
+                            args = resolve_type_arguments(ctx, spec.arguments),
+                        ))
+                    _:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
+## A receiver identifier that names a builtin type (`mat4.identity()`), not
+## shadowed by a local and not one of the module's own structs or static-member
+## types (those take the earlier arms).
+function static_builtin_type_name(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if scope_get(scope, id.name) != null:
+                    return Option[str].none
+                if ctx.structs.contains(id.name) or ctx.static_member_types.contains(id.name):
+                    return Option[str].none
+                if ctx.types.contains(id.name) or is_primitive_type_name(id.name):
+                    return Option[str].some(value = id.name)
+                return Option[str].none
+            _:
+                return Option[str].none
+
+
+## A receiver identifier naming an event declared in this module
+## (`ready.subscribe(...)`).
+function event_value_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if scope_get(scope, id.name) != null:
+                    return Option[str].none
+                if ctx.event_types.contains(id.name):
+                    return Option[str].some(value = id.name)
+                return Option[str].none
+            _:
+                return Option[str].none
+
+
+## The builtin event method result types (the host's
+## `check_event_method_call`): `subscribe`/`subscribe_once` yield
+## `Result[Subscription, EventError]`, `unsubscribe` a `bool`, `emit`/`wait` void.
+function event_method_call_type(method_name: str) -> types.Type:
+    if method_name == "subscribe" or method_name == "subscribe_once":
+        var results = vec.Vec[types.Type].create()
+        results.push(types.Type.ty_named(module_name = "", name = "Subscription"))
+        results.push(types.Type.ty_named(module_name = "", name = "EventError"))
+        return types.Type.ty_generic(name = "Result", args = results.as_span())
+    if method_name == "unsubscribe":
+        return types.primitive("bool")
+    return types.primitive("void")
+
+
 ## The declared type arguments of a specialization as resolved types.
 function resolve_type_arguments(ctx: ref[Context], type_args: span[ast.TypeArgument]) -> span[types.Type]:
     var resolved = vec.Vec[types.Type].create()
@@ -4852,6 +5100,20 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                     pass
         Option.none:
             pass
+    # A specialization of a locally-known variant/enum/flags type reads one of
+    # the type's own members (`Option[float].none`); the value is the instance
+    # itself.  A struct's member read falls through to the normal paths.
+    match type_instance_receiver(ctx, scope, receiver):
+        Option.some as instance:
+            match instance.value:
+                types.Type.ty_imported as im:
+                    if ctx.static_member_types.contains(im.name):
+                        check_static_member(ctx, im.name, member, line, column)
+                        return instance.value
+                _:
+                    pass
+        Option.none:
+            pass
     match try_imported_member(ctx, scope, receiver, member):
         Option.some as imported_value:
             return imported_value.value
@@ -4869,7 +5131,7 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                                 Option.some as imported_type:
                                     return imported_type.value
                                 Option.none:
-                                    let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
+                                    let recv = project_pointer_receiver(infer_expr(ctx, scope, receiver))
                                     return check_member(ctx, recv, member, is_method_call, line, column)
 
 
@@ -5262,6 +5524,19 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
         if args.len != 1:
             return Option[types.Type].none
         return Option[types.Type].some(value = types.primitive("ptr_uint"))
+    if callee_name == "get":
+        if args.len != 2:
+            return Option[types.Type].none
+        var source_arg: ast.Argument = unsafe: read(args.data + 0)
+        let source_ty = infer_expr(ctx, scope, source_arg.arg_value)
+        let _index_ty = infer_expr(ctx, scope, unsafe: read(args.data + 1).arg_value)
+        let element = types.pointer_element(source_ty)
+        if types.is_error(element):
+            return Option[types.Type].none
+        # The host's `check_get_call`: a nullable raw pointer to the element.
+        return Option[types.Type].some(value = types.Type.ty_nullable(
+            base = types.alloc_type(types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(element)))
+        ))
     if callee_name == "fatal":
         return Option[types.Type].some(value = types.Type.ty_error)
     if callee_name == "assert" or callee_name == "expect":

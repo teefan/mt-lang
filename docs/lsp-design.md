@@ -507,6 +507,15 @@ recovery result:
   an owned copy of every noted document's text (unbounded in long sessions);
   `note_document_tokens` re-reads and re-hashes a file per request; and there is
   no large-file/long-session soak in the gates yet.
+- **Non-ASCII doc strings** (session 10).  The host's C backend emitted
+  `String#inspect`'s `\xNN` escapes, and a C hex escape absorbs every following
+  hex digit, so `"4\xC3\x974"` compiled to `4`, `0xC3`, `t` with a stale byte
+  length.  `hover_docs.mt`'s `mat3`/`mat4` docs (`×`, `–`) are the compiler's
+  only non-ASCII literals, so a hover on those builtin types aborted the
+  host-built self binary (`string.as_str text must be valid UTF-8`) and took the
+  server down.  The host now emits non-ASCII bytes raw, byte-identical to the
+  self-host's `c_string_literal`; the headless-Neovim smoke renders the `mat4`
+  hover through a real client.
 - **Deliberate differences** (kept, and to be listed here as one table once
   Track C lands): malformed-frame recovery (`-32700` + keep serving where the
   host hangs), synchronous facts with no lag, and a faster cold start.

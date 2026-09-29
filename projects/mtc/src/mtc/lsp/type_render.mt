@@ -67,8 +67,12 @@ public function qualified_name(ty: types.Type, current_module: str) -> string.St
         types.Type.ty_primitive as p:
             buf.append(p.name)
         types.Type.ty_named as n:
-            append_module_prefix(ref_of(buf), module_or_prelude(n.module_name, n.name), current_module)
-            buf.append(n.name)
+            let owner = module_or_prelude(n.module_name, n.name)
+            if owner.len == 0 and is_moduleless_builtin_type(n.name):
+                buf.append(n.name)
+            else:
+                append_module_prefix(ref_of(buf), owner, current_module)
+                buf.append(n.name)
         types.Type.ty_opaque as o:
             append_module_prefix(ref_of(buf), o.module_name, current_module)
             buf.append(o.name)
@@ -118,6 +122,18 @@ function prelude_type_module(type_name: str) -> str:
     if type_name.equal("Result"):
         return "std.result"
     return ""
+
+
+## Builtin types with no declaring module — the host's `module_name` is nil for
+## them, so they render bare with no `*From <module>*` line.  Everything else
+## with an empty module is a user type declared in the file being hovered, which
+## the renderer qualifies with the file's own module.
+function is_moduleless_builtin_type(type_name: str) -> bool:
+    return (
+        type_name.equal("Handle")
+        or type_name.equal("Subscription")
+        or type_name.equal("EventError")
+    )
 
 
 ## A signature with its module qualifiers stripped plus the modules that were

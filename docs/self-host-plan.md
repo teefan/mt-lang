@@ -1641,6 +1641,86 @@ implicit `this`, prelude/inherent methods on builtin generics); **5** nullabilit
 handle: null (mutable)` vs `ptr[int]?`); 3 tuple/alias renderings, and the rest
 the member-location artifacts.
 
+### The host's C string-literal escaping (2026-09-29 session 10)
+
+Hovering a builtin type (`mat4.identity()`'s receiver) killed the host-built
+self binary with `string.as_str text must be valid UTF-8`, taking the LSP down
+mid-audit.  Root cause: the host emitted `String#inspect`'s `\xNN` escapes, and
+C's hex escape absorbs every following hex digit — `"4\xC3\x974 col"` compiles
+to `4`, `0xC3`, `t` — corrupting the text and its recorded byte length.
+`hover_docs.mt`'s `mat3`/`mat4` doc strings (`×`, `–`) are the compiler's only
+non-ASCII literals, so every hover on those types died (and the same literal
+was wrong in any `emit-c` output built from them, host or self).
+
+The host now emits non-ASCII bytes raw (`c_string_literal` in
+`c_backend/runtime_helpers.rb`, used by the literal-constant section, the
+inline `mt_str` initializers and the static-assert message), byte-identical to
+the self-host's `c_string_literal`.  Verified: `emit-c` on a non-ASCII fixture
+and on `projects/mtc/src/mtc/lsp/hover_docs.mt`'s literal lines match byte for
+byte; the headless-Neovim smoke renders the `mat4` hover with its `×` doc
+through a real client.
+
+### Track B, second batch (2026-09-29 session 10): the analyzer's `<error>` locals
+
+Hover **80 → 46**, definition/declaration **72 → 67** each, typeDefinition
+**70 → 66**, references **9 → 0** — total **332 → 262** differing entries.
+
+**The analyzer's expression typing.**  `infer_expr_inner` left these `<error>`,
+so a hover printed `let x: <error>` where the host resolved the type:
+
+- `~mask_a` — `infer_unary` handled only `not`/`-`; `~`/`+` now yield the operand
+  type (the host's `infer_unary`).
+- `(1, 2)` — a tuple literal built no type; `infer_tuple_literal` mirrors
+  `Types::Registry.tuple(element_types, field_names:)` (named elements included).
+- `Result[int, int].success(value = 7)` / `Option[float].none` — a *type
+  instance receiver*: `type_instance_receiver` resolves the specialization to a
+  module-qualified instance (`std.result.Result[int, int]`), so the hover's
+  `*From std.result*` line follows.
+- `heap.must_alloc[ubyte](64)` — an imported generic function called with
+  explicit type arguments (`check_imported_specialization_call`): the type
+  arguments substitute into the declared return type (`own[ubyte]`).
+- `mat4.identity()` — a bare builtin type name as receiver
+  (`static_builtin_type_name`): the member resolves on the type itself, wherever
+  its `extending` block lives (`std.linear_algebra`).
+- `ready.subscribe(listener) else:` — the builtin event methods
+  (`event_method_call_type`): `Result[Subscription, EventError]`, so the guard
+  binding narrows to `Subscription` like the host.
+- `get(arr, idx) else:` — the `get` builtin, `ptr[T]?`.
+- `detach f()` — `Handle`.
+
+**The hover-side knock-ons** (each one visible in the same `<error>` entries):
+`unwrap_nullable_type` is public and a guarded local's hover applies it (the
+host prints the guard's *success* type); `Handle`/`Subscription`/`EventError`
+are module-less builtins and render bare (`type_render`); `format_fn_signature`
+prints the declared parameter list with no `, ...` marker and always
+`-> <return-type>` (the host's `method_signature`); the builtin type/call arms
+also take the workspace definition index's location, like the host's
+`resolve_hover_info` fallback (`let ptr: ptr[int]?` gives `builtin type ptr[int]`
+its `Defined at` line).
+
+**Two lowering-visible consequences the gates caught** (the analyzer is
+lowering's type oracle):
+
+- An early-returning member arm must still infer its receiver — the event-method
+  arm now records the receiver's `mt_event_*` type, which the lowering reads via
+  `method_receiver_type`; without it a `match` on a `subscribe` call silently
+  lowered to nothing (`test_stateful_event_listener_receives_state_pointer`).
+- A type-instance receiver must resolve a *struct's* member as an associated
+  function (`BinaryHeap[T].parent_index(child)` → `ptr_uint`) and only answer
+  the instance itself for a variant/enum/flags arm; treating every instance
+  member as the instance broke four `test/mt` builds.
+- Member/method receivers project through pointer-likes (`own[T]`/`ptr[T]`
+  member reads and methods resolve on the pointee).  `own[SleepState].ready`
+  compiled before only because the initializer was `<error>`; the projection is
+  gated on the pointer type itself declaring no method of that name, so
+  `ptr[T].load()` (`extending ptr[T]` in `std.mem.ptr`) still resolves on the
+  pointer.
+
+The residual hover is the classification the first batch recorded: the
+`*From <module>*` renderings from the *source-text* annotation (15), the
+self-null member/attribute/`this`/prelude-method arms (19), the nullability
+renderings (5) and the member-location artifacts, plus the small classes.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**

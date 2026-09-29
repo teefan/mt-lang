@@ -938,10 +938,15 @@ function resolve_keyword_or_builtin_hover(
     # A specialization answers before the type table: the host's
     # `builtin_hover_info` runs its value, hook and type-constructor arms for a
     # name followed by `[`, and only a *registered* type (`int`, `str`, …)
-    # reaches the `type <name>` shape.
+    # reaches the `type <name>` shape.  The host's `resolve_hover_info` falls
+    # back to the workspace definition index whenever it resolves a signature
+    # without an explicit location, so a name the workspace also declares
+    # (`let ptr: ptr[int]?`) gains its location line.
     match builtin_specialization_hover(tokens, source, matched_index, lexeme):
         Option.some as bs:
-            return Option[CursorResult].some(value = quick_hover_doc(bs.value))
+            var specialization_result = quick_hover_doc(bs.value)
+            apply_hover_index_location(ws, uri, line, character, ref_of(specialization_result))
+            return Option[CursorResult].some(value = specialization_result)
         Option.none:
             pass
 
@@ -949,13 +954,17 @@ function resolve_keyword_or_builtin_hover(
     # `type <name>` signature with its documentation table.
     match hover_docs.builtin_type(lexeme):
         Option.some as bt:
-            return Option[CursorResult].some(value = quick_hover_doc(bt.value))
+            var builtin_type_result = quick_hover_doc(bt.value)
+            apply_hover_index_location(ws, uri, line, character, ref_of(builtin_type_result))
+            return Option[CursorResult].some(value = builtin_type_result)
         Option.none:
             pass
 
     match hover_docs.builtin_call(lexeme):
         Option.some as bu:
-            return Option[CursorResult].some(value = quick_hover_doc(bu.value))
+            var builtin_call_result = quick_hover_doc(bu.value)
+            apply_hover_index_location(ws, uri, line, character, ref_of(builtin_call_result))
+            return Option[CursorResult].some(value = builtin_call_result)
         Option.none:
             pass
 
@@ -1878,7 +1887,9 @@ function make_shortened_result(decl_line: ptr_uint, name: str, source: str, sign
 
 
 ## Render a function signature from its FnSig:
-## `async function name(a: int, b: str) -> int`.
+## `async function name(a: int, b: str) -> int`.  The host's `method_signature`
+## prints the declared parameters with no variadic marker and always the return
+## type (`-> void` when the declaration omits it).
 function format_fn_signature(sig: analyzer.FnSig, name: str, current_module: str) -> string.String:
     var sig_text = string.String.create()
     if sig.is_async:
@@ -1897,14 +1908,9 @@ function format_fn_signature(sig: analyzer.FnSig, name: str, current_module: str
         sig_text.append(param_text.as_str())
         param_text.release()
         pi += 1
-    if sig.is_variadic:
-        if sig.params.len > 0:
-            sig_text.append(", ")
-        sig_text.append("...")
     sig_text.append(")")
-    if sig.has_return_type:
-        sig_text.append(" -> ")
-        sig_text.append(types.type_to_string(sig.return_type))
+    sig_text.append(" -> ")
+    sig_text.append(types.type_to_string(sig.return_type))
     return sig_text
 
 
@@ -2753,6 +2759,7 @@ function resolve_local_hover(
                                         ast.Stmt.stmt_local as fl:
                                             return Option[CursorResult].some(value = local_hover_result(
                                                 fl.is_let, name.as_str(), fl.line, fl.stmt_type, fl.value,
+                                                fl.else_body != null,
                                                 source, ref_of(analysis), current_module.as_str()))
                                         _:
                                             pass
@@ -2775,6 +2782,7 @@ function resolve_local_hover(
                                         ast.Stmt.stmt_local as flm:
                                             return Option[CursorResult].some(value = local_hover_result(
                                                 flm.is_let, name.as_str(), flm.line, flm.stmt_type, flm.value,
+                                                flm.else_body != null,
                                                 source, ref_of(analysis), current_module.as_str()))
                                         _:
                                             pass
@@ -2930,7 +2938,8 @@ function find_local_in_block(
                     ast.Stmt.stmt_local as loc:
                         if loc.name == name:
                             return Option[CursorResult].some(value = local_hover_result(
-                                loc.is_let, name, loc.line, loc.stmt_type, loc.value, source, analysis, current_module))
+                                loc.is_let, name, loc.line, loc.stmt_type, loc.value, loc.else_body != null,
+                                source, analysis, current_module))
                     _:
                         pass
                 si += 1
@@ -3183,6 +3192,7 @@ function local_hover_result(
     decl_line: ptr_uint,
     stmt_type: ptr[ast.TypeRef]?,
     value: ptr[ast.Expr]?,
+    has_guard: bool,
     source: str,
     analysis: ref[analyzer.Analysis],
     current_module: str,
@@ -3196,7 +3206,10 @@ function local_hover_result(
         match type_render.initializer_type(analysis, value):
             Option.some as init_ty:
                 type_text.release()
-                type_text = type_render.qualified_name(init_ty.value, current_module)
+                # A guarded binding (`let x = <T?> else: …`) narrows to the
+                # guard's success type, as the analyzer's binding does.
+                let bound = if has_guard: analyzer.unwrap_nullable_type(init_ty.value) else: init_ty.value
+                type_text = type_render.qualified_name(bound, current_module)
             Option.none:
                 pass
 
