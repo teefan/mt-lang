@@ -1868,15 +1868,17 @@ Remaining differences on the real project, all documented and none a crash:
 
 ### Remaining LSP gaps (all reproducible with the harness)
 
-Re-measured 2026-09-26 after stage 6e (55 requests, 19 probes): **4 differing entries** — 1 of 55 requests,
-3 of 19 probes, 0 semantic-token comparisons — plus one gap the corpus does not
-cover yet (row 2).
+Re-measured 2026-09-26 after stage 6e (55 requests, 19 probes): **4 differing
+entries** — 1 of 55 requests, 3 of 19 probes, 0 semantic-token comparisons — plus
+one gap the corpus does not cover yet (row 2).  Re-measured 2026-09-28 session 9:
+still the same 4 entries, with row 3 narrower (the self no longer adds sema/lint
+items the host does not produce).
 
 | # | Family | Entries | Evidence / target |
 | --- | --- | --- | --- |
 | 1 | **`milkTea/debugInfo`** | `milkTea/debugInfo` | **Partially ported (stage 6f).** The host's Header, Tokens and Parse Errors sections are implemented: the header, the token histogram and **245 of 246 token rows are byte-identical** on the corpus file (lexeme, kind, location and semantic class columns).  Two known gaps remain, both measured: (a) the histogram's *tie order* — the host's `group_by` + Ruby `sort_by` leaves equal counts in an order only MRI's qsort reproduces (e.g. `2 star, 2 float, …` where first-appearance order gives `2 import, 2 as, …`); the self order is stable and documented rather than emulated.  (b) the host's **AST** (Ruby class names plus `node_ids: {N entries}`), **Facts** (`40 types, 2 functions, 2 method_sets, 1 interfaces, 2 imports`, method sets, owning types) and **Bindings** (`ValueBinding[id: N]`, `obj <object_id> → binding_id: N`) sections are not implemented: they render the host implementation's own data structures, so matching them byte-for-byte needs a Ruby-AST-shaped renderer, a binding-id model and harness normalization for the object ids.  The self adds a `Workspace` section the host has no equivalent for. |
 | 2 | **Malformed frame: the host hangs** | `stress/malformed-frame+parseError` | a JSON-RPC frame whose body is not JSON (or carries a bogus `Content-Length`) leaves the Ruby host blocked — it never answers that frame (the probe times out) and only resumes on the next one.  The self answers `-32700` with a null id and keeps serving.  This entry differs by design and is a self-host improvement; it also locks the crash it used to cause (a malformed frame used to be treated as EOF and shut the server down) |
-| 3 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports 13 (its own messages, plus sema/lint items the host does not produce).  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
+| 3 | **Parser recovery on broken input** | `stress/unterminated-source+diagnostic` | the host's recovering parser reports 5 items for the probe buffer (2 `lex/error`, 3 `parse/error`); the self reports **3** (re-measured session 9 — the panic-based unwinding removed the extra sema/lint items, so only parser recovery is left).  Two gaps: (a) the self's second `lex/error` (`unclosed grouping delimiter`) carries no position (`0:0`) where the host reports the opening delimiter's (`0:15`); (b) the parse errors — the host continues past the bad parameter name and adds `expected ')' after parameters` and a top-level `expected declaration`, while the self stops at `expected parameter name`.  Matching needs the host's parser behaviour, not an LSP change: `consume_name` clearing a keyword-name error to `keyword 'X' cannot be used as <role>` (`parser.rb:230-242`), `parse_param` recording that error *and continuing* so `consume(:rparen, "expected ')' after parameters")` fires at the previous token (`types.rb:18-36`), one error per function with a skeleton AST (`declarations.rb:647-658`, the self now keeps the name but not the continued parameter parse), and a top-level `expected declaration` that ends the parse (`declarations.rb:115`) |
 | 4 | **Host facts lag** | `stress/unicode+semanticTokens` | 2 modifier bits: the host omits `readonly` on two `let`-local references when tokens are requested right after a content change — its facts for the new content are not recomputed yet.  Verified: the same document served 2 s after `didOpen` gets `readonly` (and a freshly-opened document does too), so this is a host timing artifact, not a classification rule; the self computes facts synchronously |
 
 ### Where the next session starts
@@ -1926,13 +1928,14 @@ rows byte-identical); and the DAP items in `dap-design.md` §10.
    in the "Stage 8" record below still applies): the AST, Facts and Bindings
    sections and the histogram's tie order.  The token table, header and parse
    errors are done and byte-identical.
-3. **Parser recovery parity** (row 3): our lexer/parser recover (outline,
-   tokens and sema keep working, and lex/parse errors are reported), but the
-   error *set* on broken input differs from the host's.  The host behaviours to
-   port are listed in the row: `consume_name` keyword-name errors, `parse_param`
-   continuing so `expected ')'` fires, one error per function with a skeleton
-   AST, and a top-level `expected declaration` that ends the parse.  This also
-   changes `mtc check` text, so it belongs with the CLI-parity work (§0j).
+3. **Parser recovery parity** (row 3, narrowed by session 9): our lexer/parser
+   recover (outline, tokens and sema keep working, and lex/parse errors are
+   reported), and the panic-based unwinding now removes the extra sema/lint items
+   — the probe buffer is down to 3 items against the host's 5.  Two behaviours
+   remain: the lexer's `unclosed grouping delimiter` position, and `parse_param`
+   continuing past a bad parameter name (so `expected ')'` and a top-level
+   `expected declaration` follow).  This also changes `mtc check` text, so it
+   belongs with the CLI-parity work (§0j).
 4. **DAP** (`docs/dap-design.md` §10): (a) `launch` on a `.mt` source must build
    it (spawn `mtc build <program> -o <tmp>`), (b) the lldb-dap bridge — now
    feasible: `std/libuv.mt` exposes `uv_poll_*` and `std/async` a libuv runtime,
@@ -1950,10 +1953,11 @@ rows byte-identical); and the DAP items in `dap-design.md` §10.
    resolved to the wrong `create`); `executeCommand` answers MethodNotFound
    where the host answers null (deliberate: the spec allows it, and we advertise
    only `mtc.restartServer`).
-6. **`dead-assignment` policy** (still open from earlier sessions): it is a
-   self-host-only rule, so files where it fires differ from the host by design.
-   Either keep it (documented value-add) or gate it behind a config flag so the
-   editor matches the host exactly.
+6. **`dead-assignment` policy** — **CLOSED (session 9)**: the rule now matches the
+   host (`linter/cfg.mt` skips declaration-origin writes and never-read bindings,
+   and the warning carries the host's message and `warning` severity); the one
+   structural difference left is that the liveness walk keys on *names* where the
+   host keys on binding ids, which can only show in shadowed-name cases.
 7. **Compiler-side work** is §0j (`lower` dump parity 39/613, CLI message parity,
    `deps`/`--bundle`/`--jobs`/Wasm); the example and `test/mt` build failures it
    used to list are fixed (2026-09-27).
