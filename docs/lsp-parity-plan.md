@@ -123,9 +123,9 @@ declaration rather than the host's partial node (§0k, session 9).
   compare, non-zero exit on diff) and its corpus under `tmp/lsp-recovery/`
   (created by the tool).  Run in the session gates.
 
-## Track B — the audit residue (251 entries, was 332)
+## Track B — the audit residue (56 entries, was 332)
 
-- **B1. hover 80 → 14.** Sessions 10 and 11 closed the
+- **B1. hover 80 → 13.** Sessions 10–12 closed the
   analyzer-`<error>` locals with the renderings they exposed, the member
   resolution those types uncovered (imported `extending` methods, builtin
   vector/matrix/quaternion fields, receiver projection), the variant arm
@@ -207,29 +207,46 @@ parser unwinding and the knock-ons, session 9), the first B1 batch (the
 (the host's C string-literal escaping; the analyzer's `<error>` locals and their
 renderings; imported methods and builtin fields; the variant arm constructors
 and their labels; the module-qualified annotation renderings — hover 80 → 32,
-the full matrix 332 → 269), and session 11's five batches (field-token
-locations + resolved field types; the member arms with `variant_types` and
-`const_eval_int`; attributes/type parameters/`this`; the `this` and
-annotated-local receivers with `local_decl_types`; the method `-> void` and the
-`_` discard — hover 32 → 14, the full matrix 269 → 251).  Remaining, in order:
+the full matrix 332 → 269), session 11's five batches (field-token locations +
+resolved field types; the member arms with `variant_types` and `const_eval_int`;
+attributes/type parameters/`this`; the `this` and annotated-local receivers with
+`local_decl_types`; the method `-> void` and the `_` discard — hover 32 → 14,
+the full matrix 269 → 224), and session 12's three commits (the local definition
+rule with its gates; an import alias's member declaration; the receiver-typed
+method line — definition 61 → 5, declaration 61 → 5, typeDefinition 59 → 4,
+hover 14 → 13, the full matrix 224 → 56).
 
-1. hover's 14, grouping the classes that share a root cause:
-   - the **location artifacts** (a method call's alternative declaration in
-     `std/graph.mt`, `take_damage`, `type quat`, a `std/spatial.mt` parameter) —
-     the host's cross-file definition index and its `module_member_binding_location`
-     binding line;
-   - the **nullability** four (the analyzer's continuation refinement — the same
-     work as the multi-session plan's Phase 2 item 3);
-   - the **destructuring** two and the **match-arm payload** (stage 11c);
-   - the singletons: the union function field's bare `fn `, the member chain's
-     third segment, a binding in nested `unsafe` blocks.
-2. B2 (definition/declaration 70, typeDefinition 68 — re-measure with each hover
-   fix and see §0k's session-11 note for what the hover work already moved),
-   then B4 (the small classes; `diagnostic` is the
-   lint emission order).  B3 is closed (references 0).
-3. C1 → C2/C3 → C4/C5 (readiness), with the deliberate-difference table in
-   `docs/lsp-design.md` §8; D2/D3 (audit determinism, scoreboard row).
+Remaining, in order.  Note that the residue has crossed over: most of what is
+left is *analyzer* work the LSP only measures, so the compiler stages the
+multi-session plan already queues (Phase 2 item 3, stage 11c) come first for
+those entries:
 
+1. **C1 — the cross-file definition index and cold start.**  It owns the whole
+   navigation residue (definition 5, declaration 5, typeDefinition 4) and two of
+   hover's location entries: the host's index warms every *indexed* document
+   (`candidate_definition_uris`) and answers a token-pair declaration token in
+   files the audit never opened (`type quat` → std/linear_algebra.mt:237,
+   `parameter idx` → std/spatial.mt:125, `start` → std/graph.mt:363, a field's
+   `parent` → std/binary_heap.mt:49), plus an interface method's own token
+   (`take_damage`).  Measure cold-start latency before and after, as C1 asks.
+2. **hover's 13, grouped by root cause:**
+   - the **nullability** four (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`) — the
+     host prints the *storage* type where the self prints the flow type: the
+     analyzer's flow/continuation refinement (the multi-session plan's Phase 2
+     item 3);
+   - the **destructuring** two (`lb@1861:23`, `lb@1931:25`) and the **match-arm
+     payload** (`lb@1915:25`) — stage 11c;
+   - the singletons: the union function field's bare `fn ` (`lb@1127:9`), the
+     member chain's third segment (`lb@1958:16`), a binding in a nested
+     `unsafe:` block (`mst@88:23`) and a `let` declaration token whose binding
+     the scope walk misses (`mst@96:12`).
+3. **B4** — the small classes: documentHighlight 14, documentSymbol 5 (one shape:
+   the host emits a module symbol the self does not), semanticTokens 5,
+   diagnostic 2 (the lint emission order), codeLens 1, implementation 1,
+   workspace/symbol 1.  B2 is closed (definition 5 / declaration 5 /
+   typeDefinition 4 belong to C1) and B3 is closed (references 0).
+4. C2 → C3 → C4/C5 (readiness), with the deliberate-difference table in
+   `docs/lsp-design.md` §8, then D2/D3 (audit determinism, scoreboard row).
 ## Gates (every commit)
 
 Rebuild with `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o

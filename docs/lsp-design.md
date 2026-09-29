@@ -12,9 +12,10 @@ lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
 > `compare`, `--stress`) drives an out-of-process corpus of 55 requests — every
 > endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a
 > real editor makes — and 15 adversarial probes, and diffs normalized responses.
-> As of 2026-09-26 (stage 6b) it reports 30/30 capability keys identical, **1 of
-> 55 requests and 3 of 19 stress probes still differing** — every differing entry
-> is catalogued by family in
+> As of 2026-09-29 (session 12 close) it reports 30/30 capability keys identical
+> and **4 differing entries**, all deliberate and documented (the host hanging on
+> a malformed frame, the host's facts lag, and two "at least as good"
+> extensions) — every differing entry is catalogued by family in
 > [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure),
 > which is the live status; the per-feature claims below are self-host-side
 > results that the harness now confirms or contradicts entry by entry.
@@ -26,7 +27,8 @@ lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
 > The LSP test suite (`test/tooling/lsp/server/*`) still spawns the *Ruby* server
 > (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
 > so CI alone does not exercise `build/stage2/mtc lsp`.
-Hover coverage: 18/25 declaration types (up from 5/25).
+Hover coverage: measured by the project audit — 13 differing entries of 915
+hover requests on the SimpleGame corpus (session 12; `self-host-plan.md` §0k).
 References: cross-file via workspace index.
 Definition: local variables supported.
 Signature help: methods and extending-block methods resolved.
@@ -450,7 +452,7 @@ fixed the same day.
 
 | Feature | Status |
 |---------|--------|
-| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 3 of 47 requests and 2 of 15 stress probes still differ — 5 entries; semantic tokens byte-equal) |
+| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 4 documented differing entries) and by the project audit (6456 entries / 56 differ, session 12) |
 | Diagnostics (push + pull) | **DONE (stage 4)** — the editor *buffer* is analysed (not the file on disk); `lex/error`, `parse/error`, `import/load-error`, `sema/error` and lint items carry the host's codes, `data.stage`, token-length ranges (import failures anchor at the module-path text) and MarkupContent for quoted-identifier sema messages; `workspace/diagnostic` reports every open document in didOpen order with `previousResultIds`.  `diagnostic/pull` and `workspace/diagnostic` are byte-equal to the host. |
 | Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
 | Config application | **DONE** — parse workspace/configuration response |

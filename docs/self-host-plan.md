@@ -47,11 +47,14 @@ audits it against the host per request (2026-09-27: capabilities, launch, thread
 stackTrace, scopes, variables, breakpoints and the whole error surface are identical
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
-**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **1 of 55 harness requests and 3 of 19 stress probes still differing — 4 entries** (§0k), all documented (debugInfo, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (new counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **1328 differ** at session start (typeDefinition 334, hover 286, references 278, definition/declaration 194 each, documentHighlight 26, documentSymbol 5/7, semanticTokens 5/7, diagnostic 3/7, codeLens 1/7, implementation 1, workspace/symbol 1), **332 differ** after the session-6/7/8/9 LSP work (hover 80, definition/declaration 72 each, typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1) — the per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10.  The references-only audit is at **0 differing entries** and the definition/typeDefinition counters carry 6 deliberate self-better entries (§0k).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`, `probe5`, `probe6`), and so are their references.  Residue classified in §0k; the largest class is now `hover` (member/binding resolution).**
+**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **4 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**LSP project audit (live counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **56 differ** (session 12 close): hover 13, definition/declaration 5 each, typeDefinition 4, documentHighlight 14, documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1, references **0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline — definition/declaration 61 → 5 each, typeDefinition 59 → 4).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The navigation residue (5/5/4) is five positions of one family — the host's cross-file definition index reaching files the audit never opened — and the references-only audit is at **0 differing entries**.  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references.  Residue classified in §0k; the largest class is now `documentHighlight` (14, untouched since session 8), then `hover` (13).**
 **LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
-**Hover: 18/25 declaration types covered (up from 5/25).**
+**Hover: 13 entries left (session 12 close; §0k classifies them — the four
+nullability renderings, the two destructuring bindings, the match-arm payload,
+the union function field, the member chain's third segment, a nested `unsafe`
+binding, and the cross-file location artifacts that C1 owns).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
 **LSP logging: structured stderr, version+revision announcement, a `[LSP perf] req <method> <ms>`
 line per request (the host's shape), default level `info`, and `milkTea.lsp.logLevel`
@@ -148,10 +151,12 @@ its own sweep: `ruby tools/unused_import_parity.rb`.
    the remaining categories ranked in §0j.
 2. **CLI behavior parity** — 22/61 harness cases match; the 39 differ on message
    text, output channel and argument precedence (§0j item 10).
-3. **LSP feature parity** — **the active phase** (2026-09-26): the self-vs-host
-   harness (`tools/lsp_parity.rb`) measures 30/30 capability keys, 1 of 55 request
-   entries and 3 of 19 stress probes differing (4 entries), and 0 semantic-token
-   comparisons; the remaining families and the working order are in §0k.  Stages 1
+3. **LSP feature parity** — **the active phase** (2026-09-26; the plan
+   document is `docs/lsp-parity-plan.md`, counters as of session 12): the
+   self-vs-host harness (`tools/lsp_parity.rb`) measures 30/30 capability keys
+   with 4 documented differing entries and 0 semantic-token comparisons, and the
+   project audit (`tools/lsp_project_audit.rb`) 6456 entries / **56 differ**;
+   the remaining families and the working order are in §0k.  Stages 1
    (seven isolated entries), 2 (completion), 3 (documentSymbol), 4
    (diagnostics + semantic tokens), 5 (formatting/tidy — plus the
    `tools/format_parity.rb` mode sweep), 5b (the VS Code startup crash and the
