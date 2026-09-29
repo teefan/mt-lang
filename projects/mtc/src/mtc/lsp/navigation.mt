@@ -34,6 +34,264 @@ import mtc.lsp.workspace as workspace
 import mtc.pretty_printer.ast_formatter as ast_formatter
 
 
+## A `let`/`var`/`for` declaration site: the name token's 1-based line/column.
+struct LocalDeclSite:
+    line: ptr_uint
+    column: ptr_uint
+
+
+## True when the cursor's name resolves through the builtin arms — the host's
+## `is_builtin_name?` gate, which is `builtin_hover_info` and runs *before* its
+## local-binding arm, so a definition request for a builtin name (`ptr[int]`,
+## `zero[T]`, `read(x)`) answers nothing rather than falling through to the
+## definition index.
+function builtin_name_at(
+    ws: ref[workspace.Workspace],
+    uri: str,
+    line: ptr_uint,
+    character: ptr_uint,
+) -> bool:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return false
+    defer: file_path.release()
+    var content = ws.document_source(file_path.as_str()) else:
+        return false
+    defer: content.release()
+    let source = content.as_str()
+
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
+    defer: tokens.release()
+    let ti = token_index_at(ref_of(tokens), line, character) else:
+        return false
+    let tp = tokens.get(ti) else:
+        return false
+    let tok = unsafe: read(tp)
+    let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+
+    match builtin_specialization_hover(tokens, source, ti, lexeme):
+        Option.some:
+            return true
+        Option.none:
+            pass
+    match hover_docs.builtin_call(lexeme):
+        Option.some:
+            return true
+        Option.none:
+            pass
+    return false
+
+
+## The definition of a name that is bound in the cursor's scope — the host's
+## *local* definition rule, which is not the enclosing binding: its completion
+## bindings (`Bindings::ValueBinding`) carry no AST node, so
+## `find_local_declaration_ast_node` walks the whole file and answers the
+## **first** `let`/`var`/`for` declaration of that name *before* the cursor.
+## An editor therefore jumps to an unrelated same-named local earlier in the
+## file; reproducing that artefact is what parity requires (§0k records it).
+## None when the name is not a local binding, or when the file declares no such
+## local before the cursor — the caller then falls back to the definition index,
+## exactly as the host's pipeline does.
+function resolve_local_definition(
+    ws: ref[workspace.Workspace],
+    file_path: str,
+    source: str,
+    name: str,
+    target_line: ptr_uint,
+) -> Option[CursorResult]:
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
+    var ast_file = ast_for_document(ws, file_path, parsed_file)
+
+    # The host resolves a binding only through the cursor's own completion
+    # frame; the scope walk's region model is the self's equivalent, and it
+    # excludes module-level names, which the host answers from its value tables.
+    var bindings = scope_mod.collect_bindings(source, ast_file)
+    defer: bindings.release()
+    if scope_mod.local_binding_line(ref_of(bindings), name, target_line).is_none():
+        return Option[CursorResult].none
+
+    match first_local_declaration(ast_file, name, target_line):
+        Option.some as site:
+            var line_text = cursor.source_line(source, site.value.line)
+            var column: ptr_uint = 0
+            match cursor.token_start_in_line(line_text, name):
+                Option.some as pos:
+                    column = pos.value
+                Option.none:
+                    column = if site.value.column > 0: site.value.column - 1 else: 0z
+            return Option[CursorResult].some(value = CursorResult(
+                line = site.value.line,
+                column = column,
+                name_len = name.len,
+                hover_text = string.String.create(),
+                docs = string.String.create(),
+                target_uri = string.String.create(),
+                from_modules = string.String.create()
+            ))
+        Option.none:
+            pass
+    return Option[CursorResult].none
+
+
+## The first `let`/`var`/`for` declaration of `name` before `before_line`
+## (1-based), anywhere in the file: the host's `find_local_declaration_ast_node`
+## walk.  Destructured names and `as` bindings are not a `LocalDecl`'s own name,
+## so they never match — as in the host.
+function first_local_declaration(file: ast.SourceFile, name: str, before_line: ptr_uint) -> Option[LocalDeclSite]:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                match first_local_in_stmt(fun.body, name, before_line):
+                    Option.some as hit:
+                        return Option[LocalDeclSite].some(value = hit.value)
+                    Option.none:
+                        pass
+            ast.Decl.decl_const as c:
+                match first_local_in_stmt(c.block_body, name, before_line):
+                    Option.some as const_hit:
+                        return Option[LocalDeclSite].some(value = const_hit.value)
+                    Option.none:
+                        pass
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    let method = unsafe: read(ext.methods.data + mi)
+                    match first_local_in_stmt(method.body, name, before_line):
+                        Option.some as method_hit:
+                            return Option[LocalDeclSite].some(value = method_hit.value)
+                        Option.none:
+                            pass
+                    mi += 1
+            ast.Decl.decl_struct as st:
+                var si: ptr_uint = 0
+                while si < st.struct_events.len:
+                    let event_decl = unsafe: read(st.struct_events.data + si)
+                    match event_decl:
+                        ast.Decl.decl_function as ef:
+                            match first_local_in_stmt(ef.body, name, before_line):
+                                Option.some as event_hit:
+                                    return Option[LocalDeclSite].some(value = event_hit.value)
+                                Option.none:
+                                    pass
+                        _:
+                            pass
+                    si += 1
+                var ni: ptr_uint = 0
+                while ni < st.nested_types.len:
+                    let nested = unsafe: read(st.nested_types.data + ni)
+                    match nested:
+                        ast.Decl.decl_function as nf:
+                            match first_local_in_stmt(nf.body, name, before_line):
+                                Option.some as nested_hit:
+                                    return Option[LocalDeclSite].some(value = nested_hit.value)
+                                Option.none:
+                                    pass
+                        _:
+                            pass
+                    ni += 1
+            _:
+                pass
+        di += 1
+    return Option[LocalDeclSite].none
+
+
+## The first matching declaration in one statement body, statements and nested
+## bodies in source order.
+function first_local_in_stmt(sp: ptr[ast.Stmt]?, name: str, before_line: ptr_uint) -> Option[LocalDeclSite]:
+    let b = sp else:
+        return Option[LocalDeclSite].none
+    unsafe:
+        match read(b):
+            ast.Stmt.stmt_block as blk:
+                return first_local_in_stmts(blk.statements, name, before_line)
+            ast.Stmt.stmt_local as loc:
+                if loc.name.equal(name) and loc.line > 0 and loc.line < before_line:
+                    return Option[LocalDeclSite].some(value = LocalDeclSite(line = loc.line, column = loc.column))
+                # `let x = f() else: …` nests a body.
+                match first_local_in_stmt(loc.else_body, name, before_line):
+                    Option.some as else_hit:
+                        return Option[LocalDeclSite].some(value = else_hit.value)
+                    Option.none:
+                        pass
+            ast.Stmt.stmt_if as iff:
+                var ib: ptr_uint = 0
+                while ib < iff.branches.len:
+                    let branch = read(iff.branches.data + ib)
+                    match first_local_in_stmt(branch.body, name, before_line):
+                        Option.some as branch_hit:
+                            return Option[LocalDeclSite].some(value = branch_hit.value)
+                        Option.none:
+                            pass
+                    ib += 1
+                match first_local_in_stmt(iff.else_body, name, before_line):
+                    Option.some as if_else_hit:
+                        return Option[LocalDeclSite].some(value = if_else_hit.value)
+                    Option.none:
+                        pass
+            ast.Stmt.stmt_while as wh:
+                return first_local_in_stmt(wh.body, name, before_line)
+            ast.Stmt.stmt_for as fr:
+                # The bindings are visited before the body, as the host's walk does.
+                var bi: ptr_uint = 0
+                while bi < fr.bindings.len:
+                    let binding = read(fr.bindings.data + bi)
+                    if binding.name.equal(name) and binding.line > 0 and binding.line < before_line:
+                        return Option[LocalDeclSite].some(value = LocalDeclSite(line = binding.line, column = binding.column))
+                    bi += 1
+                return first_local_in_stmt(fr.body, name, before_line)
+            ast.Stmt.stmt_match as m:
+                var mi: ptr_uint = 0
+                while mi < m.arms.len:
+                    let arm = read(m.arms.data + mi)
+                    match first_local_in_stmt(arm.body, name, before_line):
+                        Option.some as arm_hit:
+                            return Option[LocalDeclSite].some(value = arm_hit.value)
+                        Option.none:
+                            pass
+                    mi += 1
+            ast.Stmt.stmt_unsafe as uns:
+                return first_local_in_stmt(uns.body, name, before_line)
+            ast.Stmt.stmt_defer as dfr:
+                return first_local_in_stmt(dfr.body, name, before_line)
+            ast.Stmt.stmt_when as whn:
+                var wi: ptr_uint = 0
+                while wi < whn.branches.len:
+                    let branch = read(whn.branches.data + wi)
+                    match first_local_in_stmts(branch.body, name, before_line):
+                        Option.some as when_hit:
+                            return Option[LocalDeclSite].some(value = when_hit.value)
+                        Option.none:
+                            pass
+                    wi += 1
+                return first_local_in_stmt(whn.else_body, name, before_line)
+            ast.Stmt.stmt_parallel_block as pb:
+                return first_local_in_stmts(pb.bodies, name, before_line)
+            ast.Stmt.stmt_error_block as eb:
+                return first_local_in_stmt(eb.body, name, before_line)
+            _:
+                pass
+    return Option[LocalDeclSite].none
+
+
+function first_local_in_stmts(stmts: span[ast.Stmt], name: str, before_line: ptr_uint) -> Option[LocalDeclSite]:
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        match first_local_in_stmt(unsafe: stmts.data + si, name, before_line):
+            Option.some as hit:
+                return Option[LocalDeclSite].some(value = hit.value)
+            Option.none:
+                pass
+        si += 1
+    return Option[LocalDeclSite].none
+
+
 ## Handle textDocument/definition (and `declaration`, which the host answers
 ## with the same pipeline): resolve the symbol at the cursor, then — when that
 ## yields no source location, as it does for a parameter — fall back to the
@@ -45,10 +303,52 @@ public function handle_definition(
     character: ptr_uint,
     id: json.Value,
 ) -> void:
-    # Try module-level resolution first, then fall back to local variables.
+    # The host's arm order: the module/member arms first (inside
+    # `resolve_cursor`), then `alias.Member`'s module fallback, then the builtin
+    # gate, then the local rule, then the definition index.
     var result = resolve_cursor(ws, uri, line, character, false)
+
+    # `alias.Member` where the member is not a declaration of that module: the
+    # host's definition pipeline answers the module file itself (the same
+    # position's hover stays null, so this is the definition path only).
     if result.is_none():
-        result = resolve_local_hover(ws, uri, line, character)
+        match alias_member_module_path(ws, uri, line, character):
+            Option.some as member_module_path:
+                var member_module_uri = file_uri_for_path(member_module_path.value.as_str())
+                respond_module_location(id, member_module_uri.as_str())
+                member_module_uri.release()
+                member_module_path.value.release()
+                return
+            Option.none:
+                pass
+
+    # The host answers nothing once a name resolves through its builtin arms
+    # (`is_builtin_name?` → `builtin_hover_info`): `ptr[int]`, `zero[T]` and
+    # `read(x)` are never definitions, and the answer is null rather than the
+    # definition index's `let ptr …` from some other open document.
+    if result.is_none() and builtin_name_at(ws, uri, line, character):
+        proto.write_response(id, json.null_value())
+        return
+
+    # A name bound in the cursor's scope answers the file's first same-named
+    # `let`/`var`/`for` declaration, not the enclosing binding (the host's
+    # `find_local_declaration_ast_node` artefact).
+    if result.is_none():
+        match uri_ops.file_uri_to_path(uri):
+            Option.some as def_path:
+                var def_content = ws.document_source(def_path.value.as_str())
+                if def_content.is_some():
+                    var def_source = def_content.unwrap()
+                    match cursor.identifier_at(def_source.as_str(), line, character):
+                        Option.some as def_name:
+                            result = resolve_local_definition(
+                                ws, def_path.value.as_str(), def_source.as_str(), def_name.value.text, line + 1)
+                        Option.none:
+                            pass
+                    def_source.release()
+                def_path.value.release()
+            Option.none:
+                pass
 
     var target_uri = string.String.create()
     defer: target_uri.release()
@@ -76,20 +376,6 @@ public function handle_definition(
             payload.from_modules.release()
         Option.none:
             pass
-
-    # `alias.Member` where the member is not a declaration of that module: the
-    # host's definition pipeline answers the module file itself (the same
-    # position's hover stays null, so this is the definition path only).
-    if not located:
-        match alias_member_module_path(ws, uri, line, character):
-            Option.some as member_module_path:
-                var member_module_uri = file_uri_for_path(member_module_path.value.as_str())
-                respond_module_location(id, member_module_uri.as_str())
-                member_module_uri.release()
-                member_module_path.value.release()
-                return
-            Option.none:
-                pass
 
     if not located:
         match uri_ops.file_uri_to_path(uri):
@@ -750,6 +1036,12 @@ function alias_member_module_path(
     defer: content.release()
     let source = content.as_str()
 
+    # The host requires an identifier token under the cursor (its
+    # `token.type == :identifier` gate) before this arm runs: an `alias.member`
+    # spelled inside a comment or a string defines nothing.
+    if cursor.identifier_at(source, line, character).is_none():
+        return Option[string.String].none
+
     match cursor.dot_receiver_at(source, line, character):
         Option.some as recv:
             var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
@@ -1125,12 +1417,13 @@ function resolve_cursor(
     # `Primitive.circle(radius: float)`): the host's
     # `find_variant_arm_in_types` scans the file's declared types in reverse
     # order for the first one with an arm of that name, ahead of every name
-    # lookup below.
-    match variant_arm_name_hover(ws, ast_file, target.text):
-        Option.some as arm_hover:
-            return Option[CursorResult].some(value = arm_hover.value)
-        Option.none:
-            pass
+    # lookup below.  Hover-only, like the member arm above.
+    if for_hover:
+        match variant_arm_name_hover(ws, ast_file, target.text):
+            Option.some as arm_hover:
+                return Option[CursorResult].some(value = arm_hover.value)
+            Option.none:
+                pass
 
     # The host resolves a bare name through its facts before the import aliases:
     # a registered type (`str`, `int`, `vec3`) answers its own declaration or its
@@ -1144,12 +1437,16 @@ function resolve_cursor(
     # A bare enum/flags member name (`Kind.a = 0`): the host's
     # `find_member_in_types` runs after every name lookup and renders
     # `Type.member = value` — the member's value *folded* to an integer, so an
-    # implicit member reports the auto-incremented value.
-    match bare_member_hover(ast_file, ref_of(analysis), target.text):
-        Option.some as member_hit:
-            return Option[CursorResult].some(value = member_hit.value)
-        Option.none:
-            pass
+    # implicit member reports the auto-incremented value.  Hover-only: the host's
+    # *definition* pipeline has no such arm, so a definition request for a name
+    # that happens to be a member (`b` in `flags Mask`) keeps resolving through
+    # the local rule and the definition index.
+    if for_hover:
+        match bare_member_hover(ast_file, ref_of(analysis), target.text):
+            Option.some as member_hit:
+                return Option[CursorResult].some(value = member_hit.value)
+            Option.none:
+                pass
 
     # The identifier is an import alias: the module file itself.
     unsafe:
