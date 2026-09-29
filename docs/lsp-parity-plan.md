@@ -6,7 +6,7 @@ readiness properties parity alone does not test — cold start, steady-state mem
 files, long sessions, real clients (Neovim/VS Code).
 
 **Where we are** (branch `selfhost`, session 10, 2026-09-29): SimpleGame audit
-6456 entries / **274 differ** (hover 37, definition/declaration 70 each,
+6456 entries / **269 differ** (hover 32, definition/declaration 70 each,
 typeDefinition 68, documentHighlight 14, diagnostic 2, documentSymbol 5,
 semanticTokens 5, codeLens 1, implementation 1, workspace/symbol 1;
 references 0); references-only audit **0**; synthetic harness 30/30
@@ -15,7 +15,7 @@ classes); bootstrap fixed point + 14/14; `cli:parity` 23/38/0.  Per-class
 numbers measured with `--only` drift ±10 against the full matrix (the host
 warms its caches as the audit proceeds); the full matrix is authoritative.
 
-**Track B, batches 2–4** (session 10): hover **80 → 37** and the class's
+**Track B, batches 2–5** (session 10): hover **80 → 32** and the class's
 knock-ons — references **9 → 0**, definition/declaration 72 → 70,
 typeDefinition 70 → 68 — by typing the analyzer's `<error>` locals (unary `~`,
 tuple literals, `Type[args].arm(…)` instances, imported specialization calls,
@@ -25,11 +25,12 @@ signature shape, the builtin arms' definition-index location), then the member
 resolution the new types exposed (imported modules' `extending` methods —
 `vec3.cross` in std.linear_algebra — the builtin vector/matrix/quaternion field
 tables, receiver projection through `ref`/`ptr`/`own`), then the variant arm
-constructors and their named-argument labels.  The host's C string-literal
-escaping was fixed first: its `\xNN` escapes absorbed following hex digits, so
-the host-built self binary crashed on any non-ASCII hover doc
-(`mat3`/`mat4`).  The record is `docs/self-host-plan.md` §0k, "Track B, second
-through fourth batch".
+constructors and their named-argument labels, then the module-qualified
+annotation renderings (`*From std.vec, …*`, `type Result = Result`).  The
+host's C string-literal escaping was fixed first: its `\xNN` escapes absorbed
+following hex digits, so the host-built self binary crashed on any non-ASCII
+hover doc (`mat3`/`mat4`).  The record is `docs/self-host-plan.md` §0k,
+"Track B, second through fifth batch".
 
 **Track A is closed** (session 9): `tools/lsp_recovery_probe.rb --check` reports
 recovery parity — all six mid-edit cases byte-equal.  A1 (the JSON-blob message)
@@ -96,28 +97,23 @@ declaration rather than the host's partial node (§0k, session 9).
   compare, non-zero exit on diff) and its corpus under `tmp/lsp-recovery/`
   (created by the tool).  Run in the session gates.
 
-## Track B — the audit residue (274 entries, was 332)
+## Track B — the audit residue (269 entries, was 332)
 
-- **B1. hover 80 → 37.** Session 10's batches closed the **17**
+- **B1. hover 80 → 32.** Session 10's batches closed the **17**
   analyzer-`<error>` locals with the renderings they exposed, then the member
   resolution those types uncovered (imported `extending` methods, builtin
-  vector/matrix/quaternion fields, receiver projection) and the variant arm
-  constructors with their named-argument labels.  The residue (measured
-  live, 37) is the classification the first batch recorded, unchanged in shape:
-  **15** where the
-  `*From <module>*` line differs (the annotation is rendered from the source text,
-  so an import alias leaks in as `vec` instead of `std.vec`, and a specialization
-  like `SoA[Point, 4]` loses its owner module); **19** self-null (enum/flags
-  members in a declaration body, bare variant-arm constructors and their
-  named-argument labels, attribute targets/applications, `type parameter T`,
-  fields read through a `ref` receiver, the implicit `this`, prelude/inherent
-  methods on builtin generics — the host's `methods_for_receiver_type` merges
-  `facts.methods` and `BUILTIN_TYPE_METHOD_SIGNATURES`); **5** nullability (the
-  host prints the *storage* type where the self prints the flow type); 3
-  tuple/alias renderings (`type Result = Result`, `(int, int)`); the rest are the
-  host's member-location artifacts (`editable function release()` pointing at a
-  different declaration, a field's location absent under a `public struct`
-  header).
+  vector/matrix/quaternion fields, receiver projection), the variant arm
+  constructors with their named-argument labels, and the module-qualified
+  annotation renderings.  The residue (measured
+  live, 32) is the classification the first batch recorded, minus the closed
+  classes: **self-null** (enum/flags members in a declaration body, attribute
+  targets/applications, `type parameter T`, the implicit `this`, prelude/
+  inherent methods on builtin generics — the host's `BUILTIN_TYPE_METHOD_SIGNATURES`
+  table and the attribute/type-parameter arms); **5** nullability (the host
+  prints the *storage* type where the self prints the flow type); the tuple/alias
+  renderings; and the host's member-location artifacts (`editable function
+  release()` pointing at a different declaration, a field's location absent under
+  a `public struct` header, a field read through a member *chain*).
 - **B2. definition 70 / declaration 70 / typeDefinition 68 (full matrix).** Re-measure after
   each B1 fix (the member pipeline feeds all three); the remaining shapes are the same member
   cases plus the host's location artifacts.
@@ -170,16 +166,16 @@ declaration rather than the host's partial node (§0k, session 9).
 
 Done: 0 (this plan committed), 1 (A1 → A2 → A5), 2 (A3 → A4 — one commit for the
 parser unwinding and the knock-ons, session 9), the first B1 batch (the
-`proc`-vs-`fn` hover rendering, hover 83 → 80), and session 10's four commits
+`proc`-vs-`fn` hover rendering, hover 83 → 80), and session 10's five commits
 (the host's C string-literal escaping; the analyzer's `<error>` locals and their
-renderings — hover 80 → 46; imported methods and builtin fields — hover
-46 → 44; the variant arm constructors and their labels — hover 44 → 37, the
-full matrix 332 → 274).  Remaining, in order:
+renderings; imported methods and builtin fields; the variant arm constructors
+and their labels; the module-qualified annotation renderings — hover 80 → 32,
+the full matrix 332 → 269).  Remaining, in order:
 
 1. B1's residual classes, largest first: the self-null member/attribute/`this`/
    prelude-method arms (the host's `BUILTIN_TYPE_METHOD_SIGNATURES`, the
-   attribute and `type parameter T` tables), the 15 `*From*` module renderings,
-   then the 5 nullability renderings and the tuple/alias ones.
+   attribute and `type parameter T` tables), then the 5 nullability renderings
+   and the tuple/alias ones, then the member-location artifacts.
 2. B2 (definition/declaration 70, typeDefinition 68 — re-measure with each hover
    fix), then B4 (the small classes; `diagnostic` is the
    lint emission order).  B3 is closed (references 0).

@@ -1929,9 +1929,26 @@ function resolve_name_in_analysis(
                             pass
                 return Option[CursorResult].some(value = with_docs)
             # A registered builtin without a declaration in this file (`str`,
-            # `int`): its builtin docs, and no location.
+            # `int`): its builtin docs, and no location.  A prelude type
+            # (`Result`, `Option`) still renders the host's
+            # `type Result = Result` plus `*From std.result*`, since the host
+            # installs it from std.result / std.option.
             match hover_docs.builtin_type(name):
                 Option.some as builtin_type_doc:
+                    if type_render.prelude_type_module(name).len > 0:
+                        var prelude_ty = types.Type.ty_error
+                        let prelude_ty_ptr = unsafe: read(analysis).types.get(name)
+                        if prelude_ty_ptr != null:
+                            prelude_ty = unsafe: read(ptr[types.Type]<-prelude_ty_ptr)
+                        var prelude_hover = type_hover_signature(name, prelude_ty, current_module)
+                        let prelude_shortened = type_render.shorten_signature(prelude_hover.as_str())
+                        var prelude_result = quick_hover_doc(builtin_type_doc.value)
+                        prelude_result.hover_text.release()
+                        prelude_result.hover_text = prelude_shortened.text
+                        prelude_result.from_modules.release()
+                        prelude_result.from_modules = prelude_shortened.modules
+                        prelude_hover.release()
+                        return Option[CursorResult].some(value = prelude_result)
                     return Option[CursorResult].some(value = quick_hover_doc(builtin_type_doc.value))
                 Option.none:
                     pass
@@ -2030,12 +2047,15 @@ function format_fn_signature(sig: analyzer.FnSig, name: str, current_module: str
 ## The host's `type_hover_signature`: `type <name>` for a type that renders as
 ## its own bare name (a built-in or a primitive), else
 ## `type <name> = <module-qualified type>` — the caller shortens it, so a type
-## with an owning module also reports the host's `*From <module>*` line.
+## with an owning module also reports the host's `*From <module>*` line.  The
+## prelude types are installed from std.option / std.result even though this
+## file registers them with no module, so they render `type Result = Result`
+## with `*From std.result*`.
 function type_hover_signature(name: str, ty: types.Type, current_module: str) -> string.String:
     var hover = string.String.create()
     hover.append("type ")
     hover.append(name)
-    if types.nominal_module(ty).len > 0:
+    if types.nominal_module(ty).len > 0 or type_render.prelude_type_module(name).len > 0:
         var rendered = type_render.qualified_name(ty, current_module)
         hover.append(" = ")
         hover.append(rendered.as_str())
@@ -3560,25 +3580,107 @@ function method_signature_for(analysis: ref[analyzer.Analysis], name: str, ast_p
     return null
 
 
-## The text for a local's declared type.  The host renders the resolved type's
-## `to_s` — its name with the owning module's qualifier and the type arguments as
-## written — so a local struct type reports the file's `*From <module>*` line
-## (`var particles: SoA[Point, 4]` in `docs.data_structures`); a type the module
-## does not register (a builtin generic such as `ptr[int]`) renders unqualified.
+## The text for a local's declared type, module-qualified at every level: the
+## host renders the *resolved* type's `to_s`, so the annotation's own name *and
+## each of its type arguments* carry their declaring module and the caller's
+## shortening turns the qualifiers into the `*From <module>*` line
+## (`vec.Vec[Point]` → `std.vec.Vec<current>.Point` → `Vec[Point]` plus
+## `*From std.vec, <current>*`).  A name the analysis does not register (a
+## builtin generic such as `ptr[int]`, or a type parameter) stays unqualified.
 function annotated_type_text(tref: ast.TypeRef, analysis: ref[analyzer.Analysis], current_module: str) -> string.String:
     var text = string.String.create()
-    if not tref.is_fn and not tref.is_proc and not tref.is_tuple and tref.name.parts.len > 0:
-        let first = unsafe: read(tref.name.parts.data + 0)
-        let type_ptr = unsafe: read(analysis).types.get(first)
-        if type_ptr != null and tref.name.parts.len == 1:
-            # Only a *nominal* type carries the host's `module.name` spelling; a
-            # primitive (`int`) renders bare, without a qualifier.
-            let module_name = types.nominal_module(unsafe: read(ptr[types.Type]<-type_ptr))
-            if module_name.len > 0:
-                text.append(module_name)
+    if tref.is_fn or tref.is_proc or tref.is_dyn:
+        text.append(ast_formatter.render_type(tref))
+        return text
+    if tref.is_tuple:
+        text.append("(")
+        var ti: ptr_uint = 0
+        while ti < tref.arguments.len:
+            if ti > 0:
+                text.append(", ")
+            unsafe:
+                var part = annotated_type_text(read(tref.arguments.data + ti), analysis, current_module)
+                text.append(part.as_str())
+                part.release()
+            ti += 1
+        text.append(")")
+        if tref.nullable:
+            text.append("?")
+        return text
+
+    # The annotation's own name: a bare name resolves through the module's type
+    # table (a local type spells the file's own module), an `alias.Type` spelling
+    # through the import alias's real module.
+    if tref.name.parts.len == 1:
+        append_nominal_qualifier(ref_of(text), unsafe: read(tref.name.parts.data), analysis, current_module)
+        text.append(unsafe: read(tref.name.parts.data))
+    else if tref.name.parts.len > 1:
+        unsafe:
+            let alias = read(tref.name.parts.data + 0)
+            let module_ptr = read(analysis).imports.get(alias)
+            if module_ptr != null:
+                text.append(read(module_ptr))
                 text.append(".")
-    text.append(ast_formatter.render_type(tref))
+            text.append(read(tref.name.parts.data + (tref.name.parts.len - 1)))
+
+    var args = vec.Vec[string.String].create()
+    defer: args.release()
+    match tref.lifetime:
+        Option.some as lt:
+            var lifetime_text = string.String.create()
+            lifetime_text.append("@")
+            lifetime_text.append(lt.value)
+            args.push(lifetime_text)
+        Option.none:
+            pass
+    var ai: ptr_uint = 0
+    while ai < tref.arguments.len:
+        unsafe:
+            args.push(annotated_type_text(read(tref.arguments.data + ai), analysis, current_module))
+        ai += 1
+    if args.len() > 0:
+        text.append("[")
+        var gi: ptr_uint = 0
+        while gi < args.len():
+            if gi > 0:
+                text.append(", ")
+            let part_ptr = args.get(gi) else:
+                break
+            unsafe:
+                text.append(read(part_ptr).as_str())
+                read(part_ptr).release()
+            gi += 1
+        text.append("]")
+    if tref.nullable:
+        text.append("?")
     return text
+
+
+## Append the module qualifier of a bare type name (`Point` → `<module>.`), when
+## the analysis registers it as a nominal type.  A type declared in the file
+## being hovered carries no recorded module (a single-file check), so
+## `current_module` stands in for it — the host's `Types::Struct#to_s` spelling
+## the declaring module.
+function append_nominal_qualifier(text: ref[string.String], name: str, analysis: ref[analyzer.Analysis], current_module: str) -> void:
+    unsafe:
+        let type_ptr = read(analysis).types.get(name)
+        if type_ptr == null:
+            return
+        let registered = read(ptr[types.Type]<-type_ptr)
+        match registered:
+            types.Type.ty_primitive:
+                # A builtin primitive (`int`, `vec3`) is registered with no
+                # module and renders bare.
+                return
+            _:
+                pass
+        var module_name = types.nominal_module(registered)
+        if module_name.len == 0:
+            module_name = current_module
+        if module_name.len == 0:
+            return
+        text.append(module_name)
+        text.append(".")
 
 
 ## The hover result for one local declaration.

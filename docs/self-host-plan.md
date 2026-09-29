@@ -1774,6 +1774,32 @@ sexpr lex 705/705 + parse 701/0, harness 30/30 + 4 documented entries,
 recovery OK, fixtures unchanged, valgrind clean, Neovim smoke renders
 `Result.success(value: T)` and `value: T`.
 
+### Track B, fifth batch (same session): the `*From*` renderings
+
+The annotated-local hover rendered the *source text* of the annotation, so an
+import alias leaked in as `vec` where the host spells the resolved module, and a
+specialization's type arguments carried no module at all:
+
+- `annotated_type_text` now qualifies at every level: a bare name through the
+  module's type table (a type declared in the file being hovered spells the
+  file's own module, the host's single-file `Types::Struct#to_s`), an
+  `alias.Type` spelling through the import alias's real module, and each type
+  *argument* recursively — so `vec.Vec[Point]` renders `Vec[Point]` with the
+  host's `*From std.vec, <module>*` and `SoA[Point, 4]` gains its owner module
+  from the argument.  A registered primitive (`int`, `vec3`) stays bare.
+- The prelude types render `type Result = Result` with `*From std.result*`:
+  `type_hover_signature` consults `type_render.prelude_type_module` (now
+  public), and the builtin-docs arm of `resolve_decl_hover` uses it for a
+  prelude type with no declaration in the file.
+
+Full matrix **274 → 269** (hover 37 → 32); no new diffs (hover diff sets
+compared entry by entry; `tmp/probe2`'s two `*From*` hovers closed, its two
+deliberate self-answers remain).  Gates: bootstrap fixed point + 14/14,
+test/mt 60/0, cli:parity 23/38/0 (same diff set), sexpr lex 705/705 + parse
+701/0, harness 30/30 + 4 documented entries, recovery OK, fixtures unchanged
+for hover, valgrind clean, Neovim smoke renders `Vec[…Point]` with
+`*From std.vec, …*`.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**

@@ -116,7 +116,7 @@ function module_or_prelude(module_name: str, type_name: str) -> str:
 
 
 ## The declaration module of a prelude type name, "" for everything else.
-function prelude_type_module(type_name: str) -> str:
+public function prelude_type_module(type_name: str) -> str:
     if type_name.equal("Option"):
         return "std.option"
     if type_name.equal("Result"):
