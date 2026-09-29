@@ -204,91 +204,113 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
     (branch `selfhost`). Rebuild before measuring:
       ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 
-    Read first: docs/lsp-parity-plan.md (the focused plan — Track A is CLOSED,
-    Track B's classification is in docs/self-host-plan.md §0k under "Track B,
-    first batch"), then ~/.commandcode/plans/finish-self-host-full-parity.md
-    (ledger + the session-9 log), docs/lsp-design.md §8/§9,
-    docs/lsp-performance.md, and AGENTS.md's "Self-Host Parity Program" section
-    (gates, drift, fixtures).
+    Read first: docs/lsp-parity-plan.md (the focused plan — Track A CLOSED;
+    Track B is at 269 entries, its live record in docs/self-host-plan.md §0k
+    "Track B, second through fifth batch"), then
+    ~/.commandcode/plans/finish-self-host-full-parity.md (the session-10 log),
+    docs/lsp-design.md §8/§9, and AGENTS.md's "Self-Host Parity Program"
+    section (gates, drift, fixtures).
 
-    This session is LSP-only.  State at session-9 close: recovery parity OK
-    (`ruby tools/lsp_recovery_probe.rb --check`); the SimpleGame audit is at
-    332 differing entries — hover 80, definition/declaration 72 each,
-    typeDefinition 70, documentHighlight 14, references 9, documentSymbol 5,
-    semanticTokens 5, diagnostic 2, codeLens 1, implementation 1,
-    workspace/symbol 1; references-only 0; the harness 30/30 capability keys +
-    the 4 documented entries; cli:parity 23/38/0.
+    This session is LSP-only.  State at session-10 close: the SimpleGame full
+    matrix is 6456 entries / 269 differ — hover 32, definition/declaration 70
+    each, typeDefinition 68, documentHighlight 14, diagnostic 2, documentSymbol
+    5, semanticTokens 5, codeLens 1, implementation 1, workspace/symbol 1;
+    references 0; the harness 30/30 capability keys + the 4 documented entries;
+    recovery probe OK; cli:parity 23/38/0; sexpr lex 705/705 and parse 701
+    comparable / 0 differ; unused-import 609/608; bootstrap fixed point +
+    14/14; test/mt 60/0.
 
-    Work Track B largest-first, one commit per sub-class, re-measuring with
+    MEASUREMENT RULE: the full matrix is authoritative.  `--only <method>` runs
+    drift ±10 per method (the host warms its caches as the audit proceeds), so
+    quote per-class numbers from the full run and verify a fix by comparing
+    *sets of differing keys*, not counts.
+
+    STEP 1 — re-measure before touching anything:
       ruby tools/lsp_project_audit.rb --workspace /home/teefan/Projects/MilkTea/SimpleGame \
-        --json tmp/audit-<item>.json --max-diffs 0 --timeout 60 --only hover
-    (and --only definition / declaration / typeDefinition after each hover fix —
-    the member pipeline feeds all three).  Fast repro fixtures from session 9:
-    tmp/hover-probe2 (From-module renderings), tmp/hover-probe3,
-    tmp/hover-probe4 (the analyzer-`<error>` shapes).
+        --json tmp/audit-s11.json --max-diffs 0 --timeout 60
+    then the references-only baseline (expect 0) and the harness:
+      ruby tools/lsp_project_audit.rb --workspace … --only references --max-diffs 0 --timeout 60
+      ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
+      ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
+      ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json
+    Fast fixtures (session-10 scratch under tmp/, recreate if cleaned):
+    probe-ws, probe2 (2 deliberate hovers), probe4-probe6 (0 for
+    hover/definition/declaration/typeDefinition/references), hover-probe2
+    (annotation `*From*`), hover-probe3/-4 (the analyzer `<error>` shapes),
+    hover-probe5 (mat4 / heap / tuple / detach / span), fieldprobe, crash1 (the
+    non-ASCII hover), eventprobe (event lowering), plus the valgrind wrapper
+    (/tmp/mtc-vg.sh) and tmp/nvim_hover_smoke.lua.
 
-    1. hover's 17 analyzer-`<error>` locals (the biggest single shape).  The
-       analyzer's infer_expr_inner leaves these `<error>`, so the hover prints
-       `let x: <error>`: specialized calls (`heap.must_alloc[ubyte](64)`),
-       builtin-generic arm construction (`Result[int,int].success(value = 7)`,
-       `Option[float].some(value = 5)`), unary ops on a flags value (`~mask_a`),
-       tuple literals (`(1, 2)` — the host builds
-       `Types::Registry.tuple(element_types, field_names:)` at
-       semantic_analyzer/expressions.rb:227-250), `Result` method calls
-       (`err_val.error()`).  Fix the analyzer recording, not the hover.
-    2. hover's 15 `*From <module>*` entries: the annotated local type is
-       rendered from the AST source text (`annotated_type_text` +
-       `qualified_name`), so an import alias leaks in (host `*From std.vec,
-       kinds*` where the self says `*From vec*`) and a specialization
-       (`SoA[Point, 4]`) loses its owner module.  The host renders the *resolved*
-       type — module-qualified, type arguments included — and then shortens it
-       (`hover.rb`'s `shorten_qualified_types`).  Repro: tmp/hover-probe2.
-    3. hover's 19 self-null entries: enum/flags members in a declaration body
-       (`Mask.a = 1`), bare variant-arm constructors and their named-argument
-       labels (`Result.success(value: T)`, `value: T` — the host's
-       find_variant_arm_in_types), attribute targets and applications
-       (`attribute target callable`, `attribute [callable] traced(tag: str)`),
-       `type parameter T`, fields read through a `ref` receiver, the implicit
-       `this` (`parameter this: vec3 (immutable)`), and prelude/inherent methods
-       on builtin generics (`Option.unwrap()`, `vec3.cross(v)` — port the host's
-       `methods_for_receiver_type` = `facts.methods` + imported modules' methods
-       + `BUILTIN_TYPE_METHOD_SIGNATURES`).
-    4. hover's 5 nullability renderings (the host prints the *storage* type:
-       `parameter handle: ptr[int]` and `var handle: null (mutable)` where the
-       self prints the flow type), the tuple/alias renderings
-       (`type Result = Result` plus its From std.result line, `(int, int)`), and
-       `field name: cstr` (the host omits `Defined at` for a field).
-    5. Then B2 — definition/declaration 72 and typeDefinition 70 (the same member
-       pipeline; re-measure after every hover fix) — then B3 (references 9), then
-       B4 (documentHighlight 14, documentSymbol 5, semanticTokens 5, diagnostic 2
-       = the lint emission order, codeLens 1, implementation 1,
-       workspace/symbol 1).
-    6. Then Track C readiness: index scope and cold start (C1), the
+    STEP 2 — work the hover residue largest-first, one commit per sub-class
+    (rebuild + focused re-audit + the gates + docs/ledger synced in the same
+    commit).  The 32 measured entries group as:
+
+    1. Enum/flags/arm *member* arms (3) — the host's `member_info` arm renders
+       `Type.member = value` and runs *ahead* of the name tables: `Kind.c = 6`
+       (self null), `Kind.a = 0` (self answers a same-named local), and the
+       member-access chain form `Result[int, int].success(value = T)`
+       (`lb@568:15`; the bare-name arm already handles `success(value: T)`).
+    2. Attributes, type parameters and `this` (5): `type parameter T` (the
+       host's `type_parameter_hover_signature`), `attribute target callable`,
+       `attribute [callable] traced(tag: str)` plus its Defined at, and the
+       implicit receiver `parameter this: vec3 (immutable)`.
+    3. Fields through a value / `this` / a member *chain* (6): `field radius:
+       float` through `this`, `field top_edge: Edge` + `*From*` + a location for
+       `r.top_edge` (the host's `member_access_chain_at`; the self's
+       `dot_receiver_at` sees one segment only), the *declaration* hover
+       `field parent: ptr[Node]?` + `*From node*` (the self renders the
+       source-text type `ptr?` and adds a location), and the two `let b: int` /
+       `let advance: ptr[int]` nulls.
+    4. Nullability (5): the host prints the *storage* type where the self prints
+       the flow type — `parameter handle: ptr[int]` vs `ptr[int]?`,
+       `var handle: null` vs `ptr[int]?`, `let a: own[int]` vs `own[int]?`.
+    5. Member-location artifacts (4): the `public struct`-field artifact (the
+       host's `find_field_token_in_body` treats a field at a column ≤ the
+       `struct` keyword's as a dedent, so a `public struct`'s fields carry no
+       location and the self adds one), `editable function release()` /
+       `take_damage` pointing at a different declaration, `parameter idx`
+       missing its std/spatial.mt location, and `type quat`'s index location.
+    6. Leftovers (5): `field check: fn ` (the host renders a union field's
+       function type bare), a match-arm payload binding (`local p:
+       Option[…].some payload`), a destructuring binding typed `int` by the host
+       but bare by the self, a self-more `let _: void`, and `function destroy()`
+       missing `-> void` (a *method* hover path that does not go through
+       `format_fn_signature`).
+
+    7. Then B2 — definition/declaration 70 and typeDefinition 68 (the same member
+       pipeline; re-measure after every hover fix) — then B4 (documentHighlight
+       14, documentSymbol 5, semanticTokens 5, diagnostic 2 = the lint emission
+       order, codeLens 1, implementation 1, workspace/symbol 1).
+    8. Then Track C readiness: index scope and cold start (C1), the
        reference-index memory bound (C2), note-document caching (C3), the
-       large-file soak (C4), client behaviours (C5), and the deliberate-difference
-       table in docs/lsp-design.md §8; D2/D3 (audit determinism, scoreboard row).
+       large-file soak (C4), client behaviours (C5), and the deliberate-
+       difference table in docs/lsp-design.md §8; D2/D3 (audit determinism,
+       scoreboard row).
 
-    Optional, bounded recovery follow-up (docs/self-host-plan.md §0k row 3): the
-    remaining two gaps in `stress/unterminated-source+diagnostic` — the lexer's
-    `unclosed grouping delimiter` lex/error carries no position (`0:0` where the
-    host reports the opening delimiter's), and the host's parameter parse
-    continues past a bad parameter name (adding `expected ')' after parameters`
-    and a top-level `expected declaration`) where the self stops after
-    `expected parameter name`.
+    Do not re-chase the session-10 crash: hovering a builtin type (`mat4`) used
+    to kill the host-built binary with `string.as_str text must be valid UTF-8`
+    (the host's `\xNN` C escapes absorbed the following hex digit); fixed in
+    ad14ad89.  If a non-ASCII doc dies again, rebuild with the host and check
+    `emit-c`'s literal bytes first.
 
     GATES for every commit (AGENTS.md): tools/bootstrap.sh -j 16 (fixed point +
-    14/14), build/stage2/mtc test test/mt -I . (60/0), rake "cli:parity" (23/38/0),
-    ruby tools/sexpr_parity.rb lex -q (705/705) and parse -q (701 comparable /
-    0 differ), ruby tools/unused_import_parity.rb (609/608, the documented
-    residual), ruby tools/lsp_parity.rb record --server host|self --stress then
-    compare (30/30 capability keys + 4 documented entries),
-    ruby tools/lsp_recovery_probe.rb --check, the probe fixtures (tmp/probe-ws,
-    probe2, probe4-probe6), and
+    14/14), build/stage2/mtc test test/mt -I . (60/0), rake "cli:parity"
+    (23/38/0 with the same diff *set*), ruby tools/sexpr_parity.rb lex -q
+    (705/705) and parse -q (701 comparable / 0 differ),
+    ruby tools/unused_import_parity.rb (609/608, the documented
+    async_network_lobby residual), the LSP harness (30/30 + 4),
+    ruby tools/lsp_recovery_probe.rb --check, the probe fixtures, and
     ruby tools/lsp_project_audit.rb --workspace … --only <method> for the class
-    being worked; behaviour changes also get valgrind on the touched path plus the
-    headless-Neovim smoke.  Sync docs/self-host-plan.md §0k, docs/lsp-design.md,
-    docs/lsp-parity-plan.md's counters and the plan ledger in the same commit;
-    commit trailer: Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
-    No hacks — fix root causes; never edit sources while a gate runs; run generated
-    binaries as `timeout 10 bash -c 'ulimit -v 20000000; …'`.
+    being worked.  Behaviour changes also get valgrind on the touched path (wrap
+    the binary in a script that execs valgrind and pass it as `--self` to the
+    audit tool, then check the log for Invalid/ERROR SUMMARY lines) plus the
+    headless-Neovim smoke (`nvim --headless -u NONE -l tmp/nvim_hover_smoke.lua
+    <binary> <file> <line> <col> …`).  C-backend changes additionally get the
+    example sweeps: examples/*.mt 13/15 (the 2 async `__mt_loop_N` aborts are
+    documented pre-existing), examples/sdl3 34/34, a raylib sample.
+    Sync docs/self-host-plan.md §0k, docs/lsp-design.md, docs/lsp-parity-plan.md's
+    counters and the plan ledger in the same commit; commit trailer:
+    Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
+    No hacks — fix root causes; never edit sources while a gate runs; run
+    generated binaries as `timeout 10 bash -c 'ulimit -v 20000000; …'`.
 ```
