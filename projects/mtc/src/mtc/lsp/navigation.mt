@@ -426,6 +426,11 @@ function type_of_value(
     target_line: ptr_uint,
     source_text: str,
 ) -> Option[types.Type]:
+    # The implicit receiver of an instance method is bound like a parameter, so
+    # `this.x` resolves the receiver's type exactly as `this`'s own hover does.
+    if name.equal("this"):
+        return this_receiver_type(analysis, ast_file, target_line)
+
     unsafe:
         let global_ptr = read(analysis).value_types.get(name)
         if global_ptr != null:
@@ -485,6 +490,9 @@ function local_type_at_line(stmt: ast.Stmt, name: str, want_line: ptr_uint, anal
             match found.value:
                 ast.Stmt.stmt_local as loc:
                     if loc.stmt_type != null:
+                        let declared_ptr = analysis.local_decl_types.get(loc.line)
+                        if declared_ptr != null:
+                            return Option[types.Type].some(value = unsafe: read(declared_ptr))
                         return Option[types.Type].none
                     return type_render.initializer_type(analysis, loc.value)
                 _:
@@ -3537,15 +3545,18 @@ function resolve_local_hover(
 
 
 ## The index of the top-level declaration that contains `target_line` (1-based):
-## the last one that starts at or before it.  The file's declarations are
-## ordered, so that is the enclosing declaration for a position inside a body.
+## the declaration whose start line is the greatest one at or before it.  The
+## analysis' declaration list carries `emit`-expanded declarations appended out
+## of source order, so the *line* decides — not the list position.
 function enclosing_decl_index(file: ast.SourceFile, target_line: ptr_uint) -> Option[ptr_uint]:
+    var best_line: ptr_uint = 0
     var nearest: ptr_uint = 0
     var found = false
     var di: ptr_uint = 0
     while di < file.declarations.len:
         let line = scope_mod.decl_start_line(unsafe: read(file.declarations.data + di))
-        if line > 0 and line <= target_line:
+        if line > 0 and line <= target_line and line >= best_line:
+            best_line = line
             nearest = di
             found = true
         di += 1
@@ -3718,23 +3729,16 @@ function declared_attribute_hover(file: ast.SourceFile, name: str) -> Option[Cur
     return Option[CursorResult].none
 
 
-## The hover for the implicit receiver of an instance method: the host binds
-## `this` as a parameter of the receiver's type, so a `this` mention renders
-## `parameter this: <receiver> (immutable)`.  The binding exists only inside an
-## `extending Type:` method — a struct's own methods get no completion frame, so
-## the host answers nothing there — and a `static` method has no `this` at all.
-function this_receiver_hover(
-    file: ast.SourceFile,
-    target_line: ptr_uint,
-    analysis: ref[analyzer.Analysis],
-    current_module: str,
-) -> Option[CursorResult]:
-    var receiver_name: str = ""
+## The type name an `extending Type:` method binds as `this` for a position
+## inside its body (the method that starts last at or before the cursor), or none
+## outside one — including a `static` method, which binds no receiver.
+function this_receiver_name(file: ast.SourceFile, target_line: ptr_uint) -> Option[str]:
     let enclosing = enclosing_decl_index(file, target_line) else:
-        return Option[CursorResult].none
+        return Option[str].none
     var decl: ast.Decl
     unsafe:
         decl = read(file.declarations.data + enclosing)
+    var receiver_name: str = ""
     match decl:
         ast.Decl.decl_extending_block as ext:
             var mi: ptr_uint = 0
@@ -3746,6 +3750,32 @@ function this_receiver_hover(
         _:
             pass
     if receiver_name.len == 0:
+        return Option[str].none
+    return Option[str].some(value = receiver_name)
+
+
+## The receiver type of the enclosing `extending Type:` method, for resolving a
+## `this` receiver's members.
+function this_receiver_type(analysis: ref[analyzer.Analysis], file: ast.SourceFile, target_line: ptr_uint) -> Option[types.Type]:
+    let receiver_name = this_receiver_name(file, target_line) else:
+        return Option[types.Type].none
+    let receiver_type_ptr = analysis.types.get(receiver_name) else:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = unsafe: read(receiver_type_ptr))
+
+
+## The hover for the implicit receiver of an instance method: the host binds
+## `this` as a parameter of the receiver's type, so a `this` mention renders
+## `parameter this: <receiver> (immutable)`.  The binding exists only inside an
+## `extending Type:` method — a struct's own methods get no completion frame, so
+## the host answers nothing there — and a `static` method has no `this` at all.
+function this_receiver_hover(
+    file: ast.SourceFile,
+    target_line: ptr_uint,
+    analysis: ref[analyzer.Analysis],
+    current_module: str,
+) -> Option[CursorResult]:
+    let receiver_name = this_receiver_name(file, target_line) else:
         return Option[CursorResult].none
 
     var hover = string.String.create()

@@ -172,6 +172,12 @@ struct Context:
     inside_async: bool
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
+    ## The *declared* type of an annotated local, keyed by its declaration line:
+    ## a local with an annotation has no inferred initializer type, so this is
+    ## the only record of its type (the host reads the same type off its scope
+    ## binding).  Consumers outside the analysis pass — the LSP's `this`/local
+    ## member resolution — resolve a local's type through it.
+    local_decl_types: map_mod.Map[ptr_uint, types.Type]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
     declared_attributes: map_mod.Map[str, span[str]]
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -197,6 +203,8 @@ public struct Analysis:
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
+    ## See `Context.local_decl_types`.
+    local_decl_types: map_mod.Map[ptr_uint, types.Type]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
     module_name: str
     module_kind: ast.ModuleKind
@@ -288,6 +296,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         inside_async = false,
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
+        local_decl_types = map_mod.Map[ptr_uint, types.Type].create(),
         const_values = map_mod.Map[str, ptr[ast.Expr]].create(),
         declared_attributes = map_mod.Map[str, span[str]].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -336,6 +345,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         interfaces = ctx.interfaces,
         resolved_expr_types = ctx.resolved_expr_types,
         resolved_call_kinds = ctx.resolved_call_kinds,
+        local_decl_types = ctx.local_decl_types,
         const_values = ctx.const_values,
         module_name = module_name,
         module_kind = file.module_kind,
@@ -2957,6 +2967,7 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], is_let: bool, 
     if lt != null:
         declared = resolve_type(ctx, lt)
         has_declared = true
+        ctx.local_decl_types.set(line, declared)
 
     var value_type: types.Type = types.Type.ty_error
     var has_value = false
