@@ -340,72 +340,105 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
       ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 
     Read first: docs/lsp-parity-plan.md (the focused plan — Track A CLOSED,
-    Track C1 DONE; Track B is at 37 entries, its live record in
-    docs/self-host-plan.md §0k, "Track B, thirteenth batch + Track C1"), then
-    ~/.commandcode/plans/finish-self-host-full-parity.md (the session-13 log),
-    docs/lsp-design.md §8/§9, and AGENTS.md's "Self-Host Parity Program" section
-    (gates, drift, fixtures).
+    Track C1 DONE; Track B is at 22 entries; its live records are in
+    docs/self-host-plan.md §0k, "Track B, thirteenth batch + Track C1" through
+    "fifteenth batch"), then ~/.commandcode/plans/finish-self-host-full-parity.md
+    (the session-13 log), docs/lsp-design.md §8/§9, and AGENTS.md's
+    "Self-Host Parity Program" section (gates, drift, fixtures).
 
     This session is LSP-only.  State at session-13 close: the SimpleGame full
-    matrix is 6456 entries / 22 differ — hover 9, documentSymbol 5,
+    matrix (6456 entries) is at 22 differ — hover 9, documentSymbol 5,
     semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens,
     workspace/symbol and definition/declaration/typeDefinition/implementation/
-    references 0 (codeLens and workspace/symbol closed via the host's token-pair
-    symbol list, which also reaches `when`-branch and `emit`-expanded
-    declarations); the harness 30/30 capability keys + the 4 documented entries;
-    recovery probe OK; cli:parity 23/38/0; sexpr lex 705/705 and parse 701
-    comparable / 0 differ; unused-import 609/608; bootstrap fixed point + 14/14;
-    test/mt 60/0.  Note: the synthetic `--only references` mode is
-    *pacing-coupled* — its host answers depend on the self's speed, so it reads
-    0–56 without a single self-side change (verified in session 13 by comparing
-    every self answer); the full matrix is the authoritative measure.
+    references are 0.  Everything else green: the harness 30/30 capability keys +
+    the 4 documented entries; recovery probe OK; cli:parity 23/38/0; sexpr lex
+    705/705 and parse 701 comparable / 0 differ; unused-import 609/608 (the
+    documented async_network_lobby residual); bootstrap fixed point + 14/14;
+    test/mt 60/0.
 
-    MEASUREMENT RULE: the full matrix is authoritative.  `--only <method>` runs
-    drift ±10 per method (the host warms its caches as the audit proceeds), so
-    quote per-class numbers from the full run and verify a fix by comparing
-    *sets of differing keys*, not counts.
+    INSTRUMENTS (added in session 13):
+      ruby tools/lsp_audit_diffs.rb AUDIT.json [METHOD] [ROWS]
+        # per-class table, then the differing entries' labels with host/self payloads
+      ruby tools/lsp_audit_diffs.rb --compare BEFORE.json AFTER.json [METHOD]
+        # closed / added key sets; exits 1 when anything was added — the way to
+        # verify a fix (counts drift, key sets do not)
+      ruby tools/lsp_token_diffs.rb [--count] AUDIT.json [WORKSPACE] [ROWS]
+        # position-keyed semantic-token diff (a token-index diff misleads once
+        # the streams shift)
+      ruby tools/lsp_cold_start.rb --workspace DIR [--server host|self|BIN]
+    MEASUREMENT RULES: the full matrix is authoritative.  `--only <method>` runs
+    drift ±10 per method, and the *host's* answers themselves differ between
+    `--only` and full runs for facts-dependent requests (semantic tokens,
+    documentSymbol, references) — quote per-class numbers from the full run and
+    verify every fix with `lsp_audit_diffs.rb --compare` (added must be 0).  The
+    `--only references` mode is pacing-coupled (its host answers depend on the
+    self's speed): it reads 0–56 with no self-side change.
 
-    STEP 1 — re-measure before touching anything:
+    STEP 1 — re-measure before touching anything (the full matrix takes ~14 min,
+    start it in the background):
       ruby tools/lsp_project_audit.rb --workspace /home/teefan/Projects/MilkTea/SimpleGame \
         --json tmp/audit-s14.json --max-diffs 0 --timeout 60
+      ruby tools/lsp_audit_diffs.rb tmp/audit-s14.json
     and the harness:
       ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
       ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
       ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json
-    Fast fixtures: probe-ws, probe2 (2 deliberate hovers), probe4–probe6,
-    fieldprobe, thisprobe, defprobe, crash1, hover-probe2 (annotation `*From*`),
+    Fast fixtures (evidence of no regressions; session 13 left comparable
+    recordings in tmp/audit-fin-*.json for probe-ws, probe2, probe4–probe6,
+    defprobe, eventprobe, hover-probe5, fieldprobe, thisprobe): probe-ws, probe2
+    (7 diffs, its 2 deliberate hovers among them), probe4–probe6, fieldprobe,
+    thisprobe, defprobe, crash1, hover-probe2 (annotation `*From*`),
     hover-probe3/-4 (the analyzer `<error>` shapes), hover-probe5 (mat4 / heap /
     tuple / detach / span), eventprobe, plus the valgrind wrapper
-    (/tmp/mtc-vg-s12.sh) and tmp/nvim_hover_smoke.lua.
+    (/tmp/mtc-vg-s12.sh) and tmp/nvim_hover_smoke.lua.  Debug drivers kept in tmp/
+    (gitignored): lsp_debug.rb (drive one file with scripted requests),
+    lsp_change_repro.rb (the harness's unterminated-edit step), host_trace_hook.rb
+    (a RUBYOPT hook that logs the host's `get_content` calls — this is how the
+    definition index's warm mechanism was found).
 
     STEP 2 — the residue, grouped by root cause, largest first:
 
-    1. **documentHighlight 1** (B4): `lb@704:67`, a label token the host resolves
-       through its carried-forward snapshot bindings to a binding out of scope at
-       that line (a match-arm binding 100 lines earlier); the self's region-based
-       scope walk answers the whole-file token scan instead.  The same
-       carry-forward artefact drives hover's nullability family.
-    2. **hover's 9:**
-       - the four nullability entries (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`):
-         the host prints the *flow-refined* type where the self prints the
-         declared one — the analyzer's flow/continuation refinement (the
-         multi-session plan's Phase 2 item 3);
-       - the two destructuring entries (`lb@1861:23`, `lb@1931:25`) and the
-         match-arm payload (`lb@1915:25`): the analyzer binds destructured names
-         to `ty_error` (stage 11c carries the payload design);
-       - the singletons: `lb@1127:9` (a function-typed field renders the bare
-         `fn ` in the host — `Types::Function#to_s`, the compiler stages'
-         function-type names item), `lb@1653:24` (`type quat`'s cross-file
-         location), `lb@1958:16` (a member chain's third segment).
-    3. **B4's other classes** — documentSymbol 5 (timing-coupled on the host: the
-       module wrapper appears only once its module-name index is warm; the self's
-       unwrapped outline matches the symbol set) and semanticTokens 5 (676
-       differing positions left, from 952: import-alias receivers,
-       `emit`-expanded declarations, variant payload fields, `typeParameter`
-       renderings, scope-aware binding resolution), then diagnostic 2 (a *linter*
-       residue: rule anchors differ and rules are missing — `redundant-unsafe`,
-       `owning-release-leak` — not the emission order).
-    4. Then C2–C5 (reference-index memory, note-document caching, the large-file
+    1. **hover's 9** — four families:
+       - the **nullability four** (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`) and
+         documentHighlight's survivor (`lb@704:67`) are the same root cause: the
+         host's *completion snapshots*.  The snapshot in effect at a guard line
+         carries the **falsy** refinement of a guard whose then-branch terminates
+         (base for `== null`, `null` for `!= null`); the then-branch itself carries
+         that same falsy refinement; a joining branch carries the declared type;
+         and for a label token a *binding from an out-of-scope earlier
+         declaration* can win.  This is the host's control-flow-walk ordering, not
+         a local rule — emulating it is the only way to close these five together.
+       - the **destructuring two** (`lb@1861:23`, `lb@1931:25`) and the **match-arm
+         payload** (`lb@1915:25`) — stage 11c (its payload-struct design is in the
+         multi-session plan; do NOT repeat the reverted bind-to-T model);
+       - the function-typed field's bare `fn ` (`lb@1127:9` — the host's
+         `Types::Function#to_s`, i.e. the compiler stages' function-type names item);
+       - `type quat`'s location (`lb@1653:24`): the host's answer depends on its
+         **asynchronous** definition warmup, so a blanket port of its index
+         fallback is wrong (measured: 1 closed, 5 added) — leave it documented.
+    2. **semanticTokens 5** — the five files' streams differ in **676 positions**
+       (`tools/lsp_token_diffs.rb --count`, down from 952).  Shapes: import-alias
+       receivers (`vec` → host `variable`, `Vec` → `property`, `.create` →
+       `enumMember`), `emit`-expanded declarations, variant payload fields
+       (`some`/`none` → enumMember + declaration), `typeParameter` renderings, and
+       scope-aware binding resolution (the self's `param_names`/`readonly_names`
+       are flat name sets, so a name that is both a parameter and a local resolves
+       to the wrong kind; the host resolves the binding in scope).
+    3. **documentSymbol 5** — the host's answers are *timing-coupled*: it wraps the
+       outline in a module hierarchy (`docs` → file) only once its module-name
+       index is warm, so a file alternates between wrapped and unwrapped shapes
+       between runs.  The self's existing outline matches the unwrapped shape's
+       symbol set exactly (118 symbols, same names and kinds, on
+       data_structures.mt); the differences are in `children` details and the
+       wrapper.
+    4. **diagnostic 2** — a *linter* residue, not emission order: anchors differ
+       (`redundant-return` 325:4-10 vs the self's 4-5, `redundant-type-annotation`
+       422:8-12 vs 8-13, `prefer-inline-if` / `prefer-conditional-expression`
+       474:4-5 vs 474:7-8, `owning-release-double` anchoring at the binding name),
+       and rules are missing (`redundant-unsafe` ×4, `owning-release-leak`,
+       `constant-condition`) or extra (`prefer-own-ptr` ×2).  The in-flight plan's
+       linter stages (11/11b) own this.
+    5. Then C2–C5 (reference-index memory, note-document caching, the large-file
        soak, client behaviours), the deliberate-difference table in
        docs/lsp-design.md §8, and D2/D3 (audit determinism, scoreboard row).
 
@@ -414,16 +447,17 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
     (23/38/0 with the same diff *set*), ruby tools/sexpr_parity.rb lex -q
     (705/705) and parse -q (701 comparable / 0 differ),
     ruby tools/unused_import_parity.rb (609/608, the documented
-    async_network_lobby residual), the LSP harness (30/30 + 4),
-    ruby tools/lsp_recovery_probe.rb --check, the probe fixtures, and
-    ruby tools/lsp_project_audit.rb --workspace … --only <method> for the class
-    being worked.  Behaviour changes also get valgrind on the touched path (wrap
-    the binary in a script that execs valgrind and pass it as `--self` to the
-    audit tool, then check the log for Invalid/ERROR SUMMARY lines) plus the
-    headless-Neovim smoke (`nvim --headless -u NONE -l tmp/nvim_hover_smoke.lua
-    <binary> <file> <line> <col> …`).  C-backend changes additionally get the
-    example sweeps: examples/*.mt 13/15 (the 2 async `__mt_loop_N` aborts are
-    documented pre-existing), examples/sdl3 34/34, a raylib sample.
+    async_network_lobby residual; it takes ~20 min, so start it early), the LSP
+    harness (30/30 + 4), ruby tools/lsp_recovery_probe.rb --check, the probe
+    fixtures, and ruby tools/lsp_project_audit.rb --workspace … --only <method>
+    for the class being worked.  Behaviour changes also get valgrind on the
+    touched path (wrap the binary in a script that execs valgrind and pass it as
+    `--self` to the audit tool, then check the log for Invalid/ERROR SUMMARY
+    lines) plus the headless-Neovim smoke (`nvim --headless -u NONE -l
+    tmp/nvim_hover_smoke.lua <binary> <file> <line> <col> …`).  C-backend changes
+    additionally get the example sweeps: examples/*.mt 13/15 (the 2 async
+    `__mt_loop_N` aborts are documented pre-existing), examples/sdl3 34/34, a
+    raylib sample.
     Sync docs/self-host-plan.md §0k, docs/lsp-design.md, docs/lsp-parity-plan.md's
     counters and the plan ledger in the same commit; commit trailer:
     Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
