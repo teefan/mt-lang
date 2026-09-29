@@ -292,6 +292,69 @@ function first_local_in_stmts(stmts: span[ast.Stmt], name: str, before_line: ptr
     return Option[LocalDeclSite].none
 
 
+## True for the token kinds the host's definition index pairs with names — its
+## `DEFINITION_KEYWORDS` (`const`/`var`/`let`, the type declarations, `function`,
+## `extending`, …).
+function is_definition_keyword_kind(kind: tk.TokenKind) -> bool:
+    if kind == tk.TokenKind.tk_function or kind == tk.TokenKind.tk_struct or kind == tk.TokenKind.tk_union:
+        return true
+    if kind == tk.TokenKind.tk_enum or kind == tk.TokenKind.tk_flags or kind == tk.TokenKind.tk_variant:
+        return true
+    if kind == tk.TokenKind.tk_type or kind == tk.TokenKind.tk_const or kind == tk.TokenKind.tk_var:
+        return true
+    if kind == tk.TokenKind.tk_let or kind == tk.TokenKind.tk_extending or kind == tk.TokenKind.tk_opaque:
+        return true
+    return kind == tk.TokenKind.tk_interface or kind == tk.TokenKind.tk_event
+
+
+## The host's `module_member_definition_location` for an *import alias* token:
+## the alias's name is first looked up as a declaration inside the module it
+## names — the first token a definition keyword introduces with that lexeme
+## (`find_definition_token_in_file`: `function hash` in std/hash.mt for the alias
+## `hash`, `extending ptr[T]:` in std/mem/ptr.mt for `ptr`) — and only then as the
+## module file itself.  Definition-only: the hover's alias arm answers the module,
+## as the host's hover does.
+function import_alias_member_declaration(
+    ws: ref[workspace.Workspace],
+    module_name: str,
+    name: str,
+) -> Option[CursorResult]:
+    var module_path = resolve_module_source_path(ws, module_name) else:
+        return Option[CursorResult].none
+    defer: module_path.release()
+    var module_source = ws.document_source(module_path.as_str()) else:
+        return Option[CursorResult].none
+    defer: module_source.release()
+    let module_text = module_source.as_str()
+
+    var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: lex_diags.release()
+    var tokens = lexer_mod.lex_reporting(module_text, ref_of(lex_diags))
+    defer: tokens.release()
+    var ti: ptr_uint = 1
+    while ti < tokens.len():
+        let kw_ptr = tokens.get(ti - 1) else:
+            break
+        let keyword = unsafe: read(kw_ptr)
+        let id_ptr = tokens.get(ti) else:
+            break
+        let id = unsafe: read(id_ptr)
+        if is_definition_keyword_kind(keyword.kind) and id.kind == tk.TokenKind.identifier:
+            let lexeme = unsafe: token_mod.token_lexeme(id, module_text)
+            if lexeme.equal(name):
+                return Option[CursorResult].some(value = CursorResult(
+                    line = id.line,
+                    column = if id.column > 0: id.column - 1 else: 0z,
+                    name_len = name.len,
+                    hover_text = string.String.create(),
+                    docs = string.String.create(),
+                    target_uri = file_uri_for_path(module_path.as_str()),
+                    from_modules = string.String.create()
+                ))
+        ti += 1
+    return Option[CursorResult].none
+
+
 ## Handle textDocument/definition (and `declaration`, which the host answers
 ## with the same pipeline): resolve the symbol at the cursor, then — when that
 ## yields no source location, as it does for a parameter — fall back to the
@@ -1448,11 +1511,22 @@ function resolve_cursor(
             Option.none:
                 pass
 
-    # The identifier is an import alias: the module file itself.
+    # The identifier is an import alias.  A *definition* first looks the alias's
+    # name up as a declaration inside the module it names (the host's
+    # `module_member_definition_location`: `hash` finds `function hash` in
+    # std/hash.mt, `ptr` the `extending ptr[T]:` block) and then answers the
+    # module file; a hover answers the module either way.
     unsafe:
         let alias_module_ptr = analysis.imports.get(target.text)
         if alias_module_ptr != null:
-            return resolve_module_reference(ws, read(alias_module_ptr))
+            let alias_module = read(alias_module_ptr)
+            if not for_hover:
+                match import_alias_member_declaration(ws, alias_module, target.text):
+                    Option.some as member_decl:
+                        return Option[CursorResult].some(value = member_decl.value)
+                    Option.none:
+                        pass
+            return resolve_module_reference(ws, alias_module)
 
     # A user-declared attribute (`attribute[callable] traced(tag: str)`): the
     # host's `facts.attributes` arm, which renders the target list and the
