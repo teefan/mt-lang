@@ -181,6 +181,7 @@ extending Workspace:
                 this.mark_index_dirty(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
                 refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
+                this.warm_definition_names(path_payload.value.as_str(), text)
             Option.none:
                 pass
 
@@ -194,6 +195,7 @@ extending Workspace:
                 this.mark_index_dirty(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
                 refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
+                this.warm_definition_names(path_payload.value.as_str(), text)
             Option.none:
                 pass
 
@@ -208,8 +210,20 @@ extending Workspace:
                 refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
                 # The buffer is gone: re-read the file (its saved content).
                 this.mark_index_dirty(path_payload.value.as_str())
+                match this.document_source(path_payload.value.as_str()):
+                    Option.some as saved:
+                        this.warm_definition_names(path_payload.value.as_str(), saved.value.as_str())
+                        saved.value.release()
+                    Option.none:
+                        pass
             Option.none:
                 pass
+
+
+    ## Register a document's declaration names for the host's cross-file
+    ## definition lookup (`warm_definition_candidates_for_uri`).
+    public editable function warm_definition_names(path: str, source: str) -> void:
+        defidx.warm_names(ref_of(this.definition_index), path, source)
 
 
     ## Record `path` in didOpen order, once.
@@ -260,6 +274,36 @@ extending Workspace:
                 return Option[string.String].none
 
 
+    ## The roots the workspace *symbol* index walks: the host's `index_workspace`
+    ## covers the workspace root (and the enclosing package's source root) only.
+    ## `module_roots` stays wider for import resolution — walking them would index
+    ## the whole compiler tree for a project outside it.
+    public function workspace_index_roots() -> vec.Vec[string.String]:
+        var roots = vec.Vec[string.String].create()
+        if this.root_path.len() == 0:
+            return roots
+        roots.push(string.String.from_str(this.root_path.as_str()))
+
+        match package_manifest.package_source_root_for_path(this.root_path.as_str()):
+            Option.some as source_root:
+                var present = false
+                var i: ptr_uint = 0
+                while i < roots.len():
+                    let entry = roots.get(i) else:
+                        break
+                    if unsafe: read(entry).as_str().equal(source_root.value.as_str()):
+                        present = true
+                        break
+                    i += 1
+                if present:
+                    source_root.value.release()
+                else:
+                    roots.push(source_root.value)
+            Option.none:
+                pass
+        return roots
+
+
     ## Resolve a source file path to the effective module roots for dependency
     ## loading.  Returns a span of root directory paths.
     public function effective_module_roots_for(path: str) -> vec.Vec[str]:
@@ -290,6 +334,20 @@ extending Workspace:
         defer: content.release()
         refidx.note(ref_of(this.reference_index), path, content.as_str())
 
+
+    ## Admit a document to the cross-file definition index: the host's
+    ## `hover_definition_entry_from_location` reads a hover's definition file
+    ## through `get_content`, which makes it a definition candidate.  Called from
+    ## the hover path only, as the host's is.
+    public editable function warm_definition_document(path: str) -> void:
+        if path.len == 0 or defidx.knows_names(ref_of(this.definition_index), path):
+            return
+        var content = this.document_source(path) else:
+            return
+        defer: content.release()
+        defidx.warm_names(ref_of(this.definition_index), path, content.as_str())
+
+
     ## True when `path` is an open document.
     public function is_open_path(path: str) -> bool:
         var key = string.String.from_str(path)
@@ -316,9 +374,12 @@ extending Workspace:
         if not this.index_built:
             log.info("lsp: building workspace index")
             idx.release_index(ref_of(this.index))
-            this.index = idx.build_index(ref_of(this.module_roots))
+            var walk_roots = this.workspace_index_roots()
+            defer: walk_roots.release()
+            this.index = idx.build_index(ref_of(walk_roots), ref_of(this.module_roots))
             this.index_built = true
             release_dirty_paths(ref_of(this.index_dirty))
+            this.warm_indexed_definition_names()
             log.info("lsp: workspace index ready")
             return
 
@@ -336,6 +397,25 @@ extending Workspace:
                     pass
             di += 1
         release_dirty_paths(ref_of(this.index_dirty))
+
+
+    ## Warm every indexed file's declaration names — the host's `index_workspace`
+    ## warms each file it indexes, which is what makes an unopened workspace
+    ## file a definition candidate.
+    public editable function warm_indexed_definition_names() -> void:
+        var fi: ptr_uint = 0
+        while fi < this.index.files.len():
+            let fp = this.index.files.get(fi) else:
+                break
+            let path = unsafe: read(fp).path.as_str()
+            if not defidx.knows_names(ref_of(this.definition_index), path):
+                match this.document_source(path):
+                    Option.some as content:
+                        defidx.warm_names(ref_of(this.definition_index), path, content.value.as_str())
+                        content.value.release()
+                    Option.none:
+                        pass
+            fi += 1
 
 
     ## Number of currently open documents.

@@ -60,10 +60,131 @@ public struct DocumentIndex:
 
 public struct DefinitionIndex:
     documents: map_mod.Map[string.String, DocumentIndex]
+    ## The host's `@definition_candidate_uris`: the documents known to declare a
+    ## name, in warm order (the order they were first warmed).
+    candidates: map_mod.Map[string.String, vec.Vec[string.String]]
+    ## The host's `@definition_names_by_uri`: the names each warmed document
+    ## registered, so a re-warm can drop the stale ones first.
+    names_by_uri: map_mod.Map[string.String, vec.Vec[string.String]]
 
 
 public function create() -> DefinitionIndex:
-    return DefinitionIndex(documents = map_mod.Map[string.String, DocumentIndex].create())
+    return DefinitionIndex(
+        documents = map_mod.Map[string.String, DocumentIndex].create(),
+        candidates = map_mod.Map[string.String, vec.Vec[string.String]].create(),
+        names_by_uri = map_mod.Map[string.String, vec.Vec[string.String]].create(),
+    )
+
+
+## The documents known to declare `name`, in warm order — the host's
+## `candidate_definition_uris` after its lazy warm pass.  Borrowed from the
+## index; empty when no warmed document declares the name.
+public function candidate_paths_for(index: ref[DefinitionIndex], name: str) -> span[string.String]:
+    var key = string.String.from_str(name)
+    defer: key.release()
+    let cell = index.candidates.get(key) else:
+        return span[string.String]()
+    return unsafe: read(cell).as_span()
+
+
+## True when `uri`'s declaration names are already registered.
+public function knows_names(index: ref[DefinitionIndex], uri: str) -> bool:
+    var key = string.String.from_str(uri)
+    defer: key.release()
+    return index.names_by_uri.contains(key)
+
+
+## Register `uri`'s declaration names (the host's
+## `warm_definition_candidates_for_uri`), so a later lookup can pick the
+## candidate documents without scanning them.  Already-warmed documents are
+## left alone; `forget` drops a document's entries when its content changes.
+public function warm_names(index: ref[DefinitionIndex], uri: str, source: str) -> void:
+    if uri.len == 0:
+        return
+    # The map takes ownership of the key when the document is stored, so the
+    # early return is the only path that releases it.
+    var key = string.String.from_str(uri)
+    if index.names_by_uri.contains(key):
+        key.release()
+        return
+
+    var names = map_mod.Map[string.String, bool].create()
+    defer: names.release()
+    collect_declared_names(ref_of(names), source)
+
+    var name_list = vec.Vec[string.String].create()
+    var name_iter = names.keys()
+    while true:
+        let name_ptr = name_iter.next() else:
+            break
+        let name = unsafe: read(name_ptr)
+        name_list.push(string.String.from_str(name.as_str()))
+
+        let cell = index.candidates.get(name)
+        if cell != null:
+            # The stored Vec is a value: push through a local and write it back,
+            # so a reallocation cannot leave the map holding a stale buffer.
+            var uri_list = unsafe: read(cell)
+            uri_list.push(string.String.from_str(uri))
+            unsafe: read(cell) = uri_list
+        else:
+            var uri_list = vec.Vec[string.String].create()
+            uri_list.push(string.String.from_str(uri))
+            index.candidates.set(string.String.from_str(name.as_str()), uri_list)
+
+    index.names_by_uri.set(key, name_list)
+
+
+## Drop a document's candidate entries (its declaration names changed), keeping
+## the index's other documents' entries in their warm order.
+function drop_names(index: ref[DefinitionIndex], uri: str) -> void:
+    var key = string.String.from_str(uri)
+    defer: key.release()
+    match index.names_by_uri.remove_entry(key):
+        Option.some as removed:
+            var entry = removed.value
+            entry.key.release()
+            var names = entry.value
+            var i: ptr_uint = 0
+            while i < names.len():
+                let name = names.get(i) else:
+                    break
+                let cell = index.candidates.get(unsafe: read(name))
+                if cell != null:
+                    remove_candidate(cell, uri)
+                i += 1
+            release_string_vec(ref_of(names))
+        Option.none:
+            pass
+
+
+## Remove one path from a candidate list, releasing the removed string.  The
+## Vec is stored in the map by value, so the shortened Vec is written back.
+function remove_candidate(cell: ptr[vec.Vec[string.String]], uri: str) -> void:
+    var paths = unsafe: read(cell)
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let entry = paths.get(i) else:
+            break
+        if unsafe: read(entry).as_str().equal(uri):
+            match paths.remove(i):
+                Option.some as removed:
+                    removed.value.release()
+                Option.none:
+                    pass
+            unsafe: read(cell) = paths
+            return
+        i += 1
+
+
+function release_string_vec(values: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < values.len():
+        let entry = values.get(i) else:
+            break
+        unsafe: read(entry).release()
+        i += 1
+    values.release()
 
 
 ## Drop a document's index: its content changed, so its declaration tokens and
@@ -72,12 +193,15 @@ public function create() -> DefinitionIndex:
 public function forget(index: ref[DefinitionIndex], uri: str) -> void:
     var key = string.String.from_str(uri)
     defer: key.release()
-    let stored = index.documents.get(key)
-    if stored == null:
-        return
-    var doc_index = unsafe: read(stored)
-    release_document_index(ref_of(doc_index))
-    index.documents.remove(key)
+    drop_names(index, uri)
+    match index.documents.remove_entry(key):
+        Option.some as removed:
+            var entry = removed.value
+            entry.key.release()
+            var doc_index = entry.value
+            release_document_index(ref_of(doc_index))
+        Option.none:
+            pass
 
 
 ## Drop every document's index and the map itself (a re-rooted workspace).
@@ -90,7 +214,35 @@ public function release(index: ref[DefinitionIndex]) -> void:
             continue
         var doc_index = unsafe: read(stored)
         release_document_index(ref_of(doc_index))
+    release_map_keys(ref_of(index.documents))
     index.documents.release()
+
+    var name_iter = index.names_by_uri.entries()
+    while name_iter.next():
+        let entry = name_iter.current()
+        unsafe:
+            read(entry.key).release()
+            var names = read(entry.value)
+            release_string_vec(ref_of(names))
+    index.names_by_uri.release()
+
+    var candidate_iter = index.candidates.entries()
+    while candidate_iter.next():
+        let entry = candidate_iter.current()
+        unsafe:
+            read(entry.key).release()
+            var paths = read(entry.value)
+            release_string_vec(ref_of(paths))
+    index.candidates.release()
+
+
+## Release a map's stored string keys (the values are released by the caller).
+function release_map_keys(values: ref[map_mod.Map[string.String, DocumentIndex]]) -> void:
+    var iter = values.keys()
+    while true:
+        let key_ptr = iter.next() else:
+            break
+        unsafe: read(key_ptr).release()
 
 
 ## The host's `find_definition_token_global`: the candidates are searched in

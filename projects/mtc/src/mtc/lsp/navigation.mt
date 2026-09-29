@@ -556,17 +556,19 @@ public function handle_hover(
 ## A hover that resolves a definition through the facts reports a cross-file
 ## location and the host tokenizes that file while rendering it
 ## (`hover_definition_entry_from_location` calls `find_token_at` on it) — which
-## is how a member's defining module enters the workspace identifier index.  The
-## arms the host renders from their own `source_uri` — an import line, a field
-## declaration or a named-argument label, a keyword or a builtin — resolve no
-## such entry and leave the index alone, and the self-host's hooks sit on the
-## same arms.
+## both enters it into the workspace identifier index and, through the
+## `get_content` behind `get_tokens`, admits it to the host's indexed documents
+## and so to its cross-file definition index.  The arms the host renders from
+## their own `source_uri` — an import line, a field declaration or a
+## named-argument label, a keyword or a builtin — resolve no such entry and leave
+## both indexes alone, and the self-host's hooks sit on the same arms.
 function note_hover_definition_file(ws: ref[workspace.Workspace], payload: CursorResult) -> void:
     if payload.target_uri.len() == 0:
         return
     match uri_ops.file_uri_to_path(payload.target_uri.as_str()):
         Option.some as target_path:
             ws.note_document_tokens(target_path.value.as_str())
+            ws.warm_definition_document(target_path.value.as_str())
             target_path.value.release()
         Option.none:
             pass
@@ -705,12 +707,17 @@ public function handle_type_definition(
     var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
     var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
 
-    # A type or interface this document declares: its own declaration.
+    # A type or interface this document declares: its own declaration.  The
+    # host answers `module_member_definition_location` for the *current* module
+    # and stops there, so an imported type with no declaration token here
+    # (`quat` in a file that only uses it) answers null rather than the index.
     if analysis.types.contains(target.text) or analysis.interfaces.contains(target.text):
         let decl_line = type_declaration_line(ast_file, target.text)
         if decl_line > 0:
             respond_single_location(id, uri, source, decl_line, target.text)
-            return
+        else:
+            proto.write_response(id, json.null_value())
+        return
 
     # `alias.Member`: the member's declaration inside the aliased module, or the
     # module file itself when the member is not a declaration there.
@@ -974,7 +981,9 @@ function respond_single_location(id: json.Value, uri: str, source: str, decl_lin
     proto.write_response_raw(id, json_text.as_str())
 
 
-## Handle textDocument/implementation: for an interface name, the
+## Handle textDocument/implementation: an interface *method*'s own declaration
+## token answers each implementing type's method (the host's
+## `interface_method_implementation_locations`); an interface *name* answers the
 ## declarations of every type in this file that implements it.
 public function handle_implementation(
     ws: ref[workspace.Workspace],
@@ -1001,16 +1010,26 @@ public function handle_implementation(
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var analysis = analyzer.check_source_file(ast_file)
-
-    if not analysis.interfaces.contains(target.text):
-        proto.write_response_raw(id, "[]")
-        return
 
     var json_text = string.String.create()
     defer: json_text.release()
     json_text.append("[")
     var emitted: ptr_uint = 0
+
+    # The cursor is on an interface method's declaration: every open document's
+    # implementing type answers that method's declaration line — the host's
+    # `resolve_interface_method_target_at_token` arm.
+    if interface_method_declared_at(ast_file, target.text, line + 1, character + 1):
+        append_method_implementation_locations(ws, ref_of(json_text), ref_of(emitted), target.text)
+        json_text.append("]")
+        proto.write_response_raw(id, json_text.as_str())
+        return
+
+    var analysis = analyzer.check_source_file(ast_file)
+
+    if not analysis.interfaces.contains(target.text):
+        proto.write_response_raw(id, "[]")
+        return
 
     unsafe:
         var impl_entries = analysis.implemented_interfaces.entries()
@@ -1033,6 +1052,78 @@ public function handle_implementation(
 
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
+
+
+## True when the cursor's identifier token is an interface method's own name in
+## this file — the host's `resolve_interface_method_target_at_token`.
+function interface_method_declared_at(
+    file: ast.SourceFile,
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+) -> bool:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_interface as ifc:
+                var mi: ptr_uint = 0
+                while mi < ifc.interface_methods.len:
+                    var mfn: ast.InterfaceMethod
+                    unsafe:
+                        mfn = read(ifc.interface_methods.data + mi)
+                    if mfn.name == name and mfn.line == line and mfn.column == column:
+                        return true
+                    mi += 1
+            _:
+                pass
+        di += 1
+    return false
+
+
+## Append one Location per *open* document whose implementing type declares
+## `method_name` — the host's `interface_method_implementation_locations`, whose
+## location is the method binding's declaration in the receiver's module (here:
+## the implementing type's `extending` block).
+function append_method_implementation_locations(
+    ws: ref[workspace.Workspace],
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    method_name: str,
+) -> void:
+    let open_paths = ws.open_paths_in_order()
+    var pi: ptr_uint = 0
+    while pi < open_paths.len:
+        let path = unsafe: read(open_paths.data + pi).as_str()
+        pi += 1
+        var content = ws.document_source(path) else:
+            continue
+        var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+        var parsed_file = parser.parse_source(content.as_str(), ref_of(parse_diags))
+        parse_diags.release()
+        let file = ast_for_document(ws, path, parsed_file)
+        var analysis = analysis_for_document(ws, path, parsed_file)
+
+        var type_iter = analysis.implemented_interfaces.entries()
+        while type_iter.next():
+            let entry = type_iter.current()
+            let type_name = unsafe: read(entry.key)
+            # Only a type that really declares the method answers — the host reads
+            # `methods_for_receiver_type(...)[name]`, so a generic constraint
+            # (`T implements Damageable`) has no method to report.
+            if method_sig_for_type(ref_of(analysis), type_name, method_name).is_none():
+                continue
+            let decl_line = find_method_line_in_type(file, type_name, method_name)
+            if decl_line > 0:
+                var target_uri = file_uri_for_path(path)
+                if unsafe: read(emitted) > 0:
+                    json_text.append(",")
+                unsafe: read(emitted) += 1
+                append_location(json_text, target_uri.as_str(), content.as_str(), decl_line, method_name)
+                target_uri.release()
+        content.release()
 
 
 ## True when the qualified name's last part equals `name` (`Damageable` and
@@ -1122,9 +1213,12 @@ function alias_member_module_path(
 
 ## The host's last-resort global definition lookup (`find_definition_token_global`):
 ## the requesting document first with the cursor as the position filter, then
-## every other open document in didOpen order, first declaration wins.  Only
-## identifiers a declaration keyword introduces are indexed, so an ordinary
-## reference or a parameter answers none, as the host's does.
+## every document the index knows declares the name, in warm order, first
+## declaration wins.  Only identifiers a declaration keyword introduces are
+## indexed, so an ordinary reference or a parameter answers none, as the host's
+## does.  The host's candidate set is its indexed documents — the workspace tree
+## plus every dependency file its loader has read — which is why a `let` in a
+## std module answers here.
 public function find_definition_global(
     ws: ref[workspace.Workspace],
     name: str,
@@ -1142,11 +1236,11 @@ public function find_definition_global(
     defer: candidates.release()
 
     add_definition_candidate(ws, ref_of(owned_sources), ref_of(candidates), preferred_path.as_str())
+    let indexed_paths = defidx.candidate_paths_for(ref_of(ws.definition_index), name)
     var i: ptr_uint = 0
-    while i < ws.open_doc_order.len():
-        let path_ptr = ws.open_doc_order.get(i) else:
-            break
-        add_definition_candidate(ws, ref_of(owned_sources), ref_of(candidates), unsafe: read(path_ptr).as_str())
+    while i < indexed_paths.len:
+        let entry = unsafe: read(indexed_paths.data + i)
+        add_definition_candidate(ws, ref_of(owned_sources), ref_of(candidates), entry.as_str())
         i += 1
 
     return defidx.lookup(ref_of(ws.definition_index), name, preferred_path.as_str(), before_line, before_char, candidates.as_span())
@@ -1491,7 +1585,7 @@ function resolve_cursor(
     # The host resolves a bare name through its facts before the import aliases:
     # a registered type (`str`, `int`, `vec3`) answers its own declaration or its
     # builtin docs even when an `import std.str` alias shares the name.
-    match resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source, current_module.as_str()):
+    match resolve_name_in_analysis(ast_file, ref_of(analysis), target.text, source, current_module.as_str(), line + 1, character + 1):
         Option.some as named:
             return Option[CursorResult].some(value = named.value)
         Option.none:
@@ -2131,7 +2225,7 @@ function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, m
             type_result.target_uri = file_uri_for_path(module_path.as_str())
             return Option[CursorResult].some(value = type_result)
 
-    match resolve_name_in_analysis(module_file, ref_of(module_analysis), member, module_source.as_str(), module_name):
+    match resolve_name_in_analysis(module_file, ref_of(module_analysis), member, module_source.as_str(), module_name, 0, 0):
         Option.some as res:
             var stamped = res.value
             stamped.target_uri.release()
@@ -2307,6 +2401,85 @@ function resolve_enum_member(type_name: str, member: str, source: str, analysis:
     ))
 
 
+## A declaration whose own name token the cursor is on: its 1-based line and the
+## `function` prefix its kind renders.
+struct MethodDeclarationAt:
+    line: ptr_uint
+    prefix: str
+
+
+## The declaration whose name token sits at 1-based (`line`, `column`) — the
+## host's `method_binding_at_token`, which matches the binding's AST against the
+## cursor: an extending block's method first (`facts.methods`), then an
+## interface's (`facts.interfaces`).  None when the cursor is not on a method
+## declaration in this file.
+function method_declaration_at(
+    file: ast.SourceFile,
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+) -> Option[MethodDeclarationAt]:
+    if line == 0:
+        return Option[MethodDeclarationAt].none
+
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    var mfn: ast.Method
+                    unsafe:
+                        mfn = read(ext.methods.data + mi)
+                    if mfn.name == name and mfn.line == line and mfn.column == column:
+                        return Option[MethodDeclarationAt].some(value = MethodDeclarationAt(
+                            line = mfn.line,
+                            prefix = method_kind_prefix(mfn.method_kind),
+                        ))
+                    mi += 1
+            _:
+                pass
+        di += 1
+
+    di = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_interface as ifc:
+                var mi: ptr_uint = 0
+                while mi < ifc.interface_methods.len:
+                    var mfn: ast.InterfaceMethod
+                    unsafe:
+                        mfn = read(ifc.interface_methods.data + mi)
+                    if mfn.name == name and mfn.line == line and mfn.column == column:
+                        return Option[MethodDeclarationAt].some(value = MethodDeclarationAt(
+                            line = mfn.line,
+                            prefix = method_kind_prefix(mfn.method_kind),
+                        ))
+                    mi += 1
+            _:
+                pass
+        di += 1
+
+    return Option[MethodDeclarationAt].none
+
+
+## The host's `method_signature` keyword for a method kind.
+function method_kind_prefix(kind: ast.MethodKind) -> str:
+    match kind:
+        ast.MethodKind.mk_static:
+            return "static function"
+        ast.MethodKind.mk_editable:
+            return "editable function"
+        _:
+            return "function"
+
+
 ## Resolve `name` against the semantic analysis maps.  Returns the definition
 ## location, rendered signature, and attached docs, or none if unresolvable.
 ## `current_module` names the file being resolved, so a type the analysis
@@ -2318,6 +2491,11 @@ function resolve_name_in_analysis(
     name: str,
     source: str,
     current_module: str,
+    # The cursor's 1-based position when it is inside this file, else 0: a
+    # method's own declaration token answers that declaration's line (the
+    # host's `method_binding_at_token` matches the binding's AST against it).
+    cursor_line: ptr_uint,
+    cursor_column: ptr_uint,
 ) -> Option[CursorResult]:
     unsafe:
         # Function: render the full signature.
@@ -2339,15 +2517,31 @@ function resolve_name_in_analysis(
             if method_key.ends_with(name) and method_key.len > name.len:
                 let sig_p = read(analysis).method_sigs.get(method_key)
                 if sig_p != null:
-                    let mline = find_method_line(file, name)
+                    # A cursor *on* a method's declaration answers that
+                    # declaration: the host's `method_binding_at_token` matches
+                    # the binding's AST line/column against the token, so an
+                    # interface method's own token reports the interface's line
+                    # even when an extending block implements it.
+                    var matched_decl = method_declaration_at(file, name, cursor_line, cursor_column)
+                    var mline: ptr_uint = 0
+                    var prefix_text: str = ""
+                    match matched_decl:
+                        Option.some as matched:
+                            mline = matched.value.line
+                            prefix_text = matched.value.prefix
+                        Option.none:
+                            mline = find_method_line(file, name)
                     if mline > 0:
                         var m_sig = read(sig_p)
                         var full = string.String.create()
-                        match classify_method(file, name):
-                            Option.some as prefix:
-                                full.append(prefix.value)
-                            Option.none:
-                                full.append("function")
+                        if prefix_text.len > 0:
+                            full.append(prefix_text)
+                        else:
+                            match classify_method(file, name):
+                                Option.some as prefix:
+                                    full.append(prefix.value)
+                                Option.none:
+                                    full.append("function")
                         full.append(" ")
                         full.append(name)
                         full.append("(")
@@ -4411,6 +4605,28 @@ function find_local_decl_at_line(stmt: ast.Stmt, name: str, want_line: ptr_uint)
                         Option.none:
                             pass
                     mi += 1
+            # The block-like statements the scope walk descends into: a binding
+            # inside `unsafe:`, `defer:`, `when:` or an error block is a local
+            # like any other, and the host's scope snapshot sees it.
+            ast.Stmt.stmt_unsafe as uns:
+                return find_local_decl_in_body(uns.body, name, want_line)
+            ast.Stmt.stmt_defer as dfr:
+                return find_local_decl_in_body(dfr.body, name, want_line)
+            ast.Stmt.stmt_error_block as eb:
+                return find_local_decl_in_body(eb.body, name, want_line)
+            ast.Stmt.stmt_when as whn:
+                var wi: ptr_uint = 0
+                while wi < whn.branches.len:
+                    let branch = read(whn.branches.data + wi)
+                    match find_local_decl_in_stmts(branch.body, name, want_line):
+                        Option.some as found:
+                            return Option[ast.Stmt].some(value = found.value)
+                        Option.none:
+                            pass
+                    wi += 1
+                return find_local_decl_in_body(whn.else_body, name, want_line)
+            ast.Stmt.stmt_parallel_block as pb:
+                return find_local_decl_in_stmts(pb.bodies, name, want_line)
             _:
                 pass
     return Option[ast.Stmt].none

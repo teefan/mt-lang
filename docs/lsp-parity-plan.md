@@ -5,17 +5,38 @@ with the Ruby host on everything an editor can observe (diagnostics included), p
 readiness properties parity alone does not test — cold start, steady-state memory, large
 files, long sessions, real clients (Neovim/VS Code).
 
-**Where we are** (branch `selfhost`, session 12, 2026-09-29): SimpleGame audit
-6456 entries / **56 differ** (hover 13, definition/declaration 5 each,
-typeDefinition 4, documentHighlight 14, diagnostic 2, documentSymbol 5,
-semanticTokens 5, codeLens 1, implementation 1, workspace/symbol 1;
-references 0); references-only audit **0**; synthetic harness 30/30
-capabilities + 4 documented entries; probe fixtures 0 (references) / 0–8 (small
-classes); bootstrap fixed point + 14/14; `cli:parity` 23/38/0.  Per-class
+**Where we are** (branch `selfhost`, session 13, 2026-09-29): SimpleGame audit
+6456 entries / **37 differ** (hover 9, documentHighlight 14, documentSymbol 5,
+semanticTokens 5, diagnostic 2, codeLens 1, workspace/symbol 1;
+definition/declaration/typeDefinition/implementation/**references 0**);
+synthetic harness 30/30 capabilities + 4 documented entries; probe fixtures at
+their session-12 diff sets (`hover-probe4` closed 6 navigation entries);
+bootstrap fixed point + 14/14; `cli:parity` 23/38/0.  Per-class
 numbers measured with `--only` drift ±10 against the full matrix (the host
 warms its caches as the audit proceeds); the full matrix is authoritative.
 
-**Track B, batches 11–13** (session 12): the **definition pipeline** — definition
+**Track C1 landed** (session 13): the host's cross-file definition index is
+ported — the `@definition_candidate_uris` / `@definition_names_by_uri` registry,
+`find_definition_global` searching those candidates, and the **hover-driven
+warm** that grows the index exactly where the host's does
+(`hover_definition_entry_from_location` → `find_token_at` → `get_tokens` →
+`get_content`; found by tracing `get_content` with a `RUBYOPT` hook, not by
+guessing).  The index *walk* is the workspace root now
+(`Workspace#workspace_index_roots`), which is C1's cold-start half:
+`tools/lsp_cold_start.rb` measures spawn → the first `workspace/symbol` response
+at **2723.5 → 213.3 ms** on SimpleGame and **2455.1 → 2.3 ms** on a one-file
+project.  The session also closed the interface method's own declaration line
+(hover/definition/declaration/typeDefinition), the implementation pipeline, the
+typeDefinition arm's early return and bindings inside `unsafe`/`defer`/`when`
+blocks — the audit **56 → 37**, definition **5 → 0**, declaration **5 → 0**,
+typeDefinition **4 → 0**, implementation **1 → 0**, hover **13 → 9**.  The
+synthetic references-only mode moved 0 → 56 without changing a single self
+answer (all 916 are byte-identical): its counts are pacing-coupled, since the
+audit alternates host/self requests and the host's background indexing progress
+depends on the self's speed.  The record is `docs/self-host-plan.md` §0k,
+"Track B, thirteenth batch + Track C1".
+
+**Track B, batches 11–12** (session 12): the **definition pipeline** — definition
 **61 → 5**, declaration **61 → 5**, typeDefinition **59 → 4**, hover **14 → 13**
 (closed 56/56/55, none added; audit **224 → 60 → 56**) — by classifying the residue
 first and porting five host behaviours: the local definition rule (its bindings
@@ -123,9 +144,9 @@ declaration rather than the host's partial node (§0k, session 9).
   compare, non-zero exit on diff) and its corpus under `tmp/lsp-recovery/`
   (created by the tool).  Run in the session gates.
 
-## Track B — the audit residue (56 entries, was 332)
+## Track B — the audit residue (37 entries, was 332)
 
-- **B1. hover 80 → 13.** Sessions 10–12 closed the
+- **B1. hover 80 → 9.** Sessions 10–12 closed the
   analyzer-`<error>` locals with the renderings they exposed, the member
   resolution those types uncovered (imported `extending` methods, builtin
   vector/matrix/quaternion fields, receiver projection), the variant arm
@@ -133,43 +154,44 @@ declaration rather than the host's partial node (§0k, session 9).
   annotation renderings, then (session 11) the host's indentation-sensitive
   field-token scan and resolved field types, the bare enum/flags member arms,
   the attribute/type-parameter/`this` arms, the `this` and annotated-local
-  receiver resolution, and the method signature's `-> void`.  The residue
-  (measured live, 14) is: **4 location artifacts** (a method call resolving to
-  another declaration of the same name in `std/graph.mt`, `take_damage`,
-  `type quat`'s missing std location, a `std/spatial.mt` parameter's);
-  **4 nullability** (the host prints the *storage* type where the self prints
-  the flow type — the analyzer's continuation refinement, queued as the
-  compiler-side item); **2 destructuring** (`let (a, b) = result` — the analyzer
-  binds those names to `ty_error`); a **match-arm payload binding** (stage
-  11c); a **union function field**'s bare `fn `; a **member chain's third
-  segment** (`r.top_edge.start`); and a binding inside **nested `unsafe`
-  blocks**.
-- **B2. definition 5 / declaration 5 / typeDefinition 4 (full matrix).**  Session
-  11's hover work moved all three (70 → 61 each, 68 → 59), and session 12's
-  definition-pipeline port closed 56/56/55 of what was left (none added; the
-  session-11 *traded* `lb@1915:25` entry closed with it, and the
-  receiver-typed method line took `release()`'s position out of all four
-  classes).  The residue is five positions in all three classes and belongs to
-  Track C1 (the host's cross-file definition index reaching files the audit never
-  opened): an interface method's own token (`take_damage`), `type quat`'s and
-  `parameter idx`'s std locations, `start` (`std/graph.mt:363`) and a field's
-  `parent` (`std/binary_heap.mt:49`).
+  receiver resolution, and the method signature's `-> void`; session 13 closed
+  the method's own declaration line and the block-statement bindings.  The
+  residue (measured live, session 13) is: **4 nullability** (`mst@25:7`,
+  `@28:20`, `@205:7`, `@404:7` — the host prints the flow-refined type where the
+  self prints the declared one: the analyzer's continuation refinement, the
+  compiler-side item); **2 destructuring** (`lb@1861:23`, `lb@1931:25`) and a
+  **match-arm payload binding** (`lb@1915:25`) — the analyzer binds those names
+  to `ty_error` (stage 11c); a **function-typed field**'s bare `fn `
+  (`lb@1127:9`, the host's `Types::Function#to_s` — the compiler stages'
+  function-type names item); `type quat`'s cross-file location
+  (`lb@1653:24` — the index does not reach `std/linear_algebra.mt` in the hover
+  order the audit produces); and a **member chain's third segment**
+  (`lb@1958:16`).
+- **B2. definition 0 / declaration 0 / typeDefinition 0 (closed, session 13).**
+  Session 12's definition-pipeline port closed 56/56/55 of what was left, and
+  session 13's Track C1 closed the last five positions in each class (the
+  cross-file definition index plus the interface method's own token).
 - **B3. references 0 (closed, session 10).** The 9 full-matrix entries were the
   hover residue's knock-on (files the host's hovers tokenized and the self's did
   not); typing the analyzer's `<error>` locals closed them.
 - **B4. small classes.** documentHighlight 14, documentSymbol 5, semanticTokens 5,
-  diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1 — independent, mostly
+  diagnostic 2, codeLens 1, workspace/symbol 1 — independent, mostly
   rendering/order (the two remaining `diagnostic` entries are lint *ordering*: the host
   interleaves scope/flow/whole-file rules per function, the self is pass-major).
+  `implementation` closed in session 13.
 
 ## Track C — real-project readiness (what parity alone does not test)
 
-- **C1. Index scope and cold start.** The self's workspace index walks *module roots*;
-  because the running binary lives inside the compiler tree, a project outside it gets the
-  whole compiler tree indexed (startup latency, memory). Restrict the walk to the workspace
-  root + package source roots + the explicit `-I` roots, index lazily (host's
-  `index_workspace` on `initialized`), and record cold-start time before/after on
-  SimpleGame and on a fresh empty project.
+- **C1. Index scope and cold start.** **Done (session 13).**  The workspace index
+  walks the workspace root plus the package's source root now
+  (`Workspace#workspace_index_roots`); `module_roots` stays wider for import
+  resolution only, so a project outside the compiler tree no longer indexes the
+  compiler tree.  The definition index grew its candidate registry and the
+  hover-driven warm in the same session (see "Track C1 landed" above), and
+  `tools/lsp_cold_start.rb` records the numbers: SimpleGame **2723.5 → 213.3 ms**,
+  one-file project **2455.1 → 2.3 ms** (spawn → the first `workspace/symbol`
+  response, against a binary built from the session-12 tree).  The self has no
+  `-I` flag on `mtc lsp`, so the explicit-roots half is moot.
 - **C2. Reference-index memory.** It keeps an owned copy of every noted document's text
   (token views point into it). Bound it: cap the document count / total bytes, drop on
   close + didChange, and verify with a long-session soak (thousands of requests; valgrind
@@ -211,40 +233,44 @@ the full matrix 332 → 269), session 11's five batches (field-token locations +
 resolved field types; the member arms with `variant_types` and `const_eval_int`;
 attributes/type parameters/`this`; the `this` and annotated-local receivers with
 `local_decl_types`; the method `-> void` and the `_` discard — hover 32 → 14,
-the full matrix 269 → 224), and session 12's three commits (the local definition
+the full matrix 269 → 224), session 12's three commits (the local definition
 rule with its gates; an import alias's member declaration; the receiver-typed
 method line — definition 61 → 5, declaration 61 → 5, typeDefinition 59 → 4,
-hover 14 → 13, the full matrix 224 → 56).
+hover 14 → 13, the full matrix 224 → 56), and session 13 (Track C1's definition
+index + index scope + cold start; the method's own declaration line; the
+implementation pipeline; the typeDefinition early return; block-statement
+bindings — definition/declaration/typeDefinition 5/5/4 → 0, implementation
+1 → 0, hover 13 → 9, the full matrix 56 → 37).
 
 Remaining, in order.  Note that the residue has crossed over: most of what is
 left is *analyzer* work the LSP only measures, so the compiler stages the
 multi-session plan already queues (Phase 2 item 3, stage 11c) come first for
 those entries:
 
-1. **C1 — the cross-file definition index and cold start.**  It owns the whole
-   navigation residue (definition 5, declaration 5, typeDefinition 4) and two of
-   hover's location entries: the host's index warms every *indexed* document
-   (`candidate_definition_uris`) and answers a token-pair declaration token in
-   files the audit never opened (`type quat` → std/linear_algebra.mt:237,
-   `parameter idx` → std/spatial.mt:125, `start` → std/graph.mt:363, a field's
-   `parent` → std/binary_heap.mt:49), plus an interface method's own token
-   (`take_damage`).  Measure cold-start latency before and after, as C1 asks.
-2. **hover's 13, grouped by root cause:**
+1. **documentHighlight 14** (the largest class; B4).  The shapes measured in
+   session 13: the host's arm resolves a *binding* and lists only the AST
+   identifier nodes bound to it — named-argument labels, member names after a
+   dot (`Mask.a`), destructuring declaration names and a second method's `this`
+   are excluded — where the self's token scan with a line-range scope filter
+   includes them; `lb@1545:33` is a scope-region difference (the self reports the
+   same tokens in another function), and `lb@704:67`/`lb@750:33` are label tokens
+   whose host answer is the field/variant declaration alone.
+2. **hover's 9, grouped by root cause:**
    - the **nullability** four (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`) — the
-     host prints the *storage* type where the self prints the flow type: the
-     analyzer's flow/continuation refinement (the multi-session plan's Phase 2
+     host prints the *flow-refined* type where the self prints the declared one:
+     the analyzer's flow/continuation refinement (the multi-session plan's Phase 2
      item 3);
    - the **destructuring** two (`lb@1861:23`, `lb@1931:25`) and the **match-arm
      payload** (`lb@1915:25`) — stage 11c;
-   - the singletons: the union function field's bare `fn ` (`lb@1127:9`), the
-     member chain's third segment (`lb@1958:16`), a binding in a nested
-     `unsafe:` block (`mst@88:23`) and a `let` declaration token whose binding
-     the scope walk misses (`mst@96:12`).
-3. **B4** — the small classes: documentHighlight 14, documentSymbol 5 (one shape:
-   the host emits a module symbol the self does not), semanticTokens 5,
-   diagnostic 2 (the lint emission order), codeLens 1, implementation 1,
-   workspace/symbol 1.  B2 is closed (definition 5 / declaration 5 /
-   typeDefinition 4 belong to C1) and B3 is closed (references 0).
+   - the singletons: a function-typed field's bare `fn ` (`lb@1127:9`, the host's
+     `Types::Function#to_s` — the compiler stages' function-type names item),
+     `type quat`'s cross-file location (`lb@1653:24`), the member chain's third
+     segment (`lb@1958:16`).
+3. **B4's other classes** — documentSymbol 5 (the host's module hierarchy and
+   its token-based symbol extraction), semanticTokens 5 (the import path's
+   `namespace` segment and heredoc string tokens), diagnostic 2 (the lint
+   emission order), codeLens 1, workspace/symbol 1 (the host's per-document
+   token symbols over `all_documents`, no 200 cap).
 4. C2 → C3 → C4/C5 (readiness), with the deliberate-difference table in
    `docs/lsp-design.md` §8, then D2/D3 (audit determinism, scoreboard row).
 ## Gates (every commit)
@@ -269,21 +295,24 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
     (branch `selfhost`). Rebuild before measuring:
       ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 
-    Read first: docs/lsp-parity-plan.md (the focused plan — Track A CLOSED; Track
-    B is at 56 entries, its live record in docs/self-host-plan.md §0k, "Track B,
-    eleventh and twelfth batch"), then
-    ~/.commandcode/plans/finish-self-host-full-parity.md (the session-12 log),
+    Read first: docs/lsp-parity-plan.md (the focused plan — Track A CLOSED,
+    Track C1 DONE; Track B is at 37 entries, its live record in
+    docs/self-host-plan.md §0k, "Track B, thirteenth batch + Track C1"), then
+    ~/.commandcode/plans/finish-self-host-full-parity.md (the session-13 log),
     docs/lsp-design.md §8/§9, and AGENTS.md's "Self-Host Parity Program" section
     (gates, drift, fixtures).
 
-    This session is LSP-only.  State at session-12 close: the SimpleGame full
-    matrix is 6456 entries / 56 differ — hover 13, definition/declaration 5 each,
-    typeDefinition 4, documentHighlight 14, diagnostic 2, documentSymbol 5,
-    semanticTokens 5, codeLens 1, implementation 1, workspace/symbol 1;
+    This session is LSP-only.  State at session-13 close: the SimpleGame full
+    matrix is 6456 entries / 37 differ — hover 9, documentHighlight 14,
+    documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1,
+    workspace/symbol 1; definition/declaration/typeDefinition/implementation/
     references 0; the harness 30/30 capability keys + the 4 documented entries;
     recovery probe OK; cli:parity 23/38/0; sexpr lex 705/705 and parse 701
     comparable / 0 differ; unused-import 609/608; bootstrap fixed point + 14/14;
-    test/mt 60/0.
+    test/mt 60/0.  Note: the synthetic `--only references` mode is
+    *pacing-coupled* — its host answers depend on the self's speed, so it reads
+    0–56 without a single self-side change (verified in session 13 by comparing
+    every self answer); the full matrix is the authoritative measure.
 
     MEASUREMENT RULE: the full matrix is authoritative.  `--only <method>` runs
     drift ±10 per method (the host warms its caches as the audit proceeds), so
@@ -292,9 +321,8 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
 
     STEP 1 — re-measure before touching anything:
       ruby tools/lsp_project_audit.rb --workspace /home/teefan/Projects/MilkTea/SimpleGame \
-        --json tmp/audit-s13.json --max-diffs 0 --timeout 60
-    then the references-only baseline (expect 0) and the harness:
-      ruby tools/lsp_project_audit.rb --workspace … --only references --max-diffs 0 --timeout 60
+        --json tmp/audit-s14.json --max-diffs 0 --timeout 60
+    and the harness:
       ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
       ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
       ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json
@@ -306,36 +334,32 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
 
     STEP 2 — the residue, grouped by root cause, largest first:
 
-    1. **Track C1 owns most of it** (index scope and cold start): the host's
-       cross-file definition index reaches files the audit never opened and
-       answers with a token-pair *declaration* token
-       (`find_definition_token_in_file` / `candidate_definition_uris`), while the
-       self's `find_definition_global` only knows documents it has opened or
-       noted.  The five navigation positions and two hover entries it owns:
-       - `lb@1653:24` (`type quat` → the host's std/linear_algebra.mt:237) and
-         `mst@172:22` (`parameter idx` → std/spatial.mt:125);
-       - `lb@412:24` (`start` → std/graph.mt:363) and `node.mt@2:4` (a field's
-         `parent` → the host's std/binary_heap.mt:49);
-       - `lb@181:22` (`take_damage`: the host's index answers the interface's own
-         token where the self's method-name arm answers the implementation).
-       Measure cold-start latency before and after, as C1 asks.
-    2. **hover's 13** — mostly analyzer work now, not rendering:
+    1. **documentHighlight 14** (the largest class).  The host's arm resolves a
+       *binding* and lists only the AST identifier nodes bound to it; named-
+       argument labels, member names after a dot (`Mask.a`), destructuring
+       declaration names and a second method's `this` are excluded, where the
+       self's token scan with a line-range scope filter includes them.
+       `lb@1545:33` is a scope-region difference; `lb@704:67`/`lb@750:33` are
+       label tokens whose host answer is the field/variant declaration alone;
+       `node.mt@6:20`, `lb@1861:23`, `lb@1931:25` are the label/destructuring
+       exclusions.
+    2. **hover's 9:**
        - the four nullability entries (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`):
-         the host prints the *storage* type where the self prints the flow type —
-         the analyzer's flow/continuation refinement (the multi-session plan's
-         Phase 2 item 3);
+         the host prints the *flow-refined* type where the self prints the
+         declared one — the analyzer's flow/continuation refinement (the
+         multi-session plan's Phase 2 item 3);
        - the two destructuring entries (`lb@1861:23`, `lb@1931:25`) and the
          match-arm payload (`lb@1915:25`): the analyzer binds destructured names
          to `ty_error` (stage 11c carries the payload design);
-       - the singletons: `lb@1127:9` (a union field of function type renders the
-         bare `fn ` in the host), `lb@1958:16` (a member chain's third segment —
-         the host's `member_access_chain_at`), `mst@88:23` (a binding inside a
-         *nested* `unsafe:` block) and `mst@96:12` (a `let` declaration token
-         whose binding the scope walk misses).
-    3. **B4** (documentHighlight 14, documentSymbol 5, semanticTokens 5,
-       diagnostic 2 = the lint emission order, codeLens 1, implementation 1,
-       workspace/symbol 1).  documentSymbol looks like a single shape: the host
-       emits a module symbol (`"docs"`, kind 2) the self does not.
+       - the singletons: `lb@1127:9` (a function-typed field renders the bare
+         `fn ` in the host — `Types::Function#to_s`, the compiler stages'
+         function-type names item), `lb@1653:24` (`type quat`'s cross-file
+         location), `lb@1958:16` (a member chain's third segment).
+    3. **B4's other classes** — documentSymbol 5 (the host's module hierarchy and
+       its token-based per-document symbols), semanticTokens 5 (an import path's
+       `namespace` segment, heredoc string tokens), diagnostic 2 (the lint
+       emission order), codeLens 1, workspace/symbol 1 (the host's
+       `all_documents` symbol list, no 200 cap).
     4. Then C2–C5 (reference-index memory, note-document caching, the large-file
        soak, client behaviours), the deliberate-difference table in
        docs/lsp-design.md §8, and D2/D3 (audit determinism, scoreboard row).

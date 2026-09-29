@@ -50,13 +50,19 @@ public function has_file(index: ref[Index], path: str) -> bool:
     return false
 
 
-## Scan all .mt files and build a fresh index.
-public function build_index(module_roots: ref[vec.Vec[string_mod.String]]) -> Index:
+## Scan all .mt files under `walk_roots` and build a fresh index.  `module_roots`
+## is the (wider) set used to resolve each file's imports — the host's
+## `index_workspace` walks the workspace root while imports still resolve
+## through every module root.
+public function build_index(
+    walk_roots: ref[vec.Vec[string_mod.String]],
+    module_roots: ref[vec.Vec[string_mod.String]],
+) -> Index:
     var index = Index(entries = vec.Vec[Entry].create(), files = vec.Vec[FileImports].create())
 
     var ri: ptr_uint = 0
-    while ri < module_roots.len():
-        let root_ptr = module_roots.get(ri) else:
+    while ri < walk_roots.len():
+        let root_ptr = walk_roots.get(ri) else:
             break
         unsafe:
             collect_directory(read(root_ptr).as_str(), ref_of(index), module_roots)

@@ -503,12 +503,19 @@ recovery result:
   `import`, cut-off expression, plus an incremental edit.  Not yet emulated: the
   host's *nested* declaration rescues (methods, the local-decl `else` variant,
   the field loops).
-- **Readiness beyond parity** (Track C of the plan): the workspace index walks
-  *module roots*, which for a project outside the compiler tree includes the
-  whole compiler tree (cold-start latency and memory); the reference index keeps
-  an owned copy of every noted document's text (unbounded in long sessions);
-  `note_document_tokens` re-reads and re-hashes a file per request; and there is
-  no large-file/long-session soak in the gates yet.
+- **Readiness beyond parity** (Track C of the plan): **C1 landed in session 13.**
+  The workspace *symbol* index now walks the workspace root (plus the package's
+  source root) — before, a project outside the compiler tree indexed the whole
+  compiler tree at its first index-needing request — and the cross-file definition
+  index grew the host's candidate registry (`@definition_candidate_uris` /
+  `@definition_names_by_uri`) with the warm placed where the host's is: the hover
+  path's `find_token_at` → `get_tokens` → `get_content`.  `tools/lsp_cold_start.rb`
+  measures spawn → the first `workspace/symbol` response at **2723.5 → 213.3 ms**
+  on `~/Projects/MilkTea/SimpleGame` and **2455.1 → 2.3 ms** on a one-file project
+  (baseline: a binary built from the session-12 tree).  Still open: the reference
+  index keeps an owned copy of every noted document's text (unbounded in long
+  sessions, C2); `note_document_tokens` re-reads and re-hashes a file per request
+  (C3); and there is no large-file/long-session soak in the gates yet (C4).
 - **Non-ASCII doc strings** (session 10).  The host's C backend emitted
   `String#inspect`'s `\xNN` escapes, and a C hex escape absorbs every following
   hex digit, so `"4\xC3\x974"` compiled to `4`, `0xC3`, `t` with a stale byte

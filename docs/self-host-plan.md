@@ -48,13 +48,15 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **4 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (live counter, 2026-09-28): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **56 differ** (session 12 close): hover 13, definition/declaration 5 each, typeDefinition 4, documentHighlight 14, documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, implementation 1, workspace/symbol 1, references **0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline — definition/declaration 61 → 5 each, typeDefinition 59 → 4).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The navigation residue (5/5/4) is five positions of one family — the host's cross-file definition index reaching files the audit never opened — and the references-only audit is at **0 differing entries**.  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references.  Residue classified in §0k; the largest class is now `documentHighlight` (14, untouched since session 8), then `hover` (13).**
+**LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **37 differ** (session 13 close): hover 9, documentHighlight 14, documentSymbol 5, semanticTokens 5, diagnostic 2, codeLens 1, workspace/symbol 1; definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
 **LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
-**Hover: 13 entries left (session 12 close; §0k classifies them — the four
-nullability renderings, the two destructuring bindings, the match-arm payload,
-the union function field, the member chain's third segment, a nested `unsafe`
-binding, and the cross-file location artifacts that C1 owns).**
+**Hover: 9 entries left (session 13 close; §0k classifies them — the four
+nullability renderings (the analyzer's flow/continuation refinement), the two
+destructuring bindings with the match-arm payload (stage 11c), the function-typed
+field's `fn ` (the host's `Types::Function#to_s`, the compiler stages'
+function-type names item), `type quat`'s cross-file location, and the member
+chain's third segment).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
 **LSP logging: structured stderr, version+revision announcement, a `[LSP perf] req <method> <ms>`
 line per request (the host's shape), default level `info`, and `milkTea.lsp.logLevel`
@@ -1962,6 +1964,100 @@ location shapes: an interface method's own token (`lb@181:22`, take_damage),
 audit never opened), `start` (`lb@412:24`, `std/graph.mt:363`) and a field's
 `parent` (`node.mt@2:4`, the host answering `std/binary_heap.mt:49`) — the last
 four are the same index-scope family.  These are Track C1's work.
+
+### Track B, thirteenth batch + Track C1 (2026-09-29 session 13): the cross-file definition index, the interface method, block bindings
+
+Session 12 left 56 entries, seven of them the C1 family above.  The session found
+the host's mechanism by *tracing* it rather than guessing: a `RUBYOPT` hook on
+`WorkspaceCaches#get_content` over a full audit shows the host reading std module
+files **from the hover path** — `hover_definition_entry_from_location` renders a
+resolved location through `find_token_at` → `get_tokens` → `lex_document` →
+`get_content`, and `get_content` is what inserts the path into
+`@indexed_documents`, the definition index's candidate set.  So the index grows
+with the files a hover resolves *into*, in request order (the same reason a full
+run's `workspace/symbol` lists 34 documents: the 7 workspace files plus 27 std
+modules).  Guessing "the loader read them" instead produced a 249-entry audit
+(all hostile: `host=null, self=std`) and taught the second half of C1.
+
+1. **The candidate registry** (`lsp/definition_index.mt`): the host's
+   `@definition_candidate_uris` and `@definition_names_by_uri` (its answer and
+   miss caches stay unported, as before).  `warm_names` registers a document's
+   declaration names from the same cheap line scan the host's
+   `DEFINITION_NAME_REGEX` uses (no lexing); `candidate_paths_for` answers the
+   documents that declare a name in warm order; `forget` drops a document's
+   entries on an edit and `drop_names`
+   writes the shortened Vec back into the map (a Vec is a value — mutating one
+   through a `ptr` without write-back left the map holding a stale length, which
+   is what the session's first crash was: the harness's `didChange` stress step
+   aborted with `string.as_str text must be valid UTF-8`).
+2. **`find_definition_global` searches the index's candidates**, not "the open
+   documents": the requesting document first with the cursor as the position
+   filter, then warm order.  The **warm** happens where the host's does —
+   `note_hover_definition_file` (the hover hook that already mirrored
+   `find_token_at` for the identifier index) now calls
+   `warm_definition_document`; `open`/`change`/`close` warm the document itself,
+   and the workspace index build warms the workspace tree.  Warming anywhere else
+   is visible: warming every module the loader read added 172 entries, and
+   warming on every `note_document_tokens` moved the synthetic references-only
+   mode off its 0 with std occurrences.
+3. **The index scope** (`Workspace#workspace_index_roots`): the workspace
+   *symbol* index walks the workspace root (plus the package's source root);
+   `module_roots` stays wider for import resolution only.  Before, a project
+   outside the compiler tree indexed the whole compiler tree at the first
+   index-needing request.  `tools/lsp_cold_start.rb` (new) measures spawn → the
+   first `workspace/symbol` response with the audit's file set; against a
+   session-12 binary built from the same tree: SimpleGame **2723.5 → 213.3 ms**,
+   a one-file fresh project **2455.1 → 2.3 ms**.
+4. **A method's own declaration token answers its own line**
+   (`method_declaration_at`): the host's `method_binding_at_token` matches the
+   *binding's* AST against the cursor, so the interface's `editable function
+   take_damage` answers the interface's line even though an `extending` block
+   implements it — the self answered the implementation's line for hover,
+   definition, declaration and typeDefinition at `lb@181:22`.
+5. **The implementation pipeline** (`handle_implementation`): an interface
+   method's own declaration token answers each implementing type's method
+   (`interface_method_declared_at` + `append_method_implementation_locations`,
+   which walks the open documents' `implemented_interfaces` and reports each
+   implementing type's declaration line through `find_method_line_in_type`), and
+   only a type that really declares the method answers — a generic constraint
+   (`T implements Damageable`) has none, as the host's
+   `methods_for_receiver_type(...)[name]` lookup does.
+6. **typeDefinition's early return**: `resolve_type_definition_location` returns
+   the *current* module's `module_member_definition_location` for a name in
+   `facts.types` and stops — an imported type with no declaration token here
+   (`quat` in a file that only uses it) answers null rather than the index.
+7. **Bindings inside block statements**: `find_local_decl_at_line` descended into
+   blocks, `if`, `while`, `for` and `match` only, so a hover on a binding inside
+   `unsafe:`, `defer:`, `when:` or an error block answered null (the scope walk
+   already collected them).
+
+Measured (full matrix, authoritative): the audit **56 → 37** — definition
+**5 → 0**, declaration **5 → 0**, typeDefinition **4 → 0**, implementation
+**1 → 0**, hover **13 → 9**; documentHighlight 14, documentSymbol 5,
+semanticTokens 5, diagnostic 2, codeLens 1, workspace/symbol 1 unchanged,
+references **0**.  The hover residue is now: 4 nullability renderings
+(`mst@25:7`, `@28:20`, `@205:7`, `@404:7` — the host prints the flow-refined
+type where the self prints the declared one, the analyzer's continuation
+refinement), 2 destructuring bindings + a match-arm payload (`lb@1861:23`,
+`lb@1931:25`, `lb@1915:25` — stage 11c), a function-typed field's `fn `
+(`lb@1127:9`, the host's `Types::Function#to_s`, queued as the compiler stages'
+function-type names item), `type quat`'s missing std location (`lb@1653:24` —
+the index does not reach `std/linear_algebra.mt` in the hover order the audit
+produces), and a member chain's third segment (`lb@1958:16`).  The synthetic
+references-only mode moved 0 → 56 in the same session, but **every one of the
+916 self answers is byte-identical to the previous binary's** — the mode's
+counts are pacing-coupled (the audit alternates host/self requests, so the
+self's changed speed shifts the host's background indexing), and the full matrix,
+where references are 0 in every run, is the authoritative measure.
+
+Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
+23/38/0, sexpr lex 705/705 + parse 701/0, the harness 30/30 + the 4 documented
+entries (a regression the session caused and fixed: a map-stored Vec mutated
+through a `ptr` without write-back corrupted the definition index and the
+harness's `didChange` stress step aborted), recovery probe OK, the fixtures
+identical to the session-12 binary's diff sets (hover-probe4 *gains* 6 closed
+navigation entries), valgrind 0 errors on the LSP drive, and the headless-Neovim
+smoke renders the `quat` hover.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
