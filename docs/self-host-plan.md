@@ -1800,6 +1800,105 @@ test/mt 60/0, cli:parity 23/38/0 (same diff set), sexpr lex 705/705 + parse
 for hover, valgrind clean, Neovim smoke renders `Vec[…Point]` with
 `*From std.vec, …*`.
 
+### Track B, sixth through tenth batch (2026-09-29 session 11): member arms, attributes, receivers, field tokens
+
+Hover **32 → 14** in five batches, each verified by a focused `--only hover`
+re-scan whose diff *set* was compared entry by entry (the full matrix is
+authoritative for the class; `--only` counts drift ±10).  No batch introduced a
+new diff.
+
+1. **A field's location is the host's token scan, not the AST's field.**  The
+   host's `find_field_token_in_type` / `find_field_token_in_body`
+   (`lsp/server/definition.rb`) are now ported as
+   `first_non_trivia_on_line` + `find_field_token_in_body` +
+   `find_field_token_in_type` in `lsp/navigation.mt`.  The scan stops at the
+   first line-leading token at or left of the `struct`/`union` keyword's column,
+   so a field of a `public struct X:` (fields at column 5, the `struct` keyword
+   at column 8) is never reached: the host prints **no** `Defined at` line for
+   those fields, and the self used to add one.  The three hover arms that report
+   a field's location (its own declaration, a named-argument label, a field
+   read) now take it from this scan, and the declaration hover renders the
+   field's *resolved* type (`field parent: ptr[Node]?` + `*From node*`) instead
+   of the source TypeRef's first name part.  Closed: `main.mt@18:36`,
+   `main.mt@18:55`, `node.mt@1:4`, `node.mt@2:4`, `node.mt@6:20`.
+2. **The member arms.**  `bare_member_hover` is the host's
+   `find_member_in_types`: a bare identifier naming an enum/flags member renders
+   `Type.member = value` for the file's *last-declared* type with that member,
+   with the value folded by `analyzer.const_eval_int` (now public, refactored to
+   take the `const` table so consumers outside the analysis pass can use it) —
+   hence `Kind.c = 6` and `Kind.a = 0`.  The static-member arm no longer renders
+   a *variant*'s arms as enum members: `Context`/`Analysis` carry
+   `variant_types` (set by `variant` declarations and by the prelude
+   `Option`/`Result`), so `Result.success as s:` resolves the arm constructor
+   `Result.success(value: T)` and `TokenKind.ident(name: str)`.  The flat local
+   fallback in `resolve_local_hover` is now bounded by the *enclosing*
+   declaration (`enclosing_decl_index`), so a same-named local of an earlier
+   function can no longer answer for a position in a later one (which is how
+   `@a` in `struct Buffer[@a]` used to resolve to another function's `let a`).
+   Closed: `lb@141:4`, `lb@1757:15`, `lb@568:15`.
+3. **Attributes, type parameters and `this`.**  `type_parameter_signature`
+   (the host's `type_parameter_hover_signature`: `[T]`, `[T implements I]`,
+   `[N: int]`, and no answer for an attribute's target list),
+   `attribute_target_token` (`attribute target callable`) and
+   `declared_attribute_hover` (`attribute [callable] traced(tag: str)`, with the
+   *module's* location — line 1 of the declaring file, as
+   `module_definition_location` does), plus `this_receiver_hover`
+   (`parameter this: vec3 (immutable)`), which answers only inside an
+   `extending Type:` method: a struct's own methods get no completion frame in
+   the host either, so they stay null.  Closed: `lb@228:25`, `lb@364:19`,
+   `lb@236:10`, `lb@275:51`, `lb@1545:33`.
+4. **Receivers: `this` and annotated locals.**  `type_of_value` resolves `this`
+   through `this_receiver_name` / `this_receiver_type` (the enclosing
+   `extending` method's target type), and the analyzer now records an annotated
+   local's *declared* type in `Analysis.local_decl_types` (keyed by declaration
+   line; the host reads the same type off its scope binding), which
+   `local_type_at_line` uses instead of returning none.  `enclosing_decl_index`
+   picks its declaration by *line*, not by list position: the analysis appends
+   `emit`-expanded declarations out of source order.  Closed: `lb@1822:44`
+   (`this.radius`), `lb@1957:6`, `lb@1967:26` (`r.top_edge` through a
+   `var r: Rectangle`).
+5. **Two leftovers.**  The method branch of `resolve_name_in_analysis` always
+   prints the return type (`function destroy() -> void`; the host's
+   `method_signature`), and `_` is a discard rather than a binding
+   (`find_local_in_block`, `local_stmt_declares`) — the analyzer registers no
+   `_` binding, so a `let _ = …` hover is null in the host.  Closed:
+   `node.mt@9:13`, `mst@457:8`.
+
+Measured (full matrix re-run at close, the authoritative numbers): the audit
+**269 → 224** differing entries — hover **32 → 14** (18 closed, none added) and
+the member pipeline the hover work feeds: definition **70 → 61**, declaration
+**70 → 61**, typeDefinition **68 → 59** (10 closed each; 1 traded per class at
+`lb@1915:25`, where the host's definition index answers a different function's
+`p` and the self's flat fallback now answers the enclosing function's — the
+position's *hover* location became the host's in the same batch).  The small
+classes are unchanged (documentHighlight 14, diagnostic 2, documentSymbol 5,
+semanticTokens 5, codeLens 1, implementation 1, workspace/symbol 1), references
+stay **0**.  Fixtures unchanged (`probe-ws`, `probe4`–`probe6`, `fieldprobe`,
+`crash1`, `thisprobe` at 0 differing entries; `probe2` keeps its 2 deliberate
+self-answers).  Gates: bootstrap fixed point + 14/14,
+`test/mt` 60/0, `cli:parity` 23/38/0 (same diff set), sexpr lex 705/705 + parse
+701/0, `unused_import_parity` 609/608 (the documented `async_network_lobby`
+residual), harness 30/30 capability keys + the 4 documented entries, recovery
+probe OK, references-only audit 0, valgrind clean on the hover drive
+(`ERROR SUMMARY: 0 errors from 0 contexts`), the headless-Neovim smoke renders
+`parameter this: vec3 (immutable)`, the `quat` docs and `Kind.a = 0`.
+
+The hover residue (14) and what each needs: the **location artifacts** — a
+method call resolving to a different declaration of the same name in
+`std/graph.mt` (`release()`), `take_damage`, `type quat`'s missing
+`std/linear_algebra.mt` location, and a `std/spatial.mt` parameter's location
+needing the host's cross-file definition index; the **4 nullability** entries
+(the host prints the *storage* type where the self prints the flow type — the
+host's completion snapshots carry the analyzer's continuation refinement);
+**destructuring bindings** (`let (a, b) = result` — the analyzer binds each name
+to `ty_error`, so the self has no element type to print); a **match-arm payload
+binding** (`local p: Option[(str, str)].some payload`, the queued stage 11c); a
+**union field of function type** (the host renders the bare `fn ` — its union
+field table loses the signature); a **member chain's third segment**
+(`r.top_edge.start`, needing the host's `member_access_chain_at` walk); and a
+binding inside **nested `unsafe` blocks** (`let b = read(inner)` under a second
+`unsafe:`).
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**

@@ -5,15 +5,30 @@ with the Ruby host on everything an editor can observe (diagnostics included), p
 readiness properties parity alone does not test — cold start, steady-state memory, large
 files, long sessions, real clients (Neovim/VS Code).
 
-**Where we are** (branch `selfhost`, session 10, 2026-09-29): SimpleGame audit
-6456 entries / **269 differ** (hover 32, definition/declaration 70 each,
-typeDefinition 68, documentHighlight 14, diagnostic 2, documentSymbol 5,
+**Where we are** (branch `selfhost`, session 11, 2026-09-29): SimpleGame audit
+6456 entries / **224 differ** (hover 14, definition/declaration 61 each,
+typeDefinition 59, documentHighlight 14, diagnostic 2, documentSymbol 5,
 semanticTokens 5, codeLens 1, implementation 1, workspace/symbol 1;
 references 0); references-only audit **0**; synthetic harness 30/30
 capabilities + 4 documented entries; probe fixtures 0 (references) / 0–8 (small
 classes); bootstrap fixed point + 14/14; `cli:parity` 23/38/0.  Per-class
 numbers measured with `--only` drift ±10 against the full matrix (the host
 warms its caches as the audit proceeds); the full matrix is authoritative.
+
+**Track B, batches 6–10** (session 11): hover **32 → 14** and the member
+pipeline it feeds — definition/declaration **70 → 61** each, typeDefinition
+**68 → 59** (10 entries closed per class, 1 traded at `lb@1915:25`, where the
+host's definition index answers a *different* function's declaration and the
+self's flat fallback now answers the enclosing one) — as 
+the host's indentation-sensitive field-token scan (`find_field_token_in_type`,
+so a `public struct`'s fields carry no location) with the field declaration
+hover rendering the *resolved* type, then the bare member arms
+(`find_member_in_types` with `const_eval_int`; `variant_types` so a variant arm
+renders its constructor form), then attributes/type parameters/`this`, then the
+`this` and annotated-local receiver resolution (the analyzer records
+`local_decl_types`), then two leftovers (the method signature's `-> void`, `_`
+as a discard).  The record is `docs/self-host-plan.md` §0k, "Track B, sixth
+through tenth batch".
 
 **Track B, batches 2–5** (session 10): hover **80 → 32** and the class's
 knock-ons — references **9 → 0**, definition/declaration 72 → 70,
@@ -97,26 +112,33 @@ declaration rather than the host's partial node (§0k, session 9).
   compare, non-zero exit on diff) and its corpus under `tmp/lsp-recovery/`
   (created by the tool).  Run in the session gates.
 
-## Track B — the audit residue (269 entries, was 332)
+## Track B — the audit residue (251 entries, was 332)
 
-- **B1. hover 80 → 32.** Session 10's batches closed the **17**
-  analyzer-`<error>` locals with the renderings they exposed, then the member
+- **B1. hover 80 → 14.** Sessions 10 and 11 closed the
+  analyzer-`<error>` locals with the renderings they exposed, the member
   resolution those types uncovered (imported `extending` methods, builtin
   vector/matrix/quaternion fields, receiver projection), the variant arm
-  constructors with their named-argument labels, and the module-qualified
-  annotation renderings.  The residue (measured
-  live, 32) is the classification the first batch recorded, minus the closed
-  classes: **self-null** (enum/flags members in a declaration body, attribute
-  targets/applications, `type parameter T`, the implicit `this`, prelude/
-  inherent methods on builtin generics — the host's `BUILTIN_TYPE_METHOD_SIGNATURES`
-  table and the attribute/type-parameter arms); **5** nullability (the host
-  prints the *storage* type where the self prints the flow type); the tuple/alias
-  renderings; and the host's member-location artifacts (`editable function
-  release()` pointing at a different declaration, a field's location absent under
-  a `public struct` header, a field read through a member *chain*).
-- **B2. definition 70 / declaration 70 / typeDefinition 68 (full matrix).** Re-measure after
-  each B1 fix (the member pipeline feeds all three); the remaining shapes are the same member
-  cases plus the host's location artifacts.
+  constructors with their named-argument labels, the module-qualified
+  annotation renderings, then (session 11) the host's indentation-sensitive
+  field-token scan and resolved field types, the bare enum/flags member arms,
+  the attribute/type-parameter/`this` arms, the `this` and annotated-local
+  receiver resolution, and the method signature's `-> void`.  The residue
+  (measured live, 14) is: **4 location artifacts** (a method call resolving to
+  another declaration of the same name in `std/graph.mt`, `take_damage`,
+  `type quat`'s missing std location, a `std/spatial.mt` parameter's);
+  **4 nullability** (the host prints the *storage* type where the self prints
+  the flow type — the analyzer's continuation refinement, queued as the
+  compiler-side item); **2 destructuring** (`let (a, b) = result` — the analyzer
+  binds those names to `ty_error`); a **match-arm payload binding** (stage
+  11c); a **union function field**'s bare `fn `; a **member chain's third
+  segment** (`r.top_edge.start`); and a binding inside **nested `unsafe`
+  blocks**.
+- **B2. definition 70 / declaration 70 / typeDefinition 68 (full matrix).**
+  Session 11's hover work moved all three (70 → 61, 70 → 61, 68 → 59: 10 entries
+  closed each, 1 traded at `lb@1915:25`).  Re-measure after each B1 fix; the
+  remaining shapes are the same member cases plus the host's location artifacts,
+  and the traded entry needs the host's definition-index answer (its pipeline
+  resolves a *local* that its scope model misses through `find_definition_token_global`).
 - **B3. references 0 (closed, session 10).** The 9 full-matrix entries were the
   hover residue's knock-on (files the host's hovers tokenized and the self's did
   not); typing the analyzer's `<error>` locals closed them.
@@ -166,18 +188,29 @@ declaration rather than the host's partial node (§0k, session 9).
 
 Done: 0 (this plan committed), 1 (A1 → A2 → A5), 2 (A3 → A4 — one commit for the
 parser unwinding and the knock-ons, session 9), the first B1 batch (the
-`proc`-vs-`fn` hover rendering, hover 83 → 80), and session 10's five commits
+`proc`-vs-`fn` hover rendering, hover 83 → 80), session 10's five commits
 (the host's C string-literal escaping; the analyzer's `<error>` locals and their
 renderings; imported methods and builtin fields; the variant arm constructors
 and their labels; the module-qualified annotation renderings — hover 80 → 32,
-the full matrix 332 → 269).  Remaining, in order:
+the full matrix 332 → 269), and session 11's five batches (field-token
+locations + resolved field types; the member arms with `variant_types` and
+`const_eval_int`; attributes/type parameters/`this`; the `this` and
+annotated-local receivers with `local_decl_types`; the method `-> void` and the
+`_` discard — hover 32 → 14, the full matrix 269 → 251).  Remaining, in order:
 
-1. B1's residual classes, largest first: the self-null member/attribute/`this`/
-   prelude-method arms (the host's `BUILTIN_TYPE_METHOD_SIGNATURES`, the
-   attribute and `type parameter T` tables), then the 5 nullability renderings
-   and the tuple/alias ones, then the member-location artifacts.
+1. hover's 14, grouping the classes that share a root cause:
+   - the **location artifacts** (a method call's alternative declaration in
+     `std/graph.mt`, `take_damage`, `type quat`, a `std/spatial.mt` parameter) —
+     the host's cross-file definition index and its `module_member_binding_location`
+     binding line;
+   - the **nullability** four (the analyzer's continuation refinement — the same
+     work as the multi-session plan's Phase 2 item 3);
+   - the **destructuring** two and the **match-arm payload** (stage 11c);
+   - the singletons: the union function field's bare `fn `, the member chain's
+     third segment, a binding in nested `unsafe` blocks.
 2. B2 (definition/declaration 70, typeDefinition 68 — re-measure with each hover
-   fix), then B4 (the small classes; `diagnostic` is the
+   fix and see §0k's session-11 note for what the hover work already moved),
+   then B4 (the small classes; `diagnostic` is the
    lint emission order).  B3 is closed (references 0).
 3. C1 → C2/C3 → C4/C5 (readiness), with the deliberate-difference table in
    `docs/lsp-design.md` §8; D2/D3 (audit determinism, scoreboard row).
@@ -204,21 +237,21 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
     (branch `selfhost`). Rebuild before measuring:
       ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 
-    Read first: docs/lsp-parity-plan.md (the focused plan — Track A CLOSED;
-    Track B is at 269 entries, its live record in docs/self-host-plan.md §0k
-    "Track B, second through fifth batch"), then
-    ~/.commandcode/plans/finish-self-host-full-parity.md (the session-10 log),
-    docs/lsp-design.md §8/§9, and AGENTS.md's "Self-Host Parity Program"
-    section (gates, drift, fixtures).
+    Read first: docs/lsp-parity-plan.md (the focused plan — Track A CLOSED; Track
+    B is at 224 entries, its live record in docs/self-host-plan.md §0k, "Track B,
+    sixth through tenth batch"), then
+    ~/.commandcode/plans/finish-self-host-full-parity.md (the session-11 log),
+    docs/lsp-design.md §8/§9, and AGENTS.md's "Self-Host Parity Program" section
+    (gates, drift, fixtures).
 
-    This session is LSP-only.  State at session-10 close: the SimpleGame full
-    matrix is 6456 entries / 269 differ — hover 32, definition/declaration 70
-    each, typeDefinition 68, documentHighlight 14, diagnostic 2, documentSymbol
+    This session is LSP-only.  State at session-11 close: the SimpleGame full
+    matrix is 6456 entries / 224 differ — hover 14, definition/declaration 61
+    each, typeDefinition 59, documentHighlight 14, diagnostic 2, documentSymbol
     5, semanticTokens 5, codeLens 1, implementation 1, workspace/symbol 1;
     references 0; the harness 30/30 capability keys + the 4 documented entries;
     recovery probe OK; cli:parity 23/38/0; sexpr lex 705/705 and parse 701
-    comparable / 0 differ; unused-import 609/608; bootstrap fixed point +
-    14/14; test/mt 60/0.
+    comparable / 0 differ; unused-import 609/608; bootstrap fixed point + 14/14;
+    test/mt 60/0.
 
     MEASUREMENT RULE: the full matrix is authoritative.  `--only <method>` runs
     drift ±10 per method (the host warms its caches as the audit proceeds), so
@@ -227,71 +260,56 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
 
     STEP 1 — re-measure before touching anything:
       ruby tools/lsp_project_audit.rb --workspace /home/teefan/Projects/MilkTea/SimpleGame \
-        --json tmp/audit-s11.json --max-diffs 0 --timeout 60
+        --json tmp/audit-s12.json --max-diffs 0 --timeout 60
     then the references-only baseline (expect 0) and the harness:
       ruby tools/lsp_project_audit.rb --workspace … --only references --max-diffs 0 --timeout 60
       ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
       ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
       ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json
-    Fast fixtures (session-10 scratch under tmp/, recreate if cleaned):
-    probe-ws, probe2 (2 deliberate hovers), probe4-probe6 (0 for
-    hover/definition/declaration/typeDefinition/references), hover-probe2
-    (annotation `*From*`), hover-probe3/-4 (the analyzer `<error>` shapes),
-    hover-probe5 (mat4 / heap / tuple / detach / span), fieldprobe, crash1 (the
-    non-ASCII hover), eventprobe (event lowering), plus the valgrind wrapper
-    (/tmp/mtc-vg.sh) and tmp/nvim_hover_smoke.lua.
+    Fast fixtures: probe-ws, probe2 (2 deliberate hovers), probe4–probe6,
+    fieldprobe, thisprobe, crash1, hover-probe2 (annotation `*From*`),
+    hover-probe3/-4 (the analyzer `<error>` shapes), hover-probe5 (mat4 / heap /
+    tuple / detach / span), eventprobe, plus the valgrind wrapper
+    (/tmp/mtc-vg-s11.sh) and tmp/nvim_hover_smoke.lua.
 
-    STEP 2 — work the hover residue largest-first, one commit per sub-class
-    (rebuild + focused re-audit + the gates + docs/ledger synced in the same
-    commit).  The 32 measured entries group as:
+    STEP 2 — work the residue largest-first, one commit per sub-class (rebuild +
+    focused re-audit + the gates + docs/ledger synced in the same commit).
+    The 224 group as:
 
-    1. Enum/flags/arm *member* arms (3) — the host's `member_info` arm renders
-       `Type.member = value` and runs *ahead* of the name tables: `Kind.c = 6`
-       (self null), `Kind.a = 0` (self answers a same-named local), and the
-       member-access chain form `Result[int, int].success(value = T)`
-       (`lb@568:15`; the bare-name arm already handles `success(value: T)`).
-    2. Attributes, type parameters and `this` (5): `type parameter T` (the
-       host's `type_parameter_hover_signature`), `attribute target callable`,
-       `attribute [callable] traced(tag: str)` plus its Defined at, and the
-       implicit receiver `parameter this: vec3 (immutable)`.
-    3. Fields through a value / `this` / a member *chain* (6): `field radius:
-       float` through `this`, `field top_edge: Edge` + `*From*` + a location for
-       `r.top_edge` (the host's `member_access_chain_at`; the self's
-       `dot_receiver_at` sees one segment only), the *declaration* hover
-       `field parent: ptr[Node]?` + `*From node*` (the self renders the
-       source-text type `ptr?` and adds a location), and the two `let b: int` /
-       `let advance: ptr[int]` nulls.
-    4. Nullability (5): the host prints the *storage* type where the self prints
-       the flow type — `parameter handle: ptr[int]` vs `ptr[int]?`,
-       `var handle: null` vs `ptr[int]?`, `let a: own[int]` vs `own[int]?`.
-    5. Member-location artifacts (4): the `public struct`-field artifact (the
-       host's `find_field_token_in_body` treats a field at a column ≤ the
-       `struct` keyword's as a dedent, so a `public struct`'s fields carry no
-       location and the self adds one), `editable function release()` /
-       `take_damage` pointing at a different declaration, `parameter idx`
-       missing its std/spatial.mt location, and `type quat`'s index location.
-    6. Leftovers (5): `field check: fn ` (the host renders a union field's
-       function type bare), a match-arm payload binding (`local p:
-       Option[…].some payload`), a destructuring binding typed `int` by the host
-       but bare by the self, a self-more `let _: void`, and `function destroy()`
-       missing `-> void` (a *method* hover path that does not go through
-       `format_fn_signature`).
-
-    7. Then B2 — definition/declaration 70 and typeDefinition 68 (the same member
-       pipeline; re-measure after every hover fix) — then B4 (documentHighlight
-       14, documentSymbol 5, semanticTokens 5, diagnostic 2 = the lint emission
-       order, codeLens 1, implementation 1, workspace/symbol 1).
-    8. Then Track C readiness: index scope and cold start (C1), the
+    1. hover's 14:
+       - the four location artifacts: `data_structures.mt@307:7` (`release()`
+         resolving to a different declaration in std/graph.mt — the host says
+         699, the self 345), `lb@181:22` (`take_damage`: host 182, self 196;
+         start here: the host's `module_member_binding_location` uses its
+         analyzer's binding line, which may prefer a later declaration than the
+         self's `find_method_line`), `lb@1653:24` (`type quat` missing the host's
+         std/linear_algebra.mt:237) and `mst@172:22` (`parameter idx` missing
+         std/spatial.mt:125 — the host's cross-file definition index).
+       - the four nullability entries (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`):
+         the host prints the *storage* type where the self prints the flow type.
+         This is the analyzer's flow/continuation refinement (the multi-session
+         plan's Phase 2 item 3), not an LSP rendering.
+       - the two destructuring entries (`lb@1861:23`, `lb@1931:25`: `let (a, b) =
+         result` — the analyzer binds each name to `ty_error`) and `lb@1915:25`
+         (the match-arm payload binding; stage 11c's design is in the
+         multi-session plan).
+       - the singletons: `lb@1127:9` (a union field of function type renders the
+         bare `fn ` in the host), `lb@1958:16` (a member chain's third segment —
+         the host's `member_access_chain_at`), `mst@88:23` (a binding inside a
+         *nested* `unsafe:` block) and `mst@96:12` (a `let` declaration token
+         whose binding the scope walk misses).
+    2. B2's residue (definition/declaration 61, typeDefinition 59): re-measure
+       after every hover fix; the traded `lb@1915:25` entry needs the host's
+       definition-index answer, and the classes share the location artifacts
+       above.
+    3. B4 (documentHighlight 14, documentSymbol 5, semanticTokens 5, diagnostic
+       2 = the lint emission order, codeLens 1, implementation 1,
+       workspace/symbol 1).
+    4. Then Track C readiness: index scope and cold start (C1), the
        reference-index memory bound (C2), note-document caching (C3), the
-       large-file soak (C4), client behaviours (C5), and the deliberate-
-       difference table in docs/lsp-design.md §8; D2/D3 (audit determinism,
-       scoreboard row).
-
-    Do not re-chase the session-10 crash: hovering a builtin type (`mat4`) used
-    to kill the host-built binary with `string.as_str text must be valid UTF-8`
-    (the host's `\xNN` C escapes absorbed the following hex digit); fixed in
-    ad14ad89.  If a non-ASCII doc dies again, rebuild with the host and check
-    `emit-c`'s literal bytes first.
+       large-file soak (C4), client behaviours (C5), and the
+       deliberate-difference table in docs/lsp-design.md §8; D2/D3 (audit
+       determinism, scoreboard row).
 
     GATES for every commit (AGENTS.md): tools/bootstrap.sh -j 16 (fixed point +
     14/14), build/stage2/mtc test test/mt -I . (60/0), rake "cli:parity"
