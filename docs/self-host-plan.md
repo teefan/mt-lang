@@ -1721,6 +1721,35 @@ The residual hover is the classification the first batch recorded: the
 self-null member/attribute/`this`/prelude-method arms (19), the nullability
 renderings (5) and the member-location artifacts, plus the small classes.
 
+### Track B, third batch (same session): imported methods and builtin fields
+
+Hover **46 → 44**, definition/declaration **67 → 66** each, typeDefinition
+**66 → 65**; the same three member-resolution gaps the second batch's types
+exposed:
+
+- **Imported methods** (`vec3.cross`, `mat4.identity`).  The host's
+  `methods_for_receiver_type` merges the enclosing module's methods with every
+  *imported* module's, so a builtin receiver's method resolves through its
+  `extending` block wherever it lives.  `imported_type_method_hover` walks the
+  analysis' imports, analyses each module, looks the method up by type name and
+  stamps the result with the declaring module's URI; the declaration line comes
+  from `find_method_line_in_type`, which prefers the `extending` block naming
+  the receiver's type (`std.linear_algebra`'s third `identity` is mat4's, not
+  mat3's).
+- **Builtin vector/matrix/quaternion fields** (`vec3.x`, `mat4.col0`,
+  `quat.w`): `field x: float` with no location, the host's
+  `Types::Vector`/`Matrix`/`Quaternion` field tables.
+- **Receiver projection** for the *hover* path: the receiver's type projects
+  through `ref`/`ptr`/`own` first (`project_pointer_receiver` is public), so a
+  field read on a `ref[vec3]` resolves the vector's field.
+
+Measured: hover 46 → 44, definition and declaration 67 → 66, typeDefinition
+66 → 65; the probe fixture `tmp/hover-probe5` 10 → 8; no new diffs anywhere
+(diff-set compared); harness 30/30 + 4; recovery OK; test/mt 60/0; bootstrap
+fixed point + 14/14; cli:parity 23/38/0 with the same diff set; sexpr 705/705 +
+701/0; valgrind clean; the Neovim smoke renders `vec3.cross` and
+`mat4.identity` with their std locations.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**

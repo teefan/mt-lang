@@ -1155,6 +1155,18 @@ function resolve_type_method_hover(
         target_uri.release()
         target_uri = file_uri_for_path(owner_path.as_str())
 
+    # The host's `methods_for_receiver_type` merges the enclosing module's
+    # methods with every *imported* module's, which is how a builtin receiver's
+    # method resolves (`mat4.identity` through `std.linear_algebra`'s
+    # `extending mat4:`) even though the type itself has no owning module.
+    if decl_signature.is_none():
+        match imported_type_method_hover(ws, analysis, receiver.name, method_name, current_module):
+            Option.some as imported_method:
+                target_uri.release()
+                return Option[CursorResult].some(value = imported_method.value)
+            Option.none:
+                pass
+
     let signature = decl_signature else:
         target_uri.release()
         return Option[CursorResult].none
@@ -1195,6 +1207,10 @@ function receiver_type_name(ty: types.Type) -> str:
             return n.name
         types.Type.ty_generic as g:
             return g.name
+        types.Type.ty_primitive as p:
+            # A builtin receiver (`vec3`, `mat4`) names no module, but its
+            # methods still live in an `extending` block.
+            return p.name
         types.Type.ty_nullable as nl:
             return receiver_type_name(unsafe: read(nl.base))
         _:
@@ -1331,6 +1347,27 @@ function field_hover_result(
                 pass
         di += 1
     if not found or field_line == 0:
+        # A builtin vector/matrix/quaternion field (`v.x`, `m.col0`) has no
+        # declaration to point at: the hover is the field's own type, with no
+        # location (the host's `Types::Vector#field`).
+        match builtin_field_type_name(type_name, field_name):
+            Option.some as builtin_field:
+                var builtin_text = string.String.create()
+                builtin_text.append("field ")
+                builtin_text.append(field_name)
+                builtin_text.append(": ")
+                builtin_text.append(builtin_field.value)
+                return Option[CursorResult].some(value = CursorResult(
+                    line = 0,
+                    column = 0,
+                    name_len = field_name.len,
+                    hover_text = builtin_text,
+                    docs = string.String.create(),
+                    target_uri = string.String.create(),
+                    from_modules = string.String.create()
+                ))
+            Option.none:
+                pass
         return Option[CursorResult].none
 
     let entries_ptr = decl_analysis.structs.get(type_name)
@@ -1390,11 +1427,15 @@ function resolve_member_method_hover(
 ) -> Option[CursorResult]:
     let receiver_ty = type_of_value(analysis, ast_file, receiver_name, target_line, source) else:
         return Option[CursorResult].none
-    let type_name = receiver_type_name(receiver_ty)
+    # The host projects the receiver through a pointer-like first
+    # (`project_field_receiver_type`), so `r.x` on a `ref[vec3]` resolves the
+    # vector's own field.
+    let projected_ty = analyzer.project_pointer_receiver(receiver_ty)
+    let type_name = receiver_type_name(projected_ty)
     if type_name.len == 0:
         return Option[CursorResult].none
 
-    let owner = types.nominal_module(receiver_ty)
+    let owner = types.nominal_module(projected_ty)
 
     # A field of the receiver's type comes first (the host checks a member's
     # field before its methods): `p.radius` → `field radius: float`.
@@ -1427,6 +1468,18 @@ function resolve_member_method_hover(
         target_uri.release()
         target_uri = file_uri_for_path(owner_path.as_str())
 
+    # The host's `methods_for_receiver_type` merges the enclosing module's
+    # methods with every *imported* module's, which is how a builtin receiver's
+    # method resolves (`vec3.cross` through `std.linear_algebra`'s
+    # `extending vec3:`) even though the type itself has no owning module.
+    if decl_signature.is_none():
+        match imported_type_method_hover(ws, analysis, type_name, method_name, current_module):
+            Option.some as imported_method:
+                target_uri.release()
+                return Option[CursorResult].some(value = imported_method.value)
+            Option.none:
+                pass
+
     let signature = decl_signature else:
         target_uri.release()
         return Option[CursorResult].none
@@ -1455,6 +1508,55 @@ function resolve_member_method_hover(
     stamped.target_uri.release()
     stamped.target_uri = target_uri
     return Option[CursorResult].some(value = stamped)
+
+
+## The methods every *imported* module adds to `type_name` — the host's
+## `methods_for_receiver_type` merges the enclosing module's methods with each
+## imported module's, so a builtin receiver's method (`vec3.cross`,
+## `mat4.identity`) resolves through its `extending` block wherever it lives
+## (`std.linear_algebra`), even though the type itself has no owning module.
+## The signature is stamped with the declaring module's URI, the way the host's
+## `module_member_binding_location` pairs a module's path with the declaration
+## line.
+function imported_type_method_hover(
+    ws: ref[workspace.Workspace],
+    analysis: ref[analyzer.Analysis],
+    type_name: str,
+    method_name: str,
+    current_module: str,
+) -> Option[CursorResult]:
+    var imports = unsafe: read(analysis).imports.entries()
+    while imports.next():
+        let entry = imports.current()
+        var module_name = unsafe: read(entry.value)
+        if module_name.len == 0 or module_name.equal(current_module):
+            continue
+        var module_path = resolve_module_source_path(ws, module_name) else:
+            continue
+        defer: module_path.release()
+        var module_source = ws.document_source(module_path.as_str()) else:
+            continue
+        defer: module_source.release()
+        var module_diags = vec.Vec[pstate.ParseDiagnostic].create()
+        defer: module_diags.release()
+        var parsed_module = parser.parse_source(module_source.as_str(), ref_of(module_diags))
+        var module_analysis = analysis_for_document(ws, module_path.as_str(), parsed_module)
+        let found = method_sig_for_type(ref_of(module_analysis), type_name, method_name)
+        match found:
+            Option.some as found_sig:
+                let decl_file = ast_for_document(ws, module_path.as_str(), parsed_module)
+                let decl_line = find_method_line_in_type(decl_file, type_name, method_name)
+                if decl_line > 0:
+                    var hover = method_signature_text(found_sig.value, method_name, module_name)
+                    let result = make_shortened_result(decl_line, method_name, module_source.as_str(), hover.as_str())
+                    hover.release()
+                    var stamped = result
+                    stamped.target_uri.release()
+                    stamped.target_uri = file_uri_for_path(module_path.as_str())
+                    return Option[CursorResult].some(value = stamped)
+            Option.none:
+                pass
+    return Option[CursorResult].none
 
 
 ## Resolve `member` inside imported module `module_name`: check the module's
@@ -1984,6 +2086,82 @@ function value_decl_keyword(file: ast.SourceFile, name: str) -> str:
                 pass
         di += 1
     return "const"
+
+
+## The declaration line of `type_name`'s method `name`: the `extending` blocks
+## whose target names the type come first (`mat4.identity` is std.linear_algebra's
+## third `identity`), then any block declaring the name.
+function find_method_line_in_type(file: ast.SourceFile, type_name: str, name: str) -> ptr_uint:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                var base: str = ""
+                unsafe:
+                    base = analyzer.qname_to_str(read(ext.type_name).name)
+                if method_key_names_type(base, type_name):
+                    var mi: ptr_uint = 0
+                    while mi < ext.methods.len:
+                        var mfn: ast.Method
+                        unsafe:
+                            mfn = read(ext.methods.data + mi)
+                        if mfn.name == name:
+                            return mfn.line
+                        mi += 1
+            _:
+                pass
+        di += 1
+    return find_method_line(file, name)
+
+
+## The declared type of a builtin vector/matrix/quaternion field, as the hover
+## renders it: `vec3.x` → `float`, `mat4.col0` → `vec4`, `quat.w` → `float`
+## (the host's `Types::Vector`/`Matrix`/`Quaternion` field tables).
+function builtin_field_type_name(type_name: str, field_name: str) -> Option[str]:
+    if type_name.equal("vec2"):
+        return builtin_vector_field(field_name, 2, "float")
+    if type_name.equal("vec3"):
+        return builtin_vector_field(field_name, 3, "float")
+    if type_name.equal("vec4"):
+        return builtin_vector_field(field_name, 4, "float")
+    if type_name.equal("ivec2"):
+        return builtin_vector_field(field_name, 2, "int")
+    if type_name.equal("ivec3"):
+        return builtin_vector_field(field_name, 3, "int")
+    if type_name.equal("ivec4"):
+        return builtin_vector_field(field_name, 4, "int")
+    if type_name.equal("quat"):
+        return builtin_vector_field(field_name, 4, "float")
+    if type_name.equal("mat3"):
+        return builtin_matrix_field(field_name, 3)
+    if type_name.equal("mat4"):
+        return builtin_matrix_field(field_name, 4)
+    return Option[str].none
+
+
+## `x`/`y`/`z`/`w`, the first `width` of them (the host's
+## `Types::Vector::FIELD_NAMES.first(width)`).
+function builtin_vector_field(field_name: str, width: long, element_name: str) -> Option[str]:
+    if field_name.equal("x") or field_name.equal("y"):
+        return Option[str].some(value = element_name)
+    if width >= 3 and field_name.equal("z"):
+        return Option[str].some(value = element_name)
+    if width >= 4 and field_name.equal("w"):
+        return Option[str].some(value = element_name)
+    return Option[str].none
+
+
+## `col0`…`col<dim-1>`, each a `vec3`/`vec4` column.
+function builtin_matrix_field(field_name: str, dim: long) -> Option[str]:
+    let column_type = if dim == 3: "vec3" else: "vec4"
+    if field_name.equal("col0") or field_name.equal("col1") or field_name.equal("col2"):
+        return Option[str].some(value = column_type)
+    if dim >= 4 and field_name.equal("col3"):
+        return Option[str].some(value = column_type)
+    return Option[str].none
 
 
 ## Find the line number of a method named `name` inside any `extending` block.

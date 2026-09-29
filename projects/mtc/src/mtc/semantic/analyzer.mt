@@ -4432,7 +4432,7 @@ function generic_receiver_has_method(ctx: ref[Context], t: types.Type, method_na
 ## to its referent, `ptr[T]`/`own[T]`/`const_ptr[T]` to their pointee (the
 ## host's `project_field_receiver_type` / `project_method_receiver_type`), so
 ## `state.ready` on an `own[SleepState]` resolves the field.
-function project_pointer_receiver(t: types.Type) -> types.Type:
+public function project_pointer_receiver(t: types.Type) -> types.Type:
     match t:
         types.Type.ty_generic as g:
             if g.name == "ref" and g.args.len >= 1:

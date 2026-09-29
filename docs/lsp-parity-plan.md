@@ -6,26 +6,29 @@ readiness properties parity alone does not test — cold start, steady-state mem
 files, long sessions, real clients (Neovim/VS Code).
 
 **Where we are** (branch `selfhost`, session 10, 2026-09-29): SimpleGame audit
-6456 entries / **262 differ** (hover 46, definition/declaration 67 each,
-typeDefinition 66, documentHighlight 14, diagnostic 2, documentSymbol 5,
+6456 entries / **259 differ** (hover 44, definition/declaration 66 each,
+typeDefinition 65, documentHighlight 14, diagnostic 2, documentSymbol 5,
 semanticTokens 5, codeLens 1, implementation 1, workspace/symbol 1);
 references-only audit **0**; synthetic harness 30/30 capabilities + 4 documented
 entries; probe fixtures 0 (references) / 0–8 (small classes); bootstrap fixed
 point + 14/14; `cli:parity` 23/38/0.
 
-**Track B, second batch** (session 10): hover **80 → 46** and the class's
-knock-ons — definition/declaration 72 → 67, typeDefinition 70 → 66, references
-**9 → 0** — by typing the analyzer's `<error>` locals (unary `~`, tuple
-literals, `Type[args].arm(…)` instances, imported specialization calls, builtin
-static receivers, event methods, `get`, `detach`) and the renderings that
-followed (guarded-local narrowing, module-less builtin types, the function
-signature shape, the builtin arms' definition-index location).  The host's C
+**Track B, second and third batches** (session 10): hover **80 → 44** and the
+class's knock-ons — definition/declaration 72 → 66, typeDefinition 70 → 65,
+references **9 → 0** — by typing the analyzer's `<error>` locals (unary `~`,
+tuple literals, `Type[args].arm(…)` instances, imported specialization calls,
+builtin static receivers, event methods, `get`, `detach`) and the renderings
+that followed (guarded-local narrowing, module-less builtin types, the function
+signature shape, the builtin arms' definition-index location), then the member
+resolution the new types exposed (imported modules' `extending` methods —
+`vec3.cross` in std.linear_algebra — the builtin vector/matrix/quaternion field
+tables, and receiver projection through `ref`/`ptr`/`own`).  The host's C
 string-literal escaping was fixed first: its `\xNN` escapes absorbed following
 hex digits, so the host-built self binary crashed on any non-ASCII hover doc
 (`mat3`/`mat4`).  The record is `docs/self-host-plan.md` §0k, "Track B, second
-batch"; the residual classification is unchanged (the `*From*` source-text
-renderings, the self-null member/attribute/`this`/prelude arms, nullability,
-and the member-location artifacts).
+batch" and "third batch"; the residual classification is unchanged (the
+`*From*` source-text renderings, the self-null member/attribute/`this`/prelude
+arms, nullability, and the member-location artifacts).
 
 **Track A is closed** (session 9): `tools/lsp_recovery_probe.rb --check` reports
 recovery parity — all six mid-edit cases byte-equal.  A1 (the JSON-blob message)
@@ -92,11 +95,14 @@ declaration rather than the host's partial node (§0k, session 9).
   compare, non-zero exit on diff) and its corpus under `tmp/lsp-recovery/`
   (created by the tool).  Run in the session gates.
 
-## Track B — the audit residue (262 entries, was 332)
+## Track B — the audit residue (259 entries, was 332)
 
-- **B1. hover 80.** Session 10 closed the **17** analyzer-`<error>` locals and the
-  renderings they exposed (hover 80 → 46).  The residue (measured live, 46) is the
-  classification the first batch recorded, unchanged in shape: **15** where the
+- **B1. hover 80 → 44.** Session 10's batches closed the **17**
+  analyzer-`<error>` locals with the renderings they exposed, then the member
+  resolution those types uncovered (imported `extending` methods, builtin
+  vector/matrix/quaternion fields, receiver projection).  The residue (measured
+  live, 44) is the classification the first batch recorded, unchanged in shape:
+  **15** where the
   `*From <module>*` line differs (the annotation is rendered from the source text,
   so an import alias leaks in as `vec` instead of `std.vec`, and a specialization
   like `SoA[Point, 4]` loses its owner module); **19** self-null (enum/flags
@@ -110,7 +116,7 @@ declaration rather than the host's partial node (§0k, session 9).
   host's member-location artifacts (`editable function release()` pointing at a
   different declaration, a field's location absent under a `public struct`
   header).
-- **B2. definition 67 / declaration 67 / typeDefinition 66.** Re-measure after each B1 fix
+- **B2. definition 66 / declaration 66 / typeDefinition 65.** Re-measure after each B1 fix
   (the member pipeline feeds all three); the remaining shapes are the same member cases
   plus the host's location artifacts.
 - **B3. references 0 (closed, session 10).** The 9 full-matrix entries were the
@@ -162,15 +168,19 @@ declaration rather than the host's partial node (§0k, session 9).
 
 Done: 0 (this plan committed), 1 (A1 → A2 → A5), 2 (A3 → A4 — one commit for the
 parser unwinding and the knock-ons, session 9), the first B1 batch (the
-`proc`-vs-`fn` hover rendering, hover 83 → 80), and the second B1 batch
-(session 10: the host's C string-literal escaping, then the analyzer's
-`<error>` locals and their renderings — hover 80 → 46, definition/declaration
-72 → 67, typeDefinition 70 → 66, references 9 → 0).  Remaining, in order:
+`proc`-vs-`fn` hover rendering, hover 83 → 80), and session 10's three commits
+(the host's C string-literal escaping; the analyzer's `<error>` locals and their
+renderings — hover 80 → 46, definition/declaration 72 → 67, typeDefinition
+70 → 66, references 9 → 0; then imported methods and builtin fields — hover
+46 → 44, definition/declaration 67 → 66, typeDefinition 66 → 65).  Remaining,
+in order:
 
-1. B1's residual classes, largest first: the 19 self-null hovers (the host's
-   member/variant/attribute/`this`/prelude-method arms), the 15 `*From*` module
-   renderings, then the 5 nullability renderings and the tuple/alias ones.
-2. B2 (definition/declaration 67, typeDefinition 66 — re-measure with each hover
+1. B1's residual classes, largest first: the variant-arm constructors and their
+   named-argument labels (the host's `find_variant_arm_in_types` and
+   `variant_arm_constructor_info`), the self-null member/attribute/`this`/
+   prelude-method arms, the 15 `*From*` module renderings, then the 5
+   nullability renderings and the tuple/alias ones.
+2. B2 (definition/declaration 66, typeDefinition 65 — re-measure with each hover
    fix), then B4 (the small classes; `diagnostic` is the
    lint emission order).  B3 is closed (references 0).
 3. C1 → C2/C3 → C4/C5 (readiness), with the deliberate-difference table in
