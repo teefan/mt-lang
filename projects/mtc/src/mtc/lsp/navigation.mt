@@ -1085,6 +1085,17 @@ function resolve_cursor(
     # import-alias arm — `import std.str` does not shadow `str`.  The generic
     # builtin constructors (`ptr`, `ref`, `span`, …) are not registered types and
     # stay with the keyword/builtin table, which runs last.
+    # A bare variant arm name (`Result.success(value = T)`,
+    # `Primitive.circle(radius: float)`): the host's
+    # `find_variant_arm_in_types` scans the file's declared types in reverse
+    # order for the first one with an arm of that name, ahead of every name
+    # lookup below.
+    match variant_arm_name_hover(ws, ast_file, target.text):
+        Option.some as arm_hover:
+            return Option[CursorResult].some(value = arm_hover.value)
+        Option.none:
+            pass
+
     # The host resolves a bare name through its facts before the import aliases:
     # a registered type (`str`, `int`, `vec3`) answers its own declaration or its
     # builtin docs even when an `import std.str` alias shares the name.
@@ -2672,6 +2683,172 @@ function field_declaration_hover(source: str, line: ptr_uint, character: ptr_uin
     return Option[CursorResult].none
 
 
+## The hover for a bare variant arm name (`Result.success(value = T)`): the
+## first declared variant in the file that carries an arm of that name — the
+## host's `find_variant_arm_in_types`, which walks the module's types in reverse
+## declaration order — and then the prelude variants (`Option`, `Result`),
+## whose arms the host installs from std.option / std.result.
+function variant_arm_name_hover(ws: ref[workspace.Workspace], file: ast.SourceFile, name: str) -> Option[CursorResult]:
+    match variant_arm_name_in_file(file, name):
+        Option.some as declared:
+            return Option[CursorResult].some(value = declared.value)
+        Option.none:
+            pass
+
+    match variant_arm_from_module(ws, "std.result", name):
+        Option.some as result_arm:
+            return Option[CursorResult].some(value = result_arm.value)
+        Option.none:
+            pass
+    return variant_arm_from_module(ws, "std.option", name)
+
+
+## The arm hover for `name` in one prelude module's declaration, or none.
+function variant_arm_from_module(ws: ref[workspace.Workspace], module_name: str, name: str) -> Option[CursorResult]:
+    var module_path = resolve_module_source_path(ws, module_name) else:
+        return Option[CursorResult].none
+    defer: module_path.release()
+    var module_source = ws.document_source(module_path.as_str()) else:
+        return Option[CursorResult].none
+    defer: module_source.release()
+    var module_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: module_diags.release()
+    var module_parsed = parser.parse_source(module_source.as_str(), ref_of(module_diags))
+    let module_file = ast_for_document(ws, module_path.as_str(), module_parsed)
+    return variant_arm_name_in_file(module_file, name)
+
+
+## `Type.arm(field: T, …)` for the first declared variant in `file` with an arm
+## of that name, or none.
+function variant_arm_name_in_file(file: ast.SourceFile, name: str) -> Option[CursorResult]:
+    var di: int = int<-file.declarations.len - 1
+    while di >= 0:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + ptr_uint<-di)
+        match decl:
+            ast.Decl.decl_variant as v:
+                var ai: ptr_uint = 0
+                while ai < v.variant_arms.len:
+                    let arm = unsafe: read(v.variant_arms.data + ai)
+                    if arm.name.equal(name):
+                        return Option[CursorResult].some(value = variant_arm_name_result(v.name, arm, name))
+                    ai += 1
+            _:
+                pass
+        di -= 1
+    return Option[CursorResult].none
+
+
+## The `Type.arm(field: T, …)` hover payload (the host's
+## `find_variant_arm_in_types` rendering: the fields in declaration order, no
+## location).
+function variant_arm_name_result(type_name: str, arm: ast.VariantArm, name: str) -> CursorResult:
+    var hover = string.String.create()
+    hover.append(type_name)
+    hover.append(".")
+    hover.append(arm.name)
+    if arm.arm_fields.len > 0:
+        hover.append("(")
+        var fi: ptr_uint = 0
+        while fi < arm.arm_fields.len:
+            let field = unsafe: read(arm.arm_fields.data + fi)
+            if fi > 0:
+                hover.append(", ")
+            hover.append(field.name)
+            hover.append(": ")
+            hover.append(ast_formatter.render_type(field.field_type))
+            fi += 1
+        hover.append(")")
+    return CursorResult(
+        line = 0,
+        column = 0,
+        name_len = name.len,
+        hover_text = hover,
+        docs = string.String.create(),
+        target_uri = string.String.create(),
+        from_modules = string.String.create()
+    )
+
+
+## The hover for a named argument inside a variant arm constructor
+## (`Result.success(value = 7)`, `Primitive.circle(radius = 2.0)`): the arm's
+## declared field type, rendered `value: T` with no location (the host's
+## `variant_arm_constructor_info` arm of `named_argument_parameter_info`).
+function variant_arm_label_hover(
+    ws: ref[workspace.Workspace],
+    ast_file: ast.SourceFile,
+    variant_name: str,
+    arm_name: str,
+    field_name: str,
+) -> Option[CursorResult]:
+    # The variant's declaring file: this document for a local variant, the
+    # prelude's std module for Option/Result (their arms come from
+    # std.option / std.result, the host's prelude-installed types).
+    var decl_file = ast_file
+    if variant_name.equal("Option") or variant_name.equal("Result"):
+        let module_name = if variant_name.equal("Option"): "std.option" else: "std.result"
+        var module_path = resolve_module_source_path(ws, module_name) else:
+            return Option[CursorResult].none
+        defer: module_path.release()
+        var module_source = ws.document_source(module_path.as_str()) else:
+            return Option[CursorResult].none
+        defer: module_source.release()
+        var module_diags = vec.Vec[pstate.ParseDiagnostic].create()
+        defer: module_diags.release()
+        var module_parsed = parser.parse_source(module_source.as_str(), ref_of(module_diags))
+        decl_file = ast_for_document(ws, module_path.as_str(), module_parsed)
+
+    match variant_arm_field_type_text(decl_file, variant_name, arm_name, field_name):
+        Option.some as arm_field:
+            var hover = string.String.create()
+            hover.append(field_name)
+            hover.append(": ")
+            hover.append(arm_field.value.as_str())
+            arm_field.value.release()
+            return Option[CursorResult].some(value = CursorResult(
+                line = 0,
+                column = 0,
+                name_len = field_name.len,
+                hover_text = hover,
+                docs = string.String.create(),
+                target_uri = string.String.create(),
+                from_modules = string.String.create()
+            ))
+        Option.none:
+            return Option[CursorResult].none
+
+
+## The declared type text of `arm_name`'s field `field_name` in `type_name`'s
+## `variant` declaration, rendered from the source (`value: T`).
+function variant_arm_field_type_text(file: ast.SourceFile, type_name: str, arm_name: str, field_name: str) -> Option[string.String]:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_variant as v:
+                if v.name.equal(type_name):
+                    var ai: ptr_uint = 0
+                    while ai < v.variant_arms.len:
+                        let arm = unsafe: read(v.variant_arms.data + ai)
+                        if arm.name.equal(arm_name):
+                            var fi: ptr_uint = 0
+                            while fi < arm.arm_fields.len:
+                                let field = unsafe: read(arm.arm_fields.data + fi)
+                                if field.name.equal(field_name):
+                                    var text = string.String.create()
+                                    text.append(ast_formatter.render_type(field.field_type))
+                                    return Option[string.String].some(value = text)
+                                fi += 1
+                        ai += 1
+            _:
+                pass
+        di += 1
+    return Option[string.String].none
+
+
 ## Hover for a named-argument label inside a struct aggregate literal
 ## (`Sample(x = 1, …)` or `rl.Color(r = 1, …)`, hovering `r`): the field's
 ## declaration and its resolved type, rendered as the host's `field r: ubyte`.
@@ -2748,6 +2925,47 @@ function named_argument_label_hover(
     defer: module_roots.release()
     var current_module = resolver.infer_module_name(file_path, module_roots.as_span())
     defer: current_module.release()
+
+    # `Type.arm(field = …)` — a variant arm constructor: the head names the arm
+    # and the identifier before the dot the variant, so the label's type is the
+    # arm's declared field (the host's `variant_arm_constructor_info`).  A
+    # variant is a static-member type (`Primitive`, the prelude `Result`), while
+    # an import alias (`vec.Vec(…)`) takes the aggregate path below.
+    var variant_of_label: str = module_alias
+    # Generic arm constructors (`Result[int, int].success(value = 7)`) put type
+    # arguments between the variant and the arm: walk back over the `[…]` group.
+    if variant_of_label.len == 0 and opener >= 4:
+        var close_kind = tk.TokenKind.eof
+        var dot_kind = tk.TokenKind.eof
+        let close_ptr = tokens.get(ptr_uint<-(opener - 3)) else:
+            return Option[CursorResult].none
+        close_kind = unsafe: read(close_ptr).kind
+        let dot_ptr2 = tokens.get(ptr_uint<-(opener - 2)) else:
+            return Option[CursorResult].none
+        dot_kind = unsafe: read(dot_ptr2).kind
+        if close_kind == tk.TokenKind.rbracket and dot_kind == tk.TokenKind.dot:
+            var lk: int = opener - 4
+            var bracket_depth: int = 1
+            while lk >= 0:
+                let inner_ptr = tokens.get(ptr_uint<-lk) else:
+                    break
+                let inner_kind = unsafe: read(inner_ptr).kind
+                if inner_kind == tk.TokenKind.rbracket:
+                    bracket_depth += 1
+                else if inner_kind == tk.TokenKind.lbracket:
+                    bracket_depth -= 1
+                    if bracket_depth == 0:
+                        if lk >= 1:
+                            let name_ptr = tokens.get(ptr_uint<-(lk - 1)) else:
+                                break
+                            let name_tok2 = unsafe: read(name_ptr)
+                            if name_tok2.kind == tk.TokenKind.identifier:
+                                variant_of_label = cursor.token_text(source, name_tok2)
+                        break
+                lk -= 1
+
+    if variant_of_label.len > 0 and analysis.static_member_types.contains(variant_of_label):
+        return variant_arm_label_hover(ws, ast_file, variant_of_label, type_name, field_name)
 
     # Which module's type table the head is looked up in: this file, or the
     # module the alias names.

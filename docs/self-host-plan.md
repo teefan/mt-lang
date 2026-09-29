@@ -1662,8 +1662,11 @@ through a real client.
 
 ### Track B, second batch (2026-09-29 session 10): the analyzer's `<error>` locals
 
-Hover **80 → 46**, definition/declaration **72 → 67** each, typeDefinition
-**70 → 66**, references **9 → 0** — total **332 → 262** differing entries.
+Full matrix **332 → 275** (hover **80 → 37** by the batch's end; definition and
+declaration 72 → 70 each, typeDefinition 70 → 68, references **9 → 0**).  The
+per-class numbers in this record are `--only` runs, which drift ±10 from the
+full matrix (the host warms its caches as the audit proceeds); the full-matrix
+table is the authoritative one.
 
 **The analyzer's expression typing.**  `infer_expr_inner` left these `<error>`,
 so a hover printed `let x: <error>` where the host resolved the type:
@@ -1723,9 +1726,7 @@ renderings (5) and the member-location artifacts, plus the small classes.
 
 ### Track B, third batch (same session): imported methods and builtin fields
 
-Hover **46 → 44**, definition/declaration **67 → 66** each, typeDefinition
-**66 → 65**; the same three member-resolution gaps the second batch's types
-exposed:
+The same three member-resolution gaps the second batch's types exposed:
 
 - **Imported methods** (`vec3.cross`, `mat4.identity`).  The host's
   `methods_for_receiver_type` merges the enclosing module's methods with every
@@ -1743,12 +1744,35 @@ exposed:
   through `ref`/`ptr`/`own` first (`project_pointer_receiver` is public), so a
   field read on a `ref[vec3]` resolves the vector's field.
 
-Measured: hover 46 → 44, definition and declaration 67 → 66, typeDefinition
-66 → 65; the probe fixture `tmp/hover-probe5` 10 → 8; no new diffs anywhere
-(diff-set compared); harness 30/30 + 4; recovery OK; test/mt 60/0; bootstrap
-fixed point + 14/14; cli:parity 23/38/0 with the same diff set; sexpr 705/705 +
-701/0; valgrind clean; the Neovim smoke renders `vec3.cross` and
-`mat4.identity` with their std locations.
+Measured (`--only` runs): hover 46 → 44, definition and declaration 67 → 66,
+typeDefinition 66 → 65; the probe fixture `tmp/hover-probe5` 10 → 8; no new
+diffs anywhere (diff-set compared per entry).  Gates: harness 30/30 + 4;
+recovery OK; test/mt 60/0; bootstrap fixed point + 14/14; cli:parity 23/38/0
+with the same diff set; sexpr 705/705 + 701/0; valgrind clean; the Neovim smoke
+renders `vec3.cross` and `mat4.identity` with their std locations.
+
+### Track B, fourth batch (same session): variant arm constructors
+
+The host's `find_variant_arm_in_types` and `variant_arm_constructor_info`:
+
+- **A bare arm name** (`Result.success(value: T)`, `Primitive.circle(radius:
+  float)`, `MyOption.some(value: T)`) renders `Type.arm(field: T, …)` — the
+  file's declared variants scanned in reverse order, then the prelude variants
+  from std.result / std.option (the host's prelude-installed types), ahead of
+  every name lookup (`variant_arm_name_hover`).
+- **A named argument inside an arm constructor** (`value: T`, `radius: float`)
+  renders `field_name: field_type` with no location, including the generic form
+  `Result[int, int].success(value = 7)` (the `[…]` group before the dot is
+  walked back) and the `Primitive.circle(radius = 2.0)` form
+  (`variant_arm_label_hover`).
+
+Full matrix **275 → 274** (hover 46 → 37 `--only`, 37 in the full matrix);
+definition 70, declaration 70, typeDefinition 68, references 0, the rest
+unchanged.  No new diffs (hover diff sets compared entry by entry).  Gates:
+bootstrap fixed point + 14/14, test/mt 60/0, cli:parity 23/38/0 (same diff set),
+sexpr lex 705/705 + parse 701/0, harness 30/30 + 4 documented entries,
+recovery OK, fixtures unchanged, valgrind clean, Neovim smoke renders
+`Result.success(value: T)` and `value: T`.
 
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
