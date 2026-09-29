@@ -194,9 +194,10 @@ declaration rather than the host's partial node (§0k, session 9).
   token), documentSymbol 5 (host answers are timing-coupled: the module wrapper
   appears only once its module-name index is warm; the self's outline matches
   the unwrapped shape's symbol set), semanticTokens 5 (the streams differ in 676
-  positions, from 952), diagnostic 2 (the two remaining `diagnostic` entries are
-  lint *ordering*: the host interleaves scope/flow/whole-file rules per function,
-  the self is pass-major) — codeLens, workspace/symbol and `implementation`
+  positions, from 952), diagnostic 2 (a *linter* residue, measured in session 13:
+  rule anchors differ and rules are missing — `redundant-unsafe`,
+  `owning-release-leak`; it is not the emission order) — codeLens,
+  workspace/symbol and `implementation`
   closed in session 13.
 
 ## Track C — real-project readiness (what parity alone does not test)
@@ -274,22 +275,48 @@ those entries:
    carry-forward, not a local rule.
 2. **hover's 9, grouped by root cause:**
    - the **nullability** four (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`) — the
-     host prints the *flow-refined* type where the self prints the declared one:
-     the analyzer's flow/continuation refinement (the multi-session plan's Phase 2
-     item 3);
+     host prints the *flow-refined* type where the self prints the declared one,
+     with its completion-snapshot selection deciding which refinement applies at a
+     guard line (a terminating then-branch gives the falsy refinement, a joining
+     branch the declared type).  Emulating it means reproducing the host's
+     control-flow snapshot order — the same carry-forward machinery as item 1;
    - the **destructuring** two (`lb@1861:23`, `lb@1931:25`) and the **match-arm
      payload** (`lb@1915:25`) — stage 11c;
-   - the singletons: a function-typed field's bare `fn ` (`lb@1127:9`, the host's
-     `Types::Function#to_s` — the compiler stages' function-type names item),
-     `type quat`'s cross-file location (`lb@1653:24`), the member chain's third
-     segment (`lb@1958:16`).
-3. **B4's other classes** — documentSymbol 5 (the host's module hierarchy and
-   its token-based symbol extraction), semanticTokens 5 (the import path's
-   `namespace` segment and heredoc string tokens), diagnostic 2 (the lint
-   emission order), codeLens 1, workspace/symbol 1 (the host's per-document
-   token symbols over `all_documents`, no 200 cap).
+   - the function-typed field's bare `fn ` (`lb@1127:9`, the host's
+     `Types::Function#to_s` — the compiler stages' function-type names item) and
+     `type quat`'s cross-file location (`lb@1653:24`: the host's answer depends on
+     its asynchronous definition warmup — see the finding below).
+3. **B4's other classes** — documentSymbol 5 (the host's module hierarchy; its
+   answers are timing-coupled, and the self's unwrapped outline already matches the
+   symbol set) and semanticTokens 5 (676 differing positions, from 952: import-alias
+   receivers, `emit`-expanded declarations, variant payload fields, `typeParameter`
+   renderings, scope-aware binding resolution), then diagnostic 2 — a *linter*
+   residue (see the finding below).
 4. C2 → C3 → C4/C5 (readiness), with the deliberate-difference table in
    `docs/lsp-design.md` §8, then D2/D3 (audit determinism, scoreboard row).
+
+**Findings for the next session.**
+
+- **The hover index fallback is not uniform.**  The host's `resolve_hover_info`
+  falls back to the workspace definition index when it resolves a signature without
+  a `source_location` (and not through a bare member arm) — but porting that
+  fallback for every location-less `resolve_cursor` result is *wrong*: it closed
+  `lb@1653:24` and added five entries (`lb@141:4`, `lb@1757:15`, `mst@141:13`,
+  `main.mt@18:36`, `@18:55`).  The host's answer at those positions depends on its
+  **asynchronous definition warmup** (`enqueue_definition_warmup` runs on a
+  thread), so a hover can precede the warm of the file it would find; the self is
+  deliberately synchronous (the "synchronous facts" deliberate difference of
+  `docs/lsp-design.md` §8), which is exactly the behaviour the residue shows.
+- **`diagnostic` 2 is a linter residue, not emission order.**  On
+  `language_baseline.mt` the host reports 98 items and the self 123: some rules are
+  anchored differently (`redundant-return` 325:4-10 vs the self's 4-5,
+  `redundant-type-annotation` 422:8-12 vs 8-13, `prefer-inline-if` /
+  `prefer-conditional-expression` 474:4-5 vs 474:7-8) and the host reports rules the
+  self lacks.  On `memory_stress_test.mt` (host 10 / self 7) the missing rules are
+  `redundant-unsafe` (×4) and `owning-release-leak`; `owning-release-double`
+  anchors at the binding name (335:33) where the self anchors at the declaration
+  (335:4); the self reports `prefer-own-ptr` (×2) where the host does not.  That is
+  the in-flight plan's linter stages (11/11b) work.
 ## Gates (every commit)
 
 Rebuild with `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o
@@ -375,8 +402,9 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
        unwrapped outline matches the symbol set) and semanticTokens 5 (676
        differing positions left, from 952: import-alias receivers,
        `emit`-expanded declarations, variant payload fields, `typeParameter`
-       renderings, scope-aware binding resolution), then diagnostic 2 (the lint
-       emission order).
+       renderings, scope-aware binding resolution), then diagnostic 2 (a *linter*
+       residue: rule anchors differ and rules are missing — `redundant-unsafe`,
+       `owning-release-leak` — not the emission order).
     4. Then C2–C5 (reference-index memory, note-document caching, the large-file
        soak, client behaviours), the deliberate-difference table in
        docs/lsp-design.md §8, and D2/D3 (audit determinism, scoreboard row).
