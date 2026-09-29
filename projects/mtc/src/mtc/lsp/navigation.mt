@@ -968,6 +968,27 @@ function resolve_keyword_or_builtin_hover(
         Option.none:
             pass
 
+    # A type parameter (`function f[T](…)`, `[T implements I]`, `[N: int]`): the
+    # host's `type_parameter_hover_signature`, whose arm carries no location.
+    match type_parameter_signature(tokens.as_span(), source, matched_index):
+        Option.some as type_param:
+            var type_param_text = type_param.value
+            var type_param_result = quick_hover(type_param_text.as_str())
+            type_param_text.release()
+            return Option[CursorResult].some(value = type_param_result)
+        Option.none:
+            pass
+
+    # A target in an attribute's declaration (`attribute[field] rename(…)`): the
+    # host's `attribute_target_token?` arm.
+    if attribute_target_token(tokens.as_span(), matched_index):
+        var target_text = string.String.create()
+        target_text.append("attribute target ")
+        target_text.append(lexeme)
+        var target_result = quick_hover(target_text.as_str())
+        target_text.release()
+        return Option[CursorResult].some(value = target_result)
+
     return Option[CursorResult].none
 
 
@@ -1123,7 +1144,10 @@ function resolve_cursor(
         if alias_module_ptr != null:
             return resolve_module_reference(ws, read(alias_module_ptr))
 
-    return Option[CursorResult].none
+    # A user-declared attribute (`attribute[callable] traced(tag: str)`): the
+    # host's `facts.attributes` arm, which renders the target list and the
+    # declared parameters and reports the *module's* location.
+    return declared_attribute_hover(ast_file, target.text)
 
 
 ## Hover for the method of a *type* receiver (`Vec[int].create()`): the static
@@ -3399,6 +3423,16 @@ function resolve_local_hover(
     var current_module = resolver.infer_module_name(file_path.as_str(), module_roots.as_span())
     defer: current_module.release()
 
+    # The implicit receiver of an instance method: the analyzer binds `this` in
+    # the method's scope, so a hover on it renders the host's `parameter this:
+    # <receiver> (immutable)`.
+    if name.as_str().equal("this"):
+        match this_receiver_hover(ast_file, target_line, ref_of(analysis), current_module.as_str()):
+            Option.some as this_result:
+                return Option[CursorResult].some(value = this_result.value)
+            Option.none:
+                pass
+
     # 3. The innermost binding that encloses the cursor — the host's scope-aware
     # binding resolution.  Its declaration line comes from the scope bindings, so
     # a same-named local in another function (or an unrelated block) cannot win,
@@ -3520,7 +3554,221 @@ function enclosing_decl_index(file: ast.SourceFile, target_line: ptr_uint) -> Op
     return Option[ptr_uint].none
 
 
+## The index of the token that opens the bracket group enclosing `index` (the
+## host's `enclosing_bracket_opener_index`), counting nesting.
+function enclosing_bracket_opener_index(tokens: span[token_mod.Token], index: ptr_uint) -> Option[ptr_uint]:
+    var depth: int = 0
+    var i: int = int<-index
+    while i >= 0:
+        var tok: token_mod.Token
+        unsafe:
+            tok = read(tokens.data + ptr_uint<-i)
+        if tok.kind == tk.TokenKind.rbracket:
+            depth += 1
+        else if tok.kind == tk.TokenKind.lbracket:
+            if depth == 0:
+                return Option[ptr_uint].some(value = ptr_uint<-i)
+            depth -= 1
+        i -= 1
+    return Option[ptr_uint].none
 
+
+## The previous token index at or before `index - 1` that is not structural
+## (newline/indent/dedent), or none.
+function previous_code_index(tokens: span[token_mod.Token], index: ptr_uint) -> Option[ptr_uint]:
+    var i: int = int<-index - 1
+    while i >= 0:
+        var tok: token_mod.Token
+        unsafe:
+            tok = read(tokens.data + ptr_uint<-i)
+        if not is_structural_token_kind(tok.kind):
+            return Option[ptr_uint].some(value = ptr_uint<-i)
+        i -= 1
+    return Option[ptr_uint].none
+
+
+## The hover for an identifier in a type-parameter list — the host's
+## `type_parameter_hover_signature`: `[T]`, `[T implements I]` and a generic
+## value parameter `[N: int]`.  A `[...]` group the attribute keyword introduces
+## (`attribute[field]`) is a target list, not a type-parameter list.
+function type_parameter_signature(tokens: span[token_mod.Token], source: str, index: ptr_uint) -> Option[string.String]:
+    let opener = enclosing_bracket_opener_index(tokens, index) else:
+        return Option[string.String].none
+    match previous_code_index(tokens, opener):
+        Option.some as before_opener:
+            if token_kind_at(tokens, before_opener.value, tk.TokenKind.tk_attribute):
+                return Option[string.String].none
+        Option.none:
+            pass
+
+    var token: token_mod.Token
+    unsafe:
+        token = read(tokens.data + index)
+    let lexeme = unsafe: token_mod.token_lexeme(token, source)
+    let next_index = next_code_index(tokens, index + 1)
+    let prev_index = previous_code_index(tokens, index)
+
+    match next_index:
+        Option.some as nxt:
+            if token_kind_at(tokens, nxt.value, tk.TokenKind.colon):
+                # Generic value parameter declaration: `[N: int]`.
+                var text = string.String.create()
+                text.append("generic value parameter ")
+                text.append(lexeme)
+                match next_code_index(tokens, nxt.value + 1):
+                    Option.some as value_type:
+                        var value_token: token_mod.Token
+                        unsafe:
+                            value_token = read(tokens.data + value_type.value)
+                        let value_lexeme = unsafe: token_mod.token_lexeme(value_token, source)
+                        text.append(": ")
+                        text.append(value_lexeme)
+                    Option.none:
+                        pass
+                return Option[string.String].some(value = text)
+            if token_kind_at(tokens, nxt.value, tk.TokenKind.tk_implements) and preceded_by_bracket_or_comma(tokens, prev_index):
+                # Constrained declaration: `[T implements Damageable]`.
+                var constrained = string.String.create()
+                constrained.append("type parameter ")
+                constrained.append(lexeme)
+                return Option[string.String].some(value = constrained)
+            if preceded_by_bracket_or_comma(tokens, prev_index) and (token_kind_at(tokens, nxt.value, tk.TokenKind.rbracket) or token_kind_at(tokens, nxt.value, tk.TokenKind.comma)):
+                var plain = string.String.create()
+                plain.append("type parameter ")
+                plain.append(lexeme)
+                return Option[string.String].some(value = plain)
+        Option.none:
+            pass
+    return Option[string.String].none
+
+
+## True when the token before an identifier is its list's `[` or a `,`.
+function preceded_by_bracket_or_comma(tokens: span[token_mod.Token], prev_index: Option[ptr_uint]) -> bool:
+    match prev_index:
+        Option.some as prev:
+            return token_kind_at(tokens, prev.value, tk.TokenKind.lbracket) or token_kind_at(tokens, prev.value, tk.TokenKind.comma)
+        Option.none:
+            return false
+
+
+## True for an identifier inside the target list of an attribute declaration
+## (`attribute[field]`, `attribute[callable]`): the host's
+## `attribute_target_token?`.
+function attribute_target_token(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let opener = enclosing_bracket_opener_index(tokens, index) else:
+        return false
+    match previous_code_index(tokens, opener):
+        Option.some as before_opener:
+            if not token_kind_at(tokens, before_opener.value, tk.TokenKind.tk_attribute):
+                return false
+        Option.none:
+            return false
+    match next_code_index(tokens, index + 1):
+        Option.some as after:
+            return token_kind_at(tokens, after.value, tk.TokenKind.rbracket) or token_kind_at(tokens, after.value, tk.TokenKind.comma)
+        Option.none:
+            return false
+
+
+## The hover for a user-declared attribute's name: the host's
+## `facts.attributes` arm renders `attribute [<targets>] <name>(<params>)` and
+## reports the *module's* location (its file, line 1), not the declaration's.
+function declared_attribute_hover(file: ast.SourceFile, name: str) -> Option[CursorResult]:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_attribute as attr:
+                if attr.name.equal(name):
+                    var hover = string.String.create()
+                    hover.append("attribute [")
+                    var ti: ptr_uint = 0
+                    while ti < attr.targets.len:
+                        if ti > 0:
+                            hover.append(", ")
+                        hover.append(unsafe: read(attr.targets.data + ti))
+                        ti += 1
+                    hover.append("] ")
+                    hover.append(name)
+                    hover.append("(")
+                    var pi: ptr_uint = 0
+                    while pi < attr.attr_params.len:
+                        if pi > 0:
+                            hover.append(", ")
+                        let param = unsafe: read(attr.attr_params.data + pi)
+                        hover.append(param.name)
+                        hover.append(": ")
+                        hover.append(ast_formatter.render_type(param.param_type))
+                        pi += 1
+                    hover.append(")")
+                    return Option[CursorResult].some(value = CursorResult(
+                        line = 1,
+                        column = 0,
+                        name_len = name.len,
+                        hover_text = hover,
+                        docs = string.String.create(),
+                        target_uri = string.String.create(),
+                        from_modules = string.String.create()
+                    ))
+            _:
+                pass
+        di += 1
+    return Option[CursorResult].none
+
+
+## The hover for the implicit receiver of an instance method: the host binds
+## `this` as a parameter of the receiver's type, so a `this` mention renders
+## `parameter this: <receiver> (immutable)`.  The binding exists only inside an
+## `extending Type:` method — a struct's own methods get no completion frame, so
+## the host answers nothing there — and a `static` method has no `this` at all.
+function this_receiver_hover(
+    file: ast.SourceFile,
+    target_line: ptr_uint,
+    analysis: ref[analyzer.Analysis],
+    current_module: str,
+) -> Option[CursorResult]:
+    var receiver_name: str = ""
+    let enclosing = enclosing_decl_index(file, target_line) else:
+        return Option[CursorResult].none
+    var decl: ast.Decl
+    unsafe:
+        decl = read(file.declarations.data + enclosing)
+    match decl:
+        ast.Decl.decl_extending_block as ext:
+            var mi: ptr_uint = 0
+            while mi < ext.methods.len:
+                let method = unsafe: read(ext.methods.data + mi)
+                if method.line <= target_line and method.method_kind != ast.MethodKind.mk_static:
+                    receiver_name = unsafe: read(read(ext.type_name).name.parts.data)
+                mi += 1
+        _:
+            pass
+    if receiver_name.len == 0:
+        return Option[CursorResult].none
+
+    var hover = string.String.create()
+    hover.append("parameter this: ")
+    let receiver_type_ptr = analysis.types.get(receiver_name)
+    if receiver_type_ptr != null:
+        var type_text = type_render.qualified_name(unsafe: read(receiver_type_ptr), current_module)
+        hover.append(type_text.as_str())
+        type_text.release()
+    else:
+        hover.append(receiver_name)
+    hover.append(" (immutable)")
+    var shortened = type_render.shorten_signature(hover.as_str())
+    hover.release()
+    return Option[CursorResult].some(value = CursorResult(
+        line = 0,
+        column = 0,
+        name_len = 4,
+        hover_text = shortened.text,
+        docs = string.String.create(),
+        target_uri = string.String.create(),
+        from_modules = shortened.modules
+    ))
 
 
 ## Token-level heuristic: is this identifier a for-loop binding?
