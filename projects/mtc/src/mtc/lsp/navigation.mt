@@ -46,7 +46,7 @@ public function handle_definition(
     id: json.Value,
 ) -> void:
     # Try module-level resolution first, then fall back to local variables.
-    var result = resolve_cursor(ws, uri, line, character)
+    var result = resolve_cursor(ws, uri, line, character, false)
     if result.is_none():
         result = resolve_local_hover(ws, uri, line, character)
 
@@ -185,7 +185,7 @@ public function handle_hover(
         Option.none:
             pass
 
-    match resolve_cursor(ws, uri, line, character):
+    match resolve_cursor(ws, uri, line, character, true):
         Option.some as res:
             note_hover_definition_file(ws, res.value)
             write_hover_result(ws, id, res.value, uri, hover_token_range)
@@ -1025,6 +1025,11 @@ function resolve_cursor(
     uri: str,
     line: ptr_uint,
     character: ptr_uint,
+    # A definition/declaration request shares this dispatch but not the host's
+    # hover-only arms: a user-declared attribute's name resolves for a hover and
+    # answers nothing for a definition, exactly as the host's separate
+    # definition pipeline does.
+    for_hover: bool,
 ) -> Option[CursorResult]:
     var file_path = uri_ops.file_uri_to_path(uri) else:
         return Option[CursorResult].none
@@ -1155,7 +1160,10 @@ function resolve_cursor(
     # A user-declared attribute (`attribute[callable] traced(tag: str)`): the
     # host's `facts.attributes` arm, which renders the target list and the
     # declared parameters and reports the *module's* location.
-    return declared_attribute_hover(ast_file, target.text)
+    if for_hover:
+        return declared_attribute_hover(ast_file, target.text)
+
+    return Option[CursorResult].none
 
 
 ## Hover for the method of a *type* receiver (`Vec[int].create()`): the static
