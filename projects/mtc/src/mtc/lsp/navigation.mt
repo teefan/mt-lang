@@ -1604,7 +1604,10 @@ function resolve_type_method_hover(
     let signature = decl_signature else:
         target_uri.release()
         return Option[CursorResult].none
-    let decl_line = find_method_line(decl_file, method_name)
+    # The declaration line comes from the *receiver's* type, not the first method
+    # of that name in the file: `dg.release()` on a `DenseGraph[str]` points at
+    # `extending DenseGraph[T]`'s method, not at `extending Graph[T]`'s.
+    let decl_line = find_method_line_in_type(decl_file, receiver.name, method_name)
     if decl_line == 0:
         target_uri.release()
         return Option[CursorResult].none
@@ -2017,7 +2020,10 @@ function resolve_member_method_hover(
     let signature = decl_signature else:
         target_uri.release()
         return Option[CursorResult].none
-    let decl_line = find_method_line(decl_file, method_name)
+    # The declaration line comes from the *receiver's* type, not the first method
+    # of that name in the file: `dg.release()` on a `DenseGraph[str]` points at
+    # `extending DenseGraph[T]`'s method, not at `extending Graph[T]`'s.
+    let decl_line = find_method_line_in_type(decl_file, type_name, method_name)
     if decl_line == 0:
         target_uri.release()
         return Option[CursorResult].none
