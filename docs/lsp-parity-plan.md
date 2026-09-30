@@ -387,6 +387,9 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
       ruby tmp/tok_diff.rb HOST.json SELF.json [WS] [ROWS]   # position-keyed diff
       ruby tmp/tok_groups2.rb HOST.json SELF.json [WS] [ROWS] # grouped by (host,self)
       ruby tmp/host-lsp.sh  # the Ruby host as an `lsp` binary (for lsp_debug.rb --bin)
+      ruby tmp/lsp_ds_probe.rb FILE [BIN]   # one file's documentSymbol payload
+      ruby tmp/ds_compare.rb AUDIT.json FILE SELF.json [ROWS]
+        # the symbol tree's differences against the host's audit payload, order-only separated
     MEASUREMENT RULES: the full matrix is authoritative.  `--only <method>` runs
     drift ±10 per method, and the *host's* answers themselves differ between
     `--only` and full runs for facts-dependent requests (semantic tokens,
