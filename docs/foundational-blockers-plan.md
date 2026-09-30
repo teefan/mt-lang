@@ -312,7 +312,10 @@ Continue the Milk Tea self-host compiler work in /home/teefan/Projects/Ruby/mt-l
     defprobe, crash1, hover-probe2/-3/-4/-5, eventprobe against their
     `tmp/audit-s14f-*.json` baselines with `--compare`.
 
-    Instruments (tmp/, gitignored): `ruby tmp/ds_diff.py AUDIT.json FILE` — the
+    Instruments (tmp/, gitignored): `ruby tmp/lint_table.rb [FILE ...] [--lines]` —
+    the per-rule lint table for any file (both diagnostic files by default, plus
+    the differing lines), the scoreboard's comparison extended to
+    docs/memory_stress_test.mt; `ruby tmp/ds_diff.py AUDIT.json FILE` — the
     per-key documentSymbol payload diff (host vs self) that classified F8.2;
     `tmp/ds_compare.rb`, `tmp/lsp_debug.rb`, `tmp/tok_self.rb` / `tok_ref.rb` /
     `tok_diff.rb`, `tmp/host-lsp.sh`, `tmp/nvim_hover_smoke.lua`, and
@@ -339,10 +342,11 @@ Continue the Milk Tea self-host compiler work in /home/teefan/Projects/Ruby/mt-l
         422:8-12 vs 8-13; `prefer-inline-if` / `prefer-conditional-expression`
         474:4-5 vs 7-8) and, on `docs/memory_stress_test.mt`,
         `owning-release-double` anchored at the binding name (335:33) where the self
-        anchors at the declaration (335:4), the missing `redundant-unsafe` (×4) and
-        `owning-release-leak`, and the extra `prefer-own-ptr` (×2).  One commit per
-        rule group; verify with the scoreboard table on both files and the audit's
-        two diagnostic entries (full matrix, `--compare`, added must be 0).
+        anchors at the declaration (335:4).  Measured on
+        `docs/memory_stress_test.mt` (host 10 / self 7): `owning-release-double` 1/2,
+        `owning-release-leak` 1/0, `prefer-own-ptr` 0/2, `redundant-unsafe` 5/0.  One
+        commit per rule group; verify with `tmp/lint_table.rb` on both files and the
+        audit's two diagnostic entries (full matrix, `--compare`, added must be 0).
 
     F4. **Stage 11c** (3 hover entries + the unused-import residual + the prefer-let
         sweep residue): prelude payload structs + arm bindings to the substituted
