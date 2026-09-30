@@ -149,7 +149,21 @@ outline's function-type details.
 full compiler gate set (this touches the C-backend path indirectly — run the example
 sweeps: `examples/*.mt` 13/15 documented, `examples/sdl3` 34/34, a raylib sample).
 
-## F6 — stage 11d: editable receivers in static extending methods
+## F6 — stage 11d: the generic-context gate for `prefer-let` (DONE, session 15)
+
+**Measured root cause (session 15, 2026-09-30).**  The planned "editable receivers in
+static extending methods" diagnosis was wrong; the divergence on `std/vec.mt` (self 2,
+host 0) and the prefer-let sweep was the *generic-context gate*: the host's
+`allow_prefer_let: var && !generic_function_context?` treats a method inside an
+`extending Type[T]:` block as generic (`extending_block_generic?`), and the self's scope
+pass carried the counter without ever incrementing it.  Landed: `visit_decl` now raises
+`generic_function_depth` for a function with type parameters and for every method of a
+generic extending block.  `std/vec.mt` matches the host; the probe shape reproduces the
+host's set exactly.  The residual prefer-let sweep (self-only 121 over `std/`, host 0) is
+a *ty_error-receiver* residue: the bindings are match-arm payload fields and destructured
+names, so no editable-receiver record exists — F4 (stage 11c) unblocks them.
+
+## F6 (original notes) — stage 11d: editable receivers in static extending methods
 
 `var result = Vec[T].create(); result.reserve(…)` inside `extending Vec[T]:`'s static
 method must resolve `Vec.reserve`'s `editable` kind (host-clean `std/vec.mt`).  Small

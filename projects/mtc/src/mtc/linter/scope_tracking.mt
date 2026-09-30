@@ -1114,6 +1114,9 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[ScopeW
     unsafe:
         match read(decl):
             ast.Decl.decl_function as fun:
+                let generic_body = fun.type_params.len > 0
+                if generic_body:
+                    read(ctx).generic_function_depth += 1
                 ctx_push_scope(ctx)
                 var pi: ptr_uint = 0
                 while pi < fun.method_params.len:
@@ -1122,11 +1125,20 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[ScopeW
                     pi += 1
                 visit_stmt_opt(fun.body, path, warnings, ctx)
                 ctx_pop_scope(ctx, path, warnings)
+                if generic_body:
+                    read(ctx).generic_function_depth -= 1
             ast.Decl.decl_extending_block as ex:
+                # The host's `extending_block_generic?`: a block whose receiver
+                # carries type arguments (`extending Vec[T]:`) makes every method
+                # in it a generic context, exactly as a method's own `[N]` does.
+                let generic_block = read(ex.type_name).arguments.len > 0
                 var j: ptr_uint = 0
                 while j < ex.methods.len:
-                    ctx_push_scope(ctx)
                     let m = read(ex.methods.data + j)
+                    let generic_body = generic_block or m.type_params.len > 0
+                    if generic_body:
+                        read(ctx).generic_function_depth += 1
+                    ctx_push_scope(ctx)
                     var pi: ptr_uint = 0
                     while pi < m.method_params.len:
                         let p = read(m.method_params.data + pi)
@@ -1134,6 +1146,8 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[ScopeW
                         pi += 1
                     visit_stmt(m.body, path, warnings, ctx)
                     ctx_pop_scope(ctx, path, warnings)
+                    if generic_body:
+                        read(ctx).generic_function_depth -= 1
                     j += 1
             ast.Decl.decl_when as w:
                 var bi: ptr_uint = 0

@@ -2244,6 +2244,33 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### Linter stage 11d (2026-09-30 session 15): the generic-context gate for `prefer-let`
+
+`prefer-let` no longer fires on a `var` bound in a generic context.  The host's
+rule is `allow_prefer_let: var && !generic_function_context?`, where a function
+body is generic when the function declares type parameters *or* its enclosing
+`extending` block's receiver carries type arguments (`extending Vec[T]:` —
+the host's `extending_block_generic?`).  The self's scope pass already had the
+counter (`generic_function_depth`) and the gate, but never incremented the
+counter, so every `var` in a generic method was reported: `std/vec.mt` now
+matches the host exactly (0 warnings, was 2), and the probe shape
+(`generic_plain[T]`, `extending Box[T]`, a non-generic extending method, an
+editable receiver) reproduces the host's 5-warning set.
+
+The rest of the prefer-let sweep is *not* this rule: over `std/` the self still
+reports 121 warnings the host does not, and they are dominated by bindings
+whose types the analyzer records as `ty_error` (a match-arm payload field, a
+destructured name) — the editable-receiver record then never fires, because the
+method kind cannot be resolved on an `<error>` receiver.  Stage 11c (F4) is
+what unblocks those.
+
+Measured: the full SimpleGame matrix **18 → 17 differing entries** (closed
+`docs/data_structures.mt`'s documentSymbol — the host wrapped that file in this
+run; added 0; the diagnostic class is unchanged at 2).  Gates: bootstrap fixed
+point + 14/14, `test/mt` 60/0, `cli:parity` 23/38/0, sexpr lex 705/705 + parse
+701/0, the harness 30/30 + the 4 documented entries, the recovery probe OK, the
+lint scoreboard unchanged.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**
