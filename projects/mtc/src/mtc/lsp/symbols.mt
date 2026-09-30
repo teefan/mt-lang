@@ -4,6 +4,7 @@
 
 import std.fmt
 import std.json as json
+import std.path as path_ops
 import std.str
 import std.string as string
 import std.vec as vec
@@ -11,6 +12,7 @@ import std.vec as vec
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
+import mtc.loader.package_manifest as package_manifest
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -75,18 +77,158 @@ public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, 
 
     var json_text = string.String.create()
     defer: json_text.release()
-    json_text.append("[")
+    var symbols_text = string.String.create()
+    defer: symbols_text.release()
+    symbols_text.append("[")
     var first = true
     var di: ptr_uint = 0
     while di < ast_file.declarations.len:
         var decl: ast.Decl
         unsafe:
             decl = read(ast_file.declarations.data + di)
-        emit_declaration_symbol(ref_of(json_text), ref_of(analysis), source, decl, ref_of(first))
+        emit_declaration_symbol(ref_of(symbols_text), ref_of(analysis), source, decl, ref_of(first))
         di += 1
-    append_missing_token_anchors(ref_of(json_text), source, ast_file, ref_of(first))
-    json_text.append("]")
+    append_missing_token_anchors(ref_of(symbols_text), source, ast_file, ref_of(first))
+    symbols_text.append("]")
+
+    # The host wraps the outline in its module hierarchy for a file that lives
+    # under a package root (or the std tree) and whose module name has more than
+    # one segment (`docs/data_structures.mt` -> `docs` -> `data_structures`).
+    match outline_module_name(owned_path.as_str()):
+        Option.some as module_name:
+            append_module_wrapper(ref_of(json_text), module_name.value.as_str(), source, symbols_text.as_str())
+        Option.none:
+            json_text.append(symbols_text.as_str())
     proto.write_response_raw(id, json_text.as_str())
+
+
+## The host's `resolve_outline_module_name`: the document's module name when it
+## has more than one segment and the file lives under a package root (or the
+## `std` tree).  Owned; the caller releases.
+function outline_module_name(path: str) -> Option[string.String]:
+    var relative: Option[string.String] = Option[string.String].none
+    match package_manifest.package_source_root_for_path(path):
+        Option.some as source_root:
+            let root = source_root.value.as_str()
+            if path_starts_with_dir(path, root):
+                relative = Option[string.String].some(value = string.String.from_str(path.slice(root.len + 1, path.len - root.len - 1)))
+            else:
+                let package_dir = path_ops.dirname(root)
+                if path_starts_with_dir(path, package_dir):
+                    relative = Option[string.String].some(value = string.String.from_str(path.slice(package_dir.len + 1, path.len - package_dir.len - 1)))
+        Option.none:
+            pass
+    match relative:
+        Option.some as rel:
+            var owned_rel = rel.value
+            if not path_ends_with_mt(owned_rel.as_str()):
+                owned_rel.release()
+                return Option[string.String].none
+            var name = module_name_from_relative(owned_rel.as_str())
+            owned_rel.release()
+            if module_name_segments(name.as_str()) > 1:
+                return Option[string.String].some(value = name)
+            name.release()
+            return Option[string.String].none
+        Option.none:
+            pass
+    return std_module_name(path)
+
+
+## The module name of a file in the `std/` tree: relative to the `std` directory's
+## parent, so `…/std/vec.mt` is `std.vec`.
+function std_module_name(path: str) -> Option[string.String]:
+    var i: ptr_uint = 0
+    while i < path.len:
+        if path.byte_at(i) == '/' and i + 5 <= path.len and path.slice(i + 1, 4).equal("std/") and i + 5 < path.len:
+            var name = module_name_from_relative(path.slice(i + 1, path.len - i - 1))
+            if module_name_segments(name.as_str()) > 1:
+                return Option[string.String].some(value = name)
+            name.release()
+            return Option[string.String].none
+        i += 1
+    return Option[string.String].none
+
+
+function path_starts_with_dir(path: str, dir: str) -> bool:
+    if dir.len == 0 or path.len <= dir.len + 1:
+        return false
+    if not path.slice(0, dir.len).equal(dir):
+        return false
+    return path.byte_at(dir.len) == '/'
+
+
+function path_ends_with_mt(path: str) -> bool:
+    return path.len > 3 and path.slice(path.len - 3, 3).equal(".mt")
+
+
+## A relative source path as a dotted module name (`docs/data.mt` -> `docs.data`).
+function module_name_from_relative(relative: str) -> string.String:
+    var name = string.String.create()
+    var i: ptr_uint = 0
+    while i < relative.len:
+        let b = relative.byte_at(i)
+        if b == '/':
+            name.push_byte(46)
+        else if b == '.' and i + 3 == relative.len and relative.slice(i, 3).equal(".mt"):
+            break
+        else:
+            name.push_byte(b)
+        i += 1
+    return name
+
+
+function module_name_segments(name: str) -> ptr_uint:
+    var count: ptr_uint = 1
+    var i: ptr_uint = 0
+    while i < name.len:
+        if name.byte_at(i) == '.':
+            count += 1
+        i += 1
+    return count
+
+
+## Wrap the outline in the module hierarchy: one `{name, kind: 2, range,
+## selectionRange, children}` object per module segment, the innermost holding
+## the symbols (the host's `wrap_in_module_hierarchy`; the range is the whole
+## file, its end line the newline count).
+function append_module_wrapper(json_out: ref[string.String], module_name: str, source: str, symbols_text: str) -> void:
+    var segments = vec.Vec[str].create()
+    defer: segments.release()
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i <= module_name.len:
+        if i == module_name.len or module_name.byte_at(i) == '.':
+            segments.push(module_name.slice(start, i - start))
+            start = i + 1
+        i += 1
+
+    var total_lines: ptr_uint = 0
+    var li: ptr_uint = 0
+    while li < source.len:
+        if source.byte_at(li) == '\n':
+            total_lines += 1
+        li += 1
+
+    json_out.append("[")
+    var si: ptr_uint = 0
+    while si < segments.len():
+        let segment = segments.get(si) else:
+            break
+        json_out.append("{\"name\":\"")
+        proto.append_escaped(json_out, unsafe: read(segment))
+        json_out.append("\",\"kind\":2,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":")
+        json_out.append_format(f"#{total_lines}")
+        json_out.append(",\"character\":0}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":")
+        json_out.append_format(f"#{total_lines}")
+        json_out.append(",\"character\":0}},\"children\":[")
+        si += 1
+    json_out.append(symbols_text.slice(1, symbols_text.len - 2))
+    si = 0
+    while si < segments.len():
+        json_out.append("]}")
+        si += 1
+    json_out.append("]")
 
 
 ## The host's outline is anchored on `keyword identifier` token pairs, so a
@@ -122,7 +264,7 @@ function append_missing_token_anchors(
             if name.len > 0 and not anchor_covered(file, name, idt.line):
                 var no_detail = string.String.create()
                 var no_children = vec.Vec[string.String].create()
-                emit_symbol(json_out, name, kind, idt.line, idt.column, no_detail.as_str(), ref_of(no_children), first)
+                emit_symbol(json_out, name, kind, idt.line, idt.column, no_detail.as_str(), ref_of(no_children), false, first)
                 no_detail.release()
         ti += 1
 
@@ -223,30 +365,30 @@ function emit_declaration_symbol(
 ) -> void:
     match decl:
         ast.Decl.decl_function as fun:
-            var children = collect_body_locals(analysis, fun.body)
             var detail = string.String.create()
             append_callable_detail(ref_of(detail), fun.is_const, fun.is_async, fun.return_type)
-            emit_symbol(json_out, fun.name, SYMBOLKIND_FUNCTION, fun.line, fun.column, detail.as_str(), ref_of(children), first)
+            var body_locals = collect_body_locals(analysis, fun.body)
+            emit_symbol(json_out, fun.name, SYMBOLKIND_FUNCTION, fun.line, fun.column, detail.as_str(), ref_of(body_locals.symbols), body_locals.has_declarations, first)
             detail.release()
         ast.Decl.decl_const as c:
-            var children = vec.Vec[string.String].create()
+            var body_locals = BodyLocals(symbols = vec.Vec[string.String].create(), has_declarations = false)
             if c.block_body != null:
-                children = collect_body_locals(analysis, c.block_body)
+                body_locals = collect_body_locals(analysis, c.block_body)
             var detail = string.String.create()
             append_ast_type(ref_of(detail), c.const_type, "")
-            emit_symbol(json_out, c.name, SYMBOLKIND_CONST, c.line, c.column, detail.as_str(), ref_of(children), first)
+            emit_symbol(json_out, c.name, SYMBOLKIND_CONST, c.line, c.column, detail.as_str(), ref_of(body_locals.symbols), body_locals.has_declarations, first)
             detail.release()
         ast.Decl.decl_var as v:
             var detail = string.String.create()
             append_ast_type(ref_of(detail), v.var_type, "")
             var no_children = vec.Vec[string.String].create()
-            emit_symbol(json_out, v.name, SYMBOLKIND_VARIABLE, v.line, v.column, detail.as_str(), ref_of(no_children), first)
+            emit_symbol(json_out, v.name, SYMBOLKIND_VARIABLE, v.line, v.column, detail.as_str(), ref_of(no_children), false, first)
             detail.release()
         ast.Decl.decl_struct as s:
             var children = collect_type_member_children_with_params(analysis, s.name, s.struct_fields, s.struct_events, s.nested_types, s.type_params)
             var detail = string.String.create()
             append_type_decl_detail(ref_of(detail), s.impl_list, null, s.type_params)
-            emit_symbol(json_out, s.name, SYMBOLKIND_STRUCT, s.line, s.column, detail.as_str(), ref_of(children), first)
+            emit_symbol(json_out, s.name, SYMBOLKIND_STRUCT, s.line, s.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
         ast.Decl.decl_union as u:
             var children = collect_field_children(analysis, u.union_fields)
@@ -254,31 +396,31 @@ function emit_declaration_symbol(
             var no_impls = span[ast.QualifiedName]()
             var no_params = span[ast.TypeParam]()
             append_type_decl_detail(ref_of(detail), no_impls, null, no_params)
-            emit_symbol(json_out, u.name, SYMBOLKIND_STRUCT, u.line, u.column, detail.as_str(), ref_of(children), first)
+            emit_symbol(json_out, u.name, SYMBOLKIND_STRUCT, u.line, u.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
         ast.Decl.decl_enum as e:
             var children = collect_enum_children(e.enum_members)
             var detail = string.String.create()
             append_type_decl_detail(ref_of(detail), span[ast.QualifiedName](), e.backing_type, span[ast.TypeParam]())
-            emit_symbol(json_out, e.name, SYMBOLKIND_ENUM, e.line, e.column, detail.as_str(), ref_of(children), first)
+            emit_symbol(json_out, e.name, SYMBOLKIND_ENUM, e.line, e.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
         ast.Decl.decl_flags as fl:
             var children = collect_enum_children(fl.flags_members)
             var detail = string.String.create()
             append_type_decl_detail(ref_of(detail), span[ast.QualifiedName](), fl.backing_type, span[ast.TypeParam]())
-            emit_symbol(json_out, fl.name, SYMBOLKIND_ENUM, fl.line, fl.column, detail.as_str(), ref_of(children), first)
+            emit_symbol(json_out, fl.name, SYMBOLKIND_ENUM, fl.line, fl.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
         ast.Decl.decl_variant as vr:
             var children = collect_variant_children(vr.variant_arms, vr.line)
             prepend_type_parameters(ref_of(children), vr.type_params)
             var detail = string.String.create()
             append_type_decl_detail(ref_of(detail), span[ast.QualifiedName](), null, vr.type_params)
-            emit_symbol(json_out, vr.name, SYMBOLKIND_STRUCT, vr.line, vr.column, detail.as_str(), ref_of(children), first)
+            emit_symbol(json_out, vr.name, SYMBOLKIND_STRUCT, vr.line, vr.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
         ast.Decl.decl_interface as iface:
             var children = collect_interface_children(iface.interface_methods)
             var detail = string.String.create()
-            emit_symbol(json_out, iface.name, SYMBOLKIND_INTERFACE, iface.line, iface.column, detail.as_str(), ref_of(children), first)
+            emit_symbol(json_out, iface.name, SYMBOLKIND_INTERFACE, iface.line, iface.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
         ast.Decl.decl_extending_block as ext:
             var children = collect_extending_children(analysis, ext.methods)
@@ -290,18 +432,18 @@ function emit_declaration_symbol(
                     column = pos.value + 1
                 Option.none:
                     pass
-            emit_symbol(json_out, type_name, SYMBOLKIND_STRUCT, ext.line, column, "implementation", ref_of(children), first)
+            emit_symbol(json_out, type_name, SYMBOLKIND_STRUCT, ext.line, column, "implementation", ref_of(children), false, first)
             no_detail.release()
         ast.Decl.decl_type_alias as ta:
             var detail = string.String.create()
             detail.append("= ")
             append_ast_type(ref_of(detail), ta.target, "")
             var no_children = vec.Vec[string.String].create()
-            emit_symbol(json_out, ta.name, SYMBOLKIND_CLASS, ta.line, ta.column, detail.as_str(), ref_of(no_children), first)
+            emit_symbol(json_out, ta.name, SYMBOLKIND_CLASS, ta.line, ta.column, detail.as_str(), ref_of(no_children), false, first)
             detail.release()
         ast.Decl.decl_opaque as op:
             var no_children = vec.Vec[string.String].create()
-            emit_symbol(json_out, op.name, SYMBOLKIND_STRUCT, op.line, op.column, "", ref_of(no_children), first)
+            emit_symbol(json_out, op.name, SYMBOLKIND_STRUCT, op.line, op.column, "", ref_of(no_children), false, first)
         ast.Decl.decl_event as ev:
             var detail = string.String.create()
             detail.append_format(f"event[#{ev.capacity}]")
@@ -310,14 +452,14 @@ function emit_declaration_symbol(
                 append_ast_type(ref_of(detail), ev.payload_type, "")
                 detail.append(")")
             var no_children = vec.Vec[string.String].create()
-            emit_symbol(json_out, ev.name, SYMBOLKIND_EVENT, ev.line, ev.column, detail.as_str(), ref_of(no_children), first)
+            emit_symbol(json_out, ev.name, SYMBOLKIND_EVENT, ev.line, ev.column, detail.as_str(), ref_of(no_children), false, first)
             detail.release()
         ast.Decl.decl_extern_function as ef:
             var detail = string.String.create()
             append_callable_detail(ref_of(detail), false, false, null)
             var no_children = vec.Vec[string.String].create()
             let column = token_column(source, ef.line, ef.name)
-            emit_symbol(json_out, ef.name, SYMBOLKIND_FUNCTION, ef.line, column, detail.as_str(), ref_of(no_children), first)
+            emit_symbol(json_out, ef.name, SYMBOLKIND_FUNCTION, ef.line, column, detail.as_str(), ref_of(no_children), false, first)
             detail.release()
         ast.Decl.decl_foreign_function as ff:
             var detail = string.String.create()
@@ -325,7 +467,7 @@ function emit_declaration_symbol(
             append_ast_type(ref_of(detail), ff.return_type, "void")
             var no_children = vec.Vec[string.String].create()
             let column = token_column(source, ff.line, ff.name)
-            emit_symbol(json_out, ff.name, SYMBOLKIND_FUNCTION, ff.line, column, detail.as_str(), ref_of(no_children), first)
+            emit_symbol(json_out, ff.name, SYMBOLKIND_FUNCTION, ff.line, column, detail.as_str(), ref_of(no_children), false, first)
             detail.release()
         _:
             pass
@@ -341,6 +483,10 @@ function emit_symbol(
     column: ptr_uint,
     detail: str,
     children: ref[vec.Vec[string.String]],
+    ## Emit an empty `children` array even with no child symbol: the host creates
+    ## the key whenever the body declares a local, a discarded `let _` or a
+    ## destructure included.
+    force_children: bool,
     first: ref[bool],
 ) -> void:
     if not unsafe: read(first):
@@ -360,7 +506,7 @@ function emit_symbol(
         json_out.append(",\"detail\":\"")
         proto.append_escaped(json_out, detail)
         json_out.append("\"")
-    if children.len() > 0:
+    if children.len() > 0 or force_children:
         json_out.append(",\"children\":[")
         var ci: ptr_uint = 0
         while ci < children.len():
@@ -376,7 +522,8 @@ function emit_symbol(
 
 
 ## Emit one child symbol spanning its declaration line (`{line-1,0}-{line,0}`)
-## with the name-token selectionRange.
+## with the name-token selectionRange and the detail *before* the range, as the
+## host's field/event child builders order their keys.
 function render_block_symbol(
     name: str,
     kind: int,
@@ -391,6 +538,36 @@ function render_block_symbol(
     proto.append_escaped(ref_of(result), name)
     result.append("\",\"kind\":")
     result.append_format(f"#{kind}")
+    if detail.len > 0:
+        result.append(",\"detail\":\"")
+        proto.append_escaped(ref_of(result), detail)
+        result.append("\"")
+    result.append(",\"range\":{\"start\":{\"line\":")
+    result.append_format(f"#{lz}")
+    result.append(",\"character\":0},\"end\":{\"line\":")
+    result.append_format(f"#{line}")
+    result.append(",\"character\":0}}")
+    result.append(",\"selectionRange\":")
+    append_span(ref_of(result), lz, cz, cz + name.len)
+    result.append("}")
+    return result
+
+
+## Emit one method child (kind 6): the host's `child_method_symbol` keys its
+## detail *after* the selection range, and its locals follow.
+function render_method_symbol(
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    detail: str,
+) -> string.String:
+    var result = string.String.create()
+    let lz = if line > 0: line - 1 else: 0z
+    let cz = if column > 0: column - 1 else: 0z
+    result.append("{\"name\":\"")
+    proto.append_escaped(ref_of(result), name)
+    result.append("\",\"kind\":")
+    result.append_format(f"#{SYMBOLKIND_METHOD}")
     result.append(",\"range\":{\"start\":{\"line\":")
     result.append_format(f"#{lz}")
     result.append(",\"character\":0},\"end\":{\"line\":")
@@ -402,6 +579,33 @@ function render_block_symbol(
         result.append(",\"detail\":\"")
         proto.append_escaped(ref_of(result), detail)
         result.append("\"")
+    result.append("}")
+    return result
+
+
+## Emit one local declaration (kind 13): the host's `local_decl_symbol` puts the
+## detail before the range and the name-token span in both ranges.
+function render_local_symbol(
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    detail: str,
+) -> string.String:
+    var result = string.String.create()
+    let lz = if line > 0: line - 1 else: 0z
+    let cz = if column > 0: column - 1 else: 0z
+    result.append("{\"name\":\"")
+    proto.append_escaped(ref_of(result), name)
+    result.append("\",\"kind\":")
+    result.append_format(f"#{SYMBOLKIND_VARIABLE}")
+    if detail.len > 0:
+        result.append(",\"detail\":\"")
+        proto.append_escaped(ref_of(result), detail)
+        result.append("\"")
+    result.append(",\"range\":")
+    append_span(ref_of(result), lz, cz, cz + name.len)
+    result.append(",\"selectionRange\":")
+    append_span(ref_of(result), lz, cz, cz + name.len)
     result.append("}")
     return result
 
@@ -447,12 +651,12 @@ function render_arm_symbol(name: str, variant_line: ptr_uint, detail: str) -> st
     result.append(",\"character\":0},\"end\":{\"line\":")
     result.append_format(f"#{variant_line}")
     result.append(",\"character\":0}}")
-    result.append(",\"selectionRange\":")
-    append_span(ref_of(result), lz, 0, name.len)
     if detail.len > 0:
         result.append(",\"detail\":\"")
         proto.append_escaped(ref_of(result), detail)
         result.append("\"")
+    result.append(",\"selectionRange\":")
+    append_span(ref_of(result), lz, 0, name.len)
     result.append("}")
     return result
 
@@ -759,7 +963,7 @@ function collect_interface_children(methods: span[ast.InterfaceMethod]) -> vec.V
         let m = unsafe: read(methods.data + mi)
         var detail = string.String.create()
         append_method_detail(ref_of(detail), m.method_kind, m.is_async, m.return_type)
-        children.push(render_block_symbol(m.name, SYMBOLKIND_METHOD, m.line, m.column, detail.as_str()))
+        children.push(render_method_symbol(m.name, m.line, m.column, detail.as_str()))
         detail.release()
         mi += 1
     return children
@@ -792,11 +996,11 @@ function collect_extending_children(analysis: ref[analyzer.Analysis], methods: s
             proto.append_escaped(ref_of(method_symbol), detail.as_str())
             method_symbol.append("\"")
         var locals = collect_body_locals(analysis, m.body)
-        if locals.len() > 0:
+        if locals.symbols.len() > 0 or locals.has_declarations:
             method_symbol.append(",\"children\":[")
             var li: ptr_uint = 0
-            while li < locals.len():
-                let lp = locals.get(li) else:
+            while li < locals.symbols.len():
+                let lp = locals.symbols.get(li) else:
                     break
                 if li > 0:
                     method_symbol.append(",")
@@ -804,7 +1008,7 @@ function collect_extending_children(analysis: ref[analyzer.Analysis], methods: s
                 li += 1
             method_symbol.append("]")
         method_symbol.append("}")
-        release_symbol_strings(ref_of(locals))
+        release_symbol_strings(ref_of(locals.symbols))
         children.push(method_symbol)
         detail.release()
         mi += 1
@@ -826,51 +1030,85 @@ function append_method_detail(
     append_ast_type(target, return_type, "void")
 
 
+## A body's local declarations: the child symbols and whether the body declared
+## any local at all (the host creates the `children` key for the latter, even a
+## discarded `let _` or a destructure that produces no symbol).
+struct BodyLocals:
+    symbols: vec.Vec[string.String]
+    has_declarations: bool
+
+
 ## The locals declared in a function/method body (kind 13, name-token range).
-function collect_body_locals(analysis: ref[analyzer.Analysis], body: ptr[ast.Stmt]?) -> vec.Vec[string.String]:
+function collect_body_locals(analysis: ref[analyzer.Analysis], body: ptr[ast.Stmt]?) -> BodyLocals:
     var children = vec.Vec[string.String].create()
+    var declared = false
     let b = body else:
-        return children
-    collect_stmt_locals(analysis, unsafe: read(b), ref_of(children))
-    return children
+        return BodyLocals(symbols = children, has_declarations = false)
+    collect_stmt_locals(analysis, unsafe: read(b), ref_of(children), ref_of(declared))
+    return BodyLocals(symbols = children, has_declarations = declared)
 
 
-function collect_stmt_locals(analysis: ref[analyzer.Analysis], stmt: ast.Stmt, children: ref[vec.Vec[string.String]]) -> void:
+function collect_stmt_locals(analysis: ref[analyzer.Analysis], stmt: ast.Stmt, children: ref[vec.Vec[string.String]], declared: ref[bool]) -> void:
     match stmt:
         ast.Stmt.stmt_block as blk:
             var si: ptr_uint = 0
             while si < blk.statements.len:
-                collect_stmt_locals(analysis, unsafe: read(blk.statements.data + si), children)
+                collect_stmt_locals(analysis, unsafe: read(blk.statements.data + si), children, declared)
                 si += 1
         ast.Stmt.stmt_local as loc:
+            unsafe: read(declared) = true
             if loc.name.len > 0 and loc.name != "_":
                 var detail = string.String.create()
                 append_local_type(ref_of(detail), analysis, loc.stmt_type, loc.value)
-                children.push(render_name_span_symbol(loc.name, SYMBOLKIND_VARIABLE, loc.line, loc.column, detail.as_str()))
+                children.push(render_local_symbol(loc.name, loc.line, loc.column, detail.as_str()))
                 detail.release()
         ast.Stmt.stmt_if as iff:
             var ib: ptr_uint = 0
             while ib < iff.branches.len:
                 let branch = unsafe: read(iff.branches.data + ib)
-                collect_stmt_locals(analysis, unsafe: read(branch.body), children)
+                collect_stmt_locals(analysis, unsafe: read(branch.body), children, declared)
                 ib += 1
             if iff.else_body != null:
-                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-iff.else_body), children)
+                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-iff.else_body), children, declared)
         ast.Stmt.stmt_while as w:
             if w.body != null:
-                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-w.body), children)
+                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-w.body), children, declared)
         ast.Stmt.stmt_for as f:
             if f.body != null:
-                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-f.body), children)
+                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-f.body), children, declared)
         ast.Stmt.stmt_match as m:
             var ai: ptr_uint = 0
             while ai < m.arms.len:
                 let arm = unsafe: read(m.arms.data + ai)
                 if arm.body != null:
-                    collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-arm.body), children)
+                    collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-arm.body), children, declared)
                 ai += 1
+        ast.Stmt.stmt_unsafe as uns:
+            if uns.body != null:
+                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-uns.body), children, declared)
+        ast.Stmt.stmt_defer as dfr:
+            if dfr.body != null:
+                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-dfr.body), children, declared)
+        ast.Stmt.stmt_when as whn:
+            var wi: ptr_uint = 0
+            while wi < whn.branches.len:
+                collect_stmt_span_locals(analysis, unsafe: read(whn.branches.data + wi).body, children, declared)
+                wi += 1
+            if whn.else_body != null:
+                collect_stmt_locals(analysis, unsafe: read(ptr[ast.Stmt]<-whn.else_body), children, declared)
+        ast.Stmt.stmt_parallel_block as pb:
+            collect_stmt_span_locals(analysis, pb.bodies, children, declared)
+        ast.Stmt.stmt_error_block as eb:
+            collect_stmt_locals(analysis, unsafe: read(eb.body), children, declared)
         _:
             pass
+
+
+function collect_stmt_span_locals(analysis: ref[analyzer.Analysis], stmts: span[ast.Stmt], children: ref[vec.Vec[string.String]], declared: ref[bool]) -> void:
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        collect_stmt_locals(analysis, unsafe: read(stmts.data + si), children, declared)
+        si += 1
 
 
 ## A local's type text: the annotated type, else the analyzer's short form.

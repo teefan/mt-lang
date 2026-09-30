@@ -299,12 +299,14 @@ those entries:
      `Types::Function#to_s` — the compiler stages' function-type names item) and
      `type quat`'s cross-file location (`lb@1653:24`: the host's answer depends on
      its asynchronous definition warmup — see the finding below).
-3. **B4's other classes** — documentSymbol 5 (the host's module hierarchy; its
-   answers are timing-coupled, and the self's unwrapped outline already matches the
-   symbol set) and semanticTokens 5 (676 differing positions, from 952: import-alias
-   receivers, `emit`-expanded declarations, variant payload fields, `typeParameter`
-   renderings, scope-aware binding resolution), then diagnostic 2 — a *linter*
-   residue (see the finding below).
+3. **B4's other classes** — documentSymbol 5 (session 14 saw the wrapper and the
+   key order ported — `outline_module_name` + `append_module_wrapper`, and the
+   emitters matching the host's per-shape order; what is left is the *enrichment*:
+   the extending block's symbol merge and `rl.Color` naming, the locals'
+   flow-refined types, the `when`-branch declarations, the function-type
+   rendering) and semanticTokens **1** (5 positions: `callable_value_identifier_sites`,
+   `callable_field_member_access?`, `dot_nested_type_member?`), then diagnostic 2 —
+   a *linter* residue (see the finding below).
 4. C2 → C3 → C4/C5 (readiness), with the deliberate-difference table in
    `docs/lsp-design.md` §8, then D2/D3 (audit determinism, scoreboard row).
 
@@ -452,13 +454,20 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
          not a `method` — needs the receiver's resolved type plus the field type;
        - `dot_nested_type_member?` (`Rectangle.Edge` 1962:29): a nested type name
          renders `type` — needs a nested-type-name table per struct.
-    3. **documentSymbol 5** — the host's answers are *timing-coupled*: it wraps the
-       outline in a module hierarchy (`docs` → file) only once its module-name
-       index is warm, so a file alternates between wrapped and unwrapped shapes
-       between runs.  The self's existing outline matches the unwrapped shape's
-       symbol set exactly (118 symbols, same names and kinds, on
-       data_structures.mt); the differences are in `children` details and the
-       wrapper.
+    3. **documentSymbol 5** — the wrapper and the key order are ported (session 14):
+       `outline_module_name` + `append_module_wrapper` mirror the host's
+       `resolve_outline_module_name`, and the emitters now match the host's
+       per-shape key order (detail before range for fields/events/arms/locals,
+       after the selection range for methods), with locals in every block and the
+       empty `children` key a discarded `let _` creates.  `docs/data_structures.mt`
+       is byte-equal whenever the host wraps it; the host answered it *flat* in
+       this run (its first-file artifact: the warm documentSymbol request precedes
+       the loader's module-name resolution and the flat result is cached), so the
+       counter stayed 5.  What is left is the host's *enrichment*: the extending
+       block's symbol merge (the host folds its methods into the type's symbol and
+       names the receiver `rl`, not `Color`), the locals' flow-refined types (the
+       nullability family), the `when`-branch declarations, and the function-type
+       rendering in a local's detail.
     4. **diagnostic 2** — a *linter* residue, not emission order: anchors differ
        (`redundant-return` 325:4-10 vs the self's 4-5, `redundant-type-annotation`
        422:8-12 vs 8-13, `prefer-inline-if` / `prefer-conditional-expression`

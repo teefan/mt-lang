@@ -2195,6 +2195,46 @@ added); the differing positions **676 → 5**.  Gates: bootstrap fixed point + 1
 recovery probe OK, the fixtures at their session baselines with 8 entries closed and none
 added, valgrind 0 errors over the LSP drive, the headless-Neovim smoke.
 
+### Track B, seventeenth batch (2026-09-30 session 14, continued): the outline's module wrapper and key order
+
+`documentSymbol`'s five entries were next, and the first finding corrects the record:
+the host's module-hierarchy wrapper is **not** timing-coupled per se.  Across full runs
+the `docs/*` files were wrapped every time and the `src/*` files never were (their
+module names are a single segment), while `docs/data_structures.mt` — the *first* file
+audited, whose warm `documentSymbol` request runs before the loader has resolved the
+file's module name, and whose answer the host then serves from its
+(content-hash, facts-id) outline cache — alternated between wrapped and flat.  A file's
+answer is stable once its facts exist; only the run's first file races.
+
+Port:
+
+1. **The module wrapper** (`lsp/symbols.mt`): `outline_module_name` mirrors the host's
+   `resolve_outline_module_name` — the document's module name only when the path lives
+   under a package root (`package_manifest.package_source_root_for_path`: the source
+   root first, else the package directory) or the `std/` tree, and only when the name
+   has more than one segment; `append_module_wrapper` nests the outline in one
+   `{name, kind: 2, range: whole file, selectionRange, children}` object per segment,
+   the file range's end line being the newline count.
+2. **The host's key order** — the audit compares raw JSON, so the emitters must match
+   the host's per-shape hash order: fields, events, variant arms and locals put
+   `detail` *before* `range` (the host's `child_field_symbol` / `local_decl_symbol`),
+   while methods keep it after `selectionRange` (the host's `child_method_symbol`);
+   `render_method_symbol` and `render_local_symbol` join `render_block_symbol`.
+3. **Locals in every block**: `collect_stmt_locals` descends into `unsafe`, `defer`,
+   `when` and error blocks (and `parallel` bodies) too, and a body that declares *any*
+   local — a discarded `let _`, a destructure — gets an empty `children` array exactly
+   where the host creates the key (`BodyLocals.has_declarations`).
+
+Measured: `docs/data_structures.mt`'s documentSymbol payload is byte-equal to the
+host's whenever the host wraps that file (this run's host answered it *flat* — the
+cold-start cache artifact above — so the class counter stayed 5); the other four
+entries need the *enrichment* (the extending block's symbol merge and `rl.Color`
+naming, the locals' flow-refined types, the `when`-branch declarations, the
+function-type rendering).  Gates: bootstrap fixed point + 14/14, `test/mt` 60/0,
+`cli:parity` 23/38/0, sexpr 705/705 + 701/0, the harness 30/30 + 4 documented entries,
+recovery probe OK, the fixtures unchanged (8 closed overall, none added), valgrind 0
+errors, the Neovim smoke.
+
 **Next**: the three residue shapes above, then hover's 9 (the nullability four print the
 host's *flow-refined* type — its snapshot selection at a guard line; the destructuring
 two + the match-arm payload are stage 11c; the `fn ` rendering is the compiler stages'
