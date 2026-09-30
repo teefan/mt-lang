@@ -12,7 +12,7 @@ lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
 > `compare`, `--stress`) drives an out-of-process corpus of 55 requests — every
 > endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a
 > real editor makes — and 15 adversarial probes, and diffs normalized responses.
-> As of 2026-09-29 (session 12 close) it reports 30/30 capability keys identical
+> As of 2026-09-30 (session 16 close) it reports 30/30 capability keys identical
 > and **4 differing entries**, all deliberate and documented (the host hanging on
 > a malformed frame, the host's facts lag, and two "at least as good"
 > extensions) — every differing entry is catalogued by family in
@@ -27,14 +27,16 @@ lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
 > The LSP test suite (`test/tooling/lsp/server/*`) still spawns the *Ruby* server
 > (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
 > so CI alone does not exercise `build/stage2/mtc lsp`.
-Hover coverage: measured by the project audit — 9 differing entries of 915
-hover requests on the SimpleGame corpus (session 14; `self-host-plan.md` §0k).
+Hover coverage: measured by the project audit — 2 differing entries of 915
+hover requests on the SimpleGame corpus (session 16: the `fn `-typed field
+`lb@1127:9`, which needs the compiler stages' function-type names, and the
+documented asynchronous `type quat` location; `self-host-plan.md` §0k).
 References: cross-file via workspace index.
 Definition: local variables supported.
 Signature help: methods and extending-block methods resolved.
 Diagnostic positions: lexer-based token matching, buffer-overflow fix.
 LSP logging: structured stderr with version+revision announcement.
-Snapshot semantic tokens: parity with Ruby on language_baseline.mt after decorator/enum-member/struct-body fixes; the live `semanticTokens` streams differ in 5 positions of 13576 (session 14).
+Snapshot semantic tokens: byte-identical to Ruby on `docs/language_baseline.mt` (session 16: the callable-value record plus the nested-type and callable-field rules closed the last five positions); the audit's `semanticTokens` class is 0.
 Formatting: `textDocument/formatting` + `rangeFormatting` byte-equal (mode from
 the client configuration, `tidy` by default; `rangeFormatting` formats the
 requested segment), backed by `formatter/cst.mt` + `formatter/tidy.mt`.
