@@ -27,10 +27,10 @@ lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
 > The LSP test suite (`test/tooling/lsp/server/*`) still spawns the *Ruby* server
 > (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
 > so CI alone does not exercise `build/stage2/mtc lsp`.
-Hover coverage: measured by the project audit — 2 differing entries of 915
-hover requests on the SimpleGame corpus (session 16: the `fn `-typed field
-`lb@1127:9`, which needs the compiler stages' function-type names, and the
-documented asynchronous `type quat` location; `self-host-plan.md` §0k).
+Hover coverage: measured by the project audit — 1 differing entry of 915 hover
+requests on the SimpleGame corpus (session 16 close: the documented asynchronous
+`type quat` location; the `fn `-typed field closed with the function-type names;
+`self-host-plan.md` §0k).
 References: cross-file via workspace index.
 Definition: local variables supported.
 Signature help: methods and extending-block methods resolved.
