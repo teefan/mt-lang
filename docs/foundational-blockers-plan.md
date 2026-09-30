@@ -262,119 +262,158 @@ sessions), `F9` last.  One commit per item; docs + ledger synced in each.
 
 ## Session prompt (copy-paste)
 
+Session 16 continues the plan with F3 (diagnostic 2), F4 (the payload/destructure
+bindings), F5 (function-type names) and F7 (the callable-value record), then F8's
+LSP-only closures; the identical copy lives in the multi-session ledger
+`~/.commandcode/plans/finish-self-host-full-parity.md` ("Session 16 prompt") and
+carries the measured residue lists per entry.
+
 ```
 Continue the Milk Tea self-host compiler work in /home/teefan/Projects/Ruby/mt-lang
     (branch `selfhost`). Rebuild before measuring:
       ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 
-    Read first: docs/foundational-blockers-plan.md (the focused plan — the ranked
-    blockers F1–F9; a copy is at ~/.commandcode/plans/foundational-blockers-plan.md),
-    then ~/.commandcode/plans/finish-self-host-full-parity.md (the multi-session
-    ledger + the session-14 log), docs/self-host-plan.md §0k ("Track B, sixteenth
-    and seventeenth batch" for the current LSP residue), docs/lsp-parity-plan.md,
-    and AGENTS.md's "Self-Host Parity Program" section (gates, drift, fixtures).
+    Read first: docs/foundational-blockers-plan.md (the focused plan — F1, F2 and F6
+    landed in session 15; F3, F4, F5 and F7 remain, then F8's LSP-only closures and
+    F9), then ~/.commandcode/plans/finish-self-host-full-parity.md (the multi-session
+    ledger — "Session 15" and its close carry the per-entry evidence), then
+    docs/self-host-plan.md §0k ("The nullability continuation refinement", "The real
+    control-flow graph", "Linter stage 11d" — the session-15 records),
+    docs/lsp-parity-plan.md, and AGENTS.md's "Self-Host Parity Program" section
+    (gates, drift, fixtures).
 
-    This session is a COMPILER-STAGES session (analyzer/linter) with LSP
-    verification: 12 of the 18 LSP audit entries are analyzer/linter facts the LSP
-    only measures.  State at session-14 close: the SimpleGame full matrix (6456
-    entries) is at 18 differ — hover 9, documentSymbol 5, diagnostic 2,
-    documentHighlight 1, semanticTokens 1 (its streams differ in 5 positions of
-    13576); definition/declaration/typeDefinition/implementation/references,
-    codeLens and workspace/symbol are 0.  Everything else green: the harness 30/30
-    + the 4 documented entries; recovery probe OK; cli:parity 23/38/0; sexpr lex
-    705/705 and parse 701 comparable / 0 differ; unused-import 609/608 (the
+    State at session-15 close (F6 `a689d176`, F1 `c030fe16`, F2 `c295db50`): the
+    SimpleGame full matrix (6456 entries) is at **13 differ** — hover 5,
+    documentSymbol 4, diagnostic 2, documentHighlight 1, semanticTokens 1 (its
+    streams differ in 5 positions of 9509, all in `docs/language_baseline.mt`);
+    definition/declaration/typeDefinition/implementation/references, codeLens and
+    workspace/symbol are 0.  Everything else green: the harness 30/30 + the 4
+    documented entries; recovery probe OK; cli:parity 23/38/0; sexpr lex and parse
+    0 differ (the file count drifts with the harness's tmp fixtures — quote the
+    differ count); `lower -q -j 16` 39 match / 614 differ / 51 host-rejected / 2
+    self-rejected (the 2 are the *pre-existing* `projects/stress` guarded-`Result`
+    pair — quote the set, not just the count); unused-import 609/608 (the
     async_network_lobby residual — F4 should close it); bootstrap fixed point +
-    14/14; test/mt 60/0; the probe fixtures unchanged.
+    14/14; test/mt 60/0; every probe fixture unchanged (closed 0, added 0);
+    valgrind 0 errors over an LSP drive; the headless-Neovim smoke.  Lint scoreboard
+    on `examples/language_baseline.mt`: host 98 / self 123 warnings, 9 rules with
+    count mismatches.
 
     STEP 1 — re-measure before touching anything (in the background):
       ruby tools/lsp_project_audit.rb --workspace /home/teefan/Projects/MilkTea/SimpleGame \
-        --json tmp/audit-s15.json --max-diffs 0 --timeout 60     # ~14 min
-      ruby tools/lsp_audit_diffs.rb tmp/audit-s15.json
+        --json tmp/audit-s16.json --max-diffs 0 --timeout 60     # ~14 min
+      ruby tools/lsp_audit_diffs.rb tmp/audit-s16.json
       rake "parity:scoreboard"          # the per-rule lint table (F3's baseline)
       ruby tools/unused_import_parity.rb    # ~20 min, start it early
-    Expect 18 differ with the same class split (the documentSymbol wrapper race can
-    move data_structures by one entry; the token positions are 5).  Fast fixtures
-    (no regressions): tmp/probe-ws, probe2 (7 diffs), probe4–probe6, fieldprobe,
-    thisprobe, defprobe, crash1, hover-probe2/-3/-4/-5, eventprobe — compare with
-    `ruby tools/lsp_audit_diffs.rb --compare tmp/audit-s14-<ws>.json <new>`.
+    Expect 13 differ with the same class split (the host's first-file documentSymbol
+    wrapper race can move `docs/data_structures.mt` by one entry between runs).
+    Fast fixtures: `bash tmp/fixtures_sweep.sh` (re-create it if tmp/ was cleaned)
+    compares probe-ws, probe2 (7 diffs), probe4–probe6, fieldprobe, thisprobe,
+    defprobe, crash1, hover-probe2/-3/-4/-5, eventprobe against their
+    `tmp/audit-s14f-*.json` baselines with `--compare`.
 
-    STEP 2 — the blockers, in order (one commit each; the plan has the host and self
-    references and the per-item evidence):
+    Instruments (tmp/, gitignored): `ruby tmp/ds_diff.py AUDIT.json FILE` — the
+    per-key documentSymbol payload diff (host vs self) that classified F8.2;
+    `tmp/ds_compare.rb`, `tmp/lsp_debug.rb`, `tmp/tok_self.rb` / `tok_ref.rb` /
+    `tok_diff.rb`, `tmp/host-lsp.sh`, `tmp/nvim_hover_smoke.lua`, and
+    `/tmp/mtc-vg-s14.sh` (the valgrind wrapper — refresh its log path).  HARD RULE
+    from session 15: never edit or rebuild while a gate runs — a mid-audit rebuild
+    yields a mixed-binary audit that must be discarded and re-run.
 
-    F1. **The real control-flow graph** (`projects/mtc/src/mtc/semantic/control_flow/`):
-        extend the binding-ID pre-scan into the host's graph
-        (`lib/milk_tea/core/control_flow/builder.rb`: nodes with read/write sets,
-        successor edges with refinement labels, break/continue targets,
-        `add_null_test_refinements`) + a `Dataflow.solve`-shaped solver.  Keep
-        `build_cfg_into`'s behaviour for the linter's callers.  Unit tests per shape.
+    STEP 2 — the residue, in the plan's order; the ledger's session-15 close has the
+    measured evidence for every entry and the plan sections carry the host
+    references.
 
-    F2. **Nullability continuation refinement** (closes hover's nullability four,
-        documentHighlight's survivor, documentSymbol's refined locals, `lower` item
-        14): port `control_flow/nullability_flow.rb` (intersection join, edge
-        transfer) and apply the non-null set before each statement's check, the
-        analogue of `semantic_analyzer/nullability.rb:69-90`.  The refined types must
-        reach the same records the LSP reads.  Verify with `sexpr_parity lower -q`
-        and then the FULL LSP matrix (`--compare`, added must be 0) — the hover
-        entries at `mst@25:7`, `@28:20`, `@205:7`, `@404:7` and
-        `lb@704:67` are the target.
+    F3. **Linter stages 11 + 11b** (closes diagnostic 2 — the class compares whole
+        files, so *every* rule must agree on `docs/language_baseline.mt` and
+        `docs/memory_stress_test.mt`).  Measured self/host counts on
+        `examples/language_baseline.mt`: `dead-assignment` 16/0 (the firing set:
+        exclude `:call_argument`/`:declaration` write origins, require
+        `readable_bindings` + `locally_declared`, key liveness by binding id — F1's
+        graph carries the write sites and their origins now), `redundant-unsafe`
+        0/1, `prefer-is-variant` 3/0, `prefer-own-ptr` 2/0,
+        `redundant-type-annotation` 2/1, `prefer-inline-if` 2/1,
+        `prefer-conditional-expression` 7/6, `reserved-primitive-name` 1/0,
+        `unused-local` 25/24; plus the anchor mismatches (`redundant-return`
+        325:4-10 vs 4-5 — the span, not the count; `redundant-type-annotation`
+        422:8-12 vs 8-13; `prefer-inline-if` / `prefer-conditional-expression`
+        474:4-5 vs 7-8) and, on `docs/memory_stress_test.mt`,
+        `owning-release-double` anchored at the binding name (335:33) where the self
+        anchors at the declaration (335:4), the missing `redundant-unsafe` (×4) and
+        `owning-release-leak`, and the extra `prefer-own-ptr` (×2).  One commit per
+        rule group; verify with the scoreboard table on both files and the audit's
+        two diagnostic entries (full matrix, `--compare`, added must be 0).
 
-    F3. **Linter stages 11 + 11b** (closes diagnostic 2): `dead-assignment`'s firing
-        set on F1's graph (exclude `:call_argument`/`:declaration` origins, require
-        `readable_bindings` + `locally_declared`, key liveness by binding id; host
-        `lib/milk_tea/tooling/linter/flow_rules.rb:6-37`), then the per-rule table on
-        `language_baseline.mt` AND `memory_stress_test.mt`: anchors
-        (`redundant-return` 325:4-10, `redundant-type-annotation` 422:8-12,
-        `prefer-inline-if`/`prefer-conditional-expression` 474:4-5,
-        `owning-release-double` at the binding name), missing rules
-        (`redundant-unsafe` ×4, `owning-release-leak`, `constant-condition` — the
-        codes exist, re-measure the triggers), extra (`prefer-own-ptr` ×2).
+    F4. **Stage 11c** (3 hover entries + the unused-import residual + the prefer-let
+        sweep residue): prelude payload structs + arm bindings to the substituted
+        payload struct (host `Types::VariantArmPayload`, `statements.rb:800-850`) +
+        typed destructure bindings (`check_local`'s destructure arm; do NOT repeat
+        the reverted bind-to-T model) + a per-name type record the LSP's hover and
+        outline read (`navigation.mt` `local_type_at_line`, `symbols.mt`).
+        Targets: `lb@1861:23` and `lb@1931:25` (the destructuring two — the self
+        prints `let b` with no type), `lb@1915:25` (the match-arm payload — host
+        `local p: Option[(str, str)].some payload (mutable)`, self null);
+        `examples/async_network_lobby.mt`'s unused-import residual; and the
+        prefer-let sweep over `std/` (self-only 121, host 0 — dominated by
+        `ty_error` receivers, i.e. these same bindings).
 
-    F6. **Stage 11d** (small, can go first): editable receivers in generic/static
-        extending methods (`var result = Vec[T].create(); result.reserve(…)` inside
-        `extending Vec[T]:`); verify on `std/vec.mt` + the prefer-let sweep.
-
-    F4. **Stage 11c** (closes hover's destructuring two + match-arm payload, the
-        async_network_lobby unused-import, prefer-let deltas): prelude payload
-        structs + arm bindings to the substituted payload struct (host
-        `Types::VariantArmPayload`, `statements.rb:800-850`) + typed destructure
-        bindings (`check_local`'s destructure arm; do NOT repeat the reverted
-        bind-to-T model) + a per-name type record the LSP's hover/outline read
-        (`navigation.mt` `local_type_at_line`, `symbols.mt`).
-
-    F5. **Function-type names** (Phase 2 item 5; closes hover's `fn `): add `name` to
-        `ty_function`, thread it, set it from the callee, render it in `sexpr.mt:552`;
+    F5. **Function-type names** (the `lb@1127:9` hover and the outline's
+        function-type details): the host prints `field check: fn ` where the self
+        prints `field check: fn(int) -> bool`, and the outline shows the same shape
+        (`= fn(int) -> void` vs the self's `= fn(value: int) -> void` on
+        `IntCallback`).  Add `name` to `ty_function`, thread it through every
+        constructor/matcher, set it from the callee, render it in `sexpr.mt:552`;
         then the LSP renders `fn ` like the host's `Types::Function#to_s`.
 
-    F7. **Callable-value record** (2 of semanticTokens' 5 positions): record the site
-        where a bare function name is used as a value with an expected function type
-        (`argument_inference_type`, `analyzer.mt:4118`), expose it on `Analysis`, and
-        make the token scanner require it for `function`.
+    F7. **The callable-value record** (2 of the 5 token positions): the host renders
+        a bare function name `function` only where its analyzer recorded a
+        callable-value site; the self's scanner says `function` for any name in
+        `facts.functions`.  Measured pairs — `identity` 275:40 (inside
+        `callable_of(identity)`: `callable_of` is a *parser-level* builtin in the
+        self, so it needs its own hook) and `add` 1099:41 (a proc-parameter read the
+        self resolves against the top-level `add`) both read host `variable:0` /
+        self `function:0`.
 
-    Then, in LSP-only follow-up commits: the scanner's
-    `callable_field_member_access?` + `dot_nested_type_member?` (closes
-    semanticTokens), the documentSymbol enrichment (the extending-block merge /
-    `rl.Color` naming / the `when`-branch declarations), the hover/outline consumers
-    of F4's records, and F9's readiness items (ScanFacts release, the reference
-    index's text bound, `note_document_tokens` caching).
+    Then, one commit each, the LSP-only closures (F8; F2's machinery is the base):
+        the scanner's `callable_field_member_access?` (`check` 1127:9, `invoke`
+        1160:13 — host `property`, self `method`; needs the receiver's resolved type
+        plus the field's function type) and `dot_nested_type_member?` (`Edge`
+        1962:29 — host `type`, self `enumMember`; a nested-type-name table per
+        struct), which together close semanticTokens 1; the documentSymbol
+        enrichment (4 entries, four measured causes — the `extending`-block symbol
+        merge with the receiver named as written in `src/colors.mt`; inline methods
+        as struct children, where `src/node.mt` emits a second top-level `Node` and
+        `docs/language_baseline.mt` a second `Vec2` while the host folds them in and
+        lists `create`/`destroy`/`length_sq`; the locals' flow-refined `detail` in
+        `docs/memory_stress_test.mt` — `Analysis.flow_types` plus a
+        `flow_type_at`-style lookup in `symbols.mt`; and the function-type detail
+        rendering plus the `emit`-expanded declarations' position in
+        `docs/language_baseline.mt`); and the documentHighlight survivor
+        (`lb@704:67` — the host's carried-forward snapshot binding;
+        `navigation.flow_type_at` already implements the recording-order scan, the
+        region-based binding resolution is the gap).  F9's readiness items
+        (ScanFacts release, the reference index's text bound, `note_document_tokens`
+        caching) close the session if budget remains.
 
     GATES for every commit: tools/bootstrap.sh -j 16 (fixed point + 14/14),
-    build/stage2/mtc test test/mt -I . (60/0), rake "cli:parity" (23/38/0),
-    ruby tools/sexpr_parity.rb lex -q (705/705) and parse -q (701/0) and — for the
-    lowering-touching items — lower -q -j 16,
+    build/stage2/mtc test test/mt -I . (60/0), rake "cli:parity" (23/38/0 with the
+    same diff *set*), ruby tools/sexpr_parity.rb lex -q and parse -q (0 differ) and
+    — for lowering-touching items — lower -q -j 16 (39/614/51/2, the *set*),
     ruby tools/unused_import_parity.rb (609/608, start it early),
     rake "parity:scoreboard" (the per-rule lint table where F3 moves),
     ruby tools/lsp_parity.rb record/compare (30/30 + the 4 documented entries),
-    ruby tools/lsp_recovery_probe.rb --check, the probe fixtures, and the FULL LSP
+    ruby tools/lsp_recovery_probe.rb --check, the fixture sweep, and the FULL LSP
     matrix for any item that should move the audit (never `--only` for
     facts-dependent classes; verify with lsp_audit_diffs.rb --compare — added must
     be 0).  C-backend-touching changes also get the example sweeps: examples/*.mt
     13/15 (the 2 async aborts documented), examples/sdl3 34/34, a raylib sample.
-    Behaviour changes get valgrind on the touched path + the headless-Neovim smoke
-    (`nvim --headless -u NONE -l tmp/nvim_hover_smoke.lua <binary> <file> <line> <col>`).
-    Sync docs/self-host-plan.md, docs/lsp-design.md, docs/lsp-parity-plan.md and the
-    plan ledger in the same commit; commit trailer:
+    Behaviour changes get valgrind on the touched path plus the headless-Neovim
+    smoke (`nvim --headless -u NONE -l tmp/nvim_hover_smoke.lua <binary> <file>
+    <line> <col>` — the positions are 0-based).  Sync docs/self-host-plan.md §0k,
+    docs/lsp-design.md, docs/lsp-parity-plan.md and the plan ledger in the same
+    commit; commit trailer:
     Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
-    No hacks — fix root causes; never edit sources while a gate runs; rebuild before
-    measuring; run generated binaries as
+    No hacks — fix root causes; never edit sources or rebuild while a gate runs;
+    rebuild before measuring; run generated binaries as
     `timeout 10 bash -c 'ulimit -v 20000000; …'`.
 ```
