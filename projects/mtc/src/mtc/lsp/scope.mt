@@ -12,12 +12,32 @@ import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 
 
+## Binding kinds, mirroring the host's `Bindings::ValueBinding#kind` where the
+## semantic-token scanner reads it: a parameter renders `parameter`, an
+## immutable local (`let`, a `for` binding, a match-arm binding, a destructured
+## name) renders `variable` + `readonly`, a mutable local (`var`) renders bare
+## `variable`.
+public const BINDING_TOPLEVEL:  ptr_uint = 0
+public const BINDING_PARAM:     ptr_uint = 1
+public const BINDING_IMMUTABLE: ptr_uint = 2
+public const BINDING_MUTABLE:   ptr_uint = 3
+
+
 public struct Binding:
     name: str
     line: ptr_uint
     scope_end: ptr_uint
     ## True for module-level declarations; false for parameters and locals.
     is_toplevel: bool
+    ## One of the BINDING_* constants above.
+    kind: ptr_uint
+    ## True for parameters and for locals declared directly in a function body.
+    ## The host's completion snapshots (the token classifier's
+    ## `local_semantic_value_binding`) carry only those: a local bound inside a
+    ## nested block — an `if`/`while`/`for`/`match` body, `unsafe`, `defer`, a
+    ## `when` branch — is absent from the snapshot the classifier reads, so a
+    ## reference to it falls through to the plain-value arms.
+    function_level: bool
 
 
 public function collect_bindings(source_text: str, ast_file: ast.SourceFile) -> vec.Vec[Binding]:
@@ -148,7 +168,7 @@ function collect_toplevel_names(bindings: ref[vec.Vec[Binding]], decls: span[ast
         unsafe:
             let nl = decl_name_and_line(decls.data + di)
             if nl.name.len > 0:
-                bindings.push(Binding(name = nl.name, line = nl.line, scope_end = last_line(source_text), is_toplevel = true))
+                bindings.push(Binding(name = nl.name, line = nl.line, scope_end = last_line(source_text), is_toplevel = true, kind = BINDING_TOPLEVEL, function_level = true))
         di += 1
 
 
@@ -192,7 +212,7 @@ function collect_params(bindings: ref[vec.Vec[Binding]], params: span[ast.Param]
         var p: ast.Param
         unsafe:
             p = read(params.data + pi)
-        bindings.push(Binding(name = p.name, line = p.line, scope_end = scope_end, is_toplevel = false))
+        bindings.push(Binding(name = p.name, line = p.line, scope_end = scope_end, is_toplevel = false, kind = BINDING_PARAM, function_level = true))
         pi += 1
 
 
@@ -213,26 +233,27 @@ function walk_body(bindings: ref[vec.Vec[Binding]], body_node: ptr[ast.Stmt]?, s
     unsafe:
         match read(b):
             ast.Stmt.stmt_block as blk:
-                walk_stmts(bindings, blk.statements, scope_end, source_text)
+                walk_stmts(bindings, blk.statements, scope_end, source_text, true)
             _:
                 pass
 
 
-function walk_stmts(bindings: ref[vec.Vec[Binding]], stmts: span[ast.Stmt], parent_end: ptr_uint, source_text: str) -> void:
+function walk_stmts(bindings: ref[vec.Vec[Binding]], stmts: span[ast.Stmt], parent_end: ptr_uint, source_text: str, function_level: bool) -> void:
     var si: ptr_uint = 0
     while si < stmts.len:
         unsafe:
             match read(stmts.data + si):
                 ast.Stmt.stmt_local as loc:
+                    let local_kind = if loc.is_let: BINDING_IMMUTABLE else: BINDING_MUTABLE
                     if loc.name != "_" and loc.name.len > 0:
-                        bindings.push(Binding(name = loc.name, line = loc.line, scope_end = parent_end, is_toplevel = false))
+                        bindings.push(Binding(name = loc.name, line = loc.line, scope_end = parent_end, is_toplevel = false, kind = local_kind, function_level = function_level))
                     if loc.destructure_bindings.is_some():
                         let binds = loc.destructure_bindings.unwrap()
                         var bi: ptr_uint = 0
                         while bi < binds.len:
                             var bn: str = read(binds.data + bi)
                             if bn != "_":
-                                bindings.push(Binding(name = bn, line = loc.line, scope_end = parent_end, is_toplevel = false))
+                                bindings.push(Binding(name = bn, line = loc.line, scope_end = parent_end, is_toplevel = false, kind = local_kind, function_level = function_level))
                             bi += 1
                 ast.Stmt.stmt_if as iff:
                     var ib: ptr_uint = 0
@@ -258,13 +279,13 @@ function walk_stmts(bindings: ref[vec.Vec[Binding]], stmts: span[ast.Stmt], pare
                         let mend = branch_body_end(arm.body, parent_end)
                         match arm.binding_name:
                             Option.some as bn:
-                                bindings.push(Binding(name = bn.value, line = arm.binding_line, scope_end = mend, is_toplevel = false))
+                                bindings.push(Binding(name = bn.value, line = arm.binding_line, scope_end = mend, is_toplevel = false, kind = BINDING_IMMUTABLE, function_level = false))
                             Option.none:
                                 pass
                         walk_stmt(bindings, arm.body, mend, source_text)
                         mi += 1
                 ast.Stmt.stmt_block as blk:
-                    walk_stmts(bindings, blk.statements, parent_end, source_text)
+                    walk_stmts(bindings, blk.statements, parent_end, source_text, function_level)
                 ast.Stmt.stmt_unsafe as uns:
                     walk_stmt(bindings, uns.body, parent_end, source_text)
                 ast.Stmt.stmt_defer as dfr:
@@ -273,11 +294,11 @@ function walk_stmts(bindings: ref[vec.Vec[Binding]], stmts: span[ast.Stmt], pare
                     var wi: ptr_uint = 0
                     while wi < whn.branches.len:
                         let branch = unsafe: read(whn.branches.data + wi)
-                        walk_stmts(bindings, branch.body, parent_end, source_text)
+                        walk_stmts(bindings, branch.body, parent_end, source_text, false)
                         wi += 1
                     walk_stmt(bindings, whn.else_body, parent_end, source_text)
                 ast.Stmt.stmt_parallel_block as pb:
-                    walk_stmts(bindings, pb.bodies, parent_end, source_text)
+                    walk_stmts(bindings, pb.bodies, parent_end, source_text, false)
                 ast.Stmt.stmt_error_block as eb:
                     walk_stmt(bindings, eb.body, parent_end, source_text)
                 _:
@@ -291,10 +312,11 @@ function walk_stmt(bindings: ref[vec.Vec[Binding]], sp: ptr[ast.Stmt]?, parent_e
     unsafe:
         match read(b):
             ast.Stmt.stmt_block as blk:
-                walk_stmts(bindings, blk.statements, parent_end, source_text)
+                walk_stmts(bindings, blk.statements, parent_end, source_text, false)
             ast.Stmt.stmt_local as loc:
                 if loc.name != "_" and loc.name.len > 0:
-                    bindings.push(Binding(name = loc.name, line = loc.line, scope_end = parent_end, is_toplevel = false))
+                    let local_kind = if loc.is_let: BINDING_IMMUTABLE else: BINDING_MUTABLE
+                    bindings.push(Binding(name = loc.name, line = loc.line, scope_end = parent_end, is_toplevel = false, kind = local_kind, function_level = false))
             ast.Stmt.stmt_if as iff:
                 var ib: ptr_uint = 0
                 while ib < iff.branches.len:
@@ -325,7 +347,7 @@ function collect_for_bindings(bindings: ref[vec.Vec[Binding]], for_bindings: spa
         unsafe:
             fb = read(for_bindings.data + i)
         if fb.name != "_":
-            bindings.push(Binding(name = fb.name, line = line, scope_end = scope_end, is_toplevel = false))
+            bindings.push(Binding(name = fb.name, line = line, scope_end = scope_end, is_toplevel = false, kind = BINDING_MUTABLE, function_level = false))
         i += 1
 
 
@@ -504,3 +526,134 @@ public function local_binding_line(bindings: ref[vec.Vec[Binding]], name: str, c
     if not found:
         return Option[ptr_uint].none
     return Option[ptr_uint].some(value = best_line)
+
+
+## The kind of the binding named `name` that the host's
+## `local_semantic_value_binding` resolves at `line` — a parameter or a local
+## declared directly in a function body — or none when no such binding is in
+## scope.  The host's completion snapshots carry only function-level bindings:
+## a local bound inside a nested block (an `if`/`while`/`for`/`match` body,
+## `unsafe`, `defer`, a `when` branch) and a `for`/match-arm binding are absent
+## from the snapshot the token classifier reads, so such a reference resolves
+## through the plain-value arms instead.  Among the candidates the innermost
+## (greatest declaration line at or before `line`) wins, so a later declaration
+## shadows an earlier one.
+public function binding_kind_at(bindings: vec.Vec[Binding], name: str, line: ptr_uint) -> Option[ptr_uint]:
+    var best_line: ptr_uint = 0
+    var best_kind: ptr_uint = BINDING_TOPLEVEL
+    var found = false
+    var bi: ptr_uint = 0
+    while bi < bindings.len():
+        let bp = bindings.get(bi) else:
+            break
+        let b = unsafe: read(bp)
+        if not b.is_toplevel and b.function_level and b.name.equal(name):
+            # The host's snapshot carries a binding only once its declaration
+            # statement has completed, so a name used inside its own declaration
+            # (an annotation, an initializer on the same line) is not resolved.
+            let after_declaration = line > b.line
+            if after_declaration and line <= b.scope_end:
+                if not found or b.line > best_line:
+                    best_line = b.line
+                    best_kind = b.kind
+                    found = true
+        bi += 1
+    if not found:
+        return Option[ptr_uint].none
+    return Option[ptr_uint].some(value = best_kind)
+
+
+## One declaration's in-scope type parameters: their names and the line range
+## over which the declaration carries them (the host's
+## `type_parameter_scopes_for_declaration`).
+public struct TypeParamScope:
+    names: vec.Vec[str]
+    start_line: ptr_uint
+    end_line: ptr_uint
+
+
+## Collect the type-parameter scopes of a file's declarations, in document
+## order: each declaration's own `[T, U]` clause applies from its line to the
+## next declaration's line, and an `extending` block's receiver arguments (its
+## `extending Vec[T]` names) apply per method.
+public function collect_type_param_scopes(source_text: str, ast_file: ast.SourceFile) -> vec.Vec[TypeParamScope]:
+    var scopes = vec.Vec[TypeParamScope].create()
+    var i: ptr_uint = 0
+    while i < ast_file.declarations.len:
+        let region_end = declaration_region_end(ast_file, i, source_text)
+        unsafe:
+            collect_decl_type_params(ref_of(scopes), ast_file.declarations.data + i, region_end)
+        i += 1
+    return scopes
+
+
+function collect_decl_type_params(scopes: ref[vec.Vec[TypeParamScope]], dp: ptr[ast.Decl], region_end: ptr_uint) -> void:
+    var decl: ast.Decl
+    unsafe:
+        decl = read(dp)
+    match decl:
+        ast.Decl.decl_extending_block as ex:
+            unsafe:
+                var mi: ptr_uint = 0
+                while mi < ex.methods.len:
+                    let method = read(ex.methods.data + mi)
+                    var method_end = region_end
+                    if mi + 1 < ex.methods.len:
+                        method_end = read(ex.methods.data + mi + 1).line - 1
+                    var names = vec.Vec[str].create()
+                    push_extending_type_param_names(ref_of(names), ex.type_name)
+                    push_type_param_names(ref_of(names), method.type_params)
+                    if names.len() > 0 and method.line > 0:
+                        scopes.push(TypeParamScope(names = names, start_line = method.line, end_line = method_end))
+                    else:
+                        names.release()
+                    mi += 1
+        _:
+            var names = vec.Vec[str].create()
+            push_decl_type_param_names(ref_of(names), decl)
+            let line = decl_start_line(decl)
+            if names.len() > 0 and line > 0:
+                scopes.push(TypeParamScope(names = names, start_line = line, end_line = region_end))
+            else:
+                names.release()
+
+
+## The type parameters of a declaration that can carry a `[T, U]` clause.
+function push_decl_type_param_names(names: ref[vec.Vec[str]], decl: ast.Decl) -> void:
+    match decl:
+        ast.Decl.decl_function as d:
+            push_type_param_names(names, d.type_params)
+        ast.Decl.decl_struct as d:
+            push_type_param_names(names, d.type_params)
+        ast.Decl.decl_variant as d:
+            push_type_param_names(names, d.type_params)
+        ast.Decl.decl_interface as d:
+            push_type_param_names(names, d.type_params)
+        ast.Decl.decl_extern_function as d:
+            push_type_param_names(names, d.type_params)
+        ast.Decl.decl_foreign_function as d:
+            push_type_param_names(names, d.type_params)
+        _:
+            pass
+
+
+function push_type_param_names(names: ref[vec.Vec[str]], params: span[ast.TypeParam]) -> void:
+    var i: ptr_uint = 0
+    while i < params.len:
+        unsafe:
+            names.push(read(params.data + i).name)
+        i += 1
+
+
+## An `extending Vec[T]` receiver's argument names, so the block's methods see
+## `T` (the host's `generic_type_parameter_names_for_extending_block`: only a
+## bare single-part argument counts).
+function push_extending_type_param_names(names: ref[vec.Vec[str]], type_name: ptr[ast.TypeRef]) -> void:
+    unsafe:
+        let args = read(type_name).arguments
+        var i: ptr_uint = 0
+        while i < args.len:
+            let arg = read(args.data + i)
+            if arg.arguments.len == 0 and not arg.nullable and arg.name.parts.len == 1:
+                names.push(read(arg.name.parts.data))
+            i += 1

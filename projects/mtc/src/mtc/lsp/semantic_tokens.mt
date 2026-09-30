@@ -24,6 +24,7 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types_mod
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
+import mtc.lsp.scope as scope
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 
@@ -63,6 +64,9 @@ const TOKEN_NUMBER:       uint = 19
 const TOKEN_REGEXP:       uint = 20
 const TOKEN_OPERATOR:     uint = 21
 const TOKEN_DECORATOR:    uint = 22
+## The "no entry" sentinel for a token the host's classifier skips (a character
+## literal, a malformed format-string part).
+const TOKEN_NONE:         uint = 1000
 
 
 ## Handle textDocument/semanticTokens/full.
@@ -304,8 +308,28 @@ struct ScanFacts:
     alias_types: map_mod.Map[str, bool]
     alias_interfaces: map_mod.Map[str, bool]
     alias_values: map_mod.Map[str, bool]
-    readonly_names: map_mod.Map[str, bool]
-    param_names: map_mod.Map[str, bool]
+    ## The alias members whose value binding is immutable (`const`), so a
+    ## reference renders `variable` + `readonly` like the host's
+    ## `semantic_value_binding_entry`.
+    alias_readonly_values: map_mod.Map[str, bool]
+    ## The file's implicit value bindings (`scope.collect_bindings`): a
+    ## reference resolves the innermost binding in scope — the host's
+    ## `local_semantic_value_binding` — instead of a flat name set.
+    bindings: vec.Vec[scope.Binding]
+    ## The file's module-level `const` names: their value bindings are immutable.
+    readonly_values: map_mod.Map[str, bool]
+    ## `<Type>.<member>` keys of every *static* method the file declares or its
+    ## resolved imports expose (`alias.<Type>.<member>` too): the host's
+    ## `static_method_binding_for_receiver`, which is what tells a static call
+    ## (`NPC.max_hp()`) apart from a variant arm (`Option.some(...)`).
+    static_members: map_mod.Map[str, bool]
+    ## The file's declarations' type-parameter scopes (`[T, U]` clauses), so a
+    ## reference to `T` in a type position renders `typeParameter`.
+    type_param_scopes: vec.Vec[scope.TypeParamScope]
+    ## Declared attribute names' positions (`attribute[field] rename(...)`), so
+    ## the name renders `decorator` + declaration (the host's attribute override
+    ## table, built from the AST).
+    attribute_decls: map_mod.Map[ptr_uint, bool]
 
 
 struct TokenClass:
@@ -474,19 +498,22 @@ function scan_is_variant_enum_member(tokens: span[token_mod.Token], index: ptr_u
         let other = unsafe: read(tokens.data + i)
         if scan_is_trivia(other.kind) or other.line == tok.line or other.column >= tok.column:
             continue
-        return scan_line_has_enum_header(tokens, i, other.line)
+        return scan_line_has_enum_header(tokens, other.line)
     return false
 
 
-## True when some token on `line` (up to `index`) is `variant`/`enum`/`flags`.
-function scan_line_has_enum_header(tokens: span[token_mod.Token], index: ptr_uint, line: ptr_uint) -> bool:
+## True when any token on `line` is `variant`/`enum`/`flags` — the host searches
+## the whole header line (`non_trivia_tokens_on_line`), including the tokens
+## after the one the backward scan stopped at.
+function scan_line_has_enum_header(tokens: span[token_mod.Token], line: ptr_uint) -> bool:
     var i: ptr_uint = 0
-    while i <= index and i < tokens.len:
+    while i < tokens.len:
         let t = unsafe: read(tokens.data + i)
-        if t.line == line:
-            if t.kind == tk_mod.TokenKind.tk_variant or t.kind == tk_mod.TokenKind.tk_enum or
-               t.kind == tk_mod.TokenKind.tk_flags:
-                return true
+        if t.line > line:
+            return false
+        if t.line == line and (t.kind == tk_mod.TokenKind.tk_variant or t.kind == tk_mod.TokenKind.tk_enum or
+                               t.kind == tk_mod.TokenKind.tk_flags):
+            return true
         i += 1
     return false
 
@@ -595,9 +622,13 @@ function scan_is_named_argument_label(tokens: span[token_mod.Token], index: ptr_
     return prev_kind == tk_mod.TokenKind.lparen or prev_kind == tk_mod.TokenKind.comma
 
 
-## True when the label's call is a type constructor (`Sample(x = 1)`), whose
-## labels the host reports as properties
-## (the host's `named_argument_label_in_type_constructor?`).
+## True when the named-argument label belongs to a *type constructor*: a call
+## whose callee is a declared type or one of its arms — `Sample(x = 1)`,
+## `Option[int].some(value = 2)` — where the host renders the label as a
+## property.  Only the file's own declared types count: a builtin constructor
+## (`span[int](data = ...)`) keeps the parameter shape, and the receiver's
+## type-argument list is seen through (the host's
+## `named_argument_label_in_type_constructor?`).
 function scan_named_argument_in_type_constructor(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
     let opener = scan_parameter_list_opener(tokens, index) else:
         return false
@@ -606,23 +637,36 @@ function scan_named_argument_in_type_constructor(facts: ref[ScanFacts], tokens: 
     if scan_kind_at(tokens, callee_idx) == tk_mod.TokenKind.rbracket:
         let lbracket = scan_matching_opener(tokens, callee_idx) else:
             return false
-        let callee_opt = scan_prev_index(tokens, lbracket) else:
+        let callee_base = scan_prev_index(tokens, lbracket) else:
             return false
-        callee_idx = callee_opt
+        callee_idx = callee_base
     if scan_kind_at(tokens, callee_idx) != tk_mod.TokenKind.identifier:
         return false
     let callee_name = scan_lexeme_at(tokens, callee_idx, source)
-    if is_known_type_name(facts, callee_name):
+    if scan_is_declared_type(facts, callee_name):
         return true
     let dot_idx = scan_prev_index(tokens, callee_idx) else:
         return false
     if scan_kind_at(tokens, dot_idx) != tk_mod.TokenKind.dot:
         return false
-    let receiver_idx = scan_prev_index(tokens, dot_idx) else:
+    var receiver_idx = scan_prev_index(tokens, dot_idx) else:
         return false
+    if scan_kind_at(tokens, receiver_idx) == tk_mod.TokenKind.rbracket:
+        let lbracket = scan_matching_opener(tokens, receiver_idx) else:
+            return false
+        let receiver_base = scan_prev_index(tokens, lbracket) else:
+            return false
+        receiver_idx = receiver_base
     if scan_kind_at(tokens, receiver_idx) != tk_mod.TokenKind.identifier:
         return false
-    return is_known_type_name(facts, scan_lexeme_at(tokens, receiver_idx, source))
+    return scan_is_declared_type(facts, scan_lexeme_at(tokens, receiver_idx, source))
+
+
+## True for a *declared* type or interface name — the file's own types, not the
+## builtins (`is_known_type_name?` in the host counts only `facts.types`).
+function scan_is_declared_type(facts: ref[ScanFacts], name: str) -> bool:
+    unsafe:
+        return read(facts).types.contains(name) or read(facts).interfaces.contains(name)
 
 
 ## True when the name is a constructible type: a struct, or one of the builtin
@@ -695,6 +739,105 @@ function scan_is_import_alias(tokens: span[token_mod.Token], index: ptr_uint) ->
     return scan_kind_at(tokens, prev_idx) == tk_mod.TokenKind.tk_as
 
 
+
+## The declared attribute names' positions (`attribute[field] name(...)`).
+function collect_attribute_decl_names(file: ast.SourceFile, names: ref[map_mod.Map[ptr_uint, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_attribute as attr:
+                    names.set(attribute_position_key(attr.line, attr.column), true)
+                _:
+                    pass
+        i += 1
+
+
+## A token position as one map key (`line * 10000 + column`), so the override
+## table needs no string keys that a temporary would invalidate.
+function attribute_position_key(line: ptr_uint, column: ptr_uint) -> ptr_uint:
+    return line * 10000 + column
+
+
+## The token class an attribute-name override gives, or none: the declared
+## attribute's own name (`decorator` + declaration) and the name passed to a
+## `has_attribute` / `attribute_of` call (the host's
+## `build_attribute_name_semantic_overrides`).
+function scan_attribute_override(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> Option[TokenClass]:
+    let tok = unsafe: read(tokens.data + index)
+    if unsafe: read(facts).attribute_decls.contains(attribute_position_key(tok.line, tok.column)):
+        return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_DECORATOR, token_mod = 1))
+    if scan_is_attribute_reflection_name(tokens, index, source):
+        return Option[TokenClass].some(value = TokenClass(token_type = TOKEN_DECORATOR, token_mod = 0))
+    return Option[TokenClass].none
+
+
+## True for the second argument of a `has_attribute(...)` / `attribute_of(...)`
+## call — the position those builtins read an attribute name from.
+function scan_is_attribute_reflection_name(tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    let comma = scan_prev_index(tokens, index) else:
+        return false
+    if scan_kind_at(tokens, comma) != tk_mod.TokenKind.comma:
+        return false
+    # The comma must be a top-level one: the nearest unmatched opener before it
+    # is the call's `(`.
+    var depth: ptr_uint = 0
+    var opener: ptr_uint = 0
+    var found = false
+    var i = comma
+    while i > 0:
+        i -= 1
+        let kind = scan_kind_at(tokens, i)
+        if kind == tk_mod.TokenKind.rparen or kind == tk_mod.TokenKind.rbracket:
+            depth += 1
+        else if kind == tk_mod.TokenKind.lparen:
+            if depth == 0:
+                opener = i
+                found = true
+                break
+            depth -= 1
+        else if kind == tk_mod.TokenKind.lbracket:
+            if depth > 0:
+                depth -= 1
+    if not found:
+        return false
+    let callee = scan_prev_index(tokens, opener) else:
+        return false
+    # `has_attribute` / `attribute_of` lex as keywords.
+    let name = scan_lexeme_at(tokens, callee, source)
+    return name.equal("has_attribute") or name.equal("attribute_of")
+
+
+## True for a specialized call `name[T](...)` — the host's
+## `specialized_call_with_type_args?`: a type-argument list whose closer is
+## followed by the call's `(`.
+function scan_specialized_call(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let lbracket = scan_next_index(tokens, index) else:
+        return false
+    if scan_kind_at(tokens, lbracket) != tk_mod.TokenKind.lbracket:
+        return false
+    let rbracket = scan_matching_closer_index(tokens, lbracket, tk_mod.TokenKind.lbracket, tk_mod.TokenKind.rbracket) else:
+        return false
+    let after = scan_next_index(tokens, rbracket) else:
+        return false
+    return scan_kind_at(tokens, after) == tk_mod.TokenKind.lparen
+
+
+## True for a *bare* builtin specialization (`zero[int]`, `default[T]`): a
+## type-argument list the call's `(` does not follow — the host's
+## `bare_builtin_specialization?`.
+function scan_bare_specialization(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let lbracket = scan_next_index(tokens, index) else:
+        return false
+    if scan_kind_at(tokens, lbracket) != tk_mod.TokenKind.lbracket:
+        return false
+    let rbracket = scan_matching_closer_index(tokens, lbracket, tk_mod.TokenKind.lbracket, tk_mod.TokenKind.rbracket) else:
+        return false
+    let after = scan_next_index(tokens, rbracket) else:
+        return true
+    return scan_kind_at(tokens, after) != tk_mod.TokenKind.lparen
+
+
 ## The index of the closer matching the opener at `opener_index`, or none.
 function scan_matching_closer_index(
     tokens: span[token_mod.Token],
@@ -753,6 +896,126 @@ function scan_identifier_in_type_argument_position(tokens: span[token_mod.Token]
     return next_idx <= closer
 
 
+## True when the token is one of a declaration's type-parameter names: an
+## identifier at depth 1 of a `<header> <name>[...]` clause on its line
+## (`struct Pair[A, B]`, `function f[T implements Named]`) — the host's
+## `type_parameter_declaration_info_on_line`.
+function scan_type_parameter_declaration_token(tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    let line = unsafe: read(tokens.data + index).line
+    var first = index
+    while first > 0:
+        let prev = first - 1
+        if scan_is_trivia(scan_kind_at(tokens, prev)):
+            first = prev
+            continue
+        if unsafe: read(tokens.data + prev).line != line:
+            break
+        first = prev
+
+    var header: ptr_uint = 0
+    var found_header = false
+    var hi = first
+    while hi <= index:
+        if scan_is_type_parameter_header(scan_kind_at(tokens, hi)):
+            header = hi
+            found_header = true
+            break
+        hi += 1
+    if not found_header:
+        return false
+
+    var name_idx: ptr_uint = 0
+    var found_name = false
+    var ni = header + 1
+    while ni <= index:
+        if scan_kind_at(tokens, ni) == tk_mod.TokenKind.identifier:
+            name_idx = ni
+            found_name = true
+            break
+        ni += 1
+    if not found_name:
+        return false
+
+    let lbracket = name_idx + 1
+    if lbracket > index or scan_kind_at(tokens, lbracket) != tk_mod.TokenKind.lbracket:
+        return false
+
+    var depth: ptr_uint = 0
+    var expect_name = false
+    var k = lbracket
+    while k <= index:
+        let kind = scan_kind_at(tokens, k)
+        if kind == tk_mod.TokenKind.lbracket:
+            depth += 1
+            if depth == 1:
+                expect_name = true
+        else if kind == tk_mod.TokenKind.rbracket:
+            if depth > 0:
+                depth -= 1
+            if depth == 0:
+                return false
+        else if kind == tk_mod.TokenKind.comma:
+            if depth == 1:
+                expect_name = true
+        else if kind == tk_mod.TokenKind.at or kind == tk_mod.TokenKind.tk_implements:
+            if depth == 1:
+                expect_name = false
+        else if depth == 1 and expect_name and kind == tk_mod.TokenKind.identifier:
+            if k == index:
+                return true
+            expect_name = false
+        k += 1
+    return false
+
+
+## The declaration keywords whose header can carry a type-parameter clause
+## (the host's `generic_type_parameter_header_token?`).
+function scan_is_type_parameter_header(kind: tk_mod.TokenKind) -> bool:
+    return kind == tk_mod.TokenKind.tk_function or kind == tk_mod.TokenKind.tk_struct or
+        kind == tk_mod.TokenKind.tk_union or kind == tk_mod.TokenKind.tk_enum or
+        kind == tk_mod.TokenKind.tk_flags or kind == tk_mod.TokenKind.tk_variant or
+        kind == tk_mod.TokenKind.tk_type or kind == tk_mod.TokenKind.tk_extending
+
+
+## True when the token references a type parameter of the enclosing declaration
+## in a type position — inside a type-argument list, or after `:`/`->` (the
+## host's `type_parameter_reference_token?`).
+function scan_type_parameter_reference(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    let lexeme = scan_lexeme_at(tokens, index, source)
+    let line = unsafe: read(tokens.data + index).line
+    if not scan_type_param_in_scope(facts, lexeme, line):
+        return false
+    if scan_identifier_in_type_argument_position(tokens, index):
+        return true
+    let prev = scan_prev_index(tokens, index) else:
+        return false
+    let kind = scan_kind_at(tokens, prev)
+    return kind == tk_mod.TokenKind.colon or kind == tk_mod.TokenKind.arrow
+
+
+## True when `name` is a type parameter in scope at `line`.
+function scan_type_param_in_scope(facts: ref[ScanFacts], name: str, line: ptr_uint) -> bool:
+    var found = false
+    unsafe:
+        var scopes = read(facts).type_param_scopes
+        var si: ptr_uint = 0
+        while si < scopes.len():
+            let sp = scopes.get(si) else:
+                break
+            let sc = read(sp)
+            if line >= sc.start_line and line <= sc.end_line:
+                var ni: ptr_uint = 0
+                while ni < sc.names.len():
+                    let np = sc.names.get(ni) else:
+                        break
+                    if read(np).equal(name):
+                        found = true
+                        break
+                    ni += 1
+            si += 1
+    return found
+
+
 ## True when a keyword token is a module-path segment (`import std.async as aio`)
 ## — the host's `namespace_keyword_token?`, whose name classifier answers
 ## `namespace` for it.
@@ -799,6 +1062,16 @@ function classify_scan_identifier(
     lexeme: str,
     source: str,
 ) -> TokenClass:
+    # Attribute names: a declared attribute's own name (`attribute[field] rename`)
+    # renders `decorator` + declaration, and the name a `has_attribute` /
+    # `attribute_of` call reads renders `decorator` (the host's AST-built
+    # override table, checked before every other arm).
+    match scan_attribute_override(facts, tokens, index, source):
+        Option.some as over:
+            return over.value
+        Option.none:
+            pass
+
     # Import lines: path segments are namespaces, the alias declares one.
     if scan_is_import_alias(tokens, index):
         return TokenClass(token_type = TOKEN_NAMESPACE, token_mod = 1)
@@ -852,6 +1125,13 @@ function classify_scan_identifier(
         return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 1)
     if scan_is_destructure_let(tokens, index):
         return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 5)
+    # Type parameters: the declaration's own `[T, U]` names and their references
+    # in a type position (the host's `type_parameter_declaration_token?` /
+    # `type_parameter_reference_token?`).
+    if scan_type_parameter_declaration_token(tokens, index, source):
+        return TokenClass(token_type = TOKEN_TYPE_PARAM, token_mod = 1)
+    if scan_type_parameter_reference(facts, tokens, index, source):
+        return TokenClass(token_type = TOKEN_TYPE_PARAM, token_mod = 0)
     if scan_is_named_argument_label(tokens, index):
         if scan_named_argument_in_type_constructor(facts, tokens, index, source):
             return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
@@ -893,31 +1173,103 @@ function classify_scan_identifier(
                 if unsafe: read(facts).alias_interfaces.contains(key):
                     return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
                 if unsafe: read(facts).alias_values.contains(key):
+                    if unsafe: read(facts).alias_readonly_values.contains(key):
+                        return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
                     return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
-            if is_known_type_name(facts, receiver) or starts_uppercase(receiver):
+            if receiver_is_type_name(facts, tokens, receiver_idx.unwrap(), source):
+                # A static method of the receiver's type is a `method`; every
+                # other member of a type-name receiver is a variant/enum member
+                # (`Option.some(value = 42)`), as the host's
+                # `static_type_member_access?` before `type_name_member_access?`.
+                if is_static_member_of(facts, tokens, receiver_idx.unwrap(), lexeme, source):
+                    return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
                 return TokenClass(token_type = TOKEN_ENUM_MEMBER, token_mod = 0)
         let next_idx = scan_next_index(tokens, index)
         if next_idx.is_some() and scan_kind_at(tokens, next_idx.unwrap()) == tk_mod.TokenKind.lparen:
             return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
+        if scan_specialized_call(tokens, index):
+            return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
         return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
 
-    # Call sites: builtins, functions, then type constructors.
-    let next_call = scan_next_index(tokens, index)
-    if next_call.is_some() and scan_kind_at(tokens, next_call.unwrap()) == tk_mod.TokenKind.lparen:
-        if is_default_library_function_name(lexeme):
-            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512)
-        if unsafe: read(facts).functions.contains(lexeme):
-            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
-        if is_constructible_type_name(facts, lexeme):
-            return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
-        return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
 
-    # Value / type / namespace references.
+    # Call sites: builtins, functions, then type constructors.  A *specialized*
+    # call carries a type-argument list between the callee and the call
+    # (`span[int](...)`, `hash[int](...)`), which the host's
+    # `specialized_call_with_type_args?` treats as a call shape too.
+    let next_call = scan_next_index(tokens, index)
+    if next_call.is_some():
+        let next_kind = scan_kind_at(tokens, next_call.unwrap())
+        if next_kind == tk_mod.TokenKind.lparen or scan_specialized_call(tokens, index):
+            # A bound value shadows the function name (the host's
+            # `resolved_call_callee_semantic` resolves the local binding and the
+            # module values before the builtin/function tables).
+            match scan_binding_at(facts, tokens, index, source):
+                Option.some as kind:
+                    return scan_binding_class(kind.value)
+                Option.none:
+                    pass
+            if unsafe: read(facts).values.contains(lexeme):
+                if unsafe: read(facts).readonly_values.contains(lexeme):
+                    return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
+                return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+            if is_default_library_function_name(lexeme):
+                return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512)
+            if unsafe: read(facts).functions.contains(lexeme):
+                return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
+            if is_constructible_type_name(facts, lexeme):
+                return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+            # The hash/order/equal hooks are defaultLibrary only in their
+            # specialized form (the host's `BUILTIN_ASSOCIATED_HOOK_NAMES`).
+            if scan_specialized_call(tokens, index) and
+               (lexeme.equal("hash") or lexeme.equal("equal") or lexeme.equal("order")):
+                return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512)
+            return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
+    # A bare builtin specialization (`zero[int]`, `default[T]`, no call) is a
+    # builtin function value (the host's `bare_builtin_specialization?`).
+    if (lexeme.equal("zero") or lexeme.equal("default")) and scan_bare_specialization(tokens, index):
+        return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 512)
+
+    # Value / type / namespace references.  A name bound in scope resolves to
+    # that binding (the host's `local_semantic_value_binding`, whose snapshot
+    # carries the innermost binding at the token), so a parameter renders
+    # `parameter`, a `let`/`for`/match binding `variable` + `readonly` and a
+    # `var` bare `variable`.  A *receiver before a dot* resolves through the
+    # host's dedicated arm first: a declared type name renders `type` without
+    # the defaultLibrary modifier (`Option.some`), an import alias `namespace`.
+    let next_dot = scan_next_index(tokens, index)
+    if next_dot.is_some() and scan_kind_at(tokens, next_dot.unwrap()) == tk_mod.TokenKind.dot:
+        unsafe:
+            if read(facts).types.contains(lexeme) or read(facts).interfaces.contains(lexeme):
+                return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+            if read(facts).imports.contains(lexeme):
+                return TokenClass(token_type = TOKEN_NAMESPACE, token_mod = 0)
+    # A type name in a type-reference position renders `type`, a builtin one
+    # with the defaultLibrary modifier; other names fall through to the value
+    # arms (the host's `identifier_in_type_reference_position?` arm).
+    if scan_identifier_in_type_argument_position(tokens, index) or scan_after_type_position(tokens, index, source):
+        unsafe:
+            if read(facts).types.contains(lexeme):
+                if is_default_library_type_name(lexeme):
+                    return TokenClass(token_type = TOKEN_TYPE, token_mod = 512)
+                return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+            if read(facts).interfaces.contains(lexeme):
+                return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+        if is_default_library_type_name(lexeme):
+            return TokenClass(token_type = TOKEN_TYPE, token_mod = 512)
+    match scan_binding_at(facts, tokens, index, source):
+        Option.some as kind:
+            # A parameter declaration token carries the declaration modifier
+            # (the host passes `parameter_declaration_token?` into
+            # `semantic_value_binding_entry`; the `in` of a `for … in name:`
+            # line answers that predicate there too).
+            if kind.value == scope.BINDING_PARAM and scan_is_parameter_declaration(tokens, index):
+                return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 1)
+            return scan_binding_class(kind.value)
+        Option.none:
+            pass
+    if lexeme.equal("this"):
+        return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 0)
     unsafe:
-        if read(facts).param_names.contains(lexeme):
-            return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 0)
-        if read(facts).readonly_names.contains(lexeme):
-            return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
         if read(facts).functions.contains(lexeme):
             return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
         if read(facts).types.contains(lexeme):
@@ -929,10 +1281,166 @@ function classify_scan_identifier(
         if read(facts).imports.contains(lexeme):
             return TokenClass(token_type = TOKEN_NAMESPACE, token_mod = 0)
         if read(facts).values.contains(lexeme):
+            if read(facts).readonly_values.contains(lexeme):
+                return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
             return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
     if is_default_library_type_name(lexeme):
         return TokenClass(token_type = TOKEN_TYPE, token_mod = 512)
     return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+
+
+## True when the token stands right after a type-position marker: `:`/`->`/`as`,
+## or `=` on a `type`-headed line (`const A: type = B`) — the host's
+## `identifier_in_type_reference_position?` without the type-argument case the
+## caller checks separately.
+function scan_after_type_position(tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    let prev = scan_prev_index(tokens, index) else:
+        return false
+    let kind = scan_kind_at(tokens, prev)
+    if kind == tk_mod.TokenKind.colon or kind == tk_mod.TokenKind.arrow or kind == tk_mod.TokenKind.tk_as:
+        return true
+    if kind != tk_mod.TokenKind.equal:
+        return false
+    let line = unsafe: read(tokens.data + index).line
+    var i: ptr_uint = 0
+    while i < index:
+        let t = unsafe: read(tokens.data + i)
+        if t.line == line and not scan_is_trivia(t.kind):
+            return t.kind == tk_mod.TokenKind.tk_type
+        i += 1
+    return false
+
+
+## A keyword in a type-parameter position (`[@a]`, `[T]`, a list entry after a
+## comma inside a type-parameter clause) renders `typeParameter` — the host's
+## `keyword_lifetime_or_type_param?`.
+function scan_is_keyword_type_parameter(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let prev = scan_prev_index(tokens, index) else:
+        return false
+    let kind = scan_kind_at(tokens, prev)
+    if kind == tk_mod.TokenKind.at or kind == tk_mod.TokenKind.lbracket:
+        return true
+    if kind != tk_mod.TokenKind.comma:
+        return false
+    var i = prev
+    while i > 0:
+        i -= 1
+        let k = scan_kind_at(tokens, i)
+        if k == tk_mod.TokenKind.lbracket:
+            break
+        if k == tk_mod.TokenKind.newline or k == tk_mod.TokenKind.rbracket or k == tk_mod.TokenKind.lparen:
+            return false
+    if i == 0:
+        return false
+    let before = scan_prev_index(tokens, i) else:
+        return false
+    let bk = scan_kind_at(tokens, before)
+    if bk == tk_mod.TokenKind.tk_struct or bk == tk_mod.TokenKind.tk_variant or bk == tk_mod.TokenKind.tk_enum or
+       bk == tk_mod.TokenKind.tk_flags or bk == tk_mod.TokenKind.tk_function or bk == tk_mod.TokenKind.tk_fn or
+       bk == tk_mod.TokenKind.tk_proc:
+        return true
+    return bk == tk_mod.TokenKind.rbracket
+
+
+## A keyword type name in an annotation position: the previous significant token
+## is `:` or `->` on the same line (`x: proc() -> int`) — the host's
+## `keyword_type_annotation?`.
+function scan_is_keyword_type_annotation(tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let prev = scan_prev_index(tokens, index) else:
+        return false
+    let kind = scan_kind_at(tokens, prev)
+    if kind != tk_mod.TokenKind.colon and kind != tk_mod.TokenKind.arrow:
+        return false
+    return unsafe: read(tokens.data + prev).line == read(tokens.data + index).line
+
+
+## The binding in scope at a token (the host's `local_semantic_value_binding`):
+## the kind of the innermost function-level binding of the token's name.
+function scan_binding_at(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> Option[ptr_uint]:
+    let tok = unsafe: read(tokens.data + index)
+    return scope.binding_kind_at(unsafe: read(facts).bindings, scan_lexeme_at(tokens, index, source), tok.line)
+
+
+## The token class a value binding renders: `parameter`, `variable` +
+## `readonly` for an immutable binding, bare `variable` for a mutable one.
+function scan_binding_class(kind: ptr_uint) -> TokenClass:
+    if kind == scope.BINDING_PARAM:
+        return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 0)
+    if kind == scope.BINDING_MUTABLE:
+        return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 0)
+    return TokenClass(token_type = TOKEN_VARIABLE, token_mod = 4)
+
+
+## True when the token is a member of a *static* method of the receiver's type
+## (the host's `static_type_member_access?`): the receiver may carry type
+## arguments (`Option[int].some`) and a module prefix (`rl.Color.hex_digit`),
+## and the method may come from the scanned file or a resolved import.
+function is_static_member_of(facts: ref[ScanFacts], tokens: span[token_mod.Token], receiver_index: ptr_uint, member: str, source: str) -> bool:
+    var key = string.String.create()
+    defer: key.release()
+    let module_prefix = receiver_module_prefix(tokens, receiver_index, source)
+    if module_prefix.len > 0:
+        key.append(module_prefix)
+        key.push_byte(46)
+    key.append(receiver_base_name(tokens, receiver_index, source))
+    key.push_byte(46)
+    key.append(member)
+    unsafe:
+        return read(facts).static_members.contains(key.as_str())
+
+
+## The identifier before a `module.Type` pair — the import alias qualifying the
+## receiver — or "" when the receiver stands alone.  Type arguments are seen
+## through (`vec.Vec[int].create` -> `vec`).
+function receiver_module_prefix(tokens: span[token_mod.Token], receiver_index: ptr_uint, source: str) -> str:
+    var base_index = receiver_index
+    if scan_kind_at(tokens, base_index) == tk_mod.TokenKind.rbracket:
+        let lbracket = scan_matching_opener(tokens, base_index) else:
+            return ""
+        let base = scan_prev_index(tokens, lbracket) else:
+            return ""
+        base_index = base
+    let dot = scan_prev_index(tokens, base_index) else:
+        return ""
+    if scan_kind_at(tokens, dot) != tk_mod.TokenKind.dot:
+        return ""
+    let module_idx = scan_prev_index(tokens, dot) else:
+        return ""
+    if scan_kind_at(tokens, module_idx) != tk_mod.TokenKind.identifier:
+        return ""
+    return scan_lexeme_at(tokens, module_idx, source)
+
+
+## The receiver's base identifier, seeing through a type-argument list
+## (`Option[int].some` -> `Option`).
+function receiver_base_name(tokens: span[token_mod.Token], receiver_index: ptr_uint, source: str) -> str:
+    if scan_kind_at(tokens, receiver_index) != tk_mod.TokenKind.rbracket:
+        return scan_lexeme_at(tokens, receiver_index, source)
+    let lbracket = scan_matching_opener(tokens, receiver_index) else:
+        return ""
+    let base = scan_prev_index(tokens, lbracket) else:
+        return ""
+    return scan_lexeme_at(tokens, base, source)
+
+
+## True when the receiver before the cursor's dot names a type: a declared type
+## or interface of this file or of a resolved import (`rl.Color`), a builtin, or
+## any uppercase identifier (the host's `type_name_receiver_token?`).
+function receiver_is_type_name(facts: ref[ScanFacts], tokens: span[token_mod.Token], receiver_index: ptr_uint, source: str) -> bool:
+    let name = receiver_base_name(tokens, receiver_index, source)
+    if name.len == 0:
+        return false
+    if starts_uppercase(name) or is_known_type_name(facts, name):
+        return true
+    if unsafe: read(facts).types.contains(name) or read(facts).interfaces.contains(name):
+        return true
+    let module_prefix = receiver_module_prefix(tokens, receiver_index, source)
+    if module_prefix.len == 0:
+        return false
+    var qualified = qualified_member_key(module_prefix, name)
+    defer: qualified.release()
+    unsafe:
+        return read(facts).alias_types.contains(qualified.as_str())
 
 
 function starts_uppercase(name: str) -> bool:
@@ -996,8 +1504,31 @@ function merge_bool_keys(source: ref[map_mod.Map[str, bool]], target: ref[map_mo
             target.set(read(kp), true)
 
 
+## Record a module's *static* method keys (`<Type>.<member>`) under `prefix`
+## (`""` for the scanned file's own declarations, `"alias."` for an import) —
+## the host's `static_method_binding_for_receiver`, which is what tells a
+## static call (`NPC.max_hp()`) apart from a variant arm (`Option.some(...)`).
+function collect_static_members(methods: ref[map_mod.Map[str, analyzer.FnSig]], prefix: str, target: ref[map_mod.Map[str, bool]]) -> void:
+    var entries = methods.entries()
+    while true:
+        if not entries.next():
+            break
+        unsafe:
+            let key = read(entries.current().key)
+            let sig = read(entries.current().value)
+            if sig.method_kind != ast.MethodKind.mk_static:
+                continue
+            if prefix.len == 0:
+                target.set(key, true)
+            else:
+                var buf = string.String.create()
+                buf.append(prefix)
+                buf.append(key)
+                target.set(buf.as_str(), true)
+
+
 ## Record a module's exported surface under `alias.` keys.
-function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[analyzer.Analysis]) -> void:
+function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[analyzer.Analysis], file: ast.SourceFile) -> void:
     var functions = vec.Vec[str].create()
     defer: functions.release()
     var types = vec.Vec[str].create()
@@ -1006,6 +1537,20 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
     defer: interfaces.release()
     var values = vec.Vec[str].create()
     defer: values.release()
+    var readonly_values = vec.Vec[str].create()
+    defer: readonly_values.release()
+    var const_names = map_mod.Map[str, bool].create()
+    defer: const_names.release()
+    collect_const_names(file, ref_of(const_names))
+    var alias_prefix = string.String.create()
+    defer: alias_prefix.release()
+    alias_prefix.append(alias)
+    alias_prefix.push_byte(46)
+    collect_static_members(ref_of(read(analysis).method_sigs), alias_prefix.as_str(), ref_of(facts.static_members))
+    # The host's `methods_for_receiver_type` merges every imported module's
+    # methods by the bare type name, so `vec.Vec.create` and a bare
+    # `Vec.create` resolve alike.
+    collect_static_members(ref_of(read(analysis).method_sigs), "", ref_of(facts.static_members))
     unsafe:
         var fkeys = read(analysis).functions.keys()
         while true:
@@ -1032,6 +1577,12 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
             let kp = vkeys.next() else:
                 break
             values.push(read(kp))
+    var const_iter = const_names.keys()
+    while true:
+        let kp = const_iter.next() else:
+            break
+        unsafe:
+            readonly_values.push(read(kp))
     var i: ptr_uint = 0
     while i < functions.len():
         let fp = functions.get(i) else:
@@ -1059,6 +1610,13 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
             break
         var key = qualified_member_key(alias, unsafe: read(vp))
         facts.alias_values.set(key.as_str(), true)
+        i += 1
+    i = 0
+    while i < readonly_values.len():
+        let vp = readonly_values.get(i) else:
+            break
+        var key = qualified_member_key(alias, unsafe: read(vp))
+        facts.alias_readonly_values.set(key.as_str(), true)
         i += 1
 
 
@@ -1088,7 +1646,7 @@ function register_resolved_import(
                     let dep_file = parser.parse_source(dep_source.as_str(), ref_of(dep_diags))
                     var dep_analysis = analyzer.check_source_file(dep_file)
                     facts.imports.set(alias, true)
-                    collect_alias_exports(facts, alias, ref_of(dep_analysis))
+                    collect_alias_exports(facts, alias, ref_of(dep_analysis), dep_file)
                 Result.failure as fail:
                     var err = fail.error
                     err.release()
@@ -1121,7 +1679,7 @@ function scan_import_alias_name(path: ast.QualifiedName, alias_name: Option[str]
 
 
 ## Build the classification tables for one scan.
-function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, analysis: ref[analyzer.Analysis], roots: span[str]) -> ScanFacts:
+function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, analysis: ref[analyzer.Analysis], roots: span[str], source: str) -> ScanFacts:
     var facts = ScanFacts(
         functions = map_mod.Map[str, bool].create(),
         types = map_mod.Map[str, bool].create(),
@@ -1133,14 +1691,13 @@ function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, an
         alias_types = map_mod.Map[str, bool].create(),
         alias_interfaces = map_mod.Map[str, bool].create(),
         alias_values = map_mod.Map[str, bool].create(),
-        readonly_names = map_mod.Map[str, bool].create(),
-        param_names = map_mod.Map[str, bool].create(),
+        alias_readonly_values = map_mod.Map[str, bool].create(),
+        bindings = scope.collect_bindings(source, file),
+        readonly_values = map_mod.Map[str, bool].create(),
+        static_members = map_mod.Map[str, bool].create(),
+        type_param_scopes = scope.collect_type_param_scopes(source, file),
+        attribute_decls = map_mod.Map[ptr_uint, bool].create(),
     )
-    collect_readonly_names(file, ref_of(facts.readonly_names))
-    var params = collect_param_names(analysis)
-    defer: params.release()
-    merge_bool_keys(ref_of(params), ref_of(facts.param_names))
-    facts.param_names.set("this", true)
     var analysis_value = unsafe: read(analysis)
     unsafe:
         merge_fn_keys(ref_of(analysis_value.functions), ref_of(facts.functions))
@@ -1152,6 +1709,9 @@ function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, an
         merge_type_keys(ref_of(analysis_value.type_alias_types), ref_of(facts.types))
         merge_interface_keys(ref_of(analysis_value.interfaces), ref_of(facts.interfaces))
         merge_type_keys(ref_of(analysis_value.value_types), ref_of(facts.values))
+        collect_static_members(ref_of(analysis_value.method_sigs), "", ref_of(facts.static_members))
+    collect_const_names(file, ref_of(facts.readonly_values))
+    collect_attribute_decl_names(file, ref_of(facts.attribute_decls))
 
     var i: ptr_uint = 0
     while i < file.imports.len:
@@ -1208,7 +1768,7 @@ function compute_token_data(
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
-    var facts = build_scan_facts(ws, ast_file, ref_of(analysis), roots.as_span())
+    var facts = build_scan_facts(ws, ast_file, ref_of(analysis), roots.as_span(), source)
 
     let tokens = all_tokens.as_span()
     var data = vec.Vec[uint].create()
@@ -1256,14 +1816,25 @@ function compute_token_data(
             if token_type == TOKEN_KEYWORD:
                 # The host's keyword arm: `name` before a colon declares a field
                 # (`null` ending an `if …:` line included), a keyword after a dot
-                # is a property.
-                if scan_is_keyword_field_declaration(tokens, ti):
+                # is a property, and a keyword type name after `:`/`->` on the
+                # same line (`x: proc() -> int`, `fn(x: int) -> bool`) is a type.
+                if scan_is_keyword_type_parameter(tokens, ti):
+                    token_type = TOKEN_TYPE_PARAM
+                else if scan_is_keyword_type_annotation(tokens, ti):
+                    token_type = TOKEN_TYPE
+                else if scan_is_keyword_field_declaration(tokens, ti):
                     token_type = TOKEN_PROPERTY
                     token_mod = 1
                 else if scan_prev_is_dot(tokens, ti):
                     token_type = TOKEN_PROPERTY
             if kind == tk_mod.TokenKind.at:
-                in_decorator = true
+                # Only `@[` opens an attribute application; a lifetime `@a` is
+                # not one, so its following tokens keep their own classes.
+                let after_at = scan_next_index(tokens, ti)
+                var opens_attribute = false
+                if after_at.is_some():
+                    opens_attribute = scan_kind_at(tokens, after_at.unwrap()) == tk_mod.TokenKind.lbracket
+                in_decorator = opens_attribute
                 decorator_depth = 0
             else if kind == tk_mod.TokenKind.lbracket and in_decorator:
                 decorator_depth += 1
@@ -1275,12 +1846,22 @@ function compute_token_data(
         # A heredoc body is emitted one entry per line — the host splits a
         # multi-line string token (`token_semantic_entries`) — except for the
         # embedded-language tags it leaves to the editor's grammar
-        # (`embedded_heredoc_token?`).
+        # (`embedded_heredoc_token?`), and a format string's interpolations are
+        # split into literal runs and re-lexed expressions
+        # (`fstring_interpolation_entries`).
         if token_type == TOKEN_STRING:
             let lexeme = unsafe: token_mod.token_lexeme(tok, source)
+            if kind == tk_mod.TokenKind.fstring and not scan_is_heredoc(lexeme):
+                emit_fstring_entries(ref_of(data), lexeme, line_num, ptr_uint<-col_num, ref_of(prev_line), ref_of(prev_char), ref_of(facts), source)
+                ti += 1
+                continue
             if scan_is_heredoc(lexeme):
                 if not scan_heredoc_embedded_tag(lexeme):
                     emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char))
+                ti += 1
+                continue
+            if scan_lexeme_has_newline(lexeme):
+                emit_heredoc_lines(ref_of(data), lexeme, line_num, col_num, ref_of(prev_line), ref_of(prev_char))
                 ti += 1
                 continue
         let delta_line = line_num - prev_line
@@ -1367,6 +1948,276 @@ function emit_heredoc_lines(
             segment_start = i + 1
             line_index += 1
         i += 1
+
+
+## True when a lexeme contains a newline: the host emits one entry per line for
+## such a string token (`token_semantic_entries`), which is how the implicitly
+## concatenated multi-line literals are split.
+function scan_lexeme_has_newline(lexeme: str) -> bool:
+    var i: ptr_uint = 0
+    while i < lexeme.len:
+        if lexeme.byte_at(i) == '\n':
+            return true
+        i += 1
+    return false
+
+
+## One format string's interpolation: the expression source (the format spec
+## split off) and the 0-based column of the expression's first character.
+struct FstringPart:
+    expr_col: ptr_uint
+    source: str
+    spec: str
+    has_spec: bool
+
+
+## Emit a format string's semantic entries (the host's
+## `fstring_interpolation_entries`): the literal runs render `string`, and each
+## interpolation's expression is re-lexed and classified so its identifiers,
+## numbers and operators are coloured as if they stood alone.
+function emit_fstring_entries(
+    data: ref[vec.Vec[uint]],
+    lexeme: str,
+    first_line: uint,
+    first_col: ptr_uint,
+    prev_line: ref[uint],
+    prev_char: ref[uint],
+    facts: ref[ScanFacts],
+    source: str,
+) -> void:
+    var cursor = first_col
+    var i: ptr_uint = 2
+    while i < lexeme.len:
+        let b = lexeme.byte_at(i)
+        if b == '"':
+            break
+        if b == '#' and i + 1 < lexeme.len and lexeme.byte_at(i + 1) == '{':
+            let expr_start = i + 2
+            let expr_end = fstring_interpolation_end(lexeme, expr_start)
+            if expr_end < expr_start:
+                break
+            let part = fstring_split_part(lexeme, expr_start, expr_end, first_col)
+            let hash_col = part.expr_col - 2
+            if hash_col > cursor:
+                emit_span(data, first_line, cursor, hash_col - cursor, TOKEN_STRING, 0, prev_line, prev_char)
+            emit_fstring_expression(data, part, first_line, facts, prev_line, prev_char)
+            let raw_len = part.source.len + (if part.has_spec: 1 + part.spec.len else: 0)
+            cursor = part.expr_col + raw_len + 1
+            i = expr_end + 1
+            continue
+        if b == '\\' and i + 1 < lexeme.len:
+            i += 2
+            continue
+        i += 1
+    let end_col: ptr_uint = first_col + lexeme.len - 1
+    if end_col + 1 > cursor:
+        emit_span(data, first_line, cursor, end_col + 1 - cursor, TOKEN_STRING, 0, prev_line, prev_char)
+
+
+## The index of the `}` closing the interpolation that starts at `index`, with
+## nested braces balanced and nested string literals skipped; the lexeme's end
+## when it is unterminated.
+function fstring_interpolation_end(lexeme: str, index: ptr_uint) -> ptr_uint:
+    var depth: ptr_uint = 1
+    var i = index
+    while i < lexeme.len:
+        let b = lexeme.byte_at(i)
+        if b == '"':
+            i = fstring_skip_string(lexeme, i)
+            continue
+        if b == '{':
+            depth += 1
+            i += 1
+            continue
+        if b == '}':
+            depth -= 1
+            if depth == 0:
+                return i
+            i += 1
+            continue
+        i += 1
+    return lexeme.len
+
+
+## The index just past a nested string literal starting at `index` (its opening
+## quote), escapes included.
+function fstring_skip_string(lexeme: str, index: ptr_uint) -> ptr_uint:
+    var i = index + 1
+    while i < lexeme.len:
+        let b = lexeme.byte_at(i)
+        if b == '"':
+            return i + 1
+        if b == '\\':
+            i += 2
+            continue
+        i += 1
+    return lexeme.len
+
+
+## Split one interpolation into its expression and format spec (the host's
+## `split_format_interpolation_source`: a top-level `:` whose suffix is a format
+## spec wins, the last one if several match).
+function fstring_split_part(lexeme: str, expr_start: ptr_uint, expr_end: ptr_uint, first_col: ptr_uint) -> FstringPart:
+    let raw = lexeme.slice(expr_start, expr_end - expr_start)
+    var depth: ptr_uint = 0
+    var spec_index: ptr_uint = 0
+    var found_spec = false
+    var i: ptr_uint = 0
+    while i < raw.len:
+        let b = raw.byte_at(i)
+        if b == '"':
+            i = fstring_skip_string(raw, i)
+            continue
+        if b == '(' or b == '[' or b == '{':
+            depth += 1
+        else if b == ')' or b == ']' or b == '}':
+            if depth > 0:
+                depth -= 1
+        else if b == ':':
+            if depth == 0 and fstring_format_spec_suffix(raw.slice(i + 1, raw.len - i - 1)):
+                spec_index = i
+                found_spec = true
+        i += 1
+    if found_spec:
+        return FstringPart(
+            expr_col = first_col + expr_start,
+            source = raw.slice(0, spec_index),
+            spec = raw.slice(spec_index + 1, raw.len - spec_index - 1),
+            has_spec = true,
+        )
+    return FstringPart(expr_col = first_col + expr_start, source = raw, spec = "", has_spec = false)
+
+
+## The host's `format_spec_suffix?`: a trimmed `.digits` or one of the radix
+## letters.
+function fstring_format_spec_suffix(suffix: str) -> bool:
+    let trimmed = suffix.trim_ascii_whitespace()
+    if trimmed.len == 0:
+        return false
+    if trimmed.len == 1:
+        let b = trimmed.byte_at(0)
+        return b == 'x' or b == 'X' or b == 'o' or b == 'O' or b == 'b' or b == 'B'
+    if trimmed.byte_at(0) != '.':
+        return false
+    var i: ptr_uint = 1
+    while i < trimmed.len:
+        let b = trimmed.byte_at(i)
+        if b < '0' or b > '9':
+            return false
+        i += 1
+    return true
+
+
+## Emit the entries of one interpolation: its expression re-lexed and
+## classified, then its format spec's tokens.  The re-lexed tokens are shifted
+## to the document's coordinates first (the host's
+## `interpolation_expression_tokens`), so the classifier's scope lookups see the
+## f-string's own line.
+function emit_fstring_expression(
+    data: ref[vec.Vec[uint]],
+    part: FstringPart,
+    line: uint,
+    facts: ref[ScanFacts],
+    prev_line: ref[uint],
+    prev_char: ref[uint],
+) -> void:
+    if part.source.len == 0:
+        return
+    emit_shifted_sub_tokens(data, part.source, line, part.expr_col, facts, prev_line, prev_char)
+    if part.has_spec and part.spec.len > 0:
+        emit_shifted_sub_tokens(data, part.spec, line, part.expr_col + part.source.len + 1, facts, prev_line, prev_char)
+
+
+function emit_shifted_sub_tokens(
+    data: ref[vec.Vec[uint]],
+    source: str,
+    line: uint,
+    base_col: ptr_uint,
+    facts: ref[ScanFacts],
+    prev_line: ref[uint],
+    prev_char: ref[uint],
+) -> void:
+    var diags = vec.Vec[token_mod.LexDiagnostic].create()
+    defer: diags.release()
+    var sub_tokens = lexer_mod.lex_reporting(source, ref_of(diags))
+    defer: sub_tokens.release()
+    let raw = sub_tokens.as_span()
+    var shifted = vec.Vec[token_mod.Token].create()
+    defer: shifted.release()
+    var ti: ptr_uint = 0
+    while ti < raw.len:
+        let tok = unsafe: read(raw.data + ti)
+        if not scan_is_trivia(tok.kind):
+            shifted.push(token_mod.Token(
+                kind = tok.kind,
+                start_offset = tok.start_offset,
+                end_offset = tok.end_offset,
+                line = ptr_uint<-line + 1,
+                column = base_col + tok.column,
+            ))
+        ti += 1
+    var st = shifted.as_span()
+    ti = 0
+    while ti < st.len:
+        let tok = unsafe: read(st.data + ti)
+        if scan_is_char_literal(tok.kind):
+            ti += 1
+            continue
+        let cls = scan_sub_token_class(facts, st, ti, source)
+        if cls.token_type != TOKEN_NONE:
+            let col: ptr_uint = tok.column - 1
+            let length: ptr_uint = tok.end_offset - tok.start_offset
+            emit_span(data, uint<-tok.line - 1, col, length, cls.token_type, cls.token_mod, prev_line, prev_char)
+        ti += 1
+
+
+## The class of one token inside a format-string interpolation — the classifier's
+## arms for the token kinds an expression can contain (the host classifies the
+## re-lexed sub-tokens with the same `classify_semantic_token`).
+function scan_sub_token_class(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> TokenClass:
+    let kind = scan_kind_at(tokens, index)
+    if kind == tk_mod.TokenKind.identifier:
+        return classify_scan_identifier(facts, tokens, index, scan_lexeme_at(tokens, index, source), source)
+    if kind == tk_mod.TokenKind.string or kind == tk_mod.TokenKind.cstring or kind == tk_mod.TokenKind.fstring:
+        return TokenClass(token_type = TOKEN_STRING, token_mod = 0)
+    if kind == tk_mod.TokenKind.integer or kind == tk_mod.TokenKind.float_literal:
+        return TokenClass(token_type = TOKEN_NUMBER, token_mod = 0)
+    if token_kind_to_type(kind) == TOKEN_KEYWORD:
+        if scan_is_keyword_type_annotation(tokens, index):
+            return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
+        if scan_is_keyword_field_declaration(tokens, index):
+            return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 1)
+        if scan_prev_is_dot(tokens, index):
+            return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
+        return TokenClass(token_type = TOKEN_KEYWORD, token_mod = 0)
+    return TokenClass(token_type = token_kind_to_type(kind), token_mod = 0)
+
+
+## Push one entry with the relative delta encoding the protocol uses.
+function emit_span(
+    data: ref[vec.Vec[uint]],
+    line: uint,
+    col: ptr_uint,
+    length: ptr_uint,
+    token_type: uint,
+    token_mod: uint,
+    prev_line: ref[uint],
+    prev_char: ref[uint],
+) -> void:
+    if length == 0:
+        return
+    let delta_line = line - unsafe: read(prev_line)
+    var delta_char = col
+    if delta_line == 0:
+        delta_char = col - unsafe: read(prev_char)
+    data.push(uint<-delta_line)
+    data.push(uint<-delta_char)
+    data.push(uint<-length)
+    data.push(token_type)
+    data.push(token_mod)
+    unsafe:
+        read(prev_line) = line
+        read(prev_char) = uint<-col
 
 
 ## The host's legend names, indexed by our legend constants.
@@ -1457,7 +2308,7 @@ public function semantic_class_entries(
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
-    var facts = build_scan_facts(ws, ast_file, ref_of(analysis), roots.as_span())
+    var facts = build_scan_facts(ws, ast_file, ref_of(analysis), roots.as_span(), source)
 
     let tokens = all_tokens.as_span()
     var in_decorator = false
@@ -1484,7 +2335,13 @@ public function semantic_class_entries(
                 token_mod = cls.token_mod
         else:
             if kind == tk_mod.TokenKind.at:
-                in_decorator = true
+                # Only `@[` opens an attribute application; a lifetime `@a` is
+                # not one, so its following tokens keep their own classes.
+                let after_at = scan_next_index(tokens, ti)
+                var opens_attribute = false
+                if after_at.is_some():
+                    opens_attribute = scan_kind_at(tokens, after_at.unwrap()) == tk_mod.TokenKind.lbracket
+                in_decorator = opens_attribute
                 decorator_depth = 0
             else if kind == tk_mod.TokenKind.lbracket and in_decorator:
                 decorator_depth += 1
@@ -1720,6 +2577,21 @@ function snapshot_token_type_name(token_type: uint) -> str:
     if token_type >= 23:
         return "variable"
     return SNAPSHOT_TOKEN_NAMES[uint<-token_type]
+
+
+## Collect the module-level `const` names: their value bindings are immutable,
+## so a reference renders `variable` + `readonly`.  Only the consts — a `let`
+## name inside some function must not leak into the module-level value set.
+function collect_const_names(file: ast.SourceFile, names: ref[map_mod.Map[str, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_const as dc:
+                    names.set(dc.name, true)
+                _:
+                    pass
+        i += 1
 
 
 ## Collect names of `let`/`const` bindings so references can be marked readonly.

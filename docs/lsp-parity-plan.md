@@ -5,15 +5,27 @@ with the Ruby host on everything an editor can observe (diagnostics included), p
 readiness properties parity alone does not test — cold start, steady-state memory, large
 files, long sessions, real clients (Neovim/VS Code).
 
-**Where we are** (branch `selfhost`, session 13, 2026-09-29): SimpleGame audit
-6456 entries / **22 differ** (hover 9, documentSymbol 5, semanticTokens 5,
-diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and
-definition/declaration/typeDefinition/implementation/**references 0**);
-synthetic harness 30/30 capabilities + 4 documented entries; probe fixtures at
-their session-12 diff sets (`hover-probe4` closed 6 navigation entries);
-bootstrap fixed point + 14/14; `cli:parity` 23/38/0.  Per-class
+**Where we are** (branch `selfhost`, session 14, 2026-09-30): SimpleGame audit
+6456 entries / **18 differ** (hover 9, documentSymbol 5, diagnostic 2,
+documentHighlight 1, semanticTokens **1**; codeLens, workspace/symbol and
+definition/declaration/typeDefinition/implementation/**references 0**); the
+semantic-token streams differ in **5 positions** of 13576 (from 676 at session 13's
+close — four of the five files are byte-equal); synthetic harness 30/30 capabilities
++ 4 documented entries; probe fixtures at their session-13+14 baselines (8 entries
+closed, none added); bootstrap fixed point + 14/14; `cli:parity` 23/38/0.  Per-class
 numbers measured with `--only` drift ±10 against the full matrix (the host
 warms its caches as the audit proceeds); the full matrix is authoritative.
+
+**Track B, sixteenth batch** (session 14): the token classifier's *facts* — the
+scope-resolved bindings (`scope.Binding` kinds + the function-level snapshot rule),
+the static-member table, the type-parameter scopes, the type-position/receiver arms,
+specialized calls, f-strings and multi-line strings, and the attribute-name
+overrides.  The five files' differing positions **676 → 5**; the class counter
+semanticTokens **5 → 1**; the audit **22 → 18** (closed 4, none added).  The residue
+is three host facts the self lacks: `callable_value_identifier_sites` (an
+analyzer-side record), `callable_field_member_access?` (a member call on a
+function-typed struct field), and `dot_nested_type_member?` (a nested type name).
+The record is `docs/self-host-plan.md` §0k, "Track B, sixteenth batch".
 
 **Track B, fifteenth batch** (session 13, continued): code lenses and workspace
 symbols from the host's token-pair symbol list (`extract_symbols_from_tokens` →
@@ -193,12 +205,13 @@ declaration rather than the host's partial node (§0k, session 9).
   the survivor needs the host's carried-forward binding resolution for a label
   token), documentSymbol 5 (host answers are timing-coupled: the module wrapper
   appears only once its module-name index is warm; the self's outline matches
-  the unwrapped shape's symbol set), semanticTokens 5 (the streams differ in 676
-  positions, from 952), diagnostic 2 (a *linter* residue, measured in session 13:
-  rule anchors differ and rules are missing — `redundant-unsafe`,
+  the unwrapped shape's symbol set), semanticTokens **1** (the streams differ in
+  *5 positions* of 13576, from 676 in session 13 and 952 before it — the residue
+  is `callable_value_identifier_sites`, `callable_field_member_access?` and
+  `dot_nested_type_member?`), diagnostic 2 (a *linter* residue, measured in
+  session 13: rule anchors differ and rules are missing — `redundant-unsafe`,
   `owning-release-leak`; it is not the emission order) — codeLens,
-  workspace/symbol and `implementation`
-  closed in session 13.
+  workspace/symbol and `implementation` closed in session 13.
 
 ## Track C — real-project readiness (what parity alone does not test)
 
@@ -340,61 +353,71 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
       ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 
     Read first: docs/lsp-parity-plan.md (the focused plan — Track A CLOSED,
-    Track C1 DONE; Track B is at 22 entries; its live records are in
+    Track C1 DONE; Track B is at 18 entries; its live records are in
     docs/self-host-plan.md §0k, "Track B, thirteenth batch + Track C1" through
-    "fifteenth batch"), then ~/.commandcode/plans/finish-self-host-full-parity.md
-    (the session-13 log), docs/lsp-design.md §8/§9, and AGENTS.md's
+    "sixteenth batch"), then ~/.commandcode/plans/finish-self-host-full-parity.md
+    (the session-14 log), docs/lsp-design.md §8/§9, and AGENTS.md's
     "Self-Host Parity Program" section (gates, drift, fixtures).
 
-    This session is LSP-only.  State at session-13 close: the SimpleGame full
-    matrix (6456 entries) is at 22 differ — hover 9, documentSymbol 5,
-    semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens,
+    This session is LSP-only.  State at session-14 close: the SimpleGame full
+    matrix (6456 entries) is at 18 differ — hover 9, documentSymbol 5,
+    diagnostic 2, documentHighlight 1, semanticTokens 1 (its streams differ in
+    5 positions of 13576; four of the five files are byte-equal); codeLens,
     workspace/symbol and definition/declaration/typeDefinition/implementation/
     references are 0.  Everything else green: the harness 30/30 capability keys +
     the 4 documented entries; recovery probe OK; cli:parity 23/38/0; sexpr lex
     705/705 and parse 701 comparable / 0 differ; unused-import 609/608 (the
     documented async_network_lobby residual); bootstrap fixed point + 14/14;
-    test/mt 60/0.
+    test/mt 60/0; the probe fixtures at their session-13/14 baselines with 8
+    entries closed and none added.
 
-    INSTRUMENTS (added in session 13):
+    INSTRUMENTS:
       ruby tools/lsp_audit_diffs.rb AUDIT.json [METHOD] [ROWS]
         # per-class table, then the differing entries' labels with host/self payloads
       ruby tools/lsp_audit_diffs.rb --compare BEFORE.json AFTER.json [METHOD]
         # closed / added key sets; exits 1 when anything was added — the way to
         # verify a fix (counts drift, key sets do not)
       ruby tools/lsp_token_diffs.rb [--count] AUDIT.json [WORKSPACE] [ROWS]
-        # position-keyed semantic-token diff (a token-index diff misleads once
-        # the streams shift)
+        # position-keyed semantic-token diff over a full-audit JSON
       ruby tools/lsp_cold_start.rb --workspace DIR [--server host|self|BIN]
+      ruby tmp/tok_self.rb WORKSPACE OUT.json [BIN]   # self token streams, fast
+      ruby tmp/tok_ref.rb AUDIT.json OUT.json         # the host's streams from an audit
+      ruby tmp/tok_diff.rb HOST.json SELF.json [WS] [ROWS]   # position-keyed diff
+      ruby tmp/tok_groups2.rb HOST.json SELF.json [WS] [ROWS] # grouped by (host,self)
+      ruby tmp/host-lsp.sh  # the Ruby host as an `lsp` binary (for lsp_debug.rb --bin)
     MEASUREMENT RULES: the full matrix is authoritative.  `--only <method>` runs
     drift ±10 per method, and the *host's* answers themselves differ between
     `--only` and full runs for facts-dependent requests (semantic tokens,
     documentSymbol, references) — quote per-class numbers from the full run and
     verify every fix with `lsp_audit_diffs.rb --compare` (added must be 0).  The
     `--only references` mode is pacing-coupled (its host answers depend on the
-    self's speed): it reads 0–56 with no self-side change.
+    self's speed): it reads 0–56 with no self-side change.  For tokens, run the
+    full matrix; `--only semanticTokens` gives the host *unwarmed* facts (its
+    `diagnostic` request is what resolves the imports before the token request).
+    The tok_* drivers above replay the audit's warm sequence, so the self's
+    streams are comparable to a full-run host reference (tmp/tok-host-ref.json).
 
     STEP 1 — re-measure before touching anything (the full matrix takes ~14 min,
     start it in the background):
       ruby tools/lsp_project_audit.rb --workspace /home/teefan/Projects/MilkTea/SimpleGame \
-        --json tmp/audit-s14.json --max-diffs 0 --timeout 60
-      ruby tools/lsp_audit_diffs.rb tmp/audit-s14.json
+        --json tmp/audit-s15.json --max-diffs 0 --timeout 60
+      ruby tools/lsp_audit_diffs.rb tmp/audit-s15.json
     and the harness:
       ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
       ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
       ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json
     Fast fixtures (evidence of no regressions; session 13 left comparable
-    recordings in tmp/audit-fin-*.json for probe-ws, probe2, probe4–probe6,
-    defprobe, eventprobe, hover-probe5, fieldprobe, thisprobe): probe-ws, probe2
-    (7 diffs, its 2 deliberate hovers among them), probe4–probe6, fieldprobe,
-    thisprobe, defprobe, crash1, hover-probe2 (annotation `*From*`),
-    hover-probe3/-4 (the analyzer `<error>` shapes), hover-probe5 (mat4 / heap /
-    tuple / detach / span), eventprobe, plus the valgrind wrapper
-    (/tmp/mtc-vg-s12.sh) and tmp/nvim_hover_smoke.lua.  Debug drivers kept in tmp/
-    (gitignored): lsp_debug.rb (drive one file with scripted requests),
-    lsp_change_repro.rb (the harness's unterminated-edit step), host_trace_hook.rb
-    (a RUBYOPT hook that logs the host's `get_content` calls — this is how the
-    definition index's warm mechanism was found).
+    recordings in tmp/audit-fin-*.json and session 14 in tmp/audit-s14f-*.json for
+    probe-ws, probe2, probe4–probe6, defprobe, eventprobe, hover-probe5,
+    fieldprobe, thisprobe): probe-ws, probe2 (7 diffs, its 2 deliberate hovers
+    among them), probe4–probe6, fieldprobe, thisprobe, defprobe, crash1,
+    hover-probe2 (annotation `*From*`), hover-probe3/-4 (the analyzer `<error>`
+    shapes), hover-probe5 (mat4 / heap / tuple / detach / span), eventprobe, plus
+    the valgrind wrapper (/tmp/mtc-vg-s14.sh) and tmp/nvim_hover_smoke.lua.
+    Debug drivers kept in tmp/ (gitignored): lsp_debug.rb (drive one file with
+    scripted requests), lsp_change_repro.rb (the harness's unterminated-edit
+    step), host_trace_hook.rb (a RUBYOPT hook that logs the host's `get_content`
+    calls — this is how the definition index's warm mechanism was found).
 
     STEP 2 — the residue, grouped by root cause, largest first:
 
@@ -416,14 +439,19 @@ Continue the Milk Tea self-host LSP work in /home/teefan/Projects/Ruby/mt-lang
        - `type quat`'s location (`lb@1653:24`): the host's answer depends on its
          **asynchronous** definition warmup, so a blanket port of its index
          fallback is wrong (measured: 1 closed, 5 added) — leave it documented.
-    2. **semanticTokens 5** — the five files' streams differ in **676 positions**
-       (`tools/lsp_token_diffs.rb --count`, down from 952).  Shapes: import-alias
-       receivers (`vec` → host `variable`, `Vec` → `property`, `.create` →
-       `enumMember`), `emit`-expanded declarations, variant payload fields
-       (`some`/`none` → enumMember + declaration), `typeParameter` renderings, and
-       scope-aware binding resolution (the self's `param_names`/`readonly_names`
-       are flat name sets, so a name that is both a parameter and a local resolves
-       to the wrong kind; the host resolves the binding in scope).
+    2. **semanticTokens 1 (5 positions, all `docs/language_baseline.mt`)** — three
+       host facts the self lacks:
+       - `callable_value_identifier_sites` (`identity` 275:40, `add` 1099:41): the
+         host renders a bare function name `function` only where its analyzer
+         recorded a callable-value site (`record_callable_value_identifier_site`
+         in `name_resolution.rb`); elsewhere the plain value arms win
+         (`variable:0`).  The self's scanner says `function` for any name in
+         `facts.functions` — the analyzer needs the site record;
+       - `callable_field_member_access?` (`check` 1127:9, `invoke` 1160:13): a
+         member call on a struct field whose type is `fn`/`proc` is a `property`,
+         not a `method` — needs the receiver's resolved type plus the field type;
+       - `dot_nested_type_member?` (`Rectangle.Edge` 1962:29): a nested type name
+         renders `type` — needs a nested-type-name table per struct.
     3. **documentSymbol 5** — the host's answers are *timing-coupled*: it wraps the
        outline in a module hierarchy (`docs` → file) only once its module-name
        index is warm, so a file alternates between wrapped and unwrapped shapes

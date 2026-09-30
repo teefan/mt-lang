@@ -2119,6 +2119,91 @@ module-name index is warm, so its five entries alternate between "wrapped" and
 "unwrapped" shapes between runs; the self's outline matches the unwrapped shape's
 symbol set exactly (118 symbols on `data_structures.mt`, same names and kinds).
 
+### Track B, sixteenth batch (2026-09-30 session 14): the token classifier's scope and facts
+
+The five files' token streams differed in **676 positions** at session 13's close.
+This batch ported the host classifier's *facts* rather than adding shapes one by one:
+the streams are now **5 positions** from byte-equal (`data_structures.mt`,
+`memory_stress_test.mt`, `colors.mt` and `main.mt` are byte-equal) and the class
+counter went semanticTokens **5 → 1** — the audit **22 → 18** (closed 4, added 0).
+
+1. **Scope-resolved bindings** (`lsp/scope.mt` + the scanner).  The scanner's
+   `param_names`/`readonly_names` were flat file-wide name sets; the host resolves the
+   *innermost binding in scope* (`local_semantic_value_binding`) and reads its kind.
+   `Binding` grew `kind` (param / immutable / mutable — the host's `ValueBinding#kind`)
+   and `function_level`, and `binding_kind_at` reproduces the host's snapshot facts:
+   only parameters and locals declared *directly in a function body* resolve — a local
+   bound inside `if`/`while`/`for`/`match`/`unsafe`/`defer` and a `for`/match-arm
+   binding are absent from the snapshot the classifier reads — and the binding must be
+   declared on an *earlier* line (a name used inside its own declaration,
+   `let ptr: ptr[int]?`, is not in the snapshot yet).  A parameter declaration token
+   carries the declaration modifier, and the `in` of a `for v in values:` line answers
+   the host's `parameter_declaration_token?` there too (it sits in
+   `FOREIGN_PARAM_MODE_TOKENS`).
+2. **Static members** (`collect_static_members`).  `<Type>.<member>` keys of every
+   *static* method — the file's own and each resolved import's, bare and
+   alias-qualified, mirroring the host's `methods_for_receiver_type` merge — tell a
+   static call (`NPC.max_hp()`) from a variant arm (`Option.some(...)`): a type-name
+   receiver (type arguments and a module path seen through) renders `method` for a
+   static member and `enumMember` for anything else.
+3. **Type parameters** (`scope.collect_type_param_scopes`).  Each declaration's
+   `[T, U]` names are in scope over its line range (an `extending Vec[T]` block's
+   receiver arguments per method), so a declaration token renders `typeParameter` +
+   declaration and a reference in a type position (a type-argument list, after
+   `:`/`->`) renders `typeParameter`; the scanner gained the keyword forms
+   (`keyword_lifetime_or_type_param`, `keyword_type_annotation` — `[@a]`,
+   `x: proc() -> int`).
+4. **Type positions and calls.**  A name in a type-reference position (`:`/`->`/`as`,
+   `= B` on a `type`-headed line, a type-argument list) resolves as a type — a builtin
+   with `defaultLibrary` — *before* the binding and imports arms, and a *receiver
+   before a dot* is a type or a namespace before anything else (`Option.some` →
+   `type:0`).  A specialized call (`span[int](...)`, `zero[int]`, `hash[int](...)`)
+   counts as a call shape, a bound value shadows a same-named function at a call site,
+   and a builtin name resolves as a type before an import alias of the same name.
+5. **Format strings and multi-line strings.**  An f-string's literal runs render
+   `string` while each `#{…}` expression is re-lexed, shifted to the document's
+   coordinates (so a scope lookup sees the file's bindings) and classified, its format
+   spec lexed too (the host's `fstring_interpolation_entries`); a multi-line string
+   token is emitted one entry per line (`token_semantic_entries`) — the implicitly
+   concatenated literals were one entry before.
+6. **Attribute names and lifetimes.**  `attribute[field] rename(...)` renders the
+   declared attribute's name as `decorator` + declaration (an AST-built position
+   table), the name a `has_attribute`/`attribute_of` call reads as `decorator`, and the
+   decorator state machine enters only on `@[` — a lifetime `@a` no longer swallows the
+   rest of its line.  A variant/enum/flags member declaration is found by searching the
+   whole *header line* (the backward scan stopped at a token before the header
+   keyword, so every arm declaration was missed).
+
+One readiness note: `ScanFacts` (the scanner's per-scan tables) is not released — the
+pre-existing pattern, now carrying the binding vector and the type-parameter scopes too,
+so a scan leaks a few KB per distinct document version; Track C2's memory work should
+fold it in.
+
+The residue (5 positions, all `docs/language_baseline.mt`): the host's
+`callable_value_identifier_sites` (`identity` 275:40, `add` 1099:41 — a function-value
+reference is `function` only where the analyzer recorded one, so an unrecorded site
+falls back to the plain value arms), its `callable_field_member_access?` (`check`
+1127:9, `invoke` 1160:13 — a member call on a struct field of function/proc type is a
+`property`), and `dot_nested_type_member?` (`Rectangle.Edge` 1962:29 — a nested type
+name renders `type`).  The first two need analyzer-side records, the third a
+nested-type-name table.
+
+Measured (full matrix, authoritative): the audit **22 → 18** — semanticTokens **5 → 1**
+(closed `data_structures.mt`, `memory_stress_test.mt`, `colors.mt`, `main.mt`; none
+added); the differing positions **676 → 5**.  Gates: bootstrap fixed point + 14/14, `test/mt` 60/0, `cli:parity`
+23/38/0, sexpr lex 705/705 + parse 701/0, the harness 30/30 + the 4 documented entries,
+recovery probe OK, the fixtures at their session baselines with 8 entries closed and none
+added, valgrind 0 errors over the LSP drive, the headless-Neovim smoke.
+
+**Next**: the three residue shapes above, then hover's 9 (the nullability four print the
+host's *flow-refined* type — its snapshot selection at a guard line; the destructuring
+two + the match-arm payload are stage 11c; the `fn ` rendering is the compiler stages'
+function-type names item; `type quat`'s cross-file location; a member chain's third
+segment), then B4's other classes (documentSymbol 5 — timing-coupled on the host, the
+self's unwrapped outline matches the symbol set; documentHighlight 1 — the host's
+carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
+D2/D3.
+
 ### Linter `line-too-long` parity (2026-09-27 session 4, stage 8b)
 
 The rule now mirrors the host (`linter/source_helpers.rb`): only **wrappable**

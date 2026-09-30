@@ -27,14 +27,14 @@ lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
 > The LSP test suite (`test/tooling/lsp/server/*`) still spawns the *Ruby* server
 > (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
 > so CI alone does not exercise `build/stage2/mtc lsp`.
-Hover coverage: measured by the project audit — 13 differing entries of 915
-hover requests on the SimpleGame corpus (session 12; `self-host-plan.md` §0k).
+Hover coverage: measured by the project audit — 9 differing entries of 915
+hover requests on the SimpleGame corpus (session 14; `self-host-plan.md` §0k).
 References: cross-file via workspace index.
 Definition: local variables supported.
 Signature help: methods and extending-block methods resolved.
 Diagnostic positions: lexer-based token matching, buffer-overflow fix.
 LSP logging: structured stderr with version+revision announcement.
-Snapshot semantic tokens: parity with Ruby on language_baseline.mt after decorator/enum-member/struct-body fixes.
+Snapshot semantic tokens: parity with Ruby on language_baseline.mt after decorator/enum-member/struct-body fixes; the live `semanticTokens` streams differ in 5 positions of 13576 (session 14).
 Formatting: `textDocument/formatting` + `rangeFormatting` byte-equal (mode from
 the client configuration, `tidy` by default; `rangeFormatting` formats the
 requested segment), backed by `formatter/cst.mt` + `formatter/tidy.mt`.
@@ -460,7 +460,7 @@ fixed the same day.
 | LSP logging (std/log) | **DONE** — `--log-level trace|debug|info|warn|error` |
 | $/setTrace handler | **DONE** — VSCode trace-level changes at runtime |
 | Semantic token legend | **DONE** — the host's full legend (23 token types / 10 modifiers); token *types* compare by name, never by legend index |
-| Semantic token accuracy | **DONE** — snapshot HTML matches Ruby on language_baseline.mt (decorator `@[...]` tracking, enum member dot-access via `static_member_types`, parameter-name collision in enum body, struct/union body separation), and since stage 4 (2026-09-26) the LSP `semanticTokens/full` and `/range` streams are **byte-equal** to the host's (one scanner for full/range/delta; `method`/`property`/`enumMember`/`defaultLibrary`/import-alias rules ported). |
+| Semantic token accuracy | **5 positions from byte-equal** (session 14, 2026-09-30) — four of the SimpleGame corpus's five files match exactly; `docs/language_baseline.mt` differs in 5 of 9509 positions, the residue being three host facts the self lacks (`callable_value_identifier_sites`, `callable_field_member_access?`, `dot_nested_type_member?`).  The scanner's facts are the host's: scope-resolved bindings (the function-level snapshot rule), the static-member table, the type-parameter scopes, the type-position/dot-receiver arms, specialized calls, f-string interpolation parts and multi-line string splitting, and the attribute-name overrides.  The snapshot HTML path matches Ruby on language_baseline.mt (decorator `@[...]` tracking, enum member dot-access via `static_member_types`, parameter-name collision in enum body, struct/union body separation). |
 | Completion depth | **DONE** — prefix filtering, detail, insertText, isIncomplete, proper response format, import completions via filesystem enumeration, scope/local completions via AST binding collection. Missing: format-string/snippet/value-chain/specialization contexts. |
 | Code actions depth | **IMPROVED** — unused-param, dead-assignment, shadow, unsafe-wrap, match-missing-arms quickfixes added. `only_kinds` filtering respected. Missing: type-cast-insertion, line-too-long wrap. |
 | Document link resolveProvider | **DONE** — advertised correctly |
