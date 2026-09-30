@@ -378,6 +378,178 @@ public function graph_read_keys(graph: ref[CfgGraph], keys: ref[vec.Vec[ptr_uint
         i += 1
 
 
+## Every binding key with a `declaration`-origin write anywhere in the graph —
+## the host's live `locally_declared` set (built from the graph's writes_info).
+public function graph_declared_keys(graph: ref[CfgGraph], keys: ref[vec.Vec[ptr_uint]]) -> void:
+    var i: ptr_uint = 0
+    while i < read(graph).nodes.len():
+        let slot = read(graph).nodes.get(i) else:
+            break
+        let node = unsafe: read(slot)
+        unsafe:
+            var wi: ptr_uint = 0
+            while wi < read(node).write_sites.len():
+                let site = read(node).write_sites.get(wi) else:
+                    break
+                if read(site).origin == "declaration":
+                    if not id_vec_contains(keys, read(site).key):
+                        keys.push(read(site).key)
+                wi += 1
+        i += 1
+
+
+# =============================================================================
+#  The liveness dataflow — the host's `Liveness.solve`
+# =============================================================================
+
+## The live sets around every node (the host's `Liveness::Result`): two
+## `node × binding` bool tables, `in_state` before the node and `out_state`
+## after it, solved backward.
+public struct LivenessFlow:
+    in_state: ptr[bool]?
+    out_state: ptr[bool]?
+    row_size: ptr_uint
+    node_count: ptr_uint
+
+
+## Allocate both tables for `node_count + 2` nodes of `row_size` bindings, all
+## clear (the host's initial live set is empty).
+public function liveness_create(row_size: ptr_uint, node_count: ptr_uint) -> LivenessFlow:
+    let total = row_size * (node_count + 2)
+    if total == 0:
+        return LivenessFlow(in_state = null, out_state = null, row_size = row_size, node_count = node_count)
+    let in_raw = heap.must_alloc_zeroed[bool](total)
+    let out_raw = heap.must_alloc_zeroed[bool](total)
+    return LivenessFlow(
+        in_state = unsafe: ptr[bool]<-in_raw,
+        out_state = unsafe: ptr[bool]<-out_raw,
+        row_size = row_size,
+        node_count = node_count,
+    )
+
+
+## (Re)allocate the tables for one function body, releasing any previous ones.
+public function liveness_init_into(flow: ref[LivenessFlow], row_size: ptr_uint, node_count: ptr_uint) -> void:
+    liveness_release(flow)
+    read(flow).row_size = row_size
+    read(flow).node_count = node_count
+    let total = row_size * (node_count + 2)
+    if total == 0:
+        return
+    let in_raw = heap.must_alloc_zeroed[bool](total)
+    let out_raw = heap.must_alloc_zeroed[bool](total)
+    read(flow).in_state = unsafe: ptr[bool]<-in_raw
+    read(flow).out_state = unsafe: ptr[bool]<-out_raw
+
+
+public function liveness_release(flow: ref[LivenessFlow]) -> void:
+    heap.release(read(flow).in_state)
+    heap.release(read(flow).out_state)
+    read(flow).in_state = null
+    read(flow).out_state = null
+
+
+## The host's `Result#live_out[node.id]`: is `key` live after the node?
+public function live_out_has(flow: ref[LivenessFlow], node_id: ptr_uint, key: ptr_uint) -> bool:
+    if node_id == 0:
+        return false
+    if key >= read(flow).row_size:
+        return false
+    if node_id > read(flow).node_count:
+        return false
+    let out_state = read(flow).out_state else:
+        return false
+    return unsafe: read(out_state + node_id * read(flow).row_size + key)
+
+
+## The backward solver: the state is the set of live binding keys, the join is
+## set union (may-live), and the transfer is `reads | (live_out - writes)`; ids
+## are visited ascending, and the fixpoint grows from the empty state.
+public function solve_liveness(graph: ref[CfgGraph], flow: ref[LivenessFlow]) -> void:
+    let row = read(flow).row_size
+    if row == 0:
+        return
+    let raw = heap.must_alloc_zeroed[bool](row)
+    let work = unsafe: ptr[bool]<-raw
+    defer: heap.release(work)
+
+    var changed = true
+    while changed:
+        changed = false
+        var id: ptr_uint = 1
+        while id <= read(graph).nodes.len():
+            let node = graph_node(graph, id) else:
+                id += 1
+                continue
+            clear_row(work, row)
+            union_succ_live_in(graph, flow, node, work)
+            let index = id * row
+            if liveness_row_differs(read(flow).out_state, index, work, row):
+                liveness_row_store(read(flow).out_state, index, work, row)
+                changed = true
+            unsafe:
+                var wi: ptr_uint = 0
+                while wi < read(node).write_sites.len():
+                    let site = read(node).write_sites.get(wi) else:
+                        break
+                    if read(site).key < row:
+                        read(work + read(site).key) = false
+                    wi += 1
+                var ri: ptr_uint = 0
+                while ri < read(node).read_sites.len():
+                    let site = read(node).read_sites.get(ri) else:
+                        break
+                    if read(site).key < row:
+                        read(work + read(site).key) = true
+                    ri += 1
+            if liveness_row_differs(read(flow).in_state, index, work, row):
+                liveness_row_store(read(flow).in_state, index, work, row)
+                changed = true
+            id += 1
+
+
+## OR every successor's live-in set into `work` (a node with no successors —
+## the exit — contributes nothing).
+function union_succ_live_in(graph: ref[CfgGraph], flow: ref[LivenessFlow], node: ptr[CfgNode], work: ptr[bool]) -> void:
+    let row = read(flow).row_size
+    let in_state = read(flow).in_state else:
+        return
+    unsafe:
+        var si: ptr_uint = 0
+        while si < read(node).succs.len():
+            let succ_slot = read(node).succs.get(si) else:
+                break
+            let succ = read(succ_slot)
+            if succ <= read(flow).node_count:
+                var index: ptr_uint = 0
+                while index < row:
+                    if read(in_state + succ * row + index):
+                        read(work + index) = true
+                    index += 1
+            si += 1
+
+
+function liveness_row_differs(table: ptr[bool]?, index: ptr_uint, work: ptr[bool], row: ptr_uint) -> bool:
+    let base = table else:
+        return false
+    var i: ptr_uint = 0
+    while i < row:
+        if unsafe: read(base + index + i) != (unsafe: read(work + i)):
+            return true
+        i += 1
+    return false
+
+
+function liveness_row_store(table: ptr[bool]?, index: ptr_uint, work: ptr[bool], row: ptr_uint) -> void:
+    let base = table else:
+        return
+    var i: ptr_uint = 0
+    while i < row:
+        unsafe:
+            read(base + index + i) = read(work + i)
+        i += 1
+
+
 # =============================================================================
 #  The nullability dataflow — the host's `NullabilityFlow.solve`
 # =============================================================================

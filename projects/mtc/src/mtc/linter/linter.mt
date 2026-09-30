@@ -38,6 +38,8 @@ import std.hash
 
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.control_flow.builder as flow_builder
+import mtc.semantic.control_flow.graph as flow_graph
 import mtc.lexer.lexer as lexer
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
@@ -45,7 +47,6 @@ import mtc.lexer.trivia as triv
 import mtc.formatter.tidy as tidy
 import mtc.linter.config as lint_config
 import mtc.linter.scope_tracking as scope_tracking
-import mtc.linter.cfg as cfg
 import mtc.linter.nullcheck as nullcheck
 import mtc.linter.own_ptr as own_ptr
 import mtc.linter.constprop as constprop
@@ -4220,12 +4221,10 @@ function for_each_func_body(file: ast.SourceFile, path: str, warnings: ref[vec.V
 
 function dispatch_cfg_rule(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], kind: ptr_uint) -> void:
     if kind == 0:
-        lint_dead_in_body(body, path, warnings)
-    else if kind == 1:
         lint_unreachable_in_body(body, path, warnings)
-    else if kind == 2:
+    else if kind == 1:
         lint_const_cond_in_body(body, path, warnings)
-    else if kind == 3:
+    else if kind == 2:
         lint_loop_single_in_body(body, path, warnings)
 
 
@@ -4234,24 +4233,101 @@ function dispatch_cfg_rule(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Ve
 # =============================================================================
 
 function lint_dead_assignment(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    for_each_func_body(file, path, warnings, 0)
-
-
-function lint_dead_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var dead = cfg.collect_dead_writes(body)
-    defer: dead.release()
-    var di: ptr_uint = 0
-    while di < dead.len():
-        let dp = dead.get(di) else:
-            break
+    var flow_cfg = flow_builder.empty_cfg()
+    var graph = flow_graph.empty_graph()
+    defer: flow_graph.graph_release(ref_of(graph))
+    var live = flow_graph.liveness_create(0, 0)
+    defer: flow_graph.liveness_release(ref_of(live))
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
         unsafe:
-            let dw = read(dp)
-            var buf = string.String.create()
-            buf.append("value assigned to '")
-            buf.append(dw.name)
-            buf.append("' is never read")
-            push_warning_at(warnings, path, if dw.line > 0: dw.line else: 1, if dw.column > 0: dw.column else: 0, 0, "dead-assignment", buf.as_str(), "warning")
-        di += 1
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    lint_dead_body(ref_of(flow_cfg), ref_of(graph), ref_of(live), fun.method_params, fun.body, path, warnings)
+                ast.Decl.decl_extending_block as ex:
+                    var j: ptr_uint = 0
+                    while j < ex.methods.len:
+                        let method = read(ex.methods.data + j)
+                        lint_dead_body(ref_of(flow_cfg), ref_of(graph), ref_of(live), method.method_params, method.body, path, warnings)
+                        j += 1
+                _:
+                    pass
+        i += 1
+
+
+## Emit the dead writes of one function body over F1's graph: the host's
+## `emit_dead_assignment_warnings` — a write whose origin is neither
+## `declaration` nor `call_argument`, whose binding is read somewhere in the
+## body and locally declared, and which is not live after its node.  Nodes are
+## visited by ascending id, which is the builder's reverse-statement order and
+## therefore the host's emission order.
+function lint_dead_body(
+    flow_cfg: ref[flow_builder.Cfg],
+    graph: ref[flow_graph.CfgGraph],
+    live: ref[flow_graph.LivenessFlow],
+    params: span[ast.Param],
+    body: ptr[ast.Stmt]?,
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+) -> void:
+    let b = body else:
+        return
+    flow_builder.build_graph_into(flow_cfg, graph, params, b)
+    flow_graph.liveness_init_into(live, read(flow_cfg).next_id, read(graph).next_id)
+    flow_graph.solve_liveness(graph, live)
+    var readable = vec.Vec[ptr_uint].create()
+    defer: readable.release()
+    flow_graph.graph_read_keys(graph, ref_of(readable))
+    var declared = vec.Vec[ptr_uint].create()
+    defer: declared.release()
+    flow_graph.graph_declared_keys(graph, ref_of(declared))
+    var id: ptr_uint = 1
+    while id < read(graph).next_id:
+        let node = flow_graph.graph_node(graph, id) else:
+            id += 1
+            continue
+        unsafe:
+            var wi: ptr_uint = 0
+            while wi < read(node).write_sites.len():
+                let wp = read(node).write_sites.get(wi) else:
+                    break
+                let write = read(wp)
+                # The host skips `declaration`/`call_argument` origins and then
+                # requires a `locally_declared` key; under the host's
+                # per-declaration ids no `for_binding`/`match_binding` key can
+                # carry a declaration write, so an `assignment` origin is the
+                # only origin that can fire.  The self keys bindings by name,
+                # so that equivalence has to be stated directly.
+                if write.origin == "assignment":
+                    if key_in(ref_of(readable), write.key) and key_in(ref_of(declared), write.key):
+                        if not flow_graph.live_out_has(live, id, write.key):
+                            var buf = string.String.create()
+                            buf.append("value assigned to '")
+                            buf.append(write.name)
+                            buf.append("' is never read")
+                            push_warning_at(
+                                warnings,
+                                path,
+                                if write.line > 0: write.line else: 1,
+                                if write.column > 0: write.column else: 0,
+                                write.name.len,
+                                "dead-assignment",
+                                buf.as_str(),
+                                "warning",
+                            )
+                wi += 1
+        id += 1
+
+
+function key_in(keys: ref[vec.Vec[ptr_uint]], key: ptr_uint) -> bool:
+    var i: ptr_uint = 0
+    while i < keys.len():
+        let item = keys.get(i) else:
+            break
+        if unsafe: read(item) == key:
+            return true
+        i += 1
+    return false
 
 
 # =============================================================================
@@ -4259,7 +4335,7 @@ function lint_dead_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Ve
 # =============================================================================
 
 function lint_unreachable_code(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    for_each_func_body(file, path, warnings, 1)
+    for_each_func_body(file, path, warnings, 0)
 
 
 function lint_unreachable_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4332,7 +4408,7 @@ function lint_constant_condition(file: ast.SourceFile, path: str, warnings: ref[
             push_warning(warnings, path, c.line, "constant-condition", buf.as_str(), "warning")
         ci += 1
     # Fall back to the trivial check for literal true/false and self-comparisons.
-    for_each_func_body(file, path, warnings, 2)
+    for_each_func_body(file, path, warnings, 1)
 
 
 function lint_const_cond_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4416,7 +4492,7 @@ function exprs_equal(left: ptr[ast.Expr], right: ptr[ast.Expr]) -> bool:
 # =============================================================================
 
 function lint_loop_single_iteration(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    for_each_func_body(file, path, warnings, 3)
+    for_each_func_body(file, path, warnings, 2)
 
 
 function lint_loop_single_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:

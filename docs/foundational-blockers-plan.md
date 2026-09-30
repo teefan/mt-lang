@@ -119,6 +119,50 @@ for facts-dependent requests differ between `--only` and full runs; verify with
 
 ## F3 — linter stages 11 + 11b (closes diagnostic 2)
 
+**PART DONE (session 16): `dead-assignment` over the graph.**  `graph.mt` gained the
+backward-union `LivenessFlow` (`reads | (live_out - writes)`, `live_out_has`) and
+`graph_declared_keys`; `lint_dead_assignment` builds F1's graph per body, solves
+liveness, and emits the host's firing set by ascending node id (the host's order).
+`linter/cfg.mt` is deleted.  Measured: `language_baseline.mt` dead-assignment **16 → 0**
+(host 0), warning total 123 → 107.  Record: `docs/self-host-plan.md` §0k, "Liveness over
+the graph".
+
+**NEW BLOCKER (session 16, measured): the diagnostic class compares *arrays*.**
+The host emits in visitor order — statement rules inline, a scope's
+`unused-local`/`unused-param`/`prefer-let` at that scope's pop *inside* the walk, and the
+per-function flow rules (`dead-assignment`, `unreachable`, `constant-condition`, the
+release rules, `prefer-let-else`, `prefer-var-else`, `redundant-return`) at the end of
+that function; `missing_return` after them.  The self emits all visitor warnings for the
+file, then a whole-file scope pass, then whole-file rule passes, so equal *sets* still
+differ as arrays (lb: host starts `285 unused-local, 325 redundant-return, 333
+unused-param …`, self starts `325, 422, 474 …`; mst: host emits `441 redundant-unsafe`
+before `440 owning-release-leak`).  Closing diagnostic 2 requires restructuring the
+self's linter to that walk order (scope pops inside the walk, flow rules per function) —
+on top of the per-rule deltas below.
+
+**The remaining per-rule deltas, measured with `tmp/diag_probe.rb` (session-16
+baseline, `tmp/diag-s16-base.txt`)** — ranges/messages first (mechanical): every rule
+below needs a host-shaped span, and several need a message fix.
+
+| rule | host | self | delta |
+| --- | --- | --- | --- |
+| `noop-compound-assignment` (20) | 12→18 | 12→13 | length = target identifier length (`expression_column`/`name.length`) |
+| `self-comparison` (2) | 19→35 | 19→25 | the whole binary expression's span |
+| `redundant-return` | 4→10 | 4→5 | the statement's own `length` |
+| `redundant-type-annotation` | 422:8→12 | 8→13 | `name.length`; the self also fires once too often (`let maybe_int: int? = 42` — the host skips nullable annotations) |
+| `unreachable-code` | 1305:4→10, "unreachable code" | 0:0→1, "…after a terminating statement" | `statement_column`/`statement_length` + the host's message |
+| `constant-condition` (4) | condition span, "branch condition is always…" | `0:0→1`, "if condition is always…" | `condition_span` (source-line based) + the `branch`/`loop` message; the host's answers also differ in which condition is `true` vs `false` (a `ConstantPropagation` port) |
+| `prefer-inline-if` | 474:4→5 | 474:7→8 | the `if` keyword span; the self fires once too often (482) |
+| `prefer-conditional-expression` | 6, keyword span, "every if branch assigns to 'X'; rewrite as \`let X = if …\` expression" | 7 (3 with an empty range), "every … branch assigns the same target" | message + span + drop the extras |
+| `prefer-or-pattern` | 698:19→20 | 698:8→9 | the pattern's position, not the body's |
+| `prefer-is-variant` | 0 | 3 | the self fires on `is` *expressions*; the host fires on a match whose arms map one variant to opposite booleans (`column`/`length` = the match expression) |
+| `prefer-own-ptr` | 0 | 4 (2 lb, 2 mst) | gates: `@ptr_candidates` + uses counted by identifier occurrence with `unsafe_depth` (`uses[:unsafe] > 0 && uses[:safe] == 0`, never params) |
+| `reserved-primitive-name` | 0 | 1 (lb 1376 `ptr`) | the host's module-binding scan order/exclusions |
+| `unused-local` | 24 | 25 (`msg`, a destructured name) | the host credits a destructuring `let (a, b) = …` name |
+| `redundant-unsafe` | 1 lb + 5 mst | 0 | the rule is missing entirely: `@sema_facts.required_unsafe_lines`, generic-context skip, `column` + length 6, for `unsafe:` blocks *and* expressions |
+| `owning-release-double` | mst 1 at 335:33→38 'owned' | 2 at 335:4 'heap', 403 | the CFG-based path (`classify_cfg_nodes`, `find_reachable_release`) + `symbol_name` (the released binding, not the `heap` receiver) |
+| `owning-release-leak` | mst 1 at 440:8→11 'raw' own[int] | 0 | the `own_typed_local_bindings`/`own_transferred?` path (needs resolved initializer types) |
+
 **11 — `dead-assignment` firing set** (in-flight plan correction #1): the host has the
 rule (`lib/milk_tea/tooling/linter/flow_rules.rb:6-37`, gated on `full_tier?`; the LSP
 always uses that tier) with gates the self lacks — exclude `:call_argument` and

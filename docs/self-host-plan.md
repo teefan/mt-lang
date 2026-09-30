@@ -2244,6 +2244,50 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### Liveness over the graph: `dead-assignment` (2026-09-30 session 16, F3 part 1)
+
+The linter's `dead-assignment` rule no longer walks the AST: `lint_dead_assignment`
+builds F1's graph per function body (`flow_builder.build_graph_into` with the
+body's parameters), solves a new **backward union dataflow** over it
+(`graph.mt`'s `LivenessFlow`: `reads | (live_out - writes)`, union join, empty
+bottom, `live_out_has(node, key)` the host's `Result#live_out`), and emits the
+host's `emit_dead_assignment_warnings` firing set from the write sites by
+ascending node id — the builder's reverse-statement order, which is also the
+host's emission order (verified on a two-dead-write fixture, which the host
+prints 6-then-3 and the self now prints identically).
+
+One deliberate divergence, forced by the self's *name-keyed* binding ids: the
+host's guard chain is "skip `declaration`/`call_argument` origins, require
+`readable_bindings` + `locally_declared`", which under its per-declaration ids
+can only ever fire on an `assignment` origin.  Under name-keyed ids a `for`
+binding whose name is declared again later in the same body inherits the
+declaration (this is what made `language_baseline.mt`'s `for i in 0..4:` warn),
+so the self states that equivalence directly: only `assignment`-origin writes
+are candidates.  `linter/cfg.mt` (the old path-insensitive backward walk) is
+deleted — nothing else used it.
+
+Measured on the audit's two diagnostic files: `dead-assignment` **16 → 0** on
+`language_baseline.mt` and 0 on `memory_stress_test.mt` (host 0 on both; the
+self's warning total on the first file drops 123 → 107).  Gates: bootstrap fixed
+point + 14/14, `test/mt` 60/0, `cli:parity` 23/38/0, sexpr lex 705/705 + parse
+701/0.
+
+**The diagnostic class needs more than rule content.**  The audit compares each
+file's diagnostic *array*, and the host's order is its visitor order: statement
+rules fire as the walk reaches them, a scope's `unused-local`/`unused-param`/
+`prefer-let` fire when that scope pops (inside the walk), and the per-function
+flow rules (`dead-assignment`, `unreachable`, `constant-condition`, the release
+rules, `prefer-let-else`, `redundant-return`) fire at the *end of that function*.
+The self emits all visitor warnings for the whole file first, then a separate
+scope pass, then whole-file passes — so the sets can be equal and the arrays
+still differ (`language_baseline.mt`'s host order starts `285 unused-local,
+325 redundant-return, …` while the self's starts `325, 422, …`; on
+`memory_stress_test.mt` the host emits `441 redundant-unsafe` *before*
+`440 owning-release-leak`).  Closing diagnostic 2 therefore also needs the
+linter's emission restructured to that walk order.  The remaining per-rule
+content deltas (ranges, messages, firing sets) are listed in the session-16
+prompt's ledger entry.
+
 ### The nullability continuation refinement (2026-09-30 session 15, F2)
 
 The analyzer now carries the host's control-flow narrowing, and it closed the
