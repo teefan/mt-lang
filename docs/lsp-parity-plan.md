@@ -276,9 +276,12 @@ bindings — definition/declaration/typeDefinition 5/5/4 → 0, implementation
 1 → 0, hover 13 → 9, the full matrix 56 → 37).
 
 Remaining, in order.  Note that the residue has crossed over: most of what is
-left is *analyzer* work the LSP only measures, so the compiler stages the
-multi-session plan already queues (Phase 2 item 3, stage 11c) come first for
-those entries:
+left is *analyzer* work the LSP only measures, so the compiler stages come first
+for those entries — the ranked plan with the host/self references is
+[foundational-blockers-plan.md](./foundational-blockers-plan.md) (F1 the real CFG,
+F2 the nullability continuation, F3 linter 11/11b, F4 stage 11c, F5 function-type
+names, F6 stage 11d, F7 the callable-value record, F8 the LSP-side closures, F9
+the readiness items):
 
 1. **documentHighlight 1** (B4).  `lb@704:67` is a named-argument label that the
    host resolves through its *carried-forward* snapshot bindings to a binding
@@ -309,6 +312,12 @@ those entries:
    a *linter* residue (see the finding below).
 4. C2 → C3 → C4/C5 (readiness), with the deliberate-difference table in
    `docs/lsp-design.md` §8, then D2/D3 (audit determinism, scoreboard row).
+
+The next session is a **compiler-stages session**: items 1–3 above are blocked on
+[foundational-blockers-plan.md](./foundational-blockers-plan.md)'s F1 (the real CFG),
+F2 (the nullability continuation refinement), F3 (linter 11/11b), F4 (stage 11c) and
+F5 (function-type names); its F7 closes the last analyzer-side token positions and its
+F8 lists the LSP-side closures to resume with afterwards.
 
 **Findings for the next session.**
 
