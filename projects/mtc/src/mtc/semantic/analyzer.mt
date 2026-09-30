@@ -88,6 +88,16 @@ public struct PayloadFieldDecl:
     param: str
 
 
+## A bare function name used as a *value* where a function/proc type is
+## expected (an argument to a callback parameter): the host's
+## `callable_value_identifier_sites`, keyed by the identifier's position.  The
+## token scanner renders `function` for those sites alone — a name that resolves
+## to a binding, or that is merely a function in the module, is not one.
+public struct CallableValueSite:
+    line: ptr_uint
+    column: ptr_uint
+
+
 ## An `as name` variant match-arm binding: the arm's declaration position and
 ## the payload type the binding carries, so the LSP can hover it the way the
 ## host's scope snapshot answers.
@@ -240,6 +250,13 @@ struct Context:
     variant_param_names: map_mod.Map[str, span[str]]
     ## See `Analysis.arm_binding_types`.
     arm_binding_types: vec.Vec[ArmBindingEntry]
+    ## See `Analysis.callable_value_sites`.
+    callable_value_sites: vec.Vec[CallableValueSite]
+    ## Depth of the builtin calls whose arguments are *not* values
+    ## (`callable_of`, `field_of`, `has_attribute`, …): a bare function name
+    ## inside one is the host's special evaluation, which records no
+    ## callable-value site.
+    callable_site_suppression: int
     ## The current function body's CFG, its solved non-null flow (the host's
     ## `@nullability_flow_result`), and the refinement record the LSP reads.
     flow_cfg: flow_builder.Cfg
@@ -281,6 +298,9 @@ public struct Analysis:
     ## The `as name` variant match-arm bindings with their payload types, so the
     ## LSP resolves an arm binding's hover (declaration and use).
     arm_binding_types: vec.Vec[ArmBindingEntry]
+    ## See `Context.callable_value_sites`: the bare function names used as
+    ## values, which the token scanner renders `function`.
+    callable_value_sites: vec.Vec[CallableValueSite]
     ## See `Context.flow_types`: the local refinement record the LSP resolves a
     ## hover's type through.
     flow_types: vec.Vec[FlowTypeEntry]
@@ -379,6 +399,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         destructure_types = vec.Vec[DestructureTypeEntry].create(),
         arm_payload_field_names = map_mod.Map[str, span[PayloadFieldDecl]].create(),
         arm_binding_types = vec.Vec[ArmBindingEntry].create(),
+        callable_value_sites = vec.Vec[CallableValueSite].create(),
+        callable_site_suppression = 0,
         variant_param_names = map_mod.Map[str, span[str]].create(),
         flow_cfg = flow_builder.empty_cfg(),
         flow_graph = flow_graph_mod.empty_graph(),
@@ -438,6 +460,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         local_decl_types = ctx.local_decl_types,
         destructure_types = ctx.destructure_types,
         arm_binding_types = ctx.arm_binding_types,
+        callable_value_sites = ctx.callable_value_sites,
         flow_types = ctx.flow_types,
         const_values = ctx.const_values,
         module_name = module_name,
@@ -779,12 +802,53 @@ function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.D
                         i += 1
                         continue
                     ctx.const_values.set(c.name, val)
+                    record_decl_callable_sites(ctx, val)
             ast.Decl.decl_function as fun:
                 if declare_value(ctx, fun.name, fun.line, fun.column):
                     ctx.functions.set(fun.name, build_fn_sig(ctx, fun.name, fun.method_params, fun.return_type, ast.MethodKind.mk_plain, fun.is_async))
             _:
                 pass
         i += 1
+
+
+## Record callable-value sites for the bare function names in a declaration's
+## initializer (`const WIDE: type = int_with_bits[64]`, `foreign function f(…) =
+## atoi`).  The host infers those with an expected type, so its scanner renders
+## the name `function`; the self folds consts and never infers a foreign
+## mapping, so the sites are recorded here instead.
+function record_decl_callable_sites(ctx: ref[Context], ep: ptr[ast.Expr]?) -> void:
+    let p = ep else:
+        return
+    unsafe:
+        match read(p):
+            ast.Expr.expr_identifier as id:
+                if ctx.functions.contains(id.name):
+                    ctx.callable_value_sites.push(CallableValueSite(line = id.line, column = id.column))
+            ast.Expr.expr_specialization as sp:
+                # `int_with_bits[64]`: the specialization's callee is the value
+                # (its type arguments are types, not expressions).
+                record_decl_callable_sites(ctx, sp.callee)
+            ast.Expr.expr_call as cl:
+                record_decl_callable_sites(ctx, cl.callee)
+                var ci: ptr_uint = 0
+                while ci < cl.args.len:
+                    record_decl_callable_sites(ctx, read(cl.args.data + ci).arg_value)
+                    ci += 1
+            ast.Expr.expr_member_access as ma:
+                record_decl_callable_sites(ctx, ma.receiver)
+            ast.Expr.expr_unary_op as u:
+                record_decl_callable_sites(ctx, u.operand)
+            ast.Expr.expr_prefix_cast as pc:
+                record_decl_callable_sites(ctx, pc.expression)
+            ast.Expr.expr_unsafe as us:
+                record_decl_callable_sites(ctx, us.expression)
+            ast.Expr.expr_expression_list as el:
+                var ei: ptr_uint = 0
+                while ei < el.elements.len:
+                    record_decl_callable_sites(ctx, el.elements.data + ei)
+                    ei += 1
+            _:
+                pass
 
 
 ## Register the prelude types (Option[T], Result[T,E]) so their variant arms
@@ -1434,6 +1498,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
             ast.Decl.decl_const as c:
                 if declare_value(ctx, c.name, c.line, c.column):
                     ctx.value_types.set(c.name, resolve_type(ctx, c.const_type))
+                    record_decl_callable_sites(ctx, c.value)
                     match evaluate_const_expr(ctx, c.value):
                         Option.some:
                             let val = c.value else:
@@ -1476,6 +1541,7 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                 ctx.functions.set(ff.name, sig)
                 record_mutating_param_indices(ctx, ff.name, ff.foreign_params)
                 declare_value(ctx, ff.name, ff.line, 1)
+                record_decl_callable_sites(ctx, ff.mapping)
             ast.Decl.decl_event as ev:
                 if declare_value(ctx, ev.name, ev.line, ev.column):
                     ctx.value_types.set(ev.name, types.Type.ty_named(module_name = "", name = ev.name))
@@ -3181,6 +3247,37 @@ public function unwrap_nullable_type(t: types.Type) -> types.Type:
             return t
 
 
+## True for the compile-time handle builtins whose arguments are declaration
+## *names* rather than values (`callable_of(identity)`, `field_of(T, f)`,
+## `has_attribute(x, a)`, `size_of(T)`, `align_of(T)`, `members_of`,
+## `attributes_of`, `attribute_of`, `attribute_arg`, `fields_of`).
+function is_handle_builtin_callee(callee: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                return (
+                    id.name == "callable_of" or id.name == "field_of"
+                    or id.name == "attribute_of" or id.name == "attribute_arg"
+                    or id.name == "has_attribute" or id.name == "fields_of"
+                    or id.name == "members_of" or id.name == "attributes_of"
+                    or id.name == "size_of" or id.name == "align_of"
+                )
+            _:
+                return false
+
+
+## True when a type is a function or proc type (a nullable one included), the
+## expected type a callable-value argument stands in for.
+public function is_callable_type(t: types.Type) -> bool:
+    match t:
+        types.Type.ty_function:
+            return true
+        types.Type.ty_nullable as n:
+            return is_callable_type(unsafe: read(n.base))
+        _:
+            return false
+
+
 ## Flag an assignment whose target is a name bound by `let`, which is immutable.
 function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scope], target: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
     unsafe:
@@ -3692,6 +3789,12 @@ function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], name: str
     # `value_types` entry, so keep the permissive error type for them (recorded
     # types — and thus code generation — are unchanged); only a name matching
     # nothing at all is a typo or missing import and is reported.
+    if ctx.functions.contains(name) and ctx.callable_site_suppression == 0:
+        # A bare top-level function name in a value position is the host's
+        # `record_callable_value_identifier_site`: valid only where an expected
+        # type exists (the host errors "must be called" otherwise), which is
+        # what the token scanner renders `function` for.
+        ctx.callable_value_sites.push(CallableValueSite(line = line, column = column))
     if not is_known_value_identifier(ctx, name):
         report_at(ctx, line, column, name.len, unknown_name_message(name))
     return types.Type.ty_error
@@ -4019,6 +4122,15 @@ function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, opera
 function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr], args: span[ast.Argument]) -> types.Type:
     var arg_types = vec.Vec[types.Type].create()
     var any_named = false
+    # The compile-time handle builtins take *names*, not values: the host
+    # evaluates them specially and records no callable-value site for their
+    # arguments.
+    let suppress_sites = is_handle_builtin_callee(callee)
+    if suppress_sites:
+        ctx.callable_site_suppression += 1
+    defer:
+        if suppress_sites:
+            ctx.callable_site_suppression -= 1
     var i: ptr_uint = 0
     while i < args.len:
         var arg: ast.Argument

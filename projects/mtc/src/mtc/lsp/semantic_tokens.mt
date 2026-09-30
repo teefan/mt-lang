@@ -312,6 +312,24 @@ struct ScanFacts:
     ## reference renders `variable` + `readonly` like the host's
     ## `semantic_value_binding_entry`.
     alias_readonly_values: map_mod.Map[str, bool]
+    ## The analyzer's recorded callable-value sites (bare function names used
+    ## where a callable type is expected), borrowed from the Analysis: only
+    ## those render `function` (the host's `callable_value_identifier_sites`).
+    callable_value_sites: span[analyzer.CallableValueSite]
+    ## `<Type>.<Nested>` keys for every nested type a struct declares: a member
+    ## of a type-name receiver that names one renders `type` (the host's
+    ## `dot_nested_type_member?`).
+    nested_type_keys: map_mod.Map[str, bool]
+    ## `<Struct>.<field>` keys of the struct fields whose declared type is a
+    ## function or proc: a call through such a field renders `property` (the
+    ## host's `callable_field_member_access?`).
+    callable_fields: map_mod.Map[str, bool]
+    ## `<name>.<Struct>` keys for every `let x = Struct(...)` initializer: a
+    ## callable-field receiver resolves against any struct the name is bound to
+    ## in the file, which the host's `resolve_receiver_value_type` resolves
+    ## scope-aware.  Every binding is kept — a file that reuses `c` for another
+    ## type later must not hide the earlier receiver.
+    receiver_structs: map_mod.Map[str, bool]
     ## The file's implicit value bindings (`scope.collect_bindings`): a
     ## reference resolves the innermost binding in scope — the host's
     ## `local_semantic_value_binding` — instead of a flat name set.
@@ -1183,9 +1201,18 @@ function classify_scan_identifier(
                 # `static_type_member_access?` before `type_name_member_access?`.
                 if is_static_member_of(facts, tokens, receiver_idx.unwrap(), lexeme, source):
                     return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
+                # A nested type name of the receiver's struct renders `type`
+                # (`Rectangle.Edge`), the host's `dot_nested_type_member?`.
+                if scan_nested_type_member(facts, tokens, index, source):
+                    return TokenClass(token_type = TOKEN_TYPE, token_mod = 0)
                 return TokenClass(token_type = TOKEN_ENUM_MEMBER, token_mod = 0)
         let next_idx = scan_next_index(tokens, index)
         if next_idx.is_some() and scan_kind_at(tokens, next_idx.unwrap()) == tk_mod.TokenKind.lparen:
+            # A call through a struct field of function/proc type is a
+            # `property` (the host's `callable_field_member_access?`), not a
+            # method of the receiver's type.
+            if scan_callable_field_call(facts, tokens, index, source):
+                return TokenClass(token_type = TOKEN_PROPERTY, token_mod = 0)
             return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
         if scan_specialized_call(tokens, index):
             return TokenClass(token_type = TOKEN_METHOD, token_mod = 0)
@@ -1270,7 +1297,11 @@ function classify_scan_identifier(
     if lexeme.equal("this"):
         return TokenClass(token_type = TOKEN_PARAMETER, token_mod = 0)
     unsafe:
-        if read(facts).functions.contains(lexeme):
+        if read(facts).functions.contains(lexeme) and scan_callable_value_site(facts, tokens, index):
+            # A bare function name is a `function` token only where the analyzer
+            # recorded a callable-value site (the host's
+            # `bare_function_value_identifier_site?`); a name that resolves to a
+            # binding, or the `callable_of(x)` form, is a plain variable.
             return TokenClass(token_type = TOKEN_FUNCTION, token_mod = 0)
         if read(facts).types.contains(lexeme):
             if is_default_library_type_name(lexeme):
@@ -1695,16 +1726,22 @@ function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, an
         bindings = scope.collect_bindings(source, file),
         readonly_values = map_mod.Map[str, bool].create(),
         static_members = map_mod.Map[str, bool].create(),
+        callable_value_sites = span[analyzer.CallableValueSite](),
+        nested_type_keys = map_mod.Map[str, bool].create(),
+        callable_fields = map_mod.Map[str, bool].create(),
+        receiver_structs = map_mod.Map[str, bool].create(),
         type_param_scopes = scope.collect_type_param_scopes(source, file),
         attribute_decls = map_mod.Map[ptr_uint, bool].create(),
     )
     var analysis_value = unsafe: read(analysis)
+    facts.callable_value_sites = analysis_value.callable_value_sites.as_span()
     unsafe:
         merge_fn_keys(ref_of(analysis_value.functions), ref_of(facts.functions))
         merge_type_keys(ref_of(analysis_value.types), ref_of(facts.types))
         merge_struct_keys(ref_of(analysis_value.structs), ref_of(facts.types))
         merge_struct_keys(ref_of(analysis_value.structs), ref_of(facts.structs))
         merge_struct_keys(ref_of(analysis_value.unions), ref_of(facts.structs))
+
         merge_bool_keys(ref_of(analysis_value.static_member_types), ref_of(facts.types))
         merge_type_keys(ref_of(analysis_value.type_alias_types), ref_of(facts.types))
         merge_interface_keys(ref_of(analysis_value.interfaces), ref_of(facts.interfaces))
@@ -1712,6 +1749,8 @@ function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, an
         collect_static_members(ref_of(analysis_value.method_sigs), "", ref_of(facts.static_members))
     collect_const_names(file, ref_of(facts.readonly_values))
     collect_attribute_decl_names(file, ref_of(facts.attribute_decls))
+    collect_nested_type_keys(file.declarations, "", ref_of(facts.nested_type_keys), ref_of(facts.receiver_structs), ref_of(facts.callable_fields), ref_of(analysis_value))
+
 
     var i: ptr_uint = 0
     while i < file.imports.len:
@@ -2426,6 +2465,21 @@ function emit_semantic_tokens(
     json_text.release()
 
 
+## True when the token at `index` is one of the analyzer's recorded
+## callable-value sites (a bare function name used where a callable type is
+## expected) — the host's `callable_value_identifier_sites` lookup.
+function scan_callable_value_site(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint) -> bool:
+    let tok = unsafe: read(tokens.data + index)
+    let sites = unsafe: read(facts).callable_value_sites
+    var i: ptr_uint = 0
+    while i < sites.len:
+        let site = unsafe: read(sites.data + i)
+        if site.line == tok.line and site.column == tok.column:
+            return true
+        i += 1
+    return false
+
+
 ## Classify an identifier lexeme through the Analysis maps.
 public function classify_identifier(
     lexeme: str,
@@ -2589,6 +2643,208 @@ function collect_const_names(file: ast.SourceFile, names: ref[map_mod.Map[str, b
             match read(file.declarations.data + i):
                 ast.Decl.decl_const as dc:
                     names.set(dc.name, true)
+                _:
+                    pass
+        i += 1
+
+
+## True when the token is `<Type>.<Nested>` with `<Nested>` declared inside the
+## receiver's struct — the host's `dot_nested_type_member?`.
+function scan_nested_type_member(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    let dot = scan_prev_index(tokens, index) else:
+        return false
+    if scan_kind_at(tokens, dot) != tk_mod.TokenKind.dot:
+        return false
+    let recv = scan_prev_index(tokens, dot) else:
+        return false
+    if scan_kind_at(tokens, recv) != tk_mod.TokenKind.identifier:
+        return false
+    var key = string.String.create()
+    key.append(scan_lexeme_at(tokens, recv, source))
+    key.append(".")
+    key.append(scan_lexeme_at(tokens, index, source))
+    return unsafe: read(facts).nested_type_keys.contains(key.as_str())
+
+
+## True when the token is a call through a struct field whose declared type is a
+## function or proc (`f.check(5)`) — the host's `callable_field_member_access?`.
+function scan_callable_field_call(facts: ref[ScanFacts], tokens: span[token_mod.Token], index: ptr_uint, source: str) -> bool:
+    let dot = scan_prev_index(tokens, index) else:
+        return false
+    if scan_kind_at(tokens, dot) != tk_mod.TokenKind.dot:
+        return false
+    let recv = scan_prev_index(tokens, dot) else:
+        return false
+    if scan_kind_at(tokens, recv) != tk_mod.TokenKind.identifier:
+        return false
+    let receiver_name = scan_lexeme_at(tokens, recv, source)
+    let member_name = scan_lexeme_at(tokens, index, source)
+    var prefix = string.String.create()
+    prefix.append(receiver_name)
+    prefix.append(".")
+    var entries = unsafe: read(facts).receiver_structs.entries()
+    while entries.next():
+        let entry = entries.current()
+        let key = unsafe: read(entry.key)
+        if not key.starts_with(prefix.as_str()):
+            continue
+        var field_key = string.String.create()
+        field_key.append(key.slice(prefix.len(), key.len - prefix.len()))
+        field_key.append(".")
+        field_key.append(member_name)
+        if unsafe: read(facts).callable_fields.contains(field_key.as_str()):
+            return true
+    return false
+
+
+## Collect `<Owner>.<Nested>` keys for every nested type declared inside a
+## struct, recursing into the nested structs themselves, and — as a by-product of
+## the same walk — the callable fields and the `let x = Struct(...)` receivers
+## the token scanner needs.  `owner` is the enclosing struct's name ("" at the
+## top level).
+function collect_nested_type_keys(
+    decls: span[ast.Decl],
+    owner: str,
+    keys: ref[map_mod.Map[str, bool]],
+    receivers: ref[map_mod.Map[str, bool]],
+    callable_fields: ref[map_mod.Map[str, bool]],
+    analysis: ref[analyzer.Analysis],
+) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_struct as s:
+                    if owner.len > 0:
+                        var key = string.String.create()
+                        key.append(owner)
+                        key.append(".")
+                        key.append(s.name)
+                        keys.set(key.as_str(), true)
+                    collect_struct_callable_fields(s.name, analysis, callable_fields)
+                    collect_nested_decl_names(s.nested_types, s.name, keys, receivers, callable_fields, analysis)
+                    collect_nested_type_keys(s.nested_types, s.name, keys, receivers, callable_fields, analysis)
+                ast.Decl.decl_function as fun:
+                    collect_receiver_struct_names(fun.body, receivers, analysis)
+                ast.Decl.decl_extending_block as ex:
+                    var mi: ptr_uint = 0
+                    while mi < ex.methods.len:
+                        collect_receiver_struct_names(read(ex.methods.data + mi).body, receivers, analysis)
+                        mi += 1
+                _:
+                    pass
+        i += 1
+
+
+## Register `<Owner>.<Nested>` for the nested *struct* declarations in a
+## declaration list (the recursion itself happens in `collect_nested_type_keys`).
+function collect_nested_decl_names(
+    decls: span[ast.Decl],
+    owner: str,
+    keys: ref[map_mod.Map[str, bool]],
+    receivers: ref[map_mod.Map[str, bool]],
+    callable_fields: ref[map_mod.Map[str, bool]],
+    analysis: ref[analyzer.Analysis],
+) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        unsafe:
+            match read(decls.data + i):
+                ast.Decl.decl_struct as s:
+                    var key = string.String.create()
+                    key.append(owner)
+                    key.append(".")
+                    key.append(s.name)
+                    keys.set(key.as_str(), true)
+                ast.Decl.decl_enum as e:
+                    var ekey = string.String.create()
+                    ekey.append(owner)
+                    ekey.append(".")
+                    ekey.append(e.name)
+                    keys.set(ekey.as_str(), true)
+                _:
+                    pass
+        i += 1
+
+
+## `<Struct>.<field>` for every field whose declared type is a function/proc.
+function collect_struct_callable_fields(struct_name: str, analysis: ref[analyzer.Analysis], callable_fields: ref[map_mod.Map[str, bool]]) -> void:
+    let fields_ptr = unsafe: read(analysis).structs.get(struct_name) else:
+        return
+    let fields = unsafe: read(fields_ptr)
+    var i: ptr_uint = 0
+    while i < fields.len:
+        let field = unsafe: read(fields.data + i)
+        if analyzer.is_callable_type(field.ty):
+            var key = string.String.create()
+            key.append(struct_name)
+            key.append(".")
+            key.append(field.name)
+            callable_fields.set(key.as_str(), true)
+        i += 1
+
+
+## Local binding name -> struct type name for `let x = Struct(...)` declarations
+## (the receiver shape a callable-field call reads).
+function collect_receiver_struct_names(body: ptr[ast.Stmt]?, receivers: ref[map_mod.Map[str, bool]], analysis: ref[analyzer.Analysis]) -> void:
+    let b = body else:
+        return
+    unsafe:
+        match read(b):
+            ast.Stmt.stmt_block as blk:
+                var i: ptr_uint = 0
+                while i < blk.statements.len:
+                    match read(blk.statements.data + i):
+                        ast.Stmt.stmt_local as loc:
+                            let v = loc.value
+                            if v != null and loc.name != "_":
+                                match read(v):
+                                    ast.Expr.expr_call as cl:
+                                        match read(cl.callee):
+                                            ast.Expr.expr_identifier as id:
+                                                if read(analysis).structs.contains(id.name):
+                                                    var key = string.String.create()
+                                                    key.append(loc.name)
+                                                    key.append(".")
+                                                    key.append(id.name)
+                                                    receivers.set(key.as_str(), true)
+                                            _:
+                                                pass
+                                    _:
+                                        pass
+                        _:
+                            pass
+                    i += 1
+                collect_receiver_struct_names_in_stmts(blk.statements, receivers, analysis)
+            _:
+                pass
+
+
+## Recurse `collect_receiver_struct_names` into nested bodies.
+function collect_receiver_struct_names_in_stmts(stmts: span[ast.Stmt], receivers: ref[map_mod.Map[str, bool]], analysis: ref[analyzer.Analysis]) -> void:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            match read(stmts.data + i):
+                ast.Stmt.stmt_if as iff:
+                    var bi: ptr_uint = 0
+                    while bi < iff.branches.len:
+                        collect_receiver_struct_names(read(iff.branches.data + bi).body, receivers, analysis)
+                        bi += 1
+                    collect_receiver_struct_names(iff.else_body, receivers, analysis)
+                ast.Stmt.stmt_while as w:
+                    collect_receiver_struct_names(w.body, receivers, analysis)
+                ast.Stmt.stmt_for as f:
+                    collect_receiver_struct_names(f.body, receivers, analysis)
+                ast.Stmt.stmt_match as m:
+                    var mi: ptr_uint = 0
+                    while mi < m.arms.len:
+                        collect_receiver_struct_names(read(m.arms.data + mi).body, receivers, analysis)
+                        mi += 1
+                ast.Stmt.stmt_unsafe as u:
+                    collect_receiver_struct_names(u.body, receivers, analysis)
+                ast.Stmt.stmt_defer as d:
+                    collect_receiver_struct_names(d.body, receivers, analysis)
                 _:
                     pass
         i += 1

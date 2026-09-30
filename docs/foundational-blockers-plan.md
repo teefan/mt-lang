@@ -259,7 +259,27 @@ names, so no editable-receiver record exists — F4 (stage 11c) unblocks them.
 method must resolve `Vec.reserve`'s `editable` kind (host-clean `std/vec.mt`).  Small
 analyzer fix; verify with `std/vec.mt` and the prefer-let sweep.
 
-## F7 — the analyzer's callable-value record (2 of semanticTokens' 5 positions)
+## F7 — the analyzer's callable-value record (DONE, session 16)
+
+The scanner only renders `function` for a lexeme in `Analysis.callable_value_sites`,
+which `infer_identifier` fills for every bare top-level function name it resolves
+as a value — except inside the compile-time handle builtins
+(`Context.callable_site_suppression`: `callable_of`, `field_of`, `has_attribute`,
+`size_of`, …), whose arguments are declaration *names*; `record_decl_callable_sites`
+covers the const initializers and `foreign function … = name` mappings the self never
+infers.  The two measured positions (`identity` 275:40, `add` 1099:41) render
+`variable` like the host's.  Record: `docs/self-host-plan.md` §0k.
+
+## F8.1 — the scanner's two rules (DONE, session 16)
+
+`dot_nested_type_member?` (`<Type>.<Nested>` → `type`) and
+`callable_field_member_access?` (a call through a `fn`/`proc` struct field →
+`property`), both driven by tables the scanner now collects from the AST and the
+analysis (`nested_type_keys`, `callable_fields`, `receiver_structs`).  With F7, the
+`docs/language_baseline.mt` token stream is **byte-identical** (0 differing
+positions).  Record: `docs/self-host-plan.md` §0k.
+
+## F7 (original notes) — the analyzer's callable-value record (2 of semanticTokens' 5 positions)
 
 The host marks a bare function name's site only when it is used as a value **with an
 expected function type** (`expressions.rb:356` → `record_callable_value_identifier_site`;

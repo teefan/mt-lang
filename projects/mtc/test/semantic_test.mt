@@ -2753,3 +2753,34 @@ function test_arm_payload_field_type_is_substituted() -> void:
         if entry.name == "b":
             expect_eq(types.type_to_string(entry.ty), "str")
         i += 1
+
+
+@[test]
+function test_callable_value_sites_record_arg_but_not_handle_builtins() -> void:
+    # A bare function name used as a value (an argument to a callback
+    # parameter) is the host's callable-value site; a `callable_of(name)`
+    # argument is a declaration name, not a value.
+    var source = <<-SRC
+        function double_it(x: int) -> int:
+            return x * 2
+
+        function apply(f: fn(x: int) -> int, v: int) -> int:
+            return f(v)
+
+        static_assert(has_attribute(callable_of(double_it), traced), "missing")
+
+        function main() -> int:
+            return apply(double_it, 7)
+    SRC
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    var analysis = analyzer.check_source_file(file)
+    expect_eq(int<-analysis.callable_value_sites.len(), 1)
+    var i: ptr_uint = 0
+    while i < analysis.callable_value_sites.len():
+        let sp = analysis.callable_value_sites.get(i) else:
+            break
+        let site = unsafe: read(sp)
+        expect_eq(int<-site.line, 10)
+        i += 1

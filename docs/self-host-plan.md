@@ -2244,6 +2244,39 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### The callable-value record and the scanner's two rules (2026-09-30 session 16, F7 + F8.1)
+
+The last five differing token positions in `docs/language_baseline.mt` are now
+identical to the host's — `ruby tmp/tok_diff.rb` reports **0**.
+
+**F7 — the callable-value record.**  The scanner used to render `function` for
+*any* identifier whose lexeme names a module function; the host renders it only
+for the sites its analyzer recorded through `infer_identifier(..., expected_type:)`
+(`callable_value_identifier_sites`).  The self now records the same sites in
+`infer_identifier` (`Analysis.callable_value_sites`, a `line`/`column` pair),
+with two guards: `Context.callable_site_suppression` is raised around the
+compile-time handle builtins whose arguments are declaration *names*, not values
+(`callable_of(identity)`, `field_of(T, f)`, `has_attribute`, `size_of`, …) —
+which is why the host answers `variable` there; and declaration initializers the
+self never infers (a const's value, a `foreign function … = atoi` mapping) are
+walked by `record_decl_callable_sites` so their bare function names are recorded
+too.  The scanner's value arm now requires `scan_callable_value_site`, so
+`identity` (275:40) and the proc-parameter read `add` (1099:41) render
+`variable` like the host's.  F7's original note — that `callable_of` needs "its
+own hook" — was right about the cause and wrong about the direction: the hook is
+an *exclusion*, not a record.
+
+**F8.1 — the scanner's two rules.**  `dot_nested_type_member?`: a member of a
+type-name receiver that names a type nested in that struct renders `type`
+(`Rectangle.Edge`), collected as `<Type>.<Nested>` keys by a declaration walk.
+`callable_field_member_access?`: a call through a struct field of `fn`/`proc`
+type renders `property` (`f.check(5)`, `c.invoke()`); the scanner collects the
+callable fields of every declared struct and the `<name>.<Struct>` pairs of
+`let x = Struct(...)` receivers.  Because the self's receiver table is
+name-keyed over the whole file (the host resolves the receiver scope-aware),
+a later `let c = <other struct>(…)` used to hide the earlier binding: the table
+keeps every pair and the lookup accepts any struct the name is bound to.
+
 ### Stage 11c: destructure bindings and variant arm payloads (2026-09-30 session 16, F4)
 
 The analyzer now types the two binding forms that used to be permissive
