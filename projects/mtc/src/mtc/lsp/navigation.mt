@@ -845,6 +845,13 @@ function local_type_at_line(stmt: ast.Stmt, name: str, want_line: ptr_uint, anal
         Option.some as found:
             match found.value:
                 ast.Stmt.stmt_local as loc:
+                    # A destructuring binding carries its own per-name type
+                    # (`let (a, b) = …`), not the initializer's.
+                    match destructure_type_at(analysis, name, loc.line):
+                        Option.some as destructured:
+                            return Option[types.Type].some(value = destructured.value)
+                        Option.none:
+                            pass
                     if loc.stmt_type != null:
                         let declared_ptr = analysis.local_decl_types.get(loc.line)
                         if declared_ptr != null:
@@ -855,6 +862,65 @@ function local_type_at_line(stmt: ast.Stmt, name: str, want_line: ptr_uint, anal
                     return Option[types.Type].none
         Option.none:
             return Option[types.Type].none
+
+
+## The analyzer's recorded type for the destructuring binding `name` declared
+## on `line` (0 = no such binding).
+function destructure_type_at(analysis: ref[analyzer.Analysis], name: str, line: ptr_uint) -> Option[types.Type]:
+    var i: ptr_uint = 0
+    let entries = read(analysis).destructure_types
+    while i < entries.len():
+        let ep = entries.get(i) else:
+            break
+        let entry = unsafe: read(ep)
+        if entry.line == line and entry.name.equal(name):
+            return Option[types.Type].some(value = entry.ty)
+        i += 1
+    return Option[types.Type].none
+
+
+## The analyzer's recorded type for the `as name` variant arm binding declared
+## on `line` (none when no such binding exists).
+function arm_binding_type_at(analysis: ref[analyzer.Analysis], name: str, line: ptr_uint) -> Option[types.Type]:
+    var i: ptr_uint = 0
+    let entries = read(analysis).arm_binding_types
+    while i < entries.len():
+        let ep = entries.get(i) else:
+            break
+        let entry = unsafe: read(ep)
+        if entry.line == line and entry.name.equal(name):
+            return Option[types.Type].some(value = entry.ty)
+        i += 1
+    return Option[types.Type].none
+
+
+## The hover for an `as name` variant arm binding: the host renders it from its
+## scope snapshot as `local <name>: <payload type> (mutable)` with no source
+## location, so both the declaration site and every use answer the same shape.
+function arm_binding_hover_result(analysis: ref[analyzer.Analysis], name: str, line: ptr_uint, current_module: str) -> Option[CursorResult]:
+    match arm_binding_type_at(analysis, name, line):
+        Option.some as ty:
+            var signature = string.String.create()
+            signature.append("local ")
+            signature.append(name)
+            signature.append(": ")
+            var type_text = type_render.qualified_name(ty.value, current_module)
+            signature.append(type_text.as_str())
+            type_text.release()
+            signature.append(" (mutable)")
+            var shortened = type_render.shorten_signature(signature.as_str())
+            signature.release()
+            return Option[CursorResult].some(value = CursorResult(
+                line = 0,
+                column = 0,
+                name_len = name.len,
+                hover_text = shortened.text,
+                docs = string.String.create(),
+                target_uri = string.String.create(),
+                from_modules = shortened.modules
+            ))
+        Option.none:
+            return Option[CursorResult].none
 
 
 ## The resolved type of the parameter declared on `want_line` in `ast_params`.
@@ -3990,13 +4056,6 @@ function resolve_local_hover(
         Option.none:
             pass
 
-    # 2. Token-level: match-arm "as name" binding
-    match as_binding_hover(source, line, character, name.as_str()):
-        Option.some as ab:
-            return Option[CursorResult].some(value = ab.value)
-        Option.none:
-            pass
-
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     var parsed_file = parser.parse_source(source, ref_of(parse_diags))
@@ -4026,6 +4085,14 @@ function resolve_local_hover(
             Option.none:
                 pass
 
+    # 3a. Token-level: a match-arm `as name` binding answers the same payload
+    # type at its declaration and at every use.
+    match as_binding_hover(ref_of(analysis), current_module.as_str(), source, line, character, name.as_str()):
+        Option.some as ab:
+            return Option[CursorResult].some(value = ab.value)
+        Option.none:
+            pass
+
     # 3. The innermost binding that encloses the cursor — the host's scope-aware
     # binding resolution.  Its declaration line comes from the scope bindings, so
     # a same-named local in another function (or an unrelated block) cannot win,
@@ -4053,7 +4120,13 @@ function resolve_local_hover(
                                         _:
                                             pass
                                 Option.none:
-                                    pass
+                                    # A match-arm `as name` binding is no
+                                    # `stmt_local`; its payload type answers.
+                                    match arm_binding_hover_result(ref_of(analysis), name.as_str(), want.value, current_module.as_str()):
+                                        Option.some as arm_none:
+                                            return Option[CursorResult].some(value = arm_none.value)
+                                        Option.none:
+                                            pass
                         match parameter_hover_in_decl(
                             name.as_str(), sfun.method_params, analysis.functions.get(sfun.name),
                             want.value, current_module.as_str(), flow_override):
@@ -4411,7 +4484,7 @@ function for_binding_hover(source: str, line: ptr_uint, character: ptr_uint, nam
 
 ## Token-level heuristic: is this identifier a match-arm "as" binding?
 ## Checks whether the identifier is preceded by `as ` on the same line.
-function as_binding_hover(source: str, line: ptr_uint, character: ptr_uint, name: str) -> Option[CursorResult]:
+function as_binding_hover(analysis: ref[analyzer.Analysis], current_module: str, source: str, line: ptr_uint, character: ptr_uint, name: str) -> Option[CursorResult]:
     let cursor_line_text = cursor.source_line(source, line + 1)
     if cursor_line_text.len == 0:
         return Option[CursorResult].none
@@ -4429,10 +4502,9 @@ function as_binding_hover(source: str, line: ptr_uint, character: ptr_uint, name
         while p > 0 and lt.byte_at(p - 1) == ' ':
             p -= 1
         if p >= 2 and lt.byte_at(p - 2) == 'a' and lt.byte_at(p - 1) == 's':
-            var hover = string.String.create()
-            hover.append("import alias ")
-            hover.append(name)
-            return Option[CursorResult].some(value = quick_hover(hover.as_str()))
+            # An `as name` binding: the analyzer's arm payload type answers
+            # `local <name>: <payload> (mutable)`, the host's snapshot shape.
+            return arm_binding_hover_result(analysis, name, line + 1, current_module)
     return Option[CursorResult].none
 
 
@@ -4906,6 +4978,15 @@ function local_hover_result(
             if stmt_type != null:
                 type_text.release()
                 type_text = annotated_type_text(unsafe: read(ptr[ast.TypeRef]<-stmt_type), analysis, current_module)
+            else if destructure_type_at(analysis, name, decl_line).is_some():
+                # A destructuring binding (`let (a, b) = …`) renders the
+                # per-name type, not the initializer's tuple type.
+                match destructure_type_at(analysis, name, decl_line):
+                    Option.some as dt:
+                        type_text.release()
+                        type_text = type_render.qualified_name(dt.value, current_module)
+                    Option.none:
+                        pass
             else:
                 match type_render.initializer_type(analysis, value):
                     Option.some as init_ty:

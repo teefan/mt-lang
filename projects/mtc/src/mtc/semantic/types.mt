@@ -14,6 +14,15 @@ import std.fmt as fmt
 import std.mem.heap as heap
 
 
+## One field of a variant arm's payload.  The host's `Types::VariantArmPayload`
+## *is* the arm's struct (its fields are the variant's declared arm fields with
+## the scrutinee's type arguments substituted), so `p.value` on a bound arm
+## resolves through this list.
+public struct PayloadField:
+    name: str
+    ty: Type
+
+
 public variant Type:
     ty_primitive(name: str)
     ty_str
@@ -33,7 +42,7 @@ public variant Type:
     # struct's C linkage name (`std_option_Option_some`).  Mirrors Ruby's
     # `Types::VariantArmPayload`, which the sexpr dumper tags distinctly but
     # whose fields it renders like a `Types::Struct` (`:name`, `:module_name`).
-    ty_variant_arm_payload(variant_name: str, name: str, module_name: str, c_name: str)
+    ty_variant_arm_payload(variant_name: str, name: str, module_name: str, c_name: str, display_name: str, fields: span[PayloadField])
     ty_imported(module_name: str, name: str, args: span[Type])
     ty_var(name: str)
     # An explicit lifetime argument on a `ref` type (`ref[@a, T]`).  The host
@@ -82,6 +91,32 @@ public function variant_arm_payload(variant_name: str, module_name: str, c_name:
         name = buf.as_str(),
         module_name = module_name,
         c_name = c_name,
+        display_name = "",
+        fields = span[PayloadField](),
+    )
+
+
+## The analyzer's richer construction: the host's `VariantArmPayload#to_s`
+## renders `<variant>. <arm> payload` (`Option[(str, str)].some payload`), so
+## the *instantiated* variant text and the arm's substituted field list travel
+## with the type instead of being recomputed at every consumer.
+public function variant_arm_payload_with(variant_name: str, module_name: str, c_name: str, arm_name: str, variant_text: str, fields: span[PayloadField]) -> Type:
+    var buf = string.String.create()
+    buf.append(variant_name)
+    buf.append("_")
+    buf.append(arm_name)
+    var display = string.String.create()
+    display.append(variant_text)
+    display.append(".")
+    display.append(arm_name)
+    display.append(" payload")
+    return Type.ty_variant_arm_payload(
+        variant_name = variant_name,
+        name = buf.as_str(),
+        module_name = module_name,
+        c_name = c_name,
+        display_name = display.as_str(),
+        fields = fields,
     )
 
 
@@ -192,6 +227,11 @@ public function type_to_string(t: Type) -> str:
         Type.ty_named as n:
             return n.name
         Type.ty_variant_arm_payload as ap:
+            # The host's `VariantArmPayload#to_s` is `<variant>.<arm> payload`;
+            # the lowering's constructions carry no display text, so they keep
+            # the payload struct's own name.
+            if ap.display_name.len > 0:
+                return ap.display_name
             return ap.name
         Type.ty_imported as im:
             if im.args.len == 0:

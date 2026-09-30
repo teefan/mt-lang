@@ -2244,6 +2244,53 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### Stage 11c: destructure bindings and variant arm payloads (2026-09-30 session 16, F4)
+
+The analyzer now types the two binding forms that used to be permissive
+`ty_error` placeholders, which is what three hover entries were waiting on.
+
+**Destructuring** (`let (a, b) = …`): each name carries the tuple element at its
+position (the host's `check_local_decl_tuple_destructure`), and the per-name
+types are recorded in `Analysis.destructure_types` (line + name + type) — the
+initializer itself is inferred *without* recording, so the recorded types (and
+thus codegen) stay otherwise identical.  The LSP's `local_type_at_line` consults
+that record before the initializer path, so `let sum_dest = a + b`'s `b` answers
+`let b: int (immutable)` (`lb@1861:23`, `lb@1931:25`).
+
+**Variant arm payloads** (`Option.some as p`): the binding is the host's
+`Types::VariantArmPayload` — `types.ty_variant_arm_payload` gained
+`display_name` (the instantiated `std.option.Option[(str, str)]`) and `fields`
+(`PayloadField`), with a new `variant_arm_payload_with` constructor for the
+analyzer; the lowering keeps calling the four-argument constructor, so its
+payload struct names are untouched.  The prelude's arms register their declared
+field names (`register_prelude_arm_field`: `Option_some` -> `value: T`,
+`Result_failure` -> `error: E`) and their type parameters
+(`variant_param_names`: `Option` -> `[T]`, `Result` -> `[T, E]`), and
+`match_arm_payload_type` substitutes the scrutinee's type arguments into each
+field (`Result[bytes.Bytes, Error].success as ok_payload` -> `value:
+bytes.Bytes`).  Both match forms (statement and expression) compute the
+scrutinee's type **once**, before the arms, and pass it to `check_match`
+(recomputing it there would double-report an unknown name in the scrutinee).
+
+Consequences: `p.value` resolves through `check_member`'s payload arm; the
+analyzer records `Analysis.arm_binding_types` so the LSP answers
+`local p: Option[(str, str)].some payload (mutable)` with the host's
+`*From std.option*` line at the declaration *and* at every use
+(`lb@1915:25`); and `record_expr_type` never records a payload type, because the
+lowering registers the payload struct's C name itself
+(`variant_arm_payload_binding`) — handing it an analyzer-built type whose C name
+it never declared would break codegen.
+
+**Measured**: the SimpleGame full matrix **13 → 11 differing entries** (hover
+5 → 2: only F5's `fn ` field and the documented `type quat` remain; added 0
+apart from the host's first-file documentSymbol race, below).  The prefer-let
+sweep over `std/` drops **121 → 45** from the payload typing, then **45 → 32**
+with the try operator's type (`infer_unary`'s `?` now yields the unwrapped
+success type — `Result[T,E]?` / `Option[T]?` give `T`).  The remaining 32 are a
+different root cause: a method chain on an *imported* receiver
+(`read(protocol).pending_reliable.pop()`), whose result type the analyzer still
+records as `ty_error`, so the editable-receiver record never fires.
+
 ### Liveness over the graph: `dead-assignment` (2026-09-30 session 16, F3 part 1)
 
 The linter's `dead-assignment` rule no longer walks the AST: `lint_dead_assignment`

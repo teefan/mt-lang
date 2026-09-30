@@ -69,6 +69,34 @@ public struct FieldEntry:
     ty: types.Type
 
 
+## One name of a destructuring `let (a, b) = …` binding and the type the
+## binding carries (the host's per-name scope binding): the tuple element at the
+## name's position, or the struct field at that position.  The declaration line
+## identifies the statement, so the LSP can answer a hover on a destructured
+## name the way it answers one on a plain local.
+public struct DestructureTypeEntry:
+    line: ptr_uint
+    name: str
+    ty: types.Type
+
+
+## One declared payload field of a variant arm: the field's name and the variant
+## type parameter its declared type is (`Option_some` -> `value: T`,
+## `Result_failure` -> `error: E`).
+public struct PayloadFieldDecl:
+    name: str
+    param: str
+
+
+## An `as name` variant match-arm binding: the arm's declaration position and
+## the payload type the binding carries, so the LSP can hover it the way the
+## host's scope snapshot answers.
+public struct ArmBindingEntry:
+    line: ptr_uint
+    name: str
+    ty: types.Type
+
+
 public struct EventInfo:
     name: str
     capacity: int
@@ -200,6 +228,18 @@ struct Context:
     ## binding).  Consumers outside the analysis pass — the LSP's `this`/local
     ## member resolution — resolve a local's type through it.
     local_decl_types: map_mod.Map[ptr_uint, types.Type]
+    ## See `Analysis.destructure_types`.
+    destructure_types: vec.Vec[DestructureTypeEntry]
+    ## The declared payload field names of a variant arm, keyed by the payload
+    ## name (`Option_some`): the host's `VariantArmPayload` is the arm's struct,
+    ## so an `as name` binding carries these fields with the scrutinee's type
+    ## arguments substituted.  Prelude arms only (Option/Result).
+    arm_payload_field_names: map_mod.Map[str, span[PayloadFieldDecl]]
+    ## The declared type-parameter names per variant (`Option` -> `[T]`,
+    ## `Result` -> `[T, E]`), the substitution domain for an arm payload.
+    variant_param_names: map_mod.Map[str, span[str]]
+    ## See `Analysis.arm_binding_types`.
+    arm_binding_types: vec.Vec[ArmBindingEntry]
     ## The current function body's CFG, its solved non-null flow (the host's
     ## `@nullability_flow_result`), and the refinement record the LSP reads.
     flow_cfg: flow_builder.Cfg
@@ -236,6 +276,11 @@ public struct Analysis:
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
     ## See `Context.local_decl_types`.
     local_decl_types: map_mod.Map[ptr_uint, types.Type]
+    ## See `Context.destructure_types`.
+    destructure_types: vec.Vec[DestructureTypeEntry]
+    ## The `as name` variant match-arm bindings with their payload types, so the
+    ## LSP resolves an arm binding's hover (declaration and use).
+    arm_binding_types: vec.Vec[ArmBindingEntry]
     ## See `Context.flow_types`: the local refinement record the LSP resolves a
     ## hover's type through.
     flow_types: vec.Vec[FlowTypeEntry]
@@ -331,6 +376,10 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
         local_decl_types = map_mod.Map[ptr_uint, types.Type].create(),
+        destructure_types = vec.Vec[DestructureTypeEntry].create(),
+        arm_payload_field_names = map_mod.Map[str, span[PayloadFieldDecl]].create(),
+        arm_binding_types = vec.Vec[ArmBindingEntry].create(),
+        variant_param_names = map_mod.Map[str, span[str]].create(),
         flow_cfg = flow_builder.empty_cfg(),
         flow_graph = flow_graph_mod.empty_graph(),
         flow = flow_graph_mod.NullabilityFlow(state = null, row_size = 0, node_count = 0),
@@ -387,6 +436,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         resolved_expr_types = ctx.resolved_expr_types,
         resolved_call_kinds = ctx.resolved_call_kinds,
         local_decl_types = ctx.local_decl_types,
+        destructure_types = ctx.destructure_types,
+        arm_binding_types = ctx.arm_binding_types,
         flow_types = ctx.flow_types,
         const_values = ctx.const_values,
         module_name = module_name,
@@ -751,11 +802,49 @@ function install_prelude_types(ctx: ref[Context]) -> void:
         ctx.import_aliases.set("std.result", "std.result")
     register_prelude_type(ctx, "Option", "some", "none")
     register_prelude_type(ctx, "Result", "success", "failure")
+    # The prelude variants' arm payloads (`Option_some{value: T}` and friends,
+    # the host's `Types::VariantArmPayload` shapes) and their type parameters,
+    # so an `as name` arm binding carries the arm's fields.
+    var option_params = vec.Vec[str].create()
+    option_params.push("T")
+    ctx.variant_param_names.set("Option", option_params.as_span())
+    var result_params = vec.Vec[str].create()
+    result_params.push("T")
+    result_params.push("E")
+    ctx.variant_param_names.set("Result", result_params.as_span())
+    register_prelude_arm_field(ctx, "Option", "some", "value", "T")
+    register_prelude_arm_field(ctx, "Option", "none", "", "T")
+    register_prelude_arm_field(ctx, "Result", "success", "value", "T")
+    register_prelude_arm_field(ctx, "Result", "failure", "error", "E")
     merge_prelude_binding_methods(ctx, "std.option")
     merge_prelude_binding_methods(ctx, "std.result")
     register_builtin_event_types(ctx)
 
 
+## Register one prelude arm's declared payload field name under its payload key
+## (`Option_some` -> `["value"]`, `Option_none` -> `[]`).
+function register_prelude_arm_field(ctx: ref[Context], variant_name: str, arm: str, field_name: str, field_param: str) -> void:
+    let key = payload_struct_key(variant_name, arm)
+    if field_name.len == 0:
+        ctx.arm_payload_field_names.set(key, span[PayloadFieldDecl]())
+        return
+    var decls = vec.Vec[PayloadFieldDecl].create()
+    decls.push(PayloadFieldDecl(name = field_name, param = field_param))
+    ctx.arm_payload_field_names.set(key, decls.as_span())
+
+
+## The payload struct's name for a variant arm (`Option` + `some` -> `Option_some`),
+## the key of `arm_payload_field_names` and the `name` of the payload type.
+function payload_struct_key(variant_name: str, arm: str) -> str:
+    var buf = string.String.create()
+    buf.append(variant_name)
+    buf.append("_")
+    buf.append(arm)
+    return buf.as_str()
+
+
+## Register the built-in scalar and handle type names into `ctx.types`, so a
+## declaration, annotation or field can name them.
 function register_builtin_types(ctx: ref[Context]) -> void:
     var i: ptr_uint = 0
     while i < 26:
@@ -2400,16 +2489,21 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                     check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), fr.body)
                 scope_leave(scope)
             ast.Stmt.stmt_match as m:
+                # The scrutinee's type is computed once, before the arms: an
+                # `as name` arm binds the arm's payload type from it, and the
+                # exhaustiveness pass reuses it (inferring twice would report
+                # every unknown name in the scrutinee twice).
+                let scrutinee_ty = infer_expr_inner(ctx, scope, m.scrutinee)
                 var ai: ptr_uint = 0
                 while ai < m.arms.len:
                     var arm: ast.MatchArm
                     arm = read(m.arms.data + ai)
                     scope_enter(scope)
-                    bind_match_arm_names(scope, arm.binding_name, arm.pattern)
+                    bind_match_arm_names(ctx, scope, scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
                     check_body(ctx, scope, chk, arm.body)
                     scope_leave(scope)
                     ai += 1
-                check_match(ctx, scope, m.scrutinee, m.arms, m.line, m.column)
+                check_match(ctx, scope, scrutinee_ty, m.arms, m.line, m.column)
             ast.Stmt.stmt_unsafe as u:
                 ctx.unsafe_depth += 1
                 check_body(ctx, scope, chk, u.body)
@@ -2825,11 +2919,10 @@ function check_stmt_span(ctx: ref[Context], scope: ref[sscope.Scope], chk: Check
 ##  * anything else  -> permissive
 ## Enum/variant checks bail out if any arm is not a plain `Type.case` pattern
 ## (e.g. payload destructuring), so guarded/complex matches never false-positive.
-function check_match(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
-    # Infer the scrutinee type WITHOUT recording it (`infer_expr_inner`, not
-    # `infer_expr`): this is a diagnostic-only pass and must not mutate the
-    # `resolved_expr_types` map that lowering later consumes.
-    let scrutinee_ty = infer_expr_inner(ctx, scope, scrutinee)
+function check_match(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee_ty: types.Type, arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint) -> void:
+    # The scrutinee's type arrives precomputed (and unrecorded — this is a
+    # diagnostic-only pass that must not mutate the `resolved_expr_types` map
+    # that lowering later consumes).
     if types.is_error(scrutinee_ty):
         return
 
@@ -3100,18 +3193,31 @@ function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scop
 
 
 function check_local(ctx: ref[Context], scope: ref[sscope.Scope], is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, has_guard: bool, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
-    # Destructuring bindings: bind each destructured name to the permissive
-    # error type so later references are not reported as unknown.  Binding to
-    # `ty_error` (and not inferring the initializer, as before) keeps recorded
-    # types — and thus code generation — identical to the previous behavior.
+    # Destructuring bindings: each name carries the tuple element (or struct
+    # field) at its position, the host's `check_local_decl_tuple_destructure`.
+    # The per-name types are recorded for the LSP; the initializer itself is
+    # inferred without recording so the recorded types — and thus code
+    # generation — stay identical to the previous behavior.
     match destructure_bindings:
         Option.some as names:
+            var value_ty: types.Type = types.Type.ty_error
+            let dv = value
+            if dv != null:
+                value_ty = infer_expr_inner(ctx, scope, dv)
             var di: ptr_uint = 0
             while di < names.value.len:
+                var field_ty: types.Type = types.Type.ty_error
+                match value_ty:
+                    types.Type.ty_tuple as tup:
+                        if di < tup.elements.len:
+                            field_ty = unsafe: read(tup.elements.data + di)
+                    _:
+                        pass
                 unsafe:
                     let dn = read(names.value.data + di)
                     if not dn == "_":
-                        scope_set(scope, dn, types.Type.ty_error)
+                        scope_set(scope, dn, field_ty)
+                        ctx.destructure_types.push(DestructureTypeEntry(line = line, name = dn, ty = field_ty))
                 di += 1
             return
         Option.none:
@@ -3174,6 +3280,14 @@ function infer_expr(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[ast.Exp
 
 
 function record_expr_type(ctx: ref[Context], ep: ptr[ast.Expr], ty: types.Type) -> void:
+    # A variant arm's payload type is analyzer-side only: the lowering builds
+    # its own payload struct (with the C name it registers), so recording this
+    # one would hand it a type whose C name it never declared.
+    match ty:
+        types.Type.ty_variant_arm_payload:
+            return
+        _:
+            pass
     let key = unsafe: reinterpret[ptr_uint](ep)
     ctx.resolved_expr_types.set(key, ty)
 
@@ -3484,12 +3598,15 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 let else_ty = infer_expr(ctx, scope, ife.else_expr)
                 return exprs.conditional_common_type(then_ty, else_ty)
             ast.Expr.expr_match as me:
+                # An `as name` arm binds the arm's payload type from the
+                # scrutinee's type, so it is inferred once, before the arms.
+                let expr_scrutinee_ty = infer_expr_inner(ctx, scope, me.scrutinee)
                 var arm_types = vec.Vec[types.Type].create()
                 var ai: ptr_uint = 0
                 while ai < me.arms.len:
                     var arm: ast.MatchExprArm = read(me.arms.data + ai)
                     scope_enter(scope)
-                    bind_match_arm_names(scope, arm.binding_name, arm.pattern)
+                    bind_match_arm_names(ctx, scope, expr_scrutinee_ty, arm.binding_name, arm.pattern, arm.binding_line, arm.binding_column)
                     arm_types.push(infer_expr(ctx, scope, arm.value))
                     scope_leave(scope)
                     ai += 1
@@ -3587,14 +3704,26 @@ function unknown_name_message(name: str) -> str:
     return buf.as_str()
 
 
-## Bind an arm's `as name` and struct-pattern field names to the permissive
-## error type in the current scope, so references in the arm body/value are not
-## reported as unknown.  Binding to `ty_error` keeps recorded types identical to
-## the previous (unbound) behavior, so code generation is unaffected.
-function bind_match_arm_names(scope: ref[sscope.Scope], binding_name: Option[str], pattern: ptr[ast.Expr]?) -> void:
+## Bind an arm's `as name` and struct-pattern field names in the current scope,
+## so references in the arm body/value are not reported as unknown.  An
+## `as name` binding carries the arm's **payload type** — the host's
+## `Types::VariantArmPayload`, the arm's declared fields with the scrutinee's
+## type arguments substituted (`Option[(str, str)].some payload`) — so
+## `p.value` resolves through the normal field path and the LSP can hover it; a
+## pattern field name stays at the permissive error type.
+function bind_match_arm_names(ctx: ref[Context], scope: ref[sscope.Scope], scrutinee_ty: types.Type, binding_name: Option[str], pattern: ptr[ast.Expr]?, line: ptr_uint, column: ptr_uint) -> void:
     match binding_name:
         Option.some as bn:
-            scope_set(scope, bn.value, types.Type.ty_error)
+            var binding_ty: types.Type = types.Type.ty_error
+            let bp = pattern
+            if bp != null:
+                match match_arm_payload_type(ctx, scrutinee_ty, bp):
+                    Option.some as payload_ty:
+                        binding_ty = payload_ty.value
+                    Option.none:
+                        pass
+            scope_set(scope, bn.value, binding_ty)
+            ctx.arm_binding_types.push(ArmBindingEntry(line = line, name = bn.value, ty = binding_ty))
         Option.none:
             pass
     let p = pattern else:
@@ -3615,6 +3744,121 @@ function bind_match_arm_names(scope: ref[sscope.Scope], binding_name: Option[str
                     i += 1
             _:
                 pass
+
+
+## The immediate arm name a match pattern names (`Option.some` -> `some`,
+## `Result.success(field = x)` -> `success`, a bare `some` -> `some`); "" when
+## the pattern names no arm.
+function pattern_arm_name(pattern: ptr[ast.Expr]?) -> str:
+    let p = pattern else:
+        return ""
+    unsafe:
+        match read(p):
+            ast.Expr.expr_member_access as ma:
+                return ma.member_name
+            ast.Expr.expr_call as cl:
+                return pattern_arm_name(cl.callee)
+            ast.Expr.expr_identifier as id:
+                return id.name
+            _:
+                return ""
+
+
+## The module a prelude variant belongs to ("" for anything else), mirroring
+## the host's `std.option` / `std.result` registration.
+function prelude_variant_module(variant_name: str) -> str:
+    if variant_name == "Option":
+        return "std.option"
+    if variant_name == "Result":
+        return "std.result"
+    return ""
+
+
+## The payload type an `as name` arm binds: the host's `Types::VariantArmPayload`
+## — the arm's declared payload fields with the scrutinee's type arguments
+## substituted (`Option[(str, str)].some payload`).  None for a variant or arm
+## the analyzer carries no payload fields for (a user variant), which leaves the
+## binding at the permissive error type.
+function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pattern: ptr[ast.Expr]?) -> Option[types.Type]:
+    let arm_name = pattern_arm_name(pattern)
+    if arm_name.len == 0:
+        return Option[types.Type].none
+    var variant_name: str = ""
+    var module_name: str = ""
+    var args = span[types.Type]()
+    match scrutinee_ty:
+        types.Type.ty_generic as g:
+            variant_name = g.name
+            args = g.args
+        types.Type.ty_imported as im:
+            variant_name = im.name
+            module_name = im.module_name
+            args = im.args
+        types.Type.ty_named as n:
+            variant_name = n.name
+            module_name = n.module_name
+        types.Type.ty_nullable as nl:
+            return match_arm_payload_type(ctx, unsafe: read(nl.base), pattern)
+        _:
+            return Option[types.Type].none
+    if module_name.len == 0:
+        module_name = prelude_variant_module(variant_name)
+    let decls_ptr = ctx.arm_payload_field_names.get(payload_struct_key(variant_name, arm_name)) else:
+        return Option[types.Type].none
+    let params_ptr = ctx.variant_param_names.get(variant_name) else:
+        return Option[types.Type].none
+    let decls = unsafe: read(decls_ptr)
+    let params = unsafe: read(params_ptr)
+
+    # The scrutinee's type arguments bind the variant's parameters, and each
+    # declared field takes its parameter's type.
+    var subs = map_mod.Map[str, types.Type].create()
+    defer: subs.release()
+    var pi: ptr_uint = 0
+    while pi < params.len and pi < args.len:
+        unsafe:
+            subs.set(read(params.data + pi), read(args.data + pi))
+        pi += 1
+    var fields = vec.Vec[types.PayloadField].create()
+    var fi: ptr_uint = 0
+    while fi < decls.len:
+        let decl = unsafe: read(decls.data + fi)
+        var field_ty: types.Type = types.Type.ty_error
+        let sub = subs.get(decl.param)
+        if sub != null:
+            field_ty = unsafe: read(sub)
+        fields.push(types.PayloadField(name = decl.name, ty = field_ty))
+        fi += 1
+
+    # The *instantiated* variant text (`std.option.Option[(str, str)]`): the
+    # LSP shortens it to the host's `Option[(str, str)]` plus its `*From*` line.
+    var variant_text = string.String.create()
+    if module_name.len > 0:
+        variant_text.append(module_name)
+        variant_text.append(".")
+    variant_text.append(variant_name)
+    if args.len > 0:
+        variant_text.append("[")
+        var ai: ptr_uint = 0
+        while ai < args.len:
+            if ai > 0:
+                variant_text.append(", ")
+            unsafe:
+                variant_text.append(types.type_to_string(read(args.data + ai)))
+            ai += 1
+        variant_text.append("]")
+
+    # `c_name` stays empty: the lowering registers the payload struct's C name
+    # itself (`variant_arm_payload_binding`), and a payload-typed expression is
+    # never recorded for it (see `record_expr_type`), so no C name is needed.
+    return Option[types.Type].some(value = types.variant_arm_payload_with(
+        variant_name = variant_name,
+        module_name = module_name,
+        c_name = "",
+        arm_name = arm_name,
+        variant_text = variant_text.as_str(),
+        fields = fields.as_span(),
+    ))
 
 
 function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> types.Type:
@@ -3760,6 +4004,11 @@ function infer_unary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, opera
         return types.primitive("bool")
     if op == "-" or op == "+" or op == "~":
         return ot
+    if op == "?":
+        # The try operator propagates the failure and yields the success type
+        # (`Result[T, E]?` and `Option[T]?` both give `T`), exactly like a
+        # guard-unwrapped binding.
+        return unwrap_nullable_type(ot)
     return types.Type.ty_error
 
 
@@ -5501,6 +5750,17 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             return types.Type.ty_error
         types.Type.ty_imported as im:
             return check_imported_member(ctx, im.module_name, im.name, member, is_method_call, line, column)
+        types.Type.ty_variant_arm_payload as ap:
+            # A bound match arm (`Option.some as p`) is the arm's payload struct
+            # — the host's `Types::VariantArmPayload` — so `p.value` reads the
+            # field the analyzer substituted for the scrutinee's arguments.
+            var fi: ptr_uint = 0
+            while fi < ap.fields.len:
+                let field = unsafe: read(ap.fields.data + fi)
+                if field.name == member:
+                    return field.ty
+                fi += 1
+            return types.Type.ty_error
         types.Type.ty_var as v:
             return check_type_var_member(ctx, v.name, member, is_method_call, line, column)
         types.Type.ty_generic as g:

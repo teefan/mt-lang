@@ -2695,3 +2695,61 @@ function test_cfg_break_and_continue_targets() -> void:
     let after_loop = block_statement(body, 2)
     expect(node_of_kind_succ(ref_of(graph), "break", node_of(ref_of(graph), after_loop)) != null, "break targets the statement after the loop")
     expect(cfgg.graph_reaches(ref_of(graph), cond_id, node_of(ref_of(graph), after_loop)), "the loop's false edge reaches the following statement")
+
+
+@[test]
+function test_tuple_destructure_records_per_name_types() -> void:
+    var source = <<-SRC
+        function pair() -> (int, int):
+            return (1, 2)
+
+        function main() -> int:
+            let (a, b) = pair()
+            return a + b
+    SRC
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    var analysis = analyzer.check_source_file(file)
+    expect_eq(int<-analysis.destructure_types.len(), 2)
+    var i: ptr_uint = 0
+    while i < analysis.destructure_types.len():
+        let ep = analysis.destructure_types.get(i) else:
+            break
+        let entry = unsafe: read(ep)
+        if entry.name == "a":
+            expect_eq(types.type_to_string(entry.ty), "int")
+        i += 1
+
+
+@[test]
+function test_arm_payload_field_type_is_substituted() -> void:
+    # `Option.some as p` binds the arm's payload — the host's
+    # `VariantArmPayload` — and `p.value` carries the scrutinee's type argument,
+    # so destructuring it records the substituted element types.
+    var source = <<-SRC
+        function first_of(o: Option[(int, str)]) -> int:
+            match o:
+                Option.some as p:
+                    let (a, b) = p.value
+                    if b.len == 0:
+                        return a
+                    return a + 1
+                Option.none:
+                    return 0
+    SRC
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    var analysis = analyzer.check_source_file(file)
+    expect_eq(int<-analysis.destructure_types.len(), 2)
+    var i: ptr_uint = 0
+    while i < analysis.destructure_types.len():
+        let ep = analysis.destructure_types.get(i) else:
+            break
+        let entry = unsafe: read(ep)
+        if entry.name == "a":
+            expect_eq(types.type_to_string(entry.ty), "int")
+        if entry.name == "b":
+            expect_eq(types.type_to_string(entry.ty), "str")
+        i += 1

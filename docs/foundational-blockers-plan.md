@@ -185,7 +185,25 @@ audit's second diagnostic file).  Close, rule by rule:
 `unused_import_parity.rb` (609/608 + any improvement), and the LSP audit's diagnostic
 entries (the full matrix).
 
-## F4 — stage 11c: payload structs and typed destructure bindings
+## F4 — stage 11c: payload structs and typed destructure bindings (DONE, session 16)
+
+Landed: destructure bindings carry their per-name types (recorded in
+`Analysis.destructure_types`, the initializer inferred without recording so codegen is
+otherwise unchanged) and `as name` arm bindings carry the host's payload type
+(`ty_variant_arm_payload` + `display_name`/`PayloadField` fields and the
+`variant_arm_payload_with` constructor; prelude arms register their fields and variant
+type parameters; `match_arm_payload_type` substitutes the scrutinee's arguments;
+`check_member` resolves `p.value`; `Analysis.arm_binding_types` feeds the LSP hover at
+declaration and use; `record_expr_type` never records a payload type because the
+lowering owns that struct's C name).  Also `?` now yields the unwrapped success type.
+Measured: the audit **13 → 11** (hover 5 → 2, added 0 apart from the host's
+first-file documentSymbol race), prefer-let over `std/` **121 → 32**.  The residue of
+those 32 is a different root cause — an imported-receiver method chain
+(`read(protocol).pending_reliable.pop()`) that the analyzer still types as `ty_error`
+— so the "sweep closes" prediction was only two thirds right.  Record:
+`docs/self-host-plan.md` §0k, "Stage 11c".
+
+## F4 (original notes) — stage 11c: payload structs and typed destructure bindings
 
 Design (from the multi-session plan; **do not repeat the reverted bind-to-T model**):
 1. register the prelude payload structs (`Option_some{value: T}`, `Option_none{}`,
