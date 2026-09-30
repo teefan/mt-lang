@@ -290,6 +290,9 @@ public function type_to_string(t: Type) -> str:
                 fbuf.append("fn ")
                 fbuf.append(fnt.name)
                 return fbuf.as_str()
+            # The host's `Types::Proc#to_s` renders its parameters by *type*
+            # alone (`proc(int) -> int`); a source annotation's names appear
+            # only where the outline renders the annotation itself.
             var buf = string.String.create()
             buf.append("proc(")
             var i: ptr_uint = 0

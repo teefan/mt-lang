@@ -80,15 +80,28 @@ public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, 
     var symbols_text = string.String.create()
     defer: symbols_text.release()
     symbols_text.append("[")
+    # An `extending` block written with a qualified receiver (`extending
+    # rl.Color:`) gets a *synthesized* symbol named as written, which the host
+    # appends after every flat symbol; the flat token symbol (the receiver's
+    # first identifier) stays in source order.
+    var deferred_text = string.String.create()
+    defer: deferred_text.release()
+    var deferred_first = false
     var first = true
     var di: ptr_uint = 0
     while di < ast_file.declarations.len:
         var decl: ast.Decl
         unsafe:
             decl = read(ast_file.declarations.data + di)
-        emit_declaration_symbol(ref_of(symbols_text), ref_of(analysis), source, decl, ref_of(first))
+        emit_declaration_symbol(ref_of(symbols_text), ref_of(deferred_text), ref_of(deferred_first), ref_of(analysis), source, decl, ref_of(first))
         di += 1
     append_missing_token_anchors(ref_of(symbols_text), source, ast_file, ref_of(first))
+    if deferred_text.len() > 0:
+        let dtext = deferred_text.as_str()
+        if symbols_text.len() == 1 and dtext.len > 0 and dtext.byte_at(0) == ',':
+            symbols_text.append(dtext.slice(1, dtext.len - 1))
+        else:
+            symbols_text.append(dtext)
     symbols_text.append("]")
 
     # The host wraps the outline in its module hierarchy for a file that lives
@@ -349,6 +362,10 @@ function anchor_covered(file: ast.SourceFile, name: str, line: ptr_uint) -> bool
             ast.Decl.decl_extending_block as d:
                 if last_name_part(d.type_name) == name and d.line == line:
                     return true
+                # A qualified receiver's first identifier is the flat symbol the
+                # declaration walk emits in source order.
+                if first_name_part(d.type_name) == name and d.line == line:
+                    return true
             _:
                 pass
         i += 1
@@ -358,6 +375,8 @@ function anchor_covered(file: ast.SourceFile, name: str, line: ptr_uint) -> bool
 ## Emit one declaration symbol, with its children where the host has them.
 function emit_declaration_symbol(
     json_out: ref[string.String],
+    deferred_out: ref[string.String],
+    deferred_first: ref[bool],
     analysis: ref[analyzer.Analysis],
     source: str,
     decl: ast.Decl,
@@ -387,11 +406,21 @@ function emit_declaration_symbol(
         ast.Decl.decl_struct as s:
             var children = collect_type_member_children_with_params(analysis, s.name, s.struct_fields, s.struct_events, s.nested_types, s.type_params)
             var detail = string.String.create()
+            # A struct whose methods are declared inline carries them as
+            # children and the host's `implementation` detail; the inline block
+            # itself emits no symbol.
+            let inlined = inline_struct_methods(analysis, s.name)
+            if inlined.len > 0:
+                append_method_children(ref_of(children), analysis, inlined)
+                emit_merged_struct_symbol(json_out, s.name, s.line, s.column, ref_of(children), first)
+                detail.release()
+                return
             append_type_decl_detail(ref_of(detail), s.impl_list, null, s.type_params)
             emit_symbol(json_out, s.name, SYMBOLKIND_STRUCT, s.line, s.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
         ast.Decl.decl_union as u:
-            var children = collect_field_children(analysis, u.union_fields)
+            # The host reports a union's symbol with no children at all.
+            var children = vec.Vec[string.String].create()
             var detail = string.String.create()
             var no_impls = span[ast.QualifiedName]()
             var no_params = span[ast.TypeParam]()
@@ -419,21 +448,49 @@ function emit_declaration_symbol(
             detail.release()
         ast.Decl.decl_interface as iface:
             var children = collect_interface_children(iface.interface_methods)
+            prepend_type_parameters(ref_of(children), iface.type_params)
             var detail = string.String.create()
+            if iface.type_params.len > 0:
+                # The host's `generic_signature_detail`: the interface's own
+                # `[T, U]` clause.
+                detail.append("[")
+                var tpi: ptr_uint = 0
+                while tpi < iface.type_params.len:
+                    if tpi > 0:
+                        detail.append(", ")
+                    detail.append(unsafe: read(iface.type_params.data + tpi).name)
+                    tpi += 1
+                detail.append("]")
             emit_symbol(json_out, iface.name, SYMBOLKIND_INTERFACE, iface.line, iface.column, detail.as_str(), ref_of(children), false, first)
             detail.release()
+        ast.Decl.decl_when as w:
+            # Every branch's declarations stay in the outline, in source order —
+            # the host's flat token list sees each `keyword name` pair, and a
+            # module-level `when` is not reduced to its chosen branch here.
+            var bi: ptr_uint = 0
+            while bi < w.branches.len:
+                let branch = unsafe: read(w.branches.data + bi)
+                var bdi: ptr_uint = 0
+                while bdi < branch.body.len:
+                    emit_declaration_symbol(json_out, deferred_out, deferred_first, analysis, source, unsafe: read(branch.body.data + bdi), first)
+                    bdi += 1
+                bi += 1
         ast.Decl.decl_extending_block as ext:
+            if ext.is_inline:
+                return
+            let as_written = joined_type_name(ext.type_name)
+            let first_part = first_name_part(ext.type_name)
+            if as_written.equal(first_part):
+                var children = collect_extending_children(analysis, ext.methods)
+                emit_symbol(json_out, first_part, SYMBOLKIND_STRUCT, ext.line, type_column(source, ext.line, first_part), "implementation", ref_of(children), false, first)
+                return
+            # A qualified receiver: the host's flat token symbol names its first
+            # identifier (`rl`) and keeps source order, while the enriched symbol
+            # (named as written, `rl.Color`) joins the deferred list.
+            var no_children = vec.Vec[string.String].create()
+            emit_symbol(json_out, first_part, SYMBOLKIND_STRUCT, ext.line, type_column(source, ext.line, first_part), "", ref_of(no_children), false, first)
             var children = collect_extending_children(analysis, ext.methods)
-            var no_detail = string.String.create()
-            let type_name = last_name_part(ext.type_name)
-            var column: ptr_uint = 0
-            match cursor.token_start_in_line(utils.source_line(source, ext.line), type_name):
-                Option.some as pos:
-                    column = pos.value + 1
-                Option.none:
-                    pass
-            emit_symbol(json_out, type_name, SYMBOLKIND_STRUCT, ext.line, column, "implementation", ref_of(children), false, first)
-            no_detail.release()
+            emit_synthesized_extending_symbol(deferred_out, as_written, ext.line, ref_of(children), deferred_first)
         ast.Decl.decl_type_alias as ta:
             var detail = string.String.create()
             detail.append("= ")
@@ -456,7 +513,7 @@ function emit_declaration_symbol(
             detail.release()
         ast.Decl.decl_extern_function as ef:
             var detail = string.String.create()
-            append_callable_detail(ref_of(detail), false, false, null)
+            append_callable_detail(ref_of(detail), false, false, ef.return_type)
             var no_children = vec.Vec[string.String].create()
             let column = token_column(source, ef.line, ef.name)
             emit_symbol(json_out, ef.name, SYMBOLKIND_FUNCTION, ef.line, column, detail.as_str(), ref_of(no_children), false, first)
@@ -646,15 +703,16 @@ function render_arm_symbol(name: str, variant_line: ptr_uint, detail: str) -> st
     proto.append_escaped(ref_of(result), name)
     result.append("\",\"kind\":")
     result.append_format(f"#{SYMBOLKIND_ENUM_MEMBER}")
+    # The host's `child_variant_arm_symbol` keys its detail before the ranges.
+    if detail.len > 0:
+        result.append(",\"detail\":\"")
+        proto.append_escaped(ref_of(result), detail)
+        result.append("\"")
     result.append(",\"range\":{\"start\":{\"line\":")
     result.append_format(f"#{lz}")
     result.append(",\"character\":0},\"end\":{\"line\":")
     result.append_format(f"#{variant_line}")
     result.append(",\"character\":0}}")
-    if detail.len > 0:
-        result.append(",\"detail\":\"")
-        proto.append_escaped(ref_of(result), detail)
-        result.append("\"")
     result.append(",\"selectionRange\":")
     append_span(ref_of(result), lz, 0, name.len)
     result.append("}")
@@ -707,6 +765,15 @@ function append_type_decl_detail(
                 unsafe:
                     part.append(read(iface.parts.data + pi))
                 pi += 1
+            if iface.type_arguments.len > 0:
+                part.append("[")
+                var ai: ptr_uint = 0
+                while ai < iface.type_arguments.len:
+                    if ai > 0:
+                        part.append(", ")
+                    part.append(ast_formatter.render_type(unsafe: read(iface.type_arguments.data + ai)))
+                    ai += 1
+                part.append("]")
             target.append(part.as_str())
             part.release()
             ii += 1
@@ -745,7 +812,36 @@ function append_ast_type(target: ref[string.String], type_ref: ptr[ast.TypeRef]?
     let tp = type_ref else:
         target.append(fallback)
         return
-    target.append(ast_formatter.render_type(unsafe: read(tp)))
+    let tref = unsafe: read(tp)
+    if tref.is_fn or tref.is_proc:
+        # The host's `type_detail_string` renders a function/proc type from its
+        # parameter *types* alone (`fn(int) -> void`), never the names a source
+        # annotation carries.
+        var buf = string.String.create()
+        if tref.is_proc:
+            buf.append("proc(")
+        else:
+            buf.append("fn(")
+        var i: ptr_uint = 0
+        while i < tref.fn_params.len:
+            if i > 0:
+                buf.append(", ")
+            var param = unsafe: read(tref.fn_params.data + i)
+            append_detail_type(ref_of(buf), ptr_of(param.param_type), "")
+            i += 1
+        buf.append(") -> ")
+        var return_ref = tref.fn_return
+        append_detail_type(ref_of(buf), return_ref, "void")
+        target.append(buf.as_str())
+        buf.release()
+        return
+    target.append(ast_formatter.render_type(tref))
+
+
+## The host's `type_detail_string` for a nested type: a plain ref renders its
+## own name, a function/proc ref drops its parameter names.
+function append_detail_type(target: ref[string.String], type_ref: ptr[ast.TypeRef]?, fallback: str) -> void:
+    append_ast_type(target, type_ref, fallback)
 
 
 ## The last part of a possibly-qualified type name (`extending a.B:` → `B`).
@@ -756,6 +852,156 @@ function last_name_part(type_name: ptr[ast.TypeRef]?) -> str:
     if t.name.parts.len == 0:
         return ""
     return unsafe: read(t.name.parts.data + t.name.parts.len - 1)
+
+
+## The host's *synthesized* symbol for an `extending` block whose receiver it
+## could not match by name: the key order is the host's hand-built hash
+## (`name`, `kind`, `detail`, `range`, `selectionRange`, `children`), the range
+## spans the whole declaration line and the selection range starts at column 0
+## with the name's length.
+function emit_synthesized_extending_symbol(json_out: ref[string.String], name: str, line: ptr_uint, children: ref[vec.Vec[string.String]], first: ref[bool]) -> void:
+    if not unsafe: read(first):
+        json_out.append(",")
+    unsafe: read(first) = false
+    let lz = if line > 0: line - 1 else: 0z
+    json_out.append("{\"name\":\"")
+    proto.append_escaped(json_out, name)
+    json_out.append("\",\"kind\":")
+    json_out.append_format(f"#{SYMBOLKIND_STRUCT}")
+    json_out.append(",\"detail\":\"implementation\",\"range\":{\"start\":{\"line\":")
+    json_out.append_format(f"#{lz}")
+    json_out.append(",\"character\":0},\"end\":{\"line\":")
+    json_out.append_format(f"#{lz + 1}")
+    json_out.append(",\"character\":0}},\"selectionRange\":{\"start\":{\"line\":")
+    json_out.append_format(f"#{lz}")
+    json_out.append(",\"character\":0},\"end\":{\"line\":")
+    json_out.append_format(f"#{lz}")
+    json_out.append(",\"character\":")
+    json_out.append_format(f"#{name.len}")
+    json_out.append("}}")
+    if children.len() > 0:
+        json_out.append(",\"children\":[")
+        var ci: ptr_uint = 0
+        while ci < children.len():
+            let cp = children.get(ci) else:
+                break
+            if ci > 0:
+                json_out.append(",")
+            json_out.append(unsafe: read(cp).as_str())
+            ci += 1
+        json_out.append("]")
+    json_out.append("}")
+    release_symbol_strings(children)
+
+
+## The full dotted type name an `extending` block was written with
+## (`extending rl.Color:` -> `rl.Color`).
+function joined_type_name(type_name: ptr[ast.TypeRef]?) -> str:
+    let tp = type_name else:
+        return ""
+    let t = unsafe: read(tp)
+    if t.name.parts.len == 0:
+        return ""
+    if t.name.parts.len == 1:
+        return unsafe: read(t.name.parts.data + 0)
+    var buf = string.String.create()
+    var i: ptr_uint = 0
+    while i < t.name.parts.len:
+        if i > 0:
+            buf.append(".")
+        buf.append(unsafe: read(t.name.parts.data + i))
+        i += 1
+    return buf.as_str()
+
+
+## The first identifier of an `extending` block's receiver (`rl.Color` -> `rl`).
+function first_name_part(type_name: ptr[ast.TypeRef]?) -> str:
+    let tp = type_name else:
+        return ""
+    let t = unsafe: read(tp)
+    if t.name.parts.len == 0:
+        return ""
+    return unsafe: read(t.name.parts.data + 0)
+
+
+## The 1-based column of `name` on the extending block's line (the host's token
+## anchor for the receiver).
+function type_column(source: str, line: ptr_uint, name: str) -> ptr_uint:
+    match cursor.token_start_in_line(utils.source_line(source, line), name):
+        Option.some as pos:
+            return pos.value + 1
+        Option.none:
+            return 0
+
+
+## The methods a struct declares inline, in declaration order (empty when the
+## struct has no inline block).
+function inline_struct_methods(analysis: ref[analyzer.Analysis], name: str) -> span[ast.Method]:
+    let file = unsafe: read(analysis).source_file
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + i)
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                if ext.is_inline and last_name_part(ext.type_name) == name:
+                    return ext.methods
+            _:
+                pass
+        i += 1
+    return span[ast.Method]()
+
+
+## The host's key order for a struct whose symbol the inline `extending` block
+## enriched: the base symbol's ranges, then the children the struct walk added,
+## then the `implementation` detail the block sets.
+function emit_merged_struct_symbol(
+    json_out: ref[string.String],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    children: ref[vec.Vec[string.String]],
+    first: ref[bool],
+) -> void:
+    if not unsafe: read(first):
+        json_out.append(",")
+    unsafe: read(first) = false
+    let lz = if line > 0: line - 1 else: 0z
+    let cz = if column > 0: column - 1 else: 0z
+    json_out.append("{\"name\":\"")
+    proto.append_escaped(json_out, name)
+    json_out.append("\",\"kind\":")
+    json_out.append_format(f"#{SYMBOLKIND_STRUCT}")
+    json_out.append(",\"range\":")
+    append_span(json_out, lz, cz, cz + name.len)
+    json_out.append(",\"selectionRange\":")
+    append_span(json_out, lz, cz, cz + name.len)
+    json_out.append(",\"children\":[")
+    var ci: ptr_uint = 0
+    while ci < children.len():
+        let cp = children.get(ci) else:
+            break
+        if ci > 0:
+            json_out.append(",")
+        json_out.append(unsafe: read(cp).as_str())
+        ci += 1
+    json_out.append("]")
+    json_out.append(",\"detail\":\"implementation\"}")
+    release_symbol_strings(children)
+
+
+## Append a struct's inline methods as child symbols (the host's
+## `child_method_symbol` order: fields, then methods).
+function append_method_children(children: ref[vec.Vec[string.String]], analysis: ref[analyzer.Analysis], methods: span[ast.Method]) -> void:
+    var method_children = collect_extending_children(analysis, methods)
+    var mi: ptr_uint = 0
+    while mi < method_children.len():
+        let cp = method_children.get(mi) else:
+            break
+        children.push(unsafe: read(cp))
+        mi += 1
+    method_children.release()
 
 
 ## The 1-based column of `name` on `line`, or 0 — extern/foreign declarations
@@ -786,9 +1032,11 @@ function collect_field_children_of(
     var fi: ptr_uint = 0
     while fi < fields.len:
         let field = unsafe: read(fields.data + fi)
-        var detail_owner = field_detail_type(analysis, owner_name, field)
-        children.push(render_block_symbol(field.name, SYMBOLKIND_FIELD, field.line, field.column, detail_owner.as_str()))
-        detail_owner.release()
+        var detail = string.String.create()
+        var field_ref = field.field_type
+        append_ast_type(ref_of(detail), ptr_of(field_ref), "")
+        children.push(render_block_symbol(field.name, SYMBOLKIND_FIELD, field.line, field.column, detail.as_str()))
+        detail.release()
         fi += 1
     return children
 
@@ -909,13 +1157,54 @@ function collect_type_member_children_with_params(
             nd = read(nested.data + ni)
         match nd:
             ast.Decl.decl_struct as s:
-                var no_detail = string.String.create()
-                children.push(render_block_symbol(s.name, SYMBOLKIND_STRUCT, s.line, s.column, no_detail.as_str()))
-                no_detail.release()
+                children.push(render_nested_type_child(analysis, s.name, s.line, s.column, s.struct_fields, s.struct_events, s.nested_types, s.type_params))
             _:
                 pass
         ni += 1
     return children
+
+
+## A nested type's child symbol (the host's `child_nested_struct_symbol`): the
+## host reports its own fields/nested types as children and always carries the
+## `children` key, in the `name`, `kind`, `range`, `selectionRange`, `children`
+## order.
+function render_nested_type_child(
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    fields: span[ast.Field],
+    events: span[ast.Decl],
+    nested: span[ast.Decl],
+    type_params: span[ast.TypeParam],
+) -> string.String:
+    var grandchildren = collect_type_member_children_with_params(analysis, name, fields, events, nested, type_params)
+    var result = string.String.create()
+    let lz = if line > 0: line - 1 else: 0z
+    let cz = if column > 0: column - 1 else: 0z
+    result.append("{\"name\":\"")
+    proto.append_escaped(ref_of(result), name)
+    result.append("\",\"kind\":")
+    result.append_format(f"#{SYMBOLKIND_STRUCT}")
+    result.append(",\"range\":{\"start\":{\"line\":")
+    result.append_format(f"#{lz}")
+    result.append(",\"character\":0},\"end\":{\"line\":")
+    result.append_format(f"#{line}")
+    result.append(",\"character\":0}}")
+    result.append(",\"selectionRange\":")
+    append_span(ref_of(result), lz, cz, cz + name.len)
+    result.append(",\"children\":[")
+    var ci: ptr_uint = 0
+    while ci < grandchildren.len():
+        let cp = grandchildren.get(ci) else:
+            break
+        if ci > 0:
+            result.append(",")
+        result.append(unsafe: read(cp).as_str())
+        ci += 1
+    result.append("]}")
+    release_symbol_strings(grandchildren)
+    return result
 
 
 ## Enum/flags member children (kind 22, no detail).
@@ -1059,7 +1348,7 @@ function collect_stmt_locals(analysis: ref[analyzer.Analysis], stmt: ast.Stmt, c
             unsafe: read(declared) = true
             if loc.name.len > 0 and loc.name != "_":
                 var detail = string.String.create()
-                append_local_type(ref_of(detail), analysis, loc.stmt_type, loc.value)
+                append_local_type(ref_of(detail), analysis, loc.stmt_type, loc.value, loc.else_body != null or loc.else_binding.is_some())
                 children.push(render_local_symbol(loc.name, loc.line, loc.column, detail.as_str()))
                 detail.release()
         ast.Stmt.stmt_if as iff:
@@ -1117,22 +1406,56 @@ function append_local_type(
     analysis: ref[analyzer.Analysis],
     stmt_type: ptr[ast.TypeRef]?,
     value: ptr[ast.Expr]?,
+    has_guard: bool,
 ) -> void:
     if stmt_type != null:
         append_ast_type(target, stmt_type, "")
         return
     match type_render.initializer_type(analysis, value):
         Option.some as ty:
+            # A guarded binding (`let x = <T?> else: …`) carries its *success*
+            # type — the host's binding type, narrowed like the analyzer's
+            # scope binding.
+            let bound = if has_guard: analyzer.unwrap_nullable_type(ty.value) else: ty.value
             # A type the analyzer could not resolve renders as no detail at all:
             # the host omits `detail` (it never shows `<error>`), and a
             # `<error>` in the outline is what this looked like to the user.
-            if contains_error_type(ty.value):
+            if contains_error_type(bound):
                 return
-            var short_text = type_render.short_name(ty.value)
+            var short_text = outline_local_detail(bound)
             target.append(short_text.as_str())
             short_text.release()
         Option.none:
             pass
+
+
+## An outline detail for a *resolved* type: the host's `short_type_detail`,
+## with the proc form's parameter *names* (`proc(x: int) -> int`) — the host's
+## `Types::Proc#to_s` renders its signature's parameters, while the hover's own
+## rendering (and `types.type_to_string`) keeps the types alone.
+function outline_local_detail(ty: types.Type) -> string.String:
+    match ty:
+        types.Type.ty_function as fnt:
+            if not fnt.is_proc:
+                return type_render.short_name(ty)
+            var buf = string.String.create()
+            buf.append("proc(")
+            var i: ptr_uint = 0
+            while i < fnt.params.len:
+                if i > 0:
+                    buf.append(", ")
+                if i < fnt.param_names.len:
+                    buf.append(unsafe: read(fnt.param_names.data + i))
+                    buf.append(": ")
+                unsafe:
+                    buf.append(types.type_to_string(read(fnt.params.data + i)))
+                i += 1
+            buf.append(") -> ")
+            unsafe:
+                buf.append(types.type_to_string(read(fnt.return_type)))
+            return buf
+        _:
+            return type_render.short_name(ty)
 
 
 ## True when the type (recursively) contains the analyzer's error type, i.e. it

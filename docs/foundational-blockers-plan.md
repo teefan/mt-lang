@@ -295,6 +295,17 @@ scanner currently says `function` for any name in `facts.functions`).
 against a full-run host reference, or `tools/lsp_token_diffs.rb` on a fresh audit) and
 the full matrix.
 
+## F8.2 — documentSymbol (MOSTLY DONE, session 16)
+
+`src/colors.mt`, `src/node.mt` and `docs/memory_stress_test.mt` match the host byte for
+byte; `docs/language_baseline.mt` is down to thirteen locals whose *initializer type* the
+analyzer still records as `ty_error` (str concatenation, `array[int, 3](…)`,
+`span[int](…)`, `.load()`, `ptr_of(...)`, a vector construction) plus two `emit`-expanded
+consts with a spurious `children` key — **an analyzer-typing residue, not outline work**.
+Also fixed along the way: the guard narrowing now applies to imported
+`Option`/`Result` (`unwrap_nullable_type` handles `ty_imported`), the function/proc detail
+renderers, and the declaration-shape details listed in `docs/self-host-plan.md` §0k.
+
 ## F8 — the LSP-side closures (after the facts land)
 
 1. **semanticTokens (2 positions → class closes)**: the token scanner's

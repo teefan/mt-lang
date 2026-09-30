@@ -2244,6 +2244,58 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### The outline's declaration shapes (2026-09-30 session 16, F8.2)
+
+`src/colors.mt`, `src/node.mt` and `docs/memory_stress_test.mt` are now
+byte-identical to the host's outline; `docs/language_baseline.mt` is down to a
+residue that is *analyzer* typing, not outline building (below).
+
+The four measured causes, each now matched:
+
+1. **An inline `extending` block merges into its struct's symbol.**  A struct
+   whose methods are declared inside its body (`struct Node:` … `create`,
+   `destroy`) used to produce two symbols (fields, then an
+   `implementation`-detailed method block); the host reports one, with the
+   fields and the methods as children, the `implementation` detail *after* the
+   children (its enrichment appends children first), and the inline block itself
+   contributes no symbol (`inline_struct_methods`, `emit_merged_struct_symbol`).
+2. **A qualified `extending` receiver keeps the host's two symbols.**  For
+   `extending rl.Color:` the host's flat token symbol is named after the
+   receiver's *first* identifier (`rl`, in source order) and the enriched symbol
+   — named as written (`rl.Color`) — is *appended after every flat symbol* with
+   the host's hand-built key order (`emit_synthesized_extending_symbol`); the
+   anchor pass no longer duplicates the first-part symbol.
+3. **A module-level `when` keeps every branch's declarations** in source order
+   (the host's flat token list sees each `keyword name` pair; only the analyzer
+   reduces a `when` to its chosen branch), and the declarations of an `emit`
+   block appear where they are written.
+4. **The declaration details follow the host's renderers**: a function-typed
+   field/alias renders `fn(int) -> bool` from the *source* annotation (the
+   `fn ` shape is `Types::Function#to_s` — the hover's rendering, not the
+   outline's), an interface carries its `[T, U]` clause and its type parameters
+   as first children, a union reports no children, a nested type always reports
+   a `children` array (with its own members), enum/variant members key their
+   `detail` before the ranges, an extern/foreign declaration shows its return
+   type, and `implements` keeps the interface's type arguments
+   (`(Converter[int, int])`).  The two proc renderings are genuinely different on
+   the host: the *outline's* detail prints the signature's parameter names
+   (`proc(x: int) -> int`, its `Types::Proc#to_s`), while the *hover* prints the
+   types alone (`proc(int) -> int`) — `outline_local_detail` mirrors the former
+   and `types.type_to_string` the latter.  Substituting an *imported*
+   `Option`/`Result` (the loader's `ty_imported` shape) now narrows like the
+   generic one, which closed the four `guard_demo` details.
+
+**The remaining `language_baseline.mt` residue** is thirteen locals whose
+*initializer type* the analyzer still records as `ty_error`, so the outline has
+no detail to print (`hello`/`prefix` — `str` concatenation; `nums`/`offsets` —
+`array[int, 3](…)`; `sp` — `span[int](…)` and `value[0..1]`; `val_ptr` —
+`raw_p.load()`; `_third` — `third.load()`; `expr_result` — a chain of operands;
+`v3_partial` — a vector construction; `raw_p` — `ptr_of(...)` rendering
+`ptr[ref[int]]` where the host says `ptr[int]`), plus the two `emit`-expanded
+consts that keep a spurious `children` key.  Those are the same class as the
+prefer-let sweep's imported-receiver residue: the *analyzer's* expression typing
+for constructions, builtins and method calls — not outline work.
+
 ### The callable-value record and the scanner's two rules (2026-09-30 session 16, F7 + F8.1)
 
 The last five differing token positions in `docs/language_baseline.mt` are now

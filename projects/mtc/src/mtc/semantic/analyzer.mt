@@ -3243,6 +3243,13 @@ public function unwrap_nullable_type(t: types.Type) -> types.Type:
             if (g.name == "Option" or g.name == "Result") and g.args.len >= 1:
                 return unsafe: read(g.args.data + 0)
             return t
+        types.Type.ty_imported as im:
+            # The loader binds std.option / std.result, so a guarded binding
+            # over them carries the *imported* shape (`std.result.Result[T, E]`)
+            # rather than a `ty_generic`.
+            if (im.name == "Option" or im.name == "Result") and im.args.len >= 1:
+                return unsafe: read(im.args.data + 0)
+            return t
         _:
             return t
 
