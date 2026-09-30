@@ -29,7 +29,18 @@ Everything else in the tracker is LSP-side and already planned (the token scanne
 `callable_field_member_access?` and `dot_nested_type_member?`, the documentSymbol
 enrichment, the readiness items C2–C5, the deliberate-difference table, D2/D3).
 
-## F1 — the real control-flow graph (foundation for F2 and F3)
+## F1 — the real control-flow graph (DONE, session 15; foundation for F2 and F3)
+
+Landed `projects/mtc/src/mtc/semantic/control_flow/graph.mt` (the host's `Graph` +
+`NullabilityFlow`-shaped solver: nodes with kind/statement/read/write sites, labelled
+successor edges with null-test refinement maps, per-body fall-through targets for
+`Termination`-shaped reachability) and `builder.build_graph_into` (the whole-body
+binding-ID pass + the full `ControlFlow::Builder` statement walk).  `build_cfg_into`
+keeps its narrower pre-scan for the linter; binding ids are 1-based so 0 can mean
+"not a binding of this body".  Eight shape tests in `semantic_test.mt`; the record is
+`docs/self-host-plan.md` §0k, "The real control-flow graph".
+
+## F1 (original notes) — the real control-flow graph (foundation for F2 and F3)
 
 **Host**: `lib/milk_tea/core/control_flow/builder.rb` (≈600 lines: nodes carrying
 `kind`/`statement`/`reads`/`writes`, successor edges with refinement labels,

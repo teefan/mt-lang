@@ -2244,6 +2244,37 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### The real control-flow graph (2026-09-30 session 15, F1)
+
+`projects/mtc/src/mtc/semantic/control_flow/graph.mt` is the host's
+`ControlFlow::Graph` ported: `CfgNode`s carrying their kind, the statement they
+were built from (as an address — the self's `object_id`), and their binding
+read/write sites; successor edges with the host's `true_branch`/`false_branch`
+labels and its `set_edge_refinement` null-test maps; per-body fall-through
+targets (so `Termination`-shaped reachability answers "does this body always
+terminate?") and the forward dataflow solver `NullabilityFlow` runs over them —
+the host's `Dataflow.solve` shape: forward, **intersection join**, an edge
+transfer that subtracts the node's writes then applies the taken edge's
+refinements, and an empty entry state.
+
+`builder.mt` grew `build_graph_into` with the whole-body binding-ID pass the
+graph needs (`for` bindings, match-arm `as` bindings, destructured names, a
+guarded decl's else binding) and the full `ControlFlow::Builder` statement walk
+(backwards, threading each statement's continuation, break/continue targets,
+`:fatal` for a literal-false `assert`/`expect`, transparent `unsafe:` blocks).
+The linter's `build_cfg_into` keeps its narrower pre-scan, so its binding-ID map
+is unchanged; binding ids are now **1-based** (0 = "not a binding of this
+body"), the self's analogue of the host's nil — a 0-based first parameter used
+to collide with that sentinel and drop its access records.
+
+Eight unit tests in `projects/mtc/test/semantic_test.mt` pin the shapes: a
+terminating guard's non-null continuation, the false edge of a merging if, the
+write that clears a narrowing, the loop back edge, `for` bindings and iterable
+reads, match-arm bindings, `unsafe`/`defer` nesting, and the break/continue
+targets.  Gates: bootstrap fixed point + 14/14 (the new tests included),
+`test/mt` 60/0, `cli:parity` 23/38/0, sexpr lex 705/705 + parse 701/0, the
+lint scoreboard unchanged.
+
 ### Linter stage 11d (2026-09-30 session 15): the generic-context gate for `prefer-let`
 
 `prefer-let` no longer fires on a `var` bound in a generic context.  The host's

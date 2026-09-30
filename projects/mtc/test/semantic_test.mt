@@ -8,9 +8,12 @@ import std.vec as vec
 
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
+import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.control_flow.builder as cfgb
+import mtc.semantic.control_flow.graph as cfgg
 import mtc.semantic.types as types
 
 
@@ -2274,3 +2277,421 @@ function test_alias_of_alias_records_the_declaring_module() -> void:
 
     expect(saw_wrap, "wrap module was not analyzed")
     expect(saw_main, "main module was not analyzed")
+
+
+# =============================================================================
+#  Control-flow graph — the host's `ControlFlow::Builder` shapes and the
+#  nullability dataflow over them.
+# =============================================================================
+
+## The address that identifies a statement in the graph (the host's
+## `object_id`).
+function statement_key(stmt: ptr[ast.Stmt]?) -> ptr_uint:
+    let s = stmt else:
+        return 0
+    return unsafe: reinterpret[ptr_uint](s)
+
+
+## The `index`-th statement of a block body, or null.
+function block_statement(body: ptr[ast.Stmt]?, index: ptr_uint) -> ptr[ast.Stmt]?:
+    let b = body else:
+        return null
+    unsafe:
+        match read(b):
+            ast.Stmt.stmt_block as blk:
+                if index < blk.statements.len:
+                    return blk.statements.data + index
+                return null
+            _:
+                return null
+
+
+## The statement a body starts with: a block's first statement, or the body
+## itself when the parser left it unwrapped.
+function first_statement(body: ptr[ast.Stmt]?) -> ptr[ast.Stmt]?:
+    let b = body else:
+        return null
+    let first = block_statement(b, 0)
+    if first != null:
+        return first
+    unsafe:
+        match read(b):
+            ast.Stmt.stmt_block:
+                return null
+            _:
+                return b
+
+
+## The loop body of a while statement, or null.
+function while_body(loop_stmt: ptr[ast.Stmt]?) -> ptr[ast.Stmt]?:
+    let s = loop_stmt else:
+        return null
+    unsafe:
+        match read(s):
+            ast.Stmt.stmt_while as w:
+                return w.body
+            _:
+                return null
+
+
+## The body a wrapper statement encloses (`unsafe:`/`defer`/recovered code),
+## or the statement itself when it is not a wrapper.
+function inner_body(body: ptr[ast.Stmt]?) -> ptr[ast.Stmt]?:
+    let b = body else:
+        return null
+    unsafe:
+        match read(b):
+            ast.Stmt.stmt_unsafe as u:
+                return u.body
+            ast.Stmt.stmt_defer as d:
+                return d.body
+            ast.Stmt.stmt_error_block as eb:
+                return eb.body
+            _:
+                return b
+
+
+## The `index`-th branch body of an if statement, or null.
+function if_branch_body(if_stmt: ptr[ast.Stmt]?, index: ptr_uint) -> ptr[ast.Stmt]?:
+    let s = if_stmt else:
+        return null
+    unsafe:
+        match read(s):
+            ast.Stmt.stmt_if as sif:
+                if index < sif.branches.len:
+                    return read(sif.branches.data + index).body
+                return null
+            _:
+                return null
+
+
+## Parse `source`, build its first function's CFG graph, solve the nullability
+## flow, and hand the function body back for navigation.  Returns false when
+## the source does not parse or declares no function.
+function build_flow(source: str, cfg: ref[cfgb.Cfg], graph: ref[cfgg.CfgGraph], flow: ref[cfgg.NullabilityFlow], body_out: ref[ptr[ast.Stmt]?]) -> bool:
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    if pdiags.len() > 0:
+        return false
+    var body: ptr[ast.Stmt]? = null
+    var params = span[ast.Param]()
+    unsafe:
+        var i: ptr_uint = 0
+        while i < file.declarations.len:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    body = fun.body
+                    params = fun.method_params
+                    break
+                _:
+                    pass
+            i += 1
+    let bp = body else:
+        return false
+    cfgb.cfg_clear(cfg)
+    cfgb.build_graph_into(cfg, graph, params, bp)
+    read(flow) = cfgg.flow_create(read(cfg).next_id, read(graph).next_id)
+    cfgg.solve_nullability(graph, flow)
+    read(body_out) = bp
+    return true
+
+
+## A binding's id, or 0 when the function declares no such binding.
+function binding_key(cfg: ref[cfgb.Cfg], name: str) -> ptr_uint:
+    let found = read(cfg).binding_map.get(name) else:
+        return 0
+    return unsafe: read(found)
+
+
+## The node built from `stmt` (0 when the statement is transparent).
+function node_of(graph: ref[cfgg.CfgGraph], stmt: ptr[ast.Stmt]?) -> ptr_uint:
+    return cfgg.graph_node_for_statement(graph, statement_key(stmt))
+
+
+## True when `key` is known non-null on entry to the node built from `stmt`.
+function nonnull_at(graph: ref[cfgg.CfgGraph], flow: ref[cfgg.NullabilityFlow], stmt: ptr[ast.Stmt]?, key: ptr_uint) -> bool:
+    return cfgg.nonnull_before(flow, node_of(graph, stmt), key)
+
+
+## The first node of the given kind, or null.
+function node_of_kind(graph: ref[cfgg.CfgGraph], kind: str) -> ptr[cfgg.CfgNode]?:
+    var i: ptr_uint = 0
+    while i < read(graph).nodes.len():
+        let node = read(graph).nodes.get(i) else:
+            break
+        unsafe:
+            if read(node).kind.equal(kind):
+                return read(node)
+        i += 1
+    return null
+
+
+## True when the write sites of `node` contain a write of `key` with `origin`.
+function has_write_origin(node: ptr[cfgg.CfgNode], key: ptr_uint, origin: str) -> bool:
+    unsafe:
+        var i: ptr_uint = 0
+        while i < read(node).write_sites.len():
+            let site = read(node).write_sites.get(i) else:
+                break
+            if read(site).key == key and read(site).origin.equal(origin):
+                return true
+            i += 1
+    return false
+
+
+## True when the read sites of `node` contain a read of `key`.
+function has_read_key(node: ptr[cfgg.CfgNode], key: ptr_uint) -> bool:
+    unsafe:
+        var i: ptr_uint = 0
+        while i < read(node).read_sites.len():
+            let site = read(node).read_sites.get(i) else:
+                break
+            if read(site).key == key:
+                return true
+            i += 1
+    return false
+
+
+## The first node whose kind matches `kind` and whose successor list contains
+## `succ` — the shape tests use it to pin break/continue targets.
+function node_of_kind_succ(graph: ref[cfgg.CfgGraph], kind: str, succ: ptr_uint) -> ptr[cfgg.CfgNode]?:
+    var i: ptr_uint = 0
+    while i < read(graph).nodes.len():
+        let node = read(graph).nodes.get(i) else:
+            break
+        unsafe:
+            if read(node).kind.equal(kind):
+                var si: ptr_uint = 0
+                while si < read(node).succs.len():
+                    let target = read(node).succs.get(si) else:
+                        break
+                    if read(target) == succ:
+                        return read(node)
+                    si += 1
+        i += 1
+    return null
+
+
+@[test]
+function test_cfg_terminating_guard_narrows_after_it() -> void:
+    var source = <<-SRC
+        function f(handle: ptr[int]?) -> int:
+            if handle == null:
+                return 0
+            unsafe:
+                return read(handle)
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the guard source did not build")
+        return
+    let key = binding_key(ref_of(cfg), "handle")
+    expect(key > 0, "handle was not a binding")
+    let guard = block_statement(body, 0)
+    let guard_return = first_statement(if_branch_body(guard, 0))
+    let use_return = first_statement(inner_body(block_statement(body, 1)))
+    expect(node_of(ref_of(graph), use_return) > 0, "the use after the guard has no node")
+    expect(nonnull_at(ref_of(graph), ref_of(flow), use_return, key), "handle is non-null after the guard")
+    let guard_nonnull = nonnull_at(ref_of(graph), ref_of(flow), guard_return, key)
+    expect(not guard_nonnull, "handle is not non-null inside the guard's return")
+
+
+@[test]
+function test_cfg_false_edge_refines_when_the_then_branch_returns() -> void:
+    var source = <<-SRC
+        function f(handle: ptr[int]?) -> int:
+            if handle != null:
+                return 1
+            return 0
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the guard source did not build")
+        return
+    let key = binding_key(ref_of(cfg), "handle")
+    let then_return = first_statement(if_branch_body(block_statement(body, 0), 0))
+    let after_return = block_statement(body, 1)
+    expect(nonnull_at(ref_of(graph), ref_of(flow), then_return, key), "handle is non-null in the != null branch")
+    expect(not nonnull_at(ref_of(graph), ref_of(flow), after_return, key), "handle is not non-null after the merging if")
+
+
+@[test]
+function test_cfg_write_removes_the_refinement() -> void:
+    var source = <<-SRC
+        function f(handle: ptr[int]?) -> int:
+            if handle != null:
+                handle = null[ptr[int]]
+            unsafe:
+                return read(handle)
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the write source did not build")
+        return
+    let key = binding_key(ref_of(cfg), "handle")
+    let assignment = first_statement(if_branch_body(block_statement(body, 0), 0))
+    let use_return = first_statement(inner_body(block_statement(body, 1)))
+    expect(nonnull_at(ref_of(graph), ref_of(flow), assignment, key), "the assignment still sees the narrowed handle")
+    expect(not nonnull_at(ref_of(graph), ref_of(flow), use_return, key), "the write clears the narrowing")
+
+
+@[test]
+function test_cfg_while_body_keeps_the_condition_refinement() -> void:
+    var source = <<-SRC
+        function f(handle: ptr[int]?) -> void:
+            while handle != null:
+                handle = null[ptr[int]]
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the loop source did not build")
+        return
+    let key = binding_key(ref_of(cfg), "handle")
+    let loop_stmt = block_statement(body, 0)
+    let loop_cond = node_of(ref_of(graph), loop_stmt)
+    let body_stmt = first_statement(while_body(loop_stmt))
+    expect(loop_cond > 0, "the while has no condition node")
+    expect(nonnull_at(ref_of(graph), ref_of(flow), body_stmt, key), "the loop body sees the narrowed handle")
+    expect(not nonnull_at(ref_of(graph), ref_of(flow), loop_stmt, key), "the loop head joins with the entry state")
+    expect(cfgg.graph_reaches(ref_of(graph), loop_cond, loop_cond), "the loop head reaches itself over the back edge")
+
+
+@[test]
+function test_cfg_for_header_records_bindings_and_reads() -> void:
+    var source = <<-SRC
+        function f(items: span[int]) -> int:
+            var total = 0
+            for item in items:
+                total = total + item
+            return total
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the for source did not build")
+        return
+    let header = node_of_kind(ref_of(graph), "for_header") else:
+        expect(false, "no for header node")
+        return
+    let item_key = binding_key(ref_of(cfg), "item")
+    let total_key = binding_key(ref_of(cfg), "total")
+    let items_key = binding_key(ref_of(cfg), "items")
+    expect(has_write_origin(header, item_key, "for_binding"), "the for binding is a write of the header")
+    expect(has_read_key(header, items_key), "the iterable is read at the header")
+    let assignment = node_of_kind(ref_of(graph), "assignment") else:
+        expect(false, "no assignment node")
+        return
+    expect(has_read_key(assignment, total_key) and has_read_key(assignment, item_key), "the body assignment reads total and item")
+
+
+@[test]
+function test_cfg_match_arm_binding_is_a_write_then_a_read() -> void:
+    var source = <<-SRC
+        function f(opt: Option[int]) -> int:
+            match opt:
+                Option.some as value:
+                    return value
+                Option.none:
+                    return 0
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the match source did not build")
+        return
+    let value_key = binding_key(ref_of(cfg), "value")
+    let bind_node = node_of_kind(ref_of(graph), "match_binding") else:
+        expect(false, "no match binding node")
+        return
+    expect(has_write_origin(bind_node, value_key, "match_binding"), "the arm binding writes value")
+    let match_id = node_of(ref_of(graph), block_statement(body, 0))
+    expect(cfgg.graph_reaches(ref_of(graph), match_id, unsafe: read(bind_node).id), "the match reaches its arm binding")
+
+
+@[test]
+function test_cfg_unsafe_and_defer_nesting() -> void:
+    var source = <<-SRC
+        function f(handle: ptr[int]?) -> int:
+            unsafe:
+                if handle == null:
+                    return 0
+                return read(handle)
+            defer:
+                handle = null[ptr[int]]
+            return 1
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the nesting source did not build")
+        return
+    let key = binding_key(ref_of(cfg), "handle")
+    let inner = inner_body(block_statement(body, 0))
+    let use_return = block_statement(inner, 1)
+    expect(node_of(ref_of(graph), use_return) > 0, "the nested return has a node")
+    expect(nonnull_at(ref_of(graph), ref_of(flow), use_return, key), "the nesting keeps the narrowing")
+    expect(node_of(ref_of(graph), first_statement(inner_body(block_statement(body, 1)))) > 0, "the defer body has a node")
+
+
+@[test]
+function test_cfg_break_and_continue_targets() -> void:
+    var source = <<-SRC
+        function f(limit: int) -> int:
+            var i = 0
+            while i < limit:
+                i = i + 1
+                if i == 3:
+                    continue
+                if i == 5:
+                    break
+            return i
+    SRC
+    var cfg = cfgb.empty_cfg()
+    var graph = cfgg.empty_graph()
+    defer: cfgg.graph_release(ref_of(graph))
+    var flow = cfgg.flow_create(0, 0)
+    defer: cfgg.flow_release(ref_of(flow))
+    var body: ptr[ast.Stmt]? = null
+    if not build_flow(source, ref_of(cfg), ref_of(graph), ref_of(flow), ref_of(body)):
+        expect(false, "the loop control source did not build")
+        return
+    let loop_stmt = block_statement(body, 1)
+    let cond_id = node_of(ref_of(graph), loop_stmt)
+    expect(cond_id > 0, "the while has a condition node")
+    expect(node_of_kind_succ(ref_of(graph), "continue", cond_id) != null, "continue targets the loop head")
+    let after_loop = block_statement(body, 2)
+    expect(node_of_kind_succ(ref_of(graph), "break", node_of(ref_of(graph), after_loop)) != null, "break targets the statement after the loop")
+    expect(cfgg.graph_reaches(ref_of(graph), cond_id, node_of(ref_of(graph), after_loop)), "the loop's false edge reaches the following statement")
