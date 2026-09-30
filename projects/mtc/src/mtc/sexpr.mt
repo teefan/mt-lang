@@ -549,7 +549,7 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
                 pf.push(field_value("return_type", types_value(ctx, unsafe: read(fnt.return_type))))
                 return node("Types::Proc", pf.as_span())
             var ff = vec.Vec[SexprField].create()
-            ff.push(field_str("name", ""))
+            ff.push(field_str("name", fnt.name))
             ff.push(field_value("params", param_list_value(ctx, fnt.params, fnt.param_names)))
             ff.push(field_value("return_type", types_value(ctx, unsafe: read(fnt.return_type))))
             ff.push(field_nil("receiver_type"))

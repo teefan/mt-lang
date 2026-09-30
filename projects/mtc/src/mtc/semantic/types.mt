@@ -56,7 +56,11 @@ public variant Type:
     ty_dyn_vtable(interface_name: str, linkage_name: str)
     ty_opaque(module_name: str, name: str)
     ty_generic(name: str, args: span[Type])
-    ty_function(params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool, param_names: span[str])
+    # `name` is the host's `Types::Function#name`: the declared name when the
+    # type came from a function *value* (`fn add`), empty for an anonymous
+    # `fn(…)` annotation.  `to_s` renders `fn <name>` (the host's shape), so a
+    # struct field's `fn(int) -> bool` renders `fn `.
+    ty_function(params: span[Type], return_type: ptr[Type], variadic: bool, is_proc: bool, param_names: span[str], name: str)
     ty_literal_int(value: long)
     ty_tuple(elements: span[Type], field_names: Option[span[str]])
 
@@ -278,11 +282,16 @@ public function type_to_string(t: Type) -> str:
             buf.append("]")
             return buf.as_str()
         Type.ty_function as fnt:
+            if not fnt.is_proc:
+                # The host's `Types::Function#to_s` is `fn <name>` — an
+                # anonymous function type (a field's `fn(…)` annotation) with no
+                # name renders `fn `.
+                var fbuf = string.String.create()
+                fbuf.append("fn ")
+                fbuf.append(fnt.name)
+                return fbuf.as_str()
             var buf = string.String.create()
-            if fnt.is_proc:
-                buf.append("proc(")
-            else:
-                buf.append("fn(")
+            buf.append("proc(")
             var i: ptr_uint = 0
             while i < fnt.params.len:
                 if i > 0:
