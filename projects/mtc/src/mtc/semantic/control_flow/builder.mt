@@ -365,6 +365,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     let branch = read(sif.branches.data + bi)
                     let branch_key = reinterpret[ptr_uint](sif.branches.data + bi)
                     let then_entry = build_graph_body(cfg, g, branch.body, next_id, break_target, continue_target)
+                    graph_mod.graph_set_body_target(g, branch.body, next_id)
                     let line = if branch.line > 0: branch.line else: sif.line
                     let cond_id = graph_mod.graph_add_node(g, "if_condition", branch_key, line, branch.column)
                     let cond = graph_mod.graph_node(g, cond_id) else:
@@ -410,6 +411,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     return next_id
                 collect_read_sites(cfg, cond, w.condition)
                 let body_entry = build_graph_body(cfg, g, w.body, cond_id, next_id, cond_id)
+                graph_mod.graph_set_body_target(g, w.body, next_id)
                 graph_mod.graph_add_edge(g, cond_id, body_entry)
                 graph_mod.graph_set_edge_label(g, cond_id, body_entry, "true_branch")
                 graph_mod.graph_add_edge(g, cond_id, next_id)
@@ -430,6 +432,7 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     push_write_site(cfg, header, binding.name, fr.line, fr.column, "for_binding")
                     bi += 1
                 let body_entry = build_graph_body(cfg, g, fr.body, header_id, next_id, header_id)
+                graph_mod.graph_set_body_target(g, fr.body, next_id)
                 graph_mod.graph_add_edge(g, header_id, body_entry)
                 graph_mod.graph_add_edge(g, header_id, next_id)
                 return header_id

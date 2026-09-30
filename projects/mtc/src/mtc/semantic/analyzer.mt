@@ -19,7 +19,9 @@ import mtc.parser.ast as ast
 import mtc.semantic.types as types
 import mtc.semantic.type_compatibility as compat
 import mtc.semantic.expressions as exprs
+import mtc.semantic.control_flow.builder as flow_builder
 import mtc.semantic.control_flow.definite_assignment as da
+import mtc.semantic.control_flow.graph as flow_graph_mod
 import mtc.semantic.diagnostics as diag
 import mtc.semantic.emit_expansion as emit_ex
 import mtc.semantic.scope as sscope
@@ -114,6 +116,26 @@ public struct ModuleBinding:
     private_interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
 
 
+## One entry of the analyzer's refinement record — the self's analogue of the
+## host's completion-snapshot bindings: the type a local has at a statement
+## boundary.  `at` packs the recording statement's position as
+## `line * 1000000 + column` (1-based line, 0-based column).  An entry with an
+## empty `name` is a barrier: entries recorded before it belong to an earlier
+## function body and do not apply past it; `cleared` marks a binding that left
+## scope, so the consumer falls back to its declaration.
+public struct FlowTypeEntry:
+    at: ptr_uint
+    name: str
+    ty: types.Type
+    cleared: bool
+
+
+## A name/type pair of the snapshot scratch buffer.
+struct FlowName:
+    name: str
+    ty: types.Type
+
+
 struct Context:
     value_names: map_mod.Map[str, bool]
     type_names: map_mod.Map[str, bool]
@@ -178,6 +200,15 @@ struct Context:
     ## binding).  Consumers outside the analysis pass — the LSP's `this`/local
     ## member resolution — resolve a local's type through it.
     local_decl_types: map_mod.Map[ptr_uint, types.Type]
+    ## The current function body's CFG, its solved non-null flow (the host's
+    ## `@nullability_flow_result`), and the refinement record the LSP reads.
+    flow_cfg: flow_builder.Cfg
+    flow_graph: flow_graph_mod.CfgGraph
+    flow: flow_graph_mod.NullabilityFlow
+    flow_active: bool
+    flow_types: vec.Vec[FlowTypeEntry]
+    flow_recorded: map_mod.Map[str, types.Type]
+    flow_scratch: vec.Vec[FlowName]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
     declared_attributes: map_mod.Map[str, span[str]]
     diagnostics: vec.Vec[SemanticDiagnostic]
@@ -205,6 +236,9 @@ public struct Analysis:
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
     ## See `Context.local_decl_types`.
     local_decl_types: map_mod.Map[ptr_uint, types.Type]
+    ## See `Context.flow_types`: the local refinement record the LSP resolves a
+    ## hover's type through.
+    flow_types: vec.Vec[FlowTypeEntry]
     const_values: map_mod.Map[str, ptr[ast.Expr]]
     module_name: str
     module_kind: ast.ModuleKind
@@ -297,6 +331,13 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
         local_decl_types = map_mod.Map[ptr_uint, types.Type].create(),
+        flow_cfg = flow_builder.empty_cfg(),
+        flow_graph = flow_graph_mod.empty_graph(),
+        flow = flow_graph_mod.NullabilityFlow(state = null, row_size = 0, node_count = 0),
+        flow_active = false,
+        flow_types = vec.Vec[FlowTypeEntry].create(),
+        flow_recorded = map_mod.Map[str, types.Type].create(),
+        flow_scratch = vec.Vec[FlowName].create(),
         const_values = map_mod.Map[str, ptr[ast.Expr]].create(),
         declared_attributes = map_mod.Map[str, span[str]].create(),
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
@@ -346,6 +387,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         resolved_expr_types = ctx.resolved_expr_types,
         resolved_call_kinds = ctx.resolved_call_kinds,
         local_decl_types = ctx.local_decl_types,
+        flow_types = ctx.flow_types,
         const_values = ctx.const_values,
         module_name = module_name,
         module_kind = file.module_kind,
@@ -2012,7 +2054,7 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     if rt != null:
         ret = resolve_type(ctx, rt)
     ctx.inside_async = m.is_async
-    check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), m.body)
+    check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), m.body, null)
     ctx.inside_async = false
     check_definite_assignment(ctx, m.method_params, m.body)
     ctx.type_params.clear()
@@ -2055,9 +2097,21 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
     let rt = return_type
     if rt != null:
         ret = resolve_type(ctx, rt)
+    # The host's `run_nullability_pre_pass`: build the body's control-flow graph
+    # and solve the non-null dataflow before checking any statement, so every
+    # statement's check sees the narrowing that all incoming paths prove.
+    flow_builder.cfg_clear(ref_of(ctx.flow_cfg))
+    flow_builder.build_graph_into(ref_of(ctx.flow_cfg), ref_of(ctx.flow_graph), params, b)
+    flow_graph_mod.flow_init_into(ref_of(ctx.flow), ctx.flow_cfg.next_id, ctx.flow_graph.next_id)
+    flow_graph_mod.solve_nullability(ref_of(ctx.flow_graph), ref_of(ctx.flow))
+    ctx.flow_active = true
+    ctx.flow_recorded.clear()
+    ctx.flow_scratch.clear()
+    record_flow_barrier(ctx, line)
     ctx.inside_async = is_async
-    check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), b)
+    check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), b, null)
     ctx.inside_async = false
+    ctx.flow_active = false
     check_definite_assignment(ctx, params, b)
     ctx.type_params.clear()
     ctx.suppressed_type_names.clear()
@@ -2237,7 +2291,7 @@ function check_body(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
     let b = body else:
         return
     scope_enter(scope)
-    check_stmt(ctx, scope, chk, b)
+    check_stmt(ctx, scope, chk, b, null)
     scope_leave(scope)
 
 
@@ -2254,7 +2308,24 @@ function apply_narrow_by_name(ctx: ref[Context], scope: ref[sscope.Scope], narro
             check_body(ctx, scope, chk, body)
 
 
-function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
+## Check one statement, applying the control-flow refinements the host's
+## `check_block` applies around it: before the statement the non-null set every
+## incoming path proves (its `apply_nullability_continuation_refinements!`), and
+## after it the state the statement leaves — recorded so the LSP resolves a
+## local's type the way the host's completion snapshots do.
+function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt], next_stmt: ptr[ast.Stmt]?) -> void:
+    record_flow_snapshot(ctx, scope, sp)
+    check_stmt_inner(ctx, scope, chk, sp)
+    # The host applies the dataflow's non-null set for the *next* statement
+    # right after this one, so the state it records at this statement's
+    # position already carries that narrowing (`latest_completion_snapshot`
+    # answers a guard line with it).
+    if next_stmt != null:
+        apply_flow_continuation(ctx, scope, next_stmt)
+    record_flow_snapshot(ctx, scope, sp)
+
+
+function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
     unsafe:
         match read(sp):
             ast.Stmt.stmt_block as blk:
@@ -2274,35 +2345,41 @@ function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
             ast.Stmt.stmt_local as l:
                 check_local(ctx, scope, l.is_let, l.name, l.stmt_type, l.value, l.else_body != null, l.destructure_bindings, l.line, l.column)
             ast.Stmt.stmt_if as i:
+                # The host's IfStmt arm: each branch is checked with the previous
+                # branches' falsy refinements in scope, and an if whose every
+                # branch body terminates continues with the *falsy* refinements —
+                # the only way control can get past it.
                 var false_refinements = map_mod.Map[str, types.Type].create()
-                var post_refinements = map_mod.Map[str, types.Type].create()
-                var first_post = true
+                var all_terminate = true
                 var bi2: ptr_uint = 0
                 while bi2 < i.branches.len:
                     var br: ast.IfBranch = read(i.branches.data + bi2)
+                    scope_enter(scope)
+                    apply_refinements_to_frame(scope, ref_of(false_refinements))
                     check_condition(ctx, scope, br.condition, "if", br.line, br.column)
                     var true_refs = flow_refinements(ctx, br.condition, true, scope)
+                    merge_refinements_into(ref_of(true_refs), ref_of(false_refinements))
                     scope_enter(scope)
                     apply_refinements_to_frame(scope, ref_of(true_refs))
                     check_body(ctx, scope, chk, br.body)
                     scope_leave(scope)
+                    true_refs.release()
+                    if not body_always_terminates(ctx, br.body):
+                        all_terminate = false
                     var false_refs = flow_refinements(ctx, br.condition, false, scope)
                     merge_refinements_into(ref_of(false_refinements), ref_of(false_refs))
-                    var branch_keepers = keep_unassigned(true_refs, br.body)
-                    intersect_post_refs(ref_of(post_refinements), ref_of(branch_keepers), ref_of(first_post))
-                    branch_keepers.release()
-                    first_post = false
+                    false_refs.release()
+                    scope_leave(scope)
                     bi2 += 1
-                scope_enter(scope)
-                apply_refinements_to_frame(scope, ref_of(false_refinements))
-                check_body(ctx, scope, chk, i.else_body)
-                scope_leave(scope)
                 if i.else_body != null:
-                    var else_keepers = keep_unassigned(false_refinements, i.else_body)
-                    intersect_post_refs(ref_of(post_refinements), ref_of(else_keepers), ref_of(first_post))
-                    else_keepers.release()
-                apply_refinements_to_scope_frame(scope, ref_of(post_refinements))
-                post_refinements.release()
+                    scope_enter(scope)
+                    apply_refinements_to_frame(scope, ref_of(false_refinements))
+                    check_body(ctx, scope, chk, i.else_body)
+                    scope_leave(scope)
+                else:
+                    if all_terminate and i.branches.len > 0:
+                        apply_refinements_to_scope_frame(scope, ref_of(false_refinements))
+                false_refinements.release()
             ast.Stmt.stmt_while as w:
                 if w.is_inline:
                     match evaluate_const_expr(ctx, w.condition):
@@ -2465,23 +2542,203 @@ function null_test_refinements(ctx: ref[Context], condp: ptr[ast.Expr], truthy: 
                 if not found:
                     return result
 
-                let narrow = if is_negated: truthy else: not truthy
-                if not narrow:
-                    return result
-
                 let type_ptr = scope_get(scope, name_value)
                 if type_ptr == null:
                     return result
 
                 unsafe:
-                    let raw_ty = read(type_ptr)
-                    let unwrapped = unwrap_nullable_type(raw_ty)
-                    if not types.type_equals(unwrapped, raw_ty):
-                        result.set(name_value, unwrapped)
+                    match read(type_ptr):
+                        types.Type.ty_nullable as nullable:
+                            # The host's `null_test_refinements`: the truth of
+                            # `x == null` (and the falsity of `x != null`)
+                            # refines to the bare `null`, the other direction to
+                            # the base type.
+                            let null_result = if is_negated: not truthy else: truthy
+                            if null_result:
+                                result.set(name_value, types.Type.ty_null(target = null))
+                            else:
+                                result.set(name_value, read(nullable.base))
+                        _:
+                            pass
             _:
                 pass
 
     return result
+
+
+## Apply the CFG's non-null set for `sp` to the scope: every binding the
+## dataflow proves non-null on all incoming paths narrows from `T?` to `T`
+## before the statement is checked (the host's
+## `apply_nullability_continuation_refinements!`).
+function apply_flow_continuation(ctx: ref[Context], scope: ref[sscope.Scope], sp: ptr[ast.Stmt]) -> void:
+    if not ctx.flow_active:
+        return
+    let stmt_key = unsafe: reinterpret[ptr_uint](sp)
+    let node = flow_graph_mod.graph_node_for_statement(ref_of(ctx.flow_graph), stmt_key)
+    if node == 0:
+        return
+    var key: ptr_uint = 1
+    while key < ctx.flow_cfg.next_id:
+        if flow_graph_mod.nonnull_before(ref_of(ctx.flow), node, key):
+            let name = flow_builder.cfg_binding_name(ref_of(ctx.flow_cfg), key)
+            if name.len > 0:
+                let type_ptr = scope_get(scope, name)
+                if type_ptr != null:
+                    unsafe:
+                        match read(type_ptr):
+                            types.Type.ty_nullable as nullable:
+                                scope_set(scope, name, read(nullable.base))
+                            _:
+                                pass
+        key += 1
+
+
+## Record the refinement state at a statement boundary: only the entries that
+## changed since the previous recording, positioned at the statement.  The LSP
+## resolves a local's type through the latest entry at or before the cursor,
+## which is how the host's completion snapshots answer.
+function record_flow_snapshot(ctx: ref[Context], scope: ref[sscope.Scope], sp: ptr[ast.Stmt]) -> void:
+    if not ctx.flow_active:
+        return
+    let position = statement_position(sp)
+    if position == 0:
+        return
+    ctx.flow_scratch.clear()
+    var fi: ptr_uint = 0
+    while fi < scope.frames.len():
+        let frame_ptr = scope.frames.get(fi) else:
+            break
+        var entries = unsafe: read(frame_ptr).entries()
+        while entries.next():
+            let entry = entries.current()
+            unsafe:
+                flow_scratch_set(ref_of(ctx.flow_scratch), read(entry.key), read(entry.value))
+        fi += 1
+    var si: ptr_uint = 0
+    while si < ctx.flow_scratch.len():
+        let item = ctx.flow_scratch.get(si) else:
+            break
+        unsafe:
+            let name = read(item).name
+            let ty = read(item).ty
+            let previous = ctx.flow_recorded.get(name)
+            var changed = true
+            if previous != null:
+                changed = not types.type_equals(read(previous), ty)
+            if changed:
+                ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = ty, cleared = false))
+                let _prev = ctx.flow_recorded.set(name, ty)
+        si += 1
+    var to_clear = vec.Vec[str].create()
+    defer: to_clear.release()
+    var recorded = ctx.flow_recorded.entries()
+    while recorded.next():
+        let entry = recorded.current()
+        unsafe:
+            let name = read(entry.key)
+            if not flow_scratch_contains(ref_of(ctx.flow_scratch), name):
+                to_clear.push(name)
+                ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = types.Type.ty_error, cleared = true))
+    var ci: ptr_uint = 0
+    while ci < to_clear.len():
+        let name_ptr = to_clear.get(ci) else:
+            break
+        unsafe:
+            let _removed = ctx.flow_recorded.remove(read(name_ptr))
+        ci += 1
+
+
+## Mark the start of a function body's refinement record: entries recorded
+## before the barrier belong to an earlier body and cannot apply past it.
+function record_flow_barrier(ctx: ref[Context], line: ptr_uint) -> void:
+    if line == 0:
+        return
+    ctx.flow_types.push(FlowTypeEntry(at = (line - 1) * 1000000 + 999999, name = "", ty = types.Type.ty_error, cleared = true))
+
+
+## The snapshot key of a statement: its position packed into one comparable
+## number (`line * 1000000 + column`).  A statement that carries no column uses
+## 0, so its entry applies from the start of its line.
+function statement_position(sp: ptr[ast.Stmt]) -> ptr_uint:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as l:
+                return l.line * 1000000 + l.column
+            ast.Stmt.stmt_assignment as a:
+                return a.line * 1000000 + a.column
+            ast.Stmt.stmt_if as i:
+                return i.line * 1000000
+            ast.Stmt.stmt_while as w:
+                return w.line * 1000000 + w.column
+            ast.Stmt.stmt_for as f:
+                return f.line * 1000000 + f.column
+            ast.Stmt.stmt_match as m:
+                return m.line * 1000000 + m.column
+            ast.Stmt.stmt_ret as r:
+                return r.line * 1000000 + r.column
+            ast.Stmt.stmt_break as b:
+                return b.line * 1000000 + b.column
+            ast.Stmt.stmt_continue as c:
+                return c.line * 1000000 + c.column
+            ast.Stmt.stmt_pass as p:
+                return p.line * 1000000 + p.column
+            ast.Stmt.stmt_defer as d:
+                return d.line * 1000000 + d.column
+            ast.Stmt.stmt_unsafe as u:
+                return u.line * 1000000 + u.column
+            ast.Stmt.stmt_expression as e:
+                return e.line * 1000000
+            ast.Stmt.stmt_static_assert as s:
+                return s.line * 1000000
+            ast.Stmt.stmt_emit as em:
+                return em.line * 1000000 + em.column
+            ast.Stmt.stmt_when as w:
+                return w.line * 1000000 + w.column
+            ast.Stmt.stmt_parallel_block as pb:
+                return pb.line * 1000000 + pb.column
+            ast.Stmt.stmt_gather as g:
+                return g.line * 1000000 + g.column
+            ast.Stmt.stmt_error as er:
+                return er.line * 1000000 + er.column
+            ast.Stmt.stmt_error_block as eb:
+                return eb.line * 1000000 + eb.column
+            ast.Stmt.stmt_block as blk:
+                if blk.statements.len > 0:
+                    return statement_position(blk.statements.data + 0)
+                return 0
+    return 0
+
+
+## True when control cannot fall out of `body` (the host's
+## `cfg_block_always_terminates?`, answered on the body's CFG).
+function body_always_terminates(ctx: ref[Context], body: ptr[ast.Stmt]?) -> bool:
+    if not ctx.flow_active:
+        return false
+    return flow_graph_mod.graph_body_terminates(ref_of(ctx.flow_graph), body)
+
+
+function flow_scratch_set(scratch: ref[vec.Vec[FlowName]], name: str, ty: types.Type) -> void:
+    var i: ptr_uint = 0
+    while i < scratch.len():
+        let item = scratch.get(i) else:
+            break
+        unsafe:
+            if read(item).name.equal(name):
+                read(item).ty = ty
+                return
+        i += 1
+    scratch.push(FlowName(name = name, ty = ty))
+
+
+function flow_scratch_contains(scratch: ref[vec.Vec[FlowName]], name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < scratch.len():
+        let item = scratch.get(i) else:
+            break
+        if unsafe: read(item).name.equal(name):
+            return true
+        i += 1
+    return false
 
 
 ## Copy all entries from `incoming` into `existing`.  When a key is already
@@ -2527,113 +2784,6 @@ function apply_refinements_to_scope_frame(scope: ref[sscope.Scope], refinements:
             scope_set(scope, read(entry.key), read(entry.value))
 
 
-## Return the subset of `refinements` whose variable names are NOT assigned
-## (via let/var/assignment) within the given statement body.  Variables that
-## are reassigned lose their narrowing.
-function keep_unassigned(refinements: map_mod.Map[str, types.Type], body_ptr: ptr[ast.Stmt]?) -> map_mod.Map[str, types.Type]:
-    var result = map_mod.Map[str, types.Type].create()
-    var assigned = collect_assigned_names(body_ptr)
-    var entries = refinements.entries()
-    while true:
-        if not entries.next():
-            break
-        unsafe:
-            let key = read(entries.current().key)
-            if not assigned.contains(key):
-                result.set(key, read(entries.current().value))
-    assigned.release()
-    return result
-
-
-## Collect all variable names that appear as targets of let/var declarations
-## or assignments within a statement body.
-function collect_assigned_names(body_ptr: ptr[ast.Stmt]?) -> map_mod.Map[str, bool]:
-    var result = map_mod.Map[str, bool].create()
-    collect_assigned_into(body_ptr, ref_of(result))
-    return result
-
-
-function collect_assigned_into(stmt_ptr: ptr[ast.Stmt]?, names: ref[map_mod.Map[str, bool]]) -> void:
-    if stmt_ptr == null:
-        return
-    unsafe:
-        match read(stmt_ptr):
-            ast.Stmt.stmt_local as l:
-                if not l.name == "_":
-                    names.set(l.name, true)
-            ast.Stmt.stmt_assignment as a:
-                match read(a.target):
-                    ast.Expr.expr_identifier as id:
-                        if not id.name == "_":
-                            names.set(id.name, true)
-                    _:
-                        pass
-            ast.Stmt.stmt_block as b:
-                var i: ptr_uint = 0
-                while i < b.statements.len:
-                    collect_assigned_into(b.statements.data + i, names)
-                    i += 1
-            ast.Stmt.stmt_if as i:
-                var bi: ptr_uint = 0
-                while bi < i.branches.len:
-                    let br = read(i.branches.data + bi)
-                    collect_assigned_into(br.body, names)
-                    bi += 1
-                collect_assigned_into(i.else_body, names)
-            ast.Stmt.stmt_while as w:
-                collect_assigned_into(w.body, names)
-            ast.Stmt.stmt_for as fr:
-                collect_assigned_into(fr.body, names)
-            ast.Stmt.stmt_match as m:
-                var ai: ptr_uint = 0
-                while ai < m.arms.len:
-                    let arm = read(m.arms.data + ai)
-                    collect_assigned_into(arm.body, names)
-                    ai += 1
-            ast.Stmt.stmt_defer as d:
-                collect_assigned_into(d.body, names)
-            ast.Stmt.stmt_unsafe as u:
-                collect_assigned_into(u.body, names)
-            _:
-                pass
-
-
-## Intersect `branch` into `result`.  When `first` is true, `branch` is the first
-## branch and its entries are copied directly.  Otherwise, only entries present
-## in both with the same type survive.
-function intersect_post_refs(result: ref[map_mod.Map[str, types.Type]], branch: ref[map_mod.Map[str, types.Type]], first: ref[bool]) -> void:
-    if read(first):
-        var entries = branch.entries()
-        while true:
-            if not entries.next():
-                break
-            unsafe:
-                result.set(read(entries.current().key), read(entries.current().value))
-        read(first) = false
-    else:
-        var to_remove = vec.Vec[str].create()
-        var entries = result.entries()
-        while true:
-            if not entries.next():
-                break
-            unsafe:
-                let key = read(entries.current().key)
-                if not branch.contains(key):
-                    to_remove.push(key)
-                else:
-                    let bv = branch.get(key)
-                    if bv != null and not types.type_equals(read(entries.current().value), read(bv)):
-                        to_remove.push(key)
-        var ri: ptr_uint = 0
-        while ri < to_remove.len():
-            let kr = to_remove.get(ri) else:
-                break
-            unsafe:
-                let _removed = result.remove(read(kr))
-            ri += 1
-        to_remove.release()
-
-
 function check_when_statement(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
     match evaluate_when_discriminant(ctx, discriminant, span[ast.Decl]()):
         Option.some as chosen:
@@ -2659,7 +2809,13 @@ function check_stmt_span(ctx: ref[Context], scope: ref[sscope.Scope], chk: Check
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
-            check_stmt(ctx, scope, chk, stmts.data + i)
+            # The dataflow's non-null set narrows the scope before the *next*
+            # statement (the host's `apply_nullability_continuation_refinements!`),
+            # so each statement's check sees what every incoming path proves.
+            var next: ptr[ast.Stmt]? = null
+            if i + 1 < stmts.len:
+                next = stmts.data + i + 1
+            check_stmt(ctx, scope, chk, stmts.data + i, next)
         i += 1
 
 

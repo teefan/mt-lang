@@ -5,7 +5,21 @@ with the Ruby host on everything an editor can observe (diagnostics included), p
 readiness properties parity alone does not test — cold start, steady-state memory, large
 files, long sessions, real clients (Neovim/VS Code).
 
-**Where we are** (branch `selfhost`, session 14, 2026-09-30): SimpleGame audit
+**Where we are** (branch `selfhost`, session 15, 2026-09-30): SimpleGame audit
+6456 entries / **13 differ** (hover **5**, documentSymbol 4, diagnostic 2,
+documentHighlight 1, semanticTokens 1; codeLens, workspace/symbol and
+definition/declaration/typeDefinition/implementation/references 0).  Session 15 was
+the compiler-stages session the focused plan
+([foundational-blockers-plan.md](./foundational-blockers-plan.md)) called for: the
+linter's generic-context gate for `prefer-let` (F6, 18 → 17) and the real
+control-flow graph (F1) plus the nullability continuation refinement and its
+refinement record (F2, 17 → 13) landed.  The four `memory_stress_test.mt`
+nullability hovers (`25:7`, `28:20`, `205:7`, `404:7`) are byte-equal now; the
+remaining hover 5 are the `fn ` field (`lb@1127:9`, F5), `type quat`'s
+asynchronous location (documented) and stage 11c's destructuring two + match-arm
+payload (F4, 3 entries).
+
+Previous close (session 14): SimpleGame audit
 6456 entries / **18 differ** (hover 9, documentSymbol 5, diagnostic 2,
 documentHighlight 1, semanticTokens **1**; codeLens, workspace/symbol and
 definition/declaration/typeDefinition/implementation/**references 0**); the

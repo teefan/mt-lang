@@ -68,7 +68,24 @@ later the host's definite-assignment/termination/reachability passes.
 terminating then-branch, while/for back-edges, match arms, defer/unsafe nesting),
 plus the existing suites (`test/mt` 60/0, the bootstrap fixed point).
 
-## F2 — the nullability continuation refinement
+## F2 — the nullability continuation refinement (DONE, session 15)
+
+Landed, with three measured findings that correct this plan's model.  (1) The
+continuation is applied **for the next statement at the end of the current one**
+(the host's `apply_nullability_continuation_refinements!` order), not before each
+statement — that ordering is what makes the state recorded at a guard line
+already carry the narrowing.  (2) `flow_refinements`' falsy side of `and` (and
+truthy side of `or`) is `{}` in the host, unlike the *builder's*
+`null_check_pairs` left-only trick — the `mst@404:7` entry is the continuation's
+work, not a falsy refinement.  (3) The record's consumer must scan in
+*recording* order (the host's `latest_completion_snapshot`), not by greatest
+position: a post-statement record at an earlier line still answers a later
+cursor.  The if-arm's `keep_unassigned`/`intersect_post_refs` model was replaced
+by the host's terminating-branch rule.  The record is `docs/self-host-plan.md`
+§0k, "The nullability continuation refinement"; the four hover entries closed in
+the full matrix (**17 → 13**, added 0).
+
+## F2 (original notes) — the nullability continuation refinement
 
 **Host**: `control_flow/nullability_flow.rb` (`NullabilityFlow.solve`: forward dataflow
 whose **join is set intersection**, `edge_transfer` applying `:non_null`/nullable edge

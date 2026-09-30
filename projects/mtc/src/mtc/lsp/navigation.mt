@@ -4011,6 +4011,11 @@ function resolve_local_hover(
     var current_module = resolver.infer_module_name(file_path.as_str(), module_roots.as_span())
     defer: current_module.release()
 
+    # The analyzer's refinement record at the cursor: a local narrowed by a
+    # guard or a loop condition answers its refined type, exactly as the host's
+    # completion snapshot does.
+    var flow_override = flow_type_at(ref_of(analysis), name.as_str(), target_line, character)
+
     # The implicit receiver of an instance method: the analyzer binds `this` in
     # the method's scope, so a hover on it renders the host's `parameter this:
     # <receiver> (immutable)`.
@@ -4044,14 +4049,14 @@ function resolve_local_hover(
                                             return Option[CursorResult].some(value = local_hover_result(
                                                 fl.is_let, name.as_str(), fl.line, fl.stmt_type, fl.value,
                                                 fl.else_body != null,
-                                                source, ref_of(analysis), current_module.as_str()))
+                                                source, ref_of(analysis), current_module.as_str(), flow_override))
                                         _:
                                             pass
                                 Option.none:
                                     pass
                         match parameter_hover_in_decl(
                             name.as_str(), sfun.method_params, analysis.functions.get(sfun.name),
-                            want.value, current_module.as_str()):
+                            want.value, current_module.as_str(), flow_override):
                             Option.some as param_result:
                                 return Option[CursorResult].some(value = param_result.value)
                             Option.none:
@@ -4067,7 +4072,7 @@ function resolve_local_hover(
                                             return Option[CursorResult].some(value = local_hover_result(
                                                 flm.is_let, name.as_str(), flm.line, flm.stmt_type, flm.value,
                                                 flm.else_body != null,
-                                                source, ref_of(analysis), current_module.as_str()))
+                                                source, ref_of(analysis), current_module.as_str(), flow_override))
                                         _:
                                             pass
                                 Option.none:
@@ -4075,7 +4080,7 @@ function resolve_local_hover(
                             match parameter_hover_in_decl(
                                 name.as_str(), method.method_params,
                                 method_signature_for(ref_of(analysis), method.name, method.method_params),
-                                want.value, current_module.as_str()):
+                                want.value, current_module.as_str(), flow_override):
                                 Option.some as method_param_result:
                                     return Option[CursorResult].some(value = method_param_result.value)
                                 Option.none:
@@ -4102,7 +4107,7 @@ function resolve_local_hover(
             match edecl:
                 ast.Decl.decl_function as fun:
                     if fun.body != null:
-                        var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str(), source, ref_of(analysis), current_module.as_str())
+                        var body_loc = find_local_in_block(unsafe: read(ptr[ast.Stmt]<-fun.body), name.as_str(), source, ref_of(analysis), current_module.as_str(), flow_override)
                         match body_loc:
                             Option.some as loc:
                                 return Option[CursorResult].some(value = loc.value)
@@ -4475,6 +4480,7 @@ function find_local_in_block(
     source: str,
     analysis: ref[analyzer.Analysis],
     current_module: str,
+    flow_override: Option[types.Type],
 ) -> Option[CursorResult]:
     match block_stmt:
         ast.Stmt.stmt_block as blk:
@@ -4488,7 +4494,7 @@ function find_local_in_block(
                         if loc.name == name and loc.name != "_":
                             return Option[CursorResult].some(value = local_hover_result(
                                 loc.is_let, name, loc.line, loc.stmt_type, loc.value, loc.else_body != null,
-                                source, analysis, current_module))
+                                source, analysis, current_module, flow_override))
                     _:
                         pass
                 si += 1
@@ -4692,11 +4698,17 @@ function parameter_hover_in_decl(
     sig: ptr[analyzer.FnSig]?,
     want_line: ptr_uint,
     current_module: str,
+    flow_override: Option[types.Type],
 ) -> Option[CursorResult]:
     var pi: ptr_uint = 0
     while pi < ast_params.len:
         let ast_param = unsafe: read(ast_params.data + pi)
         if ast_param.name.equal(name) and ast_param.line == want_line:
+            match flow_override:
+                Option.some as refined:
+                    return Option[CursorResult].some(value = parameter_hover_result(name, refined.value, current_module))
+                Option.none:
+                    pass
             var param_type = types.Type.ty_error
             if sig != null:
                 let resolved = unsafe: read(ptr[analyzer.FnSig]<-sig)
@@ -4838,6 +4850,38 @@ function append_nominal_qualifier(text: ref[string.String], name: str, analysis:
         text.append(".")
 
 
+## The analyzer's refinement record for a local at the cursor: the type the
+## host's `latest_completion_snapshot` resolves.  The host scans its snapshots
+## in *recording* order and takes the last one at or before the cursor, so a
+## post-statement snapshot recorded at an earlier line still answers a later
+## cursor (the same carry-forward a documentHighlight entry shows).  A barrier
+## (an entry with no name) forgets everything recorded before it, which keeps an
+## earlier function body's refinements out.  None when the name has no entry
+## there, so the declaration's own type stands.
+function flow_type_at(analysis: ref[analyzer.Analysis], name: str, line: ptr_uint, character: ptr_uint) -> Option[types.Type]:
+    let at = line * 1000000 + character
+    var best = types.Type.ty_error
+    var found = false
+    var has_type = false
+    var i: ptr_uint = 0
+    while i < unsafe: read(analysis).flow_types.len():
+        let entry = unsafe: read(analysis).flow_types.get(i) else:
+            break
+        unsafe:
+            let item = read(entry)
+            if item.at <= at:
+                if item.name.len == 0:
+                    found = false
+                else if item.name.equal(name):
+                    best = item.ty
+                    has_type = not item.cleared
+                    found = true
+        i += 1
+    if not found or not has_type:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = best)
+
+
 ## The hover result for one local declaration.
 function local_hover_result(
     is_let: bool,
@@ -4849,22 +4893,29 @@ function local_hover_result(
     source: str,
     analysis: ref[analyzer.Analysis],
     current_module: str,
+    flow_override: Option[types.Type],
 ) -> CursorResult:
     var type_text = string.String.create()
 
-    if stmt_type != null:
-        type_text.release()
-        type_text = annotated_type_text(unsafe: read(ptr[ast.TypeRef]<-stmt_type), analysis, current_module)
-    else:
-        match type_render.initializer_type(analysis, value):
-            Option.some as init_ty:
+    match flow_override:
+        Option.some as refined:
+            # The flow-refined type at the cursor (the host's snapshot binding).
+            type_text.release()
+            type_text = type_render.qualified_name(refined.value, current_module)
+        Option.none:
+            if stmt_type != null:
                 type_text.release()
-                # A guarded binding (`let x = <T?> else: …`) narrows to the
-                # guard's success type, as the analyzer's binding does.
-                let bound = if has_guard: analyzer.unwrap_nullable_type(init_ty.value) else: init_ty.value
-                type_text = type_render.qualified_name(bound, current_module)
-            Option.none:
-                pass
+                type_text = annotated_type_text(unsafe: read(ptr[ast.TypeRef]<-stmt_type), analysis, current_module)
+            else:
+                match type_render.initializer_type(analysis, value):
+                    Option.some as init_ty:
+                        type_text.release()
+                        # A guarded binding (`let x = <T?> else: …`) narrows to the
+                        # guard's success type, as the analyzer's binding does.
+                        let bound = if has_guard: analyzer.unwrap_nullable_type(init_ty.value) else: init_ty.value
+                        type_text = type_render.qualified_name(bound, current_module)
+                    Option.none:
+                        pass
 
     var signature = string.String.create()
     if is_let:

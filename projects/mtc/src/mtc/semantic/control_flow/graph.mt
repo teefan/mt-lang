@@ -80,6 +80,11 @@ public struct CfgGraph:
     edge_labels: vec.Vec[EdgeLabel]
     edge_refinements: vec.Vec[EdgeRefinement]
     by_statement: map_mod.Map[ptr_uint, ptr_uint]
+    ## Per body (the address of a block statement), the node control flows into
+    ## when the body falls through — the host's `build_block(stmts, next_id)`
+    ## continuation, kept so reachability can answer "does this body always
+    ## terminate?".
+    body_targets: map_mod.Map[ptr_uint, ptr_uint]
     entry_id: ptr_uint
     exit_id: ptr_uint
     next_id: ptr_uint
@@ -101,6 +106,7 @@ public function empty_graph() -> CfgGraph:
         edge_labels = vec.Vec[EdgeLabel].create(),
         edge_refinements = vec.Vec[EdgeRefinement].create(),
         by_statement = map_mod.Map[ptr_uint, ptr_uint].create(),
+        body_targets = map_mod.Map[ptr_uint, ptr_uint].create(),
         entry_id = 0,
         exit_id = 0,
         next_id = 1,
@@ -126,6 +132,7 @@ public function graph_clear(graph: ref[CfgGraph]) -> void:
     read(graph).edge_labels.clear()
     read(graph).edge_refinements.clear()
     read(graph).by_statement.clear()
+    read(graph).body_targets.clear()
     read(graph).entry_id = 0
     read(graph).exit_id = 0
     read(graph).next_id = 1
@@ -138,6 +145,7 @@ public function graph_release(graph: ref[CfgGraph]) -> void:
     read(graph).edge_labels.release()
     read(graph).edge_refinements.release()
     read(graph).by_statement.release()
+    read(graph).body_targets.release()
 
 
 # =============================================================================
@@ -308,6 +316,50 @@ function graph_rpo_visit(graph: ref[CfgGraph], visited: ref[map_mod.Map[ptr_uint
     ids.push(id)
 
 
+## Record the node control flows into when `body` falls through.
+public function graph_set_body_target(graph: ref[CfgGraph], body: ptr[ast.Stmt]?, target: ptr_uint) -> void:
+    let b = body else:
+        return
+    if target == 0:
+        return
+    let _prev = read(graph).body_targets.set(unsafe: reinterpret[ptr_uint](b), target)
+
+
+## The node a body starts at: its first statement's node, seeing through blocks
+## and the transparent `unsafe:`/recovered-code wrappers.  0 when the body has
+## no node (an empty body, or a statement the graph leaves out).
+public function graph_body_entry(graph: ref[CfgGraph], body: ptr[ast.Stmt]?) -> ptr_uint:
+    let b = body else:
+        return 0
+    unsafe:
+        match read(ptr[ast.Stmt]<-b):
+            ast.Stmt.stmt_block as blk:
+                if blk.statements.len > 0:
+                    return graph_body_entry(graph, blk.statements.data + 0)
+                return 0
+            ast.Stmt.stmt_unsafe as u:
+                return graph_body_entry(graph, u.body)
+            ast.Stmt.stmt_error_block as eb:
+                return graph_body_entry(graph, eb.body)
+            _:
+                return graph_node_for_statement(graph, reinterpret[ptr_uint](b))
+
+
+## The host's `Termination.block_always_terminates?` over the graph: the body
+## terminates when control cannot reach the node it would fall through to.
+public function graph_body_terminates(graph: ref[CfgGraph], body: ptr[ast.Stmt]?) -> bool:
+    let b = body else:
+        return false
+    let entry = graph_body_entry(graph, b)
+    if entry == 0:
+        return false
+    let target = read(graph).body_targets.get(unsafe: reinterpret[ptr_uint](b)) else:
+        return false
+    if unsafe: read(target) == 0:
+        return false
+    return not graph_reaches(graph, entry, unsafe: read(target))
+
+
 ## Every binding key the graph reads (the host's `all_read_binding_keys`).
 public function graph_read_keys(graph: ref[CfgGraph], keys: ref[vec.Vec[ptr_uint]]) -> void:
     var i: ptr_uint = 0
@@ -339,6 +391,18 @@ public function flow_create(row_size: ptr_uint, node_count: ptr_uint) -> Nullabi
     let raw = heap.must_alloc_zeroed[bool](total)
     let state = unsafe: ptr[bool]<-raw
     return NullabilityFlow(state = state, row_size = row_size, node_count = node_count)
+
+
+## (Re)allocate the table for one function body, releasing any previous one.
+public function flow_init_into(flow: ref[NullabilityFlow], row_size: ptr_uint, node_count: ptr_uint) -> void:
+    flow_release(flow)
+    read(flow).row_size = row_size
+    read(flow).node_count = node_count
+    let total = row_size * (node_count + 2)
+    if total == 0:
+        return
+    let raw = heap.must_alloc_zeroed[bool](total)
+    read(flow).state = unsafe: ptr[bool]<-raw
 
 
 public function flow_release(flow: ref[NullabilityFlow]) -> void:

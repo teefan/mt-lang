@@ -2244,6 +2244,72 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### The nullability continuation refinement (2026-09-30 session 15, F2)
+
+The analyzer now carries the host's control-flow narrowing, and it closed the
+four `memory_stress_test.mt` hover entries (`25:7`, `28:20`, `205:7`, `404:7`) —
+the full matrix went **17 → 13** (closed 4, added 0; nothing else moved).  The
+port has three parts:
+
+1. **The pre-pass and the continuation.**  `check_function_body` builds the
+   body's CFG and solves the non-null dataflow before checking any statement;
+   after each statement the dataflow's non-null set for the **next** statement
+   narrows the scope (`apply_flow_continuation`, the host's
+   `apply_nullability_continuation_refinements!`).  This is *not* a
+   prefix-of-statement application: the host refines at the end of statement N
+   for statement N+1, which is also what makes the state it records at N's own
+   position already carry the narrowing — that ordering is what answers a guard
+   line with the refined type.
+2. **The host's `null_test_refinements` polarity.**  The self only produced the
+   *non-null* side of a null test; the host refines the other side to the bare
+   `null` (`x == null` truthy, `x != null` falsy), which is exactly what
+   `205:7`'s `var handle: null` prints.
+3. **The if statement's continuation** (the host's IfStmt arm).  The self's
+   `keep_unassigned`/`intersect_post_refs` post-refinement model is gone: each
+   branch is checked with the previous branches' *falsy* refinements in scope,
+   and an if with no else whose **every branch body terminates**
+   (`graph_body_terminates`, CFG reachability — the host's
+   `Termination.block_always_terminates?`) continues with the merged *falsy*
+   refinements, the only way control can get past it.  (`flow_refinements`
+   itself returns `{}` for the falsy side of `and`/the truthy side of `or`,
+   exactly as the host's does; the `404:7` case is the *continuation*'s work.)
+
+**The refinement record** (`Analysis.flow_types`).  The host answers a local
+hover from its completion snapshots, and the entries showed how: the record
+holds the entries whose type *changed* at a statement boundary, positioned at
+the statement (`line * 1000000 + column`), plus a barrier entry (an empty name)
+per function body so an earlier body's refinements cannot apply.  `navigation.mt`
+resolves a hover through `flow_type_at`: the **last** entry at or before the
+cursor in *recording* order (not the greatest position — a post-statement record
+at an earlier line still answers a later cursor, the same carry-forward the
+documentHighlight residue shows), with the last matching barrier resetting it;
+the local and parameter hover arms then render that type instead of the
+declaration's.
+
+**Pre-existing divergence found while gating**: `projects/stress/src/engine/
+guards.mt` (and its importer `main.mt`) report two false-positive
+`sema/error` return-type mismatches in the self where the host reports none —
+a guarded `let x = <Result> else as error:` binding the self keeps at
+`Result[int, EngineError]` instead of narrowing to the success type.  It
+predates this session (the stage3 binary built at F1's bootstrap shows it
+identically); the `lower` sweep's `selffail` counter is therefore **2**, not the
+0 recorded earlier.
+
+Measured: the full SimpleGame matrix **17 → 13** (closed the four hover entries,
+added 0 — and the class split is now hover 5, documentSymbol 4, diagnostic 2,
+documentHighlight 1, semanticTokens 1).  Gates: bootstrap fixed point + 14/14,
+`test/mt` 60/0, `cli:parity` 23/38/0, sexpr lex 706/706 + parse 702/0 + `lower -q
+-j 16` 39/614/51/2 (the pre-existing pair above), the harness 30/30 + the 4
+documented entries, the recovery probe OK, every probe fixture unchanged
+(closed 0, added 0 across `probe-ws`, `probe2`, `probe4`–`probe6`, `fieldprobe`,
+`thisprobe`, `defprobe`, `crash1`, `hover-probe2`–`hover-probe5`, `eventprobe`),
+valgrind 0 errors over an LSP drive, the headless-Neovim smoke, and the lint
+scoreboard unchanged.  The semantic-token residue is now precisely five
+positions in `docs/language_baseline.mt`: `identity` 275:40 and `add` 1099:41
+(host `variable`, self `function` — F7's callable-value record), `check`
+1127:9 and `invoke` 1160:13 (host `property`, self `method`), and `Edge`
+1962:29 (host `type`, self `enumMember`).
+
 ### The real control-flow graph (2026-09-30 session 15, F1)
 
 `projects/mtc/src/mtc/semantic/control_flow/graph.mt` is the host's
