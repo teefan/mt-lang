@@ -295,7 +295,21 @@ scanner currently says `function` for any name in `facts.functions`).
 against a full-run host reference, or `tools/lsp_token_diffs.rb` on a fresh audit) and
 the full matrix.
 
-## F8.2 — documentSymbol (MOSTLY DONE, session 16)
+## F8.2 — documentSymbol (DONE, session 17)
+
+Closed in session 17: the thirteen-locals residue below turned out to be **24
+details plus one ordering** (the index-based `ds_diff.py` hid the tail behind the
+`emit` pair's shift).  The analyzer now types `str + str`, builtin constructions
+(`array[T, N](…)`, `span[T](…)`, with the host's argument validation),
+`ptr_of(ref[T])`, `ptr[T]` methods, a native `with`, tuple element access and an
+instantiated local generic struct's fields; the outline renders a nested type's
+own segment, a named tuple, `dyn[Interface]`, lifetime parameters, and no
+inferred detail for a local in a generic body; and the `emit`-declared symbols
+are emitted inside their enclosing const function.  The audit's documentSymbol
+class reads **0** (all seven files byte-identical).  Record: §0k, "The analyzer's
+initializer typing and the outline residue".
+
+## F8.2 (session-16 notes) — documentSymbol (MOSTLY DONE, session 16)
 
 `src/colors.mt`, `src/node.mt` and `docs/memory_stress_test.mt` match the host byte for
 byte; `docs/language_baseline.mt` is down to thirteen locals whose *initializer type* the

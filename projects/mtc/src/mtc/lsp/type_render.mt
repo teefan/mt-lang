@@ -38,15 +38,33 @@ public function short_name(ty: types.Type) -> string.String:
         types.Type.ty_primitive as p:
             buf.append(p.name)
         types.Type.ty_named as n:
-            buf.append(n.name)
+            append_own_name(ref_of(buf), n.name)
         types.Type.ty_opaque as o:
-            buf.append(o.name)
+            append_own_name(ref_of(buf), o.name)
         types.Type.ty_imported as im:
-            buf.append(im.name)
+            append_own_name(ref_of(buf), im.name)
             append_short_args(ref_of(buf), im.args)
         types.Type.ty_generic as g:
             buf.append(g.name)
             append_short_args(ref_of(buf), g.args)
+        types.Type.ty_tuple as tp:
+            buf.append("(")
+            var i: ptr_uint = 0
+            while i < tp.elements.len:
+                if i > 0:
+                    buf.append(", ")
+                match tp.field_names:
+                    Option.some as names:
+                        if i < names.value.len:
+                            buf.append(unsafe: read(names.value.data + i))
+                            buf.append(": ")
+                    Option.none:
+                        pass
+                var rendered = short_name(unsafe: read(tp.elements.data + i))
+                buf.append(rendered.as_str())
+                rendered.release()
+                i += 1
+            buf.append(")")
         types.Type.ty_nullable as nl:
             var base = short_name(unsafe: read(nl.base))
             buf.append(base.as_str())
@@ -55,6 +73,19 @@ public function short_name(ty: types.Type) -> string.String:
         _:
             buf.append(types.type_to_string(ty))
     return buf
+
+
+## A type's own name for the short detail: the host's `short_type_detail` uses
+## the declared type's `name`, and a type nested in another carries only its own
+## segment there (`Rectangle.Edge` is the host's `Edge`).
+function append_own_name(target: ref[string.String], name: str) -> void:
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < name.len:
+        if name.byte_at(i) == '.':
+            start = i + 1
+        i += 1
+    target.append(name.slice(start, name.len - start))
 
 
 ## The hover's type text: a nominal type carries its declaring module

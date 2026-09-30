@@ -5,10 +5,25 @@ with the Ruby host on everything an editor can observe (diagnostics included), p
 readiness properties parity alone does not test — cold start, steady-state memory, large
 files, long sessions, real clients (Neovim/VS Code).
 
-**Where we are** (branch `selfhost`, session 16 close, 2026-09-30): SimpleGame audit
-6456 entries / **5 differ** (hover **1**, documentSymbol **1**, diagnostic 2,
-documentHighlight 1; semanticTokens, codeLens, workspace/symbol and
+**Where we are** (branch `selfhost`, session 17, 2026-09-30): SimpleGame audit
+6456 entries / **4 differ** (hover **1**, diagnostic 2, documentHighlight 1;
+semanticTokens, codeLens, workspace/symbol, documentSymbol and
 definition/declaration/typeDefinition/implementation/references all **0**).
+Session 17 closed the documentSymbol class: the analyzer's initializer typing
+(`str + str`, builtin `array`/`span` constructions with the host's argument
+validation, `ptr_of(ref[T])`, `ptr[T]` methods, a native `with`, tuple element
+access, an instantiated local generic struct's fields), the outline's remaining
+renderings (a nested type's own segment, named tuples, `dyn[Interface]`,
+lifetime parameters, no inferred detail inside a generic body) and the
+`emit`-declared symbols' source position.  One audit run read 5 because the
+host's **first-file** `docs/data_structures.mt` documentSymbol race fired (the
+host answered unwrapped and detail-less; the self's answer was byte-equal to the
+previous run's host answer).  The remaining hover 1 is `type quat`'s
+asynchronous location and documentHighlight 1 is the host's carried-forward
+snapshot binding — both of them the *host's* warm-facts answers, measured cold
+and warm in session 17 (see `docs/lsp-design.md` §8); diagnostic 2 is the
+linter's emission order plus the measured per-rule deltas, tabulated in
+[foundational-blockers-plan.md](./foundational-blockers-plan.md).
 Session 16 landed five of the focused plan's items: the linter's
 `dead-assignment` over F1's graph with the new liveness dataflow (F3 part 1), the
 analyzer's stage 11c — per-name destructure types and variant arm payloads (F4,

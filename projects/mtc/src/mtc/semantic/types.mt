@@ -204,6 +204,14 @@ public function is_void(t: Type) -> bool:
             return false
 
 
+public function is_str(t: Type) -> bool:
+    match t:
+        Type.ty_str:
+            return true
+        _:
+            return false
+
+
 public function is_numeric(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:

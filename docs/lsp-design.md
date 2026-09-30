@@ -12,9 +12,10 @@ lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
 > `compare`, `--stress`) drives an out-of-process corpus of 55 requests — every
 > endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a
 > real editor makes — and 15 adversarial probes, and diffs normalized responses.
-> As of 2026-09-30 (session 16 close) it reports 30/30 capability keys identical
-> and **4 differing entries**, all deliberate and documented (the host hanging on
-> a malformed frame, the host's facts lag, and two "at least as good"
+> As of 2026-09-30 (session 17) it reports 30/30 capability keys identical and
+> **4 differing entries** with `--stress` (1 request — `milkTea/debugInfo`'s
+> token-kind line — and 3 stress probes), all deliberate and documented (the host
+> hanging on a malformed frame, the host's facts lag, and two "at least as good"
 > extensions) — every differing entry is catalogued by family in
 > [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure),
 > which is the live status; the per-feature claims below are self-host-side
@@ -28,9 +29,30 @@ lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
 > (`RbConfig.ruby -I lib -e "require 'milk_tea'; MilkTea::LSP::Server.new.run"`),
 > so CI alone does not exercise `build/stage2/mtc lsp`.
 Hover coverage: measured by the project audit — 1 differing entry of 915 hover
-requests on the SimpleGame corpus (session 16 close: the documented asynchronous
-`type quat` location; the `fn `-typed field closed with the function-type names;
-`self-host-plan.md` §0k).
+requests on the SimpleGame corpus (the documented asynchronous `type quat`
+location; the `fn `-typed field closed with the function-type names;
+`self-host-plan.md` §0k).  Session 17 measured the `type quat` entry in both
+states: *in the audit* the host answers the type line plus `Defined at:
+[…/std/linear_algebra.mt:237](…#L237)` (three separate runs), while *in a cold
+probe* — the same workspace opened, no audit history — the **host answers
+`null`** for that position and the self answers the type line.  The self's
+`apply_hover_index_location` already runs on the builtin-type arm, so the gap is
+the definition index's coverage of the `extending quat:` declaration in a std
+module that was never opened; `docs/self-host-plan.md` §0k's session-17 record
+carries the plan.
+Document highlight: 915 requests, 1 differing entry (session 17) —
+`docs/language_baseline.mt@704:67`, a cursor on a *named-argument label*.
+Warm, the host resolves the name through its completion snapshots
+(`rename_target_binding_id`'s `resolve_local_hover_binding` fallback) to a
+binding with exactly one identifier occurrence and answers one range
+(`598:15-20`); cold — the same probe with the workspace open — the *host*
+answers the six same-lexeme ranges, **byte-identical to the self's answer** (its
+`unbound_occurrence` filter applies only once a local binding is resolved for
+the cursor, which a named-argument label never is).  Reproducing the warm
+answer would mean modelling the
+host's snapshot carry-forward across frames; the self's bindings are name-keyed
+and cannot express it.  Kept documented (deliberate difference) with both
+measurements.
 References: cross-file via workspace index.
 Definition: local variables supported.
 Signature help: methods and extending-block methods resolved.

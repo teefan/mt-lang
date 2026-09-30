@@ -2244,6 +2244,88 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### The analyzer's initializer typing and the outline residue (2026-09-30 session 17, F8.2 closed)
+
+The outline's remaining `docs/language_baseline.mt` residue was **24 details plus
+one ordering**, not the fifteen the session-16 note listed: `tmp/ds_diff.py`
+compares by array index, and the two `emit` symbols sitting in the wrong place
+shifted every later index, hiding the tail.  The working comparison
+(`tmp/ds_residue.py`) keys by name and compares the probe's *self* against the
+**full audit's host** — the probe's own host answer can be the cold-state one.
+
+**The analyzer typing** (`semantic/analyzer.mt`), each entry measured against the
+host's recorded type:
+
+1. `str + str` concatenates (`infer_binary`'s `"+"` case; new `types.is_str`) —
+   `hello`/`prefix`/`_h`/`_p`.
+2. A builtin construction with explicit type arguments resolves to the
+   specialized builtin type: `check_specialization_call` routes `array[T, N](…)`
+   and `span[T](…)` to `check_builtin_construction`, which mirrors the host's
+   `check_array_construction` / `check_aggregate_construction` — named arguments
+   against `span`'s `data: ptr[T]` / `len: ptr_uint`, at most N positional
+   elements for `array[T, N]` — reports the host's messages (`array expects at
+   most 3 elements, got 4`, `field span[int].data expects ptr[int], got
+   own[ubyte]`), and yields the error type on failure so nothing is recorded for
+   the expression.  `span_data_fits` states the host's pointer rule: the pointee
+   must match **exactly** (the self's general assignability would widen `ubyte`
+   to `int`).
+3. `ptr_of` over a borrow is the pointee's pointer: `ptr_of(ref_of(x))` is
+   `ptr[T]`, not `ptr[ref[T]]` (the host's `check_ptr_of_call`).
+4. A `ptr[T]` method table (`ptr_method_sig`, beside the `atomic`/`str_buffer`
+   ones): `load`/`store`/`load_at`/`store_at`, the API `std.mem.ptr` declares
+   through `extending ptr[T]:`.
+5. A native vec/mat/quat `with` returns the receiver's type
+   (`v3.with(x = 99.0)` -> `vec3`).
+6. Tuple element access resolves through `check_member`'s new `ty_tuple` arm:
+   `pair._0` positionally, a named tuple's `point.x` by name.
+7. An instantiated *local* generic struct's fields read with the instance's
+   arguments substituted (`local_type_substitution`): `Pair[int, float](…)`'s
+   `pair.first` is `int`, not `<error>`.
+
+**The outline renderings** (`lsp/symbols.mt`, `lsp/type_render.mt`):
+`append_own_name` keeps only a nested type's own segment (`Rectangle.Edge` is the
+host's `Edge` — the host's `short_type_detail` renders the declared type's
+`name`); `short_name` renders a named tuple (`(x: int, y: int)`);
+`append_ast_type` renders `dyn[Mapper]` from the interface name alone;
+`append_type_decl_detail` carries lifetime parameters (`[@a]` for
+`struct Buffer[@a]`); and a **local in a generic body carries no inferred
+detail** — the host's facts record none for a body inside a generic function or
+a generic `extending` block (an explicit annotation still renders, and `let n =
+5` there has no detail either).  The harness's `documentSymbol/generics` entry
+is what caught the latter: the self's new `A` detail was *more* correct than the
+host's omission and still a parity difference.
+
+**The emit ordering**: `emit`-declared functions are appended to the declaration
+list by the analyzer (`expand_emit_declarations`, mirroring the host), while the
+host's outline lists each where it is written.
+`append_emit_declaration_symbols` walks the enclosing const function's body for
+`stmt_emit` statements (including the inline forms the analyzer's own
+`collect_emit_from_body` descends into) and emits their symbols there; the
+top-level walk stops at the appended tail (`emitted_start`, from the
+pre-expansion declaration count).
+
+**Measured**: the audit's documentSymbol class **1 → 0** — all seven files
+byte-identical to the host's answers, `docs/language_baseline.mt`'s 758 symbols
+included, with `zero_meaning`/`hex_prefix` at their source position.  The matrix
+went 5 → 4 on the real residue (the run reading 5 has the host's first-file
+`docs/data_structures.mt` race as its fifth: the host answers it unwrapped and
+detail-less, and the self's answer equals the *previous* run's host answer byte
+for byte).  The harness reads 30/30 capabilities and its documented 4 differing
+entries with `--stress` (1 request — `milkTea/debugInfo`'s token-kind line — and
+3 stress probes); `documentSymbol/generics` closed with the generic-context
+rule.  Lint scoreboard unchanged (host 98 / self 107, 8 rules
+mismatching — the `documentSymbol` work is analyzer *typing*, and the span
+validation adds no diagnostic on the audit's files).  Gates: bootstrap fixed
+point + 14/14, `test/mt` 60/0, `cli:parity` 23/38/0, sexpr lex 705/705 + parse
+701/0, `lower` 39 match / 615 differ / 51 host-rejected / **0 self-rejected**
+(the two `projects/stress` guarded-`Result` files that used to be the
+self-rejected pair now compile; that pair is the whole 613 → 615 drift),
+`unused_import_parity` 609/609, the fixture sweep at its baselines everywhere
+(closed 0, added 0 — `hover-probe5`'s intermediate state, which added its
+documentSymbol entry, is what the span validation closes), the example sweeps
+(`examples/*.mt` 15/15, `examples/sdl3` 34/34, two raylib samples), valgrind and
+the headless-Neovim smoke.
+
 ### The outline's declaration shapes (2026-09-30 session 16, F8.2)
 
 `src/colors.mt`, `src/node.mt` and `docs/memory_stress_test.mt` are now

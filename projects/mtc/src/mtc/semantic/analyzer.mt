@@ -4005,6 +4005,9 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         if is_float_literal_expr(right) and types.is_float_type(lt):
             return lt
         return lt
+    # `str + str` concatenates (the host's infer_binary `"+"` case).
+    if op == "+" and types.is_str(lt) and types.is_str(rt):
+        return lt
     if types.is_raw_pointer(lt) and not types.is_raw_pointer(rt):
         return lt
     if types.is_raw_pointer(rt) and not types.is_raw_pointer(lt):
@@ -4214,6 +4217,13 @@ function check_specialization_call(ctx: ref[Context], scope: ref[sscope.Scope], 
                             name = id.name,
                             args = resolve_type_arguments(ctx, type_args),
                         )
+                # A builtin construction with explicit type arguments
+                # (`array[int, 3](1, 2, 3)`, `span[int](data = …, len = 3)`): the
+                # host validates the arguments (`check_array_construction`, and
+                # `check_aggregate_construction` for `span`), and the value is an
+                # instance of the specialized builtin type.
+                if id.name.equal("array") or id.name.equal("span"):
+                    return check_builtin_construction(ctx, scope, id.name, type_args, arg_exprs, id.line, id.column)
                 return types.Type.ty_error
             ast.Expr.expr_member_access:
                 # `alias.fn[T](...)`: an imported generic function called with
@@ -4346,6 +4356,127 @@ function check_adapt_call(ctx: ref[Context], type_args: span[ast.TypeArgument]) 
         arg_ref = read(type_args.data + 0).value
     let iface_name = unsafe: qname_to_str(read(arg_ref).name)
     return types.Type.ty_dyn(iface = iface_name)
+
+
+## `array[T, N](v0, …, vN)` and `span[T](data = …, len = …)` — the host's
+## explicit builtin constructions (`check_array_construction`, and
+## `check_aggregate_construction` for `span`, whose field table is
+## `data: ptr[T]` / `len: ptr_uint`).  A failing argument reports the host's
+## message and yields the error type, so nothing is recorded for the
+## expression — the host's facts then carry no construction type either.
+function check_builtin_construction(
+    ctx: ref[Context],
+    scope: ref[sscope.Scope],
+    name: str,
+    type_args: span[ast.TypeArgument],
+    args: span[ast.Argument],
+    line: ptr_uint,
+    column: ptr_uint,
+) -> types.Type:
+    let builtin_type = types.Type.ty_generic(name = name, args = resolve_type_arguments(ctx, type_args))
+
+    if name.equal("array"):
+        if type_args.len != 2:
+            report(ctx, line, column, "array requires exactly two type arguments")
+            return types.Type.ty_error
+        var elem_ref: ptr[ast.TypeRef] = unsafe: read(type_args.data + 0).value
+        var length_ref: ptr[ast.TypeRef] = unsafe: read(type_args.data + 1).value
+        let elem_ty = resolve_type(ctx, elem_ref)
+        let length_ty = resolve_type(ctx, length_ref)
+        var length: long = 0
+        match length_ty:
+            types.Type.ty_literal_int as lit:
+                length = lit.value
+            _:
+                # An unresolved length stays permissive; the host's resolver has
+                # already folded a const (`array[bool, WORLD_SIZE]`) where it can.
+                if types.contains_error(length_ty) or types.contains_error(elem_ty):
+                    return builtin_type
+                report(ctx, line, column, "array specialization must be array[T, N]")
+                return types.Type.ty_error
+        var count: ptr_uint = 0
+        var i: ptr_uint = 0
+        while i < args.len:
+            var arg: ast.Argument
+            unsafe:
+                arg = read(args.data + i)
+            match arg.arg_name:
+                Option.some:
+                    report(ctx, line, column, diag.array_named_args_message())
+                    return types.Type.ty_error
+                Option.none:
+                    count += 1
+            i += 1
+        if long<-count > length:
+            report(ctx, line, column, diag.array_arity_message(length, count))
+            return types.Type.ty_error
+        i = 0
+        while i < args.len:
+            var arg: ast.Argument
+            unsafe:
+                arg = read(args.data + i)
+            let at = infer_expr(ctx, scope, arg.arg_value)
+            if incompatible_value(elem_ty, at, arg.arg_value):
+                report(ctx, line, column, diag.array_element_message(elem_ty, at))
+                return types.Type.ty_error
+            i += 1
+        return builtin_type
+
+    if type_args.len != 1:
+        report(ctx, line, column, "span requires exactly one type argument")
+        return types.Type.ty_error
+    var span_elem_ref: ptr[ast.TypeRef] = unsafe: read(type_args.data + 0).value
+    let elem_ty = resolve_type(ctx, span_elem_ref)
+    let data_ty = types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(elem_ty))
+    let len_ty = types.primitive("ptr_uint")
+    var display = types.type_to_string(builtin_type)
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        match arg.arg_name:
+            Option.some as nm:
+                if nm.value.equal("data"):
+                    let at = infer_expr(ctx, scope, arg.arg_value)
+                    if not span_data_fits(elem_ty, at):
+                        report(ctx, line, column, diag.field_type_mismatch_message(display, "data", data_ty, at))
+                        return types.Type.ty_error
+                else if nm.value.equal("len"):
+                    let at = infer_expr(ctx, scope, arg.arg_value)
+                    if incompatible_value(len_ty, at, arg.arg_value):
+                        report(ctx, line, column, diag.field_type_mismatch_message(display, "len", len_ty, at))
+                        return types.Type.ty_error
+                else:
+                    report(ctx, line, column, unknown_member_message("field", display, nm.value))
+                    return types.Type.ty_error
+            Option.none:
+                report(ctx, line, column, diag.aggregate_named_args_required_message(display))
+                return types.Type.ty_error
+        i += 1
+    return builtin_type
+
+
+## True when `actual` is a `ptr[T]`/`const_ptr[T]`/`own[T]` (optionally
+## nullable) whose pointee is exactly `elem_ty` — the host's `span` `data` field
+## takes `ptr[T]`, and its pointer coercions (`own_to_raw_pointer_compatibility?`,
+## `mutable_to_const_pointer_compatibility?`) compare pointees with `==`, so an
+## assignable-but-different element (an integer widening) does not fit.
+function span_data_fits(elem_ty: types.Type, actual: types.Type) -> bool:
+    # An unresolved side never forces a mismatch (the self has no field types
+    # for `span[T]`'s members yet, so a `span[T].data` argument infers as the
+    # error type and must stay permissive).
+    if types.contains_error(elem_ty) or types.contains_error(actual):
+        return true
+    let a = types.unwrap_nullable(actual)
+    match a:
+        types.Type.ty_generic as g:
+            if g.name.equal("ptr") or g.name.equal("const_ptr") or g.name.equal("own"):
+                if g.args.len >= 1:
+                    return types.type_equals(types.pointer_element(a), elem_ty)
+            return false
+        _:
+            return false
 
 
 ## `simd[E, N](v0, ..., vN-1)` constructs a SIMD vector.  Requires exactly two
@@ -5011,6 +5142,10 @@ function check_typed_method_call(ctx: ref[Context], receiver_type: types.Type, m
             return receiver_type
         report(ctx, line, column, unknown_member_message("method", types.type_to_string(receiver_type), method_name))
         return types.Type.ty_error
+    # A native vec/mat/quat `with` yields the receiver's own type with one field
+    # replaced (the host's `check_struct_with_call`): `v3.with(x = 99.0)` -> vec3.
+    if method_name == "with" and is_vec_math_name(primitive_type_name_static(receiver_type)):
+        return receiver_type
     match resolve_method_sig(ctx, receiver_type, method_name):
         Option.some as sig:
             check_signature_call(ctx, method_name, sig.value, args, arg_types, any_named, line, column)
@@ -5148,12 +5283,14 @@ function resolve_method_sig(ctx: ref[Context], receiver: types.Type, method_name
             return lookup_method_anywhere(ctx, "str", method_name)
         types.Type.ty_primitive as p:
             return lookup_method_anywhere(ctx, p.name, method_name)
-        # str_buffer[N] and atomic[T] builtin methods.
+        # str_buffer[N], atomic[T] and ptr[T] builtin methods.
         types.Type.ty_generic as g:
             if g.name == "str_buffer":
                 return str_buffer_method_sig(g.args, method_name)
             if g.name == "atomic":
                 return atomic_method_sig(g.args, method_name)
+            if g.name == "ptr":
+                return ptr_method_sig(g.args, method_name)
             let sig_ptr = ctx.method_sigs.get(method_key(g.name, method_name))
             if sig_ptr != null:
                 return Option[FnSig].some(value = unsafe: read(sig_ptr))
@@ -5228,6 +5365,41 @@ function atomic_method_sig(args: span[types.Type], method_name: str) -> Option[F
         return_type = return_type,
         has_return_type = true,
         method_kind = method_kind,
+        is_async = false,
+        is_variadic = false,
+        is_extern = false,
+        required_count = params.len()
+    ))
+
+
+## Synthetic FnSig for a builtin `ptr[T]` method: the API std.mem.ptr declares
+## through `extending ptr[T]:`, with the receiver's element type standing in for
+## the block's `T`.  Only the known methods are recognized.
+function ptr_method_sig(args: span[types.Type], method_name: str) -> Option[FnSig]:
+    if args.len != 1:
+        return Option[FnSig].none
+    let elem_ty = unsafe: read(args.data + 0)
+    let offset_ty = types.primitive("ptr_uint")
+    var params = vec.Vec[ParamEntry].create()
+    var return_type = types.primitive("void")
+    if method_name == "load":
+        return_type = elem_ty
+    else if method_name == "store":
+        params.push(ParamEntry(name = "value", ty = elem_ty))
+    else if method_name == "load_at":
+        params.push(ParamEntry(name = "offset", ty = offset_ty))
+        return_type = elem_ty
+    else if method_name == "store_at":
+        params.push(ParamEntry(name = "offset", ty = offset_ty))
+        params.push(ParamEntry(name = "value", ty = elem_ty))
+    else:
+        return Option[FnSig].none
+    return Option[FnSig].some(value = FnSig(
+        name = method_name,
+        params = params.as_span(),
+        return_type = return_type,
+        has_return_type = true,
+        method_kind = ast.MethodKind.mk_plain,
         is_async = false,
         is_variadic = false,
         is_extern = false,
@@ -5503,6 +5675,22 @@ function resolve_type_arguments(ctx: ref[Context], type_args: span[ast.TypeArgum
         resolved.push(resolve_type(ctx, ref_ptr))
         i += 1
     return resolved.as_span()
+
+
+## Type-argument substitution for an instantiated *local* generic type from the
+## current module's declared type parameters (`Pair[int, float](…)` -> `{A:
+## int, B: float}`).  Empty when the name declares no type parameters.
+function local_type_substitution(ctx: ref[Context], type_name: str, args: span[types.Type]) -> map_mod.Map[str, types.Type]:
+    var subs = map_mod.Map[str, types.Type].create()
+    let params_ptr = ctx.type_param_names.get(type_name) else:
+        return subs
+    let params = unsafe: read(params_ptr)
+    var i: ptr_uint = 0
+    while i < params.len and i < args.len:
+        unsafe:
+            subs.set(read(params.data + i).name, read(args.data + i))
+        i += 1
+    return subs
 
 
 ## Substitute an instantiated type's arguments into the declaring binding's
@@ -5867,6 +6055,23 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
                 report(ctx, line, column, unknown_member_message("field", n.name, member))
             return types.Type.ty_error
         types.Type.ty_imported as im:
+            # An instantiated *local* generic struct (`Pair[int, float](…)`)
+            # carries the current module's name; its fields read from the local
+            # struct table with the instance's arguments substituted, exactly as
+            # a bare `Pair` receiver would (`check_member`'s ty_named arm).
+            if im.module_name.equal(ctx.module_name) or im.module_name.len == 0:
+                let local_fields_ptr = ctx.structs.get(im.name)
+                if local_fields_ptr != null:
+                    var subs = local_type_substitution(ctx, im.name, im.args)
+                    defer: subs.release()
+                    let fields = unsafe: read(local_fields_ptr)
+                    var i: ptr_uint = 0
+                    while i < fields.len:
+                        let fe = unsafe: read(fields.data + i)
+                        if fe.name == member:
+                            return substitute_type(fe.ty, ref_of(subs))
+                        i += 1
+                    return types.Type.ty_error
             return check_imported_member(ctx, im.module_name, im.name, member, is_method_call, line, column)
         types.Type.ty_variant_arm_payload as ap:
             # A bound match arm (`Option.some as p`) is the arm's payload struct
@@ -5904,8 +6109,39 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             else:
                 report(ctx, line, column, unknown_member_message("field", g.name, member))
             return types.Type.ty_error
+        types.Type.ty_tuple as tp:
+            # A positional tuple reads `._0`/`._1`; a named tuple's elements read
+            # by name (the host's `Tuple#field`, whose positional names are `_N`).
+            var index: int = -1
+            match tp.field_names:
+                Option.some as names:
+                    var ni: ptr_uint = 0
+                    while ni < names.value.len and index < 0:
+                        if unsafe: read(names.value.data + ni) == member:
+                            index = int<-ni
+                        ni += 1
+                Option.none:
+                    index = positional_tuple_index(member)
+            if index >= 0 and ptr_uint<-index < tp.elements.len:
+                return unsafe: read(tp.elements.data + ptr_uint<-index)
+            return types.Type.ty_error
         _:
             return types.Type.ty_error
+
+
+## `_0`/`_1`/… -> the tuple element index, -1 for any other name.
+function positional_tuple_index(member: str) -> int:
+    if member.len < 2 or member.byte_at(0) != '_':
+        return -1
+    var index: int = 0
+    var i: ptr_uint = 1
+    while i < member.len:
+        let b = member.byte_at(i)
+        if b < '0' or b > '9':
+            return -1
+        index = index * 10 + int<-(b - '0')
+        i += 1
+    return index
 
 
 ## Member access on a value of type variable `T`.  A `T` value's only members are
@@ -6081,7 +6317,12 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
         if args.len != 1:
             return Option[types.Type].none
         var arg: ast.Argument = unsafe: read(args.data + 0)
-        let at = infer_expr(ctx, scope, arg.arg_value)
+        var at = infer_expr(ctx, scope, arg.arg_value)
+        # `ptr_of` over a borrow yields the pointee's pointer, not a pointer to
+        # the borrow (`ptr_of(ref_of(x))` is `ptr[T]`, the host's
+        # `check_ptr_of_call`).
+        if callee_name == "ptr_of":
+            at = unwrap_ref(at)
         let kind = if callee_name == "ptr_of": "ptr" else: if callee_name == "ref_of": "ref" else: "const_ptr"
         return Option[types.Type].some(value = types.Type.ty_generic(name = string.String.from_str(kind).as_str(), args = alloc_one_type_arg(at)))
     if callee_name == "size_of" or callee_name == "align_of":

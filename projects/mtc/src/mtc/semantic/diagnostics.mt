@@ -220,6 +220,39 @@ public function named_args_required_message(struct_name: str) -> str:
     return buf.as_str()
 
 
+## The host's `check_aggregate_field_arguments` wording for an *aggregate*
+## construction (a builtin `span[T](…)`, whose context is "aggregate
+## construction").
+public function aggregate_named_args_required_message(struct_name: str) -> str:
+    var buf = string.String.create()
+    buf.append("aggregate construction for ")
+    buf.append(struct_name)
+    buf.append(" requires named arguments")
+    return buf.as_str()
+
+
+public function array_named_args_message() -> str:
+    return "array construction does not support named arguments"
+
+
+public function array_arity_message(length: long, got: ptr_uint) -> str:
+    var buf = string.String.create()
+    buf.append("array expects at most ")
+    buf.append(uint_to_str(ptr_uint<-length))
+    buf.append(" elements, got ")
+    buf.append(uint_to_str(got))
+    return buf.as_str()
+
+
+public function array_element_message(expected: types.Type, got: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("array element expects ")
+    buf.append(types.type_to_string(expected))
+    buf.append(", got ")
+    buf.append(types.type_to_string(got))
+    return buf.as_str()
+
+
 public function duplicate_field_message(struct_name: str, field: str) -> str:
     var buf = string.String.create()
     buf.append("duplicate field ")
