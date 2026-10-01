@@ -2420,11 +2420,22 @@ function visit_assignment_target(target: ptr[ast.Expr], path: str, warnings: ref
 ## dead-assignment → unreachable → borrow → constant-condition →
 ## redundant-null-check → loop-single-iteration → owning-release →
 ## prefer-let-else/prefer-var-else, in the host's order, over one body.
+##
+## The graph is built once here and shared by the rules that need it — the
+## host caches one `statement_flow_analysis` per statement list and reuses it
+## across its rule group; each rule's own solve (liveness, constant
+## propagation) still runs inside its rule, once per body.
 function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    lint_dead_body(params, body, path, warnings)
+    let b = body else:
+        return
+    var flow_cfg = flow_builder.empty_cfg()
+    var graph = flow_graph.empty_graph()
+    defer: flow_graph.graph_release(ref_of(graph))
+    flow_builder.build_graph_into(ref_of(flow_cfg), ref_of(graph), params, b)
+    lint_dead_body(ref_of(flow_cfg), ref_of(graph), path, warnings)
     lint_unreachable_in_body(body, path, warnings)
     borrow_check_body(body, path, warnings)
-    lint_const_cond_in_body(params, body, path, warnings)
+    lint_const_cond_in_body(ref_of(flow_cfg), ref_of(graph), path, warnings)
     lint_null_check_body(body, path, warnings)
     lint_loop_single_in_body(body, path, warnings)
     ownership_walk_body(body, path, warnings, lint_owning_type_names)
@@ -5345,30 +5356,24 @@ function borrow_vec_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
 
 
 function lint_dead_body(
-    params: span[ast.Param],
-    body: ptr[ast.Stmt]?,
+    flow_cfg: ref[flow_builder.Cfg],
+    graph: ref[flow_graph.CfgGraph],
     path: str,
     warnings: ref[vec.Vec[Warning]],
 ) -> void:
-    let b = body else:
-        return
-    var flow_cfg = flow_builder.empty_cfg()
-    var graph = flow_graph.empty_graph()
-    defer: flow_graph.graph_release(ref_of(graph))
     var live = flow_graph.liveness_create(0, 0)
     defer: flow_graph.liveness_release(ref_of(live))
-    flow_builder.build_graph_into(ref_of(flow_cfg), ref_of(graph), params, b)
-    flow_graph.liveness_init_into(ref_of(live), read(ref_of(flow_cfg)).next_id, read(ref_of(graph)).next_id)
-    flow_graph.solve_liveness(ref_of(graph), ref_of(live))
+    flow_graph.liveness_init_into(ref_of(live), read(flow_cfg).next_id, read(graph).next_id)
+    flow_graph.solve_liveness(graph, ref_of(live))
     var readable = vec.Vec[ptr_uint].create()
     defer: readable.release()
-    flow_graph.graph_read_keys(ref_of(graph), ref_of(readable))
+    flow_graph.graph_read_keys(graph, ref_of(readable))
     var declared = vec.Vec[ptr_uint].create()
     defer: declared.release()
-    flow_graph.graph_declared_keys(ref_of(graph), ref_of(declared))
+    flow_graph.graph_declared_keys(graph, ref_of(declared))
     var id: ptr_uint = 1
-    while id < read(ref_of(graph)).next_id:
-        let node = flow_graph.graph_node(ref_of(graph), id) else:
+    while id < read(graph).next_id:
+        let node = flow_graph.graph_node(graph, id) else:
             id += 1
             continue
         unsafe:
@@ -5573,36 +5578,28 @@ function text_matches_at(text: str, at: ptr_uint, needle: str) -> bool:
     return true
 
 
-## The host's `emit_constant_condition_warnings` over one body: F1's graph,
-## the constant-propagation solver, the loop-body skip, then the source-line
-## anchor.
-function lint_const_cond_in_body(params: span[ast.Param], body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    let b = body else:
-        return
-    var flow_cfg = flow_builder.empty_cfg()
-    var graph = flow_graph.empty_graph()
-    defer: flow_graph.graph_release(ref_of(graph))
-    flow_builder.build_graph_into(ref_of(flow_cfg), ref_of(graph), params, b)
-    var in_states = vec.Vec[constprop.StateEntry].create()
-    defer: in_states.release()
-    var out_states = vec.Vec[constprop.StateEntry].create()
-    defer: out_states.release()
-    constprop.solve_into(ref_of(flow_cfg), ref_of(graph), ref_of(in_states), ref_of(out_states))
+## The host's `emit_constant_condition_warnings` over one body: the shared
+## graph, the constant-propagation solver, the loop-body skip, then the
+## source-line anchor.
+function lint_const_cond_in_body(flow_cfg: ref[flow_builder.Cfg], graph: ref[flow_graph.CfgGraph], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var states = constprop.states_empty()
+    defer: constprop.states_release(ref_of(states))
+    constprop.solve_into(flow_cfg, graph, ref_of(states))
     var loop_bodies = vec.Vec[ptr_uint].create()
     defer: loop_bodies.release()
-    constprop.loop_body_nodes(ref_of(graph), ref_of(loop_bodies))
+    constprop.loop_body_nodes(graph, ref_of(loop_bodies))
     var id: ptr_uint = 1
-    while id < read(ref_of(graph)).next_id:
-        let node = flow_graph.graph_node(ref_of(graph), id) else:
+    while id < read(graph).next_id:
+        let node = flow_graph.graph_node(graph, id) else:
             id += 1
             continue
-        lint_const_cond_node(ref_of(flow_cfg), ref_of(in_states), ref_of(loop_bodies), node, path, warnings)
+        lint_const_cond_node(flow_cfg, ref_of(states), ref_of(loop_bodies), node, path, warnings)
         id += 1
 
 
 function lint_const_cond_node(
     flow_cfg: ref[flow_builder.Cfg],
-    in_states: ref[vec.Vec[constprop.StateEntry]],
+    states: ref[constprop.FlowStates],
     loop_bodies: ref[vec.Vec[ptr_uint]],
     node: ptr[flow_graph.CfgNode],
     path: str,
@@ -5622,7 +5619,7 @@ function lint_const_cond_node(
         return
     let cond = constprop.node_condition(node) else:
         return
-    match constprop.condition_value_of(flow_cfg, in_states, node):
+    match constprop.condition_value_of(flow_cfg, states, node):
         Option.some as val:
             let line = unsafe: read(node).line
             let span = condition_span(cond, line, is_while)

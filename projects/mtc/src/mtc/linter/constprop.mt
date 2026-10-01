@@ -12,6 +12,7 @@
 import std.str
 import std.string as string
 import std.vec as vec
+import std.mem.heap as heap
 
 import mtc.parser.ast as ast
 import mtc.semantic.control_flow.builder as flow_builder
@@ -42,12 +43,34 @@ public struct Cell:
     exprs: span[ast.Expr]
 
 
-## One node's binding value: the state tables are flat `(node, key) → cell`
-## vectors, scanned linearly (a body has few bindings).
-public struct StateEntry:
-    node: ptr_uint
-    key: ptr_uint
-    cell: Cell
+## The solved per-node in-states (the host's `Result#in_states`): a dense
+## `node × key` table, `cells[node * key_count + key]`.  A zeroed cell is
+## `undef`, so a key no path has written reads as undef — the answer the
+## host's absent-hash-key lookup gives.  The table is dense because bindings
+## and nodes are numbered from 1 in both models; the flat `(node, key)` vector
+## this replaces made every per-node operation scan the whole table (its
+## `state_same` compared two tables with a linear scan inside the loop), so a
+## 243-node body's solve cost minutes.
+public struct FlowStates:
+    cells: ptr[Cell]?
+    key_count: ptr_uint
+
+
+public function states_empty() -> FlowStates:
+    return FlowStates(cells = null, key_count = 0)
+
+
+public function states_release(states: ref[FlowStates]) -> void:
+    heap.release(read(states).cells)
+    read(states).cells = null
+    read(states).key_count = 0
+
+
+## The in-state base of one node.
+function state_base(states: ref[FlowStates], node: ptr_uint) -> ptr[Cell]?:
+    let cells = read(states).cells else:
+        return null
+    return unsafe: cells + node * read(states).key_count
 
 
 public function undef_cell() -> Cell:
@@ -78,54 +101,44 @@ public function str_cell(value: str) -> Cell:
 #  State tables
 # =============================================================================
 
-function state_find(states: ref[vec.Vec[StateEntry]], node: ptr_uint, key: ptr_uint) -> Option[ptr_uint]:
+function clear_cells(base: ptr[Cell], count: ptr_uint) -> void:
     var i: ptr_uint = 0
-    while i < states.len():
-        let ep = states.get(i) else:
-            break
+    while i < count:
         unsafe:
-            let e = read(ep)
-            if e.node == node and e.key == key:
-                return Option[ptr_uint].some(value = i)
+            read(base + i) = undef_cell()
         i += 1
-    return Option[ptr_uint].none
 
 
-function state_get(states: ref[vec.Vec[StateEntry]], node: ptr_uint, key: ptr_uint) -> Cell:
-    match state_find(states, node, key):
-        Option.some as idx:
-            let ep = states.get(idx.value) else:
-                return undef_cell()
-            return unsafe: read(ep).cell
-        Option.none:
-            return undef_cell()
-
-
-function state_set(states: ref[vec.Vec[StateEntry]], node: ptr_uint, key: ptr_uint, cell: Cell) -> void:
-    match state_find(states, node, key):
-        Option.some as idx:
-            let ep = states.get(idx.value) else:
-                return
-            unsafe:
-                read(ep).cell = cell
-        Option.none:
-            states.push(StateEntry(node = node, key = key, cell = cell))
-
-
-function state_drop_node(states: ref[vec.Vec[StateEntry]], node: ptr_uint) -> void:
-    var kept = vec.Vec[StateEntry].create()
+function copy_cells(dst: ptr[Cell], src: ptr[Cell], count: ptr_uint) -> void:
     var i: ptr_uint = 0
-    while i < states.len():
-        let ep = states.get(i) else:
-            break
+    while i < count:
         unsafe:
-            let e = read(ep)
-            if e.node != node:
-                kept.push(e)
+            read(dst + i) = read(src + i)
         i += 1
-    states.release()
-    unsafe:
-        read(states) = kept
+
+
+function cells_same(left: ptr[Cell], right: ptr[Cell], count: ptr_uint) -> bool:
+    var i: ptr_uint = 0
+    while i < count:
+        if not cells_equal(unsafe: read(left + i), unsafe: read(right + i)):
+            return false
+        i += 1
+    return true
+
+
+## `work = join(work, base)` element-wise (the host's `join_lattice`).
+function join_into_cells(work: ptr[Cell], base: ptr[Cell], count: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < count:
+        unsafe:
+            let other = read(base + i)
+            if other.tag != TAG_UNDEF:
+                let current = read(work + i)
+                if current.tag == TAG_UNDEF:
+                    read(work + i) = other
+                else if not cells_equal(current, other):
+                    read(work + i) = nac_cell()
+        i += 1
 
 
 function cells_equal(a: Cell, b: Cell) -> bool:
@@ -154,75 +167,6 @@ function cells_equal(a: Cell, b: Cell) -> bool:
     return false
 
 
-## The host's `join_lattice`: undef yields to anything, nac absorbs, and two
-## different constants meet at nac.
-function join_cells(a: Cell, b: Cell) -> Cell:
-    if a.tag == TAG_UNDEF:
-        return b
-    if b.tag == TAG_UNDEF:
-        return a
-    if a.tag == TAG_NAC or b.tag == TAG_NAC:
-        return nac_cell()
-    if cells_equal(a, b):
-        return a
-    return nac_cell()
-
-
-function join_into(dst: ref[vec.Vec[StateEntry]], src: ref[vec.Vec[StateEntry]], dst_node: ptr_uint, src_node: ptr_uint) -> void:
-    var i: ptr_uint = 0
-    while i < src.len():
-        let ep = src.get(i) else:
-            break
-        unsafe:
-            let e = read(ep)
-            if e.node == src_node:
-                state_set(dst, dst_node, e.key, join_cells(state_get(dst, dst_node, e.key), e.cell))
-        i += 1
-
-
-function state_same(states: ref[vec.Vec[StateEntry]], node: ptr_uint, other: ref[vec.Vec[StateEntry]]) -> bool:
-    var i: ptr_uint = 0
-    while i < other.len():
-        let ep = other.get(i) else:
-            break
-        unsafe:
-            let e = read(ep)
-            if e.node == node:
-                if not cells_equal(state_get(states, node, e.key), e.cell):
-                    return false
-        i += 1
-    i = 0
-    while i < states.len():
-        let ep = states.get(i) else:
-            break
-        unsafe:
-            let e = read(ep)
-            if e.node == node:
-                if not cells_equal(state_get(other, node, e.key), e.cell):
-                    return false
-        i += 1
-    return true
-
-
-function state_store(states: ref[vec.Vec[StateEntry]], node: ptr_uint, other: ref[vec.Vec[StateEntry]]) -> void:
-    state_drop_node(states, node)
-    var i: ptr_uint = 0
-    while i < other.len():
-        let ep = other.get(i) else:
-            break
-        unsafe:
-            let e = read(ep)
-            if e.node == node:
-                states.push(StateEntry(node = node, key = e.key, cell = e.cell))
-        i += 1
-
-
-# =============================================================================
-#  The value folder (the host's `CompileTime.evaluate`)
-# =============================================================================
-
-## The key an identifier resolves to in this body (the host's
-## `identifier_key`; the self's binding ids are name-keyed).
 function identifier_key(cfg: ref[flow_builder.Cfg], name: str) -> ptr_uint:
     let key = cfg.binding_map.get(name)
     if key == null:
@@ -230,15 +174,19 @@ function identifier_key(cfg: ref[flow_builder.Cfg], name: str) -> ptr_uint:
     return unsafe: read(key)
 
 
-function state_lookup(cfg: ref[flow_builder.Cfg], in_state: ref[vec.Vec[StateEntry]], node: ptr_uint, name: str) -> Cell:
+function state_lookup(cfg: ref[flow_builder.Cfg], in_base: ptr[Cell], name: str) -> Cell:
     let key = identifier_key(cfg, name)
     if key == 0:
         return nac_cell()
-    let cell = state_get(in_state, node, key)
+    let cell = unsafe: read(in_base + key)
     if cell.tag == TAG_UNDEF:
         return nac_cell()
     return cell
 
+
+# =============================================================================
+#  The value folder (the host's `CompileTime.evaluate`)
+# =============================================================================
 
 function numeric(cell: Cell) -> bool:
     return cell.tag == TAG_INT or cell.tag == TAG_FLOAT
@@ -301,14 +249,14 @@ function eval_unary(op: str, operand: Cell) -> Cell:
     return nac_cell()
 
 
-function eval_binary(cfg: ref[flow_builder.Cfg], in_state: ref[vec.Vec[StateEntry]], node: ptr_uint, operator: str, left_expr: ptr[ast.Expr], right_expr: ptr[ast.Expr]) -> Cell:
-    let left = eval_expr(cfg, in_state, node, left_expr)
+function eval_binary(cfg: ref[flow_builder.Cfg], in_base: ptr[Cell], operator: str, left_expr: ptr[ast.Expr], right_expr: ptr[ast.Expr]) -> Cell:
+    let left = eval_expr(cfg, in_base, left_expr)
     if operator.equal("and"):
         if left.tag != TAG_BOOL:
             return nac_cell()
         if not left.b:
             return bool_cell(false)
-        let right = eval_expr(cfg, in_state, node, right_expr)
+        let right = eval_expr(cfg, in_base, right_expr)
         if right.tag == TAG_BOOL:
             return right
         return nac_cell()
@@ -317,11 +265,11 @@ function eval_binary(cfg: ref[flow_builder.Cfg], in_state: ref[vec.Vec[StateEntr
             return nac_cell()
         if left.b:
             return bool_cell(true)
-        let right = eval_expr(cfg, in_state, node, right_expr)
+        let right = eval_expr(cfg, in_base, right_expr)
         if right.tag == TAG_BOOL:
             return right
         return nac_cell()
-    let right = eval_expr(cfg, in_state, node, right_expr)
+    let right = eval_expr(cfg, in_base, right_expr)
     if operator.equal(".."):
         if left.tag == TAG_INT and right.tag == TAG_INT:
             return Cell(tag = TAG_RANGE, i = 0, d = 0.0, b = false, s = "", lo = left.i, hi = right.i, exprs = span[ast.Expr]())
@@ -451,12 +399,12 @@ function type_last_name(type_ref: ptr[ast.TypeRef]) -> str:
 ## Index access (the host's `evaluate_index_access`): an integer index into a
 ## string is its byte, into a range its element; a range index slices a string
 ## or the range.
-function eval_index_access(receiver: Cell, index: ptr[ast.Expr], cfg: ref[flow_builder.Cfg], in_state: ref[vec.Vec[StateEntry]], node: ptr_uint) -> Cell:
+function eval_index_access(receiver: Cell, index: ptr[ast.Expr], cfg: ref[flow_builder.Cfg], in_base: ptr[Cell]) -> Cell:
     unsafe:
         match read(index):
             ast.Expr.expr_range as rg:
-                let start_cell = eval_expr(cfg, in_state, node, rg.start_expr)
-                let end_cell = eval_expr(cfg, in_state, node, rg.end_expr)
+                let start_cell = eval_expr(cfg, in_base, rg.start_expr)
+                let end_cell = eval_expr(cfg, in_base, rg.end_expr)
                 let start_i = integer_of(start_cell) else:
                     return nac_cell()
                 let end_i = integer_of(end_cell) else:
@@ -477,7 +425,7 @@ function eval_index_access(receiver: Cell, index: ptr[ast.Expr], cfg: ref[flow_b
                     return exprs_slice(receiver.exprs, lo, hi)
                 return nac_cell()
             _:
-                let index_cell = eval_expr(cfg, in_state, node, index)
+                let index_cell = eval_expr(cfg, in_base, index)
                 let idx = integer_of(index_cell) else:
                     return nac_cell()
                 if idx < 0:
@@ -493,7 +441,7 @@ function eval_index_access(receiver: Cell, index: ptr[ast.Expr], cfg: ref[flow_b
                 if receiver.tag == TAG_EXPRS:
                     if idx >= long<-receiver.exprs.len:
                         return nac_cell()
-                    return eval_expr(cfg, in_state, node, receiver.exprs.data + ptr_uint<-idx)
+                    return eval_expr(cfg, in_base, receiver.exprs.data + ptr_uint<-idx)
                 return nac_cell()
 
 
@@ -516,7 +464,7 @@ function exprs_slice(elems: span[ast.Expr], start: long, end: long) -> Cell:
 
 
 ## Fold one expression in a node's in-state (the host's `eval_expr_const`).
-public function eval_expr(cfg: ref[flow_builder.Cfg], in_state: ref[vec.Vec[StateEntry]], node: ptr_uint, ep: ptr[ast.Expr]?) -> Cell:
+public function eval_expr(cfg: ref[flow_builder.Cfg], in_base: ptr[Cell], ep: ptr[ast.Expr]?) -> Cell:
     let e = ep else:
         return nac_cell()
     unsafe:
@@ -532,25 +480,25 @@ public function eval_expr(cfg: ref[flow_builder.Cfg], in_state: ref[vec.Vec[Stat
             ast.Expr.expr_string_literal as lit:
                 return str_cell(lit.value)
             ast.Expr.expr_identifier as id:
-                return state_lookup(cfg, in_state, node, id.name)
+                return state_lookup(cfg, in_base, id.name)
             ast.Expr.expr_unary_op as u:
-                return eval_unary(u.operator, eval_expr(cfg, in_state, node, u.operand))
+                return eval_unary(u.operator, eval_expr(cfg, in_base, u.operand))
             ast.Expr.expr_binary_op as b:
-                return eval_binary(cfg, in_state, node, b.operator, b.left, b.right)
+                return eval_binary(cfg, in_base, b.operator, b.left, b.right)
             ast.Expr.expr_if as iff:
-                let cond = eval_expr(cfg, in_state, node, iff.condition)
+                let cond = eval_expr(cfg, in_base, iff.condition)
                 if cond.tag != TAG_BOOL:
                     return nac_cell()
                 if cond.b:
-                    return eval_expr(cfg, in_state, node, iff.then_expr)
-                return eval_expr(cfg, in_state, node, iff.else_expr)
+                    return eval_expr(cfg, in_base, iff.then_expr)
+                return eval_expr(cfg, in_base, iff.else_expr)
             ast.Expr.expr_index_access as ix:
-                return eval_index_access(eval_expr(cfg, in_state, node, ix.receiver), ix.index, cfg, in_state, node)
+                return eval_index_access(eval_expr(cfg, in_base, ix.receiver), ix.index, cfg, in_base)
             ast.Expr.expr_prefix_cast as pc:
-                return eval_prefix_cast(pc.target_type, eval_expr(cfg, in_state, node, pc.expression))
+                return eval_prefix_cast(pc.target_type, eval_expr(cfg, in_base, pc.expression))
             ast.Expr.expr_range as rg:
-                let start_cell = eval_expr(cfg, in_state, node, rg.start_expr)
-                let end_cell = eval_expr(cfg, in_state, node, rg.end_expr)
+                let start_cell = eval_expr(cfg, in_base, rg.start_expr)
+                let end_cell = eval_expr(cfg, in_base, rg.end_expr)
                 if start_cell.tag == TAG_INT and end_cell.tag == TAG_INT:
                     return Cell(tag = TAG_RANGE, i = 0, d = 0.0, b = false, s = "", lo = start_cell.i, hi = end_cell.i, exprs = span[ast.Expr]())
                 return nac_cell()
@@ -564,74 +512,94 @@ public function eval_expr(cfg: ref[flow_builder.Cfg], in_state: ref[vec.Vec[Stat
 #  The solver
 # =============================================================================
 
-## Solve constant propagation over one body's graph.  `in_states` receives the
-## per-node in-states the rule reads; `out_states` carries the fixpoint.
+## Solve constant propagation over one body's graph.  `states` receives the
+## per-node in-states the rule reads.  The host's `Dataflow.solve` shape:
+## forward, rounds over the RPO until no state changes, the entry node's
+## in-state empty (`boundary_in`), each node's in-state the join of its
+## predecessors' out-states, and its out-state the in-state plus its writes.
 public function solve_into(
     cfg: ref[flow_builder.Cfg],
     graph: ref[flow_graph.CfgGraph],
-    in_states: ref[vec.Vec[StateEntry]],
-    out_states: ref[vec.Vec[StateEntry]],
+    states: ref[FlowStates],
 ) -> void:
+    states_release(states)
+    let keys = read(cfg).next_id
+    let nodes = read(graph).next_id
+    if keys == 0 or nodes == 0:
+        return
+    let in_raw = heap.must_alloc_zeroed[Cell](keys * nodes)
+    let out_raw = heap.must_alloc_zeroed[Cell](keys * nodes)
+    let ins = unsafe: ptr[Cell]<-in_raw
+    let outs = unsafe: ptr[Cell]<-out_raw
+    read(states).cells = ins
+    read(states).key_count = keys
+    defer: heap.release(outs)
+
+    let in_work_raw = heap.must_alloc_zeroed[Cell](keys)
+    let in_work = unsafe: ptr[Cell]<-in_work_raw
+    defer: heap.release(in_work)
+    let out_work_raw = heap.must_alloc_zeroed[Cell](keys)
+    let out_work = unsafe: ptr[Cell]<-out_work_raw
+    defer: heap.release(out_work)
+
     var ids = vec.Vec[ptr_uint].create()
     defer: ids.release()
     flow_graph.graph_rpo_ids(graph, ref_of(ids))
-    var new_out = vec.Vec[StateEntry].create()
-    defer: new_out.release()
+
+    let entry_id = read(graph).entry_id
     var changed = true
-    var rounds: ptr_uint = 0
-    while changed and rounds < read(graph).next_id + 1:
+    while changed:
         changed = false
-        rounds += 1
         var ii: ptr_uint = 0
         while ii < ids.len():
             let idp = ids.get(ii) else:
                 break
             let id = unsafe: read(idp)
             unsafe:
-                join_predecessors(graph, in_states, out_states, id)
-                build_out_state(cfg, graph, in_states, ref_of(new_out), id)
-                if not state_same(out_states, id, ref_of(new_out)):
-                    state_store(out_states, id, ref_of(new_out))
+                if id == entry_id:
+                    clear_cells(in_work, keys)
+                else:
+                    join_pred_state(graph, outs, id, in_work, keys)
+                if not cells_same(ins + id * keys, in_work, keys):
+                    copy_cells(ins + id * keys, in_work, keys)
+                    changed = true
+                copy_cells(out_work, ins + id * keys, keys)
+                apply_write_sites(cfg, graph, ins + id * keys, id, out_work)
+                if not cells_same(outs + id * keys, out_work, keys):
+                    copy_cells(outs + id * keys, out_work, keys)
                     changed = true
             ii += 1
 
 
-function join_predecessors(
+## `work` = the join of the predecessors' out-states (no predecessors — and the
+## entry node, handled by the caller — leaves it empty).
+function join_pred_state(
     graph: ref[flow_graph.CfgGraph],
-    in_states: ref[vec.Vec[StateEntry]],
-    out_states: ref[vec.Vec[StateEntry]],
-    node: ptr_uint,
+    outs: ptr[Cell],
+    node_id: ptr_uint,
+    work: ptr[Cell],
+    keys: ptr_uint,
 ) -> void:
-    state_drop_node(in_states, node)
-    let np = flow_graph.graph_node(graph, node) else:
+    clear_cells(work, keys)
+    let np = flow_graph.graph_node(graph, node_id) else:
         return
     unsafe:
         var pi: ptr_uint = 0
         while pi < read(np).preds.len():
             let predp = read(np).preds.get(pi) else:
                 break
-            join_into(in_states, out_states, node, read(predp))
+            join_into_cells(work, outs + read(predp) * keys, keys)
             pi += 1
 
 
-function build_out_state(
+function apply_write_sites(
     cfg: ref[flow_builder.Cfg],
     graph: ref[flow_graph.CfgGraph],
-    in_states: ref[vec.Vec[StateEntry]],
-    out_state: ref[vec.Vec[StateEntry]],
-    node: ptr_uint,
+    in_base: ptr[Cell],
+    node_id: ptr_uint,
+    out_work: ptr[Cell],
 ) -> void:
-    state_drop_node(out_state, node)
-    var i: ptr_uint = 0
-    while i < in_states.len():
-        let ep = in_states.get(i) else:
-            break
-        unsafe:
-            let entry = read(ep)
-            if entry.node == node:
-                out_state.push(StateEntry(node = node, key = entry.key, cell = entry.cell))
-        i += 1
-    let np = flow_graph.graph_node(graph, node) else:
+    let np = flow_graph.graph_node(graph, node_id) else:
         return
     unsafe:
         var wi: ptr_uint = 0
@@ -639,7 +607,7 @@ function build_out_state(
             let wp = read(np).write_sites.get(wi) else:
                 break
             let write = read(wp)
-            state_set(out_state, node, write.key, eval_write(cfg, in_states, np, node, write))
+            read(out_work + write.key) = eval_write(cfg, in_base, np, write)
             wi += 1
 
 
@@ -647,9 +615,8 @@ function build_out_state(
 ## assignment's value (with the compound operators) — everything else is nac.
 function eval_write(
     cfg: ref[flow_builder.Cfg],
-    in_states: ref[vec.Vec[StateEntry]],
+    in_base: ptr[Cell],
     node: ptr[flow_graph.CfgNode],
-    node_id: ptr_uint,
     write: flow_graph.WriteSite,
 ) -> Cell:
     let stmt = node_statement(node) else:
@@ -657,14 +624,14 @@ function eval_write(
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_local as l:
-                return eval_expr(cfg, in_states, node_id, l.value)
+                return eval_expr(cfg, in_base, l.value)
             ast.Stmt.stmt_assignment as a:
-                let rhs = eval_expr(cfg, in_states, node_id, a.value)
+                let rhs = eval_expr(cfg, in_base, a.value)
                 if a.operator.equal("="):
                     return rhs
                 if rhs.tag == TAG_NAC:
                     return nac_cell()
-                let lhs = eval_expr(cfg, in_states, node_id, a.target)
+                let lhs = eval_expr(cfg, in_base, a.target)
                 if lhs.tag == TAG_NAC:
                     return nac_cell()
                 if not (numeric(lhs) and numeric(rhs)):
@@ -747,11 +714,13 @@ public function node_condition(node: ptr[flow_graph.CfgNode]) -> ptr[ast.Expr]?:
 
 ## True/False when the node's condition folds to a constant boolean (the
 ## host's `constant_value_of` returning true/false).
-public function condition_value_of(cfg: ref[flow_builder.Cfg], in_states: ref[vec.Vec[StateEntry]], node: ptr[flow_graph.CfgNode]) -> Option[bool]:
+public function condition_value_of(cfg: ref[flow_builder.Cfg], states: ref[FlowStates], node: ptr[flow_graph.CfgNode]) -> Option[bool]:
     let cond = node_condition(node) else:
         return Option[bool].none
     let id = unsafe: read(node).id
-    let cell = eval_expr(cfg, in_states, id, cond)
+    let base = state_base(states, id) else:
+        return Option[bool].none
+    let cell = eval_expr(cfg, base, cond)
     if cell.tag == TAG_BOOL:
         return Option[bool].some(value = cell.b)
     return Option[bool].none

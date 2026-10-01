@@ -106,15 +106,17 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: 2026-09-27 session 3 (project-audited the LSP against
-`~/Projects/MilkTea/SimpleGame` with `tools/lsp_project_audit.rb`: a malformed
-`references` frame plus six behavioural gaps — highlight scoping, hover label
-paths, import-path navigation, local/parameter resolution, builtin type hovers,
-four linter severities — are fixed, and the fixture is at 1 deliberate
-difference of 19.  The reported `MilkTea/SimpleGame` builds and runs under the
-self-host (§0j items 2, 3, 5, 12 closed, `lower` 39/613/50/0, fixed point with 14
-files / 516 tests / 0 failed).  Remaining work: §0j item 1 (opaque declarations,
-34 sdl3 files) and items 13–15, CLI message parity, and the LSP/DAP leftovers)
+Last updated: 2026-10-01 session 19 (the LSP matrix is at **2 documented
+entries** — `documentHighlight` `lb@704:67` and the `type quat` hover
+`lb@1653:24` — after session 18 closed the diagnostic class.  Session 19 fixed
+the linter's constant propagation: the rule was quadratic in its flat state
+tables and `graph_rpo_ids` returned a post-order instead of a reverse
+post-order, so `mtc lint projects/mtc/src/mtc/main.mt` took 316 s against the
+host's 22 s — it is 1.9 s now.  The same session added `tools/lint_parity.rb`
+and measured the corpus-wide lint residue: 609 files, 357 agree / 252 differ,
+every difference pre-existing; §0k's session-19 record has the ranked per-rule
+backlog.  Remaining: that backlog, §0j item 1 (opaque declarations) and items
+13–15, CLI message parity, and the LSP/DAP leftovers)
 
 ---
 
@@ -2283,7 +2285,88 @@ Known cost: the `constant-condition` rule builds its own CFG and solves per body
 where the host caches one flow analysis per statement list; `mtc lint
 projects/mtc/src/mtc/main.mt` takes ~50 s against the host's ~22 s.  A shared
 per-body cache is the follow-up (this ledger's session-18 log, "Measured cost
-note").
+note").  **Closed in session 19 — and the ~50 s was wrong: the real figure was
+316 s (see the record below).**
+
+### The linter's constant propagation: dense states, the shared graph, a true RPO (2026-10-01 session 19)
+
+The cost above was re-measured before touching anything: `mtc lint
+projects/mtc/src/mtc/main.mt` takes **316 s** against the host's **22 s**.
+Phase instrumentation (temporary marks in `lint_source_with`, removed before the
+commit) put **320 of the 321 s** in the declaration walk's per-body rule group,
+and a per-rule breakdown put **all of it** in `constant-condition`: 97 bodies,
+the worst (243 nodes × 65 bindings) at **168 s**.  The rule's state tables were
+flat `(node, key)` vectors scanned linearly — `state_same` above all, which
+called the linear `state_get` inside its own loop, so every node's per-round
+work was quadratic in the *whole* table.
+
+1. **Dense per-node state tables** (`linter/constprop.mt`).  `FlowStates` is the
+   host's `Result#in_states` as a dense `node × key` table
+   (`cells[node * key_count + key]`; a zeroed cell is `undef`, so an unwritten
+   key reads as undef exactly as the host's absent-hash-key lookup does).
+   `solve_into` follows the host's `Dataflow.solve` shape: forward, rounds over
+   the RPO until no state changes, the entry node's in-state empty
+   (`boundary_in`), each node's in-state the join of its predecessors'
+   out-states and its out-state the in-state plus its writes.  The old
+   `rounds < next_id + 1` cap — which the host does not have — is gone with the
+   tables that needed it.  `eval_expr`/`eval_write`/`state_lookup` take a state
+   base instead of a `(table, node)` pair; `condition_value_of` reads the dense
+   table.
+2. **One per-body graph, not two** (`linter/linter.mt`).  `lint_body_rules`
+   builds the graph once and passes it to `lint_dead_body` and
+   `lint_const_cond_in_body` — the host's shared `statement_flow_analysis` per
+   statement list.  Each rule still runs its own solve (liveness, constant
+   propagation) once per body.
+3. **`graph_rpo_ids` returned a post-order, not a reverse post-order**
+   (`semantic/control_flow/graph.mt`).  The DFS pushes a node after its
+   successors and the list was never reversed, while the host's `rpo_ids`
+   *prepends* (`order.unshift(id)`).  With the wrong order the forward solvers
+   recompute a node from its successors' stale states, and with the dense tables
+   that turned into a **non-converging oscillation**: on
+   `examples/raylib/core/text_file_loading.mt`'s while loop the states of two
+   body nodes swapped the value of `text_top` (int 45 / NAC) every round —
+   **836,511 rounds** on a body of 14 keys and 33 nodes.  The file is 176 lines
+   and the whole file took >120 s while every function prefix was <50 ms; the
+   in/out cells of two consecutive rounds (dumped to disk) showed the 2-cycle.
+   Fixed by reversing the DFS post-order, as the host does.  The nullability
+   solver (F2) uses the same order and keeps its fixpoint (`test/mt`, the audit).
+
+**Measured**: `mtc lint projects/mtc/src/mtc/main.mt` **316 s → 1.9 s** (the host
+is 22 s); the worst body's solve **168 s → 99 ms**; 420 warnings on `main.mt`,
+byte-identical to the pre-change binary's output; the previously pathological
+`text_file_loading.mt` at **50 ms** (the pre-change binary needed 1 s there; the
+interim state never finished).  A corpus-wide whole-output host-vs-self lint
+comparison (the new `tools/lint_parity.rb`, below) re-ran the pre-change binary
+over every file where the host and the new self differ: **247 of 252 identical**,
+the 5 differences being exactly the files where the *old* binary timed out at
+300 s (`main.mt`, `lowering.mt`, `c_backend.mt`, `semantic_tokens.mt`,
+`3d_drawing.mt`) and now complete — so the change is behavior-preserving where
+the old binary could finish, and removes the pathology where it could not.
+
+**The corpus-wide lint measurement (new).**  `tools/lint_parity.rb` compares the
+*whole* lint output (not just `unused-import`) file by file over `std examples
+projects/mtc/src` with a worker pool: **609 files, 357 agree / 252 differ**, and
+every difference is pre-existing (see above).  The two-file scoreboard could
+never see this; the per-rule deltas, self-extra / host-only, are:
+`redundant-unsafe` 807/0 (91 files), `owning-release-leak` 599/290 (99/10),
+`prefer-inline-if` 214/0, `redundant-cast` 105/41, `prefer-struct-with` 93/0,
+`prefer-let` 85/142, `prefer-try` 63/39, `borrow-and-mutate` 27/0,
+`prefer-conditional-expression` 25/0, `shadow` 20/0, `prefer-own-ptr` 16/45,
+`constant-condition` 11/1, `prefer-or-pattern` 10/4, `loop-single-iteration` 8/2,
+`unreachable-code` 3/0, `prefer-var-else` 2/0, `owning-release-double` 0/12.
+This is the ranked next linter workstream (the ledger's session-19 log keeps the
+numbers; `tmp/lint-parity-final.log` is the run).
+
+**Gates**: bootstrap fixed point + 14/14 (`stage2.c == stage3.c`), `test/mt` 60/0,
+`cli:parity` 23/38/0 (same diff set), sexpr lex 705/705 + parse 701 comparable /
+0 differ, `unused_import_parity` 609/609, `rake parity:scoreboard` (lb host 98 /
+self 98, 0 differing lines, 0 rules with a count mismatch) and `tmp/lint_table.rb`
+(mst 10/10, 0 mismatches), the full SimpleGame audit **2 differing entries**
+(`documentHighlight` 1, `hover` 1 — both documented; `diagnostic` 0;
+`tmp/audit-s19-final.json`), the fixture sweep at every baseline (added 0),
+valgrind over the harness's LSP drive (0 invalid reads/writes/frees,
+0 uninitialised uses; the 1860 "errors" are the documented F9 leak records), and
+the headless-Neovim smoke.
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

@@ -90,7 +90,9 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
 - **Gates for every change**: `tools/bootstrap.sh -j 16` (fixed point + 14/14 self-tests),
   `build/stage2/mtc test test/mt -I .` (60 files / 0 failed), `rake "cli:parity"` (23 match / 38 differ / 0 pending),
   `ruby tools/sexpr_parity.rb lex -q` (705/705) and `parse -q` (701 comparable / 0 differ),
-  `ruby tools/unused_import_parity.rb` (609/608, the one documented residual),
+  `ruby tools/unused_import_parity.rb` (609/609, differ 0),
+  `ruby tools/lint_parity.rb` (the corpus-wide whole-output lint comparison; session 19: 357/609 agree,
+  the rest is the ranked per-rule backlog — read its summary, it is not expected to reach 0 yet),
   `ruby tools/lsp_parity.rb record|compare` (30/30 capability keys, 4 documented entries),
   `ruby tools/lsp_recovery_probe.rb --check` (mid-edit recovery parity, byte-compared).
   C-backend changes additionally get the example sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34,

@@ -367,9 +367,24 @@ lists this session (`n.` on `node.Node` is byte-identical to the host).
 4. **Readiness (F9) and determinism (D2/D3)** — `ScanFacts` is never released;
    the reference index keeps an owned copy of every noted document's text;
    `note_document_tokens` re-reads and re-hashes per request (valgrind reads
-   ~91 MB "definitely lost" over an LSP drive, 0 errors).  Then the deliberate
-   -difference table's remaining rows (the host's first-file `documentSymbol`
-   race, the host-hang stress probes).
+   ~12.7 MB "definitely lost" over the session-19 harness drive, 0 memory
+   errors).  Then the deliberate-difference table's remaining rows (the host's
+   first-file `documentSymbol` race, the host-hang stress probes).
+5. **The linter's lint cost — CLOSED (session 19).**  The `constant-condition`
+   solver was quadratic in its flat state tables (`main.mt` took 316 s against
+   the host's 22 s, all of it in that one rule) and `graph_rpo_ids` returned a
+   post-order instead of an RPO, which made a cyclic body's solve oscillate
+   forever (836,511 rounds).  Dense `FlowStates`, the shared per-body graph and
+   the RPO fix bring `main.mt` to **1.9 s** (host 22 s).  Record:
+   `docs/self-host-plan.md` §0k, "The linter's constant propagation".
+6. **The corpus-wide lint residue (new, session 19).**  `tools/lint_parity.rb`
+   over `std examples projects/mtc/src`: 609 files, **357 agree / 252 differ**,
+   all differences pre-existing (the same 252 differ with the pre-change binary).
+   The ranked per-rule deltas (self-extra / host-only) are in the ledger's
+   session-19 log; the largest are `redundant-unsafe` 807/0,
+   `owning-release-leak` 599/290, `prefer-inline-if` 214/0, `redundant-cast`
+   105/41, `prefer-struct-with` 93/0, `prefer-let` 85/142.  This is the next
+   linter workstream — the two-file scoreboard cannot see any of it.
 
 **Findings kept for the next session.**
 
@@ -395,7 +410,10 @@ build/stage2/mtc` first (never measure a stale binary).  Then
 `tools/bootstrap.sh -j 16` (fixed point + 14/14), `build/stage2/mtc test test/mt -I .`
 (60/0), `rake "cli:parity"` (23/38/0), `ruby tools/sexpr_parity.rb lex -q` (705/705)
 and `parse -q` (701 comparable / 0 differ), `ruby tools/unused_import_parity.rb`
-(609/609, differ 0), `ruby tools/lsp_parity.rb record --server … --stress`
+(609/609, differ 0), `ruby tools/lint_parity.rb` (the corpus-wide whole-output
+lint comparison; session 19: 357/609 agree, every difference pre-existing — see
+its summary for the ranked per-rule residue),
+`ruby tools/lsp_parity.rb record --server … --stress`
 + `compare` (30/30 capability keys + 4 documented entries),
 `ruby tools/lsp_recovery_probe.rb --check` (mid-edit recovery), the probe fixtures
 (`tmp/probe-ws`, `probe2`, `probe4`–`probe6`), and

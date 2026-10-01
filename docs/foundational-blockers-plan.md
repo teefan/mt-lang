@@ -191,6 +191,24 @@ The emission-order restructure (F3 part 3, session 18) closed the class: the
 diagnostic arrays of both audit files now agree item-for-item with the host's
 and the class reads 0 differing entries.
 
+**F3's scope, corrected (session 19): the two audit files were the easy half.**
+`tools/lint_parity.rb` (new) compares the *whole* lint output host-vs-self over
+`std examples projects/mtc/src`: **609 files, 357 agree / 252 differ**, and every
+difference is pre-existing (the pre-change binary's output is identical on 247 of
+the 252; the other 5 are files it timed out on).  The ranked deltas — self-extra
+/ host-only — are `redundant-unsafe` 807/0, `owning-release-leak` 599/290,
+`prefer-inline-if` 214/0, `redundant-cast` 105/41, `prefer-struct-with` 93/0,
+`prefer-let` 85/142, `prefer-try` 63/39, `borrow-and-mutate` 27/0,
+`prefer-conditional-expression` 25/0, `shadow` 20/0, `prefer-own-ptr` 16/45,
+`constant-condition` 11/1, `prefer-or-pattern` 10/4, `loop-single-iteration` 8/2,
+`unreachable-code` 3/0, `prefer-var-else` 2/0, `owning-release-double` 0/12.  So
+the per-rule work is not finished at these two files; this table is the ranked
+backlog (the ledger's session-19 log and `docs/self-host-plan.md` §0k carry the
+same numbers).  The same session closed the linter's cost (`constant-condition`
+was quadratic in its flat state tables — `main.mt` 316 s → 1.9 s — and
+`graph_rpo_ids` returned a post-order, which made a cyclic body's solve oscillate
+forever; see §0k, "The linter's constant propagation").
+
 **The remaining per-rule deltas, measured with `tmp/diag_probe.rb` (session-16
 baseline, `tmp/diag-s16-base.txt`)** — ranges/messages first (mechanical): every rule
 below needs a host-shaped span, and several need a message fix.

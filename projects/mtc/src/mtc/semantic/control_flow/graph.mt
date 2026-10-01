@@ -291,11 +291,24 @@ public function graph_reaches(graph: ref[CfgGraph], from: ptr_uint, to: ptr_uint
 
 
 ## Fill `ids` with the graph's nodes in reverse post-order from the entry (a
-## predecessor-before-successor order for the forward solver).
+## predecessor-before-successor order for the forward solver).  The DFS
+## collects a post-order; reversing it is what makes the order an RPO — the
+## host's `rpo_ids` prepends during the walk (`order.unshift(id)`), and
+## iterating a *post*-order instead lets the forward solvers recompute a node
+## from its successors' stale states, which is what made a cyclic body's
+## constant propagation oscillate instead of converge.
 public function graph_rpo_ids(graph: ref[CfgGraph], ids: ref[vec.Vec[ptr_uint]]) -> void:
     var visited = map_mod.Map[ptr_uint, bool].create()
     defer: visited.release()
-    graph_rpo_visit(graph, ref_of(visited), ids, read(graph).entry_id)
+    var post = vec.Vec[ptr_uint].create()
+    defer: post.release()
+    graph_rpo_visit(graph, ref_of(visited), ref_of(post), read(graph).entry_id)
+    var i = post.len()
+    while i > 0:
+        i -= 1
+        let slot = post.get(i) else:
+            break
+        ids.push(unsafe: read(slot))
 
 
 function graph_rpo_visit(graph: ref[CfgGraph], visited: ref[map_mod.Map[ptr_uint, bool]], ids: ref[vec.Vec[ptr_uint]], id: ptr_uint) -> void:
