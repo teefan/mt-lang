@@ -2368,6 +2368,32 @@ valgrind over the harness's LSP drive (0 invalid reads/writes/frees,
 0 uninitialised uses; the 1860 "errors" are the documented F9 leak records), and
 the headless-Neovim smoke.
 
+**The backlog's first lead, measured but not fixed (same session):** the largest
+self-extra rule is `redundant-unsafe` (807 warnings over 91 files), and the
+divergence is in the analyzer's `required_unsafe_lines` marking, not in the rule.
+Probes (`tmp/probe-unsafe.mt`, `tmp/probe-unsafe2.mt`, `tmp/probe-cast2.mt`,
+`tmp/probe-cast3.mt`):
+
+- the host *requires* unsafe for a `ptr[T] <- ptr[U]` cast (`check` errors where
+  the self accepts it — a missing sema check as well as a missing mark);
+- the host marks `unsafe: str(data = text, len = 4)` (an aggregate literal with a
+  pointer field, no cast) where the self reports it redundant;
+- `unsafe: cstr_len(cstr<-text)` is redundant in *both*, so the cast does not
+  mark in every context;
+- the host positions the cast diagnostic on the *operand* (`calls.rb:158-190`
+  passes the argument expression) where the self reports the cast's target
+  column, and the host has a second message
+  (`ref to pointer cast requires unsafe`) the self never emits.
+
+The host's predicate is `pointer_cast_type?` (`cstr`, `ptr`/`const_ptr`/`own`,
+a nullable of a pointer/function, a function type, a typed null) applied to
+**both** sides (`check_cast_call`), plus `ref_to_pointer_cast?`; the marking is
+`AnalysisContext#require_unsafe!` → `mark_current_unsafe_required!`
+(`analysis_context.rb:20-32`).  Next session: port `check_cast_call` faithfully
+(predicate, both messages, operand positions) and then re-probe the remaining
+marking sites (aggregate literals with pointer fields, call arguments)
+corpus-wide with `tools/lint_parity.rb`.
+
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
 `owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`
