@@ -89,14 +89,6 @@ public struct DestructureTypeEntry:
     ty: types.Type
 
 
-## One declared payload field of a variant arm: the field's name and the variant
-## type parameter its declared type is (`Option_some` -> `value: T`,
-## `Result_failure` -> `error: E`).
-public struct PayloadFieldDecl:
-    name: str
-    param: str
-
-
 ## A bare function name used as a *value* where a function/proc type is
 ## expected (an argument to a callback parameter): the host's
 ## `callable_value_identifier_sites`, keyed by the identifier's position.  The
@@ -153,6 +145,10 @@ public struct ModuleBinding:
     private_method_sigs: map_mod.Map[str, FnSig]
     ## Declared generic parameters per exported type name (`Vec` -> `[T]`).
     type_param_names: map_mod.Map[str, span[ast.TypeParam]]
+    ## The resolved payload fields of each exported variant arm, keyed by the
+    ## payload name (`Decl_decl_var`): an importer's `match … as name` binding
+    ## carries the host's `Types::VariantArmPayload` fields.
+    variant_arm_fields: map_mod.Map[str, span[types.PayloadField]]
     ## Declared generic parameters per exported function (`iter_filter` -> `[T]`),
     ## so an imported call can infer its type arguments from the arguments.
     function_type_params: map_mod.Map[str, span[ast.TypeParam]]
@@ -255,11 +251,13 @@ struct Context:
     local_decl_types: map_mod.Map[ptr_uint, types.Type]
     ## See `Analysis.destructure_types`.
     destructure_types: vec.Vec[DestructureTypeEntry]
-    ## The declared payload field names of a variant arm, keyed by the payload
-    ## name (`Option_some`): the host's `VariantArmPayload` is the arm's struct,
-    ## so an `as name` binding carries these fields with the scrutinee's type
-    ## arguments substituted.  Prelude arms only (Option/Result).
-    arm_payload_field_names: map_mod.Map[str, span[PayloadFieldDecl]]
+    ## The declared payload fields of a variant arm, keyed by the payload name
+    ## (`Option_some`, `Decl_decl_var`): the host's `VariantArmPayload` is the
+    ## arm's struct, so an `as name` binding carries these fields with the
+    ## scrutinee's type arguments substituted.  Covers the prelude variants and
+    ## every variant declared in the module; imported variants come from the
+    ## module binding (`ModuleBinding.variant_arm_fields`).
+    arm_payload_field_types: map_mod.Map[str, span[types.PayloadField]]
     ## The declared type-parameter names per variant (`Option` -> `[T]`,
     ## `Result` -> `[T, E]`), the substitution domain for an arm payload.
     variant_param_names: map_mod.Map[str, span[str]]
@@ -313,6 +311,9 @@ public struct Analysis:
     ## The `as name` variant match-arm bindings with their payload types, so the
     ## LSP resolves an arm binding's hover (declaration and use).
     arm_binding_types: vec.Vec[ArmBindingEntry]
+    ## See `Context.arm_payload_field_types`: the module's declared variant arm
+    ## payload fields, exported through `ModuleBinding.variant_arm_fields`.
+    arm_payload_field_types: map_mod.Map[str, span[types.PayloadField]]
     ## See `Context.callable_value_sites`: the bare function names used as
     ## values, which the token scanner renders `function`.
     callable_value_sites: vec.Vec[CallableValueSite]
@@ -416,7 +417,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
         local_decl_types = map_mod.Map[ptr_uint, types.Type].create(),
         destructure_types = vec.Vec[DestructureTypeEntry].create(),
-        arm_payload_field_names = map_mod.Map[str, span[PayloadFieldDecl]].create(),
+        arm_payload_field_types = map_mod.Map[str, span[types.PayloadField]].create(),
         arm_binding_types = vec.Vec[ArmBindingEntry].create(),
         callable_value_sites = vec.Vec[CallableValueSite].create(),
         callable_site_suppression = 0,
@@ -449,6 +450,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
     declare_values_and_functions_extra(ref_of(ctx), when_extra)
     collect_struct_fields(ref_of(ctx), source)
     collect_struct_fields_extra(ref_of(ctx), when_extra)
+    collect_variant_arm_fields(ref_of(ctx), source.declarations)
+    collect_variant_arm_fields(ref_of(ctx), when_extra)
     check_attribute_applications(ref_of(ctx), source)
     collect_extending_methods(ref_of(ctx), source)
     collect_enum_variant_members(ref_of(ctx), source)
@@ -479,6 +482,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         local_decl_types = ctx.local_decl_types,
         destructure_types = ctx.destructure_types,
         arm_binding_types = ctx.arm_binding_types,
+        arm_payload_field_types = ctx.arm_payload_field_types,
         callable_value_sites = ctx.callable_value_sites,
         flow_types = ctx.flow_types,
         const_values = ctx.const_values,
@@ -808,6 +812,65 @@ function collect_struct_fields_extra(ctx: ref[Context], extra: span[ast.Decl]) -
         i += 1
 
 
+## Resolve every declared variant arm's payload fields into the type model
+## (`Decl_decl_var` -> `[value: ptr[ast.Expr]?, line: ptr_uint]`), with the
+## variant's type parameters as `ty_var`, so an `as name` arm binding carries the
+## host's `Types::VariantArmPayload` — for a module's own variants and, through
+## `ModuleBinding.variant_arm_fields`, for imported ones.
+function collect_variant_arm_fields(ctx: ref[Context], decls: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_variant as vr:
+                enter_type_params(ctx, vr.type_params)
+                register_variant_param_names(ctx, vr.name, vr.type_params)
+                var ai: ptr_uint = 0
+                while ai < vr.variant_arms.len:
+                    let arm = unsafe: read(vr.variant_arms.data + ai)
+                    ctx.arm_payload_field_types.set(payload_struct_key(vr.name, arm.name), resolve_arm_payload_fields(ctx, arm.arm_fields))
+                    ai += 1
+                ctx.type_params.clear()
+                ctx.suppressed_type_names.clear()
+            _:
+                pass
+        i += 1
+
+
+## The declared type-parameter *names* of a variant, in declaration order — the
+## substitution domain `match_arm_payload_type` maps to the scrutinee's
+## arguments.  Value and lifetime parameters are not type variables.
+function register_variant_param_names(ctx: ref[Context], name: str, type_params: span[ast.TypeParam]) -> void:
+    ctx.variant_param_names.set(name, variant_type_param_names(type_params))
+
+
+function variant_type_param_names(type_params: span[ast.TypeParam]) -> span[str]:
+    var names = vec.Vec[str].create()
+    var i: ptr_uint = 0
+    while i < type_params.len:
+        var tp: ast.TypeParam
+        unsafe:
+            tp = read(type_params.data + i)
+        if not tp.is_value and not tp.is_lifetime:
+            names.push(tp.name)
+        i += 1
+    return names.as_span()
+
+
+function resolve_arm_payload_fields(ctx: ref[Context], fields: span[ast.Field]) -> span[types.PayloadField]:
+    var entries = vec.Vec[types.PayloadField].create()
+    var i: ptr_uint = 0
+    while i < fields.len:
+        var f: ast.Field
+        unsafe:
+            f = read(fields.data + i)
+        entries.push(types.PayloadField(name = f.name, ty = resolve_type_value(ctx, f.field_type)))
+        i += 1
+    return entries.as_span()
+
+
 function declare_values_and_functions_extra(ctx: ref[Context], extra: span[ast.Decl]) -> void:
     var i: ptr_uint = 0
     while i < extra.len:
@@ -905,20 +968,21 @@ function install_prelude_types(ctx: ref[Context]) -> void:
     register_builtin_event_types(ctx)
 
 
-## Register one prelude arm's declared payload field name under its payload key
-## (`Option_some` -> `["value"]`, `Option_none` -> `[]`).
+## Register one prelude arm's declared payload field under its payload key
+## (`Option_some` -> `[value: T]`, `Option_none` -> `[]`).  The field's type is
+## the variant's type parameter as a `ty_var`, substituted at a match site.
 function register_prelude_arm_field(ctx: ref[Context], variant_name: str, arm: str, field_name: str, field_param: str) -> void:
     let key = payload_struct_key(variant_name, arm)
     if field_name.len == 0:
-        ctx.arm_payload_field_names.set(key, span[PayloadFieldDecl]())
+        ctx.arm_payload_field_types.set(key, span[types.PayloadField]())
         return
-    var decls = vec.Vec[PayloadFieldDecl].create()
-    decls.push(PayloadFieldDecl(name = field_name, param = field_param))
-    ctx.arm_payload_field_names.set(key, decls.as_span())
+    var decls = vec.Vec[types.PayloadField].create()
+    decls.push(types.PayloadField(name = field_name, ty = types.Type.ty_var(name = field_param)))
+    ctx.arm_payload_field_types.set(key, decls.as_span())
 
 
 ## The payload struct's name for a variant arm (`Option` + `some` -> `Option_some`),
-## the key of `arm_payload_field_names` and the `name` of the payload type.
+## the key of `arm_payload_field_types` and the `name` of the payload type.
 function payload_struct_key(variant_name: str, arm: str) -> str:
     var buf = string.String.create()
     buf.append(variant_name)
@@ -2518,7 +2582,7 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                     if incompatible_value(chk.ret, vt, rv):
                         report(ctx, r.line, r.column, return_mismatch_message(chk.ret, vt))
             ast.Stmt.stmt_local as l:
-                check_local(ctx, scope, l.is_let, l.name, l.stmt_type, l.value, l.else_body != null, l.destructure_bindings, l.line, l.column)
+                check_local(ctx, scope, chk, l.is_let, l.name, l.stmt_type, l.value, l.else_binding, l.else_body, l.destructure_bindings, l.line, l.column)
             ast.Stmt.stmt_if as i:
                 # The host's IfStmt arm: each branch is checked with the previous
                 # branches' falsy refinements in scope, and an if whose every
@@ -3318,7 +3382,7 @@ function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scop
                 pass
 
 
-function check_local(ctx: ref[Context], scope: ref[sscope.Scope], is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, has_guard: bool, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
+function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, else_binding: Option[str], else_body: ptr[ast.Stmt]?, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
     # Destructuring bindings: each name carries the tuple element (or struct
     # field) at its position, the host's `check_local_decl_tuple_destructure`.
     # The per-name types are recorded for the LSP; the initializer itself is
@@ -3345,6 +3409,7 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], is_let: bool, 
                         scope_set(scope, dn, field_ty)
                         ctx.destructure_types.push(DestructureTypeEntry(line = line, name = dn, ty = field_ty))
                 di += 1
+            check_local_else_body(ctx, scope, chk, else_binding, else_body, value_ty)
             return
         Option.none:
             pass
@@ -3366,6 +3431,7 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], is_let: bool, 
 
     # A guarded let/var (let x = nullable else: ...) unwraps the value type:
     # T?, Option[T], and Result[T,E] all narrow their success type.
+    let has_guard = else_body != null
     let narrowed = unwrap_nullable_type(value_type)
 
     # Compatibility: a plain local compares its declared type against the value
@@ -3393,6 +3459,43 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], is_let: bool, 
 
     if is_reserved_name(name):
         report(ctx, line, column, reserved_local_message(name))
+
+    check_local_else_body(ctx, scope, chk, else_binding, else_body, value_type)
+
+
+## The host's `check_local_decl_let_else` else-block half: check the guard's
+## else body in a scope that also carries its `else as name` binding (the
+## initializer's error type, `Result[T, E]`'s `E`).  The `let x = optional else:`
+## form has no binding.  A body-less guard has nothing to check.
+function check_local_else_body(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, else_binding: Option[str], else_body: ptr[ast.Stmt]?, value_type: types.Type) -> void:
+    let body = else_body else:
+        return
+    scope_enter(scope)
+    match else_binding:
+        Option.some as binding:
+            scope_set(scope, binding.value, let_else_error_type(value_type))
+        Option.none:
+            pass
+    check_body(ctx, scope, chk, body)
+    scope_leave(scope)
+
+
+## The error type an `else as name` binding carries: `Result[T, E]`'s `E`; the
+## permissive error type for anything else (a nullable or `Option` guard has no
+## error binding, and the host rejects one).
+function let_else_error_type(value_type: types.Type) -> types.Type:
+    match value_type:
+        types.Type.ty_generic as g:
+            if g.name.equal("Result") and g.args.len == 2:
+                return unsafe: read(g.args.data + 1)
+        types.Type.ty_imported as im:
+            if im.name.equal("Result") and im.args.len == 2:
+                return unsafe: read(im.args.data + 1)
+        types.Type.ty_nullable as nl:
+            return let_else_error_type(unsafe: read(nl.base))
+        _:
+            pass
+    return types.Type.ty_error
 
 
 # =============================================================================
@@ -3637,11 +3740,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_prefix_cast as c:
                 let source = infer_expr(ctx, scope, c.expression)
                 let target = resolve_type(ctx, c.target_type)
-                if types.is_raw_pointer(target) and not types.is_raw_pointer(source) and not in_generic_body(ctx):
-                    if ctx.unsafe_depth == 0:
-                        report(ctx, c.line, c.column, "pointer cast requires unsafe")
-                    else:
-                        mark_required_unsafe(ctx)
+                check_cast_call(ctx, c.expression, source, target, c.line, c.column)
                 return target
             ast.Expr.expr_member_access as ma:
                 return resolve_member_access(ctx, scope, ma.receiver, ma.member_name, false, ma.line, ma.column)
@@ -3711,7 +3810,8 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                     let t = resolve_type(ctx, target)
                     return types.Type.ty_nullable(base = types.alloc_type(t))
                 return types.Type.ty_error
-            ast.Expr.expr_format_string:
+            ast.Expr.expr_format_string as fs:
+                check_format_string_parts(ctx, scope, fs.parts)
                 return types.Type.ty_str
             ast.Expr.expr_proc as pr:
                 var param_types = vec.Vec[types.Type].create()
@@ -3726,6 +3826,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 let rt = pr.return_type
                 if rt != null:
                     ret = resolve_type(ctx, rt)
+                check_proc_body(ctx, scope, param_types.as_span(), param_names.as_span(), ret, pr.body)
                 return types.Type.ty_function(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = true, param_names = param_names.as_span())
             ast.Expr.expr_if as ife:
                 let then_ty = infer_expr(ctx, scope, ife.then_expr)
@@ -3943,12 +4044,28 @@ function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pat
             return Option[types.Type].none
     if module_name.len == 0:
         module_name = prelude_variant_module(variant_name)
-    let decls_ptr = ctx.arm_payload_field_names.get(payload_struct_key(variant_name, arm_name)) else:
-        return Option[types.Type].none
-    let params_ptr = ctx.variant_param_names.get(variant_name) else:
-        return Option[types.Type].none
-    let decls = unsafe: read(decls_ptr)
-    let params = unsafe: read(params_ptr)
+    let key = payload_struct_key(variant_name, arm_name)
+    var decls: span[types.PayloadField]
+    var params: span[str]
+    if module_name.len == 0 or module_name.equal(ctx.module_name) or prelude_variant_module(variant_name).len > 0:
+        # A local (or prelude) variant: the analyzer's own tables.
+        let decls_ptr = ctx.arm_payload_field_types.get(key) else:
+            return Option[types.Type].none
+        let params_ptr = ctx.variant_param_names.get(variant_name) else:
+            return Option[types.Type].none
+        decls = unsafe: read(decls_ptr)
+        params = unsafe: read(params_ptr)
+    else:
+        # An imported variant: the exporter's resolved arm fields and declared
+        # type parameters travel on the module binding.
+        let binding = lookup_binding(ctx, module_name) else:
+            return Option[types.Type].none
+        let decls_ptr = unsafe: read(binding).variant_arm_fields.get(key) else:
+            return Option[types.Type].none
+        let tps_ptr = unsafe: read(binding).type_param_names.get(variant_name) else:
+            return Option[types.Type].none
+        decls = unsafe: read(decls_ptr)
+        params = variant_type_param_names(unsafe: read(tps_ptr))
 
     # The scrutinee's type arguments bind the variant's parameters, and each
     # declared field takes its parameter's type.
@@ -3963,11 +4080,7 @@ function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pat
     var fi: ptr_uint = 0
     while fi < decls.len:
         let decl = unsafe: read(decls.data + fi)
-        var field_ty: types.Type = types.Type.ty_error
-        let sub = subs.get(decl.param)
-        if sub != null:
-            field_ty = unsafe: read(sub)
-        fields.push(types.PayloadField(name = decl.name, ty = field_ty))
+        fields.push(types.PayloadField(name = decl.name, ty = substitute_type(decl.ty, ref_of(subs))))
         fi += 1
 
     # The *instantiated* variant text (`std.option.Option[(str, str)]`): the
@@ -3999,6 +4112,41 @@ function match_arm_payload_type(ctx: ref[Context], scrutinee_ty: types.Type, pat
         variant_text = variant_text.as_str(),
         fields = fields.as_span(),
     ))
+
+
+## Infer every interpolation part of a format string (`f"#{read(p)}"`), so the
+## nested operations are checked and their unsafe requirements recorded — the
+## host's `check_format_string_literal`.
+function check_format_string_parts(ctx: ref[Context], scope: ref[sscope.Scope], parts: span[ast.FormatStringPart]) -> void:
+    var i: ptr_uint = 0
+    while i < parts.len:
+        var part: ast.FormatStringPart
+        unsafe:
+            part = read(parts.data + i)
+        match part:
+            ast.FormatStringPart.fmt_expr as fe:
+                let _ty = infer_expr(ctx, scope, fe.expression)
+            ast.FormatStringPart.fmt_text:
+                pass
+        i += 1
+
+
+## Check a proc literal's body (`proc(x: int) -> bool: …`): the parameters are
+## declared in a fresh scope and the block is checked with the proc's return
+## type, so nested operations are inferred and their unsafe requirements
+## recorded — the host's `infer_proc_expression`.
+function check_proc_body(ctx: ref[Context], scope: ref[sscope.Scope], param_types: span[types.Type], param_names: span[str], ret: types.Type, body: ptr[ast.Stmt]?) -> void:
+    let b = body else:
+        return
+    scope_enter(scope)
+    var i: ptr_uint = 0
+    while i < param_types.len and i < param_names.len:
+        unsafe:
+            scope_set(scope, read(param_names.data + i), read(param_types.data + i))
+        i += 1
+    let proc_flags = check_flags(ret, false, false, false)
+    check_body(ctx, scope, proc_flags, b)
+    scope_leave(scope)
 
 
 function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> types.Type:
@@ -4189,6 +4337,8 @@ function infer_and_check_call(ctx: ref[Context], scope: ref[sscope.Scope], calle
 
     let arg_span = arg_types.as_span()
 
+    check_str_construction_unsafe(ctx, scope, callee)
+
     match try_imported_call(ctx, scope, callee, args, arg_span, any_named):
         Option.some as imported:
             return imported.value
@@ -4377,6 +4527,267 @@ function mark_required_unsafe(ctx: ref[Context]) -> void:
     let top = ctx.unsafe_statement_lines.last() else:
         return
     ctx.required_unsafe_lines.set(unsafe: read(top), true)
+
+
+## The host's `require_unsafe!` with explicit positions: an operation that needs
+## `unsafe`, reached inside an `unsafe:` context, marks the enclosing node;
+## outside one it is reported at the given position.
+function require_unsafe_at(ctx: ref[Context], line: ptr_uint, column: ptr_uint, message: str) -> void:
+    if ctx.unsafe_depth == 0:
+        report(ctx, line, column, message)
+    else:
+        mark_required_unsafe(ctx)
+
+
+## The host's `check_cast_call` for a `T<-expr` prefix cast.  A cast to the same
+## type is a no-op (the redundant-cast lint's business).  A cast between two
+## pointer-represented types, and one from a `ref` to such a type, requires
+## `unsafe` — reported at the *operand's* position outside an `unsafe:` context,
+## marking the enclosing `unsafe:` node inside one.  Everything else must make a
+## numeric cast; the host reports `cast requires compatible types` for the
+## residue, which the self only emits for sides it can classify concretely.
+function check_cast_call(ctx: ref[Context], operand: ptr[ast.Expr], source: types.Type, target: types.Type, line: ptr_uint, column: ptr_uint) -> void:
+    if types.type_equals(source, target):
+        return
+    if types.is_pointer_cast_type(source) and types.is_pointer_cast_type(target):
+        if not in_generic_body(ctx):
+            require_unsafe_at(ctx, expr_source_line(operand), expr_source_column(operand), "pointer cast requires unsafe")
+        return
+    if types.is_ref_type(source) and types.is_pointer_cast_type(target):
+        if not in_generic_body(ctx):
+            require_unsafe_at(ctx, expr_source_line(operand), expr_source_column(operand), "ref to pointer cast requires unsafe")
+        return
+    if not cast_side_incompatible(ctx, source) and not cast_side_incompatible(ctx, target):
+        return
+    if cast_operand_unknown(source) or cast_operand_unknown(target):
+        return
+    var message = string.String.from_str("cast requires compatible types, got ")
+    message.append(types.type_to_string(source))
+    message.append(" -> ")
+    message.append(types.type_to_string(target))
+    report(ctx, line, column, message.as_str())
+
+
+## True when a cast operand's type is not concrete enough to justify the
+## incompatible-cast error: the permissive error type (an unresolved name, a
+## payload field the analyzer does not model, …) or a generic type variable.
+function cast_operand_unknown(t: types.Type) -> bool:
+    if types.contains_error(t):
+        return true
+    match t:
+        types.Type.ty_var:
+            return true
+        _:
+            return false
+
+
+## True when a cast operand surely cannot take part in a numeric cast: it is
+## resolved, is not a numeric/bool/char primitive, and is not an enum-like value
+## whose backing type makes the host's cast numeric (a local or imported
+## enum/flags/variant, whose declaration tables the analyzer owns).
+function cast_side_incompatible(ctx: ref[Context], t: types.Type) -> bool:
+    match types.cast_numeric_type(t):
+        Option.some:
+            return false
+        Option.none:
+            pass
+    match t:
+        types.Type.ty_named as n:
+            return not ctx.static_member_types.contains(n.name)
+        types.Type.ty_imported as im:
+            let binding = lookup_binding(ctx, im.module_name) else:
+                return false
+            return not unsafe: read(binding).static_member_types.contains(im.name)
+        _:
+            return true
+
+
+## The host's `check_aggregate_construction` StringView arm: constructing a
+## `str` — directly (`str(data = …, len = …)`) or through a type alias of `str`
+## — borrows raw storage and requires `unsafe`.  The construction's own type
+## stays whatever it was (the self does not model `str`'s construction as a
+## struct call), only the requirement is recorded.
+function check_str_construction_unsafe(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr]) -> void:
+    if in_generic_body(ctx):
+        return
+    if not callee_constructs_str(ctx, scope, callee):
+        return
+    require_unsafe_at(ctx, expr_source_line(callee), expr_source_column(callee), "str construction requires unsafe")
+
+
+## True when a call's callee names the `str` type itself or a type alias whose
+## resolved type is `str`, and is not shadowed by a local or a function.
+function callee_constructs_str(ctx: ref[Context], scope: ref[sscope.Scope], callee: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier as id:
+                if scope_get(scope, id.name) != null:
+                    return false
+                if ctx.functions.contains(id.name) or ctx.type_params.contains(id.name):
+                    return false
+                if id.name.equal("str"):
+                    return true
+                return type_alias_resolves_to_str(ctx, id.name)
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as alias_id:
+                        if scope_get(scope, alias_id.name) != null:
+                            return false
+                        let module_name = ctx.import_aliases.get(alias_id.name) else:
+                            return false
+                        let binding = lookup_binding(ctx, read(module_name)) else:
+                            return false
+                        let alias_type = read(binding).type_alias_types.get(ma.member_name) else:
+                            return false
+                        return types.is_str(read(alias_type))
+                    _:
+                        return false
+            _:
+                return false
+
+
+## True when a local type alias resolves (directly or transitively) to `str`.
+function type_alias_resolves_to_str(ctx: ref[Context], name: str) -> bool:
+    let alias_type = ctx.type_alias_types.get(name) else:
+        return false
+    unsafe:
+        match read(alias_type):
+            types.Type.ty_str:
+                return true
+            _:
+                return false
+
+
+## The host's `source_line`: the first position-carrying node of an expression
+## (a member access reports its receiver, a call its callee, …).  0 when the
+## expression carries none.
+function expr_source_line(ep: ptr[ast.Expr]) -> ptr_uint:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as x:
+                return x.line
+            ast.Expr.expr_char_literal as x:
+                return x.line
+            ast.Expr.expr_null_literal as x:
+                return x.line
+            ast.Expr.expr_member_access as x:
+                return x.line
+            ast.Expr.expr_match as x:
+                return x.line
+            ast.Expr.expr_detach as x:
+                return x.line
+            ast.Expr.expr_expression_list as x:
+                return x.line
+            ast.Expr.expr_range as x:
+                return x.line
+            ast.Expr.expr_prefix_cast as x:
+                return x.line
+            ast.Expr.expr_unsafe as x:
+                return x.line
+            ast.Expr.expr_error as x:
+                return x.line
+            ast.Expr.expr_index_access as x:
+                let line = expr_source_line(x.receiver)
+                if line != 0:
+                    return line
+                return expr_source_line(x.index)
+            ast.Expr.expr_specialization as x:
+                return expr_source_line(x.callee)
+            ast.Expr.expr_call as x:
+                let line = expr_source_line(x.callee)
+                if line != 0:
+                    return line
+                var i: ptr_uint = 0
+                while i < x.args.len:
+                    let arg_line = expr_source_line(read(x.args.data + i).arg_value)
+                    if arg_line != 0:
+                        return arg_line
+                    i += 1
+                return 0
+            ast.Expr.expr_unary_op as x:
+                return expr_source_line(x.operand)
+            ast.Expr.expr_binary_op as x:
+                let line = expr_source_line(x.left)
+                if line != 0:
+                    return line
+                return expr_source_line(x.right)
+            ast.Expr.expr_if as x:
+                let line = expr_source_line(x.condition)
+                if line != 0:
+                    return line
+                let then_line = expr_source_line(x.then_expr)
+                if then_line != 0:
+                    return then_line
+                return expr_source_line(x.else_expr)
+            ast.Expr.expr_await as x:
+                return expr_source_line(x.expression)
+            _:
+                return 0
+
+
+## The host's `source_column` — see `expr_source_line`.
+function expr_source_column(ep: ptr[ast.Expr]) -> ptr_uint:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as x:
+                return x.column
+            ast.Expr.expr_char_literal as x:
+                return x.column
+            ast.Expr.expr_null_literal as x:
+                return x.column
+            ast.Expr.expr_member_access as x:
+                return x.column
+            ast.Expr.expr_match as x:
+                return x.column
+            ast.Expr.expr_detach as x:
+                return x.column
+            ast.Expr.expr_expression_list as x:
+                return x.column
+            ast.Expr.expr_range as x:
+                return x.column
+            ast.Expr.expr_prefix_cast as x:
+                return x.column
+            ast.Expr.expr_unsafe as x:
+                return x.column
+            ast.Expr.expr_error as x:
+                return x.column
+            ast.Expr.expr_index_access as x:
+                let column = expr_source_column(x.receiver)
+                if column != 0:
+                    return column
+                return expr_source_column(x.index)
+            ast.Expr.expr_specialization as x:
+                return expr_source_column(x.callee)
+            ast.Expr.expr_call as x:
+                let column = expr_source_column(x.callee)
+                if column != 0:
+                    return column
+                var i: ptr_uint = 0
+                while i < x.args.len:
+                    let arg_column = expr_source_column(read(x.args.data + i).arg_value)
+                    if arg_column != 0:
+                        return arg_column
+                    i += 1
+                return 0
+            ast.Expr.expr_unary_op as x:
+                return expr_source_column(x.operand)
+            ast.Expr.expr_binary_op as x:
+                let column = expr_source_column(x.left)
+                if column != 0:
+                    return column
+                return expr_source_column(x.right)
+            ast.Expr.expr_if as x:
+                let column = expr_source_column(x.condition)
+                if column != 0:
+                    return column
+                let then_column = expr_source_column(x.then_expr)
+                if then_column != 0:
+                    return then_column
+                return expr_source_column(x.else_expr)
+            ast.Expr.expr_await as x:
+                return expr_source_column(x.expression)
+            _:
+                return 0
 
 
 ## `reinterpret[T](v)` returns T; requires unsafe context.
@@ -6153,6 +6564,14 @@ function has_field(fields: span[FieldEntry], name: str) -> bool:
 function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint) -> types.Type:
     match receiver:
         types.Type.ty_named as n:
+            # A struct declared in another module reaches the analyzer as a
+            # `ty_named` with that module's name (an exported field's type);
+            # resolve its members through the module binding, as `ty_imported`
+            # does, instead of looking the name up locally.  Anything the
+            # binding does not declare as a struct/union (an enum, an opaque
+            # type) keeps the permissive error path below.
+            if n.module_name.len > 0 and not n.module_name.equal(ctx.module_name) and binding_has_struct_type(ctx, n.module_name, n.name):
+                return check_imported_member(ctx, n.module_name, n.name, member, is_method_call, line, column)
             let fieldsp = ctx.structs.get(n.name)
             if fieldsp == null:
                 # A union member is read like a struct field.
@@ -6215,6 +6634,15 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
             return types.Type.ty_error
         types.Type.ty_var as v:
             return check_type_var_member(ctx, v.name, member, is_method_call, line, column)
+        types.Type.ty_str:
+            # The host's `Types::StringView#fields`: `data: ptr[char]` and
+            # `len: ptr_uint`.  Every other member (an `extending str:` method)
+            # stays on the permissive path.
+            if member.equal("data"):
+                return types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(types.primitive("char")))
+            if member.equal("len"):
+                return types.primitive("ptr_uint")
+            return types.Type.ty_error
         types.Type.ty_generic as g:
             if g.name == "Task" and g.args.len >= 1:
                 if member == "frame" or member == "value" or member == "ready":
@@ -6320,6 +6748,19 @@ function check_imported_member(ctx: ref[Context], module_name: str, type_name: s
     return check_imported_member_depth(ctx, module_name, type_name, member, is_method_call, line, column, 0)
 
 
+## True when the module binding declares `type_name` as a struct or union,
+## public or private.  `check_member` uses it to route a foreign `ty_named`
+## through the binding only for types whose fields the binding actually owns.
+function binding_has_struct_type(ctx: ref[Context], module_name: str, type_name: str) -> bool:
+    let binding_ptr = lookup_binding(ctx, module_name) else:
+        return false
+    let binding = unsafe: read(binding_ptr)
+    return (
+        binding.structs.contains(type_name) or binding.unions.contains(type_name)
+        or binding.private_structs.contains(type_name) or binding.private_unions.contains(type_name)
+    )
+
+
 function check_imported_member_depth(ctx: ref[Context], module_name: str, type_name: str, member: str, is_method_call: bool, line: ptr_uint, column: ptr_uint, depth: int) -> types.Type:
     if depth > 10:
         return types.Type.ty_error
@@ -6347,6 +6788,28 @@ function check_imported_member_depth(ctx: ref[Context], module_name: str, type_n
                 if ufe.name == member:
                     return ufe.ty
                 ui += 1
+
+        # A private type reached through a public signature (a function whose
+        # return type is a module-private struct) still resolves its fields.
+        let private_fields_ptr = binding.private_structs.get(type_name)
+        if private_fields_ptr != null:
+            let fields = read(private_fields_ptr)
+            var pi: ptr_uint = 0
+            while pi < fields.len:
+                let fe = read(fields.data + pi)
+                if fe.name == member:
+                    return fe.ty
+                pi += 1
+
+        let private_union_ptr = binding.private_unions.get(type_name)
+        if private_union_ptr != null:
+            let ufields = read(private_union_ptr)
+            var pui: ptr_uint = 0
+            while pui < ufields.len:
+                let ufe = read(ufields.data + pui)
+                if ufe.name == member:
+                    return ufe.ty
+                pui += 1
 
         if member == "with" or binding_has_member(binding, type_name, member):
             return types.Type.ty_error
@@ -6442,7 +6905,7 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
         let at = infer_expr(ctx, scope, arg.arg_value)
         if types.is_raw_pointer(at) and not in_generic_body(ctx):
             if ctx.unsafe_depth == 0:
-                report(ctx, line, column, "pointer dereference requires unsafe")
+                report(ctx, line, column, "raw pointer dereference requires unsafe")
             else:
                 mark_required_unsafe(ctx)
         if types.is_raw_pointer(at) or types.is_ref_type(at):

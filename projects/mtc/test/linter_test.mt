@@ -1130,3 +1130,86 @@ function test_null_check_after_borrow_clean() -> void:
             return 0
     SRC
     expect_none(source, "redundant-null-check")
+
+
+# =============================================================================
+#  redundant-unsafe (sema-marked)
+# =============================================================================
+
+@[test]
+function test_redundant_unsafe_pointer_cast_is_required() -> void:
+    # `ptr[T] <- ptr[U]` is a pointer cast, so the enclosing `unsafe:` is
+    # required even though both sides are raw pointers.
+    let source = "function demo(p: ptr[ubyte]) -> ptr[char]:\n    return unsafe: ptr[char]<-p\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_redundant_unsafe_cstr_cast_is_required() -> void:
+    # `cstr` is pointer-represented: a cast to or from it requires unsafe.
+    let source = "function demo(text: ptr[char]) -> cstr:\n    return unsafe: cstr<-text\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_redundant_unsafe_str_construction_is_required() -> void:
+    # A `str(data = ..., len = ...)` construction borrows raw storage (the
+    # host's StringView rule), so the block is required even with no cast.
+    let source = "function demo(text: ptr[char]) -> str:\n    return unsafe: str(data = text, len = 4)\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_redundant_unsafe_str_field_read_is_required() -> void:
+    # `str.data` is `ptr[char]`, so the pointer arithmetic and `read` need
+    # unsafe.
+    let source = "function demo(text: str) -> ubyte:\n    return unsafe: ubyte<-read(text.data + 1)\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_redundant_unsafe_let_else_body_is_marked() -> void:
+    # The guard's else block is analyzed, so the cast inside it marks the
+    # block instead of the rule reporting it redundant.
+    var source = <<-SRC
+        function consume(p: ptr[void]) -> void:
+            pass
+
+        function maybe() -> Option[int]:
+            return Option[int].none
+
+        function demo(req: ptr[int]) -> int:
+            let v = maybe() else:
+                unsafe: consume(ptr[void]<-req)
+                return 0
+            return v
+    SRC
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_redundant_unsafe_proc_body_is_marked() -> void:
+    # A proc literal's body is checked like the host's proc expressions.
+    let source = "function demo(p: ptr[int]) -> int:\n    let f = proc(x: ptr[int]) -> int: unsafe: read(x)\n    return f(p)\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_redundant_unsafe_format_part_is_marked() -> void:
+    # A format string's interpolation parts are inferred.
+    let source = "function demo(p: ptr[int]) -> str:\n    return unsafe: f\"value #{read(p)}\"\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)

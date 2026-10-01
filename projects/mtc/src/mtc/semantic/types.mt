@@ -615,6 +615,68 @@ public function is_own_type(t: Type) -> bool:
             return false
 
 
+## True when `t` is a raw or owning pointer (`ptr`/`const_ptr`/`own`).  Unlike
+## `is_raw_pointer` it does not unwrap a nullable and excludes `ref` — the host's
+## `pointer_type?`, which `pointer_cast_type?` and `cast_numeric_type` build on.
+public function is_pointer_type(t: Type) -> bool:
+    match t:
+        Type.ty_generic as g:
+            return g.name == "ptr" or g.name == "const_ptr" or g.name == "own"
+        _:
+            return false
+
+
+## True when `t` is a pointer-represented value a cast may reinterpret: a
+## pointer (`ptr`/`const_ptr`/`own`), `cstr`, a function value, a nullable of a
+## pointer or function, or a typed null to one of those.  Mirrors the host's
+## `pointer_cast_type?`, which gates both cast diagnostics.
+public function is_pointer_cast_type(t: Type) -> bool:
+    match t:
+        Type.ty_primitive as p:
+            return p.name == "cstr"
+        Type.ty_null as n:
+            let target = n.target else:
+                return false
+            return is_typed_null_target(unsafe: read(target))
+        Type.ty_nullable as nl:
+            let base = unsafe: read(nl.base)
+            match base:
+                Type.ty_function:
+                    return true
+                _:
+                    return is_pointer_type(base)
+        Type.ty_function:
+            return true
+        _:
+            return is_pointer_type(t)
+
+
+## The host's `typed_null_target_type?`: a typed null is castable to `cstr`, a
+## pointer, or a function value.
+public function is_typed_null_target(t: Type) -> bool:
+    match t:
+        Type.ty_primitive as p:
+            return p.name == "cstr"
+        Type.ty_function:
+            return true
+        _:
+            return is_pointer_type(t)
+
+
+## The host's `cast_numeric_type`: the type a numeric cast goes through, when
+## there is one.  Primitives (numeric, `bool`, `char`) qualify; an `EnumBase`
+## qualifies through its backing type, which the caller decides (it owns the
+## declaration tables).
+public function cast_numeric_type(t: Type) -> Option[Type]:
+    match t:
+        Type.ty_primitive as p:
+            if is_numeric_name(p.name) or p.name == "bool" or p.name == "char":
+                return Option[Type].some(value = t)
+            return Option[Type].none
+        _:
+            return Option[Type].none
+
+
 ## The element type of a pointer or array-like type.  Returns ty_error for
 ## anything that is not ptr / const_ptr / ref / span / array.  A `ref` may carry
 ## an explicit lifetime as its first argument (`ref[@a, T]`), so its referent is

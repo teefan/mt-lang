@@ -106,17 +106,21 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: 2026-10-01 session 19 (the LSP matrix is at **2 documented
-entries** — `documentHighlight` `lb@704:67` and the `type quat` hover
-`lb@1653:24` — after session 18 closed the diagnostic class.  Session 19 fixed
-the linter's constant propagation: the rule was quadratic in its flat state
-tables and `graph_rpo_ids` returned a post-order instead of a reverse
-post-order, so `mtc lint projects/mtc/src/mtc/main.mt` took 316 s against the
-host's 22 s — it is 1.9 s now.  The same session added `tools/lint_parity.rb`
-and measured the corpus-wide lint residue: 609 files, 357 agree / 252 differ,
-every difference pre-existing; §0k's session-19 record has the ranked per-rule
-backlog.  Remaining: that backlog, §0j item 1 (opaque declarations) and items
-13–15, CLI message parity, and the LSP/DAP leftovers)
+Last updated: 2026-10-02 session 20 (the corpus-wide lint residue's first lead is
+closed: `tools/lint_parity.rb` reads **609 files, 381 agree / 228 differ** and its
+largest self-extra rule, `redundant-unsafe`, went **807 → 11**.  The session ported the
+host's cast rules (`check_cast_call`'s `pointer_cast_type?` predicate on both sides, the
+ref-to-pointer message, operand positions, the incompatible-types error), the
+`str`-construction requirement and `str`'s `data`/`len` fields, arm payload fields for
+user and imported variants (the stage-11c remainder — `ModuleBinding.variant_arm_fields`
++ `match_arm_payload_type` substitution), the `let … else:` body analysis, proc-literal
+bodies and format-string interpolation parts, and a foreign `ty_named`'s member
+resolution.  The LSP matrix is unchanged at **2 documented entries**
+(`documentHighlight` `lb@704:67`, the `type quat` hover `lb@1653:24`).  Remaining: the
+11 `redundant-unsafe` singletons (for-loop element typing for `ref[Vec[T]]` iteration,
+an lvalue `read(…) = …` target, per-file typing gaps — §0k's session-20 record lists
+them), the 104 generic-body `redundant-cast` sites, §0j item 1 (opaque declarations)
+and items 13–15, CLI message parity, and the LSP/DAP leftovers)
 
 ---
 
@@ -2393,6 +2397,95 @@ a nullable of a pointer/function, a function type, a typed null) applied to
 (predicate, both messages, operand positions) and then re-probe the remaining
 marking sites (aggregate literals with pointer fields, call arguments)
 corpus-wide with `tools/lint_parity.rb`.
+
+### The corpus-wide lint residue's first lead — done (2026-10-02 session 20)
+
+The session-19 measurement (609 files, 357 agree / 252 differ; `redundant-unsafe`
+self-extra 807 over 91 files) led with `redundant-unsafe`: the self called `unsafe:`
+blocks redundant where the host marked them required.  The divergence is not the rule —
+it reads `Analysis.unsafe_statement_lines`/`required_unsafe_lines`, the analyzer's mark
+record — it is the *marking sites and the typing they depend on*.  Landed, one commit:
+
+1. **`check_cast_call`** (`analyzer.mt`): the cast predicate is the host's
+   `pointer_cast_type?` on **both** sides — `ptr`/`const_ptr`/`own`, `cstr`, a function
+   value, a nullable of a pointer or function, a typed null to one of those — plus
+   `ref_to_pointer_cast?` with its own message (`ref to pointer cast requires unsafe`).
+   The old predicate (“target is a raw pointer, source is not”) missed `ptr[T]<-ptr[U]`,
+   every `cstr` cast, `own[T]<-ptr[T]`, nullable and function casts — the casts that
+   dominate `std/net.mt`, `std/async/libuv_runtime.mt`, `std/fs.*.mt` and the compiler's
+   own sources.  The unsafe diagnostics sit on the **operand's** position, like the
+   host's `source_line`/`source_column` walk (`expr_source_line`/`expr_source_column`
+   port that descent); the incompatible-types error (`cast requires compatible types,
+   got X -> Y`) is emitted for sides the self can classify concretely
+   (`cast_operand_unknown`/`cast_side_incompatible` keep the error type, type variables
+   and enum-likes permissive — the first cut reported `<error> -> ptr[ubyte]` on
+   `str.data` and was caught by the self-build).
+2. **`str construction requires unsafe`** (`check_str_construction_unsafe`):
+   `str(data = …, len = …)`, and a construction through a type alias of `str`, mark /
+   report like the host's `check_aggregate_construction` StringView arm.
+3. **`str`'s fields** (`check_member`'s new `ty_str` arm): `data: ptr[char]`,
+   `len: ptr_uint` — the host's `Types::StringView#fields`.  This is what makes
+   `ubyte<-read(text.data + i)` mark (the lexer's 59 entries; `str.data + i` is pointer
+   arithmetic and `read` is a dereference).
+4. **Arm payload fields for user and imported variants** (the recorded stage-11c
+   remainder): `Context.arm_payload_field_types` now holds every declared variant arm's
+   resolved fields (the variant's type parameters as `ty_var`), exported through
+   `ModuleBinding.variant_arm_fields` and consulted by `match_arm_payload_type` for
+   local, prelude and imported variants alike (the `else` branch substitutes the
+   scrutinee's arguments).  Before, only Option/Result carried payload fields, so
+   `match d: ast.Decl.decl_var as v:` left `v.value` unresolved — the single largest
+   cause of the residue (`lowering.mt` 155 → 5, `c_backend.mt` 64 → 0, `lexer.mt` 59 → 0,
+   `std/toml.mt` 3 → 0).
+5. **A foreign `ty_named` resolves through the binding** (`check_member`): an exported
+   field's type carrying its declaring module's name (`ty_named(module, name)`) now
+   routes through `check_imported_member`, gated on `binding_has_struct_type` (which
+   also consults the private struct/union tables, so a private type reached through a
+   public signature resolves) — a member chain like `tref.name.parts.data` resolves
+   where it used to stop at the first foreign type.
+6. **The guard's else block is analyzed** (`check_local_else_body`): `let x = e else:`
+   bodies were never checked, so every `unsafe:` inside one looked redundant
+   (`std/net.mt`'s 17).  The `else as name` binding carries the initializer's error type
+   (`Result[T, E]`'s `E`, `let_else_error_type`).
+7. **Proc literal bodies are checked** (`check_proc_body`: the parameters in a fresh
+   scope, the block checked with the proc's return type) and **format-string
+   interpolation parts are inferred** (`check_format_string_parts`), the host's
+   `infer_proc_expression` / `check_format_string_literal` (`std/toml.mt`, `std/json.mt`,
+   `lsp/semantic_tokens.mt`).
+8. The `read` diagnostic text is the host's `raw pointer dereference requires unsafe`
+   (was `pointer dereference requires unsafe`).
+
+**Measured** (the stage2 from this session's bootstrap): `tools/lint_parity.rb -q`
+over `std examples projects/mtc/src`: **609 files, 381 agree / 228 differ** (session 19:
+357/252), and the per-rule self-extra `redundant-unsafe` went **807 → 11**.  The other
+deltas moved with the facts: `prefer-let` 85 → 68, `prefer-inline-if` 214 → 213,
+`redundant-cast` 105 → 107 — the rule is sema-backed and the newly resolved types let
+it fire in generic bodies where the host's facts stay absent; **104 of the 107 are
+`ptr_uint<-size_of(T)`-shaped generic-body sites** (same-body rule: the next lead).
+
+**The remaining 11, with their causes** (the next lead): `std/goap.mt:62` and
+`std/input.mt:130` iterate a `ref[Vec[T]]`/`Vec[T]` whose element the self binds at
+`ty_error` (`bind_for_names`; the host's iterator protocol / collection element type is
+not ported); `std/process.mt:273` is an assignment *through* `read(…)` whose lvalue path
+does not mark and `:288` follows it; the rest are per-file typing gaps —
+`c_backend.mt:7166` (`read(nl.base)` on a nested payload field),
+`definition_index.mt:190` (`read(name)` on a `Vec.get` unwrap),
+`code_actions.mt:60`/`inlay_hints.mt:64` (an `Option.unwrap()` pointer),
+`navigation.mt:4812` and `references.mt:350` (`read(container.data + i)` on a
+`FnSig`/map value), `lowering.mt:3880` (an imported alias-map lookup).
+
+**Gates**: bootstrap fixed point (`stage2.c == stage3.c`) + 14/14 (568 tests — 15 new:
+8 linter, 7 semantic; two old cast tests re-pinned: `ptr[int]<-0` is an incompatible
+cast in the host too), `test/mt` 60/0, `cli:parity` 61 cases 23/38/0 (the same case
+set — `tmp/cli-diffs-s20.txt`), sexpr lex 705/705 + parse 701/0, `rake
+parity:scoreboard` (lb 98/98, 0 differing lines, 0 rules with a count mismatch),
+`tmp/lint_table.rb` (mst 10/10), the harness 30/30 + its 4 documented entries (the same
+set), the recovery probe OK, the fixture sweep (added 0; `hover-probe4`'s diagnostic
+closure, as recorded), the full SimpleGame audit **2 differing entries**
+(`documentHighlight` 1 + `hover` 1, both documented; `diagnostic`, `documentSymbol`,
+`semanticTokens` and the navigation classes all 0; `tmp/audit-s20.json`),
+`unused_import_parity` 609/609, the example sweeps (`examples/*.mt` 15/15,
+`examples/sdl3` 34/34, emit-c), valgrind over an LSP drive (0 errors) and the
+headless-Neovim smoke (the `zero[mat4]` hover renders).
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

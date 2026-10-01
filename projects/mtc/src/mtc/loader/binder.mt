@@ -184,6 +184,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         private_member_keys = private_member_keys,
         private_method_sigs = private_method_sigs,
         type_param_names = type_param_names,
+        variant_arm_fields = analysis.arm_payload_field_types,
         function_type_params = function_type_params,
         mutating_param_indices = analysis.mutating_param_indices,
         private_interfaces = private_interfaces,

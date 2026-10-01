@@ -1973,8 +1973,8 @@ function test_pointer_arithmetic_without_unsafe_is_flagged() -> void:
 @[test]
 function test_pointer_cast_without_unsafe_is_flagged() -> void:
     var source = <<-SRC
-        function f() -> ptr[int]:
-            return ptr[int]<-0
+        function f(p: ptr[ubyte]) -> ptr[int]:
+            return ptr[int]<-p
     SRC
     expect_flagged(source)
 
@@ -1982,9 +1982,9 @@ function test_pointer_cast_without_unsafe_is_flagged() -> void:
 @[test]
 function test_pointer_cast_inside_unsafe_is_clean() -> void:
     var source = <<-SRC
-        function f() -> ptr[int]:
+        function f(p: ptr[ubyte]) -> ptr[int]:
             unsafe:
-                return ptr[int]<-0
+                return ptr[int]<-p
     SRC
     expect_clean(source)
 
@@ -2784,3 +2784,111 @@ function test_callable_value_sites_record_arg_but_not_handle_builtins() -> void:
         let site = unsafe: read(sp)
         expect_eq(int<-site.line, 10)
         i += 1
+
+
+@[test]
+function test_user_variant_arm_payload_field_is_typed() -> void:
+    # A user variant's `as name` arm binding carries its declared payload
+    # fields, so `w.value` resolves to `int` — a wrong return type is flagged
+    # (before, the field was the permissive error type).
+    var source = <<-SRC
+        variant Box:
+            wrap(value: int)
+            empty
+
+        function bad(b: Box) -> str:
+            match b:
+                Box.wrap as w:
+                    return w.value
+                Box.empty:
+                    return ""
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_arm_payload_field_types_record_declared_fields() -> void:
+    var source = <<-SRC
+        variant Box:
+            wrap(value: int)
+            empty
+
+        function unwrap(b: Box) -> int:
+            match b:
+                Box.wrap as w:
+                    return w.value
+                Box.empty:
+                    return 0
+    SRC
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    var analysis = analyzer.check_source_file(file)
+    let fields_ptr = analysis.arm_payload_field_types.get("Box_wrap") else:
+        expect(false, "Box_wrap payload fields missing")
+        return
+    let fields = unsafe: read(fields_ptr)
+    expect_eq(int<-fields.len, 1)
+    let field = unsafe: read(fields.data + 0)
+    expect(field.name.equal("value"), "field name")
+    expect_eq(types.type_to_string(field.ty), "int")
+
+
+@[test]
+function test_generic_variant_arm_payload_field_is_substituted() -> void:
+    # `Maybe[int].some as s` binds `s` to the substituted payload, so
+    # `s.value` is `int`, not the type parameter.
+    var source = <<-SRC
+        variant Maybe[T]:
+            some(value: T)
+            none
+
+        function bad(m: Maybe[int]) -> str:
+            match m:
+                Maybe.some as s:
+                    return s.value
+                Maybe.none:
+                    return ""
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_let_else_body_is_checked() -> void:
+    # The guard's else block is analyzed like any other body, so a return of
+    # the wrong type is flagged (it used to be skipped silently).
+    var source = <<-SRC
+        function demo(o: Option[int]) -> int:
+            let v = o else:
+                return "nope"
+            return v
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_proc_body_is_checked() -> void:
+    var source = <<-SRC
+        function demo() -> int:
+            let f = proc(x: int) -> int: return "nope"
+            return f(1)
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_incompatible_cast_is_flagged() -> void:
+    var source = <<-SRC
+        function demo() -> int:
+            return int<-"abc"
+    SRC
+    expect_flagged(source)
+
+
+@[test]
+function test_pointer_cast_is_flagged_without_unsafe() -> void:
+    var source = <<-SRC
+        function demo(p: ptr[ubyte]) -> ptr[char]:
+            return ptr[char]<-p
+    SRC
+    expect_flagged(source)
