@@ -11,29 +11,20 @@ import std.str
 import mtc.parser.ast as ast
 
 
-struct ConstWrite:
+public struct ConstWrite:
     value: str
     line: ptr_uint
     kind: str
 
 
-public function collect_constant_conditions(file: ast.SourceFile) -> vec.Vec[ConstWrite]:
+## The forward-propagation conditions of one function body (the host's
+## `emit_constant_condition_warnings` runs per function).
+public function collect_constant_conditions_body(body: ptr[ast.Stmt]?) -> vec.Vec[ConstWrite]:
     var result = vec.Vec[ConstWrite].create()
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    walk_body_const(fun.body, ref_of(result))
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        walk_body_const(read(ex.methods.data + j).body, ref_of(result))
-                        j += 1
-                _:
-                    pass
-        i += 1
+    walk_body_const(body, ref_of(result))
     return result
+
+
 
 
 function walk_body_const(body_ptr: ptr[ast.Stmt]?, result: ref[vec.Vec[ConstWrite]]) -> void:

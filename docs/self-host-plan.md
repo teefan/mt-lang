@@ -2252,6 +2252,70 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### The linter's walk: the host's emission order (2026-10-01 session 18, F3 part 3)
+
+The diagnostic class compares whole *arrays*, and the two files' counts already
+matched after session 17 — what was left was the order.  The self ran two walks
+(the linter's inline visitor over the whole file, then `scope_tracking`'s scope
+pass) where the host has one, plus whole-file passes at the end.  Now the
+linter's visitor **drives** the scope state machine, so the warnings interleave
+exactly as the host's visitor emits them:
+
+1. `unused-import` and the module-level reserved names lead (the host's
+   `seed_module_bindings` + `check_unused_imports`).
+2. Per declaration, in source order: a method's reserved name (before its body),
+   then the function scope, the type-parameter reserved names, the parameters,
+   the statement walk (with each nested scope's pop *inside* it), the per-body
+   rule group — dead-assignment → unreachable → borrow → constant-condition →
+   redundant-null-check → loop-single-iteration → owning-release →
+   prefer-let-else/prefer-var-else — then `redundant-return`, then the function
+   scope's pop (`unused-local`/`unused-param`/`prefer-let`/`prefer-own-ptr`),
+   then `missing-return`.
+3. The whole-file passes keep their tail order: doc-tag, event-capacity,
+   trailing-list-comma, prefer-inline-methods, line-too-long.
+
+The pieces of the move:
+
+- `scope_tracking` keeps only the state (push/pop, declare, mark-used/mutated,
+  editable/mutating/alias hooks, binding ids) and the `unused-import` prelude;
+  its separate walk and its emission are gone.  The linter owns the pop's
+  warnings, so `prefer-own-ptr` fires there too — its state is name-keyed like
+  the host's (`@ptr_candidates` + `@binding_ptr_unsafe_uses`), filled at each
+  local declaration and each identifier use with the enclosing `unsafe:` depth.
+- `redundant-cast` moves from its whole-file walk to per-site hooks the walk
+  drains in order (`check_local`/`check_assignment`/`check_return`/
+  `check_prefix_cast`/`check_binary_operands`).
+- `reserved-primitive-name` moves to its host positions: module-level
+  declarations at the head (function/constant/module variable/event/extern/
+  foreign, the host's `seed_module_bindings`), a method's name before its body,
+  type parameters at the function's entry, locals and parameters at their
+  declaration.  The self-only struct/enum/type-alias arms are dropped — the
+  host has no arm for those declarations.
+- `constant-condition`'s forward-propagation fold is back as the per-body
+  `constprop.collect_constant_conditions_body` (the whole-file wrapper is gone).
+- The walk now matches the host's statement semantics: a statement list stops
+  visiting after `return`/`break`/`continue`, a `parallel:` block is *not*
+  visited (the host has no arm; `parallel for` is a normal `ForStmt`), `for`
+  raises the loop depth like `while`, and a match arm's binding declares its
+  local inside the arm scope.
+- `defer` bodies are their own scope and `let … else:` declares its
+  `else_binding` in the else scope (the host's `LocalDecl` arm).
+
+**Measured**: the two diagnostic arrays now agree item-for-item except the two
+content rows — `docs/language_baseline.mt`'s first divergence moves from index
+0 to index 7 (the `constant-condition` anchors) and
+`docs/memory_stress_test.mt`'s from 0 to 3 (the `owning-release` rows); every
+other item is byte-identical (same range, code, message, severity).  Counts
+unchanged: lb host 98 / self 98, mst host 10 / self 10, `rake parity:scoreboard`
+0 rules with a count mismatch.  The fixture sweep is at every baseline except
+`hover-probe4`'s diagnostic entry, which this order closes (the host emits the
+owning-release leak before the function scope's pop; the self did the reverse).
+Gates: bootstrap fixed point + 14/14, `test/mt` 60/0, `cli:parity` 23/38/0,
+sexpr lex 705/705 + parse 701/0, `unused_import_parity` 609/609, every fixture
+at its baseline (the one closure above).  The self-only linter tests for
+`x == x` constant conditions were updated to the host's semantics (a
+comparison of two unknown bindings is not constant).
+
 ### Session-17 close (2026-10-01): the matrix at 4, and what is left
 
 Three commits: F8.2 closed (`cc624800`, documentSymbol 1 → 0, the matrix

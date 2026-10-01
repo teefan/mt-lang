@@ -152,49 +152,54 @@ public function lint_source_with(
 
     lint_loop_depth = 0
     lint_generic_depth = 0
+    lint_unsafe_depth = 0
     lint_analysis = options.analysis
+    lint_cast_drained = 0
+    lint_owning_type_names = options.owning_type_names
+    var cast_ctx = redundant_cast.ctx_create(source, options.analysis)
+    defer: redundant_cast.ctx_release(ref_of(cast_ctx))
+    lint_cast_ctx = ptr_of(cast_ctx)
+
+    # The scope state the declaration walk drives.  Its entries live in this
+    # frame's buffer (see scope_tracking's header); the walk emits the scope
+    # warnings where the host's visitor does — `shadow` at each declaration,
+    # `unused-local`/`unused-param`/`prefer-let`/`prefer-own-ptr` at each pop.
+    var scope_entries: array[scope_tracking.ScopeEntry, 4096]
+    var scope: scope_tracking.ScopeCtx
+    scope_tracking.ctx_init(ref_of(scope), ptr_of(scope_entries[0]))
+    unsafe:
+        read(ref_of(scope)).editable_sites = options.editable_sites
+        read(ref_of(scope)).mutating_sites = options.mutating_sites
+    lint_scope_ctx = ptr_of(scope)
+    var ptr_state = own_ptr.PtrState.create()
+    defer: ptr_state.release()
+    lint_ptr_state = ptr_of(ptr_state)
+
+    # unused-import, before the declaration walk (the host's
+    # `check_unused_imports`).
+    var unused_imports = vec.Vec[scope_tracking.ScopeWarning].create()
+    defer: unused_imports.release()
+    scope_tracking.lint_unused_imports(file, path, options.unresolved_import_paths, options.method_providers, options.analysis, ref_of(unused_imports))
+    drain_scope_warnings(ref_of(unused_imports), ref_of(warnings))
+
+    # Module-level reserved names (the host's `seed_module_bindings`).
+    lint_reserved_module_names(file, path, ref_of(warnings))
+
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
             visit_decl(file.declarations.data + i, path, ref_of(warnings))
         i += 1
-    # Scope-tracking pass: unused-local, unused-param, shadow, prefer-let, unused-import
-    var scope_warnings = vec.Vec[scope_tracking.ScopeWarning].create()
-    scope_tracking.lint_scope_pass(file, path, options.unresolved_import_paths, options.editable_sites, options.mutating_sites, options.method_providers, options.analysis, ref_of(scope_warnings))
-    i = 0
-    while i < scope_warnings.len():
-        let sp = scope_warnings.get(i) else:
-            break
-        let sw = unsafe: read(sp)
-        warnings.push(Warning(
-            path = sw.path,
-            line = sw.line,
-            column = if sw.column > 0: sw.column else: 0,
-            length = sw.length,
-            code = sw.code,
-            message = sw.message,
-            severity = sw.severity
-        ))
-        i += 1
-    scope_warnings.release()
-    # Whole-file passes run after the AST visitor, matching Ruby's emission order.
-    lint_missing_return(file, path, ref_of(warnings))
-    lint_prefer_let_else(file, path, ref_of(warnings))
-    lint_ownership(file, path, ref_of(warnings), options.owning_type_names)
-    lint_reserved_names(file, path, ref_of(warnings))
-    lint_borrow_mutate(file, path, ref_of(warnings))
+    lint_scope_ctx = null
+    lint_ptr_state = null
+    lint_cast_ctx = null
+
+    # Whole-file passes run after the walk, matching Ruby's emission order.
     lint_doc_tags(file.declarations, source, path, ref_of(warnings))
     lint_events(file.declarations, "", path, ref_of(warnings))
     lint_trailing_commas(file.declarations, lexed.tokens.as_span(), path, ref_of(warnings))
     lint_prefer_inline_methods(file.declarations, path, ref_of(warnings))
     lint_line_too_long(source, lexed.tokens, path, max_line_length, ref_of(warnings))
-    lint_dead_assignment(file, path, ref_of(warnings))
-    lint_unreachable_code(file, path, ref_of(warnings))
-    lint_prefer_own_ptr(file, path, ref_of(warnings))
-    lint_redundant_cast(file, source, path, options.analysis, ref_of(warnings))
-    lint_constant_condition(file, path, ref_of(warnings))
-    lint_loop_single_iteration(file, path, ref_of(warnings))
-    lint_redundant_null_check(file, path, ref_of(warnings))
 
     # `# lint: ignore` / `# lint: ignore(a, b)` comments, then the rule filter.
     apply_suppressions(ref_of(warnings), source, lexed.trivia.as_span())
@@ -807,6 +812,37 @@ var lint_generic_depth: ptr_uint = 0
 ## The analysis the visitor consults for facts-dependent rules (the host's
 ## `@sema_facts`) — currently `redundant-unsafe`'s required-unsafe lines.
 var lint_analysis: ptr[analyzer.Analysis]? = null
+
+
+## The scope state the declaration walk drives (the host's `@scopes` and
+## `@module_bindings`): `null` outside a lint pass, and `null` for callers
+## that only run a sub-rule.
+var lint_scope_ctx: ptr[scope_tracking.ScopeCtx]? = null
+
+
+## prefer-own-ptr's walk state (the host's `@ptr_candidates` and
+## `@binding_ptr_unsafe_uses`): candidates by name, uses counted at every
+## identifier; the warning fires at a scope pop.
+var lint_ptr_state: ptr[own_ptr.PtrState]? = null
+
+
+## Enclosing `unsafe:` depth for the visitor (the host's `@unsafe_depth`):
+## prefer-own-ptr counts identifier uses above it.
+var lint_unsafe_depth: ptr_uint = 0
+
+
+## redundant-cast's check context for the walk (the host checks each site
+## inline, so the module's whole-file walk is gone).
+var lint_cast_ctx: ptr[redundant_cast.Ctx]? = null
+
+
+## How many of `lint_cast_ctx.diags` have already been emitted.
+var lint_cast_drained: ptr_uint = 0
+
+
+## The owning type names the ownership rule reports releases for (the caller's
+## `LintOptions.owning_type_names`); the walk needs them per body.
+var lint_owning_type_names: span[str] = span[str]()
 
 
 ## The host's `check_redundant_unsafe`: an `unsafe:` block or expression whose
@@ -2114,31 +2150,378 @@ function check_redundant_else(branches: span[ast.IfBranch], else_body: ptr[ast.S
 #  Traversal
 # =============================================================================
 
+## The host's `visit_statement_list`: each statement in order, stopping the
+## *visitation* after a terminator (`ControlFlow` reports the unreachable
+## statements, and the statements after it are not walked).
+function visit_stmt_list(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < stmts.len:
+        unsafe:
+            visit_stmt(stmts.data + i, path, warnings)
+            if stmt_is_terminator(stmts.data + i):
+                return
+        i += 1
+
+
+function stmt_is_terminator(stmt: ptr[ast.Stmt]) -> bool:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_ret:
+                return true
+            ast.Stmt.stmt_break:
+                return true
+            ast.Stmt.stmt_continue:
+                return true
+            _:
+                return false
+
+
+## A statement-list position that may hold a single statement or a block.
+function visit_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let bp = body else:
+        return
+    unsafe:
+        match read(bp):
+            ast.Stmt.stmt_block as blk:
+                visit_stmt_list(blk.statements, path, warnings)
+            _:
+                visit_stmt(bp, path, warnings)
+
+
+# =============================================================================
+#  Scope state — the linter owns the emission, scope_tracking owns the state,
+#  so the scope-based warnings interleave with the rules in the host's order.
+# =============================================================================
+
+function scope_push() -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_push_scope(ctx)
+
+
+## Move scope_tracking's emitted warnings (the `unused-import` prelude) into
+## the lint pass's vector, in order.
+function drain_scope_warnings(sink: ref[vec.Vec[scope_tracking.ScopeWarning]], warnings: ref[vec.Vec[Warning]]) -> void:
+    var i: ptr_uint = 0
+    while i < sink.len():
+        let sp = sink.get(i) else:
+            break
+        let sw = unsafe: read(sp)
+        warnings.push(Warning(
+            path = sw.path,
+            line = sw.line,
+            column = if sw.column > 0: sw.column else: 0,
+            length = sw.length,
+            code = sw.code,
+            message = sw.message,
+            severity = sw.severity
+        ))
+        i += 1
+
+
+## Pop a scope and emit its warnings: per binding, `unused-local`/`unused-param`
+## or else `prefer-let`/`prefer-own-ptr` (the host's `emit_scope_warnings`).
+function scope_pop(path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    let idx = scope_tracking.ctx_pop_scope(ctx)
+    if idx == scope_tracking.SCOPE_NONE:
+        return
+    let start = scope_tracking.ctx_scope_start(ctx, idx)
+    let count = scope_tracking.ctx_scope_count(ctx, idx)
+    var i: ptr_uint = 0
+    while i < count:
+        let bd = scope_tracking.ctx_entry(ctx, start, i)
+        if not bd.used:
+            let is_param = bd.binding_kind == scope_tracking.BINDING_PARAM
+            var buf = string.String.create()
+            buf.append("unused ")
+            buf.append(if is_param: "parameter" else: "local")
+            buf.append(" '")
+            buf.append(bd.name)
+            buf.append("'")
+            push_warning_at(warnings, path, bd.line, bd.column, bd.name.len, if is_param: "unused-param" else: "unused-local", buf.as_str(), "warning")
+        else:
+            if bd.allow_prefer_let and not bd.mutated:
+                var buf = string.String.create()
+                buf.append("variable '")
+                buf.append(bd.name)
+                buf.append("' is never reassigned, prefer 'let'")
+                push_warning_at(warnings, path, bd.line, bd.column, bd.name.len, "prefer-let", buf.as_str(), "hint")
+            if ptr_state_fires(bd.name, bd.binding_kind == scope_tracking.BINDING_PARAM):
+                var buf = string.String.create()
+                buf.append("binding '")
+                buf.append(bd.name)
+                buf.append("' is only used inside unsafe — consider converting its type from ptr to own for auto-deref")
+                push_warning_at(warnings, path, bd.line, bd.column, bd.name.len, "prefer-own-ptr", buf.as_str(), "hint")
+        i += 1
+
+
+function ptr_state_fires(name: str, is_param: bool) -> bool:
+    let p = lint_ptr_state else:
+        return false
+    return unsafe: read(p).fires(name, is_param)
+
+
+function ptr_state_record_local(name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?) -> void:
+    let p = lint_ptr_state else:
+        return
+    unsafe: read(p).record_local(name, stmt_type, value)
+
+
+function scope_declare_local(name: str, line: ptr_uint, column: ptr_uint, is_var: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    if name.len == 0 or name.starts_with("_"):
+        return
+    let ctx = unsafe: ref_of(read(c))
+    if scope_tracking.ctx_shadows_outer(ctx, name):
+        var buf = string.String.create()
+        buf.append("local '")
+        buf.append(name)
+        buf.append("' shadows a binding from an outer scope")
+        push_warning_at(warnings, path, line, column, name.len, "shadow", buf.as_str(), "warning")
+    if is_reserved_type_name(name):
+        reserved_name_warn(path, line, name, "local", warnings)
+    scope_tracking.ctx_declare_local(ctx, name, line, column, is_var)
+
+
+function scope_declare_param(name: str, line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    if name.len == 0 or name.starts_with("_"):
+        return
+    if is_reserved_type_name(name):
+        reserved_name_warn(path, line, name, "parameter", warnings)
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_declare_param(ctx, name, line, column)
+
+
+function scope_mark_used(name: str) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_mark_used(ctx, name)
+    let p = lint_ptr_state else:
+        return
+    unsafe: read(p).record_use(name, lint_unsafe_depth)
+
+
+function scope_mark_mutated(target: ptr[ast.Expr]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_mark_mutated(ctx, target)
+
+
+function scope_mark_editable_receiver(call: ptr[ast.Expr]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_mark_editable_receiver(call, ctx)
+
+
+function scope_mark_mutating_args(call: ptr[ast.Expr]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_mark_mutating_args(call, ctx)
+
+
+function scope_mark_alias_source(call: ptr[ast.Expr]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_mark_alias_source(call, ctx)
+
+
+function scope_visit_typeref(tr: ptr[ast.TypeRef]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.visit_typeref(tr, ctx)
+
+
+function scope_set_generic(depth: ptr_uint) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_set_generic_depth(ctx, depth)
+
+
+function scope_set_match_arm_depth(depth: ptr_uint) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    scope_tracking.ctx_set_match_arm_depth(ctx, depth)
+
+
+function scope_match_arm_depth() -> ptr_uint:
+    let c = lint_scope_ctx else:
+        return 0
+    return unsafe: read(c).match_arm_depth
+
+
+## Assignment targets that read their sub-expressions (the host's
+## `visit_assignment_target`): a member/index target reads its receiver, a bare
+## identifier is a write only.
+function visit_assignment_target(target: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    unsafe:
+        match read(target):
+            ast.Expr.expr_identifier:
+                pass
+            ast.Expr.expr_member_access as m:
+                visit_expr(m.receiver, path, warnings)
+            ast.Expr.expr_index_access as ix:
+                visit_expr(ix.receiver, path, warnings)
+                visit_expr(ix.index, path, warnings)
+            _:
+                visit_expr(target, path, warnings)
+
+
+# =============================================================================
+#  The per-function rule group (the host's `visit_function` tail)
+# =============================================================================
+
+## dead-assignment → unreachable → borrow → constant-condition →
+## redundant-null-check → loop-single-iteration → owning-release →
+## prefer-let-else/prefer-var-else, in the host's order, over one body.
+function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    lint_dead_body(params, body, path, warnings)
+    lint_unreachable_in_body(body, path, warnings)
+    borrow_check_body(body, path, warnings)
+    lint_const_cond_in_body(body, path, warnings)
+    lint_null_check_body(body, path, warnings)
+    lint_loop_single_in_body(body, path, warnings)
+    ownership_walk_body(body, path, warnings, lint_owning_type_names)
+    prefer_else_walk_body(body, path, warnings)
+
+
+function lint_null_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var diags = nullcheck.check_body_diags(body)
+    defer: diags.release()
+    var di: ptr_uint = 0
+    while di < diags.len():
+        let dp = diags.get(di) else:
+            break
+        unsafe:
+            let d = read(dp)
+            var buf = string.String.create()
+            buf.append("'")
+            buf.append(d.name)
+            buf.append("' is already known to be non-null here — this nil check is redundant")
+            push_warning(warnings, path, d.line, "redundant-null-check", buf.as_str(), "hint")
+        di += 1
+
+
+# =============================================================================
+#  redundant-cast — the linter's walk calls the module's hooks (the host
+#  checks each site inside its own visitor), draining the diagnostics in order.
+# =============================================================================
+
+function drain_cast_diags(path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let cp = lint_cast_ctx else:
+        return
+    let diags = unsafe: read(cp).diags
+    var i = lint_cast_drained
+    while i < diags.len():
+        let dp = diags.get(i) else:
+            break
+        unsafe:
+            let d = read(dp)
+            push_warning_at(warnings, path, d.line, d.column, 0, "redundant-cast", d.message, "hint")
+        i += 1
+    lint_cast_drained = diags.len()
+
+
+function lint_redundant_cast_local(stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let cp = lint_cast_ctx else:
+        return
+    redundant_cast.check_local(unsafe: ref_of(read(cp)), stmt_type, value)
+    drain_cast_diags(path, warnings)
+
+
+function lint_redundant_cast_value(value: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let cp = lint_cast_ctx else:
+        return
+    redundant_cast.check_assignment(unsafe: ref_of(read(cp)), value)
+    drain_cast_diags(path, warnings)
+
+
+function lint_redundant_cast_return(value: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let cp = lint_cast_ctx else:
+        return
+    redundant_cast.check_return(unsafe: ref_of(read(cp)), value)
+    drain_cast_diags(path, warnings)
+
+
+function lint_redundant_cast_prefix(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let cp = lint_cast_ctx else:
+        return
+    redundant_cast.check_prefix_cast(unsafe: ref_of(read(cp)), expr)
+    drain_cast_diags(path, warnings)
+
+
+function lint_redundant_cast_binary(op: str, left: ptr[ast.Expr], right: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let cp = lint_cast_ctx else:
+        return
+    redundant_cast.check_binary_operands(unsafe: ref_of(read(cp)), op, left, right)
+    drain_cast_diags(path, warnings)
+
+
+## One function or extending method: params, the statement walk with the
+## nested scope pops inside it, the per-body rule group, `redundant-return`,
+## the function scope's pop, then `missing-return` — the host's order.
+function visit_function_decl(
+    name: str,
+    type_params: span[ast.TypeParam],
+    params: span[ast.Param],
+    return_type: ptr[ast.TypeRef]?,
+    body: ptr[ast.Stmt]?,
+    line: ptr_uint,
+    generic_context: bool,
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+) -> void:
+    let generic_body = generic_context or type_params.len > 0
+    if generic_body:
+        lint_generic_depth += 1
+        scope_set_generic(lint_generic_depth)
+    scope_push()
+    reserved_type_params_warn(type_params, path, warnings)
+    unsafe:
+        var pi: ptr_uint = 0
+        while pi < params.len:
+            let p = read(params.data + pi)
+            scope_declare_param(p.name, p.line, p.column, path, warnings)
+            pi += 1
+    visit_body(body, path, warnings)
+    lint_body_rules(params, body, path, warnings)
+    check_redundant_return(return_type, body, path, warnings)
+    scope_pop(path, warnings)
+    check_missing_return(name, line, return_type, body, path, warnings)
+    if generic_body:
+        lint_generic_depth -= 1
+        scope_set_generic(lint_generic_depth)
+
+
 function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     unsafe:
         match read(decl):
             ast.Decl.decl_function as fun:
-                let generic_body = fun.type_params.len > 0
-                if generic_body:
-                    lint_generic_depth += 1
-                visit_stmt_opt(fun.body, path, warnings)
-                if generic_body:
-                    lint_generic_depth -= 1
-                check_redundant_return(fun.return_type, fun.body, path, warnings)
+                visit_function_decl(fun.name, fun.type_params, fun.method_params, fun.return_type, fun.body, fun.line, false, path, warnings)
             ast.Decl.decl_extending_block as ex:
                 # The host's `extending_block_generic?`: a receiver with type
                 # arguments makes every method in it a generic context.
-                let generic_block = unsafe: read(ex.type_name).arguments.len > 0
+                let generic_block = read(ex.type_name).arguments.len > 0
                 var j: ptr_uint = 0
                 while j < ex.methods.len:
                     let m = read(ex.methods.data + j)
-                    let generic_method = generic_block or m.type_params.len > 0
-                    if generic_method:
-                        lint_generic_depth += 1
-                    visit_stmt(m.body, path, warnings)
-                    if generic_method:
-                        lint_generic_depth -= 1
-                    check_redundant_return(m.return_type, m.body, path, warnings)
+                    if is_reserved_type_name(m.name):
+                        reserved_name_warn(path, m.line, m.name, "function", warnings)
+                    visit_function_decl(m.name, m.type_params, m.method_params, m.return_type, m.body, m.line, generic_block, path, warnings)
                     j += 1
             ast.Decl.decl_const as c:
                 visit_expr_opt(c.value, path, warnings)
@@ -2171,63 +2554,115 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_block as blk:
-                var i: ptr_uint = 0
-                while i < blk.statements.len:
-                    visit_stmt(blk.statements.data + i, path, warnings)
-                    i += 1
+                visit_stmt_list(blk.statements, path, warnings)
             ast.Stmt.stmt_local as loc:
                 visit_expr_opt(loc.value, path, warnings)
-                visit_stmt_opt(loc.else_body, path, warnings)
+                scope_declare_local(loc.name, loc.line, loc.column, not loc.is_let, path, warnings)
+                if loc.else_body != null or loc.else_binding.is_some():
+                    scope_push()
+                    match loc.else_binding:
+                        Option.some as bn:
+                            scope_declare_local(bn.value, loc.else_binding_line, loc.else_binding_column, false, path, warnings)
+                        Option.none:
+                            pass
+                    visit_body(loc.else_body, path, warnings)
+                    scope_pop(path, warnings)
                 check_redundant_type_annotation(loc.is_let, loc.name, loc.stmt_type, loc.value, loc.line, loc.column, path, warnings)
+                if loc.stmt_type != null and loc.value != null:
+                    lint_redundant_cast_local(loc.stmt_type, loc.value, path, warnings)
+                ptr_state_record_local(loc.name, loc.stmt_type, loc.value)
             ast.Stmt.stmt_assignment as asgn:
                 visit_expr(asgn.value, path, warnings)
-                visit_expr(asgn.target, path, warnings)
+                # A compound assignment reads the target (host
+                # `mark_assignment_target_reads`); a plain `=` does not.
+                if not asgn.operator.equal("="):
+                    match read(asgn.target):
+                        ast.Expr.expr_identifier as id:
+                            scope_mark_used(id.name)
+                        _:
+                            pass
+                visit_assignment_target(asgn.target, path, warnings)
+                scope_mark_mutated(asgn.target)
                 check_self_assignment(asgn.target, asgn.operator, asgn.value, path, warnings)
                 check_noop_compound_assignment(asgn.line, asgn.target, asgn.operator, asgn.value, path, warnings)
+                if asgn.operator.equal("="):
+                    lint_redundant_cast_value(asgn.value, path, warnings)
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0
                 while bi < iff.branches.len:
                     let br = read(iff.branches.data + bi)
                     visit_expr(br.condition, path, warnings)
-                    visit_stmt(br.body, path, warnings)
+                    scope_push()
+                    visit_body(br.body, path, warnings)
+                    scope_pop(path, warnings)
                     bi += 1
-                visit_stmt_opt(iff.else_body, path, warnings)
+                if iff.else_body != null:
+                    scope_push()
+                    visit_body(iff.else_body, path, warnings)
+                    scope_pop(path, warnings)
                 check_redundant_else(iff.branches, iff.else_body, iff.else_line, path, warnings)
                 check_duplicate_if_conditions(iff.branches, path, warnings)
                 check_prefer_inline_if(iff.branches, iff.else_body, iff.is_inline, iff.line, iff.else_line, path, warnings)
                 check_prefer_conditional_expression_if(iff.branches, iff.else_body, iff.line, first_branch_column(iff.branches), iff.else_line, path, warnings)
             ast.Stmt.stmt_while as wh:
-                visit_expr(wh.condition, path, warnings)
                 lint_loop_depth += 1
-                visit_stmt_opt(wh.body, path, warnings)
+                visit_expr(wh.condition, path, warnings)
+                scope_push()
+                visit_body(wh.body, path, warnings)
+                scope_pop(path, warnings)
                 lint_loop_depth -= 1
             ast.Stmt.stmt_for as fr:
+                lint_loop_depth += 1
                 var ii: ptr_uint = 0
                 while ii < fr.iterables.len:
                     visit_expr(fr.iterables.data + ii, path, warnings)
                     ii += 1
-                lint_loop_depth += 1
-                visit_stmt_opt(fr.body, path, warnings)
+                scope_push()
+                var bi: ptr_uint = 0
+                while bi < fr.bindings.len:
+                    let b = read(fr.bindings.data + bi)
+                    scope_declare_local(b.name, b.line, b.column, false, path, warnings)
+                    bi += 1
+                visit_body(fr.body, path, warnings)
+                scope_pop(path, warnings)
                 lint_loop_depth -= 1
             ast.Stmt.stmt_match as mt:
                 visit_expr(mt.scrutinee, path, warnings)
                 var ai: ptr_uint = 0
+                let saved_arm_depth = scope_match_arm_depth()
+                scope_set_match_arm_depth(1)
                 while ai < mt.arms.len:
                     let arm = read(mt.arms.data + ai)
+                    scope_push()
                     warn_redundant_ignored_match_binding(arm.binding_name, arm.binding_line, mt.line, path, warnings)
-                    visit_stmt_opt(arm.body, path, warnings)
+                    match arm.binding_name:
+                        Option.some as bn:
+                            scope_declare_local(bn.value, arm.binding_line, arm.binding_column, false, path, warnings)
+                        Option.none:
+                            pass
+                    visit_body(arm.body, path, warnings)
+                    scope_pop(path, warnings)
                     ai += 1
+                scope_set_match_arm_depth(saved_arm_depth)
                 check_prefer_or_pattern_stmt(mt.arms, path, warnings)
                 check_prefer_conditional_expression_match(mt.arms, mt.line, mt.column, path, warnings)
                 check_prefer_try_stmt(mt.arms, path, warnings)
             ast.Stmt.stmt_ret as r:
                 visit_expr_opt(r.value, path, warnings)
+                if r.value != null:
+                    lint_redundant_cast_return(r.value, path, warnings)
             ast.Stmt.stmt_defer as df:
                 visit_expr_opt(df.expression, path, warnings)
-                visit_stmt_opt(df.body, path, warnings)
+                scope_push()
+                visit_body(df.body, path, warnings)
+                scope_pop(path, warnings)
             ast.Stmt.stmt_unsafe as un:
                 check_redundant_unsafe(un.line, un.column, path, warnings)
-                visit_stmt_opt(un.body, path, warnings)
+                lint_unsafe_depth += 1
+                scope_push()
+                visit_body(un.body, path, warnings)
+                scope_pop(path, warnings)
+                lint_unsafe_depth -= 1
             ast.Stmt.stmt_expression as ex:
                 visit_expr(ex.expression, path, warnings)
                 check_useless_expression(ex.expression, ex.line, path, warnings)
@@ -2239,17 +2674,14 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 var wbi: ptr_uint = 0
                 while wbi < wn.branches.len:
                     let br = read(wn.branches.data + wbi)
-                    var wsi: ptr_uint = 0
-                    while wsi < br.body.len:
-                        visit_stmt(br.body.data + wsi, path, warnings)
-                        wsi += 1
+                    scope_push()
+                    visit_stmt_list(br.body, path, warnings)
+                    scope_pop(path, warnings)
                     wbi += 1
-                visit_stmt_opt(wn.else_body, path, warnings)
-            ast.Stmt.stmt_parallel_block as pb:
-                var pi: ptr_uint = 0
-                while pi < pb.bodies.len:
-                    visit_stmt(pb.bodies.data + pi, path, warnings)
-                    pi += 1
+                if wn.else_body != null:
+                    scope_push()
+                    visit_body(wn.else_body, path, warnings)
+                    scope_pop(path, warnings)
             ast.Stmt.stmt_gather as g:
                 var gi: ptr_uint = 0
                 while gi < g.handles.len:
@@ -2268,11 +2700,14 @@ function visit_expr_opt(expr: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[W
 function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     unsafe:
         match read(expr):
+            ast.Expr.expr_identifier as id:
+                scope_mark_used(id.name)
             ast.Expr.expr_binary_op as b:
                 visit_expr(b.left, path, warnings)
                 visit_expr(b.right, path, warnings)
                 check_self_comparison(b.operator, b.left, b.right, path, warnings)
                 check_redundant_bool_compare(b.operator, b.left, b.right, path, warnings)
+                lint_redundant_cast_binary(b.operator, b.left, b.right, path, warnings)
             ast.Expr.expr_unary_op as u:
                 visit_expr(u.operand, path, warnings)
             ast.Expr.expr_member_access as m:
@@ -2284,11 +2719,25 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
                     let arg = read(call.args.data + i)
                     visit_expr(arg.arg_value, path, warnings)
                     i += 1
+                scope_mark_alias_source(expr)
+                scope_mark_editable_receiver(expr)
+                scope_mark_mutating_args(expr)
             ast.Expr.expr_index_access as ix:
                 visit_expr(ix.receiver, path, warnings)
                 visit_expr(ix.index, path, warnings)
             ast.Expr.expr_specialization as sp:
                 visit_expr(sp.callee, path, warnings)
+                var sai: ptr_uint = 0
+                while sai < sp.arguments.len:
+                    scope_visit_typeref(read(sp.arguments.data + sai).value)
+                    sai += 1
+            ast.Expr.expr_sizeof as sz:
+                scope_visit_typeref(sz.target_type)
+            ast.Expr.expr_alignof as al:
+                scope_visit_typeref(al.target_type)
+            ast.Expr.expr_offsetof as off:
+                scope_visit_typeref(off.target_type)
+                scope_mark_used(off.field)
             ast.Expr.expr_if as iff:
                 visit_expr(iff.condition, path, warnings)
                 visit_expr(iff.then_expr, path, warnings)
@@ -2296,13 +2745,32 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
             ast.Expr.expr_match as mm:
                 visit_expr(mm.scrutinee, path, warnings)
                 var ai: ptr_uint = 0
+                let saved_arm_depth = scope_match_arm_depth()
+                scope_set_match_arm_depth(1)
                 while ai < mm.arms.len:
                     let arm = read(mm.arms.data + ai)
+                    scope_push()
                     warn_redundant_ignored_match_binding(arm.binding_name, arm.binding_line, mm.line, path, warnings)
+                    match arm.binding_name:
+                        Option.some as bn:
+                            scope_declare_local(bn.value, arm.binding_line, arm.binding_column, false, path, warnings)
+                        Option.none:
+                            pass
                     visit_expr(arm.value, path, warnings)
+                    scope_pop(path, warnings)
                     ai += 1
+                scope_set_match_arm_depth(saved_arm_depth)
             ast.Expr.expr_proc as pr:
-                visit_stmt(pr.body, path, warnings)
+                scope_push()
+                unsafe:
+                    var pi: ptr_uint = 0
+                    while pi < pr.method_params.len:
+                        let p = read(pr.method_params.data + pi)
+                        scope_declare_param(p.name, p.line, p.column, path, warnings)
+                        pi += 1
+                visit_body(pr.body, path, warnings)
+                lint_body_rules(pr.method_params, pr.body, path, warnings)
+                scope_pop(path, warnings)
             ast.Expr.expr_await as aw:
                 visit_expr(aw.expression, path, warnings)
             ast.Expr.expr_detach as dt:
@@ -2314,14 +2782,26 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
                 visit_expr(rg.end_expr, path, warnings)
             ast.Expr.expr_prefix_cast as pc:
                 visit_expr(pc.expression, path, warnings)
+                lint_redundant_cast_prefix(expr, path, warnings)
             ast.Expr.expr_unsafe as us:
                 check_redundant_unsafe(us.line, us.column, path, warnings)
+                lint_unsafe_depth += 1
                 visit_expr(us.expression, path, warnings)
+                lint_unsafe_depth -= 1
             ast.Expr.expr_expression_list as el:
                 var ei: ptr_uint = 0
                 while ei < el.elements.len:
                     visit_expr(el.elements.data + ei, path, warnings)
                     ei += 1
+            ast.Expr.expr_format_string as fs:
+                var pi: ptr_uint = 0
+                while pi < fs.parts.len:
+                    match read(fs.parts.data + pi):
+                        ast.FormatStringPart.fmt_expr as fe:
+                            visit_expr(fe.expression, path, warnings)
+                        _:
+                            pass
+                    pi += 1
             _:
                 pass
 
@@ -2553,32 +3033,8 @@ function identifier_name_of(expr: ptr[ast.Expr]) -> Option[str]:
 ## Emitted after the scope pass: the host checks each function once its scope
 ## frame has popped, so the function's `unused-local`/`prefer-let` warnings come
 ## first.
-function lint_missing_return(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    lint_missing_return_decls(file.declarations, path, warnings)
 
 
-function lint_missing_return_decls(decls: span[ast.Decl], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var i: ptr_uint = 0
-    while i < decls.len:
-        unsafe:
-            match read(decls.data + i):
-                ast.Decl.decl_function as fun:
-                    check_missing_return(fun.name, fun.line, fun.return_type, fun.body, path, warnings)
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        let m = read(ex.methods.data + j)
-                        check_missing_return(m.name, m.line, m.return_type, m.body, path, warnings)
-                        j += 1
-                ast.Decl.decl_when as w:
-                    var bi: ptr_uint = 0
-                    while bi < w.branches.len:
-                        let br = read(w.branches.data + bi)
-                        lint_missing_return_decls(br.body, path, warnings)
-                        bi += 1
-                _:
-                    pass
-        i += 1
 
 
 function check_missing_return(name: str, line: ptr_uint, return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -2855,21 +3311,6 @@ function expr_source_sig(expr: ptr[ast.Expr]) -> str:
 #  prefer-let-else — `let x = expr; if x == null: ...` should use let...else.
 # =============================================================================
 
-function lint_prefer_let_else(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    prefer_else_walk_body(fun.body, path, warnings)
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        prefer_else_walk_body(read(ex.methods.data + j).body, path, warnings)
-                        j += 1
-                _:
-                    pass
-        i += 1
 
 
 function prefer_else_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -3652,21 +4093,6 @@ function own_callee_type_name(callee: ptr[ast.Expr]) -> str:
 
 ## Walk all function-like bodies to collect owning locals and release calls,
 ## then report leaks and double-releases.
-function lint_ownership(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    ownership_walk_body(fun.body, path, warnings, owning_type_names)
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        ownership_walk_body(read(ex.methods.data + j).body, path, warnings, owning_type_names)
-                        j += 1
-                _:
-                    pass
-        i += 1
 
 
 function ownership_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
@@ -4085,7 +4511,10 @@ function is_reserved_type_name(name: str) -> bool:
     return false
 
 
-function lint_reserved_names(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+## The host's `seed_module_bindings` warning half: a module-level declaration
+## (function, constant, module variable, event, extern/foreign function) whose
+## name is a reserved value type is reported before the declaration walk.
+function lint_reserved_module_names(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
@@ -4093,96 +4522,36 @@ function lint_reserved_names(file: ast.SourceFile, path: str, warnings: ref[vec.
                 ast.Decl.decl_function as fun:
                     if is_reserved_type_name(fun.name):
                         reserved_name_warn(path, fun.line, fun.name, "function", warnings)
-                    reserved_check_params(fun.method_params, path, warnings)
-                    reserved_walk_body(fun.body, path, warnings)
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        let m = read(ex.methods.data + j)
-                        if is_reserved_type_name(m.name):
-                            reserved_name_warn(path, m.line, m.name, "method", warnings)
-                        reserved_check_params(m.method_params, path, warnings)
-                        reserved_walk_body(m.body, path, warnings)
-                        j += 1
+                ast.Decl.decl_const as c:
+                    if is_reserved_type_name(c.name):
+                        reserved_name_warn(path, c.line, c.name, "constant", warnings)
                 ast.Decl.decl_var as v:
                     if is_reserved_type_name(v.name):
-                        reserved_name_warn(path, v.line, v.name, "global variable", warnings)
-                ast.Decl.decl_struct as s:
-                    if is_reserved_type_name(s.name):
-                        reserved_name_warn(path, s.line, s.name, "struct", warnings)
-                ast.Decl.decl_enum as e:
-                    if is_reserved_type_name(e.name):
-                        reserved_name_warn(path, e.line, e.name, "enum", warnings)
-                ast.Decl.decl_type_alias as ta:
-                    if is_reserved_type_name(ta.name):
-                        reserved_name_warn(path, ta.line, ta.name, "type alias", warnings)
+                        reserved_name_warn(path, v.line, v.name, "module variable", warnings)
+                ast.Decl.decl_event as ev:
+                    if is_reserved_type_name(ev.name):
+                        reserved_name_warn(path, ev.line, ev.name, "event", warnings)
+                ast.Decl.decl_extern_function as ef:
+                    if is_reserved_type_name(ef.name):
+                        reserved_name_warn(path, ef.line, ef.name, "function", warnings)
+                ast.Decl.decl_foreign_function as ff:
+                    if is_reserved_type_name(ff.name):
+                        reserved_name_warn(path, ff.line, ff.name, "function", warnings)
                 _:
                     pass
         i += 1
 
 
-function reserved_check_params(params: span[ast.Param], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+## The host's `warn_reserved_primitive_type_params`, at the head of a function
+## inside its scope.
+function reserved_type_params_warn(type_params: span[ast.TypeParam], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     var i: ptr_uint = 0
-    while i < params.len:
+    while i < type_params.len:
         unsafe:
-            let p = read(params.data + i)
-            if is_reserved_type_name(p.name):
-                reserved_name_warn(path, p.line, p.name, "parameter", warnings)
+            let tp = read(type_params.data + i)
+            if is_reserved_type_name(tp.name):
+                reserved_name_warn(path, tp.line, tp.name, "type parameter", warnings)
         i += 1
-
-
-function reserved_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    let bp = body else:
-        return
-    unsafe:
-        match read(bp):
-            ast.Stmt.stmt_block as blk:
-                reserved_walk_stmts(blk.statements, path, warnings)
-            _:
-                pass
-
-
-function reserved_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var i: ptr_uint = 0
-    while i < stmts.len:
-        unsafe:
-            match read(stmts.data + i):
-                ast.Stmt.stmt_local as loc:
-                    if is_reserved_type_name(loc.name):
-                        let kind = if loc.is_let: "local" else: "variable"
-                        reserved_name_warn(path, loc.line, loc.name, kind, warnings)
-                _:
-                    pass
-            reserved_recurse_stmt(stmts.data + i, path, warnings)
-        i += 1
-
-
-function reserved_recurse_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    unsafe:
-        match read(stmt):
-            ast.Stmt.stmt_if as iff:
-                var bi: ptr_uint = 0
-                while bi < iff.branches.len:
-                    reserved_walk_body(read(iff.branches.data + bi).body, path, warnings)
-                    bi += 1
-                reserved_walk_body(iff.else_body, path, warnings)
-            ast.Stmt.stmt_match as mt:
-                var ai: ptr_uint = 0
-                while ai < mt.arms.len:
-                    reserved_walk_body(read(mt.arms.data + ai).body, path, warnings)
-                    ai += 1
-            ast.Stmt.stmt_while as wh:
-                reserved_walk_body(wh.body, path, warnings)
-            ast.Stmt.stmt_for as fr:
-                reserved_walk_body(fr.body, path, warnings)
-            ast.Stmt.stmt_unsafe as un:
-                reserved_walk_body(un.body, path, warnings)
-            ast.Stmt.stmt_defer as df:
-                reserved_walk_body(df.body, path, warnings)
-            ast.Stmt.stmt_block as blk:
-                reserved_walk_stmts(blk.statements, path, warnings)
-            _:
-                pass
 
 
 function reserved_name_warn(path: str, line: ptr_uint, name: str, kind_label: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4200,21 +4569,6 @@ function reserved_name_warn(path: str, line: ptr_uint, name: str, kind_label: st
 #  borrow-and-mutate — warn when a variable is borrowed and also mutated.
 # =============================================================================
 
-function lint_borrow_mutate(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    borrow_check_body(fun.body, path, warnings)
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        borrow_check_body(read(ex.methods.data + j).body, path, warnings)
-                        j += 1
-                _:
-                    pass
-        i += 1
 
 
 function borrow_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4406,69 +4760,17 @@ function borrow_vec_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
 
 ## Walk all function-like bodies in a source file (free functions and extending
 ## methods) and pass each body pointer to the given action.
-function for_each_func_body(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]], kind: ptr_uint) -> void:
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    dispatch_cfg_rule(fun.body, path, warnings, kind)
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        dispatch_cfg_rule(read(ex.methods.data + j).body, path, warnings, kind)
-                        j += 1
-                _:
-                    pass
-        i += 1
 
 
-function dispatch_cfg_rule(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], kind: ptr_uint) -> void:
-    if kind == 0:
-        lint_unreachable_in_body(body, path, warnings)
-    else if kind == 1:
-        lint_const_cond_in_body(body, path, warnings)
-    else if kind == 2:
-        lint_loop_single_in_body(body, path, warnings)
 
 
 # =============================================================================
 #  dead-assignment — assignment whose value is never read
 # =============================================================================
 
-function lint_dead_assignment(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var flow_cfg = flow_builder.empty_cfg()
-    var graph = flow_graph.empty_graph()
-    defer: flow_graph.graph_release(ref_of(graph))
-    var live = flow_graph.liveness_create(0, 0)
-    defer: flow_graph.liveness_release(ref_of(live))
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    lint_dead_body(ref_of(flow_cfg), ref_of(graph), ref_of(live), fun.method_params, fun.body, path, warnings)
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        let method = read(ex.methods.data + j)
-                        lint_dead_body(ref_of(flow_cfg), ref_of(graph), ref_of(live), method.method_params, method.body, path, warnings)
-                        j += 1
-                _:
-                    pass
-        i += 1
 
 
-## Emit the dead writes of one function body over F1's graph: the host's
-## `emit_dead_assignment_warnings` — a write whose origin is neither
-## `declaration` nor `call_argument`, whose binding is read somewhere in the
-## body and locally declared, and which is not live after its node.  Nodes are
-## visited by ascending id, which is the builder's reverse-statement order and
-## therefore the host's emission order.
 function lint_dead_body(
-    flow_cfg: ref[flow_builder.Cfg],
-    graph: ref[flow_graph.CfgGraph],
-    live: ref[flow_graph.LivenessFlow],
     params: span[ast.Param],
     body: ptr[ast.Stmt]?,
     path: str,
@@ -4476,18 +4778,23 @@ function lint_dead_body(
 ) -> void:
     let b = body else:
         return
-    flow_builder.build_graph_into(flow_cfg, graph, params, b)
-    flow_graph.liveness_init_into(live, read(flow_cfg).next_id, read(graph).next_id)
-    flow_graph.solve_liveness(graph, live)
+    var flow_cfg = flow_builder.empty_cfg()
+    var graph = flow_graph.empty_graph()
+    defer: flow_graph.graph_release(ref_of(graph))
+    var live = flow_graph.liveness_create(0, 0)
+    defer: flow_graph.liveness_release(ref_of(live))
+    flow_builder.build_graph_into(ref_of(flow_cfg), ref_of(graph), params, b)
+    flow_graph.liveness_init_into(ref_of(live), read(ref_of(flow_cfg)).next_id, read(ref_of(graph)).next_id)
+    flow_graph.solve_liveness(ref_of(graph), ref_of(live))
     var readable = vec.Vec[ptr_uint].create()
     defer: readable.release()
-    flow_graph.graph_read_keys(graph, ref_of(readable))
+    flow_graph.graph_read_keys(ref_of(graph), ref_of(readable))
     var declared = vec.Vec[ptr_uint].create()
     defer: declared.release()
-    flow_graph.graph_declared_keys(graph, ref_of(declared))
+    flow_graph.graph_declared_keys(ref_of(graph), ref_of(declared))
     var id: ptr_uint = 1
-    while id < read(graph).next_id:
-        let node = flow_graph.graph_node(graph, id) else:
+    while id < read(ref_of(graph)).next_id:
+        let node = flow_graph.graph_node(ref_of(graph), id) else:
             id += 1
             continue
         unsafe:
@@ -4504,7 +4811,7 @@ function lint_dead_body(
                 # so that equivalence has to be stated directly.
                 if write.origin == "assignment":
                     if key_in(ref_of(readable), write.key) and key_in(ref_of(declared), write.key):
-                        if not flow_graph.live_out_has(live, id, write.key):
+                        if not flow_graph.live_out_has(ref_of(live), id, write.key):
                             var buf = string.String.create()
                             buf.append("value assigned to '")
                             buf.append(write.name)
@@ -4538,8 +4845,6 @@ function key_in(keys: ref[vec.Vec[ptr_uint]], key: ptr_uint) -> bool:
 #  unreachable-code — statement after a terminating statement
 # =============================================================================
 
-function lint_unreachable_code(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    for_each_func_body(file, path, warnings, 0)
 
 
 function lint_unreachable_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4597,8 +4902,10 @@ function lint_unreachable_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
 #  constant-condition — `if true` / `while false` / `x == x`
 # =============================================================================
 
-function lint_constant_condition(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var conds = constprop.collect_constant_conditions(file)
+
+
+function lint_const_cond_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var conds = constprop.collect_constant_conditions_body(body)
     defer: conds.release()
     var ci: ptr_uint = 0
     while ci < conds.len():
@@ -4613,10 +4920,10 @@ function lint_constant_condition(file: ast.SourceFile, path: str, warnings: ref[
             push_warning(warnings, path, c.line, "constant-condition", buf.as_str(), "warning")
         ci += 1
     # Fall back to the trivial check for literal true/false and self-comparisons.
-    for_each_func_body(file, path, warnings, 1)
+    lint_const_cond_trivial_in_body(body, path, warnings)
 
 
-function lint_const_cond_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function lint_const_cond_trivial_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let bp = body else:
         return
     unsafe:
@@ -4639,19 +4946,19 @@ function lint_const_cond_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Ve
                     let br = read(iff.branches.data + bi)
                     if is_constant_condition(br.condition):
                         push_warning_stmt(warnings, path, iff.line, 0, "constant-condition", "if condition is always a constant boolean", "warning")
-                    lint_const_cond_in_body(br.body, path, warnings)
+                    lint_const_cond_trivial_in_body(br.body, path, warnings)
                     bi += 1
-                lint_const_cond_in_body(iff.else_body, path, warnings)
+                lint_const_cond_trivial_in_body(iff.else_body, path, warnings)
             ast.Stmt.stmt_while as wh:
                 if is_constant_condition(wh.condition):
                     push_warning_stmt(warnings, path, wh.line, 0, "constant-condition", "while condition is always a constant boolean", "warning")
-                lint_const_cond_in_body(wh.body, path, warnings)
+                lint_const_cond_trivial_in_body(wh.body, path, warnings)
             ast.Stmt.stmt_for as fr:
-                lint_const_cond_in_body(fr.body, path, warnings)
+                lint_const_cond_trivial_in_body(fr.body, path, warnings)
             ast.Stmt.stmt_match as mt:
                 var ai: ptr_uint = 0
                 while ai < mt.arms.len:
-                    lint_const_cond_in_body(read(mt.arms.data + ai).body, path, warnings)
+                    lint_const_cond_trivial_in_body(read(mt.arms.data + ai).body, path, warnings)
                     ai += 1
             _:
                 pass
@@ -4696,8 +5003,6 @@ function exprs_equal(left: ptr[ast.Expr], right: ptr[ast.Expr]) -> bool:
 #  loop-single-iteration — loop body always breaks/returns on first iteration
 # =============================================================================
 
-function lint_loop_single_iteration(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    for_each_func_body(file, path, warnings, 2)
 
 
 function lint_loop_single_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4749,52 +5054,12 @@ function lint_loop_single_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.V
                 pass
 
 
-function lint_prefer_own_ptr(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var diags = own_ptr.check(file)
-    defer: diags.release()
-    var di: ptr_uint = 0
-    while di < diags.len():
-        let dp = diags.get(di) else:
-            break
-        unsafe:
-            let d = read(dp)
-            var buf = string.String.create()
-            buf.append("binding '")
-            buf.append(d.name)
-            buf.append("' is only used inside unsafe — consider converting its type from ptr to own for auto-deref")
-            push_warning_at(warnings, path, d.line, d.column, d.name.len, "prefer-own-ptr", buf.as_str(), "hint")
-        di += 1
 
 
-function lint_redundant_cast(file: ast.SourceFile, source: str, path: str, analysis: ptr[analyzer.Analysis]?, warnings: ref[vec.Vec[Warning]]) -> void:
-    var diags = redundant_cast.check(file, source, analysis)
-    defer: diags.release()
-    var di: ptr_uint = 0
-    while di < diags.len():
-        let dp = diags.get(di) else:
-            break
-        unsafe:
-            let d = read(dp)
-            push_warning_at(warnings, path, d.line, d.column, 0, "redundant-cast", d.message, "hint")
-        di += 1
 
 
 # =============================================================================
 #  redundant-null-check — `x != null` where x is already narrowed non-null
 # =============================================================================
 
-function lint_redundant_null_check(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var diags = nullcheck.check(file)
-    defer: diags.release()
-    var di: ptr_uint = 0
-    while di < diags.len():
-        let dp = diags.get(di) else:
-            break
-        unsafe:
-            let d = read(dp)
-            var buf = string.String.create()
-            buf.append("'")
-            buf.append(d.name)
-            buf.append("' is already known to be non-null here — this nil check is redundant")
-            push_warning(warnings, path, d.line, "redundant-null-check", buf.as_str(), "hint")
-        di += 1
+

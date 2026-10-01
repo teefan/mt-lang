@@ -258,21 +258,64 @@ function own_to_pointer_redundant(inner: types.Type, cast: types.Type) -> bool:
 #  Traversal
 # =============================================================================
 
-struct Ctx:
+## The check context: the source's lines (for the parenthesis scan) and the
+## analysis (the cast flags return early without it).  The linter owns one for
+## a lint pass and calls the hooks below from its walk, so the diagnostics
+## interleave with the other rules in the host's order; `diags` holds what the
+## hooks produced (the caller drains it in order).
+public struct Ctx:
     diags: vec.Vec[Diag]
     lines: vec.Vec[str]
     analysis: ptr[analyzer.Analysis]?
 
 
-public function check(file: ast.SourceFile, source: str, analysis: ptr[analyzer.Analysis]?) -> vec.Vec[Diag]:
-    var ctx = Ctx(diags = vec.Vec[Diag].create(), lines = split_lines(source), analysis = analysis)
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            walk_decl(ref_of(ctx), read(file.declarations.data + i))
-        i += 1
-    ctx.lines.release()
-    return ctx.diags
+public function ctx_create(source: str, analysis: ptr[analyzer.Analysis]?) -> Ctx:
+    return Ctx(diags = vec.Vec[Diag].create(), lines = split_lines(source), analysis = analysis)
+
+
+public function ctx_release(ctx: ref[Ctx]) -> void:
+    read(ctx).diags.release()
+    read(ctx).lines.release()
+
+
+## A typed local's initializer (the host's `LocalDecl` arm).
+public function check_local(ctx: ref[Ctx], stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?) -> void:
+    if stmt_type == null:
+        return
+    flag_widening(ctx, value)
+    flag_literal(ctx, value)
+
+
+## A plain `=` assignment's value (the host's `Assignment` arm).
+public function check_assignment(ctx: ref[Ctx], value: ptr[ast.Expr]) -> void:
+    flag_widening(ctx, value)
+    flag_literal(ctx, value)
+
+
+## A `return`'s value (the host's `ReturnStmt` arm).
+public function check_return(ctx: ref[Ctx], value: ptr[ast.Expr]?) -> void:
+    flag_widening(ctx, value)
+    flag_literal(ctx, value)
+
+
+## A prefix cast expression: the cast's own redundancy and the parenthesis
+## check (the host's `PrefixCast` arm).
+public function check_prefix_cast(ctx: ref[Ctx], ep: ptr[ast.Expr]) -> void:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_prefix_cast as c:
+                check_cast(ctx, ep, c.target_type, c.expression, c.line, c.column)
+                check_parens(ctx, c.line, c.column, type_last_name(c.target_type))
+            _:
+                pass
+
+
+## A binary expression's operands (the host's `BinaryOp` arm).
+public function check_binary_operands(ctx: ref[Ctx], op: str, left: ptr[ast.Expr], right: ptr[ast.Expr]) -> void:
+    check_binary_operand(ctx, op, left, right)
+    check_binary_operand(ctx, op, right, left)
+    check_literal_operand(ctx, op, left, right)
+    check_literal_operand(ctx, op, right, left)
 
 
 function split_lines(source: str) -> vec.Vec[str]:
@@ -296,247 +339,16 @@ function emit_diag(ctx: ref[Ctx], line: ptr_uint, column: ptr_uint, reason: str,
     ctx.diags.push(Diag(line = line, column = column, message = message.as_str()))
 
 
-function walk_decl(ctx: ref[Ctx], d: ast.Decl) -> void:
-    match d:
-        ast.Decl.decl_const as c:
-            walk_expr_opt(ctx, c.value)
-            let blk = c.block_body
-            if blk != null:
-                unsafe:
-                    walk_stmt(ctx, read(blk))
-        ast.Decl.decl_var as v:
-            walk_expr_opt(ctx, v.value)
-        ast.Decl.decl_function as f:
-            let fb = f.body
-            if fb != null:
-                unsafe:
-                    walk_stmt(ctx, read(fb))
-        ast.Decl.decl_extending_block as ex:
-            var j: ptr_uint = 0
-            while j < ex.methods.len:
-                var mb: ptr[ast.Stmt]
-                unsafe:
-                    mb = read(ex.methods.data + j).body
-                    walk_stmt(ctx, read(mb))
-                j += 1
-        ast.Decl.decl_when as wh:
-            walk_expr(ctx, wh.discriminant)
-            var j: ptr_uint = 0
-            while j < wh.branches.len:
-                let branch = unsafe: read(wh.branches.data + j)
-                walk_expr(ctx, branch.pattern)
-                walk_decl_span(ctx, branch.body)
-                j += 1
-            walk_decl_span(ctx, wh.else_body)
-        ast.Decl.decl_static_assert as sa:
-            walk_expr(ctx, sa.condition)
-            walk_expr_opt(ctx, sa.message)
-        _:
-            pass
 
 
-function walk_decl_span(ctx: ref[Ctx], decls: span[ast.Decl]) -> void:
-    var i: ptr_uint = 0
-    while i < decls.len:
-        unsafe:
-            walk_decl(ctx, read(decls.data + i))
-        i += 1
 
 
-function walk_stmt(ctx: ref[Ctx], st: ast.Stmt) -> void:
-    match st:
-        ast.Stmt.stmt_block as b:
-            walk_stmt_span(ctx, b.statements)
-        ast.Stmt.stmt_local as l:
-            if l.stmt_type != null:
-                flag_widening(ctx, l.value)
-                flag_literal(ctx, l.value)
-            walk_expr_opt(ctx, l.value)
-            let eb = l.else_body
-            if eb != null:
-                unsafe:
-                    walk_stmt(ctx, read(eb))
-        ast.Stmt.stmt_assignment as a:
-            if a.operator.equal("="):
-                flag_widening(ctx, a.value)
-                flag_literal(ctx, a.value)
-            walk_expr(ctx, a.target)
-            walk_expr(ctx, a.value)
-        ast.Stmt.stmt_if as i:
-            var bi: ptr_uint = 0
-            while bi < i.branches.len:
-                let branch = unsafe: read(i.branches.data + bi)
-                walk_expr(ctx, branch.condition)
-                unsafe:
-                    walk_stmt(ctx, read(branch.body))
-                bi += 1
-            let ieb = i.else_body
-            if ieb != null:
-                unsafe:
-                    walk_stmt(ctx, read(ieb))
-        ast.Stmt.stmt_while as w:
-            walk_expr(ctx, w.condition)
-            let wb = w.body
-            if wb != null:
-                unsafe:
-                    walk_stmt(ctx, read(wb))
-        ast.Stmt.stmt_for as fr:
-            var fi: ptr_uint = 0
-            while fi < fr.iterables.len:
-                unsafe:
-                    walk_expr(ctx, fr.iterables.data + fi)
-                fi += 1
-            let fbody = fr.body
-            if fbody != null:
-                unsafe:
-                    walk_stmt(ctx, read(fbody))
-        ast.Stmt.stmt_match as m:
-            walk_expr(ctx, m.scrutinee)
-            var mi: ptr_uint = 0
-            while mi < m.arms.len:
-                let arm = unsafe: read(m.arms.data + mi)
-                walk_expr_opt(ctx, arm.pattern)
-                let ab = arm.body
-                if ab != null:
-                    unsafe:
-                        walk_stmt(ctx, read(ab))
-                mi += 1
-        ast.Stmt.stmt_ret as r:
-            flag_widening(ctx, r.value)
-            flag_literal(ctx, r.value)
-            walk_expr_opt(ctx, r.value)
-        ast.Stmt.stmt_defer as d:
-            walk_expr_opt(ctx, d.expression)
-            let db = d.body
-            if db != null:
-                unsafe:
-                    walk_stmt(ctx, read(db))
-        ast.Stmt.stmt_unsafe as u:
-            let ub = u.body
-            if ub != null:
-                unsafe:
-                    walk_stmt(ctx, read(ub))
-        ast.Stmt.stmt_expression as e:
-            walk_expr(ctx, e.expression)
-        ast.Stmt.stmt_static_assert as sa:
-            walk_expr(ctx, sa.condition)
-            walk_expr_opt(ctx, sa.message)
-        ast.Stmt.stmt_emit as em:
-            let decl = em.declaration
-            if decl != null:
-                unsafe:
-                    walk_decl(ctx, read(decl))
-        ast.Stmt.stmt_when as wn:
-            walk_expr(ctx, wn.discriminant)
-            var wi: ptr_uint = 0
-            while wi < wn.branches.len:
-                let br = unsafe: read(wn.branches.data + wi)
-                walk_expr(ctx, br.pattern)
-                walk_stmt_span(ctx, br.body)
-                wi += 1
-            let web = wn.else_body
-            if web != null:
-                unsafe:
-                    walk_stmt(ctx, read(web))
-        ast.Stmt.stmt_parallel_block as pb:
-            walk_stmt_span(ctx, pb.bodies)
-        ast.Stmt.stmt_gather as g:
-            var gi: ptr_uint = 0
-            while gi < g.handles.len:
-                unsafe:
-                    walk_expr(ctx, g.handles.data + gi)
-                gi += 1
-        ast.Stmt.stmt_error_block as eb:
-            unsafe:
-                walk_stmt(ctx, read(eb.body))
-        _:
-            pass
 
 
-function walk_stmt_span(ctx: ref[Ctx], stmts: span[ast.Stmt]) -> void:
-    var i: ptr_uint = 0
-    while i < stmts.len:
-        unsafe:
-            walk_stmt(ctx, read(stmts.data + i))
-        i += 1
 
 
-function walk_expr(ctx: ref[Ctx], ep: ptr[ast.Expr]) -> void:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_prefix_cast as c:
-                walk_expr(ctx, c.expression)
-                check_cast(ctx, ep, c.target_type, c.expression, c.line, c.column)
-                check_parens(ctx, c.line, c.column, type_last_name(c.target_type))
-            ast.Expr.expr_binary_op as b:
-                walk_expr(ctx, b.left)
-                walk_expr(ctx, b.right)
-                check_binary_operand(ctx, b.operator, b.left, b.right)
-                check_binary_operand(ctx, b.operator, b.right, b.left)
-                check_literal_operand(ctx, b.operator, b.left, b.right)
-                check_literal_operand(ctx, b.operator, b.right, b.left)
-            ast.Expr.expr_unary_op as u:
-                walk_expr(ctx, u.operand)
-            ast.Expr.expr_member_access as m:
-                walk_expr(ctx, m.receiver)
-            ast.Expr.expr_index_access as ix:
-                walk_expr(ctx, ix.receiver)
-                walk_expr(ctx, ix.index)
-            ast.Expr.expr_specialization as s:
-                walk_expr(ctx, s.callee)
-            ast.Expr.expr_call as call:
-                walk_expr(ctx, call.callee)
-                var ai: ptr_uint = 0
-                while ai < call.args.len:
-                    walk_expr(ctx, read(call.args.data + ai).arg_value)
-                    ai += 1
-            ast.Expr.expr_if as ie:
-                walk_expr(ctx, ie.condition)
-                walk_expr(ctx, ie.then_expr)
-                walk_expr(ctx, ie.else_expr)
-            ast.Expr.expr_match as me:
-                walk_expr(ctx, me.scrutinee)
-                var mi: ptr_uint = 0
-                while mi < me.arms.len:
-                    let arm = read(me.arms.data + mi)
-                    walk_expr_opt(ctx, arm.pattern)
-                    walk_expr(ctx, arm.value)
-                    mi += 1
-            ast.Expr.expr_unsafe as ue:
-                walk_expr(ctx, ue.expression)
-            ast.Expr.expr_proc as pr:
-                walk_stmt(ctx, read(pr.body))
-            ast.Expr.expr_await as aw:
-                walk_expr(ctx, aw.expression)
-            ast.Expr.expr_detach as dt:
-                walk_expr(ctx, dt.expression)
-            ast.Expr.expr_expression_list as el:
-                var ei: ptr_uint = 0
-                while ei < el.elements.len:
-                    walk_expr(ctx, el.elements.data + ei)
-                    ei += 1
-            ast.Expr.expr_named as nm:
-                walk_expr(ctx, nm.value)
-            ast.Expr.expr_range as rg:
-                walk_expr(ctx, rg.start_expr)
-                walk_expr(ctx, rg.end_expr)
-            ast.Expr.expr_format_string as fs:
-                var pi: ptr_uint = 0
-                while pi < fs.parts.len:
-                    match read(fs.parts.data + pi):
-                        ast.FormatStringPart.fmt_expr as fe:
-                            walk_expr(ctx, fe.expression)
-                        _:
-                            pass
-                    pi += 1
-            _:
-                pass
 
 
-function walk_expr_opt(ctx: ref[Ctx], ep: ptr[ast.Expr]?) -> void:
-    let p = ep else:
-        return
-    walk_expr(ctx, p)
 
 
 # =============================================================================

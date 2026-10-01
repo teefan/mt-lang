@@ -32,22 +32,11 @@ struct NullPair:
     non_null_if_true: bool
 
 
-public function check(file: ast.SourceFile) -> vec.Vec[Diag]:
+## The rule over one body: the host calls `emit_redundant_null_check_warnings`
+## per function, and the linter's walk does the same through this entry.
+public function check_body_diags(body: ptr[ast.Stmt]?) -> vec.Vec[Diag]:
     var diags = vec.Vec[Diag].create()
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            match read(file.declarations.data + i):
-                ast.Decl.decl_function as fun:
-                    check_body(fun.body, ref_of(diags))
-                ast.Decl.decl_extending_block as ex:
-                    var j: ptr_uint = 0
-                    while j < ex.methods.len:
-                        check_body(read(ex.methods.data + j).body, ref_of(diags))
-                        j += 1
-                _:
-                    pass
-        i += 1
+    check_body(body, ref_of(diags))
     return diags
 
 

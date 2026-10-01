@@ -328,19 +328,15 @@ lists this session (`n.` on `node.Node` is byte-identical to the host).
 
 1. **`diagnostic` 2 — the linter.**  The *counts* now match on both files
    (`language_baseline.mt` host 98 / self 98; `memory_stress_test.mt` host 10 /
-   self 10; `rake parity:scoreboard` reads 0 rules with a count mismatch).  What
-   is left is (a) the **emission order** — the host emits in its visitor's order
-   (statement rules inline, a scope's `unused-local`/`unused-param`/`prefer-let`
-   at that scope's pop, the per-function flow rules at the end of each function,
-   `missing_return` after them) while the self emits all visitor warnings, then a
-   scope pass, then whole-file rule passes, so equal sets still differ as arrays
-   (`tmp/diag_order.py` shows the first divergence at index 0 on both files); and
-   (b) two content rows: `constant-condition` (lb: the source-line
-   `condition_span`, the `branch`/`loop` message and the `ConstantPropagation`
-   port that decides *which* condition is true) and `owning-release-double`/`-leak`
-   (mst: the CFG-reachable-release path and the released binding's `symbol_name`).
-   The restructure's two-walk merge is planned in
-   [foundational-blockers-plan.md](./foundational-blockers-plan.md)'s F3 section.
+   self 10; `rake parity:scoreboard` reads 0 rules with a count mismatch) and the
+   **emission order is the host's** (session 18: the linter's visitor drives the
+   scope state machine, so the arrays agree item-for-item except the content rows
+   below — `tmp/diag_order.py`'s first divergence moved from index 0 to index 7 on
+   lb and index 3 on mst).  What is left are the two content rows:
+   `constant-condition` (lb: the source-line `condition_span`, the `branch`/`loop`
+   message and the `ConstantPropagation` port that decides *which* condition is
+   true) and `owning-release-double`/`-leak` (mst: the CFG-reachable-release path
+   and the released binding's `symbol_name`).
 2. **`documentHighlight` 1** (`lb@704:67`).  The host resolves the token to a
    *carried-forward snapshot binding* (`rename_target_binding_id`'s
    `resolve_local_hover_binding` fallback) and answers one range; the self answers

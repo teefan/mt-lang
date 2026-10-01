@@ -15,7 +15,7 @@ sessions keep ending with "documented residue" because the fix lives in another 
 
 | LSP residue | Entries | Blocked on |
 | --- | --- | --- |
-| diagnostic 2 — the emission **order** | (2 files) | the linter's two-walk merge (F3's restructure below) |
+| diagnostic 2 — the emission **order** | (2 files) | **DONE (session 18)**: the linter's visitor drives the scope state machine — one walk, the host's order (§0k, "The linter's walk") |
 | diagnostic 2 — `constant-condition` | 4 (lb) | the source-line `condition_span`, the `branch`/`loop` message and a `ConstantPropagation` port |
 | diagnostic 2 — `owning-release-double`/`-leak` | 3 (mst) | the CFG release path (`classify_cfg_nodes`/`find_reachable_release`) and the released binding's `symbol_name` |
 | documentHighlight `lb@704:67` | 1 | the host's warm-facts snapshot carry-forward — **documented** (the self matches the host's cold answer byte for byte); `docs/lsp-design.md` §8 |
@@ -25,8 +25,10 @@ sessions keep ending with "documented residue" because the fix lives in another 
 Closed since the table above was written: the nullability four (F2), the
 documentSymbol class (F8.2), semanticTokens (F7 + F8.1), the `fn ` field (F5),
 the destructuring/payload hovers and the unused-import/prefer-let residuals (F4),
-the favourite `prefer-let` gate (F6), and every per-rule **count** in the linter
-(F3 part 2 — `rake parity:scoreboard` reads 0 rules with a count mismatch, up from 8).
+the favourite `prefer-let` gate (F6), every per-rule **count** in the linter
+(F3 part 2 — `rake parity:scoreboard` reads 0 rules with a count mismatch, up from 8),
+and the linter's **emission order** (F3 part 3, session 18 — the diagnostic
+arrays now agree item-for-item except the two content rows below).
 
 Everything else in the tracker is LSP-side and already planned (the token scanner's
 `callable_field_member_access?` and `dot_nested_type_member?`, the documentSymbol
@@ -135,13 +137,18 @@ The host emits in visitor order — statement rules inline, a scope's
 `unused-local`/`unused-param`/`prefer-let` at that scope's pop *inside* the walk, and the
 per-function flow rules (`dead-assignment`, `unreachable`, `constant-condition`, the
 release rules, `prefer-let-else`, `prefer-var-else`, `redundant-return`) at the end of
-that function; `missing_return` after them.  The self emits all visitor warnings for the
-file, then a whole-file scope pass, then whole-file rule passes, so equal *sets* still
-differ as arrays (lb: host starts `285 unused-local, 325 redundant-return, 333
-unused-param …`, self starts `325, 422, 474 …`; mst: host emits `441 redundant-unsafe`
-before `440 owning-release-leak`).  Closing diagnostic 2 requires restructuring the
-self's linter to that walk order (scope pops inside the walk, flow rules per function) —
-on top of the per-rule deltas below.
+that function; `missing_return` after them.  The self emitted all visitor warnings for
+the file, then a whole-file scope pass, then whole-file rule passes, so equal *sets* still
+differ as arrays.
+
+**PART DONE (session 18): the emission order.**  The linter's visitor now drives
+`scope_tracking`'s state machine — one walk, with the scope pops inside it, the
+per-body rule group at the end of each function's walk, `redundant-return`, the
+function scope's pop and then `missing-return`; `unused-import` and the module
+reserved names lead and the whole-file passes keep their tail (`redundant-cast`
+and `reserved-primitive-name` moved into the walk with them).  The diagnostic
+arrays now agree item-for-item except the two content rows below.  Record:
+`docs/self-host-plan.md` §0k, "The linter's walk".
 
 **PART DONE (session 17): the anchor/message/firing rows.**  Closed, each
 verified with `tmp/diag_probe.rb` (the entry disappears) and

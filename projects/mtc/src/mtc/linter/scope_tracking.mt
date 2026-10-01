@@ -1,10 +1,14 @@
-## Scope-tracking lint pass for the self-hosted mtc compiler.
+## Scope state for the self-hosted mtc compiler's lint walk.
 ##
-## Separate AST traversal that emits scope-based warnings:
-##   unused-local, unused-param, shadow, prefer-let, unused-import
+## The linter's own traversal (`linter.mt`'s `visit_decl`/`visit_stmt`/
+## `visit_expr`) drives this state machine so the scope-based warnings
+## (`unused-local`, `unused-param`, `shadow`, `prefer-let`, `prefer-own-ptr`)
+## interleave with the rule warnings in the host's emission order; the scope
+## declarations also drive the rules that read bindings (`unused-import`
+## credits, `prefer-let`'s mutation tracking).
 ##
-## IMPORTANT: all scope entries are stored in a raw byte buffer on the
-## stack of lint_scope_pass, accessed exclusively through unsafe pointer
+## IMPORTANT: all scope entries are stored in a raw byte buffer owned by the
+## linter's `lint_source_with`, accessed exclusively through unsafe pointer
 ## arithmetic.  This avoids the self-host C-backend bug where
 ## `array[T,N]` inside a struct passed through a `ref[ScopeCtx]` is
 ## lowered as a zero-length array.
@@ -30,12 +34,12 @@ public struct ScopeWarning:
     severity: str
 
 
-const BINDING_LOCAL: ptr_uint = 0
-const BINDING_PARAM: ptr_uint = 1
+public const BINDING_LOCAL: ptr_uint = 0
+public const BINDING_PARAM: ptr_uint = 1
 const MAX_SCOPES: ptr_uint = 32
 const MAX_ENTRIES: ptr_uint = 128
 
-struct Binding:
+public struct Binding:
     name: str
     line: ptr_uint
     column: ptr_uint
@@ -44,13 +48,13 @@ struct Binding:
     allow_prefer_let: bool
     mutated: bool
 
-struct ScopeEntry:
+public struct ScopeEntry:
     name: str
     binding: Binding
 
 ## Minimal struct.  All scope data lives in the external byte buffer;
 ## the ctx only stores counters and a pointer to that buffer.
-struct ScopeCtx:
+public struct ScopeCtx:
     buf: ptr[ScopeEntry]
     scope_starts: array[ptr_uint, 32]
     scope_counts: array[ptr_uint, 32]
@@ -74,32 +78,6 @@ function push_w(warnings: ref[vec.Vec[ScopeWarning]], path: str, line: ptr_uint,
     warnings.push(ScopeWarning(path = path, line = line, column = column, length = length, code = code, message = msg, severity = sev))
 
 
-function warn_shadow(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
-    var buf = string.String.create()
-    buf.append("local '")
-    buf.append(name)
-    buf.append("' shadows a binding from an outer scope")
-    push_w(warnings, path, line, column, name.len, "shadow", buf.as_str(), "warning")
-
-
-function warn_unused(warnings: ref[vec.Vec[ScopeWarning]], path: str, code: str, kind: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
-    var buf = string.String.create()
-    buf.append("unused ")
-    buf.append(kind)
-    buf.append(" '")
-    buf.append(name)
-    buf.append("'")
-    push_w(warnings, path, line, column, name.len, code, buf.as_str(), "warning")
-
-
-function warn_prefer_let(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
-    var buf = string.String.create()
-    buf.append("variable '")
-    buf.append(name)
-    buf.append("' is never reassigned, prefer 'let'")
-    push_w(warnings, path, line, column, name.len, "prefer-let", buf.as_str(), "hint")
-
-
 function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
     var buf = string.String.create()
     buf.append("unused import '")
@@ -112,7 +90,7 @@ function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, nam
 #  Scope helpers — all access through ctx.buf + pointer arithmetic
 # =============================================================================
 
-function ctx_init(ctx: ref[ScopeCtx], buf: ptr[ScopeEntry]) -> void:
+public function ctx_init(ctx: ref[ScopeCtx], buf: ptr[ScopeEntry]) -> void:
     read(ctx).buf = buf
     read(ctx).scope_count = 0
     read(ctx).generic_function_depth = 0
@@ -120,7 +98,15 @@ function ctx_init(ctx: ref[ScopeCtx], buf: ptr[ScopeEntry]) -> void:
     read(ctx).mutating_sites = span[analyzer.EditableSite]()
 
 
-function ctx_push_scope(ctx: ref[ScopeCtx]) -> void:
+public function ctx_set_generic_depth(ctx: ref[ScopeCtx], depth: ptr_uint) -> void:
+    read(ctx).generic_function_depth = depth
+
+
+public function ctx_set_match_arm_depth(ctx: ref[ScopeCtx], depth: ptr_uint) -> void:
+    read(ctx).match_arm_depth = depth
+
+
+public function ctx_push_scope(ctx: ref[ScopeCtx]) -> void:
     let c = unsafe: read(ctx)
     if c.scope_count >= 32:
         fatal(c"scope tracking overflow in lint pass")
@@ -130,28 +116,57 @@ function ctx_push_scope(ctx: ref[ScopeCtx]) -> void:
     read(ctx).scope_count = si + 1
 
 
-function ctx_pop_scope(ctx: ref[ScopeCtx], path: str, warnings: ref[vec.Vec[ScopeWarning]]) -> void:
+## Drop the innermost scope and return its index (the caller emits its
+## warnings), or `SCOPE_NONE` when no scope is open.
+public const SCOPE_NONE: ptr_uint = 4294967295
+
+public function ctx_pop_scope(ctx: ref[ScopeCtx]) -> ptr_uint:
     let c = unsafe: read(ctx)
     if c.scope_count == 0:
-        return
+        return SCOPE_NONE
     let idx = c.scope_count - 1
-    emit_scope_flat(path, warnings, c.buf, c.scope_starts[idx], c.scope_counts[idx])
     read(ctx).scope_count = idx
+    return idx
 
 
-function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint, is_var: bool, path: str, warnings: ref[vec.Vec[ScopeWarning]]) -> void:
+## The host's `declare_local` shadow check: any *outer* scope (not the
+## innermost) already holds the name, and match-arm bindings never shadow.
+## True means the caller emits `shadow` for the declaration.
+public function ctx_shadows_outer(ctx: ref[ScopeCtx], name: str) -> bool:
     let c = unsafe: read(ctx)
-    if c.scope_count == 0:
-        return
-    if c.scope_count > 1 and c.match_arm_depth == 0:
-        var si: ptr_uint = 0
-        while si < c.scope_count - 1:
-            unsafe:
-                if scope_has_name_buf(c.buf, c.scope_starts[si], c.scope_counts[si], name):
-                    warn_shadow(warnings, path, name, line, col)
-                    break
-            si += 1
+    if c.scope_count <= 1 or c.match_arm_depth != 0:
+        return false
+    var si: ptr_uint = 0
+    while si < c.scope_count - 1:
+        unsafe:
+            if scope_has_name_buf(c.buf, c.scope_starts[si], c.scope_counts[si], name):
+                return true
+        si += 1
+    return false
 
+
+## The scope's entries, for the caller's warning emission (the host's
+## `emit_scope_warnings` loop over `scope.each_value`).
+public function ctx_scope_start(ctx: ref[ScopeCtx], idx: ptr_uint) -> ptr_uint:
+    return unsafe: read(ctx).scope_starts[idx]
+
+
+public function ctx_scope_count(ctx: ref[ScopeCtx], idx: ptr_uint) -> ptr_uint:
+    return unsafe: read(ctx).scope_counts[idx]
+
+
+public function ctx_entry(ctx: ref[ScopeCtx], start: ptr_uint, offset: ptr_uint) -> Binding:
+    return unsafe: read(read(ctx).buf + start + offset).binding
+
+
+## The host's `declare_local`: ignored names (`_`-prefixed) never enter a
+## scope, so they draw no shadow/unused-local/prefer-let.
+public function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint, is_var: bool) -> void:
+    let c = unsafe: read(ctx)
+    if c.scope_count == 0 or name.len == 0:
+        return
+    if name.starts_with("_"):
+        return
     let allow = is_var and c.generic_function_depth == 0
     let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_LOCAL, allow_prefer_let = allow, mutated = false)
     unsafe:
@@ -159,7 +174,9 @@ function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: p
     read(ctx).scope_counts[c.scope_count - 1] = c.scope_counts[c.scope_count - 1] + 1
 
 
-function ctx_declare_param(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint) -> void:
+public function ctx_declare_param(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint) -> void:
+    if name.len == 0 or name.starts_with("_"):
+        return
     let c = unsafe: read(ctx)
     let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_PARAM, allow_prefer_let = false, mutated = false)
     unsafe:
@@ -167,7 +184,7 @@ function ctx_declare_param(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: p
     read(ctx).scope_counts[c.scope_count - 1] = c.scope_counts[c.scope_count - 1] + 1
 
 
-function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> void:
+public function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> void:
     let c = unsafe: read(ctx)
     var si = c.scope_count
     while si > 0:
@@ -181,7 +198,7 @@ function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> void:
                     pass
 
 
-function visit_typeref(tr: ptr[ast.TypeRef], ctx: ref[ScopeCtx]) -> void:
+public function visit_typeref(tr: ptr[ast.TypeRef], ctx: ref[ScopeCtx]) -> void:
     unsafe:
         let r = read(tr)
         var pi: ptr_uint = 0
@@ -199,7 +216,7 @@ function visit_typeref_opt(tr: ptr[ast.TypeRef]?, ctx: ref[ScopeCtx]) -> void:
         visit_typeref(tr, ctx)
 
 
-function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> void:
+public function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
@@ -235,7 +252,7 @@ function ctx_mark_mutated(ctx: ref[ScopeCtx], target: ptr[ast.Expr]) -> void:
 ## `var s = Stack[int].create()` plus `s.push(x)` needs `var`, so prefer-let must
 ## not fire.  The analyzer records those receivers while resolving method kinds,
 ## matching them by the receiver identifier's name and line.
-function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+public function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
     unsafe:
         match read(call):
             ast.Expr.expr_call as cl:
@@ -263,7 +280,7 @@ function ctx_mark_editable_receiver(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> 
 ## recorded as passed to an `out`/`inout` foreign parameter, or an explicit
 ## `out x` / `inout x` argument (the host's `mutating_argument_identifier?` and
 ## its `out`/`inout` write-target rule).
-function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+public function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
     unsafe:
         match read(call):
             ast.Expr.expr_call as cl:
@@ -295,7 +312,7 @@ function ctx_mark_mutating_args(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void
 ## `mark_alias_source_mutated`): exactly one argument, and `mark_mutated`
 ## recurses through index/member receivers to the root binding, so
 ## `ptr_of(arr[0])` marks `arr`.
-function ctx_mark_alias_source(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
+public function ctx_mark_alias_source(call: ptr[ast.Expr], ctx: ref[ScopeCtx]) -> void:
     unsafe:
         match read(call):
             ast.Expr.expr_call as cl:
@@ -337,50 +354,23 @@ function scope_has_name_buf(buf: ptr[ScopeEntry], start: ptr_uint, count: ptr_ui
     return false
 
 
-function emit_scope_flat(path: str, warnings: ref[vec.Vec[ScopeWarning]], buf: ptr[ScopeEntry], start: ptr_uint, count: ptr_uint) -> void:
-    var i: ptr_uint = 0
-    while i < count:
-        unsafe:
-            let bd = read(buf + start + i).binding
-            if not bd.used and bd.name.len > 0 and not bd.name.starts_with("_"):
-                let code = if bd.binding_kind == BINDING_PARAM: "unused-param" else: "unused-local"
-                let kind = if bd.binding_kind == BINDING_PARAM: "parameter" else: "local"
-                warn_unused(warnings, path, code, kind, bd.name, bd.line, bd.column)
-            else:
-                if bd.allow_prefer_let and not bd.mutated:
-                    warn_prefer_let(warnings, path, bd.name, bd.line, bd.column)
-        i += 1
-
-
 # =============================================================================
 #  Pass entry point
 # =============================================================================
 
-public function lint_scope_pass(
+## The host's `check_unused_imports`, run before the declaration walk: one
+## `unused-import` per import whose local name nothing references.
+public function lint_unused_imports(
     file: ast.SourceFile,
     path: str,
     unresolved_import_paths: span[str],
-    editable_sites: span[analyzer.EditableSite],
-    mutating_sites: span[analyzer.EditableSite],
     providers: span[ImportMethodProvider],
     analysis: ptr[analyzer.Analysis]?,
     warnings: ref[vec.Vec[ScopeWarning]],
 ) -> void:
-    var entries_buf: array[ScopeEntry, 4096]
-    var sc: ScopeCtx
-    ctx_init(ref_of(sc), ptr_of(entries_buf[0]))
-    unsafe:
-        read(ref_of(sc)).editable_sites = editable_sites
-        read(ref_of(sc)).mutating_sites = mutating_sites
     var credited = collect_import_credits(file, providers, analysis)
     defer: credited.release()
     check_unused_imports(file, path, unresolved_import_paths, credited.as_span(), warnings)
-    var i: ptr_uint = 0
-    while i < file.declarations.len:
-        unsafe:
-            visit_decl(file.declarations.data + i, path, warnings, ref_of(sc))
-        i += 1
-    read(ref_of(sc)).scope_count = 0
 
 
 # =============================================================================
@@ -1106,299 +1096,3 @@ function type_module_name(ty: types.Type) -> str:
             return op.module_name
         _:
             return ""
-
-
-# =============================================================================
-#  AST visitors
-# =============================================================================
-
-function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[ScopeWarning]], ctx: ref[ScopeCtx]) -> void:
-    unsafe:
-        match read(decl):
-            ast.Decl.decl_function as fun:
-                let generic_body = fun.type_params.len > 0
-                if generic_body:
-                    read(ctx).generic_function_depth += 1
-                ctx_push_scope(ctx)
-                var pi: ptr_uint = 0
-                while pi < fun.method_params.len:
-                    let p = read(fun.method_params.data + pi)
-                    ctx_declare_param(ctx, p.name, p.line, p.column)
-                    pi += 1
-                visit_stmt_opt(fun.body, path, warnings, ctx)
-                ctx_pop_scope(ctx, path, warnings)
-                if generic_body:
-                    read(ctx).generic_function_depth -= 1
-            ast.Decl.decl_extending_block as ex:
-                # The host's `extending_block_generic?`: a block whose receiver
-                # carries type arguments (`extending Vec[T]:`) makes every method
-                # in it a generic context, exactly as a method's own `[N]` does.
-                let generic_block = read(ex.type_name).arguments.len > 0
-                var j: ptr_uint = 0
-                while j < ex.methods.len:
-                    let m = read(ex.methods.data + j)
-                    let generic_body = generic_block or m.type_params.len > 0
-                    if generic_body:
-                        read(ctx).generic_function_depth += 1
-                    ctx_push_scope(ctx)
-                    var pi: ptr_uint = 0
-                    while pi < m.method_params.len:
-                        let p = read(m.method_params.data + pi)
-                        ctx_declare_param(ctx, p.name, p.line, p.column)
-                        pi += 1
-                    visit_stmt(m.body, path, warnings, ctx)
-                    ctx_pop_scope(ctx, path, warnings)
-                    if generic_body:
-                        read(ctx).generic_function_depth -= 1
-                    j += 1
-            ast.Decl.decl_when as w:
-                var bi: ptr_uint = 0
-                while bi < w.branches.len:
-                    let br = read(w.branches.data + bi)
-                    var si: ptr_uint = 0
-                    while si < br.body.len:
-                        visit_decl(br.body.data + si, path, warnings, ctx)
-                        si += 1
-                    bi += 1
-            _:
-                pass
-
-
-function visit_stmt_opt(stmt: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[ScopeWarning]], ctx: ref[ScopeCtx]) -> void:
-    let sp = stmt else:
-        return
-    visit_stmt(sp, path, warnings, ctx)
-
-
-function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[ScopeWarning]], ctx: ref[ScopeCtx]) -> void:
-    unsafe:
-        match read(stmt):
-            ast.Stmt.stmt_block as blk:
-                var i: ptr_uint = 0
-                while i < blk.statements.len:
-                    visit_stmt(blk.statements.data + i, path, warnings, ctx)
-                    i += 1
-            ast.Stmt.stmt_local as loc:
-                visit_expr_opt(loc.value, path, warnings, ctx)
-                if loc.name.len > 0:
-                    ctx_declare_local(ctx, loc.name, loc.line, loc.column, not loc.is_let, path, warnings)
-                # A destructuring `let (a, b) = …` declares no tracked binding:
-                # the host's LocalDecl arm declares only `statement.name`, so a
-                # destructured name never draws unused-local/shadow/prefer-let.
-                visit_stmt_opt(loc.else_body, path, warnings, ctx)
-            ast.Stmt.stmt_assignment as asgn:
-                visit_expr(asgn.value, path, warnings, ctx)
-                visit_assignment_target(asgn.target, path, warnings, ctx)
-                # A compound assignment reads the target (host
-                # `mark_assignment_target_reads`); a plain `=` does not.
-                if not asgn.operator.equal("="):
-                    match read(asgn.target):
-                        ast.Expr.expr_identifier as id:
-                            ctx_mark_used(ctx, id.name)
-                        _:
-                            pass
-                ctx_mark_mutated(ctx, asgn.target)
-            ast.Stmt.stmt_if as iff:
-                var bi: ptr_uint = 0
-                while bi < iff.branches.len:
-                    let br = read(iff.branches.data + bi)
-                    visit_expr(br.condition, path, warnings, ctx)
-                    ctx_push_scope(ctx)
-                    visit_stmt(br.body, path, warnings, ctx)
-                    ctx_pop_scope(ctx, path, warnings)
-                    bi += 1
-                if iff.else_body != null:
-                    ctx_push_scope(ctx)
-                    visit_stmt_opt(iff.else_body, path, warnings, ctx)
-                    ctx_pop_scope(ctx, path, warnings)
-            ast.Stmt.stmt_while as wh:
-                visit_expr(wh.condition, path, warnings, ctx)
-                ctx_push_scope(ctx)
-                visit_stmt_opt(wh.body, path, warnings, ctx)
-                ctx_pop_scope(ctx, path, warnings)
-            ast.Stmt.stmt_for as fr:
-                var ii: ptr_uint = 0
-                while ii < fr.iterables.len:
-                    visit_expr(fr.iterables.data + ii, path, warnings, ctx)
-                    ii += 1
-                ctx_push_scope(ctx)
-                var bi: ptr_uint = 0
-                while bi < fr.bindings.len:
-                    let b = read(fr.bindings.data + bi)
-                    ctx_declare_local(ctx, b.name, b.line, b.column, false, path, warnings)
-                    bi += 1
-                visit_stmt_opt(fr.body, path, warnings, ctx)
-                ctx_pop_scope(ctx, path, warnings)
-            ast.Stmt.stmt_match as mt:
-                visit_expr(mt.scrutinee, path, warnings, ctx)
-                var ai: ptr_uint = 0
-                var saved_depth = unsafe: read(ctx).match_arm_depth
-                unsafe: read(ctx).match_arm_depth = 1
-                while ai < mt.arms.len:
-                    let arm = read(mt.arms.data + ai)
-                    ctx_push_scope(ctx)
-                    match arm.binding_name:
-                        Option.some as bn:
-                            ctx_declare_local(ctx, bn.value, arm.binding_line, arm.binding_column, false, path, warnings)
-                        Option.none:
-                            pass
-                    visit_stmt_opt(arm.body, path, warnings, ctx)
-                    ctx_pop_scope(ctx, path, warnings)
-                    ai += 1
-                unsafe: read(ctx).match_arm_depth = saved_depth
-            ast.Stmt.stmt_ret as r:
-                visit_expr_opt(r.value, path, warnings, ctx)
-            ast.Stmt.stmt_defer as df:
-                visit_expr_opt(df.expression, path, warnings, ctx)
-                ctx_push_scope(ctx)
-                visit_stmt_opt(df.body, path, warnings, ctx)
-                ctx_pop_scope(ctx, path, warnings)
-            ast.Stmt.stmt_unsafe as un:
-                ctx_push_scope(ctx)
-                visit_stmt_opt(un.body, path, warnings, ctx)
-                ctx_pop_scope(ctx, path, warnings)
-            ast.Stmt.stmt_expression as ex:
-                visit_expr(ex.expression, path, warnings, ctx)
-            ast.Stmt.stmt_static_assert as sa:
-                visit_expr(sa.condition, path, warnings, ctx)
-                visit_expr_opt(sa.message, path, warnings, ctx)
-            ast.Stmt.stmt_when as wn:
-                visit_expr(wn.discriminant, path, warnings, ctx)
-                var wbi: ptr_uint = 0
-                while wbi < wn.branches.len:
-                    let br = read(wn.branches.data + wbi)
-                    ctx_push_scope(ctx)
-                    var wsi: ptr_uint = 0
-                    while wsi < br.body.len:
-                        visit_stmt(br.body.data + wsi, path, warnings, ctx)
-                        wsi += 1
-                    ctx_pop_scope(ctx, path, warnings)
-                    wbi += 1
-                if wn.else_body != null:
-                    ctx_push_scope(ctx)
-                    visit_stmt_opt(wn.else_body, path, warnings, ctx)
-                    ctx_pop_scope(ctx, path, warnings)
-            ast.Stmt.stmt_gather as g:
-                var gi: ptr_uint = 0
-                while gi < g.handles.len:
-                    visit_expr(g.handles.data + gi, path, warnings, ctx)
-                    gi += 1
-            _:
-                pass
-
-
-function visit_expr_opt(expr: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[ScopeWarning]], ctx: ref[ScopeCtx]) -> void:
-    let ep = expr else:
-        return
-    visit_expr(ep, path, warnings, ctx)
-
-
-## Assignment targets that read their sub-expressions (host
-## `visit_assignment_target`): a member/index target reads its receiver, a bare
-## identifier is a write only.
-function visit_assignment_target(target: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[ScopeWarning]], ctx: ref[ScopeCtx]) -> void:
-    unsafe:
-        match read(target):
-            ast.Expr.expr_identifier:
-                pass
-            ast.Expr.expr_member_access as m:
-                visit_expr(m.receiver, path, warnings, ctx)
-            ast.Expr.expr_index_access as ix:
-                visit_expr(ix.receiver, path, warnings, ctx)
-                visit_expr(ix.index, path, warnings, ctx)
-            _:
-                visit_expr(target, path, warnings, ctx)
-
-
-function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[ScopeWarning]], ctx: ref[ScopeCtx]) -> void:
-    unsafe:
-        match read(expr):
-            ast.Expr.expr_identifier as id:
-                ctx_mark_used(ctx, id.name)
-            ast.Expr.expr_binary_op as b:
-                visit_expr(b.left, path, warnings, ctx)
-                visit_expr(b.right, path, warnings, ctx)
-            ast.Expr.expr_unary_op as u:
-                visit_expr(u.operand, path, warnings, ctx)
-            ast.Expr.expr_member_access as m:
-                visit_expr(m.receiver, path, warnings, ctx)
-            ast.Expr.expr_call as call:
-                visit_expr(call.callee, path, warnings, ctx)
-                var i: ptr_uint = 0
-                while i < call.args.len:
-                    visit_expr(read(call.args.data + i).arg_value, path, warnings, ctx)
-                    i += 1
-                ctx_mark_alias_source(expr, ctx)
-                ctx_mark_editable_receiver(expr, ctx)
-                ctx_mark_mutating_args(expr, ctx)
-            ast.Expr.expr_index_access as ix:
-                visit_expr(ix.receiver, path, warnings, ctx)
-                visit_expr(ix.index, path, warnings, ctx)
-            ast.Expr.expr_specialization as sp:
-                visit_expr(sp.callee, path, warnings, ctx)
-                var sai: ptr_uint = 0
-                while sai < sp.arguments.len:
-                    visit_typeref(read(sp.arguments.data + sai).value, ctx)
-                    sai += 1
-            ast.Expr.expr_sizeof as sz:
-                visit_typeref(sz.target_type, ctx)
-            ast.Expr.expr_alignof as al:
-                visit_typeref(al.target_type, ctx)
-            ast.Expr.expr_offsetof as off:
-                visit_typeref(off.target_type, ctx)
-            ast.Expr.expr_if as iff:
-                visit_expr(iff.condition, path, warnings, ctx)
-                visit_expr(iff.then_expr, path, warnings, ctx)
-                visit_expr(iff.else_expr, path, warnings, ctx)
-            ast.Expr.expr_match as mm:
-                visit_expr(mm.scrutinee, path, warnings, ctx)
-                var ai: ptr_uint = 0
-                while ai < mm.arms.len:
-                    let arm = read(mm.arms.data + ai)
-                    ctx_push_scope(ctx)
-                    match arm.binding_name:
-                        Option.some as bn:
-                            ctx_declare_local(ctx, bn.value, arm.binding_line, arm.binding_column, false, path, warnings)
-                        Option.none:
-                            pass
-                    visit_expr(arm.value, path, warnings, ctx)
-                    ctx_pop_scope(ctx, path, warnings)
-                    ai += 1
-            ast.Expr.expr_proc as pr:
-                ctx_push_scope(ctx)
-                var pi: ptr_uint = 0
-                while pi < pr.method_params.len:
-                    let p = read(pr.method_params.data + pi)
-                    ctx_declare_param(ctx, p.name, p.line, p.column)
-                    pi += 1
-                visit_stmt(pr.body, path, warnings, ctx)
-                ctx_pop_scope(ctx, path, warnings)
-            ast.Expr.expr_await as aw:
-                visit_expr(aw.expression, path, warnings, ctx)
-            ast.Expr.expr_detach as dt:
-                visit_expr(dt.expression, path, warnings, ctx)
-            ast.Expr.expr_named as nm:
-                visit_expr(nm.value, path, warnings, ctx)
-            ast.Expr.expr_range as rg:
-                visit_expr(rg.start_expr, path, warnings, ctx)
-                visit_expr(rg.end_expr, path, warnings, ctx)
-            ast.Expr.expr_prefix_cast as pc:
-                visit_expr(pc.expression, path, warnings, ctx)
-            ast.Expr.expr_unsafe as us:
-                visit_expr(us.expression, path, warnings, ctx)
-            ast.Expr.expr_expression_list as el:
-                var ei: ptr_uint = 0
-                while ei < el.elements.len:
-                    visit_expr(el.elements.data + ei, path, warnings, ctx)
-                    ei += 1
-            ast.Expr.expr_format_string as fs:
-                var pi: ptr_uint = 0
-                while pi < fs.parts.len:
-                    match read(fs.parts.data + pi):
-                        ast.FormatStringPart.fmt_expr as fe:
-                            visit_expr(fe.expression, path, warnings, ctx)
-                        _:
-                            pass
-                    pi += 1
-            _:
-                pass
