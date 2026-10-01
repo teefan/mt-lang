@@ -476,7 +476,7 @@ fixed the same day.
 
 | Feature | Status |
 |---------|--------|
-| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 4 documented differing entries) and by the project audit (6456 entries / 56 differ, session 12) |
+| **Live parity status** | **See [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure)** — the table below is the 2026-07-22 self-host-side record, superseded as a *parity* statement by the harness measurement (30/30 capability keys; 4 documented differing entries) and by the project audit (6456 entries / **4 differ**, session 17) |
 | Diagnostics (push + pull) | **DONE (stage 4)** — the editor *buffer* is analysed (not the file on disk); `lex/error`, `parse/error`, `import/load-error`, `sema/error` and lint items carry the host's codes, `data.stage`, token-length ranges (import failures anchor at the module-path text) and MarkupContent for quoted-identifier sema messages; `workspace/diagnostic` reports every open document in didOpen order with `previousResultIds`.  `diagnostic/pull` and `workspace/diagnostic` are byte-equal to the host. |
 | Incremental text sync (change:2) | **DONE** — range-based edits, UTF-8 line/char→byte conversion |
 | Config application | **DONE** — parse workspace/configuration response |

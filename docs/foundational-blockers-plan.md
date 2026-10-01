@@ -15,15 +15,18 @@ sessions keep ending with "documented residue" because the fix lives in another 
 
 | LSP residue | Entries | Blocked on |
 | --- | --- | --- |
-| hover nullability four (`mst@25:7`, `@28:20`, `@205:7`, `@404:7`) | 4 | the host's *continuation* null refinement (a per-function nullability dataflow over a real CFG) |
-| documentHighlight `lb@704:67` | 1 | the same snapshot machinery (which binding a completion snapshot carries at a line) |
-| documentSymbol's refined locals (`memory_stress_test.mt`) | (part) | the same refined binding types |
-| hover destructuring two (`lb@1861:23`, `lb@1931:25`) + match-arm payload (`lb@1915:25`) | 3 | stage 11c: arm payload structs + typed destructure bindings |
-| `examples/async_network_lobby.mt`'s unused-import residual + prefer-let deltas | (repo-wide) | stage 11c |
-| hover's `fn ` field (`lb@1127:9`) + the outline's function-type details | 1 | function-type **names** (`ty_function.name`, Phase 2 item 5) |
-| diagnostic 2 | 2 | linter stages 11 + 11b (dead-assignment firing set + the per-rule table) |
-| semanticTokens `identity` 275:40, `add` 1099:41 | (2 positions) | the analyzer's `callable_value_identifier_sites` |
-| prefer-let repo-wide 507/606 | (repo-wide) | stage 11d: editable receivers in static extending methods |
+| diagnostic 2 — the emission **order** | (2 files) | the linter's two-walk merge (F3's restructure below) |
+| diagnostic 2 — `constant-condition` | 4 (lb) | the source-line `condition_span`, the `branch`/`loop` message and a `ConstantPropagation` port |
+| diagnostic 2 — `owning-release-double`/`-leak` | 3 (mst) | the CFG release path (`classify_cfg_nodes`/`find_reachable_release`) and the released binding's `symbol_name` |
+| documentHighlight `lb@704:67` | 1 | the host's warm-facts snapshot carry-forward — **documented** (the self matches the host's cold answer byte for byte); `docs/lsp-design.md` §8 |
+| hover `type quat` `lb@1653:24` | 1 | the definition index's coverage of a never-opened std module (`extending quat:`); `apply_hover_index_location` is already on the arm |
+| F9 readiness: `ScanFacts` release, the index's document texts, `note_document_tokens` caching | (repo-wide) | valgrind reads ~91 MB "definitely lost" over an LSP drive (0 errors) |
+
+Closed since the table above was written: the nullability four (F2), the
+documentSymbol class (F8.2), semanticTokens (F7 + F8.1), the `fn ` field (F5),
+the destructuring/payload hovers and the unused-import/prefer-let residuals (F4),
+the favourite `prefer-let` gate (F6), and every per-rule **count** in the linter
+(F3 part 2 — `rake parity:scoreboard` reads 0 rules with a count mismatch, up from 8).
 
 Everything else in the tracker is LSP-side and already planned (the token scanner's
 `callable_field_member_access?` and `dot_nested_type_member?`, the documentSymbol
@@ -162,11 +165,29 @@ host's `extract_warning_range`: a tracked column with no length spans one
 character.  Measured: **lb host 98 / self 98, mst host 10 / self 10** — the
 warning counts match on both files.
 
-**The rows still open** (measured, session-17 probe): `constant-condition`
-(the source-line `condition_span`, the `branch`/`loop` message and the
-`ConstantPropagation` port — the host's answers differ in *which* condition is
-true) and `owning-release-double`/`-leak` (the CFG path and `symbol_name`).
-Then the emission-order restructure closes the class.
+**The rows still open** (measured, session-17 probe — the counts already match, so
+each row is now only *which* item and *where*):
+
+- `constant-condition` (lb, 4 items): the host anchors on
+  `condition_span(expr, line:, keyword_pattern:)`, which prefers a
+  **source-line** span (scanning the line for `if`/`while` up to the `:`) over the
+  expression's own position, and its message names the *branch*
+  (`branch condition is always true/false`) where the self says `if condition …`;
+  the two answers also differ in *which* condition is true, so the
+  `ConstantPropagation` port (the host's constant folding over the statement)
+  is part of the row.  Host anchors: `434:7-19`, `474:7-17`, `476:12-17`,
+  `1387:7-16`; self: `445:0-1`, `474:0-1`, `531:0-1`, `1387:0-1`.
+- `owning-release-double`/`-leak` (mst, 3 items): the host anchors
+  `owning-release-double` at the **released binding's name** (`335:33-38`,
+  `owned`) and reports the leak at `440:8-11` (`raw`, `own[int]`); the self
+  anchors at the declaration (`335:4-8`), also fires at `403:8-12` for `heap`, and
+  reports no leak.  The host's path is `release_rules.rb`'s
+  `classify_cfg_nodes`/`find_reachable_release` (a release reachable on some path
+  is a double release; an owning binding never released on any path leaks) plus
+  `own_typed_local_bindings`/`own_transferred?` — F1's graph carries what it needs.
+
+Then the emission-order restructure closes the class (see "the restructure,
+concretely" in the ledger's session-17 log).
 
 **The remaining per-rule deltas, measured with `tmp/diag_probe.rb` (session-16
 baseline, `tmp/diag-s16-base.txt`)** — ranges/messages first (mechanical): every rule
@@ -210,7 +231,7 @@ audit's second diagnostic file).  Close, rule by rule:
 - extra: `prefer-own-ptr` ×2.
 
 **Verify**: the per-rule table on both files (counts, messages, severities, positions),
-`unused_import_parity.rb` (609/608 + any improvement), and the LSP audit's diagnostic
+`unused_import_parity.rb` (609/609, differ 0), and the LSP audit's diagnostic
 entries (the full matrix).
 
 ## F4 — stage 11c: payload structs and typed destructure bindings (DONE, session 16)
@@ -348,20 +369,24 @@ Also fixed along the way: the guard narrowing now applies to imported
 `Option`/`Result` (`unwrap_nullable_type` handles `ty_imported`), the function/proc detail
 renderers, and the declaration-shape details listed in `docs/self-host-plan.md` §0k.
 
-## F8 — the LSP-side closures (after the facts land)
+## F8 — the LSP-side closures (after the facts land) — CLOSED except F8.3
 
-1. **semanticTokens (2 positions → class closes)**: the token scanner's
-   `callable_field_member_access?` (a member call on a struct field of `fn`/`proc` type
-   is a `property`) and `dot_nested_type_member?` (a nested type name renders `type`);
-   the host references are `semantic_tokens.rb:1035-1056` and `:1094-1109`.
-2. **documentSymbol (3–4 entries)**: the host's enrichment — merging an `extending`
-   block's symbol into its type's symbol with the receiver named as written
-   (`rl.Color` block → `rl`), the `when`-branch declarations in the AST walk
-   (`flatten_module_declarations`' analogue in `symbols.mt`), and the refined locals F2
-   produces.
-3. **hover**: `type quat` (`lb@1653:24`) stays documented (the host's asynchronous
-   definition warmup); the deliberate-difference table (`docs/lsp-design.md` §8) gets
-   the documentSymbol first-file race and the references pacing entry.
+1. ~~semanticTokens~~ — **DONE (F7 + F8.1, session 16)**: the scanner's
+   `callable_field_member_access?` and `dot_nested_type_member?`; the class reads 0.
+2. ~~documentSymbol~~ — **DONE (F8.2, session 17)**: the wrapper, the key order,
+   the `extending`-block merge, the `when` branches, the refined locals, the
+   function-type details and the `emit` symbols' source position; the class reads 0
+   on all seven files.
+3. **hover**: `type quat` (`lb@1653:24`) is the one remaining entry — its fix is
+   the definition index's coverage of a never-opened std module (do *not* port the
+   blanket index fallback: an earlier attempt closed it and added five; the host's
+   asynchronous definition warmup is why).  The deliberate-difference table
+   (`docs/lsp-design.md` §8) also carries the documentSymbol first-file race, the
+   references pacing entry and the documentHighlight snapshot carry-forward.
+4. **F8.3 (new, session 17)**: the documentHighlight survivor `lb@704:67` —
+   measured both cold (the host equals the self) and warm (one range via the
+   host's carried-forward snapshot binding); documented, no action unless the
+   snapshot machinery is built.
 
 ## F9 — readiness foundations (C2/C3)
 
@@ -382,8 +407,8 @@ sessions), `F9` last.  One commit per item; docs + ledger synced in each.
 - **Compiler-side** (F1–F7): `tools/bootstrap.sh -j 16` (fixed point + 14/14),
   `build/stage2/mtc test test/mt -I .` (60/0), `rake "cli:parity"` (23/38/0),
   `ruby tools/sexpr_parity.rb lex -q` (705/705) + `parse -q` (701/0) + `lower -q -j 16`
-  (the counter the item moves), `ruby tools/unused_import_parity.rb` (609/608, and the
-  residual should close with F4), `rake "parity:scoreboard"` (the per-rule lint table),
+  (the counter the item moves), `ruby tools/unused_import_parity.rb` (609/609),
+  `rake "parity:scoreboard"` (the per-rule lint table),
   and for C-backend-touching changes the example sweeps (`examples/*.mt` 13/15
   documented, `examples/sdl3` 34/34, a raylib sample).  Behaviour changes get valgrind
   on the touched path and the headless-Neovim smoke where the LSP path moves.
@@ -397,162 +422,12 @@ sessions), `F9` last.  One commit per item; docs + ledger synced in each.
 
 ## Session prompt (copy-paste)
 
-Session 16 continues the plan with F3 (diagnostic 2), F4 (the payload/destructure
-bindings), F5 (function-type names) and F7 (the callable-value record), then F8's
-LSP-only closures; the identical copy lives in the multi-session ledger
-`~/.commandcode/plans/finish-self-host-full-parity.md` ("Session 16 prompt") and
-carries the measured residue lists per entry.
-
-```
-Continue the Milk Tea self-host compiler work in /home/teefan/Projects/Ruby/mt-lang
-    (branch `selfhost`). Rebuild before measuring:
-      ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
-
-    Read first: docs/foundational-blockers-plan.md (the focused plan — F1, F2 and F6
-    landed in session 15; F3, F4, F5 and F7 remain, then F8's LSP-only closures and
-    F9), then ~/.commandcode/plans/finish-self-host-full-parity.md (the multi-session
-    ledger — "Session 15" and its close carry the per-entry evidence), then
-    docs/self-host-plan.md §0k ("The nullability continuation refinement", "The real
-    control-flow graph", "Linter stage 11d" — the session-15 records),
-    docs/lsp-parity-plan.md, and AGENTS.md's "Self-Host Parity Program" section
-    (gates, drift, fixtures).
-
-    State at session-15 close (F6 `a689d176`, F1 `c030fe16`, F2 `c295db50`): the
-    SimpleGame full matrix (6456 entries) is at **13 differ** — hover 5,
-    documentSymbol 4, diagnostic 2, documentHighlight 1, semanticTokens 1 (its
-    streams differ in 5 positions of 9509, all in `docs/language_baseline.mt`);
-    definition/declaration/typeDefinition/implementation/references, codeLens and
-    workspace/symbol are 0.  Everything else green: the harness 30/30 + the 4
-    documented entries; recovery probe OK; cli:parity 23/38/0; sexpr lex and parse
-    0 differ (the file count drifts with the harness's tmp fixtures — quote the
-    differ count); `lower -q -j 16` 39 match / 614 differ / 51 host-rejected / 2
-    self-rejected (the 2 are the *pre-existing* `projects/stress` guarded-`Result`
-    pair — quote the set, not just the count); unused-import 609/608 (the
-    async_network_lobby residual — F4 should close it); bootstrap fixed point +
-    14/14; test/mt 60/0; every probe fixture unchanged (closed 0, added 0);
-    valgrind 0 errors over an LSP drive; the headless-Neovim smoke.  Lint scoreboard
-    on `examples/language_baseline.mt`: host 98 / self 123 warnings, 9 rules with
-    count mismatches.
-
-    STEP 1 — re-measure before touching anything (in the background):
-      ruby tools/lsp_project_audit.rb --workspace /home/teefan/Projects/MilkTea/SimpleGame \
-        --json tmp/audit-s16.json --max-diffs 0 --timeout 60     # ~14 min
-      ruby tools/lsp_audit_diffs.rb tmp/audit-s16.json
-      rake "parity:scoreboard"          # the per-rule lint table (F3's baseline)
-      ruby tools/unused_import_parity.rb    # ~20 min, start it early
-    Expect 13 differ with the same class split (the host's first-file documentSymbol
-    wrapper race can move `docs/data_structures.mt` by one entry between runs).
-    Fast fixtures: `bash tmp/fixtures_sweep.sh` (re-create it if tmp/ was cleaned)
-    compares probe-ws, probe2 (7 diffs), probe4–probe6, fieldprobe, thisprobe,
-    defprobe, crash1, hover-probe2/-3/-4/-5, eventprobe against their
-    `tmp/audit-s14f-*.json` baselines with `--compare`.
-
-    Instruments (tmp/, gitignored): `ruby tmp/lint_table.rb [FILE ...] [--lines]` —
-    the per-rule lint table for any file (both diagnostic files by default, plus
-    the differing lines), the scoreboard's comparison extended to
-    docs/memory_stress_test.mt; `ruby tmp/ds_diff.py AUDIT.json FILE` — the
-    per-key documentSymbol payload diff (host vs self) that classified F8.2;
-    `tmp/ds_compare.rb`, `tmp/lsp_debug.rb`, `tmp/tok_self.rb` / `tok_ref.rb` /
-    `tok_diff.rb`, `tmp/host-lsp.sh`, `tmp/nvim_hover_smoke.lua`, and
-    `/tmp/mtc-vg-s14.sh` (the valgrind wrapper — refresh its log path).  HARD RULE
-    from session 15: never edit or rebuild while a gate runs — a mid-audit rebuild
-    yields a mixed-binary audit that must be discarded and re-run.
-
-    STEP 2 — the residue, in the plan's order; the ledger's session-15 close has the
-    measured evidence for every entry and the plan sections carry the host
-    references.
-
-    F3. **Linter stages 11 + 11b** (closes diagnostic 2 — the class compares whole
-        files, so *every* rule must agree on `docs/language_baseline.mt` and
-        `docs/memory_stress_test.mt`).  Measured self/host counts on
-        `examples/language_baseline.mt`: `dead-assignment` 16/0 (the firing set:
-        exclude `:call_argument`/`:declaration` write origins, require
-        `readable_bindings` + `locally_declared`, key liveness by binding id — F1's
-        graph carries the write sites and their origins now), `redundant-unsafe`
-        0/1, `prefer-is-variant` 3/0, `prefer-own-ptr` 2/0,
-        `redundant-type-annotation` 2/1, `prefer-inline-if` 2/1,
-        `prefer-conditional-expression` 7/6, `reserved-primitive-name` 1/0,
-        `unused-local` 25/24; plus the anchor mismatches (`redundant-return`
-        325:4-10 vs 4-5 — the span, not the count; `redundant-type-annotation`
-        422:8-12 vs 8-13; `prefer-inline-if` / `prefer-conditional-expression`
-        474:4-5 vs 7-8) and, on `docs/memory_stress_test.mt`,
-        `owning-release-double` anchored at the binding name (335:33) where the self
-        anchors at the declaration (335:4).  Measured on
-        `docs/memory_stress_test.mt` (host 10 / self 7): `owning-release-double` 1/2,
-        `owning-release-leak` 1/0, `prefer-own-ptr` 0/2, `redundant-unsafe` 5/0.  One
-        commit per rule group; verify with `tmp/lint_table.rb` on both files and the
-        audit's two diagnostic entries (full matrix, `--compare`, added must be 0).
-
-    F4. **Stage 11c** (3 hover entries + the unused-import residual + the prefer-let
-        sweep residue): prelude payload structs + arm bindings to the substituted
-        payload struct (host `Types::VariantArmPayload`, `statements.rb:800-850`) +
-        typed destructure bindings (`check_local`'s destructure arm; do NOT repeat
-        the reverted bind-to-T model) + a per-name type record the LSP's hover and
-        outline read (`navigation.mt` `local_type_at_line`, `symbols.mt`).
-        Targets: `lb@1861:23` and `lb@1931:25` (the destructuring two — the self
-        prints `let b` with no type), `lb@1915:25` (the match-arm payload — host
-        `local p: Option[(str, str)].some payload (mutable)`, self null);
-        `examples/async_network_lobby.mt`'s unused-import residual; and the
-        prefer-let sweep over `std/` (self-only 121, host 0 — dominated by
-        `ty_error` receivers, i.e. these same bindings).
-
-    F5. **Function-type names** (the `lb@1127:9` hover and the outline's
-        function-type details): the host prints `field check: fn ` where the self
-        prints `field check: fn(int) -> bool`, and the outline shows the same shape
-        (`= fn(int) -> void` vs the self's `= fn(value: int) -> void` on
-        `IntCallback`).  Add `name` to `ty_function`, thread it through every
-        constructor/matcher, set it from the callee, render it in `sexpr.mt:552`;
-        then the LSP renders `fn ` like the host's `Types::Function#to_s`.
-
-    F7. **The callable-value record** (2 of the 5 token positions): the host renders
-        a bare function name `function` only where its analyzer recorded a
-        callable-value site; the self's scanner says `function` for any name in
-        `facts.functions`.  Measured pairs — `identity` 275:40 (inside
-        `callable_of(identity)`: `callable_of` is a *parser-level* builtin in the
-        self, so it needs its own hook) and `add` 1099:41 (a proc-parameter read the
-        self resolves against the top-level `add`) both read host `variable:0` /
-        self `function:0`.
-
-    Then, one commit each, the LSP-only closures (F8; F2's machinery is the base):
-        the scanner's `callable_field_member_access?` (`check` 1127:9, `invoke`
-        1160:13 — host `property`, self `method`; needs the receiver's resolved type
-        plus the field's function type) and `dot_nested_type_member?` (`Edge`
-        1962:29 — host `type`, self `enumMember`; a nested-type-name table per
-        struct), which together close semanticTokens 1; the documentSymbol
-        enrichment (4 entries, four measured causes — the `extending`-block symbol
-        merge with the receiver named as written in `src/colors.mt`; inline methods
-        as struct children, where `src/node.mt` emits a second top-level `Node` and
-        `docs/language_baseline.mt` a second `Vec2` while the host folds them in and
-        lists `create`/`destroy`/`length_sq`; the locals' flow-refined `detail` in
-        `docs/memory_stress_test.mt` — `Analysis.flow_types` plus a
-        `flow_type_at`-style lookup in `symbols.mt`; and the function-type detail
-        rendering plus the `emit`-expanded declarations' position in
-        `docs/language_baseline.mt`); and the documentHighlight survivor
-        (`lb@704:67` — the host's carried-forward snapshot binding;
-        `navigation.flow_type_at` already implements the recording-order scan, the
-        region-based binding resolution is the gap).  F9's readiness items
-        (ScanFacts release, the reference index's text bound, `note_document_tokens`
-        caching) close the session if budget remains.
-
-    GATES for every commit: tools/bootstrap.sh -j 16 (fixed point + 14/14),
-    build/stage2/mtc test test/mt -I . (60/0), rake "cli:parity" (23/38/0 with the
-    same diff *set*), ruby tools/sexpr_parity.rb lex -q and parse -q (0 differ) and
-    — for lowering-touching items — lower -q -j 16 (39/614/51/2, the *set*),
-    ruby tools/unused_import_parity.rb (609/608, start it early),
-    rake "parity:scoreboard" (the per-rule lint table where F3 moves),
-    ruby tools/lsp_parity.rb record/compare (30/30 + the 4 documented entries),
-    ruby tools/lsp_recovery_probe.rb --check, the fixture sweep, and the FULL LSP
-    matrix for any item that should move the audit (never `--only` for
-    facts-dependent classes; verify with lsp_audit_diffs.rb --compare — added must
-    be 0).  C-backend-touching changes also get the example sweeps: examples/*.mt
-    13/15 (the 2 async aborts documented), examples/sdl3 34/34, a raylib sample.
-    Behaviour changes get valgrind on the touched path plus the headless-Neovim
-    smoke (`nvim --headless -u NONE -l tmp/nvim_hover_smoke.lua <binary> <file>
-    <line> <col>` — the positions are 0-based).  Sync docs/self-host-plan.md §0k,
-    docs/lsp-design.md, docs/lsp-parity-plan.md and the plan ledger in the same
-    commit; commit trailer:
-    Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
-    No hacks — fix root causes; never edit sources or rebuild while a gate runs;
-    rebuild before measuring; run generated binaries as
-    `timeout 10 bash -c 'ulimit -v 20000000; …'`.
-```
+The live copy is the ledger's **"Session 18 prompt"**
+(`~/.commandcode/plans/finish-self-host-full-parity.md`): it opens with the
+session-17 close (the matrix at 4 differing entries, every per-rule lint *count*
+now matching) and lists the remaining work in order — F3's emission-order
+restructure, `constant-condition`, the `owning-release` pair, the `type quat`
+index-coverage fix, the documented `documentHighlight` decision, then F9's
+readiness items and the compiler tracks (lower/CLI/DAP/bindings).  Its
+per-entry evidence and the restructure's concrete plan are in the ledger's
+session-17 log.

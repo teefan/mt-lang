@@ -149,25 +149,33 @@ its own sweep: `ruby tools/unused_import_parity.rb`.
    a 40-file raylib sample, `test/mt` 60/60 with 0 failures).  Six root causes are
    recorded in §0j's 2026-09-27 section; regressions should show up as a build
    failure in those sweeps.
-1. **`lower` dump parity** — paused: 0 self-rejections, 38/702 byte-identical,
-   the remaining categories ranked in §0j.
-2. **CLI behavior parity** — 22/61 harness cases match; the 39 differ on message
-   text, output channel and argument precedence (§0j item 10).
-3. **LSP feature parity** — **the active phase** (2026-09-26; the plan
-   document is `docs/lsp-parity-plan.md`, counters as of session 12): the
-   self-vs-host harness (`tools/lsp_parity.rb`) measures 30/30 capability keys
-   with 4 documented differing entries and 0 semantic-token comparisons, and the
-   project audit (`tools/lsp_project_audit.rb`) 6456 entries / **56 differ**;
-   the remaining families and the working order are in §0k.  Stages 1
-   (seven isolated entries), 2 (completion), 3 (documentSymbol), 4
-   (diagnostics + semantic tokens), 5 (formatting/tidy — plus the
-   `tools/format_parity.rb` mode sweep), 5b (the VS Code startup crash and the
-   resolve endpoints the harness was missing) and 6 (`codeLens/resolve`) are
-   closed.  The self-host survives the whole stress corpus without a crash or
-   hang, and a real VS Code session runs clean under valgrind.
+1. **`lower` dump parity** — session-17 measurement: **39 match / 615 differ /
+   51 host-rejected / 0 self-rejected** (the count drifts with the tmp fixtures;
+   quote the set).  The ranked remaining categories are in §0j — the biggest
+   single mover is item 1 (opaque declaration naming/`forward_declarable`, the
+   first difference for all 34 sdl3 files).
+2. **CLI behavior parity** — **23 match / 38 differ / 0 pending** of 61 harness
+   cases (session 17); the differ on message text, output channel and argument
+   precedence (§0j item 10).
+3. **LSP feature parity** — **the active phase** (plan:
+   `docs/lsp-parity-plan.md`; live records in §0k).  Session-17 close: the
+   self-vs-host harness (`tools/lsp_parity.rb`) measures **30/30 capability keys
+   with its 4 documented differing entries**, and the project audit
+   (`tools/lsp_project_audit.rb`) 6456 entries / **4 differ** — `diagnostic` 2
+   (the linter's emission order plus `constant-condition` and the
+   `owning-release` pair), `documentHighlight` 1 (the host's warm-facts snapshot
+   carry-forward, documented) and `hover` 1 (`type quat`'s index coverage) —
+   with `documentSymbol`, `semanticTokens`, codeLens, foldingRange, inlayHint,
+   documentLink, workspace/symbol and definition/declaration/typeDefinition/
+   implementation/references all **0**.  Completion gained imported-type member
+   lists this session (`n.` on `node.Node` is byte-identical to the host).  The
+   self-host survives the whole stress corpus without a crash or hang, and a real
+   VS Code session runs clean under valgrind.
 4. **DAP** — phase 1 (process backend, 29 handlers) delivered; the lldb-dap
    bridge is now feasible (`std/libuv.mt` poll + `std/async`) but unstarted
-   (`dap-design.md` §10).
+   (`dap-design.md` §10).  Session-17 smoke: the self's `*launch(.mt)` reports
+   `error: Milk Tea binary not found: src/main` where the host is `ok` — the
+   build-on-launch path is the first DAP item.
 
 ### First steps for the next session (2026-09-27 session-2 handoff)
 
@@ -181,8 +189,8 @@ program).  Suggested order:
    which makes `sexpr_parity`'s staleness warning fire harmlessly):
    ```sh
    ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
-   ruby tools/sexpr_parity.rb lower -q -j 16      # baseline 39 match / 613 differ / 50 host-rejected / 0 self-rejected
-   rake "cli:parity"                              # baseline 22 match / 39 differ / 0 pending
+   ruby tools/sexpr_parity.rb lower -q -j 16      # session-17: 39 match / 615 differ / 51 host-rejected / 0 self-rejected
+   rake "cli:parity"                              # session-17: 23 match / 38 differ / 0 pending
    ```
 2. **The biggest single mover** — §0j item 1 (opaque `IR::OpaqueDecl`
    naming/`forward_declarable`: the first difference for all 34 sdl3 files; the
@@ -2243,6 +2251,56 @@ segment), then B4's other classes (documentSymbol 5 — timing-coupled on the ho
 self's unwrapped outline matches the symbol set; documentHighlight 1 — the host's
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
+
+### Session-17 close (2026-10-01): the matrix at 4, and what is left
+
+Three commits: F8.2 closed (`cc624800`, documentSymbol 1 → 0, the matrix
+5 → 4), the linter's per-rule anchor/message/firing deltas (`1e147e12`, every
+*count* now matching — `rake parity:scoreboard` reads **0 rules with a count
+mismatch**, from 8) and the imported-type completion fix (`5e272a4f`, below).
+
+State at the close — the SimpleGame full matrix (6456 entries) reads
+**4 differing entries**: `diagnostic` 2, `documentHighlight` 1, `hover` 1;
+`documentSymbol`, `semanticTokens`, `codeLens`, `foldingRange`, `inlayHint`,
+`documentLink`, `workspace/symbol` and definition/declaration/typeDefinition/
+implementation/references are all **0**.  Everything else green: bootstrap fixed
+point + 14/14, `test/mt` 60/0, `cli:parity` 23/38/0, sexpr lex 705/705 + parse
+701/0 + `lower` 39 match / 615 differ / 51 host-rejected / 0 self-rejected,
+`unused_import_parity` 609/609, the harness 30/30 + its 4 documented entries,
+the recovery probe, the fixture sweep at every baseline (added 0), the formatter
+**705/705 in all three modes**, the example sweeps (15/15, 34/34, two raylib),
+valgrind 0 errors over an LSP drive, the headless-Neovim smoke.
+
+What is left, revised (the full ranked list is
+`docs/lsp-parity-plan.md`'s "Remaining, revised at the session-17 close" and
+`docs/foundational-blockers-plan.md`'s table):
+
+1. **`diagnostic` 2 — the linter's emission order** (the two-walk merge: the
+   scope walk drives, the inline rules fire at each statement, the per-function
+   flow rules and the function's scope pop follow, then `missing_return`; the
+   whole-file passes keep their tail order).  With the counts already matching,
+   this alone should close the class.
+2. **`diagnostic` 2 — `constant-condition`** (lb, 4 items: the source-line
+   `condition_span`, the `branch`/`loop` message, the `ConstantPropagation` port)
+   and **`owning-release-double`/`-leak`** (mst, 3 items: the CFG release path
+   and the released binding's `symbol_name`).  One commit each.
+3. **`hover` 1 — `type quat`** (`lb@1653:24`): the definition index never
+   covered a std module nobody opened; warm/index the std modules whose
+   `extending` blocks a file references (or resolve from the loaded module
+   binding) and re-run the audit twice.
+4. **`documentHighlight` 1** (`lb@704:67`): the host's warm-facts snapshot
+   carry-forward, measured in both states — the self matches the host's *cold*
+   answer byte for byte, and the host's warm answer is a name-keyed-snapshot
+   artifact the self's bindings cannot express.  Documented as a deliberate
+   difference; no action unless the snapshot machinery is built for other reasons.
+5. **F9 readiness** (`ScanFacts` release, the reference index's document texts,
+   `note_document_tokens` caching) — valgrind reads ~91 MB "definitely lost" over
+   an LSP drive.
+6. Beyond the LSP: the compiler tracks — `lower` dump parity (615 differing
+   files, Phase 2's ranked items), CLI parity (38 differing cases), DAP's
+   build-on-launch (`*launch(.mt)` reports "Milk Tea binary not found" on the
+   self where the host is `ok`), and the self-only `imported-bindings --all
+   --check` (3 verified / 25 "changed" — triage cosmetic vs behavioural first).
 
 ### Imported-type member completion (2026-10-01 session 17): `n.` on an imported struct
 
