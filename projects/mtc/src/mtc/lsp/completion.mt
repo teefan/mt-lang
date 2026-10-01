@@ -93,7 +93,13 @@ public function handle_completion(
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
     var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    var analysis = analyzer.check_source_file(ast_file)
+    # The loader-backed analysis binds the imported modules, so a value's
+    # imported type resolves (`var n = node.Node.create(…)`); the single-file
+    # analysis is the fallback when the document cannot be loaded.
+    var maybe_analysis = workspace.analysis_for(ws, file_path.as_str())
+    var analysis = if maybe_analysis.is_some(): maybe_analysis.unwrap() else: analyzer.check_source_file(ast_file)
+    if maybe_analysis.is_some():
+        ast_file = analysis.source_file
 
     # Dot-receiver context.  The host answers every dot receiver from the
     # receiver chain — and, failing that, from the file's method list — so the
@@ -152,15 +158,22 @@ function dot_receiver_completions(
         # A failed import has no facts binding, so the host falls through.
 
     # 2. Type receiver: enum/variant members, then the type's methods.
-    var type_items = type_receiver_completions(analysis, ast_file, receiver, prefix, uri)
+    var type_items = type_receiver_completions(analysis, ast_file, receiver, module_text, prefix, uri)
     if type_items != null:
         let result = unsafe: read(type_items)
         heap.release(type_items)
         return result
 
-    # 3. Value receiver: fields then methods of the receiver's type.
+    # 3. Value receiver: fields then methods of the receiver's type.  An
+    # imported type's members come from the analysis's `imported_type_members`
+    # record, since the current module's tables do not carry them.
     match receiver_value_type(analysis, ast_file, receiver, line + 1):
         Option.some as ty:
+            var imported_items = imported_value_receiver_completions(analysis, ty.value, prefix, uri)
+            if imported_items != null:
+                let result = unsafe: read(imported_items)
+                heap.release(imported_items)
+                return result
             var value_items = value_receiver_completions(
                 analysis, ast_file, ty.value, prefix, uri, module_text)
             if value_items != null:
@@ -792,6 +805,7 @@ function type_receiver_completions(
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
     receiver: str,
+    module_name: str,
     prefix: str,
     uri: str,
 ) -> ptr[string.String]?:
@@ -826,7 +840,7 @@ function type_receiver_completions(
 
     # Methods declared on the type.
     emit_type_methods(
-        ast_file, type_name, prefix, uri, 0, "0_",
+        analysis, ast_file, type_name, module_name, prefix, uri, 0, "0_",
         ref_of(items_json), ref_of(first), ref_of(count))
 
     items_json.append("]")
@@ -881,7 +895,7 @@ function value_receiver_completions(
             fi += 1
 
     emit_type_methods(
-        ast_file, type_name, prefix, uri, 2, "1_",
+        analysis, ast_file, type_name, current_module, prefix, uri, 2, "1_",
         ref_of(items_json), ref_of(first), ref_of(count))
 
     items_json.append("]")
@@ -892,6 +906,171 @@ function value_receiver_completions(
     let alloc = heap.must_alloc[string.String](1)
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
+
+
+## The `(module, type)` an imported type reference names.  The analyzer produces
+## two shapes for one: `ty_imported` for a specialized or imported nominal
+## (`node.Node`, `Vec[int]`) and a `ty_named` whose `module_name` is set for a
+## plain imported name.
+public struct ImportedTypeRef:
+    module_name: str
+    name: str
+
+
+function imported_type_reference(ty: types.Type) -> Option[ImportedTypeRef]:
+    match ty:
+        types.Type.ty_imported as im:
+            if im.module_name.len > 0:
+                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = im.module_name, name = im.name))
+            return Option[ImportedTypeRef].none
+        types.Type.ty_named as n:
+            if n.module_name.len > 0:
+                return Option[ImportedTypeRef].some(value = ImportedTypeRef(module_name = n.module_name, name = n.name))
+            return Option[ImportedTypeRef].none
+        _:
+            return Option[ImportedTypeRef].none
+
+
+## An *imported* type's members for a value receiver (`var n = node.Node.create(…)`
+## then `n.`): the analysis's `imported_type_members` record carries the declaring
+## module's fields and method signatures, and the host renders both with that
+## module's qualification (`parent: ptr[node.Node]?`).  None when the receiver is
+## not an imported type or the record has no entry for it, so the caller keeps its
+## local-type path and the method fallback.
+function imported_value_receiver_completions(
+    analysis: ref[analyzer.Analysis],
+    receiver_ty: types.Type,
+    prefix: str,
+    uri: str,
+) -> ptr[string.String]?:
+    let reference = imported_type_reference(receiver_ty) else:
+        return null
+    let module_name = reference.module_name
+    let im_name = reference.name
+    var key = string.String.create()
+    key.append(module_name)
+    key.append(".")
+    key.append(im_name)
+    defer: key.release()
+    let member_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str()) else:
+        return null
+    let members = unsafe: read(member_ptr)
+
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+
+    var fi: ptr_uint = 0
+    while fi < members.fields.len and count < MAX_COMPLETION_ITEMS:
+        let field = unsafe: read(members.fields.data + fi)
+        if prefix_matches(field.name, prefix):
+            var detail = string.String.create()
+            detail.append(field.name)
+            detail.append(": ")
+            var rendered = type_render.qualified_name(field.ty, module_name)
+            detail.append(rendered.as_str())
+            rendered.release()
+            var sort_text = string.String.create()
+            sort_text.append("0_")
+            sort_text.append(field.name)
+            append_item_ext(
+                ref_of(items_json), field.name, KIND_FIELD, detail.as_str(), field.name,
+                sort_text.as_str(), field.name, uri, 0, "", "", ref_of(first))
+            sort_text.release()
+            detail.release()
+            count += 1
+        fi += 1
+
+    var entries = members.methods.entries()
+    while entries.next() and count < MAX_COMPLETION_ITEMS:
+        let entry = entries.current()
+        let method_name = unsafe: read(entry.key)
+        let sig = unsafe: read(entry.value)
+        var label = string.String.create()
+        if sig.method_kind == ast.MethodKind.mk_static:
+            label.append("static:")
+        label.append(method_name)
+        if prefix_matches(label.as_str(), prefix):
+            var params_text = imported_params_text(sig.params, module_name)
+            var detail = string.String.create()
+            detail.append(label.as_str())
+            detail.append("(")
+            detail.append(params_text.as_str())
+            detail.append(") -> ")
+            var rendered = type_render.qualified_name(sig.return_type, module_name)
+            detail.append(rendered.as_str())
+            rendered.release()
+            var insert = string.String.create()
+            var insert_format: int = 0
+            if sig.params.len <= 5:
+                append_param_snippet(ref_of(insert), label.as_str(), sig.params)
+                insert_format = 2
+            else:
+                insert.append(label.as_str())
+            var label_details = string.String.create()
+            if params_text.len() > 0:
+                label_details.append(" (")
+                label_details.append(params_text.as_str())
+                label_details.append(")")
+            var sort_text = string.String.create()
+            sort_text.append("1_")
+            sort_text.append(label.as_str())
+            append_item_ext(
+                ref_of(items_json), label.as_str(), KIND_METHOD, detail.as_str(),
+                insert.as_str(), sort_text.as_str(), label.as_str(), uri, insert_format,
+                label_details.as_str(), "", ref_of(first))
+            sort_text.release()
+            label_details.release()
+            insert.release()
+            detail.release()
+            params_text.release()
+            count += 1
+        label.release()
+
+    items_json.append("]")
+    if count == 0:
+        items_json.release()
+        return null
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    return alloc
+
+
+## `name: type, …` for a resolved signature's parameters — the host's
+## `format_params`, each type rendered with the declaring module's qualification.
+function imported_params_text(params: span[analyzer.ParamEntry], module_name: str) -> string.String:
+    var buf = string.String.create()
+    var i: ptr_uint = 0
+    while i < params.len:
+        if i > 0:
+            buf.append(", ")
+        let pa = unsafe: read(params.data + i)
+        buf.append(pa.name)
+        buf.append(": ")
+        var rendered = type_render.qualified_name(pa.ty, module_name)
+        buf.append(rendered.as_str())
+        rendered.release()
+        i += 1
+    return buf
+
+
+## The host's `snippet_for_callable`: one placeholder per parameter
+## (`create(${1:name})`), the bare call when there are none.
+function append_param_snippet(target: ref[string.String], label: str, params: span[analyzer.ParamEntry]) -> void:
+    target.append(label)
+    target.append("(")
+    var i: ptr_uint = 0
+    while i < params.len:
+        if i > 0:
+            target.append(", ")
+        target.append("${")
+        target.append_format(f"#{i + 1}")
+        target.append(":")
+        target.append(unsafe: read(params.data + i).name)
+        target.append("}")
+        i += 1
+    target.append(")")
 
 
 ## Render a struct/union field's declared type from the AST.  The semantic
@@ -930,8 +1109,10 @@ function field_type_text(ast_file: ast.SourceFile, type_name: str, field_name: s
 ## declaration order, with `sort_prefix` (`0_` for a type receiver and the
 ## method fallback, `1_` for a value receiver's methods).
 function emit_type_methods(
+    analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
     type_name: str,
+    module_name: str,
     prefix: str,
     uri: str,
     insert_format: int,
@@ -954,13 +1135,90 @@ function emit_type_methods(
                         unsafe:
                             mfn = read(ext.methods.data + mi)
                         if prefix_matches(mfn.name, prefix):
-                            emit_method_item(
-                                mfn.name, mfn.method_params, mfn.return_type, sort_prefix, uri,
+                            emit_resolved_method_item(
+                                analysis, module_name, type_name, mfn, sort_prefix, uri,
                                 insert_format, items_json, first, count)
                         mi += 1
             _:
                 pass
         di += 1
+
+
+## Emit one method of a known type from its *resolved* signature when the
+## analysis has one: the host renders the label (`static:` for a static
+## method), the parameter text (`name: type`, module-qualified), the detail
+## (`static:make() -> local_probe.LocalThing`), the call snippet and the label
+## details all from its method table.  Falls back to the AST rendering when no
+## signature is recorded (`method_fallback_completions` keeps using it).
+function emit_resolved_method_item(
+    analysis: ref[analyzer.Analysis],
+    module_name: str,
+    type_name: str,
+    mfn: ast.Method,
+    sort_prefix: str,
+    uri: str,
+    insert_format: int,
+    items_json: ref[string.String],
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    let is_static = mfn.method_kind == ast.MethodKind.mk_static
+    var label = string.String.create()
+    defer: label.release()
+    if is_static:
+        label.append("static:")
+    label.append(mfn.name)
+
+    var key = string.String.create()
+    key.append(type_name)
+    key.append(".")
+    key.append(mfn.name)
+    defer: key.release()
+    let sig_ptr = unsafe: read(analysis).method_sigs.get(key.as_str()) else:
+        emit_method_item(
+            label.as_str(), mfn.method_params, mfn.return_type, sort_prefix, uri,
+            insert_format, items_json, first, count)
+        return
+    let sig = unsafe: read(sig_ptr)
+
+    var params_text = imported_params_text(sig.params, module_name)
+    defer: params_text.release()
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append(label.as_str())
+    detail.append("(")
+    detail.append(params_text.as_str())
+    detail.append(") -> ")
+    var rendered = type_render.qualified_name(sig.return_type, module_name)
+    detail.append(rendered.as_str())
+    rendered.release()
+
+    var insert = string.String.create()
+    defer: insert.release()
+    var item_format: int = 0
+    if sig.params.len <= 5:
+        append_param_snippet(ref_of(insert), label.as_str(), sig.params)
+        item_format = 2
+    else:
+        insert.append(label.as_str())
+
+    var label_details = string.String.create()
+    defer: label_details.release()
+    if params_text.len() > 0:
+        label_details.append(" (")
+        label_details.append(params_text.as_str())
+        label_details.append(")")
+
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append(sort_prefix)
+    sort_text.append(label.as_str())
+
+    append_item_ext(
+        items_json, label.as_str(), KIND_METHOD, detail.as_str(), insert.as_str(),
+        sort_text.as_str(), label.as_str(), uri, item_format, label_details.as_str(), "", first)
+    unsafe:
+        read(count) = read(count) + 1
 
 
 ## Emit one method completion item.
@@ -1986,8 +2244,6 @@ function append_item_ext(
     json_out.append("\",\"insertText\":\"")
     proto.append_escaped(json_out, insert)
     json_out.append("\"")
-    if insert_format == 2:
-        json_out.append(",\"insertTextFormat\":2")
     json_out.append(",\"sortText\":\"")
     proto.append_escaped(json_out, sort_text)
     json_out.append("\"")
@@ -2006,6 +2262,10 @@ function append_item_ext(
             proto.append_escaped(json_out, label_details_description)
             json_out.append("\"")
         json_out.append("}")
+    # The host sets `insertTextFormat` after the snippet *and* the label details,
+    # so it is the item's last key.
+    if insert_format == 2:
+        json_out.append(",\"insertTextFormat\":2")
     json_out.append("}")
 
 

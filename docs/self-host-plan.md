@@ -2244,6 +2244,51 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### Imported-type member completion (2026-10-01 session 17): `n.` on an imported struct
+
+Reported from the SimpleGame project: in `src/main.mt` a `Node` local
+`var n = node.Node.create(c"Hello")` offered **no** completions after `n.`,
+while the host lists `name`, `parent` and `static:create`.  Two causes, both in
+the completion path:
+
+1. **The buffer was checked single-file.**  `handle_completion` ran
+   `analyzer.check_source_file` — no imports bound — so the imported
+   construction's type was `ty_error` and the receiver resolved to nothing.  It
+   now uses the loader-backed analysis through the same convention the hover,
+   outline and definition paths use (`analysis_for_document` /
+   `ast_for_document`), re-pointing `ast_file` at the tree the analysis was built
+   from, since `resolved_expr_types` is keyed by expression pointer.
+2. **The value-receiver path only read the current module's tables.**  An
+   imported struct's fields are in neither `Analysis.structs` nor the file's AST,
+   and the empty-but-non-null result suppressed the host's method-list fallback.
+   The analyzer now records every imported module's structs and unions with their
+   method signatures while the bindings are borrowed (`Analysis.imported_type_members`,
+   keyed `<module>.<Type>`), and the completion reads that record for a
+   `ty_imported` or module-qualified `ty_named` receiver — the two shapes the
+   analyzer produces for one imported type — rendering each member with the
+   declaring module's qualification, exactly the host's `Types::Struct#to_s`.
+
+A third delta surfaced while checking a *local* struct receiver: the method list
+rendered from the AST alone (`make() -> LocalThing`, no `static:` marker) where
+the host renders from its method table (`static:make() -> local_probe.LocalThing`).
+`emit_type_methods` now goes through `emit_resolved_method_item`, which prefers
+the analysis's signature for the label, the parameter text, the detail, the call
+snippet and the label details, and falls back to the AST rendering when no
+signature is recorded (`method_fallback_completions` keeps using that).
+`append_item_ext` also emits `insertTextFormat` **last**, where the host sets it
+— key order is invisible to clients but visible to a byte comparison.
+
+Measured on SimpleGame `src/main.mt`: the host's three items and the self's are
+**byte-identical** — `name` (`name: cstr`), `parent` (`parent: ptr[node.Node]?`)
+and `static:create` (`static:create(name: cstr) -> node.Node`, with the
+`${1:name}` snippet, the ` (name: cstr)` label detail and `insertTextFormat: 2`).
+Verified both in the committed file (`… n.name …`) and in the reported mid-edit
+shape — a bare `n.` line whose buffer no longer parses — and the local-struct
+pair (`first`/`second`/`static:make`/`describe`) matches too.  The host answers
+completion only once its facts exist (`unless facts → []`), so the probe warms
+with a `textDocument/diagnostic` first (`tmp/hl_probe.rb --warm`); the full
+matrix is unchanged by all of this (`4 -> 4`, closed 0, added 0).
+
 ### Linter stage 11b: the anchor, message and firing deltas (2026-10-01 session 17, F3 part 2)
 
 The diagnostic class compares whole *arrays*, so this is the content half of F3;

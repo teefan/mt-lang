@@ -69,6 +69,15 @@ public struct FieldEntry:
     ty: types.Type
 
 
+## One imported type's members, keyed `<module>.<Type>`: its fields (a struct's or
+## union's) and its methods.  The analysis carries only the current module's
+## tables, so this is the record the LSP's dot-receiver completion reads to list
+## `imported.Node.`'s members.
+public struct ImportedTypeMembers:
+    fields: span[FieldEntry]
+    methods: map_mod.Map[str, FnSig]
+
+
 ## One name of a destructuring `let (a, b) = …` binding and the type the
 ## binding carries (the host's per-name scope binding): the tuple element at the
 ## name's position, or the struct field at that position.  The declaration line
@@ -314,6 +323,8 @@ public struct Analysis:
     module_name: str
     module_kind: ast.ModuleKind
     unsafe_statement_lines: vec.Vec[ptr_uint]
+    ## See `ImportedTypeMembers`: the imported types' fields and methods.
+    imported_type_members: map_mod.Map[str, ImportedTypeMembers]
     uses_parallel_for: bool
     declared_attributes: map_mod.Map[str, span[str]]
     imports: map_mod.Map[str, str]
@@ -474,6 +485,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         module_name = module_name,
         module_kind = file.module_kind,
         unsafe_statement_lines = required_unsafe_line_list(ref_of(ctx)),
+        imported_type_members = collect_imported_type_members(ref_of(ctx)),
         uses_parallel_for = ctx.uses_parallel_for,
         declared_attributes = ctx.declared_attributes,
         imports = ctx.import_aliases,
@@ -4293,6 +4305,61 @@ function required_unsafe_line_list(ctx: ref[Context]) -> vec.Vec[ptr_uint]:
         let entry = entries.current()
         lines.push(unsafe: read(entry.key))
     return lines
+
+
+## Every imported module's structs and unions with their methods, keyed
+## `<module>.<Type>` — the record `Analysis.imported_type_members` carries for the
+## LSP (the module bindings themselves are borrowed by the check and not exposed).
+function collect_imported_type_members(ctx: ref[Context]) -> map_mod.Map[str, ImportedTypeMembers]:
+    var members_by_type = map_mod.Map[str, ImportedTypeMembers].create()
+    let modules = ctx.imported_modules else:
+        return members_by_type
+    var entries = unsafe: read(modules).entries()
+    while entries.next():
+        let entry = entries.current()
+        let module_name = unsafe: read(entry.key)
+        collect_binding_members(module_name, entry.value, false, ref_of(members_by_type))
+        collect_binding_members(module_name, entry.value, true, ref_of(members_by_type))
+    return members_by_type
+
+
+## One group of a binding's types (its structs, or its unions) with their methods.
+function collect_binding_members(
+    module_name: str,
+    binding_ptr: ptr[ModuleBinding],
+    union_group: bool,
+    members_by_type: ref[map_mod.Map[str, ImportedTypeMembers]],
+) -> void:
+    var entries = if union_group:
+        unsafe: read(binding_ptr).unions.entries()
+    else:
+        unsafe: read(binding_ptr).structs.entries()
+    while entries.next():
+        let entry = entries.current()
+        let type_name = unsafe: read(entry.key)
+        var methods = map_mod.Map[str, FnSig].create()
+        collect_type_methods(type_name, binding_ptr, ref_of(methods))
+        var key = string.String.create()
+        key.append(module_name)
+        key.append(".")
+        key.append(type_name)
+        members_by_type.set(key.as_str(), ImportedTypeMembers(fields = unsafe: read(entry.value), methods = methods))
+
+
+## A type's methods, keyed by their own names: the binding's `method_sigs` are
+## keyed `<Type>.<method>` (no `static:` marker — the signature's `method_kind`
+## carries that).
+function collect_type_methods(type_name: str, binding_ptr: ptr[ModuleBinding], methods: ref[map_mod.Map[str, FnSig]]) -> void:
+    var prefix = string.String.create()
+    prefix.append(type_name)
+    prefix.append(".")
+    var entries = unsafe: read(binding_ptr).method_sigs.entries()
+    while entries.next():
+        let entry = entries.current()
+        let key = unsafe: read(entry.key)
+        if key.starts_with(prefix.as_str()):
+            let method_name = key.slice(prefix.len(), key.len - prefix.len())
+            methods.set(method_name, unsafe: read(entry.value))
 
 
 ## The host does not check a *generic* body — it is checked at instantiation —
