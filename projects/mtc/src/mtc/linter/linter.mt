@@ -149,6 +149,10 @@ public function lint_source_with(
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
     var lexed = lexer.lex_with_trivia(source, ref_of(lex_diags))
+    var source_lines = vec.Vec[str].create()
+    defer: source_lines.release()
+    split_source_lines(source, ref_of(source_lines))
+    lint_source_lines = ptr_of(source_lines)
 
     lint_loop_depth = 0
     lint_generic_depth = 0
@@ -193,6 +197,7 @@ public function lint_source_with(
     lint_scope_ctx = null
     lint_ptr_state = null
     lint_cast_ctx = null
+    lint_source_lines = null
 
     # Whole-file passes run after the walk, matching Ruby's emission order.
     lint_doc_tags(file.declarations, source, path, ref_of(warnings))
@@ -845,6 +850,11 @@ var lint_cast_drained: ptr_uint = 0
 var lint_owning_type_names: span[str] = span[str]()
 
 
+## The file's source lines (the host's `@source_lines`), for the source-line
+## spans the rules anchor on.  `null` outside a lint pass.
+var lint_source_lines: ptr[vec.Vec[str]]? = null
+
+
 ## The host's `check_redundant_unsafe`: an `unsafe:` block or expression whose
 ## line the analyzer never recorded as *required* has nothing to do.
 function check_redundant_unsafe(line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -922,6 +932,21 @@ function int_to_decimal(n: int) -> string.String:
         result.push_byte(ds.byte_at(i - 1))
         i -= 1
     return result
+
+
+## Split the source into its lines (the host's `@source_lines`), each without
+## its trailing newline.
+function split_source_lines(source: str, sink: ref[vec.Vec[str]]) -> void:
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i <= source.len:
+        if i == source.len:
+            sink.push(source.slice(start, i - start))
+            break
+        if source.byte_at(i) == 10:
+            sink.push(source.slice(start, i - start))
+            start = i + 1
+        i += 1
 
 
 function push_warning(warnings: ref[vec.Vec[Warning]], path: str, line: ptr_uint, code: str, message: str, severity: str) -> void:
@@ -2392,7 +2417,7 @@ function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: st
     lint_dead_body(params, body, path, warnings)
     lint_unreachable_in_body(body, path, warnings)
     borrow_check_body(body, path, warnings)
-    lint_const_cond_in_body(body, path, warnings)
+    lint_const_cond_in_body(params, body, path, warnings)
     lint_null_check_body(body, path, warnings)
     lint_loop_single_in_body(body, path, warnings)
     ownership_walk_body(body, path, warnings, lint_owning_type_names)
@@ -4899,105 +4924,168 @@ function lint_unreachable_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
 
 
 # =============================================================================
-#  constant-condition — `if true` / `while false` / `x == x`
+#  constant-condition — the host's `emit_constant_condition_warnings`
 # =============================================================================
 
+## The host's `source_code_line`: the line with trailing whitespace removed.
+function source_code_line(line: ptr_uint) -> Option[str]:
+    let lp = lint_source_lines else:
+        return Option[str].none
+    let lines = unsafe: read(lp)
+    if line == 0 or line > lines.len():
+        return Option[str].none
+    let sp = lines.get(line - 1) else:
+        return Option[str].none
+    return Option[str].some(value = rstrip_line(unsafe: read(sp)))
 
 
-function lint_const_cond_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    var conds = constprop.collect_constant_conditions_body(body)
-    defer: conds.release()
-    var ci: ptr_uint = 0
-    while ci < conds.len():
-        let cp = conds.get(ci) else:
+## Trailing whitespace removed (the host's `rstrip`).
+function rstrip_line(text: str) -> str:
+    var end = text.len
+    while end > 0:
+        let b = text.byte_at(end - 1)
+        if b == 32 or b == 9 or b == 13:
+            end -= 1
+        else:
             break
-        unsafe:
-            let c = read(cp)
-            var buf = string.String.create()
-            buf.append(c.kind)
-            buf.append(" condition is always ")
-            buf.append(c.value)
-            push_warning(warnings, path, c.line, "constant-condition", buf.as_str(), "warning")
-        ci += 1
-    # Fall back to the trivial check for literal true/false and self-comparisons.
-    lint_const_cond_trivial_in_body(body, path, warnings)
+    return text.slice(0, end)
 
 
-function lint_const_cond_trivial_in_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    let bp = body else:
+struct ConditionSpan:
+    line: ptr_uint
+    column: ptr_uint
+    length: ptr_uint
+
+
+## The host's `condition_span`: it prefers the *source line's* keyword-to-colon
+## span over the expression's own position.
+function condition_span(expr: ptr[ast.Expr], line: ptr_uint, is_while: bool) -> ConditionSpan:
+    match source_condition_span(line, is_while):
+        Option.some as sp:
+            return sp.value
+        Option.none:
+            var eline = expression_line(expr)
+            if eline == 0:
+                eline = line
+            return ConditionSpan(line = eline, column = expression_column(expr), length = expression_length(expr))
+
+
+## The host's `source_condition_span`: on the given line, the keyword
+## (`else if` / `if` / `while`) followed by the condition text up to the `:`.
+function source_condition_span(line: ptr_uint, is_while: bool) -> Option[ConditionSpan]:
+    let text = source_code_line(line) else:
+        return Option[ConditionSpan].none
+    var i: ptr_uint = 0
+    while i < text.len and (text.byte_at(i) == 32 or text.byte_at(i) == 9):
+        i += 1
+    var after_keyword: ptr_uint = 0
+    if is_while:
+        if not text_matches_at(text, i, "while"):
+            return Option[ConditionSpan].none
+        after_keyword = i + 5
+    else:
+        if text_matches_at(text, i, "else if"):
+            after_keyword = i + 7
+        else if text_matches_at(text, i, "if"):
+            after_keyword = i + 2
+        else:
+            return Option[ConditionSpan].none
+    if after_keyword >= text.len:
+        return Option[ConditionSpan].none
+    let sep = text.byte_at(after_keyword)
+    if not (sep == 32 or sep == 9):
+        return Option[ConditionSpan].none
+    var start = after_keyword
+    while start < text.len and (text.byte_at(start) == 32 or text.byte_at(start) == 9):
+        start += 1
+    var colon = start
+    var found = false
+    while colon < text.len:
+        if text.byte_at(colon) == 58:
+            found = true
+            break
+        colon += 1
+    if not found:
+        return Option[ConditionSpan].none
+    let cond = rstrip_line(text.slice(start, colon - start))
+    if cond.len == 0:
+        return Option[ConditionSpan].none
+    return Option[ConditionSpan].some(value = ConditionSpan(line = line, column = start + 1, length = cond.len))
+
+
+function text_matches_at(text: str, at: ptr_uint, needle: str) -> bool:
+    if at + needle.len > text.len:
+        return false
+    var i: ptr_uint = 0
+    while i < needle.len:
+        if text.byte_at(at + i) != needle.byte_at(i):
+            return false
+        i += 1
+    return true
+
+
+## The host's `emit_constant_condition_warnings` over one body: F1's graph,
+## the constant-propagation solver, the loop-body skip, then the source-line
+## anchor.
+function lint_const_cond_in_body(params: span[ast.Param], body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let b = body else:
         return
-    unsafe:
-        match read(bp):
-            ast.Stmt.stmt_block as blk:
-                var si: ptr_uint = 0
-                while si < blk.statements.len:
-                    lint_const_cond_stmt(blk.statements.data + si, path, warnings)
-                    si += 1
-            _:
-                pass
+    var flow_cfg = flow_builder.empty_cfg()
+    var graph = flow_graph.empty_graph()
+    defer: flow_graph.graph_release(ref_of(graph))
+    flow_builder.build_graph_into(ref_of(flow_cfg), ref_of(graph), params, b)
+    var in_states = vec.Vec[constprop.StateEntry].create()
+    defer: in_states.release()
+    var out_states = vec.Vec[constprop.StateEntry].create()
+    defer: out_states.release()
+    constprop.solve_into(ref_of(flow_cfg), ref_of(graph), ref_of(in_states), ref_of(out_states))
+    var loop_bodies = vec.Vec[ptr_uint].create()
+    defer: loop_bodies.release()
+    constprop.loop_body_nodes(ref_of(graph), ref_of(loop_bodies))
+    var id: ptr_uint = 1
+    while id < read(ref_of(graph)).next_id:
+        let node = flow_graph.graph_node(ref_of(graph), id) else:
+            id += 1
+            continue
+        lint_const_cond_node(ref_of(flow_cfg), ref_of(in_states), ref_of(loop_bodies), node, path, warnings)
+        id += 1
 
 
-function lint_const_cond_stmt(sp: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
-    unsafe:
-        match read(sp):
-            ast.Stmt.stmt_if as iff:
-                var bi: ptr_uint = 0
-                while bi < iff.branches.len:
-                    let br = read(iff.branches.data + bi)
-                    if is_constant_condition(br.condition):
-                        push_warning_stmt(warnings, path, iff.line, 0, "constant-condition", "if condition is always a constant boolean", "warning")
-                    lint_const_cond_trivial_in_body(br.body, path, warnings)
-                    bi += 1
-                lint_const_cond_trivial_in_body(iff.else_body, path, warnings)
-            ast.Stmt.stmt_while as wh:
-                if is_constant_condition(wh.condition):
-                    push_warning_stmt(warnings, path, wh.line, 0, "constant-condition", "while condition is always a constant boolean", "warning")
-                lint_const_cond_trivial_in_body(wh.body, path, warnings)
-            ast.Stmt.stmt_for as fr:
-                lint_const_cond_trivial_in_body(fr.body, path, warnings)
-            ast.Stmt.stmt_match as mt:
-                var ai: ptr_uint = 0
-                while ai < mt.arms.len:
-                    lint_const_cond_trivial_in_body(read(mt.arms.data + ai).body, path, warnings)
-                    ai += 1
-            _:
-                pass
-
-
-## True when the expression is a trivially constant boolean: literal true/false,
-## or a self-comparison like `x == x`.
-function is_constant_condition(ep: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_binary_op as b:
-                if b.operator == "==" or b.operator == "!=":
-                    return exprs_equal(b.left, b.right)
-            ast.Expr.expr_unary_op as u:
-                if u.operator == "not":
-                    return is_constant_condition(u.operand)
-            _:
-                pass
-    return false
-
-
-function exprs_equal(left: ptr[ast.Expr], right: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(left):
-            ast.Expr.expr_identifier as li:
-                match read(right):
-                    ast.Expr.expr_identifier as ri:
-                        return li.name == ri.name
-                    _:
-                        return false
-            ast.Expr.expr_bool_literal as lb:
-                match read(right):
-                    ast.Expr.expr_bool_literal as rb:
-                        return lb.value == rb.value
-                    _:
-                        return false
-            _:
-                return false
-
+function lint_const_cond_node(
+    flow_cfg: ref[flow_builder.Cfg],
+    in_states: ref[vec.Vec[constprop.StateEntry]],
+    loop_bodies: ref[vec.Vec[ptr_uint]],
+    node: ptr[flow_graph.CfgNode],
+    path: str,
+    warnings: ref[vec.Vec[Warning]],
+) -> void:
+    let kind = unsafe: read(node).kind
+    let is_if = kind.equal("if_condition")
+    let is_while = kind.equal("while_condition")
+    if not (is_if or is_while):
+        return
+    if is_if and constprop.id_in(loop_bodies, unsafe: read(node).id):
+        # An if-condition in a loop's reach: variables can change across
+        # iterations, so the host does not warn.
+        return
+    if is_while and constprop.while_is_true(node):
+        # `while true` is an idiomatic infinite loop.
+        return
+    let cond = constprop.node_condition(node) else:
+        return
+    match constprop.condition_value_of(flow_cfg, in_states, node):
+        Option.some as val:
+            let line = unsafe: read(node).line
+            let span = condition_span(cond, line, is_while)
+            var buf = string.String.create()
+            if is_while:
+                buf.append("loop condition is always ")
+            else:
+                buf.append("branch condition is always ")
+            buf.append(if val.value: "true" else: "false")
+            push_warning_at(warnings, path, span.line, span.column, span.length, "constant-condition", buf.as_str(), "warning")
+        Option.none:
+            pass
 
 # =============================================================================
 #  loop-single-iteration — loop body always breaks/returns on first iteration

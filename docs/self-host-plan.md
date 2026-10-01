@@ -2252,6 +2252,50 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### `constant-condition`: the host's dataflow rule (2026-10-01 session 18)
+
+The self's rule was a forward integer-value map plus a trivial
+self-comparison check; the host runs `ControlFlow::ConstantPropagation` over
+the CFG and folds the condition with `CompileTime.evaluate` (identifier
+resolution only — member access and calls are "not constant").  The port
+replaces the whole rule:
+
+- `linter/constprop.mt` is the host's lattice: `undef` / a constant / `nac`,
+  `join_lattice` (undef yields, nac absorbs, two different constants meet at
+  nac, an int and an equal float are the same constant), and the per-write
+  transfer (`local_decl` initializers, assignment values with the compound
+  operators).  Values are integers, floats, booleans, strings, `..` ranges
+  (the host materializes `(left...right).to_a`; only indexing, slicing and
+  comparison matter) and expression lists.  The folder covers literals,
+  identifiers, unary/binary operators (arithmetic, bitwise, shifts,
+  comparisons, `and`/`or` short-circuit), index access (a string's byte or
+  slice, a range's element or sub-range, an expression list's element), `if`
+  expressions and numeric prefix casts.
+- the rule walks the graph's `if_condition`/`while_condition` nodes in node
+  order, skips an if-condition the host's `compute_loop_body_nodes` marks as
+  reachable from a back edge (the host's over-approximation is why an
+  if-condition *after* a loop is skipped too), skips `while true`, and anchors
+  on the source line's keyword-to-colon span (`condition_span` /
+  `source_condition_span`), with the `branch condition is always true|false`
+  and `loop condition is always …` messages.  The trivial self-comparison
+  fallback is gone: a comparison of two unknown bindings folds to nac in the
+  host, so it never fires.
+- the walk carries the file's source lines (`lint_source_lines`) for that span.
+- **the graph builder gained a missing edge**: a `let … else:` declaration's
+  success node dead-ended (the host's `add_linear_node(…, next_id)` continues
+  into the next statement), so nothing after a let-else had a dataflow state.
+  With the edge, `let val = maybe_int else: …` folds `val` to the initializer's
+  value (the lb 1387 entry).
+
+**Measured**: `docs/language_baseline.mt`'s diagnostic array is **byte-identical
+to the host's** — 98/98 items, `tmp/lint_table.rb` reports 0 differing lines
+and `rake parity:scoreboard` 0 rules with a count mismatch (both were 8 lines
+at the session-17 close).  The fixture sweep is at its baselines (the two
+already-documented closures only) and the self-host linter tests for `if a == a`
+were updated to the host's semantics (no warning: `a` is nac).  Gates:
+bootstrap fixed point + 14/14, `test/mt` 60/0, `cli:parity` 23/38/0, sexpr lex
+705/705 + parse 701/0, `unused_import_parity` 609/609.
+
 ### The linter's walk: the host's emission order (2026-10-01 session 18, F3 part 3)
 
 The diagnostic class compares whole *arrays*, and the two files' counts already

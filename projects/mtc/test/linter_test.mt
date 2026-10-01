@@ -829,25 +829,27 @@ function test_constant_condition_false_flagged() -> void:
 
 
 @[test]
-function test_constant_condition_self_equal_flagged() -> void:
+function test_constant_condition_self_equal_clean() -> void:
+    # The host folds `a == a` only when `a` has a known constant value; a
+    # parameter is `nac`, so the condition is not reported.
     var source = <<-SRC
         function demo(a: int) -> int:
             if a == a:
                 return 1
             return 0
     SRC
-    expect_one(source, "constant-condition")
+    expect_none(source, "constant-condition")
 
 
 @[test]
-function test_constant_condition_not_self_not_equal_flagged() -> void:
+function test_constant_condition_not_self_not_equal_clean() -> void:
     var source = <<-SRC
         function demo(a: int) -> int:
             if not (a != a):
                 return 1
             return 0
     SRC
-    expect_one(source, "constant-condition")
+    expect_none(source, "constant-condition")
 
 
 @[test]

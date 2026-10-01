@@ -315,6 +315,9 @@ function build_graph_statement(cfg: ref[Cfg], g: ref[graph_mod.CfgGraph], stmt: 
                     collect_local_decl_writes(cfg, success, l.name, l.line, l.column)
                     graph_mod.graph_add_edge(g, cond_id, success_id)
                     graph_mod.graph_set_edge_label(g, cond_id, success_id, "non_null")
+                    # The success arm continues into the next statement (the
+                    # host's `add_linear_node(..., next_id, ...)`).
+                    graph_mod.graph_add_edge(g, success_id, next_id)
                     let null_entry = build_graph_body(cfg, g, l.else_body, next_id, break_target, continue_target)
                     graph_mod.graph_add_edge(g, cond_id, null_entry)
                     graph_mod.graph_set_edge_label(g, cond_id, null_entry, "null")
