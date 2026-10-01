@@ -39,7 +39,14 @@ probe* — the same workspace opened, no audit history — the **host answers
 `apply_hover_index_location` already runs on the builtin-type arm, so the gap is
 the definition index's coverage of the `extending quat:` declaration in a std
 module that was never opened; `docs/self-host-plan.md` §0k's session-17 record
-carries the plan.
+carries the plan.  Session 18 measured the obvious coverage fix — registering
+every loaded dependency file with the index when a document's analysis is built
+(`workspace.mt`'s `analysis_cache` path, `warm_definition_document`) — and it is
+**wrong**: the host's index grows *asynchronously* through its hover-driven warm,
+so eagerly indexing the loader's modules answers locations the host does not
+have yet and adds **153 entries** (declaration/definition 58 each, references 23,
+hover 12, typeDefinition 2, workspace/symbol 1; `tmp/audit-s18-d.json`).  Reverted;
+the entry stays documented until the snapshot/async-index machinery is modelled.
 Document highlight: 915 requests, 1 differing entry (session 17) —
 `docs/language_baseline.mt@704:67`, a cursor on a *named-argument label*.
 Warm, the host resolves the name through its completion snapshots

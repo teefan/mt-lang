@@ -5,10 +5,19 @@ with the Ruby host on everything an editor can observe (diagnostics included), p
 readiness properties parity alone does not test — cold start, steady-state memory, large
 files, long sessions, real clients (Neovim/VS Code).
 
-**Where we are** (branch `selfhost`, session 17, 2026-09-30): SimpleGame audit
-6456 entries / **4 differ** (hover **1**, diagnostic 2, documentHighlight 1;
-semanticTokens, codeLens, workspace/symbol, documentSymbol and
-definition/declaration/typeDefinition/implementation/references all **0**).
+**Where we are** (branch `selfhost`, session 18, 2026-10-01): SimpleGame audit
+6456 entries / **2 differ** — `documentHighlight` 1 (`lb@704:67`, documented) and
+`hover` 1 (`lb@1653:24`, `type quat`); `diagnostic`, documentSymbol,
+semanticTokens, codeLens, foldingRange, inlayHint, documentLink,
+workspace/symbol and definition/declaration/typeDefinition/implementation/
+references are all **0**.  Session 18 closed the **diagnostic class** in three
+commits: the linter's emission order (`a37938b5` — the visitor drives the scope
+state machine, so the arrays interleave in the host's order), the
+`constant-condition` dataflow rule (`bb323ea2`) and the owning-release pair
+(`9680a6c1`).  Both audit files' diagnostic arrays are byte-identical to the
+host's (lb 98/98, mst 10/10, 0 differing lines, 0 rules with a count mismatch).
+The `type quat` hover was re-measured and its eager index-coverage fix rejected
+(153 added entries; §8 of `docs/lsp-design.md`), so it stays documented.
 Session 17 closed the documentSymbol class: the analyzer's initializer typing
 (`str + str`, builtin `array`/`span` constructions with the host's argument
 validation, `ptr_of(ref[T])`, `ptr[T]` methods, a native `with`, tuple element
@@ -347,10 +356,14 @@ lists this session (`n.` on `node.Node` is byte-identical to the host).
 3. **`hover` 1** (`lb@1653:24`, `type quat`).  The host's audit answer carries
    `Defined at: […/std/linear_algebra.mt:237]`; the self's has no location because
    its definition index never covered a std module nobody opened.  The self's
-   `apply_hover_index_location` is already on the arm — the fix is index coverage
-   (warm/index the std modules whose `extending` blocks a file references, or
-   resolve the location from the loaded module binding), then re-run the audit
-   twice.  This is the one entry with a clear, local fix.
+   `apply_hover_index_location` is already on the arm, so the gap is index
+   coverage — but **session 18 measured the eager fix and it is wrong**: warming
+   every loaded dependency file when a document's analysis is built adds **153
+   entries** (the host's index grows *asynchronously* through its hover-driven
+   warm; `docs/lsp-design.md` §8 has the numbers and `tmp/audit-s18-d.json` the
+   run).  The entry stays documented unless the host's asynchronous index
+   behaviour is modelled.  Do NOT port the blanket index fallback either: an
+   earlier attempt closed this entry and added five others.
 4. **Readiness (F9) and determinism (D2/D3)** — `ScanFacts` is never released;
    the reference index keeps an owned copy of every noted document's text;
    `note_document_tokens` re-reads and re-hashes per request (valgrind reads

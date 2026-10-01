@@ -2253,6 +2253,38 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### Session-18 close (2026-10-01): the diagnostic class closed, the matrix at 2
+
+Four commits: the linter's emission order (`a37938b5` — F3 part 3), the
+`constant-condition` dataflow rule (`bb323ea2`), the owning-release pair
+(`9680a6c1`) and this docs close (`dd2ed8ac`).
+
+State at the close — the SimpleGame full matrix (6456 entries) reads
+**2 differing entries**: `documentHighlight` 1 (`docs/language_baseline.mt@704:67`,
+the host's warm-facts snapshot carry-forward — documented) and `hover` 1
+(`docs/language_baseline.mt@1653:24`, `type quat` — documented, with the eager
+index-coverage fix measured and rejected: 153 added entries,
+`docs/lsp-design.md` §8).  `diagnostic` is **0**: all seven files' diagnostic
+arrays are byte-identical to the host's (lb 98/98, mst 10/10; `tmp/lint_table.rb`
+0 differing lines and `rake parity:scoreboard` 0 rules with a count mismatch on
+both).  `documentSymbol`, `semanticTokens`, `codeLens`, `foldingRange`,
+`inlayHint`, `documentLink`, `workspace/symbol` and definition/declaration/
+typeDefinition/implementation/references are all 0.
+
+Everything else green: bootstrap fixed point + 14/14, `test/mt` 60/0,
+`cli:parity` 23/38/0, sexpr lex 705/705 + parse 701/0, `unused_import_parity`
+609/609, the harness 30/30 + its 4 documented entries, the recovery probe, the
+fixture sweep at every baseline except the two documented closures
+(`defprobe`'s seven hover entries from earlier sessions, `hover-probe4`'s
+diagnostic entry closed by the emission order), valgrind 0 errors over an LSP
+drive, the headless-Neovim smoke.
+
+Known cost: the `constant-condition` rule builds its own CFG and solves per body
+where the host caches one flow analysis per statement list; `mtc lint
+projects/mtc/src/mtc/main.mt` takes ~50 s against the host's ~22 s.  A shared
+per-body cache is the follow-up (this ledger's session-18 log, "Measured cost
+note").
+
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
 `owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`
