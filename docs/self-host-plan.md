@@ -2244,6 +2244,113 @@ self's unwrapped outline matches the symbol set; documentHighlight 1 — the hos
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
 
+### Linter stage 11b: the anchor, message and firing deltas (2026-10-01 session 17, F3 part 2)
+
+The diagnostic class compares whole *arrays*, so this is the content half of F3;
+the order half (the host's walk order, which the self still does not reproduce)
+is planned in `docs/foundational-blockers-plan.md`'s F3 section and the ledger's
+session-18 note.  Every row below was measured with `tmp/diag_probe.rb`
+(per-item ranges/messages) and `tmp/lint_table.rb` (per-rule counts and the
+differing lines).
+
+**The range conversion itself.**  `lsp/diagnostics.mt` now mirrors the host's
+`extract_warning_range` exactly: a warning that carries a *column* and no length
+spans **one** character (`len = 1 if len <= 0`), and the quoted-symbol search
+runs only for warnings with no column at all.  The self used the quoted name in
+both cases, which is why the conciseness hints came out 6–10 columns wide where
+the host's are one.
+
+**New span helpers** (`linter/linter.mt`), all mirroring the host's
+`source_helpers.rb`: `expression_length` (an identifier is its name, literals
+their lexeme, `bool` 4/5, `null` 4, a binary expression the distance from its
+left operand's column to the right operand's end, else 1),
+`binary_expression_length`, `statement_column` / `statement_length` (the
+statement's own recorded length — the parser stamps `return`/`while` — with the
+host's per-kind fallbacks), `first_branch_column` and `visually_inline_if`
+(the host's `visually_inline_if?`: every branch body on its branch's own line and
+the else body on the else line — the host's `inline_if_too_wide?` reports
+exactly these as unjoinable, which is its gate on the conditional-expression
+rule).
+
+**Rule rows closed** (each verified by the probe: the entry disappears):
+
+1. `noop-compound-assignment` — the assignment's line, the target's column, the
+   target identifier's length.
+2. `self-comparison` — the whole binary expression's span.
+3. `redundant-return` — the statement's own length (the `return` keyword, 6).
+4. `redundant-type-annotation` — skips a *nullable* annotation
+   (`let x: int? = 42` never warns, the host's `return if statement.type.nullable`)
+   and spans the local's name.
+5. `unreachable-code` — `statement_column`/`statement_length` and the bare
+   message `unreachable code` (was `0:0→1` with
+   "…after a terminating statement").
+6. `prefer-inline-if` — anchored on the branch (the `if` keyword), plus the
+   `visually_inline_if` gate; `prefer-conditional-expression` — the host's
+   messages (`every if branch assigns to 'X'; rewrite as `let X = if …`
+   expression`), the `if`/`match` anchors, the loop-depth gate (a new
+   module-level `lint_loop_depth`, the host's `@loop_depth`) and the same
+   visually-inline gate.
+7. `prefer-or-pattern` — `expression_column` now returns a member access's *own*
+   column (the member token's), as the host's `expression_column` does with its
+   first `expr.column` check; the pattern `Palette.green` anchors at `green`.
+8. `prefer-is-variant` — the host's `desugared_from_is` gate (the three lb
+   firings were all `is`-expression desugarings) and the match expression's own
+   span.
+9. The scope warnings (`unused-local`/`unused-param`/`prefer-let`/
+   `unused-import`/`shadow`) carry the binding name's length
+   (`ScopeWarning.length`, the host's `binding.name.length`), and a
+   destructuring `let (a, b) = …` declares **no** tracked binding — the host's
+   LocalDecl arm declares only `statement.name`, so a destructured name never
+   draws unused-local (`msg` at lb 1942 closed).
+10. `reserved-primitive-name` — `RESERVED_VALUE_NAMES` is now the host's
+    `Types::RESERVED_VALUE_TYPE_NAMES` exactly (`BUILTIN_PRIMITIVE_NAMES` +
+    `Option`/`Result`): the container names (`ptr`, `ref`, `span`, `own`) and
+    `type`/`fn` are **not** reserved value names, so
+    `let ptr: ptr[int]? = null` is clean (this is the lb 1377 firing).
+11. `prefer-own-ptr`'s message now matches the host's
+    ("…consider converting its type from ptr to own…").
+12. **`redundant-unsafe` — the rule was missing entirely.**  The analyzer now
+    carries the host's record: `Context.unsafe_statement_lines` (a stack of the
+    enclosing `unsafe:` nodes' lines, pushed at both the statement and the
+    expression form) and `required_unsafe_lines`; every operation that
+    *requires* unsafe marks the enclosing node's line
+    (`mark_required_unsafe`, the host's `mark_current_unsafe_required!`) — the
+    five sites are the pointer cast, pointer indexing, pointer arithmetic,
+    `reinterpret` and `read`.  `Analysis.unsafe_statement_lines` (a field that
+    had been a placeholder) now carries the set, and the linter's visitor emits
+    the host's warning at the `unsafe:` node itself (block *and* expression
+    form, column + length 6), skipping generic bodies
+    (`lint_generic_depth`, the host's `generic_function_context?`).
+
+13. **`prefer-own-ptr` is the host's rule** — the old implementation warned when
+    a `ptr[...]`-annotated local had no *observed* use, which is why it fired on
+    `let ptr: ptr[int]? = null` (never used) and on `as_byte_ptr` (used only as a
+    method receiver).  `linter/own_ptr.mt` now mirrors the host: candidates are
+    declarations with a `ptr`/`const_ptr` annotation **or** a heap-allocation
+    initializer (`heap.must_alloc`… family), uses are counted recursively with
+    the enclosing `unsafe:` depth (identifier uses and member receivers), and the
+    warning fires only for a non-parameter binding with `unsafe > 0` and
+    `safe == 0`.  Its anchor is the binding (`line`, `column`, `name.length`).
+
+14. Two analyzer facts the linter rules above were reading through stubs:
+    `span[T]`'s members are now `data: ptr[T]` / `len: ptr_uint` (the host's
+    `Span#fields` — this is what made `redundant-unsafe` fire at `mst 323`, where
+    `read(view.data + 0)` needs unsafe), and a *field read through a raw pointer*
+    requires unsafe (`resolve_member_access` reports, or marks the enclosing
+    `unsafe:` node inside one) — the host's
+    `raw pointer dereference requires unsafe`, which is what the `eventprobe`
+    fixture caught.
+
+**Measured**: `language_baseline.mt` host **98 / self 98** and
+`memory_stress_test.mt` host **10 / self 10** — the counts now match on both
+files.  What remains is the *array order* (the emission restructure above) plus
+two content rows: `constant-condition` (lb: four entries whose anchors/messages
+differ — the source-line `condition_span`, the `branch`/`loop` message and the
+`ConstantPropagation` port that decides *which* condition is true) and the
+`owning-release` pair (mst: `owning-release-double` anchored at the binding
+rather than the declaration and `owning-release-leak` missing — the CFG path and
+the released binding's `symbol_name`).
+
 ### The analyzer's initializer typing and the outline residue (2026-09-30 session 17, F8.2 closed)
 
 The outline's remaining `docs/language_baseline.mt` residue was **24 details plus

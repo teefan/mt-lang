@@ -23,6 +23,8 @@ public struct ScopeWarning:
     path: str
     line: ptr_uint
     column: ptr_uint
+    ## The binding name's length: the host's scope warnings span the name.
+    length: ptr_uint
     code: str
     message: str
     severity: str
@@ -68,8 +70,8 @@ struct ScopeCtx:
 #  Warning helpers
 # =============================================================================
 
-function push_w(warnings: ref[vec.Vec[ScopeWarning]], path: str, line: ptr_uint, column: ptr_uint, code: str, msg: str, sev: str) -> void:
-    warnings.push(ScopeWarning(path = path, line = line, column = column, code = code, message = msg, severity = sev))
+function push_w(warnings: ref[vec.Vec[ScopeWarning]], path: str, line: ptr_uint, column: ptr_uint, length: ptr_uint, code: str, msg: str, sev: str) -> void:
+    warnings.push(ScopeWarning(path = path, line = line, column = column, length = length, code = code, message = msg, severity = sev))
 
 
 function warn_shadow(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
@@ -77,7 +79,7 @@ function warn_shadow(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str,
     buf.append("local '")
     buf.append(name)
     buf.append("' shadows a binding from an outer scope")
-    push_w(warnings, path, line, column, "shadow", buf.as_str(), "warning")
+    push_w(warnings, path, line, column, name.len, "shadow", buf.as_str(), "warning")
 
 
 function warn_unused(warnings: ref[vec.Vec[ScopeWarning]], path: str, code: str, kind: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
@@ -87,7 +89,7 @@ function warn_unused(warnings: ref[vec.Vec[ScopeWarning]], path: str, code: str,
     buf.append(" '")
     buf.append(name)
     buf.append("'")
-    push_w(warnings, path, line, column, code, buf.as_str(), "warning")
+    push_w(warnings, path, line, column, name.len, code, buf.as_str(), "warning")
 
 
 function warn_prefer_let(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
@@ -95,7 +97,7 @@ function warn_prefer_let(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: 
     buf.append("variable '")
     buf.append(name)
     buf.append("' is never reassigned, prefer 'let'")
-    push_w(warnings, path, line, column, "prefer-let", buf.as_str(), "hint")
+    push_w(warnings, path, line, column, name.len, "prefer-let", buf.as_str(), "hint")
 
 
 function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, name: str, line: ptr_uint, column: ptr_uint) -> void:
@@ -103,7 +105,7 @@ function warn_unused_import(warnings: ref[vec.Vec[ScopeWarning]], path: str, nam
     buf.append("unused import '")
     buf.append(name)
     buf.append("'")
-    push_w(warnings, path, line, column, "unused-import", buf.as_str(), "warning")
+    push_w(warnings, path, line, column, name.len, "unused-import", buf.as_str(), "warning")
 
 
 # =============================================================================
@@ -1180,16 +1182,9 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[ScopeW
                 visit_expr_opt(loc.value, path, warnings, ctx)
                 if loc.name.len > 0:
                     ctx_declare_local(ctx, loc.name, loc.line, loc.column, not loc.is_let, path, warnings)
-                match loc.destructure_bindings:
-                    Option.some as bindings:
-                        var di: ptr_uint = 0
-                        while di < bindings.value.len:
-                            let dname = unsafe: read(bindings.value.data + di)
-                            if dname.len > 0:
-                                ctx_declare_local(ctx, dname, loc.line, loc.column, not loc.is_let, path, warnings)
-                            di += 1
-                    Option.none:
-                        pass
+                # A destructuring `let (a, b) = …` declares no tracked binding:
+                # the host's LocalDecl arm declares only `statement.name`, so a
+                # destructured name never draws unused-local/shadow/prefer-let.
                 visit_stmt_opt(loc.else_body, path, warnings, ctx)
             ast.Stmt.stmt_assignment as asgn:
                 visit_expr(asgn.value, path, warnings, ctx)

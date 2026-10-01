@@ -229,6 +229,12 @@ struct Context:
     attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
     field_attribute_apps: map_mod.Map[str, vec.Vec[ast.AttributeApplication]]
     unsafe_depth: int
+    ## The enclosing `unsafe:` statements/expressions' lines (the host's
+    ## `@unsafe_statement_lines`): an operation that requires unsafe inside one
+    ## of them records that node's line in `required_unsafe_lines`, which is what
+    ## the linter's `redundant-unsafe` rule reads.
+    unsafe_statement_lines: vec.Vec[ptr_uint]
+    required_unsafe_lines: map_mod.Map[ptr_uint, bool]
     inside_async: bool
     resolved_expr_types: map_mod.Map[ptr_uint, types.Type]
     resolved_call_kinds: map_mod.Map[ptr_uint, str]
@@ -392,6 +398,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
         field_attribute_apps = map_mod.Map[str, vec.Vec[ast.AttributeApplication]].create(),
         unsafe_depth = 0,
+        unsafe_statement_lines = vec.Vec[ptr_uint].create(),
+        required_unsafe_lines = map_mod.Map[ptr_uint, bool].create(),
         inside_async = false,
         resolved_expr_types = map_mod.Map[ptr_uint, types.Type].create(),
         resolved_call_kinds = map_mod.Map[ptr_uint, str].create(),
@@ -465,7 +473,7 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         const_values = ctx.const_values,
         module_name = module_name,
         module_kind = file.module_kind,
-        unsafe_statement_lines = vec.Vec[ptr_uint].create(),
+        unsafe_statement_lines = required_unsafe_line_list(ref_of(ctx)),
         uses_parallel_for = ctx.uses_parallel_for,
         declared_attributes = ctx.declared_attributes,
         imports = ctx.import_aliases,
@@ -2572,8 +2580,10 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                 check_match(ctx, scope, scrutinee_ty, m.arms, m.line, m.column)
             ast.Stmt.stmt_unsafe as u:
                 ctx.unsafe_depth += 1
+                ctx.unsafe_statement_lines.push(u.line)
                 check_body(ctx, scope, chk, u.body)
                 ctx.unsafe_depth -= 1
+                let _popped_stmt = ctx.unsafe_statement_lines.pop()
             ast.Stmt.stmt_defer as d:
                 if chk.inside_parallel:
                     report(ctx, d.line, d.column, "defer is not allowed inside a parallel block")
@@ -3615,16 +3625,22 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_prefix_cast as c:
                 let source = infer_expr(ctx, scope, c.expression)
                 let target = resolve_type(ctx, c.target_type)
-                if types.is_raw_pointer(target) and ctx.unsafe_depth == 0 and not types.is_raw_pointer(source):
-                    report(ctx, c.line, c.column, "pointer cast requires unsafe")
+                if types.is_raw_pointer(target) and not types.is_raw_pointer(source) and not in_generic_body(ctx):
+                    if ctx.unsafe_depth == 0:
+                        report(ctx, c.line, c.column, "pointer cast requires unsafe")
+                    else:
+                        mark_required_unsafe(ctx)
                 return target
             ast.Expr.expr_member_access as ma:
                 return resolve_member_access(ctx, scope, ma.receiver, ma.member_name, false, ma.line, ma.column)
             ast.Expr.expr_index_access as ix:
                 let rt = infer_expr(ctx, scope, ix.receiver)
                 let _ix = infer_expr(ctx, scope, ix.index)
-                if types.is_raw_pointer(rt) and ctx.unsafe_depth == 0:
-                    report(ctx, 0, 0, "pointer indexing requires unsafe")
+                if types.is_raw_pointer(rt) and not in_generic_body(ctx):
+                    if ctx.unsafe_depth == 0:
+                        report(ctx, 0, 0, "pointer indexing requires unsafe")
+                    else:
+                        mark_required_unsafe(ctx)
                 # Range slicing: `str[start..stop]` yields `str`;
                 # `array[T,N][a..b]` / `span[T][a..b]` yield `span[T]`.
                 unsafe:
@@ -3651,8 +3667,10 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 return types.Type.ty_error
             ast.Expr.expr_unsafe as u:
                 ctx.unsafe_depth += 1
+                ctx.unsafe_statement_lines.push(u.line)
                 let result = infer_expr(ctx, scope, u.expression)
                 ctx.unsafe_depth -= 1
+                let _popped_expr = ctx.unsafe_statement_lines.pop()
                 return result
             ast.Expr.expr_call as call:
                 let ty = infer_and_check_call(ctx, scope, call.callee, call.args)
@@ -3989,8 +4007,11 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         if types.is_simd_type(rt) and types.is_numeric(lt) and types.type_equals(types.simd_element_type(rt), lt):
             if op == "*":
                 return rt
-    if (types.is_raw_pointer(lt) or types.is_raw_pointer(rt)) and ctx.unsafe_depth == 0:
-        report(ctx, 0, 0, "pointer arithmetic requires unsafe")
+    if (types.is_raw_pointer(lt) or types.is_raw_pointer(rt)) and not in_generic_body(ctx):
+        if ctx.unsafe_depth == 0:
+            report(ctx, 0, 0, "pointer arithmetic requires unsafe")
+        else:
+            mark_required_unsafe(ctx)
     if types.is_numeric(lt) and types.is_numeric(rt):
         # A literal operand adapts to the other operand's numeric type, so
         # `48 + value` types as `value`'s type and `1 << uint<-x` as uint —
@@ -4263,12 +4284,43 @@ function check_imported_specialization_call(ctx: ref[Context], scope: ref[sscope
                 return types.Type.ty_error
 
 
+## The lines whose unsafe context was actually required, in insertion order —
+## the host's `required_unsafe_lines` array on the analysis facts.
+function required_unsafe_line_list(ctx: ref[Context]) -> vec.Vec[ptr_uint]:
+    var lines = vec.Vec[ptr_uint].create()
+    var entries = ctx.required_unsafe_lines.entries()
+    while entries.next():
+        let entry = entries.current()
+        lines.push(unsafe: read(entry.key))
+    return lines
+
+
+## The host does not check a *generic* body — it is checked at instantiation —
+## so an unsafe-context requirement inside one is neither reported nor recorded
+## (this is why `redundant-unsafe` skips generic bodies).
+function in_generic_body(ctx: ref[Context]) -> bool:
+    return ctx.type_params.len() > 0
+
+
+## The host's `mark_current_unsafe_required!`: an operation that needs `unsafe`,
+## reached while inside an `unsafe:` context, marks the *enclosing* unsafe node's
+## line so the linter's `redundant-unsafe` rule can tell a required `unsafe:`
+## from one with nothing to do.
+function mark_required_unsafe(ctx: ref[Context]) -> void:
+    let top = ctx.unsafe_statement_lines.last() else:
+        return
+    ctx.required_unsafe_lines.set(unsafe: read(top), true)
+
+
 ## `reinterpret[T](v)` returns T; requires unsafe context.
 function check_reinterpret_call(ctx: ref[Context], type_args: span[ast.TypeArgument], arg_types: span[types.Type], line: ptr_uint, column: ptr_uint) -> types.Type:
     if type_args.len != 1:
         return types.Type.ty_error
-    if ctx.unsafe_depth == 0:
-        report(ctx, line, column, "reinterpret requires unsafe")
+    if not in_generic_body(ctx):
+        if ctx.unsafe_depth == 0:
+            report(ctx, line, column, "reinterpret requires unsafe")
+        else:
+            mark_required_unsafe(ctx)
     var arg_ref: ptr[ast.TypeRef]
     unsafe:
         arg_ref = read(type_args.data + 0).value
@@ -5872,7 +5924,17 @@ function resolve_member_access(ctx: ref[Context], scope: ref[sscope.Scope], rece
                                 Option.some as imported_type:
                                     return imported_type.value
                                 Option.none:
-                                    let recv = project_pointer_receiver(infer_expr(ctx, scope, receiver))
+                                    let raw_recv = infer_expr(ctx, scope, receiver)
+                                    # A field read through a raw pointer dereferences
+                                    # it — the host requires unsafe
+                                    # (`raw pointer dereference requires unsafe`).
+                                    # `own`/`ref` receivers auto-deref without.
+                                    if types.is_raw_pointer(raw_recv) and not is_method_call and not in_generic_body(ctx):
+                                        if ctx.unsafe_depth == 0:
+                                            report(ctx, line, column, "raw pointer dereference requires unsafe")
+                                        else:
+                                            mark_required_unsafe(ctx)
+                                    let recv = project_pointer_receiver(raw_recv)
                                     return check_member(ctx, recv, member, is_method_call, line, column)
 
 
@@ -6091,8 +6153,11 @@ function check_member(ctx: ref[Context], receiver: types.Type, member: str, is_m
                 if member == "frame" or member == "value" or member == "ready":
                     return types.Type.ty_error
             if g.name == "span":
-                if member == "data" or member == "len":
-                    return types.Type.ty_error
+                # The host's `Span#fields`: the element pointer and the length.
+                if member == "data" and g.args.len >= 1:
+                    return types.Type.ty_generic(name = "ptr", args = alloc_one_type_arg(unsafe: read(g.args.data + 0)))
+                if member == "len":
+                    return types.primitive("ptr_uint")
             if g.name == "ptr":
                 if has_method(ctx, g.name, member):
                     return types.Type.ty_error
@@ -6308,8 +6373,11 @@ function try_builtin_call(ctx: ref[Context], scope: ref[sscope.Scope], callee_na
             return Option[types.Type].none
         var arg: ast.Argument = unsafe: read(args.data + 0)
         let at = infer_expr(ctx, scope, arg.arg_value)
-        if types.is_raw_pointer(at) and ctx.unsafe_depth == 0:
-            report(ctx, line, column, "pointer dereference requires unsafe")
+        if types.is_raw_pointer(at) and not in_generic_body(ctx):
+            if ctx.unsafe_depth == 0:
+                report(ctx, line, column, "pointer dereference requires unsafe")
+            else:
+                mark_required_unsafe(ctx)
         if types.is_raw_pointer(at) or types.is_ref_type(at):
             return Option[types.Type].some(value = types.pointer_element(at))
         return Option[types.Type].none

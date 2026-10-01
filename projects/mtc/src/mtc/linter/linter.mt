@@ -150,6 +150,9 @@ public function lint_source_with(
     defer: lex_diags.release()
     var lexed = lexer.lex_with_trivia(source, ref_of(lex_diags))
 
+    lint_loop_depth = 0
+    lint_generic_depth = 0
+    lint_analysis = options.analysis
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
@@ -167,7 +170,7 @@ public function lint_source_with(
             path = sw.path,
             line = sw.line,
             column = if sw.column > 0: sw.column else: 0,
-            length = 0,
+            length = sw.length,
             code = sw.code,
             message = sw.message,
             severity = sw.severity
@@ -790,6 +793,40 @@ function lint_prefer_inline_methods(decls: span[ast.Decl], path: str, warnings: 
         i += 1
 
 
+## Enclosing loop depth for the visitor — the host's `@loop_depth`, which
+## suppresses the conciseness hints that would rewrite a loop body.
+var lint_loop_depth: ptr_uint = 0
+
+
+## Enclosing generic-body depth for the visitor — the host's
+## `generic_function_context?` (`redundant-unsafe` skips those bodies: their
+## required-unsafe facts are only complete once instantiated elsewhere).
+var lint_generic_depth: ptr_uint = 0
+
+
+## The analysis the visitor consults for facts-dependent rules (the host's
+## `@sema_facts`) — currently `redundant-unsafe`'s required-unsafe lines.
+var lint_analysis: ptr[analyzer.Analysis]? = null
+
+
+## The host's `check_redundant_unsafe`: an `unsafe:` block or expression whose
+## line the analyzer never recorded as *required* has nothing to do.
+function check_redundant_unsafe(line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    if lint_generic_depth > 0:
+        return
+    let ap = lint_analysis else:
+        return
+    let lines = unsafe: read(ap).unsafe_statement_lines
+    var i: ptr_uint = 0
+    while i < lines.len():
+        let lp = lines.get(i) else:
+            break
+        if unsafe: read(lp) == line:
+            return
+        i += 1
+    push_warning_at(warnings, path, line, column, 6, "redundant-unsafe", "unsafe block contains no unsafe operations and can be removed", "hint")
+
+
 const EVENT_CAPACITY_THRESHOLD: int = 128
 
 
@@ -955,6 +992,10 @@ function expression_column(expr: ptr[ast.Expr]?) -> ptr_uint:
             ast.Expr.expr_char_literal as ch:
                 return ch.column
             ast.Expr.expr_member_access as m:
+                # The host checks the node's own `column` first, and its parser
+                # stamps a member access with the *member* token's position.
+                if m.column > 0:
+                    return m.column
                 return expression_column(m.receiver)
             ast.Expr.expr_match as mm:
                 return mm.column
@@ -994,6 +1035,122 @@ function expression_column(expr: ptr[ast.Expr]?) -> ptr_uint:
                 return expression_column(aw.expression)
             _:
                 return 0
+
+
+## The host's `statement_column`: a statement's own anchor column, with the
+## same structural fallbacks the host uses when a kind carries none.
+function statement_column(stmt: ptr[ast.Stmt]) -> ptr_uint:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_local as loc:
+                return loc.column
+            ast.Stmt.stmt_assignment as a:
+                return a.column
+            ast.Stmt.stmt_if as iff:
+                if iff.branches.len > 0:
+                    let br = read(iff.branches.data + 0)
+                    if br.column > 0:
+                        return br.column
+                return iff.else_column
+            ast.Stmt.stmt_while as w:
+                return w.column
+            ast.Stmt.stmt_for as f:
+                return f.column
+            ast.Stmt.stmt_match as m:
+                return m.column
+            ast.Stmt.stmt_ret as r:
+                return r.column
+            ast.Stmt.stmt_defer as d:
+                return d.column
+            ast.Stmt.stmt_unsafe as u:
+                return u.column
+            ast.Stmt.stmt_expression as e:
+                return expression_column(e.expression)
+            ast.Stmt.stmt_when as wn:
+                return wn.column
+            ast.Stmt.stmt_error_block as eb:
+                return eb.column
+            _:
+                return 0
+
+
+## The host's `statement_length`: the statement's own recorded length (the
+## parser stamps `return`/`while` with their keyword), else the kind's fallback.
+function statement_length(stmt: ptr[ast.Stmt]) -> ptr_uint:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_local as loc:
+                return loc.name.len
+            ast.Stmt.stmt_if as iff:
+                if iff.branches.len > 0:
+                    let br = read(iff.branches.data + 0)
+                    if br.length > 0:
+                        return br.length
+                return if iff.else_column > 0: 4 else: 1
+            ast.Stmt.stmt_while as w:
+                if w.length > 0:
+                    return w.length
+                return expression_length(w.condition)
+            ast.Stmt.stmt_for as f:
+                if f.bindings.len > 0:
+                    return read(f.bindings.data + 0).name.len
+                return 1
+            ast.Stmt.stmt_match as m:
+                return expression_length(m.scrutinee)
+            ast.Stmt.stmt_ret as r:
+                if r.length > 0:
+                    return r.length
+                return expression_length(r.value)
+            ast.Stmt.stmt_expression as e:
+                return expression_length(e.expression)
+            _:
+                return 1
+
+
+## A binary expression's length, the host's `expression_length` rule: from the
+## left operand's column to the end of the right operand.
+function binary_expression_length(left: ptr[ast.Expr], right: ptr[ast.Expr]) -> ptr_uint:
+    let left_col = expression_column(left)
+    let right_col = expression_column(right)
+    if left_col > 0 and right_col > 0:
+        return (right_col + expression_length(right)) - left_col
+    return 1
+
+
+## The host's `expression_length`: an identifier is its name, a literal its
+## lexeme, a binary expression the distance from its left operand's column to
+## the right operand's end, and anything else one column.
+function expression_length(expr: ptr[ast.Expr]?) -> ptr_uint:
+    let ep = expr else:
+        return 1
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as id:
+                return id.name.len
+            ast.Expr.expr_integer_literal as il:
+                return il.lexeme.len
+            ast.Expr.expr_float_literal as fl:
+                return fl.lexeme.len
+            ast.Expr.expr_string_literal as sl:
+                return sl.lexeme.len
+            ast.Expr.expr_bool_literal as bl:
+                return if bl.value: 4 else: 5
+            ast.Expr.expr_null_literal:
+                return 4
+            ast.Expr.expr_binary_op as b:
+                return binary_expression_length(b.left, b.right)
+            ast.Expr.expr_unary_op as u:
+                return expression_length(u.operand)
+            ast.Expr.expr_specialization as sp:
+                return expression_length(sp.callee)
+            ast.Expr.expr_call as call:
+                return expression_length(call.callee)
+            ast.Expr.expr_await as aw:
+                return expression_length(aw.expression)
+            ast.Expr.expr_unsafe as un:
+                return expression_length(un.expression)
+            _:
+                return 1
 
 
 # =============================================================================
@@ -1364,7 +1521,9 @@ function check_self_comparison(operator: str, left: ptr[ast.Expr], right: ptr[as
     buf.append(left_name)
     buf.append("' is compared to itself — ")
     buf.append(always)
-    push_warning_expr(warnings, path, left, "self-comparison", buf.as_str(), "warning")
+    # The host anchors the warning on the whole binary expression
+    # (`expression_line/column/length` of the comparison).
+    push_warning_at(warnings, path, expression_line(left), expression_column(left), binary_expression_length(left, right), "self-comparison", buf.as_str(), "warning")
 
 
 ## `x == true` / `x != false` and friends — comparison against a boolean literal.
@@ -1471,15 +1630,25 @@ function check_useless_expression(expr: ptr[ast.Expr], stmt_line: ptr_uint, path
     push_warning(warnings, path, line, "useless-expression", "expression result is unused and has no side effects", "warning")
 
 
+## The column of an if-chain's first branch (the `if` keyword) — the host's
+## `statement.branches.first&.column`, its anchor for the conciseness hints.
+function first_branch_column(branches: span[ast.IfBranch]) -> ptr_uint:
+    if branches.len == 0:
+        return 0
+    return unsafe: read(branches.data + 0).column
+
+
 ## Compound assignment against an identity value (`x += 0`, `x *= 1`).
-function check_noop_compound_assignment(target: ptr[ast.Expr], operator: str, value: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_noop_compound_assignment(line: ptr_uint, target: ptr[ast.Expr], operator: str, value: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     var is_identity = false
     if operator == "+=" or operator == "-=" or operator == "|=" or operator == "^=" or operator == "<<=" or operator == ">>=":
         is_identity = integer_literal_matches(value, "0")
     else if operator == "*=" or operator == "/=":
         is_identity = numeric_literal_one(value)
     if is_identity:
-        push_warning_expr(warnings, path, target, "noop-compound-assignment", "compound assignment with identity value has no effect", "hint")
+        # The host anchors on the assignment's line and the target's column, with
+        # the target identifier's own length.
+        push_warning_at(warnings, path, line, expression_column(target), expression_length(target), "noop-compound-assignment", "compound assignment with identity value has no effect", "hint")
 
 
 function lexeme_without_underscores(lexeme: str) -> string.String:
@@ -1639,7 +1808,9 @@ function check_redundant_return(return_type: ptr[ast.TypeRef]?, body: ptr[ast.St
         match read(last):
             ast.Stmt.stmt_ret as r:
                 if r.value == null:
-                    push_warning_stmt(warnings, path, r.line, r.column, "redundant-return", "final bare return in void function is redundant", "hint")
+                    # The host spans the statement's own `length` — the `return`
+                    # keyword (its `final_statement.length || "return".length`).
+                    push_warning_at(warnings, path, r.line, r.column, 6, "redundant-return", "final bare return in void function is redundant", "hint")
             _:
                 pass
 
@@ -1899,6 +2070,16 @@ function statement_line(stmt: ptr[ast.Stmt]) -> ptr_uint:
                 return expression_line(ex.expression)
             ast.Stmt.stmt_local as loc:
                 return loc.line
+            ast.Stmt.stmt_assignment as asgn:
+                return asgn.line
+            ast.Stmt.stmt_when as wn:
+                return wn.line
+            ast.Stmt.stmt_parallel_block as pb:
+                return pb.line
+            ast.Stmt.stmt_gather as ga:
+                return ga.line
+            ast.Stmt.stmt_error_block as eb:
+                return eb.line
             ast.Stmt.stmt_break as bk:
                 return bk.line
             ast.Stmt.stmt_continue as ct:
@@ -1937,13 +2118,26 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[Warnin
     unsafe:
         match read(decl):
             ast.Decl.decl_function as fun:
+                let generic_body = fun.type_params.len > 0
+                if generic_body:
+                    lint_generic_depth += 1
                 visit_stmt_opt(fun.body, path, warnings)
+                if generic_body:
+                    lint_generic_depth -= 1
                 check_redundant_return(fun.return_type, fun.body, path, warnings)
             ast.Decl.decl_extending_block as ex:
+                # The host's `extending_block_generic?`: a receiver with type
+                # arguments makes every method in it a generic context.
+                let generic_block = unsafe: read(ex.type_name).arguments.len > 0
                 var j: ptr_uint = 0
                 while j < ex.methods.len:
                     let m = read(ex.methods.data + j)
+                    let generic_method = generic_block or m.type_params.len > 0
+                    if generic_method:
+                        lint_generic_depth += 1
                     visit_stmt(m.body, path, warnings)
+                    if generic_method:
+                        lint_generic_depth -= 1
                     check_redundant_return(m.return_type, m.body, path, warnings)
                     j += 1
             ast.Decl.decl_const as c:
@@ -1989,7 +2183,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 visit_expr(asgn.value, path, warnings)
                 visit_expr(asgn.target, path, warnings)
                 check_self_assignment(asgn.target, asgn.operator, asgn.value, path, warnings)
-                check_noop_compound_assignment(asgn.target, asgn.operator, asgn.value, path, warnings)
+                check_noop_compound_assignment(asgn.line, asgn.target, asgn.operator, asgn.value, path, warnings)
             ast.Stmt.stmt_if as iff:
                 var bi: ptr_uint = 0
                 while bi < iff.branches.len:
@@ -2000,17 +2194,21 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 visit_stmt_opt(iff.else_body, path, warnings)
                 check_redundant_else(iff.branches, iff.else_body, iff.else_line, path, warnings)
                 check_duplicate_if_conditions(iff.branches, path, warnings)
-                check_prefer_inline_if(iff.branches, iff.else_body, iff.is_inline, iff.line, path, warnings)
-                check_prefer_conditional_expression_if(iff.branches, iff.else_body, path, warnings)
+                check_prefer_inline_if(iff.branches, iff.else_body, iff.is_inline, iff.line, iff.else_line, path, warnings)
+                check_prefer_conditional_expression_if(iff.branches, iff.else_body, iff.line, first_branch_column(iff.branches), iff.else_line, path, warnings)
             ast.Stmt.stmt_while as wh:
                 visit_expr(wh.condition, path, warnings)
+                lint_loop_depth += 1
                 visit_stmt_opt(wh.body, path, warnings)
+                lint_loop_depth -= 1
             ast.Stmt.stmt_for as fr:
                 var ii: ptr_uint = 0
                 while ii < fr.iterables.len:
                     visit_expr(fr.iterables.data + ii, path, warnings)
                     ii += 1
+                lint_loop_depth += 1
                 visit_stmt_opt(fr.body, path, warnings)
+                lint_loop_depth -= 1
             ast.Stmt.stmt_match as mt:
                 visit_expr(mt.scrutinee, path, warnings)
                 var ai: ptr_uint = 0
@@ -2020,7 +2218,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     visit_stmt_opt(arm.body, path, warnings)
                     ai += 1
                 check_prefer_or_pattern_stmt(mt.arms, path, warnings)
-                check_prefer_conditional_expression_match(mt.arms, path, warnings)
+                check_prefer_conditional_expression_match(mt.arms, mt.line, mt.column, path, warnings)
                 check_prefer_try_stmt(mt.arms, path, warnings)
             ast.Stmt.stmt_ret as r:
                 visit_expr_opt(r.value, path, warnings)
@@ -2028,6 +2226,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 visit_expr_opt(df.expression, path, warnings)
                 visit_stmt_opt(df.body, path, warnings)
             ast.Stmt.stmt_unsafe as un:
+                check_redundant_unsafe(un.line, un.column, path, warnings)
                 visit_stmt_opt(un.body, path, warnings)
             ast.Stmt.stmt_expression as ex:
                 visit_expr(ex.expression, path, warnings)
@@ -2116,6 +2315,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
             ast.Expr.expr_prefix_cast as pc:
                 visit_expr(pc.expression, path, warnings)
             ast.Expr.expr_unsafe as us:
+                check_redundant_unsafe(us.line, us.column, path, warnings)
                 visit_expr(us.expression, path, warnings)
             ast.Expr.expr_expression_list as el:
                 var ei: ptr_uint = 0
@@ -2131,7 +2331,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
                 check_prefer_struct_with(expr, call.args, path, warnings)
             ast.Expr.expr_match as mm:
                 check_prefer_or_pattern_expr(mm.arms, path, warnings)
-                check_prefer_is_variant_expr(mm.arms, mm.line, path, warnings)
+                check_prefer_is_variant_expr(mm.arms, mm.line, mm.column, mm.length, mm.desugared_from_is, path, warnings)
             _:
                 pass
 
@@ -2406,7 +2606,7 @@ function mk_missing_return_msg(name: str) -> str:
 #  statement that fits on one line.
 # =============================================================================
 
-function check_prefer_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, is_inline: bool, line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, is_inline: bool, line: ptr_uint, else_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     if is_inline:
         return
     if not block_is_nonempty(else_body):
@@ -2423,8 +2623,32 @@ function check_prefer_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast
         return
     if not inline_simple_statement(s):
         return
-    let first_cond = unsafe: read(branches.data + 0).condition
-    push_warning_expr(warnings, path, first_cond, "prefer-inline-if", "if/else with single-statement branches can be written inline", "hint")
+    if visually_inline_if(branches, else_body, else_line):
+        return
+    # The host anchors on the branch (the `if` keyword), not the condition.
+    let first_branch = unsafe: read(branches.data + 0)
+    push_warning_at(warnings, path, first_branch.line, first_branch.column, 0, "prefer-inline-if", "if/else with single-statement branches can be written inline", "hint")
+
+
+## The host's `visually_inline_if?`: every branch body starts on its branch's own
+## line and the else body on the else line — the source already writes the whole
+## `if` on one line, and the host's `inline_if_too_wide?` reports exactly these
+## as unjoinable, suppressing the block-form hints.
+function visually_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, else_line: ptr_uint) -> bool:
+    var bi: ptr_uint = 0
+    while bi < branches.len:
+        unsafe:
+            let br = read(branches.data + bi)
+            let s = single_statement_body(br.body) else:
+                return false
+            if statement_line(s) != br.line:
+                return false
+        bi += 1
+    let es = single_statement_body(else_body) else:
+        return false
+    if else_line == 0 or statement_line(es) != else_line:
+        return false
+    return true
 
 
 # =============================================================================
@@ -2487,8 +2711,14 @@ function check_prefer_or_pattern_expr(arms: span[ast.MatchExprArm], path: str, w
 #  or assigns to the same target.
 # =============================================================================
 
-function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, line: ptr_uint, column: ptr_uint, else_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    if lint_loop_depth > 0:
+        return
     if not block_is_nonempty(else_body):
+        return
+    # The host gates this arm on `inline_if_too_wide?`, which reports an
+    # already-inline-written `if` as unjoinable (see `visually_inline_if`).
+    if visually_inline_if(branches, else_body, else_line):
         return
     # Collect single statements from each branch.
     var stmts = vec.Vec[ptr[ast.Stmt]].create()
@@ -2504,57 +2734,12 @@ function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], el
         return
     stmts.push(else_s)
 
-    var all_ret = true
-    var all_assign = true
-    var assign_target_sig: Option[str] = Option[str].none
-    var si: ptr_uint = 0
-    while si < stmts.len():
-        unsafe:
-            let sp = stmts.get(si) else:
-                break
-            let s = read(sp)
-            match read(s):
-                ast.Stmt.stmt_ret as r:
-                    if r.value == null:
-                        return
-                    all_assign = false
-                ast.Stmt.stmt_assignment as a:
-                    if a.operator != "=":
-                        return
-                    all_ret = false
-                    let tsig = expr_source_sig(a.target)
-                    match assign_target_sig:
-                        Option.some as prev_sig:
-                            if not tsig.equal(prev_sig.value):
-                                return
-                        Option.none:
-                            assign_target_sig = Option[str].some(value = tsig)
-                _:
-                    return
-        si += 1
-
-    let kind = "if"
-    if all_ret:
-        var buf = string.String.create()
-        buf.append("every ")
-        buf.append(kind)
-        buf.append(" branch returns a value; use a `return ")
-        buf.append(kind)
-        buf.append(" ...` expression")
-        let line = unsafe: expression_line(read(branches.data + 0).condition)
-        push_warning_expr(warnings, path, unsafe: read(branches.data + 0).condition, "prefer-conditional-expression", buf.as_str(), "hint")
-    else if all_assign:
-        var buf = string.String.create()
-        buf.append("every ")
-        buf.append(kind)
-        buf.append(" branch assigns the same target; use a `")
-        buf.append(kind)
-        buf.append(" ...` expression")
-        let line = unsafe: expression_line(read(branches.data + 0).condition)
-        push_warning_expr(warnings, path, unsafe: read(branches.data + 0).condition, "prefer-conditional-expression", buf.as_str(), "hint")
+    report_conditional_expression(ref_of(stmts), line, column, "if", path, warnings)
 
 
-function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    if lint_loop_depth > 0:
+        return
     # Only fires when there is a wildcard arm.
     var has_wild = false
     var ai: ptr_uint = 0
@@ -2581,16 +2766,26 @@ function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], pat
             stmts.push(s)
         ai += 1
 
+    report_conditional_expression(ref_of(stmts), line, column, "match", path, warnings)
+
+
+## The host's `report_conditional_expression`: every single-statement branch
+## either returns a value or assigns the same target, and the message names the
+## kind and (for an assignment) the target.
+function report_conditional_expression(stmts: ref[vec.Vec[ptr[ast.Stmt]]], line: ptr_uint, column: ptr_uint, kind: str, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    if stmts.len() == 0:
+        return
+    if lint_loop_depth > 0:
+        return
     var all_ret = true
     var all_assign = true
-    var assign_target_sig: Option[str] = Option[str].none
+    var target_name: str = ""
     var si: ptr_uint = 0
     while si < stmts.len():
+        let sp = stmts.get(si) else:
+            break
         unsafe:
-            let sp = stmts.get(si) else:
-                break
-            let s = read(sp)
-            match read(s):
+            match read(unsafe: read(sp)):
                 ast.Stmt.stmt_ret as r:
                     if r.value == null:
                         return
@@ -2599,36 +2794,36 @@ function check_prefer_conditional_expression_match(arms: span[ast.MatchArm], pat
                     if a.operator != "=":
                         return
                     all_ret = false
-                    let tsig = expr_source_sig(a.target)
-                    match assign_target_sig:
-                        Option.some as prev_sig:
-                            if not tsig.equal(prev_sig.value):
-                                return
-                        Option.none:
-                            assign_target_sig = Option[str].some(value = tsig)
+                    let nm = identifier_name_of(a.target) else:
+                        return
+                    if target_name.len == 0:
+                        target_name = nm
+                    else if not nm.equal(target_name):
+                        return
                 _:
                     return
         si += 1
 
-    let kind = "match"
     if all_ret:
         var buf = string.String.create()
         buf.append("every ")
         buf.append(kind)
-        buf.append(" branch returns a value; use a `return ")
+        buf.append(" branch returns a value; rewrite as `return ")
         buf.append(kind)
-        buf.append(" ...` expression")
-        let line = unsafe: expression_line(read(arms.data + 0).pattern)
-        push_warning_expr(warnings, path, unsafe: read(arms.data + 0).pattern, "prefer-conditional-expression", buf.as_str(), "hint")
+        buf.append(" …` expression")
+        push_warning_at(warnings, path, line, column, 0, "prefer-conditional-expression", buf.as_str(), "hint")
     else if all_assign:
         var buf = string.String.create()
         buf.append("every ")
         buf.append(kind)
-        buf.append(" branch assigns the same target; use a `")
+        buf.append(" branch assigns to '")
+        buf.append(target_name)
+        buf.append("'; rewrite as `let ")
+        buf.append(target_name)
+        buf.append(" = ")
         buf.append(kind)
-        buf.append(" ...` expression")
-        let line = unsafe: expression_line(read(arms.data + 0).pattern)
-        push_warning_expr(warnings, path, unsafe: read(arms.data + 0).pattern, "prefer-conditional-expression", buf.as_str(), "hint")
+        buf.append(" …` expression")
+        push_warning_at(warnings, path, line, column, 0, "prefer-conditional-expression", buf.as_str(), "hint")
 
 
 ## A source-signature string for an expression, used for assignment-target
@@ -2967,7 +3162,11 @@ struct IsVariantPair:
     pat_is_first: bool
     want_true: bool
 
-function check_prefer_is_variant_expr(arms: span[ast.MatchExprArm], match_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_is_variant_expr(arms: span[ast.MatchExprArm], match_line: ptr_uint, match_column: ptr_uint, match_length: ptr_uint, desugared_from_is: bool, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    # The host skips a match the parser desugared from `is` (warning would be
+    # circular) and anchors on the match expression itself.
+    if desugared_from_is:
+        return
     if arms.len != 2:
         return
     unsafe:
@@ -2989,7 +3188,7 @@ function check_prefer_is_variant_expr(arms: span[ast.MatchExprArm], match_line: 
         buf.append("prefer `")
         buf.append(suggestion.as_str())
         buf.append("` over a match that maps one variant arm to a boolean")
-        push_warning(warnings, path, match_line, "prefer-is-variant", buf.as_str(), "hint")
+        push_warning_at(warnings, path, match_line, match_column, match_length, "prefer-is-variant", buf.as_str(), "hint")
 
 
 function classify_is_variant_arms(arm0: ast.MatchExprArm, arm1: ast.MatchExprArm) -> Option[IsVariantPair]:
@@ -3062,17 +3261,18 @@ function check_redundant_type_annotation(
         return
     let val = value else:
         return
-    let type_name = type_ref_leaf_name(st) else:
-        let nullable_name = type_ref_leaf_name_nullable(st) else:
-            return
-        redundancy_match(nullable_name, val, line, column, path, warnings)
+    # The host skips a nullable annotation outright (`return if
+    # statement.type.nullable`): `let x: int? = 42` never warns.
+    if unsafe: read(st).nullable:
         return
-    redundancy_match(type_name, val, line, column, path, warnings)
+    let type_name = type_ref_leaf_name(st) else:
+        return
+    redundancy_match(type_name, name, val, line, column, path, warnings)
 
 
 ## If the expression's literal type matches the declared type name, emit a
 ## redundant-type-annotation warning.
-function redundancy_match(declared: str, val: ptr[ast.Expr], line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function redundancy_match(declared: str, name: str, val: ptr[ast.Expr], line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let inferred = expression_literal_type_name(val) else:
         return
     if declared.equal(inferred):
@@ -3080,7 +3280,8 @@ function redundancy_match(declared: str, val: ptr[ast.Expr], line: ptr_uint, col
         buf.append("type annotation ': ")
         buf.append(declared)
         buf.append("' is redundant, inferred from initializer")
-        push_warning_at(warnings, path, line, column, 0, "redundant-type-annotation", buf.as_str(), "hint")
+        # The host anchors on the declaration and spans the local's *name*.
+        push_warning_at(warnings, path, line, column, name.len, "redundant-type-annotation", buf.as_str(), "hint")
 
 
 ## Extract the leaf name from a simple TypeRef even when nullable
@@ -3859,22 +4060,25 @@ function ownership_transfer_ctor(expr: ptr[ast.Expr]?, target_name: str) -> bool
 #  reserved-primitive-name — warn when a binding shadows a built-in type name.
 # =============================================================================
 
-const RESERVED_VALUE_NAMES: array[str, 30] = array[str, 30](
+## The host's `Types::RESERVED_VALUE_TYPE_NAMES`: `BUILTIN_PRIMITIVE_NAMES` plus
+## `Option`/`Result`.  Container type names (`ptr`, `ref`, `span`, `own`) are
+## *not* reserved value names — `let ptr: ptr[int]? = null` is fine.
+const RESERVED_VALUE_NAMES: array[str, 28] = array[str, 28](
     "bool", "byte", "short", "int", "long",
     "ubyte", "ushort", "uint", "ulong",
     "char", "float", "double",
     "void", "str", "cstr",
+    "ptr_int", "ptr_uint",
     "vec2", "vec3", "vec4",
     "ivec2", "ivec3", "ivec4",
     "mat3", "mat4", "quat",
-    "ptr", "ref", "span", "own",
-    "type", "fn"
+    "Option", "Result"
 )
 
 
 function is_reserved_type_name(name: str) -> bool:
     var i: ptr_uint = 0
-    while i < 30:
+    while i < 28:
         if name.equal(RESERVED_VALUE_NAMES[i]):
             return true
         i += 1
@@ -4356,8 +4560,9 @@ function lint_unreachable_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[
         unsafe:
             if dead:
                 let sp = stmts.data + si
-                let line = statement_line(sp)
-                push_warning(warnings, path, line, "unreachable-code", "unreachable code after a terminating statement", "warning")
+                # The host anchors on the statement's own span with the bare
+                # message ("unreachable code").
+                push_warning_at(warnings, path, statement_line(sp), statement_column(sp), statement_length(sp), "unreachable-code", "unreachable code", "warning")
                 si += 1
                 continue
             if stmt_always_returns(stmts.data + si):
@@ -4556,8 +4761,8 @@ function lint_prefer_own_ptr(file: ast.SourceFile, path: str, warnings: ref[vec.
             var buf = string.String.create()
             buf.append("binding '")
             buf.append(d.name)
-            buf.append("' is only used inside unsafe — consider converting from ptr to own for auto-deref")
-            push_warning(warnings, path, d.line, "prefer-own-ptr", buf.as_str(), "hint")
+            buf.append("' is only used inside unsafe — consider converting its type from ptr to own for auto-deref")
+            push_warning_at(warnings, path, d.line, d.column, d.name.len, "prefer-own-ptr", buf.as_str(), "hint")
         di += 1
 
 

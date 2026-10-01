@@ -140,6 +140,34 @@ before `440 owning-release-leak`).  Closing diagnostic 2 requires restructuring 
 self's linter to that walk order (scope pops inside the walk, flow rules per function) —
 on top of the per-rule deltas below.
 
+**PART DONE (session 17): the anchor/message/firing rows.**  Closed, each
+verified with `tmp/diag_probe.rb` (the entry disappears) and
+`tmp/lint_table.rb` (counts unchanged): `noop-compound-assignment`,
+`self-comparison`, `redundant-return`, `redundant-type-annotation` (plus its
+nullable gate), `unreachable-code` (span + message), `prefer-inline-if`,
+`prefer-conditional-expression` (messages, anchors, loop-depth gate,
+visually-inline gate), `prefer-or-pattern` (the member-access column),
+`prefer-is-variant` (`desugared_from_is`), the scope warnings' name lengths
+(`ScopeWarning.length`), the destructuring-name credit, `reserved-primitive-name`
+(the host's exact `RESERVED_VALUE_TYPE_NAMES` — `ptr` is *not* in it) and
+`prefer-own-ptr`'s message, and `redundant-unsafe` (the rule was missing: the
+analyzer's `Context.unsafe_statement_lines`/`required_unsafe_lines` +
+`mark_required_unsafe` at the five require-unsafe sites, the
+`Analysis.unsafe_statement_lines` record and the visitor's emission at the
+`unsafe:` node with the generic-context skip), `prefer-own-ptr` (the host's
+candidate/use-counting gates) plus the two analyzer facts they need
+(`span[T]`'s `data`/`len` member table, and the raw-pointer field read's unsafe
+requirement).  The LSP's range conversion (`lsp/diagnostics.mt`) now mirrors the
+host's `extract_warning_range`: a tracked column with no length spans one
+character.  Measured: **lb host 98 / self 98, mst host 10 / self 10** — the
+warning counts match on both files.
+
+**The rows still open** (measured, session-17 probe): `constant-condition`
+(the source-line `condition_span`, the `branch`/`loop` message and the
+`ConstantPropagation` port — the host's answers differ in *which* condition is
+true) and `owning-release-double`/`-leak` (the CFG path and `symbol_name`).
+Then the emission-order restructure closes the class.
+
 **The remaining per-rule deltas, measured with `tmp/diag_probe.rb` (session-16
 baseline, `tmp/diag-s16-base.txt`)** — ranges/messages first (mechanical): every rule
 below needs a host-shaped span, and several need a message fix.
