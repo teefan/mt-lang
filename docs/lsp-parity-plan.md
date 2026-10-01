@@ -326,17 +326,15 @@ behaviour the self deliberately does not reproduce.  `documentSymbol`,
 references are all **0**, and the completion surface gained imported-type member
 lists this session (`n.` on `node.Node` is byte-identical to the host).
 
-1. **`diagnostic` 2 — the linter.**  The *counts* now match on both files
-   (`language_baseline.mt` host 98 / self 98; `memory_stress_test.mt` host 10 /
-   self 10; `rake parity:scoreboard` reads 0 rules with a count mismatch) and the
-   **emission order is the host's** (session 18: the linter's visitor drives the
-   scope state machine, so the arrays agree item-for-item except the content rows
-   below — `tmp/diag_order.py`'s first divergence moved from index 0 to index 7 on
-   lb and index 3 on mst).  What is left are the two content rows:
-   `constant-condition` (lb: the source-line `condition_span`, the `branch`/`loop`
-   message and the `ConstantPropagation` port that decides *which* condition is
-   true) and `owning-release-double`/`-leak` (mst: the CFG-reachable-release path
-   and the released binding's `symbol_name`).
+1. **`diagnostic` 2 — the linter.  CLOSED (session 18).**  Counts, order and
+   content now all match: `language_baseline.mt` and `memory_stress_test.mt` are
+   **byte-identical** to the host's arrays (98/98 and 10/10 items, 0 differing
+   lines, 0 rules with a count mismatch), after the emission-order restructure
+   (the linter's visitor drives the scope state machine), the
+   `ConstantPropagation` port with the source-line `condition_span` and the
+   `branch`/`loop` messages, and the owning-release pair (the sequential
+   double-release pass and the `own[T]` leak path).  `tmp/diag_order.py` reports
+   no divergence on either file.
 2. **`documentHighlight` 1** (`lb@704:67`).  The host resolves the token to a
    *carried-forward snapshot binding* (`rename_target_binding_id`'s
    `resolve_local_hover_binding` fallback) and answers one range; the self answers

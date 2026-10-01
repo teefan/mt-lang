@@ -173,28 +173,23 @@ character.  Measured: **lb host 98 / self 98, mst host 10 / self 10** — the
 warning counts match on both files.
 
 **The rows still open** (measured, session-17 probe — the counts already match, so
-each row is now only *which* item and *where*):
+each row is now only *which* item and *where*) — **both rows are DONE (session
+18)**, see below:
 
 - `constant-condition` (lb, 4 items): the host anchors on
-  `condition_span(expr, line:, keyword_pattern:)`, which prefers a
-  **source-line** span (scanning the line for `if`/`while` up to the `:`) over the
-  expression's own position, and its message names the *branch*
-  (`branch condition is always true/false`) where the self says `if condition …`;
-  the two answers also differ in *which* condition is true, so the
-  `ConstantPropagation` port (the host's constant folding over the statement)
-  is part of the row.  Host anchors: `434:7-19`, `474:7-17`, `476:12-17`,
-  `1387:7-16`; self: `445:0-1`, `474:0-1`, `531:0-1`, `1387:0-1`.
-- `owning-release-double`/`-leak` (mst, 3 items): the host anchors
-  `owning-release-double` at the **released binding's name** (`335:33-38`,
-  `owned`) and reports the leak at `440:8-11` (`raw`, `own[int]`); the self
-  anchors at the declaration (`335:4-8`), also fires at `403:8-12` for `heap`, and
-  reports no leak.  The host's path is `release_rules.rb`'s
-  `classify_cfg_nodes`/`find_reachable_release` (a release reachable on some path
-  is a double release; an owning binding never released on any path leaks) plus
-  `own_typed_local_bindings`/`own_transferred?` — F1's graph carries what it needs.
+  `condition_span(expr, line:, keyword_pattern:)` … — **DONE (session 18)**: the
+  `ConstantPropagation` port (`linter/constprop.mt`), the loop-body skip, the
+  source-line `condition_span` and the `branch`/`loop` messages landed; lb's
+  diagnostic array is byte-identical to the host's.
+- `owning-release-double`/`-leak` (mst, 3 items): the host anchors … — **DONE
+  (session 18)**: the sequential double-release pass (reported at the last
+  release's line with the released binding's name) and the `own[T]` leak path
+  (the resolved initializer type, never released/transferred) landed; mst's
+  array is byte-identical.
 
-Then the emission-order restructure closes the class (see "the restructure,
-concretely" in the ledger's session-17 log).
+The emission-order restructure (F3 part 3, session 18) closed the class: the
+diagnostic arrays of both audit files now agree item-for-item with the host's
+and the class reads 0 differing entries.
 
 **The remaining per-rule deltas, measured with `tmp/diag_probe.rb` (session-16
 baseline, `tmp/diag-s16-base.txt`)** — ranges/messages first (mechanical): every rule

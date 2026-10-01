@@ -38,6 +38,7 @@ import std.hash
 
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.types as types
 import mtc.semantic.control_flow.builder as flow_builder
 import mtc.semantic.control_flow.graph as flow_graph
 import mtc.lexer.lexer as lexer
@@ -853,6 +854,12 @@ var lint_owning_type_names: span[str] = span[str]()
 ## The file's source lines (the host's `@source_lines`), for the source-line
 ## spans the rules anchor on.  `null` outside a lint pass.
 var lint_source_lines: ptr[vec.Vec[str]]? = null
+
+
+
+
+
+
 
 
 ## The host's `check_redundant_unsafe`: an `unsafe:` block or expression whose
@@ -4120,6 +4127,580 @@ function own_callee_type_name(callee: ptr[ast.Expr]) -> str:
 ## then report leaks and double-releases.
 
 
+# =============================================================================
+#  The host's release rules tail: `own[T]` leaks and the sequential
+#  double-release check (`release_rules.rb`).
+# =============================================================================
+
+struct OwnBinding:
+    name: str
+    line: ptr_uint
+    column: ptr_uint
+    type_name: str
+
+
+## The host's `check_own_release_leaks`: every `own[T]`-typed local that is
+## never released on any path and never transferred is a leak.
+function ownership_own_leaks(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let b = body else:
+        return
+    var locals = vec.Vec[OwnBinding].create()
+    defer: locals.release()
+    ownership_collect_own_locals(b, ref_of(locals))
+    var released = vec.Vec[str].create()
+    defer: released.release()
+    ownership_collect_own_released(b, ref_of(released))
+    var i: ptr_uint = 0
+    while i < locals.len():
+        let lp = locals.get(i) else:
+            break
+        unsafe:
+            let lb = read(lp)
+            if not ownership_contains(ref_of(released), lb.name) and not ownership_own_transferred(b, lb.name):
+                var buf = string.String.create()
+                buf.append("owning binding '")
+                buf.append(lb.name)
+                buf.append("' of type '")
+                buf.append(lb.type_name)
+                buf.append("' is never released")
+                push_warning_at(warnings, path, lb.line, lb.column, lb.name.len, "owning-release-leak", buf.as_str(), "warning")
+        i += 1
+
+
+## The host's `_collect_own_typed_locals`.
+function ownership_collect_own_locals(body: ptr[ast.Stmt], sink: ref[vec.Vec[OwnBinding]]) -> void:
+    unsafe:
+        match read(body):
+            ast.Stmt.stmt_block as blk:
+                var si: ptr_uint = 0
+                while si < blk.statements.len:
+                    ownership_collect_own_locals_stmt(blk.statements.data + si, sink)
+                    si += 1
+            _:
+                ownership_collect_own_locals_stmt(body, sink)
+
+
+function ownership_collect_own_locals_stmt(stmt: ptr[ast.Stmt], sink: ref[vec.Vec[OwnBinding]]) -> void:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_local as loc:
+                if loc.name.len > 0:
+                    match own_local_type(loc.value):
+                        Option.some as type_name:
+                            sink.push(OwnBinding(name = loc.name, line = loc.line, column = loc.column, type_name = type_name.value))
+                        Option.none:
+                            pass
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    ownership_collect_own_locals_body(read(iff.branches.data + bi).body, sink)
+                    bi += 1
+                ownership_collect_own_locals_body(iff.else_body, sink)
+            ast.Stmt.stmt_while as wh:
+                ownership_collect_own_locals_body(wh.body, sink)
+            ast.Stmt.stmt_for as fr:
+                ownership_collect_own_locals_body(fr.body, sink)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    ownership_collect_own_locals_body(read(mt.arms.data + ai).body, sink)
+                    ai += 1
+            ast.Stmt.stmt_unsafe as un:
+                ownership_collect_own_locals_body(un.body, sink)
+            ast.Stmt.stmt_defer as df:
+                ownership_collect_own_locals_body(df.body, sink)
+            _:
+                pass
+
+
+function ownership_collect_own_locals_body(body: ptr[ast.Stmt]?, sink: ref[vec.Vec[OwnBinding]]) -> void:
+    let b = body else:
+        return
+    ownership_collect_own_locals(b, sink)
+
+
+## The host's `resolve_local_own_pointer_type`: a heap allocation is
+## `own[<inferred>]`; otherwise the initializer's resolved type when it is an
+## `own[T]` generic instance.
+function own_local_type(value: ptr[ast.Expr]?) -> Option[str]:
+    if release_heap_alloc_call(value):
+        return Option[str].some(value = "own[<inferred>]")
+    let v = value else:
+        return Option[str].none
+    let ap = lint_analysis else:
+        return Option[str].none
+    let ep = unsafe: read(ap).resolved_expr_types.get(reinterpret[ptr_uint](v)) else:
+        return Option[str].none
+    unsafe:
+        match read(ep):
+            types.Type.ty_generic as g:
+                if g.name.equal("own"):
+                    return Option[str].some(value = types.type_to_string(read(ep)))
+            types.Type.ty_imported as im:
+                if im.name.equal("own"):
+                    return Option[str].some(value = types.type_to_string(read(ep)))
+            _:
+                pass
+    return Option[str].none
+
+
+## The linter's `is_heap_alloc_call?` — the allocation wrappers that yield an
+## `own[T]` (`must_alloc` and friends; the plain `alloc` is *not* one here).
+function release_heap_alloc_call(value: ptr[ast.Expr]?) -> bool:
+    let vp = value else:
+        return false
+    unsafe:
+        match read(vp):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_member_access as ma:
+                        return ma.member_name.equal("must_alloc") or ma.member_name.equal("must_alloc_aligned") or ma.member_name.equal("must_alloc_zeroed") or ma.member_name.equal("must_resize")
+                    ast.Expr.expr_specialization as sp:
+                        match read(sp.callee):
+                            ast.Expr.expr_member_access as ma:
+                                return ma.member_name.equal("must_alloc") or ma.member_name.equal("must_alloc_aligned") or ma.member_name.equal("must_alloc_zeroed") or ma.member_name.equal("must_resize")
+                            _:
+                                return false
+                    _:
+                        return false
+            _:
+                return false
+
+
+## The host's `_collect_heap_release_names` / `heap_release_call_on_name?`:
+## `heap.release(x)` / `heap.release_and_null(x)` (and `x.release()`), naming
+## the last direct-identifier argument.
+function ownership_collect_own_released(body: ptr[ast.Stmt], sink: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(body):
+            ast.Stmt.stmt_block as blk:
+                var si: ptr_uint = 0
+                while si < blk.statements.len:
+                    ownership_collect_own_released_stmt(blk.statements.data + si, sink)
+                    si += 1
+            _:
+                ownership_collect_own_released_stmt(body, sink)
+
+
+function ownership_collect_own_released_stmt(stmt: ptr[ast.Stmt], sink: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_expression as ex:
+                ownership_collect_own_released_expr(ex.expression, sink)
+            ast.Stmt.stmt_ret as r:
+                ownership_collect_own_released_expr_opt(r.value, sink)
+            ast.Stmt.stmt_local as loc:
+                ownership_collect_own_released_expr_opt(loc.value, sink)
+            ast.Stmt.stmt_assignment as a:
+                ownership_collect_own_released_expr(a.value, sink)
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    ownership_collect_own_released_body(read(iff.branches.data + bi).body, sink)
+                    bi += 1
+                ownership_collect_own_released_body(iff.else_body, sink)
+            ast.Stmt.stmt_while as wh:
+                ownership_collect_own_released_body(wh.body, sink)
+            ast.Stmt.stmt_for as fr:
+                ownership_collect_own_released_body(fr.body, sink)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    ownership_collect_own_released_body(read(mt.arms.data + ai).body, sink)
+                    ai += 1
+            ast.Stmt.stmt_unsafe as un:
+                ownership_collect_own_released_body(un.body, sink)
+            ast.Stmt.stmt_defer as df:
+                ownership_collect_own_released_body(df.body, sink)
+            _:
+                pass
+
+
+function ownership_collect_own_released_body(body: ptr[ast.Stmt]?, sink: ref[vec.Vec[str]]) -> void:
+    let b = body else:
+        return
+    ownership_collect_own_released(b, sink)
+
+
+function ownership_collect_own_released_expr_opt(expr: ptr[ast.Expr]?, sink: ref[vec.Vec[str]]) -> void:
+    let ep = expr else:
+        return
+    ownership_collect_own_released_expr(ep, sink)
+
+
+function ownership_collect_own_released_expr(expr: ptr[ast.Expr], sink: ref[vec.Vec[str]]) -> void:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_call as call:
+                let name = heap_release_target_name(expr)
+                if name.len > 0:
+                    if not ownership_contains(sink, name):
+                        sink.push(name)
+                ownership_collect_own_released_expr(call.callee, sink)
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    ownership_collect_own_released_expr(read(call.args.data + ai).arg_value, sink)
+                    ai += 1
+            ast.Expr.expr_binary_op as b:
+                ownership_collect_own_released_expr(b.left, sink)
+                ownership_collect_own_released_expr(b.right, sink)
+            ast.Expr.expr_unary_op as u:
+                ownership_collect_own_released_expr(u.operand, sink)
+            ast.Expr.expr_member_access as m:
+                ownership_collect_own_released_expr(m.receiver, sink)
+            ast.Expr.expr_index_access as ix:
+                ownership_collect_own_released_expr(ix.receiver, sink)
+                ownership_collect_own_released_expr(ix.index, sink)
+            ast.Expr.expr_prefix_cast as pc:
+                ownership_collect_own_released_expr(pc.expression, sink)
+            ast.Expr.expr_unsafe as us:
+                ownership_collect_own_released_expr(us.expression, sink)
+            ast.Expr.expr_expression_list as el:
+                var ei: ptr_uint = 0
+                while ei < el.elements.len:
+                    ownership_collect_own_released_expr(el.elements.data + ei, sink)
+                    ei += 1
+            _:
+                pass
+
+
+## The host's `heap_release_call_on_name?`: a `release`/`release_and_null`
+## call with at least one argument, naming the last direct-identifier argument
+## (or the identifier inside a `ref_of(...)`).
+function heap_release_target_name(expr: ptr[ast.Expr]) -> str:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_call as call:
+                match read(call.callee):
+                    ast.Expr.expr_member_access as ma:
+                        if not (ma.member_name.equal("release") or ma.member_name.equal("release_and_null")):
+                            return ""
+                    _:
+                        return ""
+                if call.args.len < 1:
+                    return ""
+                var released: str = ""
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    let value = read(call.args.data + ai).arg_value
+                    var inner = value
+                    unsafe:
+                        match read(value):
+                            ast.Expr.expr_unsafe as us:
+                                inner = us.expression
+                            _:
+                                pass
+                    match read(inner):
+                        ast.Expr.expr_identifier as id:
+                            released = id.name
+                        ast.Expr.expr_call as ic:
+                            match read(ic.callee):
+                                ast.Expr.expr_identifier as cid:
+                                    if cid.name.equal("ref_of") and ic.args.len == 1:
+                                        match read(read(ic.args.data + 0).arg_value):
+                                            ast.Expr.expr_identifier as rid:
+                                                released = rid.name
+                                            _:
+                                                pass
+                                _:
+                                    pass
+                        _:
+                            pass
+                    ai += 1
+                return released
+            _:
+                return ""
+
+
+## The host's `own_transferred?`.
+function ownership_own_transferred(body: ptr[ast.Stmt], name: str) -> bool:
+    unsafe:
+        match read(body):
+            ast.Stmt.stmt_block as blk:
+                var si: ptr_uint = 0
+                while si < blk.statements.len:
+                    if ownership_own_transferred_stmt(blk.statements.data + si, name):
+                        return true
+                    si += 1
+                return false
+            _:
+                return ownership_own_transferred_stmt(body, name)
+
+
+function ownership_own_transferred_stmt(stmt: ptr[ast.Stmt], name: str) -> bool:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_ret as r:
+                let rv = r.value else:
+                    return false
+                match read(rv):
+                    ast.Expr.expr_identifier as id:
+                        if id.name.equal(name):
+                            return true
+                    ast.Expr.expr_unsafe as us:
+                        match read(us.expression):
+                            ast.Expr.expr_prefix_cast as pc:
+                                match read(pc.expression):
+                                    ast.Expr.expr_identifier as inner:
+                                        if inner.name.equal(name):
+                                            return true
+                                    _:
+                                        pass
+                            _:
+                                pass
+                    _:
+                        pass
+                return ownership_transfer_call_on(r.value, name)
+            ast.Stmt.stmt_assignment as a:
+                let value = a.value
+                match read(value):
+                    ast.Expr.expr_identifier as id:
+                        if id.name.equal(name):
+                            return true
+                    _:
+                        pass
+                return ownership_transfer_call_on(value, name)
+            ast.Stmt.stmt_local as loc:
+                return ownership_transfer_call_on(loc.value, name)
+            ast.Stmt.stmt_expression as ex:
+                return ownership_transfer_call_on(ex.expression, name)
+            _:
+                return false
+
+
+## The host's `own_struct_field_transfer?`: a call with an argument that
+## mentions the binding (through casts or nested calls).
+function ownership_transfer_call_on(expr: ptr[ast.Expr]?, name: str) -> bool:
+    let ep = expr else:
+        return false
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_call as call:
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    if own_transfer_identifier(read(call.args.data + ai).arg_value, name):
+                        return true
+                    ai += 1
+                return false
+            ast.Expr.expr_prefix_cast as pc:
+                return own_transfer_identifier(pc.expression, name)
+            _:
+                return false
+
+
+function own_transfer_identifier(value: ptr[ast.Expr], name: str) -> bool:
+    unsafe:
+        match read(value):
+            ast.Expr.expr_identifier as id:
+                return id.name.equal(name)
+            ast.Expr.expr_prefix_cast as pc:
+                return own_transfer_identifier(pc.expression, name)
+            ast.Expr.expr_call as call:
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    if own_transfer_identifier(read(call.args.data + ai).arg_value, name):
+                        return true
+                    ai += 1
+                return false
+            _:
+                return false
+
+
+## The host's `check_owning_release_double`: per statement list, the release
+## sites per binding; two releases of one binding through the same sequence
+## warn at the *last* release's line (the LSP recovers the range from the
+## quoted name).  `unsafe:` and `defer:` bodies are separate sequences, and
+## their results merge after the outer sequence.
+function ownership_double_warnings(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let b = body else:
+        return
+    var result_names = vec.Vec[str].create()
+    defer: result_names.release()
+    var result_lines = map_mod.Map[str, ptr_uint].create()
+    defer: result_lines.release()
+    ownership_double_scope(b, ref_of(result_names), ref_of(result_lines))
+    var i: ptr_uint = 0
+    while i < result_names.len():
+        let np = result_names.get(i) else:
+            break
+        let name = unsafe: read(np)
+        var line: ptr_uint = 0
+        let lp = result_lines.get(name)
+        if lp != null:
+            unsafe:
+                line = read(lp)
+        var buf = string.String.create()
+        buf.append("owning binding '")
+        buf.append(name)
+        buf.append("' may be released more than once")
+        push_warning(warnings, path, line, "owning-release-double", buf.as_str(), "warning")
+        i += 1
+
+
+function ownership_double_scope(body: ptr[ast.Stmt]?, result_names: ref[vec.Vec[str]], result_lines: ref[map_mod.Map[str, ptr_uint]]) -> void:
+    let b = body else:
+        return
+    unsafe:
+        match read(b):
+            ast.Stmt.stmt_block as blk:
+                ownership_double_in_stmts(blk.statements, result_names, result_lines)
+            _:
+                pass
+
+
+function ownership_double_in_stmts(stmts: span[ast.Stmt], result_names: ref[vec.Vec[str]], result_lines: ref[map_mod.Map[str, ptr_uint]]) -> void:
+    var names = vec.Vec[str].create()
+    defer: names.release()
+    var counts = map_mod.Map[str, ptr_uint].create()
+    defer: counts.release()
+    var lines = map_mod.Map[str, ptr_uint].create()
+    defer: lines.release()
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        unsafe:
+            let stmt = stmts.data + si
+            ownership_double_note_stmt(stmt, ref_of(names), ref_of(counts), ref_of(lines))
+            match read(stmt):
+                ast.Stmt.stmt_unsafe as un:
+                    ownership_double_scope(un.body, result_names, result_lines)
+                ast.Stmt.stmt_defer as df:
+                    ownership_double_scope(df.body, result_names, result_lines)
+                _:
+                    pass
+        si += 1
+    # Names with more than one release in this sequence (the host's
+    # ).
+    var i: ptr_uint = 0
+    while i < names.len():
+        let np = names.get(i) else:
+            break
+        let name = unsafe: read(np)
+        let count_ptr = counts.get(name)
+        let count = if count_ptr != null: unsafe: read(count_ptr) else: 0
+        if count > 1 and not ownership_contains(result_names, name):
+            result_names.push(name)
+            let lp = lines.get(name)
+            if lp != null:
+                unsafe:
+                    result_lines.set(name, read(lp))
+        i += 1
+
+
+## Record one statement's release (the host's ).
+function ownership_double_note_stmt(stmt: ptr[ast.Stmt], names: ref[vec.Vec[str]], counts: ref[map_mod.Map[str, ptr_uint]], lines: ref[map_mod.Map[str, ptr_uint]]) -> void:
+    var name: str = ""
+    match ownership_extract_expr(stmt):
+        Option.some as ep:
+            unsafe:
+                if release_call_on_binding(ep.value):
+                    match read(ep.value):
+                        ast.Expr.expr_call as call:
+                            match read(call.callee):
+                                ast.Expr.expr_member_access as ma:
+                                    match read(ma.receiver):
+                                        ast.Expr.expr_identifier as id:
+                                            name = id.name
+                                        _:
+                                            pass
+                                _:
+                                    pass
+                        _:
+                            pass
+                else:
+                    name = heap_release_target_name(ep.value)
+        Option.none:
+            pass
+    if name.len > 0:
+        let count_ptr = counts.get(name)
+        let count = if count_ptr != null: unsafe: read(count_ptr) else: 0
+        if count == 0:
+            names.push(name)
+        counts.set(name, count + 1)
+        unsafe:
+            lines.set(name, statement_line(stmt))
+    ownership_double_note_reassign(stmt, counts)
+
+
+## The host's : an  assignment to a visible
+## binding clears that binding's release history.
+function ownership_double_note_reassign(stmt: ptr[ast.Stmt], counts: ref[map_mod.Map[str, ptr_uint]]) -> void:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_assignment as a:
+                if not a.operator.equal("="):
+                    return
+                match read(a.target):
+                    ast.Expr.expr_identifier as id:
+                        if scope_name_visible(id.name):
+                            counts.set(id.name, 0)
+                    _:
+                        pass
+            _:
+                pass
+
+
+## The host's `extract_expr`: the expression a statement would be checked in.
+function ownership_extract_expr(stmt: ptr[ast.Stmt]) -> Option[ptr[ast.Expr]]:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_expression as ex:
+                return Option[ptr[ast.Expr]].some(value = ex.expression)
+            ast.Stmt.stmt_ret as r:
+                let rv = r.value else:
+                    return Option[ptr[ast.Expr]].none
+                return Option[ptr[ast.Expr]].some(value = rv)
+            ast.Stmt.stmt_local as loc:
+                let lv = loc.value else:
+                    return Option[ptr[ast.Expr]].none
+                return Option[ptr[ast.Expr]].some(value = lv)
+            ast.Stmt.stmt_assignment as a:
+                return Option[ptr[ast.Expr]].some(value = a.value)
+            _:
+                return Option[ptr[ast.Expr]].none
+
+
+## The host's `release_call_on_binding?`: `x.release()` (no arguments).
+function release_call_on_binding(expr: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_call as call:
+                if call.args.len > 0:
+                    return false
+                match read(call.callee):
+                    ast.Expr.expr_member_access as ma:
+                        if not ma.member_name.equal("release"):
+                            return false
+                        match read(ma.receiver):
+                            ast.Expr.expr_identifier:
+                                return true
+                            _:
+                                return false
+                    _:
+                        return false
+            _:
+                return false
+
+
+## Whether the name is a visible binding of the walk (the host's ).
+function scope_name_visible(name: str) -> bool:
+    let c = lint_scope_ctx else:
+        return false
+    let ctx = unsafe: ref_of(read(c))
+    let count = unsafe: read(ctx).scope_count
+    var si: ptr_uint = 0
+    while si < count:
+        let start = scope_tracking.ctx_scope_start(ctx, si)
+        let n = scope_tracking.ctx_scope_count(ctx, si)
+        var i: ptr_uint = 0
+        while i < n:
+            let bd = scope_tracking.ctx_entry(ctx, start, i)
+            if bd.name.equal(name):
+                return true
+            i += 1
+        si += 1
+    return false
+
+
 function ownership_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
     let bp = body else:
         return
@@ -4129,6 +4710,10 @@ function ownership_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.
                 ownership_walk_stmts(blk.statements, path, warnings, owning_type_names)
             _:
                 pass
+    # The host's tail, in its order: the struct-owning leaks above, then the
+    # own[T] leaks, then the sequential double releases.
+    ownership_own_leaks(bp, path, warnings)
+    ownership_double_warnings(bp, path, warnings)
 
 
 function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
@@ -4138,8 +4723,6 @@ function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[ve
     defer: released.release()
     var transferred = vec.Vec[str].create()
     defer: transferred.release()
-    var released_lines = map_mod.Map[str, ptr_uint].create()
-    defer: released_lines.release()
     var created_info = map_mod.Map[str, OwningBinding].create()
     defer: created_info.release()
 
@@ -4147,7 +4730,7 @@ function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[ve
     var si: ptr_uint = 0
     while si < stmts.len:
         unsafe:
-            ownership_collect_stmt(stmts.data + si, ref_of(created), ref_of(created_info), ref_of(released), ref_of(released_lines), ref_of(transferred), path, warnings, owning_type_names)
+            ownership_collect_stmt(stmts.data + si, ref_of(created), ref_of(created_info), ref_of(released), ref_of(transferred), path, warnings, owning_type_names)
         si += 1
 
     # Recurse into nested scopes.
@@ -4195,7 +4778,7 @@ function ownership_contains(vec_ref: ref[vec.Vec[str]], name: str) -> bool:
     return false
 
 
-function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]], created_info: ref[map_mod.Map[str, OwningBinding]], released: ref[vec.Vec[str]], released_lines: ref[map_mod.Map[str, ptr_uint]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
+function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]], created_info: ref[map_mod.Map[str, OwningBinding]], released: ref[vec.Vec[str]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_local as loc:
@@ -4213,10 +4796,10 @@ function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]],
                     if vt != null and is_owning_type_annotation(unsafe: read(vt), owning_type_names):
                         created.push(loc.name)
                         created_info.set(loc.name, OwningBinding(line = loc.line, type_name = own_created_type_name(null, loc.stmt_type)))
-                ownership_collect_expr_opt(loc.value, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr_opt(loc.value, released, transferred, path, warnings)
                 ownership_collect_body_opt(loc.else_body, path, warnings)
             ast.Stmt.stmt_expression as ex:
-                ownership_collect_expr(ex.expression, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(ex.expression, released, transferred, path, warnings)
             ast.Stmt.stmt_assignment as asgn:
                 # If assigned from a create call of an owning type, mark the
                 # target as created.
@@ -4227,33 +4810,12 @@ function ownership_collect_stmt(stmt: ptr[ast.Stmt], created: ref[vec.Vec[str]],
                                 created.push(id.name)
                             _:
                                 pass
-                # If the value is a release call, mark the target (the released var) and check double-release.
-                if is_release_call_expr(asgn.target):
-                    match read(asgn.target):
-                        ast.Expr.expr_member_access as ma:
-                            match read(ma.receiver):
-                                ast.Expr.expr_identifier as id:
-                                    if released_lines.contains(id.name):
-                                        let prev_ptr = released_lines.get(id.name)
-                                        if prev_ptr != null:
-                                            let prev_line = unsafe: read(prev_ptr)
-                                            var buf = string.String.create()
-                                            buf.append("owning binding '")
-                                            buf.append(id.name)
-                                            buf.append("' may be released more than once")
-                                            push_warning(warnings, path, prev_line, "owning-release-double", buf.as_str(), "warning")
-                                    else:
-                                        released_lines.set(id.name, unsafe: expression_line(asgn.target))
-                                _:
-                                    pass
-                        _:
-                            pass
-                ownership_collect_expr(asgn.value, released, released_lines, transferred, path, warnings)
-                ownership_collect_expr(asgn.target, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(asgn.value, released, transferred, path, warnings)
+                ownership_collect_expr(asgn.target, released, transferred, path, warnings)
                 # Check for transferred ownership (e.g., passing to struct constructor).
                 ownership_collect_transfer_in_args(asgn.value, asgn.target, transferred)
             ast.Stmt.stmt_ret as r:
-                ownership_collect_expr_opt(r.value, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr_opt(r.value, released, transferred, path, warnings)
                 ownership_collect_ret_transfer(r.value, transferred)
             _:
                 pass
@@ -4277,7 +4839,7 @@ function ownership_collect_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[v
                 defer: transferred.release()
                 var created_info = map_mod.Map[str, OwningBinding].create()
                 defer: created_info.release()
-                ownership_collect_stmt(bp, ref_of(created), ref_of(created_info), ref_of(released), ref_of(released_lines), ref_of(transferred), path, warnings, span[str]())
+                ownership_collect_stmt(bp, ref_of(created), ref_of(created_info), ref_of(released), ref_of(transferred), path, warnings, span[str]())
 
 
 function ownership_collect_body_opt(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4286,73 +4848,69 @@ function ownership_collect_body_opt(body: ptr[ast.Stmt]?, path: str, warnings: r
     ownership_collect_body(bp, path, warnings)
 
 
-function ownership_collect_expr(expr: ptr[ast.Expr], released: ref[vec.Vec[str]], released_lines: ref[map_mod.Map[str, ptr_uint]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function ownership_collect_expr(expr: ptr[ast.Expr], released: ref[vec.Vec[str]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     unsafe:
         match read(expr):
             ast.Expr.expr_call as call:
-                if is_release_call_expr(call.callee):
+                # A `x.release()` marks x as released for the struct-leak half
+                # (the host's `_collect_released_names_in_expr`).
+                if release_call_on_binding(expr):
                     match read(call.callee):
                         ast.Expr.expr_member_access as ma:
                             match read(ma.receiver):
                                 ast.Expr.expr_identifier as id:
-                                    if ownership_contains(released, id.name):
-                                        var buf = string.String.create()
-                                        buf.append("owning binding '")
-                                        buf.append(id.name)
-                                        buf.append("' may be released more than once")
-                                        push_warning(warnings, path, expression_line(expr), "owning-release-double", buf.as_str(), "warning")
-                                    else:
+                                    if not ownership_contains(released, id.name):
                                         released.push(id.name)
                                 _:
                                     pass
                         _:
                             pass
-                ownership_collect_expr(call.callee, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(call.callee, released, transferred, path, warnings)
                 var ai: ptr_uint = 0
                 while ai < call.args.len:
-                    ownership_collect_expr(read(call.args.data + ai).arg_value, released, released_lines, transferred, path, warnings)
+                    ownership_collect_expr(read(call.args.data + ai).arg_value, released, transferred, path, warnings)
                     ai += 1
             ast.Expr.expr_member_access as m:
-                ownership_collect_expr(m.receiver, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(m.receiver, released, transferred, path, warnings)
             ast.Expr.expr_binary_op as b:
-                ownership_collect_expr(b.left, released, released_lines, transferred, path, warnings)
-                ownership_collect_expr(b.right, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(b.left, released, transferred, path, warnings)
+                ownership_collect_expr(b.right, released, transferred, path, warnings)
             ast.Expr.expr_unary_op as u:
-                ownership_collect_expr(u.operand, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(u.operand, released, transferred, path, warnings)
             ast.Expr.expr_index_access as ix:
-                ownership_collect_expr(ix.receiver, released, released_lines, transferred, path, warnings)
-                ownership_collect_expr(ix.index, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(ix.receiver, released, transferred, path, warnings)
+                ownership_collect_expr(ix.index, released, transferred, path, warnings)
             ast.Expr.expr_if as iff:
-                ownership_collect_expr(iff.condition, released, released_lines, transferred, path, warnings)
-                ownership_collect_expr(iff.then_expr, released, released_lines, transferred, path, warnings)
-                ownership_collect_expr(iff.else_expr, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(iff.condition, released, transferred, path, warnings)
+                ownership_collect_expr(iff.then_expr, released, transferred, path, warnings)
+                ownership_collect_expr(iff.else_expr, released, transferred, path, warnings)
             ast.Expr.expr_match as mm:
-                ownership_collect_expr(mm.scrutinee, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(mm.scrutinee, released, transferred, path, warnings)
                 var mi: ptr_uint = 0
                 while mi < mm.arms.len:
-                    ownership_collect_expr(read(mm.arms.data + mi).value, released, released_lines, transferred, path, warnings)
+                    ownership_collect_expr(read(mm.arms.data + mi).value, released, transferred, path, warnings)
                     mi += 1
             ast.Expr.expr_prefix_cast as pc:
-                ownership_collect_expr(pc.expression, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(pc.expression, released, transferred, path, warnings)
             ast.Expr.expr_unsafe as us:
-                ownership_collect_expr(us.expression, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(us.expression, released, transferred, path, warnings)
             ast.Expr.expr_await as aw:
-                ownership_collect_expr(aw.expression, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(aw.expression, released, transferred, path, warnings)
             ast.Expr.expr_detach as dt:
-                ownership_collect_expr(dt.expression, released, released_lines, transferred, path, warnings)
+                ownership_collect_expr(dt.expression, released, transferred, path, warnings)
             ast.Expr.expr_expression_list as el:
                 var ei: ptr_uint = 0
                 while ei < el.elements.len:
-                    ownership_collect_expr(el.elements.data + ei, released, released_lines, transferred, path, warnings)
+                    ownership_collect_expr(el.elements.data + ei, released, transferred, path, warnings)
                     ei += 1
             _:
                 pass
 
 
-function ownership_collect_expr_opt(expr: ptr[ast.Expr]?, released: ref[vec.Vec[str]], released_lines: ref[map_mod.Map[str, ptr_uint]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function ownership_collect_expr_opt(expr: ptr[ast.Expr]?, released: ref[vec.Vec[str]], transferred: ref[vec.Vec[str]], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let ep = expr else:
         return
-    ownership_collect_expr(ep, released, released_lines, transferred, path, warnings)
+    ownership_collect_expr(ep, released, transferred, path, warnings)
 
 
 function ownership_recurse_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -4462,15 +5020,6 @@ function is_alloc_method_name(name: str) -> bool:
 
 
 ## True when `expr` is a `.release()` or `.release_and_null()` call.
-function is_release_call_expr(expr: ptr[ast.Expr]) -> bool:
-    unsafe:
-        match read(expr):
-            ast.Expr.expr_member_access as ma:
-                return ma.member_name.equal("release") or ma.member_name.equal("release_and_null")
-            _:
-                return false
-
-
 ## Record transfers: when `target` is an identifier (struct field assignment or
 ## similar), and `value` contains an owning name, that name is transferred.
 function ownership_collect_transfer_in_args(value: ptr[ast.Expr], target: ptr[ast.Expr], transferred: ref[vec.Vec[str]]) -> void:

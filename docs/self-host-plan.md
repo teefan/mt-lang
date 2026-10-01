@@ -48,6 +48,7 @@ stackTrace, scopes, variables, breakpoints and the whole error surface are ident
 for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
 the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **4 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**LSP project audit (live counter, 2026-10-01 session 18): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **2 differ**: `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward) and `hover` 1 (`lb@1653:24`, `type quat`); **every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work) and `documentSymbol` (the run carried no host race).**
 **LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **22 differ** (session 13 close): hover 9, documentSymbol 5, semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set) → 22 (session 13's third: codeLens and workspace/symbol 1 → 0 each via the host's token-pair symbol list, documentHighlight 2 → 1, and the token scanner's keyword/heredoc/type-argument rules).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's single survivor needs the host's carried-forward binding resolution (a label token resolving a binding that is out of scope at that line).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
 **LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
@@ -2251,6 +2252,43 @@ segment), then B4's other classes (documentSymbol 5 — timing-coupled on the ho
 self's unwrapped outline matches the symbol set; documentHighlight 1 — the host's
 carried-forward snapshot binding; diagnostic 2 — a *linter* residue), then C2–C5 and
 D2/D3.
+
+### The owning-release pair: the host's release rules (2026-10-01 session 18)
+
+`owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`
+reported `heap`) and fired at the wrong sites, and `owning-release-leak` never
+fired for `own[T]`.  Both are now the host's `release_rules.rb` paths:
+
+- **the sequential double release** (`check_owning_release_double`): per
+  statement list, a release site per binding — `x.release()` (no arguments) and
+  `heap.release(x)` / `heap.release_and_null(x)` (naming the last direct
+  identifier argument, through `ref_of`/`unsafe:`), with an `=` assignment to a
+  visible binding clearing that binding's history; two releases through one
+  sequence report at the *last* release's line with the binding's name (the LSP
+  recovers the range from the quoted name, exactly as the host's nil-column
+  warning does).  `unsafe:` and `defer:` bodies are separate sequences whose
+  results merge after the outer one.
+- **the `own[T]` leak** (`check_own_release_leaks`): a local whose initializer
+  is a heap allocation (`own[<inferred>]`) or whose resolved initializer type is
+  an `own[T]` generic instance (from the analyzer's `resolved_expr_types`) that
+  is never released and never transferred — anchored at the declaration with
+  the resolved type name (`owning binding 'raw' of type 'own[int]' is never
+  released`).
+- the old heuristic double-release emission (receiver-named, per expression) is
+  gone from the struct-owning walk, which keeps its leak half — and its release
+  bookkeeping: `x.release()` still marks x as released for the struct-leak check
+  (the host's `_collect_released_names_in_expr`), which the first cut of the
+  change had dropped, re-reporting twenty `Vec`/`Deque`/`Queue` leaks on
+  `docs/data_structures.mt`.
+
+**Measured**: `docs/memory_stress_test.mt`'s diagnostic array is **byte-identical
+to the host's** (10/10 items: `335:33-38 'owned'` and `440:8-11 'raw'` where the
+self had `335:4 'heap'`, `403:8 'heap'` and no leak), and
+`docs/language_baseline.mt` stays identical.  With this the **diagnostic class
+reads 0 differing entries** in the full matrix — all seven files' diagnostic
+arrays are byte-identical to the host's (the initial cut's dropped release
+bookkeeping showed up as 20 self-only leaks on `docs/data_structures.mt`; the
+fix is in the same commit).
 
 ### `constant-condition`: the host's dataflow rule (2026-10-01 session 18)
 
