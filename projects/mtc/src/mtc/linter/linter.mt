@@ -2438,7 +2438,7 @@ function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: st
     lint_const_cond_in_body(ref_of(flow_cfg), ref_of(graph), path, warnings)
     lint_null_check_body(body, path, warnings)
     lint_loop_single_in_body(body, path, warnings)
-    ownership_walk_body(body, path, warnings, lint_owning_type_names)
+    ownership_walk_body(body, path, warnings, lint_owning_type_names, ref_of(graph))
     prefer_else_walk_body(body, path, warnings)
 
 
@@ -4578,6 +4578,44 @@ function ownership_own_transferred(body: ptr[ast.Stmt], name: str) -> bool:
 
 
 function ownership_own_transferred_stmt(stmt: ptr[ast.Stmt], name: str) -> bool:
+    if ownership_own_transferred_direct(stmt, name):
+        return true
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    if ownership_own_transferred(read(iff.branches.data + bi).body, name):
+                        return true
+                    bi += 1
+                return ownership_own_transferred_opt(iff.else_body, name)
+            ast.Stmt.stmt_while as wh:
+                return ownership_own_transferred_opt(wh.body, name)
+            ast.Stmt.stmt_for as fr:
+                return ownership_own_transferred_opt(fr.body, name)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    if ownership_own_transferred_opt(read(mt.arms.data + ai).body, name):
+                        return true
+                    ai += 1
+                return false
+            ast.Stmt.stmt_unsafe as un:
+                return ownership_own_transferred_opt(un.body, name)
+            ast.Stmt.stmt_defer as df:
+                return ownership_own_transferred_opt(df.body, name)
+            _:
+                return false
+
+
+function ownership_own_transferred_opt(body: ptr[ast.Stmt]?, name: str) -> bool:
+    let bp = body else:
+        return false
+    return ownership_own_transferred(bp, name)
+
+
+## The direct predicates of the host's `own_transferred?` block.
+function ownership_own_transferred_direct(stmt: ptr[ast.Stmt], name: str) -> bool:
     unsafe:
         match read(stmt):
             ast.Stmt.stmt_ret as r:
@@ -4851,19 +4889,620 @@ function scope_name_visible(name: str) -> bool:
     return false
 
 
-function ownership_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:
+## The release rules' body entry (the host's `emit_owning_release_warnings`):
+## the struct-owning analysis (`ownership_cfg_warnings` over F1's graph when
+## the analysis is present, the simple AST fallback when it is not — the host's
+## `cfg_available`), then the `own[T]` leaks, then the sequential double
+## releases.
+function ownership_walk_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str], graph: ref[flow_graph.CfgGraph]) -> void:
+    let bp = body else:
+        return
+    if lint_analysis != null:
+        ownership_cfg_warnings(bp, path, warnings, owning_type_names, graph)
+    else:
+        unsafe:
+            match read(bp):
+                ast.Stmt.stmt_block as blk:
+                    ownership_walk_stmts(blk.statements, path, warnings, owning_type_names)
+                _:
+                    pass
+    # The host's tail, in its order: the struct-owning warnings above, then
+    # the own[T] leaks, then the sequential double releases.
+    ownership_own_leaks(bp, path, warnings)
+    ownership_double_warnings(bp, path, warnings)
+
+
+# =============================================================================
+#  The host's CFG release analysis (`release_rules.rb`'s
+#  `emit_owning_release_cfg_warnings`): the struct-owning leak and
+#  double-release checks over F1's graph.
+# =============================================================================
+
+## The host's `emit_owning_release_cfg_warnings`: per struct-owning local, in
+## declaration order — a leak when some path from the declaration reaches an
+## exit without a consumer, then a double release when a release node is
+## reachable from another release before any reassignment.
+function ownership_cfg_warnings(body: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str], graph: ref[flow_graph.CfgGraph]) -> void:
+    var locals = vec.Vec[OwnBinding].create()
+    defer: locals.release()
+    var index = map_mod.Map[str, ptr_uint].create()
+    defer: index.release()
+    ownership_collect_owning_locals(body, ref_of(locals), ref_of(index), owning_type_names)
+    if locals.len() == 0:
+        return
+    var reachable = ownership_reachable_ids(graph)
+    defer: reachable.release()
+    var i: ptr_uint = 0
+    while i < locals.len():
+        let lp = locals.get(i) else:
+            break
+        unsafe:
+            let lb = read(lp)
+            let decl_id = ownership_find_decl_node(graph, lb.name)
+            if decl_id != 0 and ownership_ids_contain(ref_of(reachable), decl_id):
+                ownership_cfg_warn_one(graph, ref_of(reachable), decl_id, lb, path, warnings)
+        i += 1
+
+
+## The per-local half of `emit_owning_release_cfg_warnings`: the leak, then the
+## first reachable double release.
+function ownership_cfg_warn_one(graph: ref[flow_graph.CfgGraph], reachable: ref[vec.Vec[ptr_uint]], decl_id: ptr_uint, lb: OwnBinding, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    var releases = vec.Vec[ptr_uint].create()
+    defer: releases.release()
+    var consumers = vec.Vec[ptr_uint].create()
+    defer: consumers.release()
+    var reassigns = vec.Vec[ptr_uint].create()
+    defer: reassigns.release()
+    ownership_classify_nodes(graph, reachable, lb.name, ref_of(releases), ref_of(consumers), ref_of(reassigns))
+    if not ownership_every_path_has_consumer(graph, decl_id, ref_of(consumers), reachable):
+        var buf = string.String.create()
+        buf.append("owning binding '")
+        buf.append(lb.name)
+        buf.append("' of type '")
+        buf.append(lb.type_name)
+        buf.append("' is never released")
+        push_warning_at(warnings, path, lb.line, lb.column, lb.name.len, "owning-release-leak", buf.as_str(), "warning")
+    var ri: ptr_uint = 0
+    while ri < releases.len():
+        let rip = releases.get(ri) else:
+            break
+        let rel_id = unsafe: read(rip)
+        let hit = ownership_find_reachable_release(graph, rel_id, ref_of(releases), ref_of(reassigns), reachable)
+        if hit != 0:
+            let node = flow_graph.graph_node(graph, hit) else:
+                break
+            var dbuf = string.String.create()
+            dbuf.append("owning binding '")
+            dbuf.append(lb.name)
+            dbuf.append("' may be released more than once")
+            push_warning(warnings, path, unsafe: read(node).line, "owning-release-double", dbuf.as_str(), "warning")
+            break
+        ri += 1
+
+
+## The host's `owning_local_bindings`: the struct-owning locals in declaration
+## order.  A re-declaration updates the entry in place at its first position,
+## as Ruby's hash update does.
+function ownership_collect_owning_locals(body: ptr[ast.Stmt]?, sink: ref[vec.Vec[OwnBinding]], index: ref[map_mod.Map[str, ptr_uint]], owning_type_names: span[str]) -> void:
     let bp = body else:
         return
     unsafe:
         match read(bp):
             ast.Stmt.stmt_block as blk:
-                ownership_walk_stmts(blk.statements, path, warnings, owning_type_names)
+                var si: ptr_uint = 0
+                while si < blk.statements.len:
+                    ownership_collect_owning_locals_stmt(blk.statements.data + si, sink, index, owning_type_names)
+                    si += 1
+            _:
+                ownership_collect_owning_locals_stmt(bp, sink, index, owning_type_names)
+
+
+function ownership_collect_owning_locals_stmt(stmt: ptr[ast.Stmt], sink: ref[vec.Vec[OwnBinding]], index: ref[map_mod.Map[str, ptr_uint]], owning_type_names: span[str]) -> void:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_local as loc:
+                if loc.name.len > 0:
+                    match ownership_resolve_owning_type(loc.stmt_type, loc.value, owning_type_names):
+                        Option.some as type_name:
+                            ownership_note_owning_local(sink, index, loc.name, loc.line, loc.column, type_name.value)
+                        Option.none:
+                            pass
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    ownership_collect_owning_locals(read(iff.branches.data + bi).body, sink, index, owning_type_names)
+                    bi += 1
+                ownership_collect_owning_locals(iff.else_body, sink, index, owning_type_names)
+            ast.Stmt.stmt_while as wh:
+                ownership_collect_owning_locals(wh.body, sink, index, owning_type_names)
+            ast.Stmt.stmt_for as fr:
+                ownership_collect_owning_locals(fr.body, sink, index, owning_type_names)
+            ast.Stmt.stmt_match as mt:
+                var ai: ptr_uint = 0
+                while ai < mt.arms.len:
+                    ownership_collect_owning_locals(read(mt.arms.data + ai).body, sink, index, owning_type_names)
+                    ai += 1
+            ast.Stmt.stmt_unsafe as un:
+                ownership_collect_owning_locals(un.body, sink, index, owning_type_names)
+            ast.Stmt.stmt_defer as df:
+                ownership_collect_owning_locals(df.body, sink, index, owning_type_names)
             _:
                 pass
-    # The host's tail, in its order: the struct-owning leaks above, then the
-    # own[T] leaks, then the sequential double releases.
-    ownership_own_leaks(bp, path, warnings)
-    ownership_double_warnings(bp, path, warnings)
+
+
+function ownership_note_owning_local(sink: ref[vec.Vec[OwnBinding]], index: ref[map_mod.Map[str, ptr_uint]], name: str, line: ptr_uint, column: ptr_uint, type_name: str) -> void:
+    let existing = index.get(name)
+    if existing != null:
+        let slot = unsafe: read(existing)
+        let item = sink.get(slot) else:
+            return
+        unsafe:
+            read(item).line = line
+            read(item).column = column
+            read(item).type_name = type_name
+        return
+    index.set(name, sink.len())
+    sink.push(OwnBinding(name = name, line = line, column = column, type_name = type_name))
+
+
+## The host's `resolve_local_owning_type`: the annotation's base name when it
+## names an owning type, else the initializer's created type.
+function ownership_resolve_owning_type(stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, owning_type_names: span[str]) -> Option[str]:
+    let tp = stmt_type else:
+        return ownership_initializer_owning_type(value, owning_type_names)
+    let base = owning_annotation_type_name(tp)
+    if is_owning_type_name(base, owning_type_names):
+        return Option[str].some(value = base)
+    return ownership_initializer_owning_type(value, owning_type_names)
+
+
+function ownership_initializer_owning_type(value: ptr[ast.Expr]?, owning_type_names: span[str]) -> Option[str]:
+    let vp = value else:
+        return Option[str].none
+    match ownership_initializer_type(vp):
+        Option.some as name:
+            if is_owning_type_name(name.value, owning_type_names):
+                return Option[str].some(value = name.value)
+        Option.none:
+            pass
+    return Option[str].none
+
+
+## The host's `extract_initializer_type`: a zero-argument `create` /
+## `with_capacity` / `empty` / `from_str` call whose receiver names the type.
+function ownership_initializer_type(value: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(value):
+            ast.Expr.expr_call as call:
+                if call.args.len > 0:
+                    return Option[str].none
+                var method_name = ""
+                var receiver: ptr[ast.Expr]? = null
+                match read(call.callee):
+                    ast.Expr.expr_member_access as ma:
+                        method_name = ma.member_name
+                        receiver = ma.receiver
+                    ast.Expr.expr_specialization as sp:
+                        match read(sp.callee):
+                            ast.Expr.expr_member_access as sma:
+                                method_name = sma.member_name
+                            _:
+                                pass
+                        receiver = call.callee
+                    _:
+                        pass
+                if not is_create_method_name(method_name):
+                    return Option[str].none
+                let recv = receiver else:
+                    return Option[str].none
+                let name = owning_type_from_receiver(recv)
+                if name.len == 0:
+                    return Option[str].none
+                return Option[str].some(value = name)
+            _:
+                return Option[str].none
+
+
+## The host's `owning_type_from_receiver` (for a specialization the host
+## recurses into the specialization's callee).
+function owning_type_from_receiver(receiver: ptr[ast.Expr]) -> str:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                return owning_base_name(id.name)
+            ast.Expr.expr_member_access as ma:
+                return owning_base_name(ma.member_name)
+            ast.Expr.expr_specialization as sp:
+                return owning_type_from_receiver(sp.callee)
+            _:
+                return ""
+
+
+## The host's `owning_base_name`: the segment after the last dot.
+function owning_base_name(qname: str) -> str:
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < qname.len:
+        if qname.byte_at(i) == '.':
+            start = i + 1
+        i += 1
+    if start == 0:
+        return qname
+    return qname.slice(start, qname.len - start)
+
+
+## The reachability solver's result: every node reachable from the entry over
+## successor edges (`ControlFlow::Reachability.solve`).
+function ownership_reachable_ids(graph: ref[flow_graph.CfgGraph]) -> vec.Vec[ptr_uint]:
+    var ids = vec.Vec[ptr_uint].create()
+    var queue = vec.Vec[ptr_uint].create()
+    defer: queue.release()
+    queue.push(unsafe: read(graph).entry_id)
+    var cursor: ptr_uint = 0
+    while cursor < queue.len():
+        let idp = queue.get(cursor) else:
+            break
+        let id = unsafe: read(idp)
+        cursor += 1
+        if ownership_ids_contain(ref_of(ids), id):
+            continue
+        ids.push(id)
+        let node = flow_graph.graph_node(graph, id) else:
+            continue
+        let succs = unsafe: read(node).succs
+        var si: ptr_uint = 0
+        while si < succs.len():
+            let sp = succs.get(si) else:
+                break
+            queue.push(unsafe: read(sp))
+            si += 1
+    return ids
+
+
+## The host's `find_decl_node_id`: the `local_decl` node whose declaration
+## write names the binding (0 = none).  The host's `statement_flow_analysis`
+## builder writes a declaration only when the local has an initializer
+## (`local_decl_write_targets`), so an uninitialized `var x: T` has no decl
+## node here even though the self's shared builder records the write.
+function ownership_find_decl_node(graph: ref[flow_graph.CfgGraph], name: str) -> ptr_uint:
+    var i: ptr_uint = 0
+    let count = unsafe: read(graph).nodes.len()
+    while i < count:
+        let slot = unsafe: read(graph).nodes.get(i) else:
+            break
+        let node = unsafe: read(slot)
+        if unsafe: read(node).kind.equal("local_decl") and ownership_decl_has_initializer(unsafe: read(node).statement):
+            let writes = unsafe: read(node).write_sites
+            var wi: ptr_uint = 0
+            while wi < writes.len():
+                let wp = writes.get(wi) else:
+                    break
+                unsafe:
+                    let w = read(wp)
+                    if w.origin.equal("declaration") and w.name.equal(name):
+                        return read(node).id
+                wi += 1
+        i += 1
+    return 0
+
+
+function ownership_decl_has_initializer(stmt_key: ptr_uint) -> bool:
+    let stmt = unsafe: reinterpret[ptr[ast.Stmt]](stmt_key)
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_local as loc:
+                return loc.value != null
+            _:
+                return false
+
+
+## The host's `classify_cfg_nodes`: the reachable nodes that release the
+## binding (consumers; the non-defer ones also count as releases), the nodes
+## that consume it by transfer (a by-name return or a struct-field transfer)
+## and the nodes that reassign it.
+function ownership_classify_nodes(graph: ref[flow_graph.CfgGraph], reachable: ref[vec.Vec[ptr_uint]], name: str, releases: ref[vec.Vec[ptr_uint]], consumers: ref[vec.Vec[ptr_uint]], reassigns: ref[vec.Vec[ptr_uint]]) -> void:
+    var i: ptr_uint = 0
+    let count = unsafe: read(graph).nodes.len()
+    while i < count:
+        let slot = unsafe: read(graph).nodes.get(i) else:
+            break
+        let node = unsafe: read(slot)
+        let id = unsafe: read(node).id
+        unsafe:
+            if ownership_ids_contain(reachable, id):
+                let kind = read(node).kind
+                let stmt_key = read(node).statement
+                if stmt_key != 0 and ownership_statement_node_kind(kind):
+                    let stmt = reinterpret[ptr[ast.Stmt]](stmt_key)
+                    if ownership_release_call_in_stmt(stmt, name):
+                        consumers.push(id)
+                        if not kind.equal("defer"):
+                            releases.push(id)
+                    if ownership_return_for_name(stmt, name) or ownership_struct_transfer_in_stmt(stmt, name):
+                        consumers.push(id)
+                if kind.equal("assignment"):
+                    let writes = read(node).write_sites
+                    var wi: ptr_uint = 0
+                    while wi < writes.len():
+                        let wp = writes.get(wi) else:
+                            break
+                        let w = read(wp)
+                        if w.origin.equal("assignment") and w.name.equal(name):
+                            reassigns.push(id)
+                        wi += 1
+        i += 1
+
+
+## Whether a node's `statement` field is an AST statement the release
+## predicates can read.  The builder stores a branch/arm in `if_condition` and
+## `match_binding` nodes, exactly as the host's builder does (whose predicates
+## then simply do not match).
+function ownership_statement_node_kind(kind: str) -> bool:
+    return not kind.equal("if_condition") and not kind.equal("match_binding")
+
+
+## The host's `release_call_in_stmt?`: a release of the binding inside the
+## statement, including a defer body's statements.
+function ownership_release_call_in_stmt(stmt: ptr[ast.Stmt], name: str) -> bool:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_defer as df:
+                let body = df.body else:
+                    return false
+                match read(body):
+                    ast.Stmt.stmt_block as blk:
+                        var si: ptr_uint = 0
+                        while si < blk.statements.len:
+                            if ownership_release_call_in_stmt(blk.statements.data + si, name):
+                                return true
+                            si += 1
+                        return false
+                    _:
+                        return ownership_release_call_in_stmt(body, name)
+            _:
+                match ownership_extract_expr(stmt):
+                    Option.some as ep:
+                        return ownership_expr_has_release(ep.value, name)
+                    Option.none:
+                        return false
+
+
+## The host's `_expr_has_release?`: an `x.release()` on the binding, a
+## `release_*` helper taking it through `ref_of`/`ptr_of`, or anything nested.
+function ownership_expr_has_release(expr: ptr[ast.Expr], name: str) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_call as call:
+                if release_call_on_binding(expr):
+                    match read(call.callee):
+                        ast.Expr.expr_member_access as ma:
+                            match read(ma.receiver):
+                                ast.Expr.expr_identifier as id:
+                                    if id.name.equal(name):
+                                        return true
+                                _:
+                                    pass
+                        _:
+                            pass
+                else:
+                    match read(call.callee):
+                        ast.Expr.expr_identifier as cid:
+                            if cid.name.starts_with("release_") and ownership_release_helper_has(call.args, name):
+                                return true
+                        _:
+                            pass
+                if ownership_expr_has_release(call.callee, name):
+                    return true
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    if ownership_expr_has_release(read(call.args.data + ai).arg_value, name):
+                        return true
+                    ai += 1
+                return false
+            ast.Expr.expr_member_access as m:
+                return ownership_expr_has_release(m.receiver, name)
+            ast.Expr.expr_binary_op as b:
+                return ownership_expr_has_release(b.left, name) or ownership_expr_has_release(b.right, name)
+            ast.Expr.expr_unary_op as u:
+                return ownership_expr_has_release(u.operand, name)
+            _:
+                return false
+
+
+## The host's `release_helper_binding_names`: a `release_*` helper's
+## `ref_of(binding)` / `ptr_of(binding)` arguments name released bindings.
+function ownership_release_helper_has(args: span[ast.Argument], name: str) -> bool:
+    var ai: ptr_uint = 0
+    while ai < args.len:
+        let arg = unsafe: read(args.data + ai)
+        unsafe:
+            match read(arg.arg_value):
+                ast.Expr.expr_call as vc:
+                    match read(vc.callee):
+                        ast.Expr.expr_identifier as cid:
+                            if cid.name.equal("ref_of") or cid.name.equal("ptr_of"):
+                                var ii: ptr_uint = 0
+                                while ii < vc.args.len:
+                                    match read(read(vc.args.data + ii).arg_value):
+                                        ast.Expr.expr_identifier as inner:
+                                            if inner.name.equal(name):
+                                                return true
+                                        _:
+                                            pass
+                                    ii += 1
+                        _:
+                            pass
+                _:
+                    pass
+        ai += 1
+    return false
+
+
+## The host's `return_for_name?`.
+function ownership_return_for_name(stmt: ptr[ast.Stmt], name: str) -> bool:
+    unsafe:
+        match read(stmt):
+            ast.Stmt.stmt_ret as r:
+                let value = r.value else:
+                    return false
+                match read(value):
+                    ast.Expr.expr_identifier as id:
+                        return id.name.equal(name)
+                    _:
+                        return false
+            _:
+                return false
+
+
+## The host's `struct_transfer_in_stmt?`: a call statement that hands the
+## binding to a named argument (through casts or nested calls).
+function ownership_struct_transfer_in_stmt(stmt: ptr[ast.Stmt], name: str) -> bool:
+    match ownership_extract_expr(stmt):
+        Option.some as ep:
+            return ownership_expr_contains_transfer(ep.value, name)
+        Option.none:
+            return false
+
+
+## The host's `_expr_contains_transfer?`.
+function ownership_expr_contains_transfer(expr: ptr[ast.Expr], name: str) -> bool:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_call as call:
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    let arg = read(call.args.data + ai)
+                    if ownership_argument_transfers(arg.arg_value, name, arg.arg_name.is_some()):
+                        return true
+                    ai += 1
+                return false
+            _:
+                return false
+
+
+## The host's `argument_transfers?`: a named identifier transfers ownership; a
+## pointer cast around one transfers regardless of the argument's name, and a
+## nested call's named arguments are walked.
+function ownership_argument_transfers(value: ptr[ast.Expr], name: str, named: bool) -> bool:
+    unsafe:
+        match read(value):
+            ast.Expr.expr_identifier as id:
+                return named and id.name.equal(name)
+            ast.Expr.expr_prefix_cast as pc:
+                match read(pc.expression):
+                    ast.Expr.expr_identifier as inner:
+                        return inner.name.equal(name)
+                    _:
+                        return false
+            ast.Expr.expr_call as call:
+                var ai: ptr_uint = 0
+                while ai < call.args.len:
+                    let arg = read(call.args.data + ai)
+                    if ownership_argument_transfers(arg.arg_value, name, arg.arg_name.is_some()):
+                        return true
+                    ai += 1
+                return false
+            _:
+                return false
+
+
+## The host's `every_path_to_exit_has_consumer?`: walk from the declaration;
+## a consumer ends the path, an exit node before any consumer is a leak.  An
+## exhausted walk (no exit nodes reachable) is not a leak.
+function ownership_every_path_has_consumer(graph: ref[flow_graph.CfgGraph], decl_id: ptr_uint, consumers: ref[vec.Vec[ptr_uint]], reachable: ref[vec.Vec[ptr_uint]]) -> bool:
+    var visited = vec.Vec[ptr_uint].create()
+    defer: visited.release()
+    var queue = vec.Vec[ptr_uint].create()
+    defer: queue.release()
+    let decl = flow_graph.graph_node(graph, decl_id) else:
+        return true
+    let succs = unsafe: read(decl).succs
+    var si: ptr_uint = 0
+    while si < succs.len():
+        let sp = succs.get(si) else:
+            break
+        queue.push(unsafe: read(sp))
+        si += 1
+    var cursor: ptr_uint = 0
+    while cursor < queue.len():
+        let idp = queue.get(cursor) else:
+            break
+        let nid = unsafe: read(idp)
+        cursor += 1
+        if ownership_ids_contain(ref_of(visited), nid):
+            continue
+        visited.push(nid)
+        if not ownership_ids_contain(reachable, nid):
+            continue
+        let node = flow_graph.graph_node(graph, nid) else:
+            continue
+        if ownership_ids_contain(consumers, nid):
+            continue
+        let kind = unsafe: read(node).kind
+        if kind.equal("exit") or kind.equal("return"):
+            return false
+        let nexts = unsafe: read(node).succs
+        var ni: ptr_uint = 0
+        while ni < nexts.len():
+            let np = nexts.get(ni) else:
+                break
+            queue.push(unsafe: read(np))
+            ni += 1
+    return true
+
+
+## The host's `find_reachable_release`: the first release node reachable from
+## another release for the same binding without passing a reassignment.
+function ownership_find_reachable_release(graph: ref[flow_graph.CfgGraph], start_id: ptr_uint, releases: ref[vec.Vec[ptr_uint]], reassigns: ref[vec.Vec[ptr_uint]], reachable: ref[vec.Vec[ptr_uint]]) -> ptr_uint:
+    var visited = vec.Vec[ptr_uint].create()
+    defer: visited.release()
+    var queue = vec.Vec[ptr_uint].create()
+    defer: queue.release()
+    let start = flow_graph.graph_node(graph, start_id) else:
+        return 0
+    let succs = unsafe: read(start).succs
+    var si: ptr_uint = 0
+    while si < succs.len():
+        let sp = succs.get(si) else:
+            break
+        queue.push(unsafe: read(sp))
+        si += 1
+    var cursor: ptr_uint = 0
+    while cursor < queue.len():
+        let idp = queue.get(cursor) else:
+            break
+        let nid = unsafe: read(idp)
+        cursor += 1
+        if ownership_ids_contain(ref_of(visited), nid):
+            continue
+        visited.push(nid)
+        if not ownership_ids_contain(reachable, nid):
+            continue
+        if ownership_ids_contain(releases, nid) and nid != start_id:
+            return nid
+        if ownership_ids_contain(reassigns, nid):
+            continue
+        let node = flow_graph.graph_node(graph, nid) else:
+            continue
+        let nexts = unsafe: read(node).succs
+        var ni: ptr_uint = 0
+        while ni < nexts.len():
+            let np = nexts.get(ni) else:
+                break
+            queue.push(unsafe: read(np))
+            ni += 1
+    return 0
+
+
+function ownership_ids_contain(ids: ref[vec.Vec[ptr_uint]], id: ptr_uint) -> bool:
+    var i: ptr_uint = 0
+    while i < ids.len():
+        let ip = ids.get(i) else:
+            break
+        if unsafe: read(ip) == id:
+            return true
+        i += 1
+    return false
 
 
 function ownership_walk_stmts(stmts: span[ast.Stmt], path: str, warnings: ref[vec.Vec[Warning]], owning_type_names: span[str]) -> void:

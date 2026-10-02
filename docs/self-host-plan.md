@@ -2686,6 +2686,65 @@ scoreboard lb 98/98 + parse 705/701/0, `lint_parity` 434/175, the harness 30/30 
 documented entries, recovery OK, fixtures at baselines, the audit **2 documented**,
 examples 49/0, valgrind 0 errors, the Neovim smoke.
 
+### The release rules' CFG precision analysis (2026-10-02 session 23)
+
+The session-22 close ranked the corpus lint residue; `owning-release-leak`
+(602 self-only / 286 host-only) was the largest rule delta.  The cause was a
+missing port, not a gate: the host's `emit_owning_release_warnings`
+(`release_rules.rb`) runs `emit_owning_release_cfg_warnings` whenever its
+`sema_facts` exist — and `mtc lint` / the LSP always have them — while the
+self always ran the *simple* AST path (the host's no-facts fallback).  The CFG
+path is a different algorithm: per struct-owning local, a leak means **some
+path** from the declaration reaches an exit before any consumer (a release, a
+by-name return or a struct-field transfer), not "no release anywhere"; and a
+release reachable from another release before a reassignment is a double
+release (the host-only 12 in the corpus).
+
+Landed, one commit (linter only):
+
+- `ownership_walk_body` dispatches on the analysis: `ownership_cfg_warnings`
+  over F1's graph when `lint_analysis != null` (the host's `cfg_available`),
+  the simple path otherwise (kept — it is the host's real fallback for a file
+  whose context bootstrap fails, e.g. a lint with no analysis).
+- The ported pieces: `ownership_find_decl_node` (the `local_decl` node with a
+  `declaration` write — and the host's builder writes one only when the local
+  has an initializer, so an uninitialized `var x: T` is skipped while the
+  self's shared builder records the write unconditionally),
+  `ownership_reachable_ids` (BFS from the entry), `ownership_classify_nodes`
+  (releases / consumers / reassigns),
+  `ownership_release_call_in_stmt` / `ownership_expr_has_release` (including
+  the `release_*`-helper idiom and defer bodies), `ownership_return_for_name`,
+  `ownership_struct_transfer_in_stmt` (the host's `_expr_contains_transfer?` /
+  `argument_transfers?`), the `every_path_to_exit_has_consumer?` and
+  `find_reachable_release` BFS walks, and the owning-locals collection
+  (`resolve_local_owning_type`: the annotation's base name, or a zero-argument
+  `create` / `with_capacity` / `empty` / `from_str` call whose receiver names
+  the type — the host's `extract_initializer_type` rejects argument-taking
+  calls).
+- One pre-existing port bug fixed on the way: `own_transferred?` uses the
+  host's `_any_stmt?` and therefore **recurses into nested bodies**
+  (`unsafe:` / `if` / `while` / `for` / `match` / `defer`); the self's port did
+  not, so every heap allocation handed over inside an `unsafe:` block (86 of
+  the corpus's 89 residual sites, e.g. `read(bucket_ptr + index) = node` in
+  `std/map.mt` and the parser's `alloc_*` helpers) was reported as a leak.
+
+Measured: `tools/lint_parity.rb -q` over `std examples projects/mtc/src`:
+**475 agree / 134 differ** (session 22: 434/175); `owning-release-leak`
+**602/286 → 0/0** and `owning-release-double` **0/12 → 0/0**; no other rule
+moved.  `tmp/rl_scan.rb` (the session-local focused scan, host outputs from the
+host cache) reads 0/0.  The two diagnostic files stay byte-identical (lb 98/98,
+mst 10/10, 0 differing lines).  Four new tests in
+`projects/mtc/test/linter_test.mt` pin the CFG shapes: the conditional-release
+leak, the uninitialized-declaration skip, the `unsafe:`-nested `own[T]`
+transfer and the loop-back-edge double release (each first verified against
+the host).
+
+Tooling: `tools/lint_parity.rb` gained `--host-cache FILE` — the host's
+per-file outputs are cached under the file's digest (and the whole cache drops
+when the host compiler's sources change), so corpus iterations run the host
+once and the self side live afterwards (609 files: minutes before, ~20 s after
+the first warm).
+
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
 `owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`

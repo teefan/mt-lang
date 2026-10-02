@@ -16,10 +16,16 @@
 #   --timeout SEC    per-invocation timeout     (default: 180)
 #   -q, --quiet      print only the summary
 #   --max-files N    print at most N differing files (default: 20)
+#   --host-cache F   cache host outputs in F (a JSON file); entries are reused
+#                    when the file's digest matches, and the whole cache is
+#                    dropped when the host compiler's sources change.  The
+#                    self-host side always runs live.
 #   -h, --help       show this message
 #
 # Exit status: 0 when every file's output is byte-identical, 1 otherwise.
 
+require "digest"
+require "json"
 require "open3"
 require "optparse"
 
@@ -39,6 +45,7 @@ OptionParser.new do |opts|
   opts.on("--timeout SEC", Integer) { |v| options[:timeout] = v }
   opts.on("-q", "--quiet") { options[:quiet] = true }
   opts.on("--max-files N", Integer) { |v| options[:max_files] = v }
+  opts.on("--host-cache FILE") { |v| options[:host_cache] = File.expand_path(v, ROOT) }
   opts.on("-h", "--help") { puts opts; exit 0 }
 end.parse!
 targets = ARGV.empty? ? %w[std examples projects/mtc/src] : ARGV
@@ -59,6 +66,44 @@ def lint_output(command, file, timeout)
   status.exitstatus == 124 ? "<timeout after #{timeout}s>" : out
 end
 
+# Host-output cache.  The host is deterministic but expensive (one Ruby
+# process per file), so its outputs are cached per file digest; the *self*
+# side is what changes while iterating and always runs live.  A change to the
+# host compiler's own sources drops the whole cache.
+host_cache = nil
+digests = {}
+if options[:host_cache]
+  host_version = Dir.glob([File.join(ROOT, "lib/**/*.rb"), File.join(ROOT, "bin/mtc")])
+                    .map { |f| File.mtime(f).to_i }.max
+  host_cache = { "version" => host_version, "commands" => [options[:host]], "files" => {} }
+  if File.exist?(options[:host_cache])
+    loaded = begin
+      JSON.parse(File.read(options[:host_cache]))
+    rescue JSON::ParserError
+      {}
+    end
+    if loaded["version"] == host_version && loaded["commands"] == [options[:host]]
+      host_cache["files"] = loaded["files"] || {}
+    end
+  end
+  files.each { |f| digests[f] = Digest::SHA256.file(f).hexdigest }
+end
+cache_mutex = Mutex.new
+
+def host_lint(options, host_cache, digests, cache_mutex, file)
+  return lint_output(options[:host], file, options[:timeout]) if host_cache.nil?
+
+  key = file.delete_prefix("#{ROOT}/")
+  digest = digests[file]
+  cache_mutex.synchronize do
+    entry = host_cache["files"][key]
+    return entry[1] if entry && entry[0] == digest
+  end
+  out = lint_output(options[:host], file, options[:timeout])
+  cache_mutex.synchronize { host_cache["files"][key] = [digest, out] }
+  out
+end
+
 def rule_tally(text)
   text.lines.filter_map { |line| line[%r{^\S+\.mt:\d+: ([a-z-]+):}, 1] }.tally
 end
@@ -76,7 +121,7 @@ workers = Array.new(options[:jobs]) do
       rescue ThreadError
         break
       end
-      host = lint_output(options[:host], file, options[:timeout])
+      host = host_lint(options, host_cache, digests, cache_mutex, file)
       self_host = lint_output([options[:self], "lint"], file, options[:timeout])
       next if host == self_host
 
@@ -85,6 +130,12 @@ workers = Array.new(options[:jobs]) do
   end
 end
 workers.each(&:join)
+
+if options[:host_cache]
+  tmp_path = "#{options[:host_cache]}.tmp"
+  File.write(tmp_path, JSON.generate(host_cache))
+  File.rename(tmp_path, options[:host_cache])
+end
 
 host_only = Hash.new(0)
 self_only = Hash.new(0)

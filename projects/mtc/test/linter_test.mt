@@ -1331,3 +1331,136 @@ function test_prefer_inline_if_multiline_body_suppressed() -> void:
     var warns = lint_text(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "prefer-inline-if")), 0)
+
+
+# =============================================================================
+#  owning-release-leak / owning-release-double — the CFG precision analysis
+# =============================================================================
+
+## Lint `source` with the single-file analysis and an explicit owning-type set
+## (the loader normally derives it from the analyses' `.release` methods).
+function lint_text_with_owning(source: str, owning: vec.Vec[str]) -> vec.Vec[linter.Warning]:
+    var diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: diags.release()
+    let file = parser.parse_source(source, ref_of(diags))
+    var analysis = analyzer.check_source_file(file)
+    var options = linter.default_lint_options()
+    options.analysis = ptr_of(analysis)
+    options.owning_type_names = owning.as_span()
+    return linter.lint_source_with(file, source, "test.mt", options)
+
+
+function owning_names_one(name: str) -> vec.Vec[str]:
+    var names = vec.Vec[str].create()
+    names.push(name)
+    return names
+
+
+@[test]
+function test_owning_release_leak_conditional_release_is_a_leak() -> void:
+    # The CFG path: a release in one branch only leaves the other path to an
+    # exit without a consumer (the simple AST path accepted a release
+    # anywhere).
+    var source = <<-SRC
+        public struct Box:
+            value: int
+
+        extending Box:
+            public function release() -> void:
+                pass
+
+        function make_box() -> Box:
+            return Box(value = 1)
+
+        function demo(flag: bool) -> void:
+            var b: Box = make_box()
+            if flag:
+                b.release()
+    SRC
+    var owning = owning_names_one("Box")
+    defer: owning.release()
+    var warns = lint_text_with_owning(source, owning)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "owning-release-leak")), 1)
+    expect(message_of(ref_of(warns), "owning-release-leak").contains_substring("owning binding 'b' of type 'Box' is never released"), "leak message")
+
+
+@[test]
+function test_owning_release_uninitialized_decl_has_no_decl_node() -> void:
+    # The host's statement-flow builder writes a declaration only when the
+    # local has an initializer, so `var b: Box` (assigned later) never reaches
+    # the release analysis.
+    var source = <<-SRC
+        public struct Box:
+            value: int
+
+        extending Box:
+            public function release() -> void:
+                pass
+
+        function make_box() -> Box:
+            return Box(value = 1)
+
+        function demo() -> void:
+            var b: Box
+            b = make_box()
+            b.release()
+    SRC
+    var owning = owning_names_one("Box")
+    defer: owning.release()
+    var warns = lint_text_with_owning(source, owning)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "owning-release-leak")), 0)
+
+
+@[test]
+function test_owning_release_own_transfer_inside_unsafe_not_a_leak() -> void:
+    # `own_transferred?` walks nested bodies (the host's `_any_stmt?`), so a
+    # call handing the binding over inside `unsafe:` is a transfer.
+    var source = <<-SRC
+        function consume(x: own[int]) -> void:
+            x.release()
+
+        function demo() -> void:
+            let p = heap.must_alloc[int](1)
+            unsafe:
+                consume(p)
+    SRC
+    var owning = vec.Vec[str].create()
+    defer: owning.release()
+    var warns = lint_text_with_owning(source, owning)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "owning-release-leak")), 0)
+
+
+@[test]
+function test_owning_release_double_across_loop_back_edge() -> void:
+    # The path-sensitive double: from the tail release the loop back edge
+    # reaches the branch release, which the sequential check cannot see.
+    var source = <<-SRC
+        public struct Box:
+            value: int
+
+        extending Box:
+            public function release() -> void:
+                pass
+
+        function make_box() -> Box:
+            return Box(value = 1)
+
+        function demo(flag: bool) -> void:
+            var again = true
+            while again:
+                var b: Box = make_box()
+                if flag:
+                    b.release()
+                    return
+                b.release()
+                again = false
+    SRC
+    var owning = owning_names_one("Box")
+    defer: owning.release()
+    var warns = lint_text_with_owning(source, owning)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "owning-release-double")), 1)
+    expect_eq(int<-(count_code(ref_of(warns), "owning-release-leak")), 0)
