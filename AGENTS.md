@@ -87,16 +87,31 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
 
 - **Rebuild before measuring**: `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc`.
   A stale `build/stage2/mtc` is the classic false result.
-- **Gates for every change**: `tools/bootstrap.sh -j 16` (fixed point + 14/14 self-tests),
-  `build/stage2/mtc test test/mt -I .` (60 files / 0 failed), `rake "cli:parity"` (23 match / 38 differ / 0 pending),
-  `ruby tools/sexpr_parity.rb lex -q` (705/705) and `parse -q` (701 comparable / 0 differ),
-  `ruby tools/unused_import_parity.rb` (609/609, differ 0),
-  `ruby tools/lint_parity.rb` (the corpus-wide whole-output lint comparison; session 19: 357/609 agree,
-  the rest is the ranked per-rule backlog — read its summary, it is not expected to reach 0 yet),
-  `ruby tools/lsp_parity.rb record|compare` (30/30 capability keys, 4 documented entries),
-  `ruby tools/lsp_recovery_probe.rb --check` (mid-edit recovery parity, byte-compared).
-  C-backend changes additionally get the example sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34,
-  a raylib sample); behaviour changes get valgrind on the touched path plus the headless-Neovim smoke.
+- **Gates are tiered — iterate cheap, prove once.**  `tools/gates.sh` picks the set from
+  `git diff --name-only` (or `--areas`), prints it, and `--run` executes it in order
+  (each gate logs to `tmp/gates/<id>.log`; hard gates stop the run, meters continue).
+  - **Tier 1 — per edit / per workstream (minutes)**: rebuild the dev compiler
+    (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~50 s), run
+    `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure **only the class you
+    touched** — a focused `ruby tools/lint_parity.rb -q <paths>`, one file's host-vs-self
+    lint diff, `tmp/diag_probe.rb`, `ruby tools/sexpr_parity.rb lex|parse -q`.
+    Do not run the corpus-wide sweep or the audit as the iteration loop.
+  - **Tier 2 — once per commit, on frozen sources, backgrounded**:
+    `tools/bootstrap.sh -j 16` (fixed point + 14/14 self-tests) and
+    `build/stage2/mtc test test/mt -I .` (60/0) are the hard proofs; then the area
+    sweeps — linter: `rake parity:scoreboard`, `ruby tools/lint_parity.rb -q`
+    (609 files; read its summary, it is not expected to reach 0 yet),
+    `ruby tools/unused_import_parity.rb` (609/609), `ruby tools/cli_parity.rb`
+    (23 match / 38 differ / 0 pending expected); LSP: `tools/lsp_parity.rb
+    record|compare` (30/30 + the 4 documented entries),
+    `tools/lsp_recovery_probe.rb --check`, `tools/lsp_project_audit.rb --workspace DIR`
+    (drift ±10 — compare differing *sets*), valgrind on an LSP drive + the Neovim smoke;
+    lowering/C backend: `ruby tools/sexpr_parity.rb lower -q -j 16` plus the example
+    sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34, a raylib sample).
+  - **Do not replay a baseline a previous session verified at the same commit.**  The
+    ledger records the last verified numbers per commit; a new session re-measures only
+    the classes its task can move (or nothing, if the tree is unchanged).  Re-measure
+    when the tree moved or a number is surprising.
 - **Never edit sources while a gate runs**: `bootstrap.sh` compiles the working tree, so an edit
   mid-run silently corrupts the result — check the exit status, not just the tail.
 - **Live state**: `docs/self-host-plan.md` §0j (`lower`) and §0k (LSP/linter/formatter: session records

@@ -1,10 +1,10 @@
 # Self-Host Plan
 
-> **Starting a session?** Read **"How to start a work session"** below (phase
-> order, per-workstream entry points and gates), then **"First steps for the next
-> session (2026-09-27 handoff)"** — the builds are at parity, so what remains is
-> `lower` dump fidelity (§0j's ranked table), CLI message parity, and the LSP
-> (§0k) / DAP (`dap-design.md` §10) leftovers.
+> **Starting a session?** Read **"How to start a work session"** below (the tiered
+> gate protocol and the per-workstream entry points), then the *latest* session record
+> in **§0k** and the ledger `~/.commandcode/plans/finish-self-host-full-parity.md`
+> (per-commit verified numbers, the session logs, and the ranked remaining work).
+> The live leads are the newest §0k records, not the older handoff sections.
 
 > **Workstream status (self-host vs `projects/stress`)**: **DONE** — the
 > self-host compiler builds, links and runs `projects/stress` with output and
@@ -144,9 +144,30 @@ workstream doc for the area you are touching:
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
 
-**Always** finish a change with `tools/bootstrap.sh -j 16` (fixed point +
-compiler self-test) plus the sweep that covers the area — several changes that
-looked correct at the CLI level broke the compiler's own bootstrap.
+**Start by checking what your task can move, not by replaying the matrix.**  The
+last verified numbers per commit are in this file's session records and in the
+ledger (`~/.commandcode/plans/finish-self-host-full-parity.md`); a session only
+re-measures the classes its change touches, and only when the tree moved (or a
+number looks surprising).  Iterate on the dev compiler
+(`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~50 s;
+`tmp/mtc-dev test projects/mtc -I .`) with a *focused* meter — a single file's
+host-vs-self lint/check diff, `tmp/diag_probe.rb`, `ruby tools/lint_parity.rb -q
+<paths>`, `ruby tools/sexpr_parity.rb lex|parse -q` — and save the wide sweeps
+for the commit.
+
+**Once per commit, on frozen sources**, run the tier-2 proofs: `tools/bootstrap.sh
+-j 16` (fixed point + compiler self-test — several changes that looked correct at
+the CLI level broke the compiler's own bootstrap) plus the sweep that covers the
+area.  `tools/gates.sh` picks the set for you:
+
+```sh
+tools/gates.sh                 # list the gates for the working-tree diff
+tools/gates.sh --areas linter  # or name the areas
+tools/gates.sh --run           # execute them (logs under tmp/gates/)
+```
+
+**Never edit sources while a gate runs** — `bootstrap.sh` compiles the working
+tree, so a mid-run edit silently corrupts the result.
 
 One command for every counter: `rake "parity:scoreboard"` (cheap sections:
 cli/lex/parse/lint; add `FULL=1` for lower/format/LSP/DAP).  Lint parity has
