@@ -2859,6 +2859,55 @@ mid-edit `n.` workspace).
 | 25 + 18 | The method-fallback path: the host lists its whole method table with raw keys (`static:default`) and takes that path for *any* dot position (its `find_dot_receiver_path` accepts digit/bracket segments the self rejects, so the self falls to the global list instead) |
 | 15 + 15 + 14 + … | Receiver resolution: `Vec[int].` (specialized type receiver), `Option`/`Result` prelude receivers (host lists prelude methods), missing single methods (`as_iter`) |
 
+### Completion parity, part 2: the receiver merge and the alias-qualified receivers (2026-10-02 session 24)
+
+Part 1 left **366** differing completion entries; this batch takes the class to
+**235** (from the 600 the dot pass first measured):
+
+- **The host's `methods_for_receiver_type` merge** (`merged_receiver_methods`):
+  the current module's methods for the receiver type in registration order,
+  then every import's (in the file's import order), deduped by name — replacing
+  the AST walks that saw only the current file's `extending` blocks.  The
+  type-receiver path emits statics alone with the `static:` marker stripped;
+  value receivers keep it as their label.  Details/params/snippets render with
+  *absolute* type names (`static:create() -> std.vec.Vec[T]`), as the host's
+  `Types#to_s` does.
+- **`imported_type_members` now covers public type aliases**
+  (`collect_binding_alias_members`): `rl.Rectangle`/`rl.Color` are `public type
+  X = c.X`, so the alias spelling had no entry — the module's
+  `<Alias>.<method>` extending methods (`std.raylib`'s `Color.from_hsv`) and the
+  target's fields were invisible.  (This also completes the
+  `prefer-struct-with` fields path for aliased structs.)
+- **Alias-qualified type receivers** (`rl.Color.`): `type_receiver_completions`
+  accepts the receiver segment when the alias's module carries it
+  (`type_receiver_known`), fed by `cursor.type_receiver_at`'s module alias —
+  the host's `resolve_type_receiver_info` fall-through.
+- **The method fallback** walks the file's declarations in order (the host's
+  per-type registration order; inline methods are desugared into `extending`
+  blocks by the parser) and labels statics with the `static:` prefix, rendering
+  resolved signatures absolutely — the host's method-table iteration.
+- **Completion-only dot detection** (`cursor.member_receiver_at`): a port of the
+  host's `find_dot_receiver_path` — any dot context yields a receiver (digit
+  segments and `[…]` groups included; the *rightmost* path segment is the
+  receiver), so the fallback answers exactly where the host does.  The
+  hover/definition endpoints keep the stricter `dot_receiver_at`.
+
+Measured: completion audit **366 → 235 differing entries**; the full matrix at
+the same tree reads **237** (235 completion + the 2 documented entries), the
+harness is back to **30/30 + the 4 documented entries**, dev tests 14 files / 0
+failed, and the corpus lint is unchanged at 494/115.
+
+**Remaining completion families** (ranked; unchanged labels are order-only
+unless noted):
+
+| Entries | Family |
+| --- | --- |
+| ~120 | **Order-only**: the same labels, a different array order.  The host's merge order is per *type object* across every import; the self's per-module entry order still differs for some receivers (e.g. `docs/data_structures.mt@260`) |
+| 15 | A module that *extends* a type it does not declare has no `<module>.<Type>` entry, so its methods are missing from the merge (`std.iter`'s `Vec.as_iter`).  Fix: collect method-only entries from each binding's method table |
+| ~26 | Prelude `Option`/`Result` receivers: the host's `BUILTIN_TYPE_METHOD_SIGNATURES` table supplies `unwrap`/`expect`/…; the self's prelude stubs are a different set (and absent from the fallback, correctly) |
+| 15 | `vec.Vec[int].`-style specialized type receivers fall through to the fallback instead of the type-receiver path |
+| ~30 | Small resolved-vs-unresolved receiver differences (`lb@123:16`'s `a,b,both`, `lb@1577:27`, `lb@1653`-style positions) |
+
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
 `owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`

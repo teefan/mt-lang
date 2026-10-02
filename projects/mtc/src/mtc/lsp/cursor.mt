@@ -317,6 +317,62 @@ public function type_receiver_at(source: str, line: ptr_uint, character: ptr_uin
     return Option[TypeReceiver].some(value = TypeReceiver(name = name, module_alias = module_alias))
 
 
+## The completion receiver of a member access at the cursor — the last segment
+## of the host's `find_dot_receiver_path`.  Unlike `dot_receiver_at` (which the
+## hover/definition endpoints use and which requires a plain identifier), any
+## dot context yields a receiver here — digit segments and `[…]` groups
+## included — because the host falls back to its method table for a receiver it
+## cannot resolve, so every dot position must answer that fallback.
+public function member_receiver_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[str]:
+    let line_text = source_line(source, line + 1)
+    var idx: int = int<-character
+    if idx > int<-line_text.len:
+        idx = int<-line_text.len
+    idx -= 1
+    # Walk back past the hovered identifier to its dot.
+    while idx >= 0 and utils.is_word_byte(line_text.byte_at(ptr_uint<-idx)):
+        idx -= 1
+    if idx < 0 or line_text.byte_at(ptr_uint<-idx) != 46:
+        return Option[str].none
+
+    var last_segment: str = ""
+    var have_segment = false
+    var left: int = idx - 1
+    while true:
+        # Skip a `[…]` group and its contents.
+        if left >= 0 and line_text.byte_at(ptr_uint<-left) == 93:
+            var depth: int = 1
+            left -= 1
+            while left >= 0 and depth > 0:
+                let b = line_text.byte_at(ptr_uint<-left)
+                if b == 93:
+                    depth += 1
+                else if b == 91:
+                    depth -= 1
+                if depth > 0 and left > 0:
+                    left -= 1
+            left -= 1
+
+        # Walk back over identifier characters.
+        var start: int = left
+        while start >= 0 and utils.is_word_byte(line_text.byte_at(ptr_uint<-start)):
+            start -= 1
+        if start < left and not have_segment:
+            # The path is collected right-to-left; the first segment found is
+            # the receiver (the host's `split('.').last`).
+            last_segment = line_text.slice(ptr_uint<-(start + 1), ptr_uint<-(left - start))
+            have_segment = true
+
+        if start >= 0 and line_text.byte_at(ptr_uint<-start) == 46:
+            left = start - 1
+            continue
+        break
+
+    if not have_segment:
+        return Option[str].none
+    return Option[str].some(value = last_segment)
+
+
 ## The text of 1-based line `line_no` in `source`, without the newline.
 public function source_line(source: str, line_no: ptr_uint) -> str:
     if line_no == 0:

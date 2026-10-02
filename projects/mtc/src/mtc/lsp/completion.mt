@@ -105,10 +105,16 @@ public function handle_completion(
     # Dot-receiver context.  The host answers every dot receiver from the
     # receiver chain — and, failing that, from the file's method list — so the
     # keyword list is never a dot-receiver answer.
-    match cursor.dot_receiver_at(source, line, character):
+    var type_alias: str = ""
+    match cursor.type_receiver_at(source, line, character):
+        Option.some as trecv:
+            type_alias = trecv.value.module_alias
+        Option.none:
+            pass
+    match cursor.member_receiver_at(source, line, character):
         Option.some as recv:
             var dot_items = dot_receiver_completions(
-                ws, ref_of(analysis), ast_file, file_path.as_str(), uri, recv.value, prefix, line)
+                ws, ref_of(analysis), ast_file, file_path.as_str(), uri, recv.value, type_alias, prefix, line)
             proto.write_response_raw(id, dot_items.as_str())
             dot_items.release()
             return
@@ -143,6 +149,7 @@ function dot_receiver_completions(
     file_path: str,
     uri: str,
     receiver: str,
+    type_alias: str,
     prefix: str,
     line: ptr_uint,
 ) -> string.String:
@@ -159,7 +166,7 @@ function dot_receiver_completions(
         # A failed import has no facts binding, so the host falls through.
 
     # 2. Type receiver: enum/variant members, then the type's methods.
-    var type_items = type_receiver_completions(analysis, ast_file, receiver, module_text, prefix, uri)
+    var type_items = type_receiver_completions(analysis, ast_file, receiver, type_alias, module_text, prefix, uri)
     if type_items != null:
         let result = unsafe: read(type_items)
         heap.release(type_items)
@@ -170,7 +177,7 @@ function dot_receiver_completions(
     # record, since the current module's tables do not carry them.
     match receiver_value_type(analysis, ast_file, receiver, line + 1):
         Option.some as ty:
-            var imported_items = imported_value_receiver_completions(analysis, ty.value, prefix, uri)
+            var imported_items = imported_value_receiver_completions(analysis, ast_file, ty.value, prefix, uri)
             if imported_items != null:
                 let result = unsafe: read(imported_items)
                 heap.release(imported_items)
@@ -185,7 +192,7 @@ function dot_receiver_completions(
             pass
 
     # 4. The file's method list.
-    return method_fallback_completions(ast_file, prefix, uri)
+    return method_fallback_completions(analysis, ast_file, prefix, uri)
 
 
 ## Handle completionItem/resolve.  When the editor resolves a completion
@@ -913,6 +920,153 @@ function emit_module_type(
         read(count) = read(count) + 1
 
 
+## One entry of the host's merged `methods_for_receiver_type` table: the method
+## key as the analyzer registered it (`static:` prefixed for a static method),
+## the module that declared it, and its resolved signature.
+struct ReceiverMethod:
+    key: str
+    module_name: str
+    sig: analyzer.FnSig
+
+
+## The host's `methods_for_receiver_type`: the current module's methods for
+## `type_name` in registration order, then every import's (in the file's import
+## order), deduped by key (first wins).  The host renders these items with
+## absolute type names, so callers render with an empty current module.
+function merged_receiver_methods(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    type_name: str,
+    sink: ref[vec.Vec[ReceiverMethod]],
+    seen: ref[map_mod.Map[str, bool]],
+) -> void:
+    var prefix = string.String.create()
+    defer: prefix.release()
+    prefix.append(type_name)
+    prefix.append(".")
+
+    var entries = unsafe: read(analysis).method_sigs.entries()
+    while entries.next():
+        let entry = entries.current()
+        let key = unsafe: read(entry.key)
+        if key.starts_with(prefix.as_str()):
+            let member = key.slice(prefix.len(), key.len - prefix.len())
+            if not seen.contains(member):
+                seen.set(member, true)
+                sink.push(ReceiverMethod(
+                    key = member, module_name = unsafe: read(analysis).module_name,
+                    sig = unsafe: read(entry.value)))
+
+    var ii: ptr_uint = 0
+    while ii < ast_file.imports.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(ast_file.imports.data + ii)
+        match d:
+            ast.Decl.decl_import as imp:
+                var alias = ""
+                match imp.alias_name:
+                    Option.some as a:
+                        alias = a.value
+                    Option.none:
+                        # The implicit alias is the path's last segment.
+                        if imp.path.parts.len > 0:
+                            alias = unsafe: read(imp.path.parts.data + imp.path.parts.len - 1)
+                if alias.len > 0:
+                    let module_ptr = unsafe: read(analysis).imports.get(alias)
+                    if module_ptr != null:
+                        let module_name = unsafe: read(module_ptr)
+                        var key = string.String.create()
+                        defer: key.release()
+                        key.append(module_name)
+                        key.append(".")
+                        key.append(type_name)
+                        let member_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str())
+                        if member_ptr != null:
+                            let methods = unsafe: read(member_ptr).methods
+                            var me = methods.entries()
+                            while me.next():
+                                let e = me.current()
+                                let member = unsafe: read(e.key)
+                                if not seen.contains(member):
+                                    seen.set(member, true)
+                                    sink.push(ReceiverMethod(
+                                        key = member, module_name = module_name,
+                                        sig = unsafe: read(e.value)))
+            _:
+                pass
+        ii += 1
+
+
+## Emit one merged receiver method in the host's shape.  `static_only` is the
+## type-receiver path, which emits static methods alone and strips the
+## `static:` marker from the label; a value receiver keeps the registered key
+## as its label (the host labels a value receiver's static methods
+## `static:create`).
+function emit_receiver_method(
+    entry: ReceiverMethod,
+    static_only: bool,
+    prefix: str,
+    sort_prefix: str,
+    uri: str,
+    items_json: ref[string.String],
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    let is_static = entry.sig.method_kind == ast.MethodKind.mk_static
+    if static_only and not is_static:
+        return
+    var label = string.String.create()
+    defer: label.release()
+    # The self's method tables key methods by their bare name (`method_kind`
+    # carries staticness); the host's labels, which these mirror, carry the
+    # `static:` prefix on a value receiver and strip it on a type receiver.
+    if is_static and not static_only:
+        label.append("static:")
+    label.append(entry.key)
+    if not prefix_matches(label.as_str(), prefix):
+        return
+
+    var params_text = imported_params_text(entry.sig.params, "")
+    defer: params_text.release()
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append(label.as_str())
+    detail.append("(")
+    detail.append(params_text.as_str())
+    detail.append(") -> ")
+    var rendered_return = type_render.qualified_name(entry.sig.return_type, "")
+    defer: rendered_return.release()
+    detail.append(rendered_return.as_str())
+
+    var insert = string.String.create()
+    var insert_format: int = 0
+    if entry.sig.params.len <= 5:
+        append_param_snippet(ref_of(insert), label.as_str(), entry.sig.params)
+        insert_format = 2
+    else:
+        insert.append(label.as_str())
+    defer: insert.release()
+
+    var label_details = string.String.create()
+    defer: label_details.release()
+    if params_text.len() > 0:
+        label_details.append(" (")
+        label_details.append(params_text.as_str())
+        label_details.append(")")
+
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append(sort_prefix)
+    sort_text.append(label.as_str())
+
+    append_item_ext(
+        items_json, label.as_str(), KIND_METHOD, detail.as_str(), insert.as_str(),
+        sort_text.as_str(), label.as_str(), uri, insert_format, label_details.as_str(), "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
 ## Completions for a type-name receiver: enum/variant members (kind 22) first,
 ## then the type's methods (kind 6).  Returns null when the receiver is not a
 ## known type name.
@@ -920,12 +1074,20 @@ function type_receiver_completions(
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
     receiver: str,
+    alias_name: str,
     module_name: str,
     prefix: str,
     uri: str,
 ) -> ptr[string.String]?:
-    let type_name = resolve_receiver_type_name(analysis, receiver)
+    var type_name = resolve_receiver_type_name(analysis, receiver)
+    if type_name.len == 0 and alias_name.len > 0:
+        # `alias.Type`: the receiver segment names the type; it is known when the
+        # alias's module carries it (the host's `resolve_type_receiver_info`
+        # falls through to the module binding's type table).
+        type_name = receiver
     if type_name.len == 0:
+        return null
+    if not type_receiver_known(analysis, type_name, alias_name):
         return null
 
     var items_json = string.String.create()
@@ -957,10 +1119,21 @@ function type_receiver_completions(
                     count += 1
                 mi += 1
 
-    # Methods declared on the type.
-    emit_type_methods(
-        analysis, ast_file, type_name, module_name, prefix, uri, 0, "0_",
-        ref_of(items_json), ref_of(first), ref_of(count))
+    # Methods declared on the type — merged across the current module and every
+    # import, static only, with the `static:` marker stripped (the host's
+    # `completion_items_for_type_receiver`).
+    var methods = vec.Vec[ReceiverMethod].create()
+    defer: methods.release()
+    var method_seen = map_mod.Map[str, bool].create()
+    defer: method_seen.release()
+    merged_receiver_methods(analysis, ast_file, type_name, ref_of(methods), ref_of(method_seen))
+    var mi2: ptr_uint = 0
+    while mi2 < methods.len() and count < MAX_COMPLETION_ITEMS:
+        let mp = methods.get(mi2) else:
+            break
+        unsafe:
+            emit_receiver_method(read(mp), true, prefix, "0_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+        mi2 += 1
 
     items_json.append("]")
     if count == 0:
@@ -1013,9 +1186,18 @@ function value_receiver_completions(
                 count += 1
             fi += 1
 
-    emit_type_methods(
-        analysis, ast_file, type_name, current_module, prefix, uri, 2, "1_",
-        ref_of(items_json), ref_of(first), ref_of(count))
+    var methods = vec.Vec[ReceiverMethod].create()
+    defer: methods.release()
+    var method_seen = map_mod.Map[str, bool].create()
+    defer: method_seen.release()
+    merged_receiver_methods(analysis, ast_file, type_name, ref_of(methods), ref_of(method_seen))
+    var mi: ptr_uint = 0
+    while mi < methods.len() and count < MAX_COMPLETION_ITEMS:
+        let mp = methods.get(mi) else:
+            break
+        unsafe:
+            emit_receiver_method(read(mp), false, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+        mi += 1
 
     items_json.append("]")
     if count == 0:
@@ -1058,6 +1240,7 @@ function imported_type_reference(ty: types.Type) -> Option[ImportedTypeRef]:
 ## local-type path and the method fallback.
 function imported_value_receiver_completions(
     analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
     receiver_ty: types.Type,
     prefix: str,
     uri: str,
@@ -1101,51 +1284,18 @@ function imported_value_receiver_completions(
             count += 1
         fi += 1
 
-    var entries = members.methods.entries()
-    while entries.next() and count < MAX_COMPLETION_ITEMS:
-        let entry = entries.current()
-        let method_name = unsafe: read(entry.key)
-        let sig = unsafe: read(entry.value)
-        var label = string.String.create()
-        if sig.method_kind == ast.MethodKind.mk_static:
-            label.append("static:")
-        label.append(method_name)
-        if prefix_matches(label.as_str(), prefix):
-            var params_text = imported_params_text(sig.params, module_name)
-            var detail = string.String.create()
-            detail.append(label.as_str())
-            detail.append("(")
-            detail.append(params_text.as_str())
-            detail.append(") -> ")
-            var rendered = type_render.qualified_name(sig.return_type, module_name)
-            detail.append(rendered.as_str())
-            rendered.release()
-            var insert = string.String.create()
-            var insert_format: int = 0
-            if sig.params.len <= 5:
-                append_param_snippet(ref_of(insert), label.as_str(), sig.params)
-                insert_format = 2
-            else:
-                insert.append(label.as_str())
-            var label_details = string.String.create()
-            if params_text.len() > 0:
-                label_details.append(" (")
-                label_details.append(params_text.as_str())
-                label_details.append(")")
-            var sort_text = string.String.create()
-            sort_text.append("1_")
-            sort_text.append(label.as_str())
-            append_item_ext(
-                ref_of(items_json), label.as_str(), KIND_METHOD, detail.as_str(),
-                insert.as_str(), sort_text.as_str(), label.as_str(), uri, insert_format,
-                label_details.as_str(), "", ref_of(first))
-            sort_text.release()
-            label_details.release()
-            insert.release()
-            detail.release()
-            params_text.release()
-            count += 1
-        label.release()
+    var methods = vec.Vec[ReceiverMethod].create()
+    defer: methods.release()
+    var method_seen = map_mod.Map[str, bool].create()
+    defer: method_seen.release()
+    merged_receiver_methods(analysis, ast_file, im_name, ref_of(methods), ref_of(method_seen))
+    var mi: ptr_uint = 0
+    while mi < methods.len() and count < MAX_COMPLETION_ITEMS:
+        let mp = methods.get(mi) else:
+            break
+        unsafe:
+            emit_receiver_method(read(mp), false, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+        mi += 1
 
     items_json.append("]")
     if count == 0:
@@ -1224,166 +1374,13 @@ function field_type_text(ast_file: ast.SourceFile, type_name: str, field_name: s
     return ""
 
 
-## Emit the methods declared for `type_name` by `extending` blocks, in
-## declaration order, with `sort_prefix` (`0_` for a type receiver and the
-## method fallback, `1_` for a value receiver's methods).
-function emit_type_methods(
-    analysis: ref[analyzer.Analysis],
-    ast_file: ast.SourceFile,
-    type_name: str,
-    module_name: str,
-    prefix: str,
-    uri: str,
-    insert_format: int,
-    sort_prefix: str,
-    items_json: ref[string.String],
-    first: ref[bool],
-    count: ref[ptr_uint],
-) -> void:
-    var di: ptr_uint = 0
-    while di < ast_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(ast_file.declarations.data + di)
-        match decl:
-            ast.Decl.decl_extending_block as ext:
-                if extending_type_name(ext.type_name).equal(type_name):
-                    var mi: ptr_uint = 0
-                    while mi < ext.methods.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
-                        var mfn: ast.Method
-                        unsafe:
-                            mfn = read(ext.methods.data + mi)
-                        if prefix_matches(mfn.name, prefix):
-                            emit_resolved_method_item(
-                                analysis, module_name, type_name, mfn, sort_prefix, uri,
-                                insert_format, items_json, first, count)
-                        mi += 1
-            _:
-                pass
-        di += 1
-
-
-## Emit one method of a known type from its *resolved* signature when the
-## analysis has one: the host renders the label (`static:` for a static
-## method), the parameter text (`name: type`, module-qualified), the detail
-## (`static:make() -> local_probe.LocalThing`), the call snippet and the label
-## details all from its method table.  Falls back to the AST rendering when no
-## signature is recorded (`method_fallback_completions` keeps using it).
-function emit_resolved_method_item(
-    analysis: ref[analyzer.Analysis],
-    module_name: str,
-    type_name: str,
-    mfn: ast.Method,
-    sort_prefix: str,
-    uri: str,
-    insert_format: int,
-    items_json: ref[string.String],
-    first: ref[bool],
-    count: ref[ptr_uint],
-) -> void:
-    let is_static = mfn.method_kind == ast.MethodKind.mk_static
-    var label = string.String.create()
-    defer: label.release()
-    if is_static:
-        label.append("static:")
-    label.append(mfn.name)
-
-    var key = string.String.create()
-    key.append(type_name)
-    key.append(".")
-    key.append(mfn.name)
-    defer: key.release()
-    let sig_ptr = unsafe: read(analysis).method_sigs.get(key.as_str()) else:
-        emit_method_item(
-            label.as_str(), mfn.method_params, mfn.return_type, sort_prefix, uri,
-            insert_format, items_json, first, count)
-        return
-    let sig = unsafe: read(sig_ptr)
-
-    var params_text = imported_params_text(sig.params, module_name)
-    defer: params_text.release()
-    var detail = string.String.create()
-    defer: detail.release()
-    detail.append(label.as_str())
-    detail.append("(")
-    detail.append(params_text.as_str())
-    detail.append(") -> ")
-    var rendered = type_render.qualified_name(sig.return_type, module_name)
-    detail.append(rendered.as_str())
-    rendered.release()
-
-    var insert = string.String.create()
-    defer: insert.release()
-    var item_format: int = 0
-    if sig.params.len <= 5:
-        append_param_snippet(ref_of(insert), label.as_str(), sig.params)
-        item_format = 2
-    else:
-        insert.append(label.as_str())
-
-    var label_details = string.String.create()
-    defer: label_details.release()
-    if params_text.len() > 0:
-        label_details.append(" (")
-        label_details.append(params_text.as_str())
-        label_details.append(")")
-
-    var sort_text = string.String.create()
-    defer: sort_text.release()
-    sort_text.append(sort_prefix)
-    sort_text.append(label.as_str())
-
-    append_item_ext(
-        items_json, label.as_str(), KIND_METHOD, detail.as_str(), insert.as_str(),
-        sort_text.as_str(), label.as_str(), uri, item_format, label_details.as_str(), "", first)
-    unsafe:
-        read(count) = read(count) + 1
-
-
-## Emit one method completion item.
-function emit_method_item(
-    name: str,
-    params: span[ast.Param],
-    return_type: ptr[ast.TypeRef]?,
-    sort_prefix: str,
-    uri: str,
-    insert_format: int,
-    items_json: ref[string.String],
-    first: ref[bool],
-    count: ref[ptr_uint],
-) -> void:
-    var params_text = string.String.create()
-    defer: params_text.release()
-    append_ast_params(ref_of(params_text), params)
-
-    var detail = string.String.create()
-    defer: detail.release()
-    detail.append(name)
-    detail.append("(")
-    detail.append(params_text.as_str())
-    detail.append(") -> ")
-    append_ast_type(ref_of(detail), return_type, "void")
-
-    var snippet = string.String.create()
-    defer: snippet.release()
-    let has_snippet = append_ast_snippet(ref_of(snippet), name, params)
-    let insert_text = if has_snippet: snippet.as_str() else: name
-
-    var sort_text = string.String.create()
-    defer: sort_text.release()
-    sort_text.append(sort_prefix)
-    sort_text.append(name)
-
-    append_item_ext(
-        items_json, name, KIND_METHOD, detail.as_str(), insert_text,
-        sort_text.as_str(), name, uri, insert_format, "", "", first)
-    unsafe:
-        read(count) = read(count) + 1
-
-
-## The file's method list, in declaration order — the host's
-## `method-fallback` answer for a receiver it cannot resolve.
+## The file's method list — the host's `method-fallback` answer for a receiver
+## it cannot resolve.  The host iterates its method table by receiver type in
+## first-registration order, which is this file's declaration order (inline
+## methods are desugared into `extending` blocks by the parser); each method
+## carries the resolved signature and the `static:` label a value receiver gets.
 function method_fallback_completions(
+    analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
     prefix: str,
     uri: str,
@@ -1400,16 +1397,25 @@ function method_fallback_completions(
             decl = read(ast_file.declarations.data + di)
         match decl:
             ast.Decl.decl_extending_block as ext:
-                var mi: ptr_uint = 0
-                while mi < ext.methods.len and count < MAX_COMPLETION_ITEMS:
-                    var mfn: ast.Method
-                    unsafe:
-                        mfn = read(ext.methods.data + mi)
-                    if prefix_matches(mfn.name, prefix):
-                        emit_method_item(
-                            mfn.name, mfn.method_params, mfn.return_type, "0_", uri,
-                            2, ref_of(items_json), ref_of(first), ref_of(count))
-                    mi += 1
+                let type_name = extending_base_name(ext.type_name)
+                if type_name.len > 0:
+                    var key_prefix = string.String.create()
+                    defer: key_prefix.release()
+                    key_prefix.append(type_name)
+                    key_prefix.append(".")
+                    var mi: ptr_uint = 0
+                    while mi < ext.methods.len and count < MAX_COMPLETION_ITEMS:
+                        let mfn = unsafe: read(ext.methods.data + mi)
+                        var key = string.String.create()
+                        defer: key.release()
+                        key.append(key_prefix.as_str())
+                        key.append(mfn.name)
+                        let sig_ptr = unsafe: read(analysis).method_sigs.get(key.as_str())
+                        if sig_ptr != null:
+                            emit_receiver_method(
+                                ReceiverMethod(key = mfn.name, module_name = "", sig = unsafe: read(sig_ptr)),
+                                false, prefix, "0_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+                        mi += 1
             _:
                 pass
         di += 1
@@ -1418,8 +1424,8 @@ function method_fallback_completions(
     return wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
 
 
-## The declared type name of an `extending` block (`extending a.B:` → `B`).
-function extending_type_name(type_name: ptr[ast.TypeRef]?) -> str:
+## The base type name an `extending` block targets (`extending a.B:` → `B`).
+function extending_base_name(type_name: ptr[ast.TypeRef]?) -> str:
     let tp = type_name else:
         return ""
     let t = unsafe: read(tp)
@@ -2204,6 +2210,29 @@ function named_argument_completions(
     let alloc = heap.must_alloc[string.String](1)
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
+
+
+## Whether a type receiver names a known type: a locally visible name, or a
+## type the receiver alias's module carries (the host's
+## `resolve_type_receiver_info` falls through to the module binding's table).
+function type_receiver_known(analysis: ref[analyzer.Analysis], type_name: str, alias_name: str) -> bool:
+    let a = unsafe: read(analysis)
+    if a.type_names.contains(type_name):
+        return true
+    if alias_name.len == 0:
+        return false
+    let module_ptr = a.imports.get(alias_name) else:
+        return false
+    var key = string.String.create()
+    defer: key.release()
+    key.append(unsafe: read(module_ptr))
+    key.append(".")
+    key.append(type_name)
+    if a.imported_type_members.contains(key.as_str()):
+        return true
+    # An imported enum/flags/variant's members are merged into
+    # `match_case_names` under the bare name.
+    return a.match_case_names.contains(type_name)
 
 
 ## Resolve a receiver name to its Milk Tea type name (e.g. "v" → "Vec").

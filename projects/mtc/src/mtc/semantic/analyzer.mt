@@ -4807,7 +4807,47 @@ function collect_imported_type_members(ctx: ref[Context]) -> map_mod.Map[str, Im
         let module_name = unsafe: read(entry.key)
         collect_binding_members(module_name, entry.value, false, ref_of(members_by_type))
         collect_binding_members(module_name, entry.value, true, ref_of(members_by_type))
+        collect_binding_alias_members(ctx, module_name, entry.value, ref_of(members_by_type))
     return members_by_type
+
+
+## A module's public type aliases: the host's type identity resolves an alias to
+## the underlying Struct, so a receiver spelled with the alias (`rl.Color` for
+## `public type Color = c.Color`) carries the target's fields and the module's
+## own `<Alias>.<method>` extending methods (`std.raylib`'s `Color.from_hsv`).
+function collect_binding_alias_members(
+    ctx: ref[Context],
+    module_name: str,
+    binding_ptr: ptr[ModuleBinding],
+    members_by_type: ref[map_mod.Map[str, ImportedTypeMembers]],
+) -> void:
+    var entries = unsafe: read(binding_ptr).type_alias_types.entries()
+    while entries.next():
+        let entry = entries.current()
+        let alias_name = unsafe: read(entry.key)
+        let target = unsafe: read(entry.value)
+        var fields = span[FieldEntry]()
+        match target:
+            types.Type.ty_imported as tim:
+                let target_binding = lookup_binding(ctx, tim.module_name)
+                if target_binding != null:
+                    let fp = unsafe: read(target_binding).structs.get(tim.name)
+                    if fp != null:
+                        fields = unsafe: read(fp)
+            types.Type.ty_named as tn:
+                if tn.module_name.equal(module_name):
+                    let fp = unsafe: read(binding_ptr).structs.get(tn.name)
+                    if fp != null:
+                        fields = unsafe: read(fp)
+            _:
+                pass
+        var methods = map_mod.Map[str, FnSig].create()
+        collect_type_methods(alias_name, binding_ptr, ref_of(methods))
+        var key = string.String.create()
+        key.append(module_name)
+        key.append(".")
+        key.append(alias_name)
+        members_by_type.set(key.as_str(), ImportedTypeMembers(fields = fields, methods = methods))
 
 
 ## One group of a binding's types (its structs, or its unions) with their methods.
