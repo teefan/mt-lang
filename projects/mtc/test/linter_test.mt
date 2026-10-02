@@ -1264,3 +1264,70 @@ function test_generic_body_cast_is_not_reported() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 0)
+
+
+# =============================================================================
+#  prefer-inline-if — the `inline_if_too_wide?` join simulation
+# =============================================================================
+
+@[test]
+function test_prefer_inline_if_joinable_reported() -> void:
+    var source = <<-SRC
+        function do_a() -> void:
+            pass
+
+        function do_b() -> void:
+            pass
+
+        function demo(c: bool) -> void:
+            if c:
+                do_a()
+            else:
+                do_b()
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "prefer-inline-if")), 1)
+
+
+@[test]
+function test_prefer_inline_if_too_wide_suppressed() -> void:
+    # The composed one-line join exceeds the 120-character budget, so the host
+    # reports the chain as unjoinable and emits no hint.
+    var source = <<-SRC
+        function do_a() -> void:
+            pass
+
+        function do_b() -> void:
+            pass
+
+        function demo(c: bool) -> void:
+            if c:
+                do_a_with_a_very_long_name_that_makes_the_joined_line_exceed_the_budget()
+            else:
+                do_b_with_another_extremely_long_name_for_width_padding_purposes_only()
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "prefer-inline-if")), 0)
+
+
+@[test]
+function test_prefer_inline_if_multiline_body_suppressed() -> void:
+    # A branch body spanning more than one physical line cannot be joined.
+    var source = <<-SRC
+        function consume(a: int, b: int) -> void:
+            pass
+
+        function demo(c: bool) -> void:
+            if c:
+                consume(
+                    1,
+                    2,
+                )
+            else:
+                consume(3, 4)
+    SRC
+    var warns = lint_text(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "prefer-inline-if")), 0)

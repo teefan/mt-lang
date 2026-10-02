@@ -122,7 +122,12 @@ unguarded) matches the host's messages and positions; `cli:parity` moved 23/38 �
 entries.  Remaining measured residuals of the same family, both ranked next: a bare
 `null` into a non-nullable target (`return null` for a `ptr[int]`) and
 generic-vs-scalar pairs (`ptr[int]` → `str`, kept permissive for the `ref[T]` borrow
-coercion) are still self-silent.)
+coercion) are still self-silent.  A second commit ported the host's
+`inline_if_too_wide?` join simulation: `prefer-inline-if` **213 → 0** self-only and
+`prefer-conditional-expression` **25 → 0**, taking `tools/lint_parity.rb -q` from 385
+agree / 224 differ to **434 agree / 175 differ** (the remaining ranked deltas:
+`owning-release-leak` 602/286, `prefer-struct-with` 93/0, `redundant-cast` 74/22,
+`prefer-try` 64/39, `prefer-let` 51/142).)
 
 The session-21 note is kept in §0k's records.
 
@@ -2648,6 +2653,38 @@ permissive by the cross-kind fallback; tightening needs the host's positive
 surfaced by the probes: assigning to an immutable *parameter* is not flagged
 (`function f(v: int?): v = null` is a host error; the self's immutable check only tracks
 `let` bindings) — pre-existing, unrelated to this change.
+
+### The host's `inline_if_too_wide?` join simulation (2026-10-02 session 22, second commit)
+
+`prefer-inline-if` was the largest remaining conciseness-rule delta (213 self-only, 0
+host-only): the self had ported the host's `visually_inline_if?` half of the gate but
+not the other half, `inline_if_too_wide?` (`visitors.rb:838-882`), which decides whether
+the whole `if`/`else if`/`else` chain can actually be joined onto one physical line:
+
+- the header line must start with `if `;
+- every branch body must be a single physical line (a second body line at a deeper
+  indent is unjoinable);
+- the chain must end in a same-indent `else:`;
+- the composed line (`indent + "header body"` segments joined by spaces) must be at most
+  120 *characters* (Ruby's `String#length`, not bytes) and have balanced `()`/`[]`.
+
+Ported as `inline_if_too_wide` plus the helpers `source_line_at`,
+`leading_whitespace_len`, `right_trim_ascii`, `utf8_char_count` and
+`balanced_inline_line`.  The `prefer-conditional-expression` if-arm had a *different*
+gate in the self (`visually_inline_if`) where the host uses `inline_if_too_wide?`; it now
+shares the join simulation (and its now-dead `else_line` parameter is gone).
+
+Measured: `tools/lint_parity.rb -q` over the corpus **385 agree / 224 differ → 434
+agree / 175 differ**; `prefer-inline-if` **213 → 0** self-only and
+`prefer-conditional-expression` **25 → 0**; every other rule's delta unchanged
+(`owning-release-leak` reads 602 — the three-warning drift from the session-21 close is
+content, not behaviour: a scan with a binary built from `48c36dc7` over the same sources
+produces the byte-identical self-only leak set).  Three new linter tests pin the
+joinable / over-budget / multi-line-body shapes, each first verified against the host.
+Gates: bootstrap fixed point + 14/14, `test/mt` 60/0, `cli:parity` 24/37 (unchanged),
+scoreboard lb 98/98 + parse 705/701/0, `lint_parity` 434/175, the harness 30/30 + its 4
+documented entries, recovery OK, fixtures at baselines, the audit **2 documented**,
+examples 49/0, valgrind 0 errors, the Neovim smoke.
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

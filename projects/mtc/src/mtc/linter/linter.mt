@@ -2651,7 +2651,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 check_redundant_else(iff.branches, iff.else_body, iff.else_line, path, warnings)
                 check_duplicate_if_conditions(iff.branches, path, warnings)
                 check_prefer_inline_if(iff.branches, iff.else_body, iff.is_inline, iff.line, iff.else_line, path, warnings)
-                check_prefer_conditional_expression_if(iff.branches, iff.else_body, iff.line, first_branch_column(iff.branches), iff.else_line, path, warnings)
+                check_prefer_conditional_expression_if(iff.branches, iff.else_body, iff.line, first_branch_column(iff.branches), path, warnings)
             ast.Stmt.stmt_while as wh:
                 lint_loop_depth += 1
                 visit_expr(wh.condition, path, warnings)
@@ -3129,6 +3129,8 @@ function check_prefer_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast
         return
     if visually_inline_if(branches, else_body, else_line):
         return
+    if inline_if_too_wide(branches.len, line):
+        return
     # The host anchors on the branch (the `if` keyword), not the condition.
     let first_branch = unsafe: read(branches.data + 0)
     push_warning_at(warnings, path, first_branch.line, first_branch.column, 0, "prefer-inline-if", "if/else with single-statement branches can be written inline", "hint")
@@ -3153,6 +3155,138 @@ function visually_inline_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stm
     if else_line == 0 or statement_line(es) != else_line:
         return false
     return true
+
+
+## The host's `inline_if_too_wide?`: simulate the actual one-line join of the
+## whole `if`/`else if`/`else` chain from the source text.  A chain whose
+## branches are not each a single physical line, whose composed line exceeds
+## the column budget (120 characters), or whose delimiters do not balance is
+## unjoinable, so the conciseness hints are suppressed.
+function inline_if_too_wide(branches_len: ptr_uint, line: ptr_uint) -> bool:
+    if branches_len == 0:
+        return false
+    let lines_ptr = lint_source_lines else:
+        return false
+    var lines = unsafe: read(lines_ptr)
+    if line == 0 or line > lines.len():
+        return true
+    let header_raw = source_line_at(ref_of(lines), line - 1)
+    let header = header_raw.trim_ascii_whitespace()
+    if not header.starts_with("if "):
+        return true
+    let indent_len = leading_whitespace_len(header_raw)
+
+    var headers = vec.Vec[str].create()
+    defer: headers.release()
+    var bodies = vec.Vec[str].create()
+    defer: bodies.release()
+    var cur_header = header
+    var cur_body = ""
+    var has_body = false
+    var idx = line
+    while idx < lines.len():
+        let text = right_trim_ascii(source_line_at(ref_of(lines), idx))
+        if text.len == 0:
+            break
+        let text_indent = leading_whitespace_len(text)
+        let stripped = text.trim_ascii_whitespace()
+        if text_indent == indent_len and (stripped == "else:" or stripped.starts_with("else if ")):
+            if not has_body:
+                return true
+            headers.push(cur_header)
+            bodies.push(cur_body)
+            cur_header = stripped
+            cur_body = ""
+            has_body = false
+            idx += 1
+            continue
+        if text_indent <= indent_len:
+            break
+        if has_body:
+            return true
+        cur_body = stripped
+        has_body = true
+        idx += 1
+    if not has_body:
+        return true
+    if not cur_header == "else:":
+        return true
+    headers.push(cur_header)
+    bodies.push(cur_body)
+
+    var joined = string.String.create()
+    defer: joined.release()
+    joined.append(header_raw.slice(0, indent_len))
+    var si: ptr_uint = 0
+    while si < headers.len():
+        let hp = headers.get(si) else:
+            break
+        let bp = bodies.get(si) else:
+            break
+        if si > 0:
+            joined.append(" ")
+        joined.append(unsafe: read(hp))
+        joined.append(" ")
+        joined.append(unsafe: read(bp))
+        si += 1
+    let joined_text = joined.as_str()
+    if utf8_char_count(joined_text) > 120:
+        return true
+    return not balanced_inline_line(joined_text)
+
+
+function source_line_at(lines: ref[vec.Vec[str]], index: ptr_uint) -> str:
+    let s = lines.get(index) else:
+        return ""
+    return unsafe: read(s)
+
+
+function leading_whitespace_len(text: str) -> ptr_uint:
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if b == 32 or b == 9:
+            i += 1
+            continue
+        break
+    return i
+
+
+function right_trim_ascii(text: str) -> str:
+    var end = text.len
+    while end > 0:
+        let b = text.byte_at(end - 1)
+        if b == 32 or b == 9 or b == 13:
+            end -= 1
+            continue
+        break
+    return text.slice(0, end)
+
+
+## Ruby's `String#length`: the number of UTF-8 characters, not bytes.
+function utf8_char_count(text: str) -> ptr_uint:
+    var count: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < text.len:
+        if not str.utf8_continuation_byte(text.byte_at(i)):
+            count += 1
+        i += 1
+    return count
+
+
+function balanced_inline_line(text: str) -> bool:
+    var depth: int = 0
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if b == 40 or b == 91:
+            depth += 1
+        else if b == 41 or b == 93:
+            depth -= 1
+            if depth < 0:
+                return false
+        i += 1
+    return depth == 0
 
 
 # =============================================================================
@@ -3215,14 +3349,14 @@ function check_prefer_or_pattern_expr(arms: span[ast.MatchExprArm], path: str, w
 #  or assigns to the same target.
 # =============================================================================
 
-function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, line: ptr_uint, column: ptr_uint, else_line: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function check_prefer_conditional_expression_if(branches: span[ast.IfBranch], else_body: ptr[ast.Stmt]?, line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     if lint_loop_depth > 0:
         return
     if not block_is_nonempty(else_body):
         return
-    # The host gates this arm on `inline_if_too_wide?`, which reports an
-    # already-inline-written `if` as unjoinable (see `visually_inline_if`).
-    if visually_inline_if(branches, else_body, else_line):
+    # The host gates this arm on `inline_if_too_wide?`: an `if` whose one-line
+    # join would not fit (or that is already written inline) is suppressed.
+    if inline_if_too_wide(branches.len, line):
         return
     # Collect single statements from each branch.
     var stmts = vec.Vec[ptr[ast.Stmt]].create()
