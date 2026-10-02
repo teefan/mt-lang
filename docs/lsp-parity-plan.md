@@ -403,23 +403,28 @@ lists this session (`n.` on `node.Node` is byte-identical to the host).
   --warm` sends a `textDocument/diagnostic` before the completion request, and
   the two servers should be probed in *separate* runs (the combined run can lose
   the second server's answer).
-## Gates (every commit)
+## Gates (tiered — iterate cheap, prove once)
 
-Rebuild with `ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o
-build/stage2/mtc` first (never measure a stale binary).  Then
-`tools/bootstrap.sh -j 16` (fixed point + 14/14), `build/stage2/mtc test test/mt -I .`
-(60/0), `rake "cli:parity"` (23/38/0), `ruby tools/sexpr_parity.rb lex -q` (705/705)
-and `parse -q` (701 comparable / 0 differ), `ruby tools/unused_import_parity.rb`
-(609/609, differ 0), `ruby tools/lint_parity.rb` (the corpus-wide whole-output
-lint comparison; session 19: 357/609 agree, every difference pre-existing — see
-its summary for the ranked per-rule residue),
-`ruby tools/lsp_parity.rb record --server … --stress`
-+ `compare` (30/30 capability keys + 4 documented entries),
-`ruby tools/lsp_recovery_probe.rb --check` (mid-edit recovery), the probe fixtures
-(`tmp/probe-ws`, `probe2`, `probe4`–`probe6`), and
-`ruby tools/lsp_project_audit.rb --workspace … --only <method>` for the class being
-worked.  Behaviour changes also get valgrind on the touched path plus the
-headless-Neovim smoke.  Never edit sources while a gate runs.
+`tools/gates.sh` picks the set for the working-tree diff (or `--areas`) and can run it
+(`--run`, logs in `tmp/gates/`); the tiering itself is in AGENTS.md and
+`docs/self-host-plan.md`'s "How to start a work session".
+
+- **While iterating (minutes)**: a `--no-cache` dev build to `tmp/mtc-dev`, then a
+  *focused* LSP meter — `ruby tools/lsp_project_audit.rb --workspace … --only <method>`
+  (counters drift ±10; compare differing *sets*), `tmp/diag_probe.rb`,
+  `ruby tools/lsp_recovery_probe.rb --check`, or one fixture.
+- **Once per commit, on frozen sources**: the hard proofs
+  `tools/bootstrap.sh -j 16` (fixed point + 14/14) and
+  `build/stage2/mtc test test/mt -I .` (60/0); then the LSP sweeps —
+  `ruby tools/lsp_parity.rb record --server … --stress` + `compare`
+  (30/30 capability keys + the 4 documented entries), the full
+  `ruby tools/lsp_project_audit.rb --workspace …` (2 documented entries),
+  `ruby tools/lsp_recovery_probe.rb --check`, the probe fixtures (`tmp/probe-ws`,
+  `probe2`, `probe4`–`probe6`), valgrind on an LSP drive and the headless-Neovim smoke;
+  plus the adjacent tracks when the change reaches them — `rake "cli:parity"`
+  (23/38/0), `ruby tools/sexpr_parity.rb lex|parse -q`, `ruby tools/lint_parity.rb`,
+  `ruby tools/unused_import_parity.rb` (609/609).
+- Never measure a stale `build/stage2/mtc`, and never edit sources while a gate runs.
 
 ## Session prompt (copy-paste)
 

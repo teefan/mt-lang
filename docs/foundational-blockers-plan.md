@@ -424,17 +424,22 @@ sessions), `F9` last.  One commit per item; docs + ledger synced in each.
 
 ## Gates
 
+Tiered (session-21 revision; the full protocol is in AGENTS.md and
+`docs/self-host-plan.md`'s "How to start a work session"): iterate on a
+`tmp/mtc-dev` build with a focused meter, and run the proofs below once per
+commit, on frozen sources — `tools/gates.sh --run` picks and runs the set.
+
 - **Compiler-side** (F1–F7): `tools/bootstrap.sh -j 16` (fixed point + 14/14),
   `build/stage2/mtc test test/mt -I .` (60/0), `rake "cli:parity"` (23/38/0),
   `ruby tools/sexpr_parity.rb lex -q` (705/705) + `parse -q` (701/0) + `lower -q -j 16`
   (the counter the item moves), `ruby tools/unused_import_parity.rb` (609/609),
   `rake "parity:scoreboard"` (the per-rule lint table),
-  and for C-backend-touching changes the example sweeps (`examples/*.mt` 13/15
-  documented, `examples/sdl3` 34/34, a raylib sample).  Behaviour changes get valgrind
+  and for C-backend-touching changes the example sweeps (`examples/*.mt` 15/15,
+  `examples/sdl3` 34/34, a raylib sample).  Behaviour changes get valgrind
   on the touched path and the headless-Neovim smoke where the LSP path moves.
 - **LSP-side** (every item that should move the audit): the **full matrix**
   (`tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame --json …`,
-  ~14 min — never quote `--only` for facts-dependent classes), verified with
+  minutes — never quote `--only` for facts-dependent classes), verified with
   `tools/lsp_audit_diffs.rb --compare` (added must be 0), plus the harness (30/30 + 4),
   the recovery probe, the fixtures, valgrind, and the Neovim smoke.
 - Never edit sources while a gate runs; rebuild before measuring; run generated
