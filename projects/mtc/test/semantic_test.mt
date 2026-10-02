@@ -2892,3 +2892,161 @@ function test_pointer_cast_is_flagged_without_unsafe() -> void:
             return ptr[char]<-p
     SRC
     expect_flagged(source)
+
+
+@[test]
+function test_for_loop_elements_are_typed() -> void:
+    # A range iterable yields its bounds' integer type and an array its element
+    # type, so a mismatched use is flagged (each loop variable used to be the
+    # permissive error type).
+    var source = <<-SRC
+        function from_range() -> str:
+            for i in 0..3:
+                return i
+            return ""
+
+        function from_array(values: array[int, 2]) -> str:
+            for v in values:
+                return v
+            return ""
+    SRC
+    expect_eq(int<-diagnostic_count(source), 2)
+
+
+@[test]
+function test_for_loop_matching_element_types_are_clean() -> void:
+    var source = <<-SRC
+        function sum(values: array[int, 2]) -> int:
+            var total = 0
+            for v in values:
+                total += v
+            return total
+
+        function count() -> int:
+            var n = 0
+            for i in 0..3:
+                n += i
+            return n
+    SRC
+    expect_clean(source)
+
+
+const PRELUDE_OPTION_STUB: str = <<-SRC
+public variant Option[T]:
+    some(value: T)
+    none
+
+extending Option[T]:
+    public function unwrap() -> T:
+        match this:
+            Option.some as payload:
+                return payload.value
+            Option.none:
+                fatal(c"called Option.unwrap on a none value")
+SRC
+
+const PRELUDE_UNWRAP_MAIN: str = <<-SRC
+function good(o: Option[int]) -> int:
+    return o.unwrap()
+
+function bad(o: Option[int]) -> str:
+    return o.unwrap()
+SRC
+
+
+@[test]
+function test_prelude_unwrap_types_the_payload() -> void:
+    # The seeded std.option binding's method signatures type a prelude
+    # receiver's call (`Option[int].unwrap()` -> int), so only the `bad`
+    # function's return mismatches.  The workspace carries a minimal
+    # `std/option.mt` so the prelude seed resolves it without the repository's
+    # std tree.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_unwrap_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    if not write_file(root.as_str(), "std/option.mt", PRELUDE_OPTION_STUB):
+        expect(false, "could not write the prelude stub")
+    if not write_file(root.as_str(), "main.mt", PRELUDE_UNWRAP_MAIN):
+        expect(false, "could not write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    expect_eq(int<-program.diagnostic_count(), 1)
+
+
+const GENERIC_FIELD_BASE: str = <<-SRC
+public struct Box[T]:
+    value: T
+SRC
+
+const GENERIC_FIELD_MAIN: str = <<-SRC
+import base as b
+
+function good(box: b.Box[int]) -> int:
+    return box.value
+
+function bad(box: b.Box[int]) -> str:
+    return box.value
+SRC
+
+
+@[test]
+function test_imported_generic_field_is_substituted() -> void:
+    # An imported generic struct's field carries the declaring type's parameter
+    # (`Box[T].value` -> `T`), substituted with the receiver's argument
+    # (`Box[int].value` -> `int`), so the mismatched return is flagged.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_genfield_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    if not write_file(root.as_str(), "base.mt", GENERIC_FIELD_BASE):
+        expect(false, "could not write base")
+    if not write_file(root.as_str(), "main.mt", GENERIC_FIELD_MAIN):
+        expect(false, "could not write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    expect_eq(int<-program.diagnostic_count(), 1)
+
+
+const METHOD_SPEC_BASE: str = <<-SRC
+public struct Store:
+    public editable function take[T](count: ptr_uint) -> ptr[T]?:
+        return null
+SRC
+
+const METHOD_SPEC_MAIN: str = <<-SRC
+import base as b
+
+function good(store: ref[b.Store]) -> ptr[int]?:
+    return store.take[int](4)
+
+function bad(store: ref[b.Store]) -> int:
+    return int<-store.take[int](4)
+SRC
+
+
+@[test]
+function test_method_specialization_on_a_value_receiver() -> void:
+    # `store.take[int](4)` resolves the generic method's return type with the
+    # explicit type argument substituted (`ptr[T]?` -> `ptr[int]?`), so the
+    # cast in `bad` reports the incompatible types.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_spec_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    if not write_file(root.as_str(), "base.mt", METHOD_SPEC_BASE):
+        expect(false, "could not write base")
+    if not write_file(root.as_str(), "main.mt", METHOD_SPEC_MAIN):
+        expect(false, "could not write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+    expect_eq(int<-program.diagnostic_count(), 1)

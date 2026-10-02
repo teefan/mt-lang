@@ -2482,6 +2482,7 @@ function drain_cast_diags(path: str, warnings: ref[vec.Vec[Warning]]) -> void:
 function lint_redundant_cast_local(stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let cp = lint_cast_ctx else:
         return
+    redundant_cast.set_generic_body(unsafe: ref_of(read(cp)), lint_generic_depth > 0)
     redundant_cast.check_local(unsafe: ref_of(read(cp)), stmt_type, value)
     drain_cast_diags(path, warnings)
 
@@ -2489,6 +2490,7 @@ function lint_redundant_cast_local(stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.
 function lint_redundant_cast_value(value: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let cp = lint_cast_ctx else:
         return
+    redundant_cast.set_generic_body(unsafe: ref_of(read(cp)), lint_generic_depth > 0)
     redundant_cast.check_assignment(unsafe: ref_of(read(cp)), value)
     drain_cast_diags(path, warnings)
 
@@ -2496,6 +2498,7 @@ function lint_redundant_cast_value(value: ptr[ast.Expr], path: str, warnings: re
 function lint_redundant_cast_return(value: ptr[ast.Expr]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let cp = lint_cast_ctx else:
         return
+    redundant_cast.set_generic_body(unsafe: ref_of(read(cp)), lint_generic_depth > 0)
     redundant_cast.check_return(unsafe: ref_of(read(cp)), value)
     drain_cast_diags(path, warnings)
 
@@ -2503,6 +2506,7 @@ function lint_redundant_cast_return(value: ptr[ast.Expr]?, path: str, warnings: 
 function lint_redundant_cast_prefix(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let cp = lint_cast_ctx else:
         return
+    redundant_cast.set_generic_body(unsafe: ref_of(read(cp)), lint_generic_depth > 0)
     redundant_cast.check_prefix_cast(unsafe: ref_of(read(cp)), expr)
     drain_cast_diags(path, warnings)
 
@@ -2510,6 +2514,7 @@ function lint_redundant_cast_prefix(expr: ptr[ast.Expr], path: str, warnings: re
 function lint_redundant_cast_binary(op: str, left: ptr[ast.Expr], right: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     let cp = lint_cast_ctx else:
         return
+    redundant_cast.set_generic_body(unsafe: ref_of(read(cp)), lint_generic_depth > 0)
     redundant_cast.check_binary_operands(unsafe: ref_of(read(cp)), op, left, right)
     drain_cast_diags(path, warnings)
 

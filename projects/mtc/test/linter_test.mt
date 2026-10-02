@@ -1213,3 +1213,54 @@ function test_redundant_unsafe_format_part_is_marked() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+# =============================================================================
+#  analyzer marks feeding redundant-unsafe (session 21)
+# =============================================================================
+
+@[test]
+function test_redundant_unsafe_short_circuit_and_marks() -> void:
+    # `p != null and read(p)` refines `p` for the right operand, so the read
+    # marks the inline `unsafe:`.
+    let source = "function demo(p: ptr[int]?) -> bool:\n    return p != null and unsafe: read(p) == 0\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_redundant_unsafe_if_expression_marks() -> void:
+    # The then-branch of an if-expression sees the condition's refinements.
+    let source = "function demo(p: ptr[int]?) -> int:\n    return if p != null: unsafe: read(p) else: 0\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_redundant_unsafe_while_body_marks() -> void:
+    # The while body runs only while the condition holds, so `p` is narrowed.
+    var source = <<-SRC
+        function demo(start: ptr[int]?) -> int:
+            var total = 0
+            var p = start
+            while p != null:
+                total += unsafe: read(p)
+                p = null
+            return total
+    SRC
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-unsafe")), 0)
+
+
+@[test]
+function test_generic_body_cast_is_not_reported() -> void:
+    # The host's analyzer does not check generic bodies, so its linter has no
+    # expression types there; the self's redundant-cast must fall back to the
+    # literal-only paths in that context instead of over-reporting.
+    let source = "function demo[T](count: ptr_uint) -> ptr_uint:\n    return ptr_uint<-size_of(T)\n"
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "redundant-cast")), 0)

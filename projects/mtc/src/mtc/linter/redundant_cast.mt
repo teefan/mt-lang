@@ -127,6 +127,11 @@ function comparison_op(op: str) -> bool:
 # =============================================================================
 
 function resolve_expr_type(ctx: ref[Ctx], ep: ptr[ast.Expr]) -> ptr[types.Type]?:
+    # Inside a generic body the host's analyzer records no expression types, so
+    # its rules fall back to the literal-only paths; the self's analyzer does
+    # record them, so the generic-body flag suppresses them here to match.
+    if read(ctx).generic_body:
+        return null
     let analysis = ctx.analysis else:
         return null
     let key = unsafe: reinterpret[ptr_uint](ep)
@@ -267,10 +272,22 @@ public struct Ctx:
     diags: vec.Vec[Diag]
     lines: vec.Vec[str]
     analysis: ptr[analyzer.Analysis]?
+    ## True while the walk is inside a generic function/extending-method body.
+    ## The host's analyzer does not check those bodies, so its linter has no
+    ## expression types there and the sema-backed checks fall back to the
+    ## literal-only paths; the self sets this to match (its analyzer does check
+    ## them, which would otherwise over-report).
+    generic_body: bool
 
 
 public function ctx_create(source: str, analysis: ptr[analyzer.Analysis]?) -> Ctx:
-    return Ctx(diags = vec.Vec[Diag].create(), lines = split_lines(source), analysis = analysis)
+    return Ctx(diags = vec.Vec[Diag].create(), lines = split_lines(source), analysis = analysis, generic_body = false)
+
+
+## The linter's walk marks the generic-body state before draining a hook's
+## diagnostics (its `lint_generic_depth`).
+public function set_generic_body(ctx: ref[Ctx], generic: bool) -> void:
+    read(ctx).generic_body = generic
 
 
 public function ctx_release(ctx: ref[Ctx]) -> void:

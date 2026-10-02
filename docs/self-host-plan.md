@@ -106,21 +106,24 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: 2026-10-02 session 20 (the corpus-wide lint residue's first lead is
-closed: `tools/lint_parity.rb` reads **609 files, 381 agree / 228 differ** and its
-largest self-extra rule, `redundant-unsafe`, went **807 → 11**.  The session ported the
-host's cast rules (`check_cast_call`'s `pointer_cast_type?` predicate on both sides, the
-ref-to-pointer message, operand positions, the incompatible-types error), the
-`str`-construction requirement and `str`'s `data`/`len` fields, arm payload fields for
-user and imported variants (the stage-11c remainder — `ModuleBinding.variant_arm_fields`
-+ `match_arm_payload_type` substitution), the `let … else:` body analysis, proc-literal
-bodies and format-string interpolation parts, and a foreign `ty_named`'s member
-resolution.  The LSP matrix is unchanged at **2 documented entries**
-(`documentHighlight` `lb@704:67`, the `type quat` hover `lb@1653:24`).  Remaining: the
-11 `redundant-unsafe` singletons (for-loop element typing for `ref[Vec[T]]` iteration,
-an lvalue `read(…) = …` target, per-file typing gaps — §0k's session-20 record lists
-them), the 104 generic-body `redundant-cast` sites, §0j item 1 (opaque declarations)
-and items 13–15, CLI message parity, and the LSP/DAP leftovers)
+Last updated: 2026-10-02 session 21 (the corpus-wide lint residue's two largest
+self-extra rules are closed: `redundant-unsafe` is at **0 self-only** — 807 at the
+session-20 open, 11 at its close — and `redundant-cast` fell 107 → 74, both measured by
+`tools/lint_parity.rb` over `std examples projects/mtc/src` (609 files, **385 agree /
+224 differ**, session 20: 381/228).  The session landed the for-loop element typing
+(range/array/span/iterator protocol), `x.method[T](…)` on a value receiver, the host's
+`read` semantics, prelude method signatures for typing (`Option[int].unwrap()` → `int`;
+deliberately *not* exported on the `Analysis`, or the LSP member hover goes null),
+imported generic struct field substitution, the `and`/`or`/if-expression/while-body
+refinements the faithful `read` change exposed, and the generic-body gate for
+`redundant-cast`.  The LSP matrix is at **2 documented entries** (+ the documented host
+first-file `documentSymbol` race phantom).  Remaining ranked: `owning-release-leak`
+599/286, `prefer-inline-if` 213/0, `prefer-struct-with` 93/0, the `redundant-cast` 74,
+`prefer-try` 64/39, `prefer-let` 51/142; and a pre-existing assignability gap measured
+while writing tests (a nullable-pointer source is not flagged against a `str` return —
+§0k's session-21 record).)
+
+The session-20 note is kept in §0k's records.
 
 ---
 
@@ -2486,6 +2489,73 @@ closure, as recorded), the full SimpleGame audit **2 differing entries**
 `unused_import_parity` 609/609, the example sweeps (`examples/*.mt` 15/15,
 `examples/sdl3` 34/34, emit-c), valgrind over an LSP drive (0 errors) and the
 headless-Neovim smoke (the `zero[mat4]` hover renders).
+
+### The last `redundant-unsafe` sites and the generic-body cast residue (2026-10-02 session 21)
+
+The session-20 close left `redundant-unsafe` at 11 self-only and ranked the
+generic-body `redundant-cast` sites (104 of 107) next.  Both are closed; the
+`redundant-unsafe` class is now **0/0** corpus-wide.  Landed, one commit:
+
+1. **For-loop element typing** (`bind_for_binding_types` + helpers): a range yields its
+   bounds' (harmonized) integer type; an array/span its element — a `ref[element]` for a
+   struct element, the host's `collection_loop_type`/`collection_loop_binding_type`; and
+   anything else runs the iterator protocol (`iter()`'s result's `next()`: a nullable
+   pointer-like item yields its base, a `bool` yields `current()`).  The iterables are
+   inferred too.  Closes `std/goap.mt:62` (`for entry in open_list` over a
+   `ref[Vec[ptr_uint]]`) and `std/input.mt:130`.
+2. **`x.method[T](args)` on a value receiver** (`check_specialized_method_call`; the
+   method's declared type parameters exported through
+   `Analysis.method_type_params`/`ModuleBinding.method_type_params`): the explicit
+   arguments substitute the method's return type (`storage.alloc[ptr[char]](n)` ->
+   `ptr[ptr[char]]?`).  Closes `std/process.mt:273`/`:288`.
+3. **`read` is the host's `infer_reference_value_type`**: a `ref` reads its referent; a
+   raw pointer dereferences and requires unsafe; an `own[T]` auto-dereferences (no
+   requirement); a nullable pointer is not a read source (the host rejects it, staying
+   permissive here).
+4. **Prelude method signatures for typing** (`Context.prelude_method_sigs`, filled from
+   the seeded std.option/std.result bindings; `check_typed_method_call` substitutes a
+   generic receiver's own arguments): `Option[int].unwrap()` -> `int`, the receiver's
+   method calls type like the host's.  Deliberately **not** exported on the `Analysis`
+   — the LSP resolves a member's declaration from the receiver's own module, and an
+   exported prelude signature made `unwrap`'s hover/definition/references answers go
+   null (8 new audit entries; the separate table fixed them).
+5. **Imported generic struct fields are substituted** (`substituted_field_type`, also
+   for the private struct/union tables): `entry.value` on a
+   `RemovedEntry[K, V]` no longer returns the declaring type's `ty_var` but the
+   receiver's argument.
+6. **Short-circuit and branch refinements** — the host's `infer_binary`'s `and`/`or`
+   right-operand refinement, `infer_if_expression`'s per-branch refinements, and
+   `check_while_stmt`'s body refinement.  This is what the faithful `read` change
+   exposed (30 self-only entries mid-session: `p != null and read(p)…`,
+   `if p != null: read(p)`, `while p != null: read(p)` had never been narrowed).
+7. **The generic-body gate for `redundant-cast`** (`redundant_cast.Ctx.generic_body`,
+   set from the linter's `lint_generic_depth`): the host's analyzer does not check
+   generic bodies, so its linter has no expression types there and the sema-backed cast
+   checks fall back to the literal-only paths; the self records the types, so the flag
+   suppresses them to match (heap/arena/pool/iter's `ptr_uint<-size_of(T)` family).
+
+**Measured**: `tools/lint_parity.rb -q` over `std examples projects/mtc/src`:
+**609 files, 385 agree / 224 differ** (session 20: 381/228); **`redundant-unsafe`
+0/0**, `redundant-cast` self 107 → **74** (host 28 → 24), `prefer-let` self 68 → 51.
+
+**A pre-existing assignability gap measured while writing the tests** (next lead): the
+self does not flag a *nullable pointer* against a `str` return —
+`function f(p: ptr[int]?) -> str: return p` is a host error and self-silent
+(`incompatible_value`/`types_compat` treats the nullable pointer as compatible).
+
+**Gates**: bootstrap fixed point (`stage2.c == stage3.c`) + 14/14 (9 new tests: 4
+linter — the `and`/if-expression/while marks and the generic-cast gate — and 5 semantic
+— for-loop element typing, the prelude `unwrap` via a temp-workspace prelude stub,
+imported generic field substitution, and the value-receiver specialization), `test/mt`
+60/0, `cli:parity` 61 cases 23/38/0 (the same set), sexpr lex 705/705 + parse 701/0,
+`rake parity:scoreboard` (lb 98/98, 0 differing lines, 0 rules with a count mismatch)
+and `tmp/lint_table.rb` (mst 10/10), the harness 30/30 + its 4 documented entries
+(`tmp/lsp-self-s21b.json`), the recovery probe OK, the fixture sweep at every baseline
+(added 0), the full SimpleGame audit **2 documented entries** (`tmp/audit-s21b.json`;
+the first run carried the documented `docs/data_structures.mt` `documentSymbol` race
+phantom — the self's answer equals the previous quiet run's host answer), the example
+sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34, emit-c), valgrind over an LSP
+drive (0 errors) and the headless-Neovim smoke.
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
