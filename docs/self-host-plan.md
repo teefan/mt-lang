@@ -2745,6 +2745,62 @@ when the host compiler's sources change), so corpus iterations run the host
 once and the self side live afterwards (609 files: minutes before, ~20 s after
 the first warm).
 
+### `prefer-struct-with`: the host's gates and the imported-alias resolution (2026-10-02 session 23, second)
+
+The ranked residue's next self-only class was `prefer-struct-with` (93
+self-only, 0 host-only): the self's rule was a shape match with none of the
+host's gates.  The host (`visitors.rb:977-1015`) requires: the callee is an
+identifier or member access (a specialized `Vec[T](…)` is neither), every
+argument is named, `copied >= 2` and `changed >= 1` from a single source
+value, the target resolves to a `Types::Struct` (not a generic instance,
+union, enum or variant), the copied source's type is that same struct, and
+the copied names are exactly the struct's fields minus the changed ones.  The
+message renders `expr_source_name` (dotted chains, `…` otherwise) and anchors
+at the callee.
+
+Ported all of it (`prefer_struct_with_fields` / `_same_type` /
+`_partition_ok` / `_source_name`, the callee gate, the analysis gate); the old
+message format (`width = ..., height = ...`) was wrong in both the separator
+and the ellipsis and is now the host's
+(``copies 2 field(s) from `s`; use `s.with(width, height = …)` ``).
+
+Two analyzer gaps surfaced behind it and were fixed with it:
+
+1. **Re-exported imported aliases.**  `rl.Rectangle` is `type Rectangle =
+   c.Rectangle` in std.raylib; the expression path (`try_imported_type`) and
+   the imported constructor path (`try_imported_call`) only looked in the
+   binding's `structs`, so a constructor through the alias recorded `ty_error`
+   and its member reads lost the declaring module.  Both now follow
+   `type_alias_types` to the resolved target exactly as the type-reference
+   path (`resolve_imported_type`) already did — `rl.Rectangle(…)` types as
+   `std.c.raylib.Rectangle`.  The alias construction is deliberately *not*
+   field-validated there: a first cut validated it against the declaring
+   binding and rejected `examples/sdl3/demo/bytepusher.mt`
+   (`a = sdl.ALPHA_OPAQUE`, declared `int`, into a `ubyte` field) — the host
+   folds the const and accepts, the self's coercion rule does not fold yet
+   (also `return sdl.ALPHA_OPAQUE` from a `ubyte` function, a pre-existing
+   analyzer gap; the next lead below).
+2. **Moduleless local constructors.**  A local struct constructor records
+   `ty_named(module_name="", name=…)` while an annotation carries the module;
+   the same-type gate treats an empty module as a match (the host's type
+   identity has no such distinction).
+
+Measured: `tools/lint_parity.rb -q` over the corpus **475 agree / 130 differ →
+494 / 115**; `prefer-struct-with` **93/0 → 0/0**.  Three new tests pin the
+copy-fields hint (byte-equal message), the source-type gate and the
+all-arguments-named gate.  lb 98/98 and mst 10/10 stay byte-identical.
+
+**Documented follow-up (found by the alias work):** a *constant expression*
+whose folded value fits a narrow integer target is host-accepted and
+self-rejected — `return sdl.ALPHA_OPAQUE` from `-> ubyte`, `let x: ubyte =
+sdl.ALPHA_OPAQUE`, and the same value in a field/argument.  The host's
+compatibility rule folds the const (its `constant_value_for`); the self's
+`is_numeric_literal_valued_expr` (`type_compatibility.mt`) only recognizes
+literal nodes and `if`-chains, so the declared `int` type of the imported
+const mismatches `ubyte`.  Fixing it means threading a folded-constant
+notion into `types_compatible` (or pre-folding at the call sites) — a
+separate analyzer change.
+
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
 `owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`

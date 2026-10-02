@@ -5808,6 +5808,25 @@ function try_imported_call(ctx: ref[Context], scope: ref[sscope.Scope], callee: 
                                 args = span[types.Type](),
                             ))
 
+                        # A re-exported type alias constructs its resolved target
+                        # (`rl.Rectangle` is `c.Rectangle`): yield the target type,
+                        # as the host's resolved Struct does.  The construction
+                        # itself is not field-checked here — the host's check
+                        # accepts constants whose folded value fits a narrow field
+                        # (`a = sdl.ALPHA_OPAQUE`, declared int), which the self's
+                        # coercion rule does not fold yet.
+                        let alias_ptr = read(binding_ptr).type_alias_types.get(ma.member_name)
+                        if alias_ptr != null:
+                            let target = read(ptr[types.Type]<-alias_ptr)
+                            match target:
+                                types.Type.ty_imported as tim:
+                                    let target_binding = lookup_binding(ctx, tim.module_name) else:
+                                        return Option[types.Type].none
+                                    if read(target_binding).structs.contains(tim.name):
+                                        return Option[types.Type].some(value = target)
+                                _:
+                                    pass
+
                         return Option[types.Type].none
                     _:
                         return Option[types.Type].none
@@ -6431,6 +6450,9 @@ function interface_method_named(methods: span[ast.InterfaceMethod], name: str) -
 ## Resolve `alias.Type` where `alias` is an imported module and `Type` is one of
 ## its exported types (struct, enum, flags, variant, type alias, interface, or
 ## opaque).  Returns an imported-type reference or `none` for anything else.
+## A re-exported type alias follows its resolved target, exactly as
+## `resolve_imported_type` does for a type reference (`rl.Rectangle` names the
+## raw binding's struct, not the alias).
 function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr], member: str) -> Option[types.Type]:
     unsafe:
         match read(receiver):
@@ -6442,6 +6464,9 @@ function try_imported_type(ctx: ref[Context], scope: ref[sscope.Scope], receiver
                 let binding_ptr = lookup_binding(ctx, read(module_name_ptr)) else:
                     return Option[types.Type].none
                 let binding = read(binding_ptr)
+                let alias_type = binding.type_alias_types.get(member)
+                if alias_type != null:
+                    return Option[types.Type].some(value = read(ptr[types.Type]<-alias_type))
                 if binding.structs.contains(member) or binding.type_aliases.contains(member) or binding.static_member_types.contains(member) or binding.interfaces.contains(member) or binding.types.contains(member):
                     return Option[types.Type].some(value = types.Type.ty_imported(module_name = read(module_name_ptr), name = member, args = span[types.Type]()))
                 return Option[types.Type].none

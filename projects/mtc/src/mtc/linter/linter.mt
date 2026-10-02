@@ -2856,7 +2856,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
     unsafe:
         match read(expr):
             ast.Expr.expr_call as call:
-                check_prefer_struct_with(expr, call.args, path, warnings)
+                check_prefer_struct_with(expr, call.callee, call.args, path, warnings)
             ast.Expr.expr_match as mm:
                 check_prefer_or_pattern_expr(mm.arms, path, warnings)
                 check_prefer_is_variant_expr(mm.arms, mm.line, mm.column, mm.length, mm.desugared_from_is, path, warnings)
@@ -3966,12 +3966,33 @@ function expression_literal_type_name(expr: ptr[ast.Expr]) -> Option[str]:
 #  prefer-struct-with — struct construction with many copy-field args.
 # =============================================================================
 
-function check_prefer_struct_with(call_expr: ptr[ast.Expr], args: span[ast.Argument], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+
+
+## The host's `check_prefer_struct_with`: a constructor literal that copies
+## all-but-one field from the same source value can use `.with(...)`.  The
+## gates matter as much as the shape: the callee must be an identifier or a
+## member access (a specialized `Vec[T](…)` is neither), the target must be a
+## *struct* (the host's `Types::Struct` — not a generic instance, union, enum
+## or variant), the copied source's type must be that same struct, and the
+## copied names must be exactly the struct's fields minus the changed ones.
+function check_prefer_struct_with(call_expr: ptr[ast.Expr], callee: ptr[ast.Expr], args: span[ast.Argument], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    let ap = lint_analysis else:
+        return
+    let analysis = unsafe: ref_of(read(ap))
+    unsafe:
+        match read(callee):
+            ast.Expr.expr_identifier:
+                pass
+            ast.Expr.expr_member_access:
+                pass
+            _:
+                return
     if args.len < 3:
         return
     var changed_count: ptr_uint = 0
     var copied_count: ptr_uint = 0
     var source_sig: Option[str] = Option[str].none
+    var source_receiver: ptr[ast.Expr]? = null
     var changed_fields = vec.Vec[str].create()
     defer: changed_fields.release()
     var copied_fields = vec.Vec[str].create()
@@ -3990,6 +4011,8 @@ function check_prefer_struct_with(call_expr: ptr[ast.Expr], args: span[ast.Argum
                         # This arg is a copy from a source struct.
                         copied_count += 1
                         copied_fields.push(field_name)
+                        if source_receiver == null:
+                            source_receiver = m.receiver
                         match source_sig:
                             Option.some as prev:
                                 if not field_sig.equal(prev.value):
@@ -4007,18 +4030,27 @@ function check_prefer_struct_with(call_expr: ptr[ast.Expr], args: span[ast.Argum
     if changed_count == 0 or copied_count < 2:
         return
 
-    let source_text = source_sig.unwrap_or("source")
-    # Extract just the variable name from the sig (e.g. "id:x" -> "x")
-    var display_source = source_text
-    if display_source.starts_with("id:"):
-        display_source = display_source.slice(3, display_source.len - 3)
+    let target_ty = prefer_struct_with_expr_type(analysis, call_expr) else:
+        return
+    let struct_fields = prefer_struct_with_fields(analysis, target_ty) else:
+        return
+    let receiver = source_receiver else:
+        return
+    let source_ty = prefer_struct_with_expr_type(analysis, receiver) else:
+        return
+    if not prefer_struct_with_same_type(source_ty, target_ty):
+        return
+    if not prefer_struct_with_partition_ok(struct_fields, ref_of(copied_fields), ref_of(changed_fields)):
+        return
+
+    let source_text = prefer_struct_with_source_name(receiver)
     var buf = string.String.create()
     buf.append("copies ")
     buf.append(uint_to_str(copied_count))
     buf.append(" field(s) from `")
-    buf.append(display_source)
+    buf.append(source_text)
     buf.append("`; use `")
-    buf.append(display_source)
+    buf.append(source_text)
     buf.append(".with(")
     var first = true
     var ci: ptr_uint = 0
@@ -4028,11 +4060,117 @@ function check_prefer_struct_with(call_expr: ptr[ast.Expr], args: span[ast.Argum
         if not first:
             buf.append(", ")
         buf.append(unsafe: read(fp))
-        buf.append(" = ...")
         first = false
         ci += 1
-    buf.append(")`")
-    push_warning(warnings, path, expression_line(call_expr), "prefer-struct-with", buf.as_str(), "hint")
+    buf.append(" = …)`")
+    push_warning_at(warnings, path, expression_line(callee), expression_column(callee), 0, "prefer-struct-with", buf.as_str(), "hint")
+
+
+## The resolved type of an expression from the analysis record.
+function prefer_struct_with_expr_type(analysis: ref[analyzer.Analysis], expr: ptr[ast.Expr]) -> Option[types.Type]:
+    let tp = unsafe: read(analysis).resolved_expr_types.get(reinterpret[ptr_uint](expr)) else:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = unsafe: read(tp))
+
+
+## The target struct's fields, or none when the type is not a plain struct:
+## a `ty_named` only when the module's struct table carries it (enums, unions
+## and variants are separate tables), and an imported instance only without
+## type arguments (a generic instance is the host's `GenericInstance`, not a
+## `Struct`).
+function prefer_struct_with_fields(analysis: ref[analyzer.Analysis], ty: types.Type) -> Option[span[analyzer.FieldEntry]]:
+    match ty:
+        types.Type.ty_named as n:
+            let fp = unsafe: read(analysis).structs.get(n.name) else:
+                return Option[span[analyzer.FieldEntry]].none
+            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(fp))
+        types.Type.ty_imported as im:
+            if im.args.len > 0:
+                return Option[span[analyzer.FieldEntry]].none
+            var key = string.String.create()
+            defer: key.release()
+            key.append(im.module_name)
+            key.append(".")
+            key.append(im.name)
+            let mp = unsafe: read(analysis).imported_type_members.get(key.as_str()) else:
+                return Option[span[analyzer.FieldEntry]].none
+            return Option[span[analyzer.FieldEntry]].some(value = unsafe: read(mp).fields)
+        _:
+            return Option[span[analyzer.FieldEntry]].none
+
+
+## The host compares the copied source's type with the target struct's by
+## qualified name (`source_type.to_s == struct_type.to_s`).  A local struct
+## constructor records the moduleless `ty_named` form while an annotation
+## carries the module, so an empty module matches any.
+function prefer_struct_with_same_type(a: types.Type, b: types.Type) -> bool:
+    match a:
+        types.Type.ty_named as na:
+            match b:
+                types.Type.ty_named as nb:
+                    if not na.name.equal(nb.name):
+                        return false
+                    return na.module_name.equal(nb.module_name) or na.module_name.len == 0 or nb.module_name.len == 0
+                _:
+                    return false
+        types.Type.ty_imported as ia:
+            if ia.args.len > 0:
+                return false
+            match b:
+                types.Type.ty_imported as ib:
+                    if ib.args.len > 0:
+                        return false
+                    return ia.name.equal(ib.name) and ia.module_name.equal(ib.module_name)
+                _:
+                    return false
+        _:
+            return false
+
+
+## The host's `(field_names - changed_names) == copied_names`: every copied
+## name is a field that was not changed, and every field not changed is copied.
+function prefer_struct_with_partition_ok(fields: span[analyzer.FieldEntry], copied: ref[vec.Vec[str]], changed: ref[vec.Vec[str]]) -> bool:
+    var ci: ptr_uint = 0
+    while ci < copied.len():
+        let cp = copied.get(ci) else:
+            break
+        let name = unsafe: read(cp)
+        if ownership_contains(changed, name) or not prefer_struct_with_has_field(fields, name):
+            return false
+        ci += 1
+    var fi: ptr_uint = 0
+    while fi < fields.len:
+        let field_name = unsafe: read(fields.data + fi).name
+        if not ownership_contains(changed, field_name) and not ownership_contains(copied, field_name):
+            return false
+        fi += 1
+    return true
+
+
+function prefer_struct_with_has_field(fields: span[analyzer.FieldEntry], name: str) -> bool:
+    var fi: ptr_uint = 0
+    while fi < fields.len:
+        if unsafe: read(fields.data + fi).name.equal(name):
+            return true
+        fi += 1
+    return false
+
+
+## The host's `expr_source_name`: identifiers and member chains render
+## dotted, everything else is the ellipsis.
+function prefer_struct_with_source_name(expr: ptr[ast.Expr]) -> str:
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_identifier as id:
+                return id.name
+            ast.Expr.expr_member_access as m:
+                var buf = string.String.create()
+                buf.append(prefer_struct_with_source_name(m.receiver))
+                buf.append(".")
+                buf.append(m.member_name)
+                return buf.as_str()
+            _:
+                return "…"
 
 
 function uint_to_str(n: ptr_uint) -> str:

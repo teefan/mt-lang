@@ -1464,3 +1464,63 @@ function test_owning_release_double_across_loop_back_edge() -> void:
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "owning-release-double")), 1)
     expect_eq(int<-(count_code(ref_of(warns), "owning-release-leak")), 0)
+
+
+# =============================================================================
+#  prefer-struct-with — the struct/type gates
+# =============================================================================
+
+@[test]
+function test_prefer_struct_with_copied_fields_reported() -> void:
+    var source = <<-SRC
+        public struct Point:
+            x: float
+            y: float
+            z: float
+
+        function demo() -> Point:
+            var s = Point(x = 1.0, y = 2.0, z = 3.0)
+            return Point(x = s.x, y = s.y, z = 4.0)
+    SRC
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "prefer-struct-with")), 1)
+    expect(message_of(ref_of(warns), "prefer-struct-with").contains_substring("copies 2 field(s) from `s`; use `s.with(z = …)`"), "with hint")
+
+
+@[test]
+function test_prefer_struct_with_type_mismatch_suppressed() -> void:
+    # The copied source's type must be the target struct itself.
+    var source = <<-SRC
+        public struct Point:
+            x: float
+            y: float
+            z: float
+
+        public struct Vec3:
+            x: float
+            y: float
+            z: float
+
+        function demo(v: Vec3) -> Point:
+            return Point(x = v.x, y = v.y, z = 1.0)
+    SRC
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "prefer-struct-with")), 0)
+
+
+@[test]
+function test_prefer_struct_with_unnamed_argument_suppressed() -> void:
+    var source = <<-SRC
+        public struct Point:
+            x: float
+            y: float
+            z: float
+
+        function demo(s: Point) -> Point:
+            return Point(x = s.x, s.y, z = 1.0)
+    SRC
+    var warns = lint_text_with_analysis(source)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "prefer-struct-with")), 0)
