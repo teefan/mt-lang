@@ -15,18 +15,21 @@ import mtc.semantic.types as types
 public struct Scope:
     frames: vec.Vec[map_mod.Map[str, types.Type]]
     let_bindings: vec.Vec[map_mod.Map[str, bool]]
+    storage_types: vec.Vec[map_mod.Map[str, types.Type]]
 
 
 public function scope_create() -> Scope:
     return Scope(
         frames = vec.Vec[map_mod.Map[str, types.Type]].create(),
         let_bindings = vec.Vec[map_mod.Map[str, bool]].create(),
+        storage_types = vec.Vec[map_mod.Map[str, types.Type]].create(),
     )
 
 
 public function scope_enter(scope: ref[Scope]) -> void:
     scope.frames.push(map_mod.Map[str, types.Type].create())
     scope.let_bindings.push(map_mod.Map[str, bool].create())
+    scope.storage_types.push(map_mod.Map[str, types.Type].create())
 
 
 public function scope_leave(scope: ref[Scope]) -> void:
@@ -39,6 +42,12 @@ public function scope_leave(scope: ref[Scope]) -> void:
     match scope.let_bindings.pop():
         Option.some as let_frame:
             var released = let_frame.value
+            released.release()
+        Option.none:
+            pass
+    match scope.storage_types.pop():
+        Option.some as storage_frame:
+            var released = storage_frame.value
             released.release()
         Option.none:
             pass
@@ -86,3 +95,30 @@ public function scope_set_let(scope: ref[Scope], name: str) -> void:
         return
     unsafe:
         let _prev = read(frame_ptr).set(name, true)
+
+
+## The binding's *storage* type — the declared/initializer type, unaffected by
+## flow refinement.  The host's `ValueBinding#storage_type`: an assignment
+## target is checked against it (`infer_lvalue`), so a refined non-null binding
+## still accepts a nullable value.
+public function scope_set_storage(scope: ref[Scope], name: str, ty: types.Type) -> void:
+    let count = scope.storage_types.len()
+    if count == 0:
+        return
+    let frame_ptr = scope.storage_types.get(count - 1) else:
+        return
+    unsafe:
+        let _prev = read(frame_ptr).set(name, ty)
+
+
+public function scope_get_storage(scope: ref[Scope], name: str) -> ptr[types.Type]?:
+    var index = scope.storage_types.len()
+    while index > 0:
+        index -= 1
+        let frame_ptr = scope.storage_types.get(index) else:
+            return null
+        unsafe:
+            let found = read(frame_ptr).get(name)
+            if found != null:
+                return found
+    return scope_get(scope, name)

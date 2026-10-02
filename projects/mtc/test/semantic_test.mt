@@ -3050,3 +3050,91 @@ function test_method_specialization_on_a_value_receiver() -> void:
     var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
     defer: program.release()
     expect_eq(int<-program.diagnostic_count(), 1)
+
+
+@[test]
+function test_nullable_source_into_non_nullable_target_is_flagged() -> void:
+    # A nullable value is not assignable to a non-nullable target: the host's
+    # `types_compatible?` has no such coercion, and the flow refinement is what
+    # narrows a guarded use to its base.
+    var source = <<-SRC
+        function ret_ptr(p: ptr[int]?) -> ptr[int]:
+            return p
+
+        function ret_int(v: int?) -> int:
+            return v
+
+        function ret_str(p: ptr[int]?) -> str:
+            return p
+    SRC
+    expect_eq(int<-diagnostic_count(source), 3)
+
+
+@[test]
+function test_nullable_source_narrowed_by_guards_is_clean() -> void:
+    # A guard that exits (`if v == null: return`) narrows the continuation, and
+    # a truthy `if`/`while`/`and` condition narrows the body, so the guarded
+    # uses are the non-null base type.
+    var source = <<-SRC
+        function guard_return(v: int?) -> int:
+            if v == null:
+                return 0
+            return v
+
+        function guard_branch(p: ptr[int]?) -> ptr[int]?:
+            if p != null:
+                return p
+            return null
+
+        function guard_and(v: int?) -> int:
+            if v != null and v > 0:
+                return v
+            return 0
+
+        function guard_while(v: int?) -> int:
+            while v != null:
+                return v
+            return 0
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_refined_assignment_target_uses_the_storage_type() -> void:
+    # An assignment target is checked against the binding's *storage* type (the
+    # host's `infer_lvalue` -> `binding.storage_type`), so a binding the flow
+    # refinement narrowed still accepts its declared nullable type.
+    var source = <<-SRC
+        function demo(v: ptr[int]?) -> ptr[int]?:
+            var x = v
+            if x == null:
+                return null
+            x = v
+            return x
+
+        function loop(v: ptr[int]?) -> ptr[int]?:
+            var x = v
+            while x != null:
+                x = v
+            return x
+    SRC
+    expect_clean(source)
+
+
+@[test]
+function test_module_level_value_narrows_through_a_guard() -> void:
+    # A module-level value has no scope binding; the host seeds module bindings
+    # into its scopes, so `if g == null: return` narrows it for the rest of the
+    # body and the guarded use is clean.
+    var source = <<-SRC
+        var g: ptr[char]? = null
+
+        function take(p: ptr[char]) -> int:
+            return 0
+
+        function f() -> int:
+            if g == null:
+                return 0
+            return take(g)
+    SRC
+    expect_clean(source)

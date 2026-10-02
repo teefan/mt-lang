@@ -17,11 +17,13 @@ public function return_mismatch_message(expected: types.Type, got: types.Type) -
     return buf.as_str()
 
 
-public function local_mismatch_message(expected: types.Type, got: types.Type) -> str:
+public function local_mismatch_message(expected: types.Type, got: types.Type, name: str) -> str:
     var buf = string.String.create()
-    buf.append("type mismatch: cannot assign ")
+    buf.append("cannot assign ")
     buf.append(types.type_to_string(got))
     buf.append(" to ")
+    buf.append(name)
+    buf.append(": expected ")
     buf.append(types.type_to_string(expected))
     return buf.as_str()
 

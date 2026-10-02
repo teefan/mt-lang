@@ -2291,6 +2291,14 @@ function scope_set_let(scope: ref[sscope.Scope], name: str) -> void:
     sscope.scope_set_let(scope, name)
 
 
+function scope_set_storage(scope: ref[sscope.Scope], name: str, ty: types.Type) -> void:
+    sscope.scope_set_storage(scope, name, ty)
+
+
+function scope_get_storage(scope: ref[sscope.Scope], name: str) -> ptr[types.Type]?:
+    return sscope.scope_get_storage(scope, name)
+
+
 function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method, target_type_name: ptr[ast.TypeRef]) -> void:
     enter_suppressed_extending_target(ctx, target_type_name)
     enter_type_params(ctx, m.type_params)
@@ -2298,6 +2306,7 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     scope_enter(ref_of(scope))
     if m.method_kind != ast.MethodKind.mk_static:
         scope_set(ref_of(scope), "this", this_type)
+        scope_set_storage(ref_of(scope), "this", this_type)
     var seen = map_mod.Map[str, bool].create()
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
@@ -2309,7 +2318,9 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
         seen.set(p.name, true)
         if is_reserved_name(p.name):
             report(ctx, m.line, m.column, reserved_param_message(m.name, p.name))
-        scope_set(ref_of(scope), p.name, resolve_type_value(ctx, p.param_type))
+        let param_ty = resolve_type_value(ctx, p.param_type)
+        scope_set(ref_of(scope), p.name, param_ty)
+        scope_set_storage(ref_of(scope), p.name, param_ty)
         pi += 1
     seen.release()
     var ret = types.primitive("void")
@@ -2341,7 +2352,9 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
         seen.set(p.name, true)
         if is_reserved_name(p.name):
             report(ctx, line, 1, reserved_param_message(name, p.name))
-        scope_set(ref_of(scope), p.name, resolve_type_value(ctx, p.param_type))
+        let param_ty = resolve_type_value(ctx, p.param_type)
+        scope_set(ref_of(scope), p.name, param_ty)
+        scope_set_storage(ref_of(scope), p.name, param_ty)
         pi += 1
     seen.release()
     # Generic value params (`[N: int]`) are compile-time integer constants.
@@ -2354,7 +2367,9 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
         if tp.is_value:
             let vtype = tp.value_type
             if vtype != null:
-                scope_set(ref_of(scope), tp.name, resolve_type_value(ctx, unsafe: read(vtype)))
+                let vparam_ty = resolve_type_value(ctx, unsafe: read(vtype))
+                scope_set(ref_of(scope), tp.name, vparam_ty)
+                scope_set_storage(ref_of(scope), tp.name, vparam_ty)
         tpi += 1
     var ret = types.primitive("void")
     let rt = return_type
@@ -2604,7 +2619,7 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                         report(ctx, r.line, r.column, "void function may not return a value")
                     let vt = infer_expr(ctx, scope, rv)
                     if incompatible_value(chk.ret, vt, rv):
-                        report(ctx, r.line, r.column, return_mismatch_message(chk.ret, vt))
+                        report(ctx, expr_source_line(rv), expr_source_column(rv), return_mismatch_message(chk.ret, vt))
             ast.Stmt.stmt_local as l:
                 check_local(ctx, scope, chk, l.is_let, l.name, l.stmt_type, l.value, l.else_binding, l.else_body, l.destructure_bindings, l.line, l.column)
             ast.Stmt.stmt_if as i:
@@ -2618,12 +2633,12 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                 while bi2 < i.branches.len:
                     var br: ast.IfBranch = read(i.branches.data + bi2)
                     scope_enter(scope)
-                    apply_refinements_to_frame(scope, ref_of(false_refinements))
+                    apply_refinements_to_frame(ctx, scope, ref_of(false_refinements))
                     check_condition(ctx, scope, br.condition, "if", br.line, br.column)
                     var true_refs = flow_refinements(ctx, br.condition, true, scope)
                     merge_refinements_into(ref_of(true_refs), ref_of(false_refinements))
                     scope_enter(scope)
-                    apply_refinements_to_frame(scope, ref_of(true_refs))
+                    apply_refinements_to_frame(ctx, scope, ref_of(true_refs))
                     check_body(ctx, scope, chk, br.body)
                     scope_leave(scope)
                     true_refs.release()
@@ -2636,12 +2651,12 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                     bi2 += 1
                 if i.else_body != null:
                     scope_enter(scope)
-                    apply_refinements_to_frame(scope, ref_of(false_refinements))
+                    apply_refinements_to_frame(ctx, scope, ref_of(false_refinements))
                     check_body(ctx, scope, chk, i.else_body)
                     scope_leave(scope)
                 else:
                     if all_terminate and i.branches.len > 0:
-                        apply_refinements_to_scope_frame(scope, ref_of(false_refinements))
+                        apply_refinements_to_scope_frame(ctx, scope, ref_of(false_refinements))
                 false_refinements.release()
             ast.Stmt.stmt_while as w:
                 if w.is_inline:
@@ -2657,7 +2672,7 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                 # the host's `body_scopes = scopes_with_refinements(…)`.
                 scope_enter(scope)
                 var loop_refs = flow_refinements(ctx, w.condition, true, scope)
-                apply_refinements_to_frame(scope, ref_of(loop_refs))
+                apply_refinements_to_frame(ctx, scope, ref_of(loop_refs))
                 check_body(ctx, scope, check_flags(chk.ret, true, chk.inside_defer, chk.inside_parallel), w.body)
                 loop_refs.release()
                 scope_leave(scope)
@@ -2721,11 +2736,28 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
             ast.Stmt.stmt_assignment as a:
                 let tt = infer_expr(ctx, scope, a.target)
                 let vt = infer_expr(ctx, scope, a.value)
-                if a.operator == "=" and incompatible_value(tt, vt, a.value):
-                    report(ctx, a.line, a.column, assign_message(tt, vt))
+                let target_ty = assign_target_type(scope, a.target, tt)
+                if a.operator == "=" and incompatible_value(target_ty, vt, a.value):
+                    report(ctx, a.line, a.column, assign_message(target_ty, vt))
                 check_assign_target_immutable(ctx, scope, a.target, a.line, a.column)
             _:
                 pass
+
+
+## The type an assignment target is checked against.  A plain identifier uses
+## its *storage* type — the host's `infer_lvalue` → `binding.storage_type` — so
+## a binding the flow refinement narrowed is still assigned its declared type;
+## member and index targets keep the refined receiver type.
+function assign_target_type(scope: ref[sscope.Scope], target: ptr[ast.Expr], inferred: types.Type) -> types.Type:
+    unsafe:
+        match read(target):
+            ast.Expr.expr_identifier as id:
+                let storage = scope_get_storage(scope, id.name)
+                if storage != null:
+                    return read(storage)
+            _:
+                pass
+    return inferred
 
 
 function check_condition(ctx: ref[Context], scope: ref[sscope.Scope], cond: ptr[ast.Expr], keyword: str, line: ptr_uint, column: ptr_uint) -> void:
@@ -2752,7 +2784,7 @@ function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, 
                     if truthy:
                         var left = flow_refinements(ctx, b.left, true, scope)
                         merge_refinements_into(ref_of(result), ref_of(left))
-                        apply_refinements_to_frame(scope, ref_of(left))
+                        apply_refinements_to_frame(ctx, scope, ref_of(left))
                         var right = flow_refinements(ctx, b.right, true, scope)
                         merge_refinements_into(ref_of(result), ref_of(right))
                     else:
@@ -2766,7 +2798,7 @@ function flow_refinements(ctx: ref[Context], cond: ptr[ast.Expr], truthy: bool, 
                     else:
                         var left = flow_refinements(ctx, b.left, false, scope)
                         merge_refinements_into(ref_of(result), ref_of(left))
-                        apply_refinements_to_frame(scope, ref_of(left))
+                        apply_refinements_to_frame(ctx, scope, ref_of(left))
                         var right = flow_refinements(ctx, b.right, false, scope)
                         merge_refinements_into(ref_of(result), ref_of(right))
                     return result
@@ -2820,7 +2852,7 @@ function null_test_refinements(ctx: ref[Context], condp: ptr[ast.Expr], truthy: 
                 if not found:
                     return result
 
-                let type_ptr = scope_get(scope, name_value)
+                let type_ptr = refinement_type_ptr(ctx, scope, name_value)
                 if type_ptr == null:
                     return result
 
@@ -2860,11 +2892,12 @@ function apply_flow_continuation(ctx: ref[Context], scope: ref[sscope.Scope], sp
         if flow_graph_mod.nonnull_before(ref_of(ctx.flow), node, key):
             let name = flow_builder.cfg_binding_name(ref_of(ctx.flow_cfg), key)
             if name.len > 0:
-                let type_ptr = scope_get(scope, name)
+                let type_ptr = refinement_type_ptr(ctx, scope, name)
                 if type_ptr != null:
                     unsafe:
                         match read(type_ptr):
                             types.Type.ty_nullable as nullable:
+                                note_refinement_storage(ctx, scope, name)
                                 scope_set(scope, name, read(nullable.base))
                             _:
                                 pass
@@ -3040,26 +3073,51 @@ function merge_refinements_into(existing: ref[map_mod.Map[str, types.Type]], inc
 
 ## Apply refinement bindings to the top scope frame, shadowing any existing
 ## bindings with the narrowed types.
-function apply_refinements_to_frame(scope: ref[sscope.Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
+function apply_refinements_to_frame(ctx: ref[Context], scope: ref[sscope.Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
     var entries = refinements.entries()
     while true:
         if not entries.next():
             break
         unsafe:
             let entry = entries.current()
+            note_refinement_storage(ctx, scope, read(entry.key))
             scope_set(scope, read(entry.key), read(entry.value))
 
 
 ## Apply refinements directly to the current scope frame without entering a new
 ## one — for post-if refinements that persist beyond the if/else block.
-function apply_refinements_to_scope_frame(scope: ref[sscope.Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
+function apply_refinements_to_scope_frame(ctx: ref[Context], scope: ref[sscope.Scope], refinements: ref[map_mod.Map[str, types.Type]]) -> void:
     var entries = refinements.entries()
     while true:
         if not entries.next():
             break
         unsafe:
             let entry = entries.current()
+            note_refinement_storage(ctx, scope, read(entry.key))
             scope_set(scope, read(entry.key), read(entry.value))
+
+
+## The type a refinement reads for `name`: the scope binding's current type, or
+## a module-level value's declared type.  The host seeds module bindings into its
+## scopes, so its flow refinements narrow globals the same way locals are.
+function refinement_type_ptr(ctx: ref[Context], scope: ref[sscope.Scope], name: str) -> ptr[types.Type]?:
+    let scoped = scope_get(scope, name)
+    if scoped != null:
+        return scoped
+    return ctx.value_types.get(name)
+
+
+## Record the declared type of a module-level value as the storage type of a
+## refinement frame, so an assignment to the refined name is still checked
+## against the declared type (`assign_target_type`).  A scope binding's storage
+## is already recorded at its declaration.
+function note_refinement_storage(ctx: ref[Context], scope: ref[sscope.Scope], name: str) -> void:
+    if scope_get_storage(scope, name) != null:
+        return
+    let declared = ctx.value_types.get(name)
+    if declared != null:
+        unsafe:
+            scope_set_storage(scope, name, read(declared))
 
 
 function check_when_statement(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, discriminant: ptr[ast.Expr], branches: span[ast.WhenBranch], else_body: ptr[ast.Stmt]?) -> void:
@@ -3360,6 +3418,7 @@ function bind_for_binding_types(ctx: ref[Context], scope: ref[sscope.Scope], bin
             var iterable_ptr: ptr[ast.Expr] = unsafe: iterables.data + i
             binding_ty = for_binding_type(ctx, scope, iterable_ptr, threaded)
         scope_set(scope, binding_name, binding_ty)
+        scope_set_storage(scope, binding_name, binding_ty)
         i += 1
 
 
@@ -3573,6 +3632,7 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
                     let dn = read(names.value.data + di)
                     if not dn == "_":
                         scope_set(scope, dn, field_ty)
+                        scope_set_storage(scope, dn, field_ty)
                         ctx.destructure_types.push(DestructureTypeEntry(line = line, name = dn, ty = field_ty))
                 di += 1
             check_local_else_body(ctx, scope, chk, else_binding, else_body, value_ty)
@@ -3606,19 +3666,21 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
     if has_declared and has_value:
         let compared = if has_guard: narrowed else: value_type
         if incompatible_value(declared, compared, value):
-            report(ctx, line, column, local_mismatch_message(declared, compared))
+            report(ctx, line, column, local_mismatch_message(declared, compared, name))
 
     # Bind the name for later inference: prefer the declared type, but narrow a
-    # guard-unwrapped nullable/Option/Result to its success type.
+    # guard-unwrapped nullable/Option/Result to its success type.  The storage
+    # type follows the host's `LocalDecl`: a plain declaration stores its final
+    # type, a guarded one stores the raw initializer for a `let` and the success
+    # type for a `var`.
+    var final_ty: types.Type = types.Type.ty_error
     if has_declared:
-        scope_set(scope, name, declared)
+        final_ty = declared
     else if has_value:
-        if has_guard:
-            scope_set(scope, name, narrowed)
-        else:
-            scope_set(scope, name, value_type)
-    else:
-        scope_set(scope, name, types.Type.ty_error)
+        final_ty = if has_guard: narrowed else: value_type
+    scope_set(scope, name, final_ty)
+    let storage_ty = if has_guard and is_let: value_type else: final_ty
+    scope_set_storage(scope, name, storage_ty)
 
     if is_let:
         scope_set_let(scope, name)
@@ -3639,7 +3701,9 @@ function check_local_else_body(ctx: ref[Context], scope: ref[sscope.Scope], chk:
     scope_enter(scope)
     match else_binding:
         Option.some as binding:
-            scope_set(scope, binding.value, let_else_error_type(value_type))
+            let err_ty = let_else_error_type(value_type)
+            scope_set(scope, binding.value, err_ty)
+            scope_set_storage(scope, binding.value, err_ty)
         Option.none:
             pass
     check_body(ctx, scope, chk, body)
@@ -4001,13 +4065,13 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 let _cond_ty = infer_expr(ctx, scope, ife.condition)
                 scope_enter(scope)
                 var then_refs = flow_refinements(ctx, ife.condition, true, scope)
-                apply_refinements_to_frame(scope, ref_of(then_refs))
+                apply_refinements_to_frame(ctx, scope, ref_of(then_refs))
                 let then_ty = infer_expr(ctx, scope, ife.then_expr)
                 then_refs.release()
                 scope_leave(scope)
                 scope_enter(scope)
                 var else_refs = flow_refinements(ctx, ife.condition, false, scope)
-                apply_refinements_to_frame(scope, ref_of(else_refs))
+                apply_refinements_to_frame(ctx, scope, ref_of(else_refs))
                 let else_ty = infer_expr(ctx, scope, ife.else_expr)
                 else_refs.release()
                 scope_leave(scope)
@@ -4144,6 +4208,7 @@ function bind_match_arm_names(ctx: ref[Context], scope: ref[sscope.Scope], scrut
                     Option.none:
                         pass
             scope_set(scope, bn.value, binding_ty)
+            scope_set_storage(scope, bn.value, binding_ty)
             ctx.arm_binding_types.push(ArmBindingEntry(line = line, name = bn.value, ty = binding_ty))
         Option.none:
             pass
@@ -4160,6 +4225,7 @@ function bind_match_arm_names(ctx: ref[Context], scope: ref[sscope.Scope], scrut
                         ast.Expr.expr_identifier as id:
                             if not id.name == "_":
                                 scope_set(scope, id.name, types.Type.ty_error)
+                                scope_set_storage(scope, id.name, types.Type.ty_error)
                         _:
                             pass
                     i += 1
@@ -4322,7 +4388,10 @@ function check_proc_body(ctx: ref[Context], scope: ref[sscope.Scope], param_type
     var i: ptr_uint = 0
     while i < param_types.len and i < param_names.len:
         unsafe:
-            scope_set(scope, read(param_names.data + i), read(param_types.data + i))
+            let pname = read(param_names.data + i)
+            let pty = read(param_types.data + i)
+            scope_set(scope, pname, pty)
+            scope_set_storage(scope, pname, pty)
         i += 1
     let proc_flags = check_flags(ret, false, false, false)
     check_body(ctx, scope, proc_flags, b)
@@ -4339,7 +4408,7 @@ function infer_binary(ctx: ref[Context], scope: ref[sscope.Scope], op: str, left
         # checked (`p != null and read(p)…` narrows `p` for the read).
         scope_enter(scope)
         var refs = flow_refinements(ctx, left, op.equal("and"), scope)
-        apply_refinements_to_frame(scope, ref_of(refs))
+        apply_refinements_to_frame(ctx, scope, ref_of(refs))
         let _short_circuit_ty = infer_expr(ctx, scope, right)
         refs.release()
         scope_leave(scope)
@@ -7412,8 +7481,8 @@ function return_mismatch_message(expected: types.Type, got: types.Type) -> str:
     return diag.return_mismatch_message(expected, got)
 
 
-function local_mismatch_message(expected: types.Type, got: types.Type) -> str:
-    return diag.local_mismatch_message(expected, got)
+function local_mismatch_message(expected: types.Type, got: types.Type, name: str) -> str:
+    return diag.local_mismatch_message(expected, got, name)
 
 
 function assign_message(target: types.Type, value: types.Type) -> str:

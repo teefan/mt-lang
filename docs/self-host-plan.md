@@ -106,24 +106,25 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: 2026-10-02 session 21 (the corpus-wide lint residue's two largest
-self-extra rules are closed: `redundant-unsafe` is at **0 self-only** — 807 at the
-session-20 open, 11 at its close — and `redundant-cast` fell 107 → 74, both measured by
-`tools/lint_parity.rb` over `std examples projects/mtc/src` (609 files, **385 agree /
-224 differ**, session 20: 381/228).  The session landed the for-loop element typing
-(range/array/span/iterator protocol), `x.method[T](…)` on a value receiver, the host's
-`read` semantics, prelude method signatures for typing (`Option[int].unwrap()` → `int`;
-deliberately *not* exported on the `Analysis`, or the LSP member hover goes null),
-imported generic struct field substitution, the `and`/`or`/if-expression/while-body
-refinements the faithful `read` change exposed, and the generic-body gate for
-`redundant-cast`.  The LSP matrix is at **2 documented entries** (+ the documented host
-first-file `documentSymbol` race phantom).  Remaining ranked: `owning-release-leak`
-599/286, `prefer-inline-if` 213/0, `prefer-struct-with` 93/0, the `redundant-cast` 74,
-`prefer-try` 64/39, `prefer-let` 51/142; and a pre-existing assignability gap measured
-while writing tests (a nullable-pointer source is not flagged against a `str` return —
-§0k's session-21 record).)
+Last updated: 2026-10-02 session 22 (the analyzer's nullability assignability rule: a
+`T?` source is no longer accepted where a non-nullable slot is expected — the host's
+`types_compatible?` has no such coercion, and a guarded use is narrowed by the flow
+refinement before the check.  The lockstep addition is the binding *storage* type: an
+assignment target is checked against it (the host's `infer_lvalue` →
+`binding.storage_type`), so a binding the refinement narrowed still accepts its
+declared nullable type, and the local-declaration mismatch message and the return
+error's anchor now match the host's.  Flow refinements cover module-level values too
+(the host seeds module bindings into its scopes), which closed the
+`examples/sdl3/misc/clipboard.mt` emit-c difference.  Measured: the probe set
+(nullable sources at returns/arguments/local and global declarations, guarded and
+unguarded) matches the host's messages and positions; `cli:parity` moved 23/38 →
+**24/37** (`check-sema-error` closed); the LSP matrix stays at its 2 documented
+entries.  Remaining measured residuals of the same family, both ranked next: a bare
+`null` into a non-nullable target (`return null` for a `ptr[int]`) and
+generic-vs-scalar pairs (`ptr[int]` → `str`, kept permissive for the `ref[T]` borrow
+coercion) are still self-silent.)
 
-The session-20 note is kept in §0k's records.
+The session-21 note is kept in §0k's records.
 
 ---
 
@@ -2577,6 +2578,76 @@ the first run carried the documented `docs/data_structures.mt` `documentSymbol` 
 phantom — the self's answer equals the previous quiet run's host answer), the example
 sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34, emit-c), valgrind over an LSP
 drive (0 errors) and the headless-Neovim smoke.
+
+### The analyzer's nullability assignability rule and the binding storage type (2026-10-02 session 22)
+
+The session-21 close ranked the assignability gap first: `function f(p: ptr[int]?) -> str:
+return p` is a host error and was self-silent.  The host's rule set was measured first on
+single-shape probe files (the host aborts a file at its first error, so each shape needs
+its own file):
+
+| Shape | Host |
+| --- | --- |
+| `return p` / `take(p)` / `var x: T = p` with `p: T?` | error (`return type mismatch: expected T, got T?`, `argument x to f expects T, got T?`, `cannot assign T? to x: expected T`) |
+| `return null` into a non-nullable `ptr[int]`/`str` | error (`… got null`) |
+| `return p` after `if p == null: return …`, in an `if p != null:` branch, in an `and` guard, in a `while` body | clean — the flow refinement narrows `p` |
+| `x = v` where `x: T?` was refined non-null | clean — the target is the **storage** type |
+| module-level `var g: T?` with `if g == null: return` then `take(g)` | clean — the host seeds module bindings into its scopes |
+
+Landed, one commit:
+
+1. **`types_compatible` no longer accepts `T?` → non-nullable**: the permissive rule 6 in
+   `type_compatibility.mt` is gone, and `definitely_incompatible` (`types.mt`) reports the
+   pair — unless the target or the unwrapped base is a type variable or *contains* one
+   (`contains_type_var`, new), so generic bodies stay permissive exactly as the host's
+   (it does not check them).  F2's flow refinement is what keeps the guarded shapes
+   working: it changes the *inferred* type of the use before the check.
+2. **The binding storage type** (`semantic/scope.mt`): a parallel frame stack
+   (`scope_set_storage` / `scope_get_storage`) holds the declared/initializer type and
+   refinements only touch the flow frame; `check_local` stores the host's `LocalDecl` rule
+   (a plain declaration keeps its final type; a guarded one keeps the raw initializer for
+   a `let` and the success type for a `var`), parameters / `this` / for / match-arm /
+   destructure / else bindings store theirs, and `assign_target_type` uses it for a plain
+   identifier assignment target (the host's `infer_lvalue` → `binding.storage_type`), so
+   a refined non-null binding still accepts its declared nullable type.  Two regressions
+   the first cut caused and the tests caught: `std/map.mt`'s `node = read(node_ptr).next`
+   (a generic body — the `contains_type_var` gate) and a frame-coherent lookup variant,
+   which broke refinements (they write into the *current* frame, not the binding's).
+3. **Module-level values refine like locals**: `refinement_type_ptr` falls back to
+   `ctx.value_types` and `note_refinement_storage` records the declared type in the
+   refinement frame, so `if g == null: return` narrows a global for the rest of the body.
+   The first full gate bus caught this as a false positive it *caused*:
+   `examples/sdl3/misc/clipboard.mt`'s `pasted_str` global (the host accepted the guarded
+   `text_ops.chars_as_str(pasted_str)` call, the self had started rejecting it); the fix
+   is part of the same commit and the second bus reads examples 49/0.
+4. **The local-declaration message and the return anchor**: `cannot assign <got> to
+   <name>: expected <expected>` (was `type mismatch: cannot assign <got> to <expected>`)
+   and a return mismatch anchors on the value expression
+   (`expr_source_line`/`expr_source_column`), as the host's `ensure_assignable!` does.
+
+Measured: the probe set matches the host's messages *and* positions byte-for-byte;
+`cli:parity` 61 cases **24 match / 37 differ / 0 pending** (was 23/38 — `check-sema-error`
+closed; `tmp/cli-diffs-s22.txt` against `tmp/cli-diffs-s20.txt` shows exactly that one
+closure, no additions).  Gates (final tree, `tools/gates.sh --areas analyzer --only
+… --run`; the first bus's failing examples gate is what forced fix 3): bootstrap fixed
+point (`stage2.c == stage3.c`) + 14/14, `test/mt` 60/0, `cli:parity` 24/37, scoreboard
+lb 98/98 + parse 705/701/0 (unchanged), `tools/lint_parity.rb -q` 609 files 385/224
+(unchanged — no lint facts move), `unused_import_parity` 609/609, the harness 30/30
+capability keys + its 4 documented entries, the recovery probe OK, the fixture sweep at
+every baseline (closed 0, added 0), the SimpleGame audit **2 documented entries**
+(`tmp/audit-gates.json`: `documentHighlight` 1 + `hover` 1), **examples same=49
+differ=0**, valgrind over the LSP drive (0 errors) and the headless-Neovim smoke.
+
+**Residuals of the same function, measured and ranked next** (both self-silent where the
+host errors): a bare `null` into a non-nullable target (`return null` for `ptr[int]` /
+`str`; the self's `ty_null` is kind-unknown in `definitely_incompatible`, and
+`types_compatible` has no null arm) and generic-vs-scalar pairs (`ptr[int]` → `str`,
+permissive by the cross-kind fallback; tightening needs the host's positive
+`call_argument_compatible?` split, because `implicit_ref_argument_compatible?` lets a
+`ref[T]` parameter borrow a `T` argument at call sites only).  One adjacent measured gap
+surfaced by the probes: assigning to an immutable *parameter* is not flagged
+(`function f(v: int?): v = null` is a host error; the self's immutable check only tracks
+`let` bindings) — pre-existing, unrelated to this change.
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

@@ -188,6 +188,39 @@ function any_contains_error(args: span[Type]) -> bool:
     return false
 
 
+## True when the type is, or structurally contains, a type variable.  A generic
+## body is instantiated later, and the host does not check it at definition
+## time, so no assignability rule may prove a mismatch through a variable.
+public function contains_type_var(t: Type) -> bool:
+    match t:
+        Type.ty_var:
+            return true
+        Type.ty_nullable as n:
+            return contains_type_var(unsafe: read(n.base))
+        Type.ty_generic as g:
+            return any_contains_var(g.args)
+        Type.ty_imported as im:
+            return any_contains_var(im.args)
+        Type.ty_function as f:
+            if contains_type_var(unsafe: read(f.return_type)):
+                return true
+            return any_contains_var(f.params)
+        Type.ty_tuple as tp:
+            return any_contains_var(tp.elements)
+        _:
+            return false
+
+
+function any_contains_var(args: span[Type]) -> bool:
+    var i: ptr_uint = 0
+    while i < args.len:
+        unsafe:
+            if contains_type_var(read(args.data + i)):
+                return true
+        i += 1
+    return false
+
+
 public function is_bool(t: Type) -> bool:
     match t:
         Type.ty_primitive as p:
@@ -1012,17 +1045,23 @@ public function definitely_incompatible(target: Type, source: Type) -> bool:
     if is_error(target) or is_error(source):
         return false
 
-    # Nullability.  T? ← T? compares bases; T? ← T checks the base; T ← T?
-    # stays permissive because narrowing an optional to its base requires flow
-    # refinement the self-host does not model yet (gap #4).
+    # Nullability.  T? ← T? compares bases; T? ← T checks the base; T ← T? is a
+    # mismatch — the host's `types_compatible?` has no coercion for it and a
+    # guarded use is narrowed to its base by the flow refinement before it
+    # reaches here.  Unresolved components (type variables, errors) stay
+    # permissive.
     let tn = is_nullable_type(target)
     let sn = is_nullable_type(source)
     if tn and sn:
         return definitely_incompatible(unwrap_nullable(target), unwrap_nullable(source))
-    if sn:
-        return false
     if tn:
         return definitely_incompatible(unwrap_nullable(target), source)
+    if sn:
+        if type_kind(target) == kind_unknown or type_kind(unwrap_nullable(source)) == kind_unknown:
+            return false
+        if contains_type_var(target) or contains_type_var(source):
+            return false
+        return true
 
     # Integer ↔ char: any integer (including untagged literals) is assignable
     # to char; char is assignable to any integer.

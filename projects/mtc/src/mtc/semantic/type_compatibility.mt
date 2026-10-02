@@ -89,16 +89,11 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
     if e_nullable and not a_nullable:
         return types_compatible(types.unwrap_nullable(expected), actual, source_expr)
 
-    # 6  Permissive: accept T? → T (flow refinement handles narrowing in
-    #     checked bodies; standalone calls into imported modules use this).
-    if a_nullable and not e_nullable:
-        return true
-
-    # 7  Both nullable: compare the inner types.
+    # 6  Both nullable: compare the inner types.
     if e_nullable and a_nullable:
         return types_compatible(types.unwrap_nullable(expected), types.unwrap_nullable(actual), source_expr)
 
-    # 8  ptr[T]  →  const_ptr[T]   (mutable-to-const pointer coercion).
+    # 7  ptr[T]  →  const_ptr[T]   (mutable-to-const pointer coercion).
     match actual:
         types.Type.ty_generic as ag:
             if ag.name == "ptr":
@@ -115,7 +110,7 @@ public function types_compatible(expected: types.Type, actual: types.Type, sourc
         _:
             pass
 
-    # 8a  own[T]  →  ptr[T] / const_ptr[T]   (owning-to-raw pointer coercion).
+    # 8  own[T]  →  ptr[T] / const_ptr[T]   (owning-to-raw pointer coercion).
     match actual:
         types.Type.ty_generic as ag:
             if ag.name == "own":
