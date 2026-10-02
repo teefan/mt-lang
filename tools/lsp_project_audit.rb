@@ -255,6 +255,23 @@ def identifier_positions(source, cap)
   (0...cap).map { |i| positions[(i * step).floor] }
 end
 
+## Every member-access completion position in `source`: the character just
+## after a `.` that is followed by an identifier (so `a.b` chains, module
+## aliases and `self.x` all count; `..` ranges and float literals do not).
+## Evenly sampled down to `cap`.
+def member_completion_positions(source, cap)
+  positions = []
+  source.each_line.with_index do |line, li|
+    line.to_enum(:scan, /\.(?=[A-Za-z_])/).each do
+      positions << [li, Regexp.last_match.end(0)]
+    end
+  end
+  return positions if cap.zero? || positions.size <= cap
+
+  step = positions.size.fdiv(cap)
+  (0...cap).map { |i| positions[(i * step).floor] }
+end
+
 def relative(path, workspace)
   path.start_with?(workspace) ? path[workspace.length..].sub(%r{\A/}, "") : path
 end
@@ -407,7 +424,22 @@ files.each do |path|
       results["#{rel}@#{line}:#{col} #{method}"] = both(servers, method, params)
     end
   end
-  warn "audited #{rel}: #{positions.size} positions"
+
+  # Member completion at every `.` — the shape the editor drives while typing
+  # (`n.` on a struct value, `rl.` on a module alias).  The host's handler
+  # ignores the text after the cursor, so a valid buffer's dot position covers
+  # the same path as the bare-`n.` mid-edit case.
+  member_positions = member_completion_positions(sources[path], cap)
+  unless only && !"textDocument/completion".include?(only)
+    member_positions.each do |line, col|
+      results["#{rel}@#{line}:#{col} textDocument/completion"] = both(
+        servers, "textDocument/completion",
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => col }
+      )
+    end
+  end
+  warn "audited #{rel}: #{positions.size} positions, #{member_positions.size} member dots"
 end
 
 # workspace/symbol across the project (one query covers the file walk).

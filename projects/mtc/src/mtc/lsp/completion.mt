@@ -33,6 +33,7 @@ import mtc.lsp.workspace_index as workspace_index
 
 ## LSP CompletionItemKind values, matching the host's numbering.
 const KIND_MODULE:      int = 2
+const KIND_MODULE_TYPE: int = 5
 const KIND_METHOD:      int = 6
 const KIND_CLASS:       int = 7
 const KIND_FIELD:       int = 8
@@ -83,7 +84,7 @@ public function handle_completion(
     var prefix = utils.current_word_prefix(source, line, character)
 
     # Import context: filesystem-based module path completion before parsing.
-    var import_items = import_completions(ws, source, line, character, prefix)
+    var import_items = import_completions(ws, source, line, character, prefix, uri)
     if import_items != null:
         proto.write_response_raw(id, unsafe: read(import_items).as_str())
         unsafe: read(import_items).release()
@@ -150,7 +151,7 @@ function dot_receiver_completions(
     let module_text = current_module.as_str()
     # 1. Import alias that resolves to a loadable module.
     if unsafe: read(analysis).imports.contains(receiver):
-        var module_items = module_member_completions(ws, analysis, receiver, prefix, uri)
+        var module_items = module_member_completions(ws, analysis, receiver, prefix, uri, module_text)
         if module_items != null:
             let result = unsafe: read(module_items)
             heap.release(module_items)
@@ -357,6 +358,7 @@ function import_completions(
     line: ptr_uint,
     character: ptr_uint,
     prefix: str,
+    uri: str,
 ) -> ptr[string.String]?:
     let line_text = utils.source_line(source, line + 1)
     let trimmed = line_text.trim_ascii_whitespace()
@@ -431,16 +433,11 @@ function import_completions(
             Result.success as dir_entries:
                 let entries_count = dir_entries.value.len()
                 var ci: ptr_uint = 0
-                while ci < entries_count and count < MAX_COMPLETION_ITEMS:
+                while ci < entries_count:
                     match dir_entries.value.get(ci):
                         Option.some as entry_payload:
                             let entry_name = entry_payload.value
                             if entry_name.starts_with("."):
-                                ci += 1
-                                continue
-
-                            # Skip platform-specific files (auto-resolved by compiler)
-                            if entry_name.ends_with(".linux.mt") or entry_name.ends_with(".windows.mt"):
                                 ci += 1
                                 continue
 
@@ -462,11 +459,11 @@ function import_completions(
 
                             if fs_mod.is_directory(full_path.as_str()):
                                 if dir_contains_mt(full_path.as_str()):
-                                    add_import_item(ref_of(items_json), entry_name, ref_of(seen), ref_of(count), ref_of(first))
+                                    add_import_item(ref_of(items_json), entry_name, uri, ref_of(seen), ref_of(count), ref_of(first))
                             else if entry_name.ends_with(".mt"):
                                 let mod_name = entry_name.slice(0, entry_name.len - 3)
                                 if mod_name.len > 0:
-                                    add_import_item(ref_of(items_json), mod_name, ref_of(seen), ref_of(count), ref_of(first))
+                                    add_import_item(ref_of(items_json), mod_name, uri, ref_of(seen), ref_of(count), ref_of(first))
                         Option.none:
                             pass
                     ci += 1
@@ -483,7 +480,8 @@ function import_completions(
         return null
 
     let alloc = heap.must_alloc[string.String](1)
-    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+    # The host's import path is uncapped.
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), false)
     return alloc
 
 
@@ -491,14 +489,19 @@ function import_completions(
 function add_import_item(
     json_out: ref[string.String],
     name: str,
+    uri: str,
     seen: ref[map_mod.Map[str, bool]],
     count: ref[ptr_uint],
     first: ref[bool],
 ) -> void:
-    if seen.contains(name) or unsafe: read(count) >= MAX_COMPLETION_ITEMS:
+    if seen.contains(name):
         return
     seen.set(name, true)
-    append_plain_item(json_out, name, KIND_MODULE, "module", name, first)
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append("module ")
+    detail.append(name)
+    append_plain_item(json_out, name, KIND_MODULE, detail.as_str(), name, uri, first)
     unsafe:
         read(count) = read(count) + 1
 
@@ -533,11 +536,17 @@ function module_member_completions(
     alias_name: str,
     prefix: str,
     uri: str,
+    current_module: str,
 ) -> ptr[string.String]?:
     let module_ptr = unsafe: read(analysis).imports.get(alias_name)
     if module_ptr == null:
         return null
     let module_name = unsafe: read(module_ptr)
+
+    # The host renders member signatures from the import's *binding* (resolved
+    # types, module-qualified); the same data is the loaded program's analysis
+    # of the target module, cached on the current document's analysis entry.
+    let target = target_module_analysis(ws, unsafe: read(analysis).source_path, module_name)
 
     var roots = ws.effective_module_roots_for("")
     defer: roots.release()
@@ -564,14 +573,38 @@ function module_member_completions(
             # Three passes in the host's bucket order: functions, then values,
             # then types (each in declaration order).  Clients sort by sortText,
             # but the host's array order is what it advertises.
-            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 0, exports_all, ref_of(first), ref_of(count))
-            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 1, exports_all, ref_of(first), ref_of(count))
-            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 2, exports_all, ref_of(first), ref_of(count))
+            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 0, exports_all, target, current_module, ref_of(first), ref_of(count))
+            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 1, exports_all, target, current_module, ref_of(first), ref_of(count))
+            emit_module_members(ref_of(items_json), module_file, module_name, prefix, uri, 2, exports_all, target, current_module, ref_of(first), ref_of(count))
 
             items_json.append("]")
             let alloc = heap.must_alloc[string.String](1)
-            unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
+            # The host's module path is uncapped (its 200-item cap applies to the
+            # global and method-fallback paths only).
+            unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), false)
             return alloc
+
+
+## The loaded analysis of the module `module_name`, from the current document's
+## program (the host's `facts.imports[alias]` binding data — resolved, fully
+## qualified signatures).
+function target_module_analysis(
+    ws: ref[workspace.Workspace],
+    current_path: str,
+    module_name: str,
+) -> Option[analyzer.Analysis]:
+    let entry_ptr = workspace.analysis_entry_for(ws, current_path) else:
+        return Option[analyzer.Analysis].none
+    let program = unsafe: read(entry_ptr).program
+    var i: ptr_uint = 0
+    while i < program.analyses.len():
+        let ap = program.analyses.get(i) else:
+            break
+        let a = unsafe: read(ap)
+        if a.module_name.equal(module_name):
+            return Option[analyzer.Analysis].some(value = a)
+        i += 1
+    return Option[analyzer.Analysis].none
 
 
 ## One pass over a module's declarations, emitting the members of one bucket.
@@ -586,11 +619,13 @@ function emit_module_members(
     uri: str,
     bucket: ptr_uint,
     exports_all: bool,
+    target: Option[analyzer.Analysis],
+    current_module: str,
     first: ref[bool],
     count: ref[ptr_uint],
 ) -> void:
     var di: ptr_uint = 0
-    while di < module_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+    while di < module_file.declarations.len:
         var d: ast.Decl
         unsafe:
             d = read(module_file.declarations.data + di)
@@ -599,20 +634,20 @@ function emit_module_members(
                 if bucket == 0 and (exports_all or f.visibility) and prefix_matches(f.name, prefix):
                     emit_module_function(
                         items_json, f.name, f.method_params, f.return_type,
-                        module_name, uri, first, count)
+                        module_name, uri, target, current_module, first, count)
             ast.Decl.decl_foreign_function as ff:
                 # A raw/binding module (`std.stdio`) declares its API as foreign
                 # functions; without this arm `io.` listed only its types.
                 if bucket == 0 and (exports_all or ff.visibility) and prefix_matches(ff.name, prefix):
                     emit_module_foreign_function(
                         items_json, ff.name, ff.foreign_params, ff.return_type,
-                        module_name, uri, first, count)
+                        module_name, uri, target, current_module, first, count)
             ast.Decl.decl_const as c:
                 if bucket == 1 and (exports_all or c.visibility) and prefix_matches(c.name, prefix):
-                    emit_module_value(items_json, c.name, c.const_type, uri, first, count)
+                    emit_module_value(items_json, c.name, c.const_type, uri, target, current_module, first, count)
             ast.Decl.decl_var as v:
                 if bucket == 1 and (exports_all or v.visibility) and prefix_matches(v.name, prefix):
-                    emit_module_value(items_json, v.name, v.var_type, uri, first, count)
+                    emit_module_value(items_json, v.name, v.var_type, uri, target, current_module, first, count)
             ast.Decl.decl_struct as s:
                 if bucket == 2 and (exports_all or s.visibility) and prefix_matches(s.name, prefix):
                     emit_module_type(items_json, s.name, uri, first, count)
@@ -642,7 +677,10 @@ function emit_module_members(
         di += 1
 
 
-## Emit one exported module function in the host's shape.
+## Emit one exported module function in the host's shape.  The host renders the
+## import binding's resolved signature (`function f(a: std.vec.Vec[T]) -> …`);
+## the target module's loaded analysis carries the same FnSig, so prefer it and
+## keep the AST rendering as the fallback for an unloaded module.
 function emit_module_function(
     items_json: ref[string.String],
     name: str,
@@ -650,9 +688,22 @@ function emit_module_function(
     return_type: ptr[ast.TypeRef]?,
     module_name: str,
     uri: str,
+    target: Option[analyzer.Analysis],
+    current_module: str,
     first: ref[bool],
     count: ref[ptr_uint],
 ) -> void:
+    match target:
+        Option.some as ta:
+            let sig_ptr = ta.value.functions.get(name)
+            if sig_ptr != null:
+                emit_semantic_module_callable(
+                    items_json, name, unsafe: read(sig_ptr), module_name, uri,
+                    current_module, first, count)
+                return
+        Option.none:
+            pass
+
     var params_text = string.String.create()
     defer: params_text.release()
     append_ast_params(ref_of(params_text), params)
@@ -668,18 +719,50 @@ function emit_module_function(
 
     emit_module_callable_item(
         items_json, name, params_text.as_str(), return_text.as_str(), insert_text,
+        if has_snippet: 2 else: 0,
+        module_name, uri, first, count)
+
+
+## A module callable item rendered from its resolved signature.
+function emit_semantic_module_callable(
+    items_json: ref[string.String],
+    name: str,
+    sig: analyzer.FnSig,
+    module_name: str,
+    uri: str,
+    current_module: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var params_text = string.String.create()
+    defer: params_text.release()
+    append_semantic_params(ref_of(params_text), sig.params, current_module)
+
+    var snippet = string.String.create()
+    defer: snippet.release()
+    let has_snippet = append_semantic_snippet(ref_of(snippet), name, sig.params)
+
+    var returns_text = type_render.qualified_name(sig.return_type, current_module)
+    defer: returns_text.release()
+
+    emit_module_callable_item(
+        items_json, name, params_text.as_str(), returns_text.as_str(),
+        if has_snippet: snippet.as_str() else: name,
+        if has_snippet: 2 else: 0,
         module_name, uri, first, count)
 
 
 ## The shared item for an exported module function — local or foreign: detail
 ## `function name(params) -> ret`, sort group `0_`, label details with the
-## parameter list and the module as the description.
+## parameter list and the module as the description.  `insert_format` is 2 only
+## when `insert_text` is a snippet (the host omits `insertTextFormat` otherwise).
 function emit_module_callable_item(
     items_json: ref[string.String],
     name: str,
     params_text: str,
     return_text: str,
     insert_text: str,
+    insert_format: int,
     module_name: str,
     uri: str,
     first: ref[bool],
@@ -707,13 +790,14 @@ function emit_module_callable_item(
 
     append_item_ext(
         items_json, name, KIND_FUNCTION, detail.as_str(), insert_text,
-        sort_text.as_str(), name, uri, 2, label_details.as_str(), module_name, first)
+        sort_text.as_str(), name, uri, insert_format, label_details.as_str(), module_name, first)
     unsafe:
         read(count) = read(count) + 1
 
 
-## A foreign function's completion item, rendered from its foreign parameter
-## list exactly like a local one (`path: str as cstr` in the label details).
+## A foreign function's completion item.  The resolved signature is preferred,
+## as for a local function; the AST rendering (`path: str as cstr`) is the
+## fallback for a module whose analysis is not loaded.
 function emit_module_foreign_function(
     items_json: ref[string.String],
     name: str,
@@ -721,9 +805,22 @@ function emit_module_foreign_function(
     return_type: ptr[ast.TypeRef],
     module_name: str,
     uri: str,
+    target: Option[analyzer.Analysis],
+    current_module: str,
     first: ref[bool],
     count: ref[ptr_uint],
 ) -> void:
+    match target:
+        Option.some as ta:
+            let sig_ptr = ta.value.functions.get(name)
+            if sig_ptr != null:
+                emit_semantic_module_callable(
+                    items_json, name, unsafe: read(sig_ptr), module_name, uri,
+                    current_module, first, count)
+                return
+        Option.none:
+            pass
+
     var params_text = string.String.create()
     defer: params_text.release()
     var snippet = string.String.create()
@@ -752,7 +849,7 @@ function emit_module_foreign_function(
 
     emit_module_callable_item(
         items_json, name, params_text.as_str(), return_text.as_str(),
-        snippet.as_str(), module_name, uri, first, count)
+        snippet.as_str(), 2, module_name, uri, first, count)
 
 
 function emit_module_value(
@@ -760,6 +857,8 @@ function emit_module_value(
     name: str,
     declared: ptr[ast.TypeRef]?,
     uri: str,
+    target: Option[analyzer.Analysis],
+    current_module: str,
     first: ref[bool],
     count: ref[ptr_uint],
 ) -> void:
@@ -767,10 +866,26 @@ function emit_module_value(
     defer: detail.release()
     detail.append(name)
     detail.append(": ")
-    append_ast_type(ref_of(detail), declared, "void")
+    var rendered_semantic = false
+    match target:
+        Option.some as ta:
+            let ty_ptr = ta.value.value_types.get(name)
+            if ty_ptr != null:
+                var rendered = type_render.qualified_name(unsafe: read(ty_ptr), current_module)
+                defer: rendered.release()
+                detail.append(rendered.as_str())
+                rendered_semantic = true
+        Option.none:
+            pass
+    if not rendered_semantic:
+        append_ast_type(ref_of(detail), declared, "void")
 
+    var value_sort = string.String.create()
+    defer: value_sort.release()
+    value_sort.append("1_")
+    value_sort.append(name)
     append_item_ext(
-        items_json, name, KIND_VARIABLE, detail.as_str(), name, "1_", name, uri,
+        items_json, name, KIND_VARIABLE, detail.as_str(), name, value_sort.as_str(), name, uri,
         0, "", "", first)
     unsafe:
         read(count) = read(count) + 1
@@ -793,7 +908,7 @@ function emit_module_type(
     defer: sort_text.release()
     sort_text.append("2_")
     sort_text.append(name)
-    append_item_ext(items_json, name, KIND_CLASS, detail.as_str(), name, sort_text.as_str(), name, uri, 0, "", "", first)
+    append_item_ext(items_json, name, KIND_MODULE_TYPE, detail.as_str(), name, sort_text.as_str(), name, uri, 0, "", "", first)
     unsafe:
         read(count) = read(count) + 1
 
@@ -831,10 +946,14 @@ function type_receiver_completions(
                     detail.append(type_name)
                     detail.append(".")
                     detail.append(mname)
+                    var member_sort = string.String.create()
+                    member_sort.append("0_")
+                    member_sort.append(mname)
                     append_item_ext(
                         ref_of(items_json), mname, KIND_ENUM_MEMBER, detail.as_str(), mname,
-                        "0_", mname, uri, 0, "", "", ref_of(first))
+                        member_sort.as_str(), mname, uri, 0, "", "", ref_of(first))
                     detail.release()
+                    member_sort.release()
                     count += 1
                 mi += 1
 
@@ -2253,12 +2372,16 @@ function append_item_ext(
         json_out.append("\",\"name\":\"")
         proto.append_escaped(json_out, data_name)
         json_out.append("\"}")
-    if label_details.len > 0:
-        json_out.append(",\"labelDetails\":{\"detail\":\"")
-        proto.append_escaped(json_out, label_details)
-        json_out.append("\"")
+    if label_details.len > 0 or label_details_description.len > 0:
+        json_out.append(",\"labelDetails\":{")
+        if label_details.len > 0:
+            json_out.append("\"detail\":\"")
+            proto.append_escaped(json_out, label_details)
+            json_out.append("\"")
+            if label_details_description.len > 0:
+                json_out.append(",")
         if label_details_description.len > 0:
-            json_out.append(",\"description\":\"")
+            json_out.append("\"description\":\"")
             proto.append_escaped(json_out, label_details_description)
             json_out.append("\"")
         json_out.append("}")
@@ -2269,14 +2392,15 @@ function append_item_ext(
     json_out.append("}")
 
 
-## Append one CompletionItem with the label as its sort key and no `data`
-## payload (the import context's shape).
+## Append one import-context CompletionItem in the host's shape (kind Module,
+## `module <name>` detail, `0_` sort group, the current document's `data`).
 function append_plain_item(
     json_out: ref[string.String],
     label: str,
     kind: int,
     detail: str,
     insert: str,
+    uri: str,
     first_var: ref[bool],
 ) -> void:
     if label.len == 0:
@@ -2292,9 +2416,16 @@ function append_plain_item(
     proto.append_escaped(json_out, detail)
     json_out.append("\",\"insertText\":\"")
     proto.append_escaped(json_out, insert)
-    json_out.append("\",\"sortText\":\"")
+    json_out.append("\",\"sortText\":\"0_")
     proto.append_escaped(json_out, label)
-    json_out.append("\"}")
+    json_out.append("\"")
+    if uri.len > 0:
+        json_out.append(",\"data\":{\"uri\":\"")
+        proto.append_escaped(json_out, uri)
+        json_out.append("\",\"name\":\"")
+        proto.append_escaped(json_out, label)
+        json_out.append("\"}")
+    json_out.append("}")
 
 
 ## Wrap a JSON items array in the LSP completion result object.

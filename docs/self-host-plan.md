@@ -2801,6 +2801,64 @@ const mismatches `ubyte`.  Fixing it means threading a folded-constant
 notion into `types_compatible` (or pre-folding at the call sites) — a
 separate analyzer change.
 
+### Completion parity, part 1: the project audit's dot pass (2026-10-02 session 24)
+
+The LSP harness's synthetic completion cases (member, import-member,
+top-level, struct-field) were green, but the *project audit* never requested
+completion at all, so real-project completion was unmeasured.  The audit now
+has a member-completion pass (`member_completion_positions`: the character
+after every `.` followed by an identifier, sampled like the other position
+endpoints), and the first run on SimpleGame read **600 of 619 entries
+differing** — the harness had masked the whole class.
+
+Fixed in this batch (completion.mt unless noted):
+
+- **Module-alias members are uncapped.**  The host's 200-item cap applies to
+  its global and method-fallback paths only; `rl.` answers all 689 members
+  (`isIncomplete: false`).  Module types also carry the host's kind 5.
+- **`labelDetails` is emitted when either part exists** (a no-parameter module
+  function still carries the module as its `description`).
+- **Module-member signatures render from the target module's loaded analysis**
+  (`target_module_analysis`: the current document's program, matched by
+  `module_name`) — the host's `facts.imports[alias]` binding data, with
+  fully-qualified types (`ref[std.vec.Vec[T]]`, `std.iter.Iter[T]`).  The
+  AST-based rendering stays as the fallback for an unloaded module.
+- **`type_render.qualified_name` renders a proc/function's nested types
+  qualified** (`proc(std.async.libuv_runtime.Runtime) -> T`); previously it
+  fell through to `type_to_string` (bare names).
+- **Import completion is the host's shape**: `module <name>` detail, `0_`
+  sort group, the current document's `data`, plus the platform variants
+  (`fs.linux`/`fs.windows`) the self used to skip; the import path is uncapped.
+- **Enum-member and module-value `sortText` carried the name** (`0_idle`,
+  `1_ptr_uint_max`); both were emitting the bare group prefix.
+- **Snippets gate `insertTextFormat`**: the host sets it only when a snippet
+  was produced (a >5-parameter function inserts the bare name), where the
+  module item hardcoded `2`.
+- **Analyzer**: a foreign/extern function's declared type parameters are
+  `ty_var` in its signature, not the suppressed `<error>` (`enter_type_params`
+  on top of `enter_suppressed_type_params`).  The host's binding types carry
+  `T` (`value: T`, `ptr[T]`); call-site checking is unchanged because
+  `check_signature_call` returns early for `is_extern`.
+
+Measured: completion audit **600 → 366 differing entries**; the full matrix
+shows no regressions (hover 1, documentHighlight 1, documentSymbol 1 — the
+documented entries plus the known host first-file race), the harness stays at
+30/30 + 4 documented, and the `n.` `static:create` case on SimpleGame's
+`src/main.mt` is byte-identical to the host (the host renders `static:`-prefixed
+method labels on value receivers; a *type* receiver strips the prefix — both
+already matched).  Three new instruments: the audit's dot pass,
+`tmp/comp_diff.rb` (the diff-family classifier) and `tmp/sg-probe2` (the
+mid-edit `n.` workspace).
+
+**Remaining completion families, ranked** (from the classifier):
+
+| Entries | Family |
+| --- | --- |
+| 49 | Type-receiver misses a receiver type's methods declared in *other* modules (the host's `methods_for_receiver_type` merges the current module + every import; `rl.Color.from_hsv` from std.raylib while the local `extending` block supplies the rest) |
+| ~97 | **Order-only**: same labels/sortTexts, different array order — the merge order above (fields, then current-module methods, then each import's, deduped) |
+| 25 + 18 | The method-fallback path: the host lists its whole method table with raw keys (`static:default`) and takes that path for *any* dot position (its `find_dot_receiver_path` accepts digit/bracket segments the self rejects, so the self falls to the global list instead) |
+| 15 + 15 + 14 + … | Receiver resolution: `Vec[int].` (specialized type receiver), `Option`/`Result` prelude receivers (host lists prelude methods), missing single methods (`as_iter`) |
+
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
 `owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`

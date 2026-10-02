@@ -128,6 +128,27 @@ public function qualified_name(ty: types.Type, current_module: str) -> string.St
             buf.append(base.as_str())
             base.release()
             buf.append("?")
+        types.Type.ty_function as fnt:
+            # The host renders the nested types of a proc/function *qualified*
+            # (`proc(std.async.libuv_runtime.Runtime) -> T`), so the fallback's
+            # `type_to_string` is only right for the `fn <name>` form.
+            if not fnt.is_proc:
+                buf.append("fn ")
+                buf.append(fnt.name)
+            else:
+                buf.append("proc(")
+                var fi: ptr_uint = 0
+                while fi < fnt.params.len:
+                    if fi > 0:
+                        buf.append(", ")
+                    var nested = qualified_name(unsafe: read(fnt.params.data + fi), current_module)
+                    buf.append(nested.as_str())
+                    nested.release()
+                    fi += 1
+                buf.append(") -> ")
+                var returns = qualified_name(unsafe: read(fnt.return_type), current_module)
+                buf.append(returns.as_str())
+                returns.release()
         _:
             buf.append(types.type_to_string(ty))
     return buf

@@ -1633,19 +1633,26 @@ function declare_values_and_functions(ctx: ref[Context], file: ast.SourceFile) -
                         ctx.function_type_params.set(fun.name, fun.type_params)
             ast.Decl.decl_extern_function as ef:
                 enter_suppressed_type_params(ctx, ef.type_params)
+                # The declared type parameters are type *variables* in the
+                # signature (the host's binding types carry `T`); the suppression
+                # above keeps every other unknown name permissive.
+                enter_type_params(ctx, ef.type_params)
                 var extern_ret = types.primitive("void")
                 let er_ptr = ef.return_type
                 if er_ptr != null:
                     extern_ret = resolve_type(ctx, er_ptr)
                 let sig = build_foreign_fn_sig(ctx, ef.name, ef.extern_params, extern_ret)
                 ctx.suppressed_type_names.clear()
+                ctx.type_params.clear()
                 ctx.functions.set(ef.name, sig)
                 record_mutating_param_indices(ctx, ef.name, ef.extern_params)
                 declare_value(ctx, ef.name, ef.line, 1)
             ast.Decl.decl_foreign_function as ff:
                 enter_suppressed_type_params(ctx, ff.type_params)
+                enter_type_params(ctx, ff.type_params)
                 let sig = build_foreign_fn_sig(ctx, ff.name, ff.foreign_params, resolve_type(ctx, ff.return_type))
                 ctx.suppressed_type_names.clear()
+                ctx.type_params.clear()
                 ctx.functions.set(ff.name, sig)
                 record_mutating_param_indices(ctx, ff.name, ff.foreign_params)
                 declare_value(ctx, ff.name, ff.line, 1)
