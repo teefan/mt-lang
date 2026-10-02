@@ -3551,15 +3551,16 @@ items the host does not produce).
 
 Read this order: this §0k → `docs/lsp-design.md` (LSP architecture) →
 `docs/dap-design.md` §10 (DAP gaps) → the gates below.  Rebuild before measuring
-— every harness silently uses a stale `build/stage2/mtc`:
+— every harness silently uses a stale `build/stage2/mtc`.  The LSP iteration loop
+is a `tmp/mtc-dev` build plus the *focused* meter for the class being worked; the
+sweeps below run once per commit, on frozen sources (`tools/gates.sh --run` runs
+the right subset):
 
 ```sh
-ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
-ruby tools/lsp_parity.rb record --server host --out tmp/lsp-host.json --stress
-ruby tools/lsp_parity.rb record --server self --out tmp/lsp-self.json --stress
-ruby tools/lsp_parity.rb compare tmp/lsp-host.json tmp/lsp-self.json --full
-ruby tools/dap_smoke.rb --json tmp/dap.json        # DAP: per-request host/self diff
-tools/bootstrap.sh -j 16                            # fixed point + tests, before every commit
+ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev   # iterate
+tmp/mtc-dev test projects/mtc -I . --timeout 120                       # iterate
+ruby tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame --only <method>
+tools/gates.sh --run                                                   # per commit
 ```
 
 **Closed since the stage list below was written** (details in the stage records
