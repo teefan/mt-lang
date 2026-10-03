@@ -1,18 +1,30 @@
 # Self-Host Plan
 
-> **Starting a session?** Read **"How to start a work session"** below (the tiered
-> gate protocol and the per-workstream entry points), then the *latest* session record
-> in **§0k** and the ledger `~/.commandcode/plans/finish-self-host-full-parity.md`
-> (per-commit verified numbers, the session logs, and the ranked remaining work).
-> The live leads are the newest §0k records, not the older handoff sections.
+> **Starting a session?** Read **"How to start a work session"** below (the entry
+> points and the tiered gate protocol), then **The program** — the single ranked
+> remaining-work list — and the *latest* session record in **§0k**.  The
+> **Ledger** carries the last verified number per gate.  This file is the single
+> self-host planning document: it absorbed the former plan files (the sibling
+> `foundational-blockers` / `lsp-parity` plans and the `~/.commandcode/plans`
+> session plans) on 2026-10-03 (session 25) — the originals are in git history;
+> see *Provenance* at the end.
+
+## Contents
+
+- [How to start a work session](#how-to-start-a-work-session-read-this-first)
+- [The program — ranked remaining work](#the-program--ranked-remaining-work)
+- [Ledger and scoreboard](#ledger-and-scoreboard)
+- §0k — LSP / linter / formatter records and the session history (sessions 4–24)
+- §0j — stress, parse and `lower` records · §0i, §0h, §0a–§0f — older sessions
+- §1–§7 — subsystem records · Appendix (working notes) · Provenance
 
 > **Workstream status (self-host vs `projects/stress`)**: **DONE** — the
 > self-host compiler builds, links and runs `projects/stress` with output and
 > exit status identical to the Ruby host's build (exit 242, empty stdout).  The
 > root causes fixed on the way (task-root proc bridge, proc bodies inside async
 > functions, builtin vector constructors, format-string locals, `inline for`
-> reflection) plus reproduction and verification steps are recorded in
-> [self-host-stress-todo.md](./self-host-stress-todo.md).
+> reflection) plus reproduction and verification steps are in §0j's
+> "The `projects/stress` build — absorbed record" below.
 
 Status: **SELF-HOSTING FIXED POINT ACHIEVED. LSP + DAP + BINDGEN + IMPORTED-BINDINGS COMPLETE.**
 **A real user project outside the repository builds and runs under the
@@ -106,53 +118,46 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: 2026-10-02 session 22 (the analyzer's nullability assignability rule: a
-`T?` source is no longer accepted where a non-nullable slot is expected — the host's
-`types_compatible?` has no such coercion, and a guarded use is narrowed by the flow
-refinement before the check.  The lockstep addition is the binding *storage* type: an
-assignment target is checked against it (the host's `infer_lvalue` →
-`binding.storage_type`), so a binding the refinement narrowed still accepts its
-declared nullable type, and the local-declaration mismatch message and the return
-error's anchor now match the host's.  Flow refinements cover module-level values too
-(the host seeds module bindings into its scopes), which closed the
-`examples/sdl3/misc/clipboard.mt` emit-c difference.  Measured: the probe set
-(nullable sources at returns/arguments/local and global declarations, guarded and
-unguarded) matches the host's messages and positions; `cli:parity` moved 23/38 →
-**24/37** (`check-sema-error` closed); the LSP matrix stays at its 2 documented
-entries.  Remaining measured residuals of the same family, both ranked next: a bare
-`null` into a non-nullable target (`return null` for a `ptr[int]`) and
-generic-vs-scalar pairs (`ptr[int]` → `str`, kept permissive for the `ref[T]` borrow
-coercion) are still self-silent.  A second commit ported the host's
-`inline_if_too_wide?` join simulation: `prefer-inline-if` **213 → 0** self-only and
-`prefer-conditional-expression` **25 → 0**, taking `tools/lint_parity.rb -q` from 385
-agree / 224 differ to **434 agree / 175 differ** (the remaining ranked deltas:
-`owning-release-leak` 602/286, `prefer-struct-with` 93/0, `redundant-cast` 74/22,
-`prefer-try` 64/39, `prefer-let` 51/142).)
-
-The session-21 note is kept in §0k's records.
+Last updated: session 24 close (2026-10-02) — the LSP **completion** class: the
+project audit gained a member-completion pass (`member_completion_positions`) and
+completion moved **600 of 619 entries differing → 366 → 235** across two batches
+(the host's per-receiver merge order, public type aliases in
+`imported_type_members`, alias-qualified type receivers, the order-walking method
+fallback, completion-only dot detection); the full matrix reads **237 = 235
+completion + the 2 documented entries** (`documentHighlight` `lb@704:67`, `hover`
+`type quat` `lb@1653:24`), and every other class is 0.  Session 23 closed
+`owning-release-leak` 602/286 → 0/0, `owning-release-double` 0/12 → 0/0 (the CFG
+precision analysis) and `prefer-struct-with` 93/0 → 0/0 (the host's gates +
+imported-alias resolution), taking the corpus lint to **494 agree / 115 differ**;
+`--sexpr` lower on the same tree reads 39/615/51/0 (the session-17 set).
+Earlier sessions' records are in §0k (session 22's assignability rule and
+`inline_if_too_wide?`; sessions 19–21's corpus work; sessions 15–18's foundational
+blockers; sessions 5–14's LSP pipeline ports).  The plan files were consolidated
+into this document on 2026-10-03 (session 25); see *Provenance*.
 
 ---
 
 ## How to start a work session (read this first)
 
-Entry point for any self-host work: **this file's §0j** (current state, measured
-gates, and the ranked remaining-work table with an approach per item), then the
-workstream doc for the area you are touching:
+Entry point for any self-host work: **The program** below (the single ranked
+remaining-work list, with the approach for each item), then the workstream doc
+for the area you are touching:
 
 | Workstream | Read | Verify with |
 | --- | --- | --- |
-| `lower` dump parity | §0j "Remaining work" (items 1, 4, 6–8, 13–15), §0i roadmap, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min) |
+| LSP completion parity (**active**) | the program's completion track + §0k's session-24 records | `tools/lsp_project_audit.rb --workspace DIR` (its member-completion pass); `tmp/hl_probe.rb --method textDocument/completion` (`--warm` first for the host) |
+| LSP feature parity / audit residue | the program's LSP track + §0k; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host\|self`, `compare`, `--stress`), `tools/lsp_project_audit.rb --workspace DIR` (per-file, every position, both servers live), plus valgrind and the headless-Neovim smoke for behavior changes |
+| Linter corpus residue | the program's linter track + §0k's sessions 19–23 | `ruby tools/lint_parity.rb -q` (609 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
+| `lower` dump parity | the program's `lower` track, §0j's records, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min; quote the set) |
 | Example / vendored-family builds (no known failures since 2026-09-27) | §0j's 2026-09-27 section | the 15 top-level examples, `find examples/sdl3 -name '*.mt'`, a raylib sample |
-| CLI behavior parity | §0j item 10, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
-| LSP feature parity (**in progress**, §0k) | §0k's gap list + the stage 6 capsule, `docs/lsp-design.md`, `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host|self`, `compare`, `--stress`), `tools/lsp_project_audit.rb --workspace DIR` (per-file, every position, both servers live), plus valgrind and the headless-Neovim smoke test for behavior changes |
+| CLI behavior parity | the program's CLI track, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
 | Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (preserve/tidy must stay 702/702; canonical is the comment-reattachment delta) |
-| DAP | `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both] [--json OUT]` — runs a session on both adapters and prints a per-request diff |
+| DAP | the program's DAP track, `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both] [--json OUT]` — runs a session on both adapters and prints a per-request diff |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
 
 **Start by checking what your task can move, not by replaying the matrix.**  The
-last verified numbers per commit are in this file's session records and in the
-ledger (`~/.commandcode/plans/finish-self-host-full-parity.md`); a session only
+**Ledger** below holds the last verified numbers per gate; a session only
 re-measures the classes its change touches, and only when the tree moved (or a
 number looks surprising).  Iterate on the dev compiler
 (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~50 s;
@@ -173,11 +178,19 @@ tools/gates.sh --run           # execute them (logs under tmp/gates/)
 ```
 
 **Never edit sources while a gate runs** — `bootstrap.sh` compiles the working
-tree, so a mid-run edit silently corrupts the result.
+tree, so a mid-run edit silently corrupts the result.  Check the exit status, not
+just the tail.
 
 One command for every counter: `rake "parity:scoreboard"` (cheap sections:
-cli/lex/parse/lint; add `FULL=1` for lower/format/LSP/DAP).  Lint parity has
-its own sweep: `ruby tools/unused_import_parity.rb`.
+cli/lex/parse/lint; add `FULL=1` for lower/format/LSP/DAP).
+
+**HARD RULES (all learned the expensive way):** rebuild before measuring (a stale
+`build/stage2/mtc` is the classic false result; `bootstrap.sh` rewrites
+`version_info.mt`, which makes `sexpr_parity`'s staleness warning fire
+harmlessly); quote *sets* where a counter drifts (sexpr's file count with the
+tmp fixtures, the audit's ±10 between runs); run generated binaries as
+`timeout 10 bash -c 'ulimit -v 20000000; …'`; no hacks — fix root causes; sync
+this file's records + ledger in the same commit as the code change.
 
 ### Phase order and current position
 
@@ -188,65 +201,494 @@ its own sweep: `ruby tools/unused_import_parity.rb`.
    failure in those sweeps.
 1. **`lower` dump parity** — session-17 measurement: **39 match / 615 differ /
    51 host-rejected / 0 self-rejected** (the count drifts with the tmp fixtures;
-   quote the set).  The ranked remaining categories are in §0j — the biggest
+   quote the set).  The ranked items are the program's `lower` track; the biggest
    single mover is item 1 (opaque declaration naming/`forward_declarable`, the
    first difference for all 34 sdl3 files).
-2. **CLI behavior parity** — **23 match / 38 differ / 0 pending** of 61 harness
-   cases (session 17); the differ on message text, output channel and argument
-   precedence (§0j item 10).
-3. **LSP feature parity** — **the active phase** (plan:
-   `docs/lsp-parity-plan.md`; live records in §0k).  Session-17 close: the
-   self-vs-host harness (`tools/lsp_parity.rb`) measures **30/30 capability keys
-   with its 4 documented differing entries**, and the project audit
-   (`tools/lsp_project_audit.rb`) 6456 entries / **4 differ** — `diagnostic` 2
-   (the linter's emission order plus `constant-condition` and the
-   `owning-release` pair), `documentHighlight` 1 (the host's warm-facts snapshot
-   carry-forward, documented) and `hover` 1 (`type quat`'s index coverage) —
-   with `documentSymbol`, `semanticTokens`, codeLens, foldingRange, inlayHint,
-   documentLink, workspace/symbol and definition/declaration/typeDefinition/
-   implementation/references all **0**.  Completion gained imported-type member
-   lists this session (`n.` on `node.Node` is byte-identical to the host).  The
-   self-host survives the whole stress corpus without a crash or hang, and a real
+2. **CLI behavior parity** — **24 match / 37 differ / 0 pending** of 61 harness
+   cases (session 22); the differ on message text, output channel and argument
+   precedence.  The unported subsystems are the program's CLI track.
+3. **LSP feature parity** — **the active phase**.  The harness is at 30/30
+   capability keys + its 4 documented differing entries; the project audit is at
+   **237 = 235 completion + the 2 documented** after session 24 (completion
+   600 → 366 → 235); every other class is 0.  The open work is the program's
+   completion track, then the readiness residue (F9/C2–C6/D2–D4).  Recovery
+   parity holds, the stress corpus runs without a crash or hang, and a real
    VS Code session runs clean under valgrind.
 4. **DAP** — phase 1 (process backend, 29 handlers) delivered; the lldb-dap
    bridge is now feasible (`std/libuv.mt` poll + `std/async`) but unstarted
-   (`dap-design.md` §10).  Session-17 smoke: the self's `*launch(.mt)` reports
-   `error: Milk Tea binary not found: src/main` where the host is `ok` — the
-   build-on-launch path is the first DAP item.
+   (`dap-design.md` §10).  The self's `*launch(.mt)` reports `error: Milk Tea
+   binary not found: src/main` where the host is `ok` — build-on-launch is the
+   first DAP item (program track 5).
 
-### First steps for the next session (2026-09-27 session-2 handoff)
+### Session kickoff prompt (copy-paste template)
 
-Nothing is broken: the builds are at parity and the reported `MilkTea/SimpleGame`
-project builds and runs, so every remaining item is a *fidelity* or *breadth*
-item, and each one is verified by a counter moving (not by a new passing
-program).  Suggested order:
+```
+Continue the Milk Tea self-host work in /home/teefan/Projects/Ruby/mt-lang
+    (branch `selfhost`). Work in tiers: iterate on the dev compiler
+    (ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev, ~50 s;
+    tmp/mtc-dev test projects/mtc -I . --timeout 120), measure only the class you
+    touch, and run the tier-2 proofs once on frozen sources — `tools/gates.sh`
+    prints the set (or `--run` executes it, logs in tmp/gates/).  Do not replay
+    the ledger's verified baselines unless the tree moved.
 
-1. **Re-measure before changing anything** (a stale binary is the classic false
-   result; note the bootstrap rewrites `version_info.mt` after stage2 is built,
-   which makes `sexpr_parity`'s staleness warning fire harmlessly):
-   ```sh
-   ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
-   ruby tools/sexpr_parity.rb lower -q -j 16      # session-17: 39 match / 615 differ / 51 host-rejected / 0 self-rejected
-   rake "cli:parity"                              # session-17: 23 match / 38 differ / 0 pending
-   ```
-2. **The biggest single mover** — §0j item 1 (opaque `IR::OpaqueDecl`
-   naming/`forward_declarable`: the first difference for all 34 sdl3 files; the
-   C backend's opaque typedef emission moves with it).
-3. **The two localized next-first-differences** — §0j item 13 (a global
-   initialized from an imported constant: `box3d/ragdoll` + `box_stack`) and item
-   14 (refined non-null operand types after a null check: `data_structures` +
-   `reflection_advanced`).
-4. **Then the residue** — items 4, 6, 7, 8 (event fields, function-type names,
-   include sets, declaration ordering/const-folding) and item 15 (proc
-   representation, §0i item 2 — the largest single item).
-5. **CLI message parity** (§0j item 10) and the **LSP leftovers** (§0k: the
-   `debugInfo` remainder, parser-recovery parity, the feature-audit items) and
-   **DAP** (`dap-design.md` §10) are independent tracks; pick by user value.
+    Read first: this file's "How to start a work session", "The program" (pick
+    the next ranked item), the Ledger, and the latest §0k records.
 
-Each change still ends with `tools/bootstrap.sh -j 16` (fixed point + compiler
-self-test) plus the sweep that covers the area — `sexpr_parity` for lowering,
-`rake "cli:parity"` for CLI text, `tools/lsp_parity.rb` for LSP,
-`tools/dap_smoke.rb` for DAP.
+    STEP 1 — one item per commit from the program's ranked list; each commit ends
+    with the gate set and this file's records + ledger synced in the same commit;
+    commit trailer: Co-authored-by: CommandCodeBot <noreply@commandcode.ai>.
+
+    HARD RULES: never edit sources while a gate runs (bootstrap compiles the
+    working tree — check the exit status, not the tail); rebuild before
+    measuring; quote *sets* where a counter drifts; run generated binaries as
+    `timeout 10 bash -c 'ulimit -v 20000000; …'`; no hacks — fix root causes.
+```
+
+## The program — ranked remaining work
+
+**Goal.** Close every remaining self-host gap so `build/stage2/mtc` matches the
+Ruby host (`ruby -Ilib bin/mtc`) on observable behavior everywhere — `--sexpr`
+dumps, CLI messages/commands, LSP, DAP, linter, formatter, imported bindings,
+bindgen — while keeping the self-host's existing deliberate improvements
+(malformed-frame recovery, synchronous facts with no lag, speed, determinism).
+"Parity" means byte-identical where a harness can compare; "better" means
+documented deliberate extensions only.
+
+**Confirmed scope decisions (2026-09-27).** (1) **All** unported CLI subsystems
+are in scope: `deps`, `docs`, wasm/emcc + preview, `--bundle`/`--archive`,
+`--jobs`, `toolchain bootstrap/tools`, `--kind static|shared`, the bindgen policy
+flags — sequenced after the parity-critical tracks.  (2) Ordering: finish the LSP
+workstreams first (the completion class, then the readiness residue), then
+`lower`, CLI, DAP, bindings/bindgen, and the final verification — pick by user
+value where the tracks are independent.  (3) The lldb-dap bridge is included (the
+VS Code extension's default backend).
+
+### Definition of done (per track)
+
+- **`lower`**: 0 differing files in `sexpr_parity lower` (residuals only if
+  proven host artifacts, each documented); lex/parse stay 0-diff; no build
+  regressions anywhere.
+- **CLI**: every host command/flag exists with equivalent behavior;
+  `cli:parity` all-match; `deps`/`docs`/wasm/bundle/jobs/toolchain functional.
+- **LSP**: harness at 0 unintended entries (only the documented rows); the
+  audit's completion class closed (0 unintended); `milkTea/debugInfo` byte-equal
+  after object-id normalization; `[LSP perf]` ≤ ~10 ms per edit after the
+  per-module cache; valgrind clean.
+- **Linter**: per-rule counts/messages/severities/positions equal the host on
+  `language_baseline.mt`, `memory_stress_test.mt` **and** the 609-file corpus
+  sweep.
+- **DAP**: a real VS Code session debugs a `.mt` program end-to-end with the
+  default `lldb-dap` backend (breakpoints, stepping, evaluate; frames/locals
+  shown as Milk Tea names via the debug map); process backend unchanged;
+  `dap_smoke` green on both.
+- **Bindings/bindgen**: `mtc imported-bindings --all --check` 28/28 verified (or
+  each residual delta justified as cosmetic with evidence); bindgen output
+  reproducible for the repo's bindings.
+- **Formatter**: 702/702 in all three modes stays.
+
+### Track 1 — LSP completion parity (ACTIVE at session 24 close)
+
+Session 24 (the user's `n.` report) added the audit's member-completion pass and
+took the completion class from **600 of 619 entries differing** to **235** (366
+after part 1).  Remaining families, ranked (labels are order-only unless noted):
+
+| Entries | Family | Approach |
+| --- | --- | --- |
+| ~120 | **Order-only**: the same labels, a different array order | the host's merge order is per *type object* across every import; the self's per-module entry order still differs for some receivers (e.g. `docs/data_structures.mt@260`) |
+| 15 | A module that *extends* a type it does not declare has no `<module>.<Type>` entry, so its methods are missing from the merge (`std.iter`'s `Vec.as_iter`) | collect method-only entries from each binding's method table |
+| ~26 | Prelude `Option`/`Result` receivers: the host's `BUILTIN_TYPE_METHOD_SIGNATURES` supplies `unwrap`/`expect`/…; the self's prelude stubs are a different set (and absent from the fallback, correctly) | align the prelude signature set |
+| 15 | `vec.Vec[int].`-style specialized type receivers fall through to the fallback instead of the type-receiver path | route them through it |
+| ~30 | Small resolved-vs-unresolved receiver differences (`lb@123:16`'s `a,b,both`, `lb@1577:27`, `lb@1653`-style positions) | classify per entry with `tmp/comp_diff.rb` |
+
+Tools: the audit's `member_completion_positions` pass, `tmp/comp_diff.rb`
+(per-entry label-set / field / order grouping), `tmp/hl_probe.rb --method
+textDocument/completion` — `--warm` sends a diagnostic first (the host answers
+completion only once its facts exist) and the two servers should be probed in
+separate runs.  Already ported (batch 1–2): `merged_receiver_methods` (current
+module + every import in file order, deduped), `imported_type_members` with
+public type aliases, alias-qualified type receivers, the order-walking method
+fallback, completion-only dot detection (`cursor.member_receiver_at`).  Records:
+§0k, "Completion parity, part 1/2".
+
+### Track 2 — Linter corpus residue
+
+`tools/lint_parity.rb -q` over `std examples projects/mtc/src`: 609 files,
+**494 agree / 115 differ** (session 23 close; from 357/252 in session 19).
+Closed so far: `redundant-unsafe` 807 → 0, `owning-release-leak` 602/286 → 0/0,
+`owning-release-double` 0/12 → 0/0, `prefer-inline-if` 213 → 0,
+`prefer-struct-with` 93/0 → 0/0, `prefer-conditional-expression` 25 → 0.
+Remaining ranked deltas (self-extra / host-only): `redundant-cast` 74/22,
+`prefer-try` 64/39, `prefer-let` 51/142, `borrow-and-mutate` 27/0, `shadow` 20/0,
+`prefer-own-ptr` 17/45, `constant-condition` 11/1, `prefer-or-pattern` 10/4,
+`loop-single-iteration` 8/2, `unreachable-code` 3/0, `prefer-var-else` 2/0.  All
+differences are pre-existing (the pre-change binary's output is identical on
+them); quote *sets*, not just counts.  Tool: `tools/lint_parity.rb` with
+`--host-cache FILE` (warm fill ~4 min, then ~20 s per full run).
+
+Also open from the analyzer track (they gate audit entries and lint rows):
+
+- **The session-22 residual assignability pair**: (a) a bare `null` into a
+  non-nullable target (`return null` for a `ptr[int]`/`str`; `ty_null` is
+  kind-unknown in `definitely_incompatible` and `types_compatible` has no null
+  arm) and (b) generic-vs-scalar pairs (`ptr[int]` → `str`; tightening needs the
+  host's positive `call_argument_compatible?`/
+  `implicit_ref_argument_compatible?` split so the `ref[T]` call-site borrow
+  keeps working).  Also measured: assigning to an immutable parameter is
+  unflagged (the immutable check tracks only `let` bindings).
+- **Constant-value coercion** (session 23): a constant whose folded value fits a
+  narrow integer target is host-accepted and self-rejected (`return
+  sdl.ALPHA_OPAQUE` from `-> ubyte`, `let x: ubyte = sdl.ALPHA_OPAQUE`, the same
+  in a field/argument).  The host folds (`constant_value_for`); the self's
+  `is_numeric_literal_valued_expr` sees only literal nodes/`if`-chains.  Evidence
+  `tmp/probe-const-narrow.mt`.
+
+Records: §0k sessions 19–23.
+
+### Track 3 — Compiler `lower` dump parity
+
+Work in §0j's ranked order; after **each** item re-run
+`ruby tools/sexpr_parity.rb lower -q -j 16` and re-rank.  Current set:
+**39 match / 615 differ / 51 host-rejected / 0 self-rejected** (session 17; the
+file count drifts with the tmp fixtures — quote the set).
+
+1. **Opaque declarations** (`IR::OpaqueDecl` item 1; the first difference for all
+   34 sdl3 files; dump-only, builds fixed).  `lowering.mt:1473
+   collect_opaque_decls` (wired `:590`) must keep the *declared* name, compute
+   `linkage_name` from the resolved backing type and `forward_declarable` per the
+   host rule (`core/lowering/utils.rb:1059-1069`, `declarations.rb:182-194`);
+   `c_backend.mt:7367 emit_opaque_typedefs` (`:253`) becomes the host's
+   `emit_forward_declarations` (`c_backend/type_declaration.rb:19`): `typedef
+   struct <linkage> <linkage>;` for forward-declarable entries, deduped by
+   linkage; the `c_type` opaque arm (`c_backend.mt:2080-2088`) keeps using the
+   backing name.  Re-verify opaque-as-pointer
+   (`projects/mtc/test/c_backend_test.mt:385`) and the sdl3 sweep.
+2. **A global initialized from an imported constant** (item 13; `box3d/ragdoll` +
+   `box_stack`'s first difference).  In the `decl_var` arm
+   (`lowering.mt:1247-1276`) try `try_const_typed_value_ir` (`:18553`) /
+   `try_const_value_ir` (`:18024`) before `lower_expr`, mirroring the host's
+   `lower_static_storage_initializer` + `rewrite_static_storage_initializer`
+   (`lowering/utils.rb:335-419`, `declarations.rb:166-174`).  Add a lowering test
+   for a global initialized from an imported const.
+3. **Refined (non-null) operand types after a null check** (item 14;
+   `data_structures` + `reflection_advanced`'s first difference).  **Verify
+   first** — F2's continuation refinement (session 15) may already have closed
+   this dump difference; if not, port the refined-type recording into
+   `expr_type` for guarded uses (`analyzer.mt`'s `flow_types` record is the base).
+4. **Event fields** (item 4; `event_stress_test`).  `lower_struct_decl`
+   (`lowering.mt:13974`, rewrite `:13987-13991`, push `:14002`) must emit
+   `IR::Field(name = "__event_<name>", ty = <ty_event>)` (host
+   `declarations.rb:239`, `Types::Event#hidden_field_name` `types.rb:775`);
+   adjust the analyzer's `FieldEntry` (`analyzer.mt:1062`) if the field name is
+   sourced there.
+5. **Function-type names** (item 6) — **DONE (session 16, F5, `6ad423ce`)**:
+   `ty_function` carries the callee's name, `type_to_string` renders `fn <name>`
+   and `sexpr.mt` emits it.  Keep as a regression watch only.
+6. **Include set** (item 7; `box2d/drop`).  `collect_includes`
+   (`lowering.mt:1705`) iterates canonical post-order; the host iterates its
+   analysis cache and its directives come from the raw-bindings registry
+   (`lowering/scans.rb:45`, `module_loader.rb:233`,
+   `bindings/raw_bindings/defaults.rb` — raymath `:742`, math `:871`).  Add each
+   library's include directives to `imported_bindings/registry.mt` (or a
+   parallel raw-bindings table), drive `collect_includes` and
+   `build.mt:253 collect_binding_flags` from it, and pin the emitted order to
+   the host's.
+7. **Item 8 sub-items.**  (a) *Declaration ordering* (`ClockSync` vs
+   `std_net_recv_impl_frame`): diff the host's seed list
+   (`c_backend.rb:191-196`) against `topo_sort_types`' node construction
+   (`c_backend.mt:3584-3645`).  (b) *Enum-member + const folding shape*
+   (`errno_test.mt`): extend `imported_const_value_ir` (`lowering.mt:18705`) /
+   `try_const_member_ir` (`:18737`) to resolve `alias.EnumType.MEMBER` to its
+   integer (host `resolve_type_member_const_value` +
+   `resolve_imported_module_const_value`, `resolve.rb:1515-1599`).
+   (c) *Variant-match goto* residual (1 file): diff `lower_variant_match_goto`
+   (`:15556`) arm-by-arm against `block.rb:936-1079`.
+8. **Proc representation** (item 15, §0i roadmap item 2 — the largest single
+   item), staged A→D.  Self-host today: type refs and literals materialize as
+   `ty_named(mt_proc_*)` structs (`lowering.mt:4344-4366, 13111-13196`); the
+   analyzer already carries `ty_function(is_proc)` and `sexpr.mt:545-559`
+   renders it.  Two doc corrections: the host has **no** `__setup_env` function
+   (it inlines env setup, `lowering/block.rb:106-153`) — the separate one is
+   self-host-only (`lowering.mt:6013, 6097-6159`); the host allocates envs with
+   `mt_async_alloc/free` (`block.rb:123`, `proc.rb:82`) vs raw `malloc/free`
+   (`lowering.mt:6123, 6264`).
+   - **A (dump-visible, low risk):** keep runtime helpers and
+     env/invoke/release/retain names; make the lowering carry
+     `ty_function(is_proc=true)` as the proc value type (as the analyzer does)
+     and have the C backend synthesize the `mt_proc_*` typedef from the type
+     (host `c_backend/type_collectors.rb:468-729`, `type_system.rb:214`).
+     `is_proc_type` accepts both forms during migration.
+   - **B:** align the C struct name to the host's `mt_proc_proc_<ret>_<params>`
+     (`c_naming.mt:95`, `proc_type_name_from_signature`).
+   - **C:** IR shape — inline env setup and switch to `mt_async_alloc/free`.
+   - **D (highest risk):** port the contained-proc retain/release lifecycle
+     (`lowering/proc.rb:276-362`: local decls, struct fields, async frames; the
+     self-host has none today).  Verify against the host's lifecycle cases
+     (`test/compiler/c/basic_2_test.rb:1819-1965, 2639-2722`) and the fixed
+     point — the compiler's own sources use procs heavily (~29 files).
+9. **§0i residue sweep** (visible beyond each file's first difference; lowest
+   priority, 2–3 per commit, driven by per-file diffs): `let…else` guard temp
+   naming (`__mt_guard_N` vs the binding's name), nested struct C names
+   (`<Parent>_<Child>`, union `<Variant>_data`), generic-instance ordering,
+   parallel-for/detach naming (`mt_pfor_cap_*`/`mt_pfor_work_*`/
+   `mt_spawn_work_*`), for-loop `__mt_for_stop_N` hoisting, integer-promotion
+   casts in bit ops.
+10. **Tail loop:** repeat {re-run sweep → take the largest remaining category →
+    fix → regression test} until `lower` is 0 differ.  Every C-side change also
+    gets the §2.5-style formatting-independent check (external symbol sets,
+    array lengths); proc work additionally gets an alloc/free balance check.
+
+Gates per item: bootstrap + `test/mt` + `sexpr_parity` lex/parse/lower +
+examples 15/15, sdl3 34/34, a raylib sample; new tests in
+`projects/mtc/test/lowering_test.mt` / `c_backend_test.mt` / `semantic_test.mt`.
+
+### Track 4 — CLI parity (messages, then commands, then subsystems)
+
+1. **Message/channel/precedence parity** — enumerate the 37 differing cases with
+   `ruby tools/cli_parity.rb --max-diffs 37` (add `--keep` to dump per-case
+   `host/self.{out,err,rc}` under `tmp/cli-parity/cases/`); fix each to
+   byte-equal (examples: `std show` prints to stdout instead of stderr;
+   `build --bogus` reports "accepts a single source path" instead of "unknown
+   build option").  Exit: 61/61 on the current corpus.
+2. **Cheap flags/subcommands**: `test --jobs N` (port the host's fork-per-file,
+   order-preserving parallel runner, `cli/commands/test.rb:281-335`) and stop
+   ignoring `--cc/--profile/--platform`; `build --kind static|shared`
+   (`tooling/build.rb` kind handling); `toolchain bootstrap`/`toolchain tools`
+   (`toolchain_cli.rb:68-205`); `bindgen
+   --nullable-policy/--nullable-report/--clang-arg`.
+3. **`--bundle`/`--archive`** (host `build.rb:143-164, 459-464, 962-1032`;
+   `asset_pack.rb` MTAP).  `std/tar.mt` and `std/gzip.mt` already exist —
+   implement the archive in-language.  Verify: `tar tzf` lists it, extraction
+   runs the program, and each host consumes the other's archive.
+4. **Wasm/emcc + preview** — `build.mt` currently ignores `Platform.wasm`.  Port
+   `compile_wasm` + shell rendering (`build.rb:26-69, 704-779, 900-937,
+   953-960`, `templates/wasm_shell.html`), `--preload-file` for `build.assets`,
+   `.html` output, and the `run --platform wasm` preview server
+   (`run.rb:11-207`) on `std/http/server.mt`.  Detect `$EMCC`/`emcc` in
+   `toolchain doctor`; if emcc is absent, reproduce the host's error text.
+   Verify with emcc installed and byte-compare the emitted HTML shell.
+5. **`docs`** — port `cli/commands/docs.rb` + `tooling/docs_app.rb` (Sinatra)
+   routes (`/`, `/reference`, `/stdlib`, `/stdlib/:name`, `/api/search`) onto
+   `std/http/server.mt`, reusing the repo's `docs/` assets and `snapshot.js`
+   verbatim; `--port/-p`, `--open/-o`, the host's
+   `Serving Milk Tea docs at <url>` line.  Acceptance: functional parity (same
+   routes/URLs/content), not byte-identical HTML.
+6. **`deps` (largest subsystem, ~3,000 lines + 485-line CLI)** — port
+   `lib/milk_tea/packages/*` (manifest, manifest_editor, lock, graph,
+   dependency_solver, source_resolver, source_fetcher, source_cache,
+   registry_store, registry_metadata_provider, version, atomic_write, services)
+   into `projects/mtc/src/mtc/packages/*.mt` +
+   `deps add|remove|update|tree|lock|publish|fetch`; extend
+   `loader/package_manifest.mt` (currently `source_root` only) into the full
+   manifest/graph, then wire `--locked`/`--frozen` and package-graph resolution
+   into `build`/`run`/`check` (the host's `PackageGraph.load` path).  Network via
+   `std/http`.  Verify against the host's package fixtures (adapt
+   `test/packages/*` into MT tests) and a local-registry probe.
+7. **Harness**: add `cli_parity.rb` cases for every command/flag above and
+   delete the matching `KNOWN_GAPS` entries as they land; exit: all cases match.
+
+### Track 5 — DAP (debug map → build-on-launch → pause/modules → lldb-dap bridge)
+
+1. **Debug map (prerequisite).**  New `dap/debug_map.mt`: walk
+   `ir.Program.functions` (`ir.mt:191-226`) collecting params and `stmt_local`
+   locals (`:110`) with line/`source_path`, serialize the host's shape
+   (`{version, functions:[{name,cName,params,locals,sourcePath,line}],
+   binaryPath, programSourcePath}` — `tooling/debug_map.rb:9-50,130-196`) and
+   write `<output>.mtdbg.json` from `build.mt` after a successful link
+   (`build.mt:97-158`).  Add the loader + frame/variable/expression rewriters of
+   `dap/server/debug_map.rb:45-225`.
+2. **Build-on-launch.**  `dap/utilities.mt resolve_launch_program` (`:17-41`):
+   for a `.mt` source, spawn the running compiler (`/proc/self/exe`) as
+   `mtc build <program> -o <tmp>/<name> --profile debug`, track temp dirs for
+   cleanup, return the runnable path and load its debug map (host
+   `dap/server/launch.rb:120-153`).
+3. **Pause diagnostics + `modules`.**  Dispatch `modules` in
+   `handlers.mt:27-93` and load the map from the backend's response (host
+   `debug_map.rb:13-36`); make `handle_pause` emit the host's console `output`
+   event built from a `stackTrace` (`pause_diagnostics.rb:7-53`).
+4. **lldb-dap bridge (largest/riskiest).**  New `dap/lldb_backend.mt` + an
+   fd-parameterized `protocol.mt` (readers/writers are stdio-only today,
+   `:32-223`) + a `server.mt` loop that runs a libuv poll loop when
+   `--backend=lldb-dap` (`std/libuv.mt poll_init/start :354-357`, `std/async`,
+   the pattern in `std/tls.mt:242-299`).  Single-threaded state machine: pending
+   table for client→adapter responses, reverse adapter→client requests with
+   their own pending table + timeout and capability merging, adapter
+   `initialized` suppressed, stderr drained, `--adapter-path` parsed (the
+   extension sends it), shutdown ordering.  Reference:
+   `dap/lldb_dap_backend.rb` (153 lines) + `dap/server/lldb_backend.rb:7-213,349-361`.
+5. **Verification.**  Extend `tools/dap_smoke.rb`: per-server `--backend`,
+   build the smoke program with *each* server (so the self emits the map), and
+   add the lldb section (breakpoint → `stopped` → `stackTrace` shows Milk Tea
+   names → scopes/variables → `evaluate`/`next`/`stepIn`/`stepOut`/`continue` →
+   `modules` → pause console output).  Finish with a real xvfb VS Code session
+   on the default backend.
+
+### Track 6 — Imported bindings and bindgen
+
+1. **OpenGL naming transforms** — port the six tables + seven functions
+   (`bindings/imported_bindings/naming.rb:7-280`) into
+   `imported_bindings/naming.mt`; wire the call sites (host
+   `generator.rb:707,875`) and add the missing `snake_case` trailing
+   normalization (`naming.rb:259`).
+2. **28-binding verification** — make `mtc imported-bindings --all --check` emit
+   a machine-readable report and add `tools/imported_bindings_parity.rb` that
+   prints the per-binding delta categories (baseline 3 verified / 25 changed,
+   cosmetic emitter gaps).  Close them to 28/28 (the named raylib Quaternion
+   member-ordering delta included) or justify any residual byte-for-byte.
+3. **Bindgen gaps (§6.7)** — header-provenance filter in `walk`
+   (`bindgen.mt:346-445`; host `ast_parser.rb:105-132`,
+   `allowed_declaration_name?`), unknown-type policy instead of echoing bare
+   names (`bindgen.mt:259`; host `type_mapper.rb:62` + `declaration.rb:123`),
+   nested `const char*` → `cstr` in the pointer branch (`bindgen.mt:169-190`;
+   host `type_mapper.rb:21-22,528-532`), and the typedef record/enum alias maps
+   (`bindgen.mt:730-737`; host `ast_parser.rb:159-176`,
+   `synthesize_typedef_dependency:326-337`).  Verify by regenerating the repo's
+   `std/c/*.mt` and diffing against the checked-in files (and the host's output).
+
+### Track 7 — LSP readiness and residue
+
+- **F9 readiness foundations (C2/C3).**  `ScanFacts` is never released (session 14
+  extended it with the binding vector and the type-parameter scopes); the
+  reference index keeps an owned copy of every noted document's text (C2);
+  `note_document_tokens` re-reads and re-hashes per request (C3).  Bound both and
+  cache by (mtime, size)/content hash; verify with a long-session soak and
+  valgrind (~12.7 MB "definitely lost" over the session-19 harness drive, 0
+  memory errors).
+- **C4 large files/workspaces.**  Add a soak target (≥5k lines, ≥10k requests,
+  mixed methods, timeouts + valgrind + RSS ceiling) to the gates.
+- **C5 client behaviours.**  workspace folders, `didChangeConfiguration`, watched
+  files, `includeDeclaration: false`, cancellation, closed-file edits —
+  cross-check against the host and add harness cases for any that differ.
+- **C6 deliberate differences, one table.**  Keep and document: malformed-frame
+  recovery, synchronous facts (no lag), faster cold start, the recovery-adjacent
+  differences Track A left, the host's first-file `documentSymbol` race, the
+  `documentHighlight` snapshot carry-forward and the `type quat` asynchronous
+  location (`docs/lsp-design.md` §8 is the canonical table).
+- **D2/D3.**  `tools/lsp_project_audit.rb --canonical` (or a documented
+  substitute) to pin the request history so the ±10 drift disappears; an LSP row
+  in `tools/parity_scoreboard.rb` (verify current status).  D4: keep the standing
+  gates exactly as this file's protocol and AGENTS.md list them.
+- **Stage-plan residue (absorbed; verify each against §0k before starting):**
+  - **per-module `ModuleCache`** (edit-latency foundation; closes the
+    re-parse/re-analyze of the whole import closure on each content version —
+    the remaining 39 ms → target ≤ ~10 ms/edit on `SimpleGame/src/main.mt`).
+    Design: `lsp.Workspace`-owned cache keyed by resolved path →
+    `{content_hash, owned source, the SAME AST instance (resolved_expr_types is
+    pointer-keyed), analysis, ModuleBinding, lex/parse diagnostics, direct-import
+    versions}`; `module_loader.check_program_with_source` consults it,
+    `parse_all` skips unmodified modules, `check_and_bind_module` reuses when the
+    module's hash and every direct import's version are unchanged;
+    `lsp/semantic_tokens.mt`'s `register_resolved_import`/`build_scan_facts` read
+    the alias surface from it.  Verify with the dependency-edit probe
+    (edit `std/vec.mt` → a dependent's diagnostics refresh) and valgrind.
+  - **`reserved-primitive-name --fix` use-site renaming** (stage 8): multi-site
+    edits + collision resolution (`resolve_reserved_primitive_name_conflicts!`),
+    `<name>_value` suggestion, `column`/`length`/`symbol_name` on the warning;
+    byte parity vs the host `--fix`.
+  - **`prefer-inline-methods` auto-fix** (stage 10): port
+    `prefer_inline_methods_edits`, add to `fixable_codes()` — `--fix`,
+    `source.fixAll` and the quickfix all see it (host
+    `fix_engine.rb:161-…`, title "Inline methods into struct").
+  - **Stage-14 leftovers:** `call_hierarchy` imported/module-qualified callees
+    and extending methods (`call_hierarchy.rb:7-45`); `linked_editing_range`
+    null unless a local binding (`linked_editing_range.rb:7-25`,
+    `rename.rb:302-326`); `typeDefinition`'s surviving null path for imported
+    functions/methods (`definition.rb:27-130, 284-330`); `inlay_hints`
+    receiver-aware callee resolution **and** the host's inferred return-type
+    hints (`inlay_hints.rb:39-97, 143`); `execute_command` unknown commands
+    answer `null`, not `-32601`.  (The module-symbol wrapper landed in session
+    14 — do not redo it.)
+  - **`static_type_method_references`** (stage 15): port
+    `resolve_static_type_reference_target` + `static_type_method_references`
+    into `handle_references` and the code-lens count (`references.rb:7-45`,
+    `completion.rb:560-690`, `code_lens.rb:90`).
+  - **Quickfix extras** (stage 16): `Cast expression to <type>` for
+    `cannot assign …` (parenthesize non-simple values, wrap in `unsafe:` if
+    required); `Import <module>` for unknown-name/type diagnostics
+    (`code_actions.rb:38-55, 265-285`); titles byte-equal.
+  - **`milkTea/debugInfo` byte-parity** (stage 17, highest-risk; partial today —
+    the matrix's 4 documented entries include its remainder).  The absorbed
+    sub-steps: section order/envelope (Header, Tokens, AST, Parse Errors, Facts,
+    Bindings, Diagnostics; drop the self-only `Workspace` section); the
+    histogram tie order (port `ruby_qsort` for that exact sort); the AST section
+    (`format_ast`/`compact_ast_repr` + the host's node-id semantics
+    (`core/ast.rb:316-356`)); the Facts section (`format_facts` shapes); the
+    Bindings section (binding-id allocation in the host's order +
+    `binding_types`, the 30-entry cap); the Diagnostics section; and the
+    harness `normalize` extension for Ruby `object_id` values.
+  - **`format --timings`** (stage 18): the host's phase breakdown in the
+    host's output shape (`formatter.rb:37-59`,
+    `cli/commands/format.rb:173-196`).
+  - **The linter's `:fast`/`:full` tier flag** (stage 11's first half):
+    `LintOptions.lint_tier` with the host's `full_tier?` gating; the CLI and
+    LSP pass `:full` like the host CLI, and diagnostics *scheduling* stays out
+    of scope.  Verify the current state first (§7.3 lists it as open).
+- **The documented entries stay documented** unless their machinery is built for
+  another reason: the harness's 4 (debugInfo remainder, host parser recovery,
+  host hang on a malformed frame, host facts lag) and the audit's 2
+  (`documentHighlight` `lb@704:67` — the host's warm snapshot carry-forward,
+  byte-equal cold; `hover` `type quat` `lb@1653:24` — the host's asynchronous
+  index warm; an eager fix adds 153 entries, measured and rejected in session
+  18).
+
+### Track 8 — Final verification
+
+- Clean-tree run of the full matrix: `tools/bootstrap.sh -j 16` (stage2 ==
+  stage3, 14/14 tests), `build/stage2/mtc test test/mt -I .` (60/60), 15/15
+  examples, 34/34 sdl3, 217/219 raylib, vendored families, `sexpr_parity`
+  lex/parse/lower, `cli:parity`, both LSP harnesses + valgrind + a Neovim and a
+  VS Code session, `dap_smoke` on both backends, `format_parity all`,
+  `imported-bindings --all --check`, the lint corpus, and
+  `~/Projects/MilkTea/SimpleGame` building and running.
+- Update this file's header, records and ledger; `docs/lsp-design.md`,
+  `docs/dap-design.md` as their areas change.
+- Declare done only when the Ledger shows every counter at its target.
+
+### Risks and notes
+
+- **`lower` tail**: every fix moves files' first differences deeper and can
+  expose new categories; the ranked order + sweep loop is the process.  Treat "0
+  differ, or a documented host artifact with a reproduction" as the stopping
+  rule.
+- **Proc stage D** changes runtime lifecycle semantics and must not break the
+  fixed point (the compiler bootstraps itself with procs).  Land A–C first.
+- **DAP bridge** is the highest-risk single item (single-threaded correlation of
+  two directions); it lands last in its track with the debug map and
+  pause/modules already in place, so each step is independently smoke-testable.
+- **`deps`** is the largest subsystem; keep the port mechanical (module-per-file
+  mirroring the Ruby layout) and lean on the host's tests as the spec.
+- **emcc** may not be installed on this machine; reproduce the host's
+  detection/error behavior and verify the wasm path where emcc is available.
+- Deliberate "better than host" behaviors stay (malformed-frame `-32700` + keep
+  serving, synchronous facts with no lag, faster cold start, deterministic
+  binding-map iteration); parity work must not regress them.
+
+## Ledger and scoreboard
+
+Newest verified numbers (session 24 close, 2026-10-02) — re-measure only the
+classes a change can move, and only when the tree moved.  Target = the
+definition of done above.
+
+| Gate | Live | Target | Command |
+| --- | --- | --- | --- |
+| bootstrap fixed point | holds, 14 files / 516 tests / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed | stay green | `build/stage2/mtc test test/mt -I .` |
+| examples / sdl3 / raylib | 15/15, 34/34, 217/219 | stay green | per-family sweeps |
+| `sexpr lex` / `parse` | 702/702; 698 comparable / 0 differ | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
+| `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `cli:parity` | 24 match / 37 differ / 0 pending (61 cases) | all match | `rake "cli:parity"` |
+| LSP harness | 30/30 capability keys; 4 documented entries | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | 237 = 235 completion + 2 documented | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
+| LSP recovery | 6/6 cases byte-equal | stay green | `tools/lsp_recovery_probe.rb --check` |
+| formatter | 702/702 all three modes | stay green | `ruby tools/format_parity.rb all -j 16` |
+| lint corpus | 494 agree / 115 differ (609 files) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| DAP | process-backend parity per request; lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
+| imported-bindings | 3 verified / 25 changed (cosmetic emitter gaps) | 28/28 or each justified | `mtc imported-bindings --all --check` |
+
+Baseline for reference only (Phase 0, session 5): bootstrap 14/0, `test/mt`
+60/0, lex 702/702, parse 698/0, lower 39/613/51/0, cli 22/39, LSP 4 documented,
+lint lb host 98 / self 158.  **Do not replay a baseline a previous session
+verified at the same commit** — counts drift (sexpr's file count with the tmp
+fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 
 ---
 
@@ -324,6 +766,10 @@ ruby tools/lsp_parity.rb compare tmp/host.json tmp/self.json [--full]
 6. **`definition` / `declaration` / `typeDefinition` return a bare `Location`
    object** when there is one result, as the host does (they returned a
    single-element array).
+
+**Stages 1–3 commits (2026-09-26).**  `7e980196` (stage 1 — the seven isolated
+harness entries), `36d42b3c` (stage 2 — completion mirrors the host's branches),
+`23d6460f` (stage 3 — documentSymbol mirrors the host's tree).
 
 ### Fixed this session (2026-09-26)
 
@@ -971,6 +1417,17 @@ codeAction, codeLens, documentLink, formatting, rangeFormatting,
 onTypeFormatting, foldingRange, selectionRange, semanticTokens, workspaceSymbol,
 workspace/diagnostic.
 
+**Session 4 close (2026-09-27) — the stage-plan foundations.**  `f33c5740` (one
+lint-options funnel with `.mt-lint.yml` and suppressions everywhere, `mtc check`
+full lint, 6 new tests), `2e739191` (canonical comment reattachment + four
+printer-fidelity fixes — format_parity **702/702 in all three modes**),
+`2b8d59c3` (`line-too-long`: wrappable gate, host message, LSP wrap quickfix;
+`navigation.mt` byte-identical), `a0642272` (sema-backed `redundant-cast` with
+the host's six checks; `str[i]: ubyte`; the CLI lints the analysis' AST).  These
+are stages 1–4 of the stage plan (the records below use the session's 8a/8b/8c
+labels); gates for all four: bootstrap fixed point + 14/14, `test/mt` 60/0,
+`cli:parity` 22/39/0, `lower` 39/613/50/0 unchanged.
+
 ### Linter `redundant-cast` is sema-backed (2026-09-27 session 4, stage 8c)
 
 `linter/redundant_cast.mt` was rewritten as a complete AST walker with the
@@ -1005,6 +1462,26 @@ Measured on `examples/language_baseline.mt`: **redundant-cast 0 -> 1, the
 identical line and message as the host** (`424: implicit widening makes this
 cast redundant: int<-`); 6 new linter tests; projects/mtc 14 files / 0 failed;
 test/mt 60 / 0; the `lower` sweep unchanged (39/613/50/0).
+
+**Session 5 close (2026-09-27).**  Stage 5 (`unused-import` credit parity) landed
+as `a16e2c85`, stage 6 (`prefer-let` mutation facts) as `4d23fd79` (`out`/`inout`
+foreign arguments — same-module and imported, via
+`Analysis`/`ModuleBinding.mutating_param_indices` — str_buffer mutating builtins
+as `editable`, and the host's `ref_of`/`ptr_of` alias rule).  `language_baseline`
+prefer-let is now **19/19** (was 21); repo-wide prefer-let **507/606**, dominated
+by two analyzer gaps: match-arm payload bindings typed `ty_error` (stage 11c) and
+editable-receiver resolution in `extending Type[T]` static methods (stage 11d).
+The Phase-0 baseline and scoreboard (`tools/parity_scoreboard.rb` +
+`rake "parity:scoreboard"`) also landed this session.  Stage 11c's design was
+explored here — **do not repeat the reverted bind-to-T model**: register the
+prelude payload structs (`Option_some{value: T}`, `Option_none{}`,
+`Result_success{value: T}`, `Result_failure{error: E}`) at
+`register_prelude_type`, export variant arm *fields* on `ModuleBinding`, compute
+the scrutinee type once at a match, substitute the variant's declared type params
+with the scrutinee's arguments, bind the arm name to the substituted payload
+struct (host `Types::VariantArmPayload`) and resolve `p.value` through the normal
+struct-field path; expression matches keep the `ty_error` binding until the same
+substitution is threaded there.  Next: stage 11c, 11d, then stage 7.
 
 ### Linter `unused-import` credit parity (2026-09-27 session 5)
 
@@ -1108,6 +1585,25 @@ text differs even though rule and position match.
 
 Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0, `sexpr_parity` lex 702/702 + parse 698/0.
+
+**Session 6 close (2026-09-28)** — the SimpleGame hover report; five commits,
+hover 286 → 181 of 915, each fully gated.  The report's hypothesis was wrong on
+item 1: the alias chain was already correct — `resolve_cursor` built its facts
+with the *standalone* `check_source_file` (whose `imported_modules` is null), so
+every `alias.Type` became `ty_error`.  Fixes: loader-backed facts +
+`shorten_signature` + `value_hover_signature` + the audit's stderr-drain fix
+(`98c096eb`); the parameter hover's resolved type (`1174b632`); the `alias` kind
+in `find_decl_line_in` + `type_hover_signature` (`bf81591f`); named-argument
+labels (`29382f4e`); member methods (`901a2f62`); plus the scope-region fix
+`cbbfd180`.  Session deltas: hover 286 → 181, references 278 → 256,
+documentHighlight 26 → 15, definition 194 → 138, declaration 194 → 139
+(typeDefinition 334 untouched).  Residue ranked: the host's global definition
+fallback (62, also driving definition/declaration), rendering shapes (66), the
+analyzer's alias-typed generic constructors + static receivers (28),
+`this`/unreached parameters (9), member-access fields (7), `type parameter T` (2),
+builtin-vs-member precedence (6), one deliberate self-answer.  Five positions the
+scope fix moved the other way need a re-check (`docs/data_structures.mt@6:11`;
+`docs/memory_stress_test.mt@74:8, 175:20, 370:20, 396:20`).
 
 ### LSP hover: imported types resolve through the module-aware analysis (2026-09-28 session 6, plan fix 1)
 
@@ -1332,6 +1828,25 @@ Gates: bootstrap fixed point + 14/14 self-tests, `test/mt` 60/0, `cli:parity`
 22/39/0 unchanged, `sexpr_parity` lex 702/702 + parse 698/0, LSP harness
 30/30 capabilities + 4 documented entries.
 
+**Session 7 close (2026-09-28)** — two commits.  `30851d50`: the host's
+definition index (`lsp/definition_index.mt`), the `typeDefinition` pipeline,
+hover locations from the index, static type receivers (`Vec[int].create()`,
+`alias.Type.method()`), member-access fields (`p.radius`), `type_of_value`
+resolved through the scope walk, interface hover wording — plus a C-backend fix
+(`collect_span_types` walked only emitted functions while the generic-instance
+collection walks all lowered ones, so a pruned function's `Option[span[X]]`
+instance had no `mt_span_…` typedef; `maybe_add_span` now recurses into type
+arguments and the collection reads `program.functions` — the bootstrap's
+"14 test files, 1 failed").  `3585e781`: the host's hover dispatch order
+(field/label → bindings → names → members → keyword/builtin tables last), the
+import-alias arm's position, primitive builtin precedence, module-qualified
+annotation renderings.  Counters: typeDefinition **334 → 91**, hover
+**286 → 121**, definition and declaration **194 → 93**, references 278 → 267,
+documentHighlight 26 → 15, total **1328 → 696**.  Probes (`probe-ws`,
+`probe4`–`probe7`) at 0 for hover/definition/declaration/typeDefinition;
+`probe2` keeps its 2 deliberate self-answers.  Next: references (267), then
+hover's 121 and the member-pipeline classes.
+
 ### LSP definition and member pipeline: the host's global index, typeDefinition, location rule (2026-09-28 session 7)
 
 One root runs through this batch: the host answers `definition`, `declaration`,
@@ -1480,6 +1995,24 @@ Measured: hover 131 → **121**, definition/declaration 94 → 93, typeDefinitio
    codeLens 1 / implementation 1 / workspace/symbol 1** — small, independent
    classes.
 
+**Session 8 close (2026-09-28)** — the references pipeline ported into new
+`lsp/references.mt` + `lsp/reference_index.mt`: the host's arms in order (static
+type-receiver method with the `module_member_binding_location` artifact, scoped
+local, module-level name + importing files' identifier tokens, the workspace
+identifier index), the tokenization order noted per request, candidates = open /
+content-touched / workspace-root documents, only `INSTALLABLE_BUILTIN_TYPE_NAMES`
+module-level (`ptr`/`array`/`own`/`ref`/`span` fall through to the token index).
+Three `lsp/scope.mt` fixes: region ends = nearest later start line (the analyzer
+appends `emit`-expanded declarations out of order), statement last lines cover
+every kind, the binding walk descends into `unsafe`/`defer`/`while`/`for`/`when`
+bodies.  references **267 → 9** (references-only 255 → 1); the second batch
+followed the host's hover order, the type-receiver location artifact and the
+builtin specialization arms: hover **121 → 83**, definition/declaration
+**95 → 72**, typeDefinition **93 → 70**, total **443 → 336**.  Residue: 9
+full-matrix entries (files the host's hovers tokenized and the self's did not —
+`option.mt`, `linear_algebra.mt` — plus 1 references-only pacing entry) and 6
+deliberate self-better definition answers.
+
 ### LSP references: the host's pipeline, index and arm order (2026-09-28 session 8)
 
 `handle_references` is now a literal port of the host's pipeline
@@ -1614,6 +2147,28 @@ classes (documentSymbol 5, semanticTokens 5, diagnostic 3, codeLens 1,
 implementation 1, workspace/symbol 1), and references 9 (gated on the hover
 residue).
 
+**Session 9 close (2026-09-28)** — Track A closed.  The instrument first:
+`tools/lsp_recovery_probe.rb` (new) drives both servers through six mid-edit
+states — `n.` (+ an incremental `.`), `a.inner.`, an unterminated string, an
+unterminated block, a half-typed `import`, a cut-off expression — and
+byte-compares the pull diagnostics; `--check` exits non-zero on any difference
+(corpus under `tmp/lsp-recovery/`).  Then A1 the JSON blob (the analyzer's
+duplicate `missing-return` sema error — the host has only the linter rule —
+removed, which also fixed `mtc build` refusing programs the host builds),
+A2 the ` at <uri>:<line>:<col>` suffix (built in the LSP diagnostic conversion
+from the document URI), A3/A4 the parser's panic-based unwinding
+(`ParserState.panic` + the error token index; `recover_statement` /
+`recover_top_level` / `recover_match_arm`, the local-decl rescue and the partial
+`FunctionDef` rescue) with the lints that followed (the scope pass stopped
+counting assignment targets as uses, dead-assignment's gates/message/severity,
+`missing-return` after the scope pass, the outline's token anchoring).
+**Counters**: recovery probe OK (6/6 byte-equal); audit 336 → 335 (diagnostic
+3 → 2, hover 83 → 80 via the `proc(...)` rendering); references-only 0;
+`cli:parity` 23/38/0 (`lint-warns` closed); lex 705/705, parse 701/0;
+unused-import 609/608.  **Not emulated**: the host's nested declaration rescues
+(a nested declaration dropped inside a block recovers as dropped, not as the
+host's partial node) — revisit only if a fixture shows it.
+
 ### Recovery parity: the parser's unwinding, the diagnostic suffix and the blob (2026-09-28 session 9)
 
 `tools/lsp_recovery_probe.rb` (the focused plan's A5) drives both servers through
@@ -1692,6 +2247,27 @@ implicit `this`, prelude/inherent methods on builtin generics); **5** nullabilit
 (the host prints the *storage* type where the self prints the flow type: `var
 handle: null (mutable)` vs `ptr[int]?`); 3 tuple/alias renderings, and the rest
 the member-location artifacts.
+
+**Session 10 close (2026-09-29)** — five batches (Track B, largest-first), audit
+332 → 269.  (1) The host's C string-literal escaping: `String#inspect`'s `\xNN`
+escapes absorbed the following hex digit in C, so the host-built binary crashed
+on non-ASCII hover docs (`×`, `–`) with `string.as_str text must be valid UTF-8`;
+the host now emits non-ASCII bytes raw.  (2) The analyzer's expression typing
+(hover 80 → 46): unary `~`/`+`, tuple literals, `Type[args].arm(…)` instances,
+imported specialization calls (`heap.must_alloc[ubyte](64)` → `own[ubyte]`),
+bare builtin type receivers (`mat4.identity()`), builtin event methods, `get`,
+`detach`; hover-side: guarded-local narrowing, module-less builtins render bare,
+signature shape (`-> <ret>`), builtin arms take the definition index's location
+— with three lowering-visible consequences the gates caught (an early-returning
+member arm must still infer its receiver; a `Type[args]` receiver resolves
+struct members as associated functions; member receivers project through
+pointer-likes).  (3) `a9333965` the member resolution the new types exposed
+(imported `extending` methods, builtin vector/matrix/quaternion fields,
+`ref`/`ptr`/`own` projection).  (4) The variant arm constructors
+(`Result.success(value: T)`, named-argument labels; hover 44 → 37).
+(5) The `*From*` renderings (qualification at every level, prelude
+`type Result = Result`; hover 37 → 32).  Full matrix 269; references 0;
+examples 13/15 (the 2 async `__mt_loop_N` aborts documented).
 
 ### The host's C string-literal escaping (2026-09-29 session 10)
 
@@ -1852,6 +2428,23 @@ test/mt 60/0, cli:parity 23/38/0 (same diff set), sexpr lex 705/705 + parse
 for hover, valgrind clean, Neovim smoke renders `Vec[…Point]` with
 `*From std.vec, …*`.
 
+**Session 11 close (2026-09-29)** — five batches + a follow-up; six commits
+(`4abd6ff8` field locations from the host's token scan — a `public struct`'s
+fields carry no location and a field declaration hover renders the *resolved*
+type; `12527c82` the member arms with `variant_types`/`const_eval_int`;
+`48e80cd0` attributes/type parameters/`this`; `d51af37a` the `this` and
+annotated-local receivers via `Analysis.local_decl_types`; `2bf28f10` the method
+`-> void` and `_` as a discard; `3568fef1` the attribute arm kept off the
+definition path).  Hover **32 → 14** (18 closed, none added); the member pipeline
+followed: definition/declaration **70 → 61** each, typeDefinition **68 → 59**
+(1 traded at `lb@1915:25` — the host's definition index answers a different
+function's `p`); audit **269 → 224**.  Each batch verified by a focused
+`--only hover` re-scan with the diff *set* compared entry by entry (the full
+matrix is authoritative; `--only` drifts ±10).  Next: hover's 14 (the location
+artifacts, the nullability four, stage 11c's three, the union function field,
+the member chain's third segment, the nested-`unsafe` binding), then
+definition/declaration 61 and typeDefinition 59.
+
 ### Track B, sixth through tenth batch (2026-09-29 session 11): member arms, attributes, receivers, field tokens
 
 Hover **32 → 14** in five batches, each verified by a focused `--only hover`
@@ -1951,6 +2544,22 @@ field table loses the signature); a **member chain's third segment**
 binding inside **nested `unsafe` blocks** (`let b = read(inner)` under a second
 `unsafe:`).
 
+**Session 12 close (2026-09-29)** — the definition pipeline; the session began
+with the classification the previous review asked for: of the 224 remaining
+entries, 181 were definition/declaration/typeDefinition, and 45–49 of the 61 per
+class were one shape.  Three commits porting the host's local definition rule
+(its completion bindings carry no AST node, so a definition answers the *file's
+first* same-named `let`/`var`/`for` declaration before the cursor —
+`find_local_declaration_ast_node` + `first_local_declaration`/
+`first_local_in_stmt(s)`; destructured names and `as` bindings never match; the
+bare member and variant-arm arms are hover-only; the `is_builtin_name?` bail),
+the import alias's member declaration (`find_definition_token_in_file`, the
+token-pair scan, definition-only), and the receiver-typed method line
+(`find_method_line_in_type` in both method paths).  Definition **61 → 5**,
+declaration **61 → 5**, typeDefinition **59 → 4** (closed 56/56/55, none added;
+audit 224 → 60 → 56).  The 5/5/4 residue is the cross-file/index location family
+(Track C1).  Next: Track C1, then hover's remaining classes, then B4 and C2–C5.
+
 ### Track B, eleventh and twelfth batch (2026-09-29 session 12): the definition pipeline
 
 The session started by *classifying* definition/declaration/typeDefinition instead
@@ -2009,6 +2618,26 @@ location shapes: an interface method's own token (`lb@181:22`, take_damage),
 audit never opened), `start` (`lb@412:24`, `std/graph.mt:363`) and a field's
 `parent` (`node.mt@2:4`, the host answering `std/binary_heap.mt:49`) — the last
 four are the same index-scope family.  These are Track C1's work.
+
+**Session 13 close (2026-09-29)** — Track C1: the host's cross-file definition
+index (the `@definition_candidate_uris` / `@definition_names_by_uri` registry;
+`find_definition_global` over the candidates — preferred document first with the
+cursor filter, then warm order — and the **hover-driven** warm
+(`hover_definition_entry_from_location` → `find_token_at` → `get_tokens` →
+`get_content`), found by tracing `get_content` with a `RUBYOPT` hook instead of
+guessing) and the index walk at the workspace root (`workspace_index_roots`) —
+cold start (`tools/lsp_cold_start.rb`, new): SimpleGame **2723.5 → 213.3 ms**,
+one-file project **2455.1 → 2.3 ms**.  Plus the interface method's own
+declaration line, the implementation pipeline, typeDefinition's early null and
+block-statement bindings; a crash the session caused and fixed (a `Map`-stored
+`Vec` mutated through a `ptr` without write-back).  Definition/declaration/
+typeDefinition **5/5/4 → 0**, implementation **1 → 0**, hover **13 → 9**,
+documentHighlight **14 → 1**, audit **56 → 37 → 25**; the same session's second
+push (codeLens and workspace/symbol from the token-pair symbol list, `this`
+scoped to its method, the token scanner's rules) took the audit **25 → 22** and
+the token positions **952 → 676**.  The synthetic `--only references` mode is
+pacing-coupled (the host's background indexing depends on the self's speed) —
+never quote its counts; the full matrix is the measure.
 
 ### Track B, thirteenth batch + Track C1 (2026-09-29 session 13): the cross-file definition index, the interface method, block bindings
 
@@ -2163,6 +2792,23 @@ semanticTokens 5, diagnostic 2 unchanged.  `documentSymbol`'s host answers are
 module-name index is warm, so its five entries alternate between "wrapped" and
 "unwrapped" shapes between runs; the self's outline matches the unwrapped shape's
 symbol set exactly (118 symbols on `data_structures.mt`, same names and kinds).
+
+**Session 14 close (2026-09-30)** — the token classifier's *facts*:
+scope-resolved bindings (`Binding.kind` / `function_level`; the host's snapshot
+rule — only parameters and locals declared directly in a function body, and only
+from a later line), the static-member table (`<Type>.<member>`), type-parameter
+scopes, the type-position/dot-receiver/specialized-call arms, f-strings and
+multi-line strings, attribute-name overrides.  Token positions **676 → 5**,
+semanticTokens **5 → 1** (four of the five files byte-equal), audit **22 → 18**.
+Continuation (the outline's wrapper and key order): the module wrapper, the
+host's per-shape key order and locals in every block apply only when the host
+wraps `docs/data_structures.mt` (its first-file warm artifact); the remaining
+four outlines need the enrichment (the `extending` block's symbol merge +
+`rl.Color` naming, the locals' flow-refined types, the `when`-branch
+declarations, the function-type rendering).  Next: the three semantic-token facts
+(`callable_value_identifier_sites`, `callable_field_member_access?`,
+`dot_nested_type_member?`), then hover's 9 and B4's classes, then C2–C5 and
+D2/D3.
 
 ### Track B, sixteenth batch (2026-09-30 session 14): the token classifier's scope and facts
 
@@ -3072,9 +3718,8 @@ the recovery probe, the fixture sweep at every baseline (added 0), the formatter
 **705/705 in all three modes**, the example sweeps (15/15, 34/34, two raylib),
 valgrind 0 errors over an LSP drive, the headless-Neovim smoke.
 
-What is left, revised (the full ranked list is
-`docs/lsp-parity-plan.md`'s "Remaining, revised at the session-17 close" and
-`docs/foundational-blockers-plan.md`'s table):
+What is left, revised at the session-17 close (a snapshot — the live ranked list
+is the program above):
 
 1. **`diagnostic` 2 — the linter's emission order** (the two-walk merge: the
    scope walk drives, the inline rules fire at each statement, the per-function
@@ -3152,8 +3797,8 @@ matrix is unchanged by all of this (`4 -> 4`, closed 0, added 0).
 
 The diagnostic class compares whole *arrays*, so this is the content half of F3;
 the order half (the host's walk order, which the self still does not reproduce)
-is planned in `docs/foundational-blockers-plan.md`'s F3 section and the ledger's
-session-18 note.  Every row below was measured with `tmp/diag_probe.rb`
+is planned in §0k's absorbed F-block ("Foundational blockers — absorbed plan
+record") and the session-18 records.  Every row below was measured with `tmp/diag_probe.rb`
 (per-item ranges/messages) and `tmp/lint_table.rb` (per-rule counts and the
 differing lines).
 
@@ -3337,6 +3982,24 @@ documentSymbol entry, is what the span validation closes), the example sweeps
 (`examples/*.mt` 15/15, `examples/sdl3` 34/34, two raylib samples), valgrind and
 the headless-Neovim smoke.
 
+**Session 16 close (2026-09-30)** — seven commits, audit 13 → 5, in the order
+F3 part 1 → F4 → F5 → F7 + F8.1 → F8.2 (the all-or-nothing linter class left
+last): F3 part 1 (liveness → `dead-assignment`, `501ab123`; the firing set by
+ascending node id; `linter/cfg.mt` and its import deleted), F4 (destructure types
++ variant arm payloads, `15a8572b`; the prefer-let sweep over `std/` 121 → 45 →
+32), F7 + F8.1 (callable-value sites + the scanner's nested-type and
+callable-field rules, `a90c2e19` — `language_baseline`'s token stream
+byte-identical), F5 (function-type names, `6ad423ce` — hover 2 → 1) and F8.2's
+outline shapes (three of four files byte-identical).  Residue at close: hover 1
+(the documented `type quat`), documentSymbol 1 (`language_baseline`'s thirteen
+locals whose initializer type is still `ty_error`, plus two `emit`-expanded
+consts), diagnostic 2 (the F3 linter residue: the emission-order restructure +
+the 18 per-rule deltas), documentHighlight 1 (F8.3).  `lower` 39/613,
+`unused_import_parity` **609/609** (the `async_network_lobby` residual closed),
+prefer-let over `std/` 32 (imported-receiver method chains typed `ty_error`).
+Next: F8.3's decision, then the F3 residue, then the analyzer's initializer
+typing.
+
 ### The outline's declaration shapes (2026-09-30 session 16, F8.2)
 
 `src/colors.mt`, `src/node.mt` and `docs/memory_stress_test.mt` are now
@@ -3512,6 +4175,63 @@ still differ (`language_baseline.mt`'s host order starts `285 unused-local,
 linter's emission restructured to that walk order.  The remaining per-rule
 content deltas (ranges, messages, firing sets) are listed in the session-16
 prompt's ledger entry.
+
+### Foundational blockers — absorbed plan record (F1–F9, sessions 15–18)
+
+The focused plan (`docs/foundational-blockers-plan.md`, absorbed into this
+document) ranked the analyzer/linter facts that gated the LSP residue.  Outcome:
+**every F item is done** except the deliberately documented ones and the
+readiness residue — F1 the real CFG and F2 the nullability continuation
+refinement (session 15), F3 linter stages 11/11b (the firing set + anchors +
+the emission order + the two content rows, sessions 16–18; the corpus-wide
+residue it uncovered is the program's linter track), F4 stage 11c's
+payload/destructure types (session 16), F5 function-type names (session 16,
+`6ad423ce`), F6 the generic-context gate (session 15), F7 + F8.1 the
+callable-value record and the scanner's two rules (session 16), F8.2
+documentSymbol (session 17), F8.3 the `documentHighlight` survivor
+(documented — `docs/lsp-design.md` §8), F9 readiness (`ScanFacts` release, the
+reference index's owned texts, `note_document_tokens` caching — open; the
+program's LSP track).  The per-item landed records are the session-15/16/17/18
+entries below; the residue tables became the program's tracks.
+
+Original design notes (superseded; kept for provenance only):
+
+- **F1** (host): `core/control_flow/builder.rb` (nodes carrying
+  `kind`/`statement`/`reads`/`writes`, successor edges with refinement labels,
+  `build_block`/`build_statement` with `break_target:`/`continue_target:`,
+  `add_null_test_refinements` at `:541`), `graph.rb`, `dataflow.rb`
+  (`Dataflow.solve(direction:, initial:, join:, edge_transfer:, boundary_in:)`).
+  `build_cfg_into` keeps its signature for the linter's callers.
+- **F2** (host): `control_flow/nullability_flow.rb` (`NullabilityFlow.solve`,
+  intersection join, `Result#nonnull_before(stmt)`),
+  `semantic_analyzer/nullability.rb:69-90`
+  (`apply_nullability_continuation_refinements!`), `flow_refinement.rb:289`.
+  Verify with the `lower` track's item 14 files.
+- **F4** (host): `Types::VariantArmPayload`, `statements.rb:800-850`; the
+  destructure arm at `analyzer.mt:2944-2956`; **do not repeat the reverted
+  bind-to-T model** (recorded in the session-5 close above).
+- **F6** (host): `allow_prefer_let: var && !generic_function_context?` +
+  `extending_block_generic?`.
+- **F7** (host): `expressions.rb:356` → `record_callable_value_identifier_site`;
+  `callable_of(identity)` is *not* recorded (the host answers `variable:0`).
+
+**Session 15 close (2026-09-30)** — the foundational blockers began; three
+commits, each with its own gate run: F6 `a689d176` (the generic-context gate for
+`prefer-let` — the planned "editable receivers" diagnosis was wrong; `visit_decl`
+now raises `generic_function_depth` for a function with type parameters and for
+every method of a generic extending block), F1 `c030fe16` (the real
+control-flow graph: `semantic/control_flow/graph.mt` = the host's `Graph` +
+`NullabilityFlow`-shaped solver + per-body fall-through targets;
+`builder.build_graph_into`'s whole-body binding-ID pass; binding ids 1-based so 0
+can mean "not a binding of this body"; eight shape tests) and F2 `c295db50` (the
+nullability continuation refinement — applied at the end of each statement for
+the *next* one, the host's order; the bare-`null` side ported; the
+terminating-branch rule; the `Analysis.flow_types` record the LSP scans in
+*recording* order).  Audit **18 → 17 → 13** (the four
+`memory_stress_test.mt` nullability hovers byte-equal, added 0).  Also measured:
+`lower -q -j 16` 39/614/51/**2** — the 2 self-rejections are the *pre-existing*
+`projects/stress` guarded-`Result` pair; prefer-let over `std/` self-only 121
+(host 0), dominated by `ty_error` receivers (F4's work).
 
 ### The nullability continuation refinement (2026-09-30 session 15, F2)
 
@@ -4022,7 +4742,7 @@ inventory of the remaining self-host gaps instead of the estimates in §0i.
 1. **`projects/stress` builds and runs at parity** — five root causes fixed
    (task-root proc bridge, proc bodies inside async functions, builtin vector
    constructors, format-string locals, `inline for` reflection).  Details and
-   verification live in [self-host-stress-todo.md](./self-host-stress-todo.md).
+   verification are in "The `projects/stress` build — absorbed record" below.
 2. **`parse --sexpr` reached zero differences**: `:destructure_type_name`
    rendered the joined `"types.Transform"` where the host's AST holds the part
    list (`("types" "Transform")`); the dumper now splits the stored name like
@@ -4132,6 +4852,13 @@ resolved the receiver through the alias chain to the canonical type
 registration, the export surface and the lookup; the families now get past the
 analyzer (`box3d/ragdoll.mt` `check`s clean, `box2d/*` is down to the const
 issues in "Newly exposed gaps").
+
+**Session commits (2026-09-25).**  `c796a227` (the CLI parity harness + the
+lower-diff attribution tool), `697e9e53` (the host's CLI dispatch, help text and
+version output), `e2f91867`/`aff18af6` (the revert and reapply of sending
+diagnostics and the check summary to stderr), `117e7bc6` (diagnostics on the
+host's one-line header), `a543165e` (`unsafe:` and bare block bodies get their
+own defer scope), `ade972cc` (guard bindings read through their projection).
 
 ### Same session, second pass — linkage naming and foreign return types
 
@@ -4433,7 +5160,52 @@ Fixing those exposed two further host bugs, both fixed in the same pass:
   an invalid array assignment (`Holder(colors = make())`, and the same for
   `array[array[T, N], M](f(), g())`); it now copies element by element.
 
-### Remaining work (planned for the next session)
+### The `projects/stress` build — absorbed record (2026-09-25, DONE)
+
+Goal: `build/stage2/mtc build projects/stress` compiles, links and runs with
+output matching the host's build.  **Achieved**: exit **242**, empty
+stdout/stderr; the fixed-point gate holds.
+
+Reproduce and verify:
+
+```sh
+ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/dev/mtc        # 1. compiler
+timeout 300 bash -c 'ulimit -v 20000000; \
+  build/dev/mtc build projects/stress -I . --no-cache -o /tmp/stress_self'    # 2. target
+timeout 20 bash -c 'ulimit -v 20000000; /tmp/stress_self'; echo $?            # 3. must exit 242
+tools/bootstrap.sh -j 16                                        # 4. fixed point holds
+```
+
+Per-section parity was checked with a probe driver (each section's subtotal
+printed through `std.terminal`): all 12 sections — including `compile_time`,
+`math` and `async` — are byte-identical to the host.  Reference behavior: the
+host build exits **242** with empty stdout/stderr.
+
+What was broken (root causes, not symptoms):
+
+| Area | Root cause | Fix |
+| --- | --- | --- |
+| `aio.wait(task_expr)` | a `Task[X]` argument passed to a `proc() -> Task[X]` parameter was handed over bare; the narrow bridge matched only same-module bare-identifier callees, so a qualified `atasks.task_pipeline()` fell through | the host's task-expression→root-proc bridge in `lower_call_with_callee`: the argument AST is wrapped in a synthesized `proc() -> Task[X]` thunk (`lower_task_expression_as_root_proc`) and lowered through the proc path, capturing enclosing locals; `lower_proc_expression_typed` split out; the invoke builders take the resolved return type |
+| proc literal inside an async function | the invoke builders cleared the CPS state but not `ctx.inside_async`, so `return x + offset` was wrapped in a task literal while the invoke returned `int32_t` | save/clear/restore `inside_async` with the other CPS flags |
+| `3.0 * v3` | builtin `vec3(...)`/`mat4(...)`/`quat(...)` were unknown callables → `<error>` → the numeric fallback emitted `(mt_vec3) 3.0 * v3` | `try_construction` resolves the builtin names (host `lookup_named_type`); `lower_vec_binary_op` expands component-wise |
+| `f"#{hex}"` on a format-string local | `lower_format_string_local` emitted the C local but never pushed a `LocalBinding`, so the interpolation formatted `str` as int | register the local binding; capacity/append use `.len` + `mt_format_append_str` |
+| `inline for` over `members_of`/`attributes_of` | qualified type args unresolved; member names/values only in the current module; `attributes_of` hardcoded; `member.name` never substituted | `comptime_type_arg_name` resolves module-qualified names; program-wide member lookup; real attribute applications (declaration-level + the new field-level `field_attribute_apps`); `inline_for_member_subst` handles `.name` |
+
+Regression tests added (passing under both compilers): `test/mt/reflect_test.mt`
+(`inline for` over `members_of`/`attributes_of`), `test/mt/fmt_test.mt`
+(interpolating format-string locals), `test/mt/linear_algebra_test.mt` (new —
+vec/ivec/mat/quat arithmetic and `std.linear_algebra`).  The verification log
+also recorded: `rake "cli:parity"`'s differ set byte-identical to the
+pre-change compiler's; the Ruby-host suites (`lowering_test`, `semantic/*`,
+`examples_smoke_test`, `in_language_tests_test`) all pass.  Known gaps at the
+time, both fixed 2026-09-27: the seven `test/mt` build failures
+(generic-instance naming/typing — `check_extending_methods` resolved `this`
+before the block's type parameters; an async frame field typed as a match-arm
+payload lacked a `by_value_dep_key` ordering edge) and the `inline for`
+first-branch fold quirk (`lower_if_stmt` now walks the branches in order —
+locked by `test/mt/reflect_test.mt`'s `test_members_of_name_selection_chain`).
+
+### The `lower` ranking at the last sweep (frozen 2026-09-27; live list: the program's Track 3)
 
 There are **no self-rejections left**: the self-host analyzes and lowers every
 corpus file the host can.  What remains is *dump fidelity*; **all hard build
@@ -4441,7 +5213,9 @@ failures are closed** (2026-09-27: 15/15 language examples, 34/34 sdl3 files,
 60/60 `test/mt`, and the reported `MilkTea/SimpleGame` project).  Ranking after
 the fourth pass (the second 2026-09-27 session closed items 2, 3, 5 and 12 —
 see "2026-09-27 session 2" below); item 1 plus the three items it uncovered
-(13–15) are the categories the current first differences are dominated by:
+(13–15) are the categories the current first differences are dominated by.
+The table below is the frozen evidence/approach record from that sweep; the live
+ranked list — merged with the per-item notes — is **the program's Track 3**.
 
 | # | Item | Evidence | Approach |
 | --- | --- | --- | --- |
@@ -4450,7 +5224,7 @@ see "2026-09-27 session 2" below); item 1 plus the three items it uncovered
 | 3 | ~~**`null` literal contextual typing**~~ **FIXED (2026-09-27 session 2)** | `data_structures` / `reflection_advanced`'s first difference was host `(IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name "ptr" …)))` vs self `(IR::NullLiteral :type (Types::Primitive :name "void"))` | comparisons now re-type a bare `null` operand from the other side (the host propagates the left operand's type to the right), and the runtime path gives a typed `null[T]` its `Types::Null :target_type T`.  **Documented divergence:** the host types a *left-hand* bare null (`null == x`) as `bool` — an artifact of a later inference pass recording the comparison's expected type on the literal node; the self-host types it from the other operand.  No corpus file has that shape (`tmp/probes/reversed_null.mt` is the only probe).  Both files' first differences moved deeper (now item 14) |
 | 4 | **Event fields in event-carrying structs** | `event_stress_test`'s first difference: host `(IR::Field :name "__event_closed" :type (Types::Event :name "closed" :capacity 4 …))` vs self `(IR::Field :name "closed" :type (Types::Struct :name "mt_event_…_closed_4"))` | the event runtime models each `event` field as `__event_<name>` typed `Types::Event`; the self-host emits the listener-slot struct under the bare name.  Mirror the host's field naming/type in the event-declaration lowering |
 | 5 | ~~**Generic-specialization parameter types**~~ **FIXED (2026-09-27 session 2)** | `language_baseline`'s first difference was `(Types::Parameter :name "x" :type (Types::Struct :name "T" :module_name ""))` where the host has `int` | `gen_dyn_vtable_constant` now substitutes the interface's type parameters like the vtable struct and the wrapper functions already do (the const is a `DynVtable`'s method slot).  `language_baseline`'s first difference moved past it (now the proc-representation gap, §0i item 2) |
-| 6 | **Function-type names** (`Types::Function :name ""`) | visible in the sdl3 dumps right after item 1's first difference: host `:name "run_app_no_args_uninitialized"` vs self `:name ""` | the function *type* of a function reference carries the callee's name in the host; thread it through the analyzer/lowering type construction |
+| 6 | ~~**Function-type names**~~ **FIXED (session 16, F5)** | visible in the sdl3 dumps right after item 1's first difference: host `:name "run_app_no_args_uninitialized"` vs self `:name ""` | `ty_function` carries the host's `name` and `sexpr.mt` emits it (`6ad423ce`); keep as a regression watch only |
 | 7 | **Include set** (`math_bindgen.h` vs `raymath.h`, box2d/drop.mt) | the first difference for `examples/box2d` | the binding's include directives must match the host's registry (std.math → raymath) |
 | 8 | **Struct/declaration ordering**, **const-folding shape**, **enum-member const folding**, **variant-match goto** | `ClockSync` vs `std_net_recv_impl_frame`; `IR::IntegerLiteral` vs `IR::Cast` (`errno_test.mt`); 4 / 1 files | mirror the host's decl ordering in the C backend's sort; fold `T<-literal` casts in constant position; roadmap #7/#13 |
 | 9 | ~~**Four example build failures** (`async_network_lobby`, `async_stress_test`, `data_structures`, `nullable_and_variant_test`) and the 7 `test/mt` build failures~~ **FIXED (2026-09-27)** | all four examples build and run at stdout+exit parity with the host; `test/mt` is 60 files / 0 failed | four root causes: the analyzer's extending-block type parameters (three examples + six `test/mt` files), an async frame field typed as a match-arm payload with no ordering edge (`net_sync`), opaque values emitted as values, and recursive variant arm reads missing their dereference.  Details in the 2026-09-27 section above |
@@ -4482,19 +5256,6 @@ linkage-name *sets* equal the host's, and a 19-file sample has **0** pathless
 `return` statements (host: 0, before: 138) and all 5 huge-literal constants the
 host dumps.  The remaining `lower` mismatches start 35–63 KB into the dumps for
 the families these sessions touched (they were at ~1.5–2.3 KB at the start).
-
-### Next, ranked by files moved per unit of work
-
-No build blockers remain (2026-09-27), so the remaining items move *dumps* only —
-except item 1, which also unblocks the sdl3 family's C-side naming.  Item 1
-(opaque `IR::OpaqueDecl` naming/`forward_declarable`) is the single biggest
-mover (34 files) and the first difference for that whole family; item 13 (a
-global initialized from an imported constant) and item 14 (refined nullable
-operands) are the box3d and data-structures families' next first differences and
-are each localized; then item 4 (event fields), items 6–8 (function-type names,
-include sets, declaration ordering) and item 15 (proc representation, the
-largest single item).  CLI message parity (item 10) and the LSP/DAP leftovers
-(§0k, `dap-design.md` §10) are independent tracks.
 
 ---
 
@@ -5950,3 +6711,58 @@ fixtures diff clean against the host.
 | ~~Linter `line-too-long` wrap-fix~~ **DONE (2026-09-27 session 4, stage 8b: wrappable gate + message suffix + LSP `Wrap long line` quickfix)** | — | — |
 | Linter `:fast` tier | Small | independent |
 | Formatter `--timings` profile phases | Small | independent |
+
+The two open rows (`:fast` tier, `--timings`) are tracked in the program
+(Track 7's stage-plan residue).
+
+## Appendix — working notes (absorbed)
+
+Structural rules learned while porting, each costing a rebuild cycle (from the
+absorbed stage plan):
+
+- `Analysis.resolved_expr_types` / `resolved_call_kinds` / `const_values` are
+  keyed by **expression pointer** (`reinterpret[ptr_uint](ep)`); `Type`-valued
+  maps (`types`, `type_alias_types`, `static_member_types`) are fine (name
+  keys).  Any caller that re-parses the source must lint/analyze the *analysis'
+  own AST* (`read(analysis).source_file`) or rebuild the analysis from its parse
+  (the fix engine does the latter per pass).
+- `analysis.types` maps names (aliases resolved) → `Type`; enums/flags/variants
+  are `ty_named` and also appear in `analysis.static_member_types`.
+- `Map.get` returns `ptr[T]?` (nullable pointer), `Vec.get` returns
+  `Option[ptr[T]]`; `read()` needs a narrowed *local*, not a struct field.
+- Language keywords to avoid as identifiers: `emit`, `match`, `type`, `link`,
+  `include`, `event`, `final`, `inline`, `parallel`, `when`, `opaque`, `ref`,
+  `own` (a function named `emit` failed to parse; a local `match` too).
+- The self-host's analyzer binding ids are **name-keyed** where the host's are
+  per-declaration — several gates note this in the records (e.g.
+  `dead-assignment`'s origin gate, the documentHighlight carry-forward).
+- `resolve_cursor` facts must come from the loader-backed
+  `analysis_for_document` / `ast_for_document`, never the standalone
+  `check_source_file` (whose `imported_modules` is null) — the session-6
+  finding.
+- The host aborts a file at its first semantic error; probe one shape per file
+  (the session-22 rule-set measurement).
+
+## Provenance
+
+This document absorbed and replaced the following planning files on 2026-10-03
+(session 25).  Their content is merged above; the three `docs/` originals are in
+git history, and the nine machine-local session plans under
+`~/.commandcode/plans/` were removed (the durable record was always this file
+plus those session plans, which the merge superseded):
+
+- `docs/foundational-blockers-plan.md` → the absorbed F1–F9 record in §0k and
+  the program's LSP track.
+- `docs/lsp-parity-plan.md` → the program's LSP track + the §0k session
+  records it summarized.
+- `docs/self-host-stress-todo.md` → §0j's "The `projects/stress` build —
+  absorbed record".
+- `~/.commandcode/plans/finish-self-host-full-parity.md` → the program, the
+  Ledger, and the session close blocks in §0k.
+- `~/.commandcode/plans/remaining-lsp-linter-formatter-parity.md` → the
+  program's LSP track (the unexecuted stage residue) + this appendix.
+- `~/.commandcode/plans/foundational-blockers-plan.md` and
+  `lsp-real-project-parity.md` (stale session copies), and the superseded
+  session plans `self-host-cli-and-lowering-parity.md`, `lsp-parity-gaps.md`,
+  `lsp-parity-gap-closure.md`, `lsp-stage4-diagnostics-semantic-tokens.md`,
+  `lsp-formatting-tidy-parity.md`.

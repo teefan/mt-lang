@@ -114,10 +114,10 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     when the tree moved or a number is surprising.
 - **Never edit sources while a gate runs**: `bootstrap.sh` compiles the working tree, so an edit
   mid-run silently corrupts the result — check the exit status, not just the tail.
-- **Live state**: `docs/self-host-plan.md` §0j (`lower`) and §0k (LSP/linter/formatter: session records
-  and the ranked residue) plus the multi-session plan file
-  `~/.commandcode/plans/finish-self-host-full-parity.md` (ledger, per-session logs, residue ranking).
-  Sync both in the same commit as the code change.
+- **Live state**: `docs/self-host-plan.md` is the single source of truth — the session protocol,
+  the ranked program, the ledger, and the §0j/§0k session records.  Sync it in the same commit as
+  the code change.  Session plans under `~/.commandcode/plans/` are transient working notes,
+  never the record.
 - `tools/lsp_project_audit.rb --workspace DIR` diffs every LSP request against the host live; its
   per-method counters drift ±10 between runs (the host warms its caches as the audit proceeds), so
   compare *sets of differing keys* when verifying a fix. Fast fixtures: `tmp/probe-ws`, `tmp/probe2`,

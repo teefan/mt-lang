@@ -506,8 +506,9 @@ fixed the same day.
 
 ## 9. Real-project readiness and recovery (2026-09-28)
 
-The focused plan for making the self-hosted server a daily driver lives in
-`docs/lsp-parity-plan.md`.  Its starting evidence is kept below, then the
+The focused plan for making the self-hosted server a daily driver now lives in
+`docs/self-host-plan.md` (the program's LSP track; §0k carries the measured
+records).  Its starting evidence is kept below, then the
 recovery result:
 
 - **Recovery was not at parity** when the plan was written.  Driving both servers
