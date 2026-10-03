@@ -66,8 +66,14 @@ public function handle_range_formatting(ws: ref[workspace.Workspace], params: js
     let source = source_text.as_str()
     let range = extract_range(params)
 
-    let start_offset = line_offset(source, range.start_line, range.start_char)
-    let end_offset = line_offset(source, range.end_line, range.end_char)
+    # The requested range's character columns arrive as UTF-16 code units;
+    # the segment is sliced by byte offsets.  The response echoes the
+    # requested range unchanged.
+    let start_char = ws.position_byte_offset(uri, range.start_line, range.start_char)
+    let end_char = ws.position_byte_offset(uri, range.end_line, range.end_char)
+
+    let start_offset = line_offset(source, range.start_line, start_char)
+    let end_offset = line_offset(source, range.end_line, end_char)
     if start_offset > end_offset or end_offset > source.len:
         proto.write_response_raw(id, "[]")
         return

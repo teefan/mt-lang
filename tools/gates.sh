@@ -120,7 +120,7 @@ gate_label() {
     case "$1" in
         dev_build)      echo "dev build to tmp/mtc-dev (~50 s)" ;;
         dev_tests)      echo "self-host test suite on the dev build (~2 min)" ;;
-        bootstrap)      echo "bootstrap: fixed point + 14/14 self-tests (~18 min)" ;;
+        bootstrap)      echo "bootstrap: fixed point + self-tests (~18 min)" ;;
         test_mt)        echo "test/mt under stage2 (60 files / 0 failed)" ;;
         sexpr_lex)      echo "sexpr lex parity (705/705)" ;;
         sexpr_parse)    echo "sexpr parse parity (701 comparable / 0 differ)" ;;

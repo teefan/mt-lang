@@ -205,32 +205,32 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
     # Navigation (Tier 2)
     else if method == "textDocument/definition" or method == "textDocument/declaration":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         nav.handle_definition(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/typeDefinition":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         nav.handle_type_definition(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/implementation":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         nav.handle_implementation(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/hover":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         if not pos.valid:
             proto.write_response(msg.id, json.null_value())
         else:
             nav.handle_hover(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/references":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         refs.handle_references(ws, pos.uri, pos.line, pos.character, refs.include_declaration_param(msg.params), msg.id)
     else if method == "textDocument/documentHighlight":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         highlight.handle_document_highlight(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/foldingRange":
         let uri = extract_text_doc_uri(msg.params)
         folding.handle_folding_range(ws, uri, msg.id)
     else if method == "textDocument/selectionRange":
         let uri = extract_text_doc_uri(msg.params)
-        var positions = extract_selection_positions(msg.params)
+        var positions = extract_selection_positions(ws, uri, msg.params)
         selection.handle_selection_range(ws, uri, positions.as_span(), msg.id)
         positions.release()
     else if method == "workspace/symbol":
@@ -245,7 +245,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
     # Type hierarchy
     else if method == "textDocument/prepareTypeHierarchy":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         type_hier.handle_prepare_type_hierarchy(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "typeHierarchy/supertypes":
         type_hier.handle_supertypes(ws, msg.params, msg.id)
@@ -254,7 +254,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
     # Call hierarchy
     else if method == "textDocument/prepareCallHierarchy":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         call_hier.handle_prepare_call_hierarchy(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "callHierarchy/incomingCalls":
         call_hier.handle_incoming_calls(ws, msg.params, msg.id)
@@ -269,7 +269,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
     # Linked editing range
     else if method == "textDocument/linkedEditingRange":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         linked_range.handle_linked_editing_range(ws, pos.uri, pos.line, pos.character, msg.id)
 
     # Execute command
@@ -304,7 +304,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
 
     # Tier 3
     else if method == "textDocument/completion":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         completion.handle_completion(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "completionItem/resolve":
         completion.handle_completion_resolve(ws, msg.params, msg.id)
@@ -319,13 +319,13 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         let uri = extract_text_doc_uri(msg.params)
         semtok.handle_semantic_tokens_delta(ws, uri, msg.id)
     else if method == "textDocument/signatureHelp":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         sighelp.handle_signature_help(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/prepareRename":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         rename_mod.handle_prepare_rename(ws, pos.uri, pos.line, pos.character, msg.id)
     else if method == "textDocument/rename":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         let new_name_ptr = extract_new_name(msg.params)
         rename_mod.handle_rename(ws, pos.uri, pos.line, pos.character, new_name_ptr, msg.id)
     else if method == "textDocument/codeAction":
@@ -336,7 +336,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
         var range = extract_range_lines(msg.params)
         inlay.handle_inlay_hint(ws, uri, range.start_line, range.end_line, msg.id)
     else if method == "textDocument/onTypeFormatting":
-        var pos = extract_position_params(msg.params)
+        var pos = position_params(ws, msg.params)
         on_type.handle_on_type_formatting(ws, pos.uri, pos.line, extract_trigger_character(msg.params), msg.id)
 
     else if method == "$/setTrace":
@@ -367,6 +367,21 @@ struct PositionParams:
     ## False when the request carries no usable `position` object; the host's
     ## handlers raise on such input and answer null.
     valid: bool
+
+
+## Extract textDocument position params and convert the character column from
+## the client's UTF-16 code units to the byte offset the scanners use, against
+## the document's current text.
+function position_params(ws: ref[workspace.Workspace], params: json.Value) -> PositionParams:
+    let p = extract_position_params(params)
+    if not p.valid:
+        return p
+    return PositionParams(
+        uri = p.uri,
+        line = p.line,
+        character = ws.position_byte_offset(p.uri, p.line, p.character),
+        valid = true,
+    )
 
 
 ## Extract textDocument position params.  `valid` is false when the request
@@ -453,8 +468,10 @@ function extract_query(params: json.Value) -> str:
         return query_str
 
 
-## Extract selectionRange positions as a flat (line, character, ...) list.
-function extract_selection_positions(params: json.Value) -> vec.Vec[ptr_uint]:
+## Extract selectionRange positions as a flat (line, character, ...) list,
+## each character converted from the client's UTF-16 code units to a byte
+## offset in the document.
+function extract_selection_positions(ws: ref[workspace.Workspace], uri: str, params: json.Value) -> vec.Vec[ptr_uint]:
     var result = vec.Vec[ptr_uint].create()
     let obj_ptr = params.as_object()
     if obj_ptr == null:
@@ -472,8 +489,10 @@ function extract_selection_positions(params: json.Value) -> vec.Vec[ptr_uint]:
                 break
             let pos_obj = read(pos_ptr).as_object()
             if pos_obj != null:
-                result.push(number_field(pos_obj, "line"))
-                result.push(number_field(pos_obj, "character"))
+                let line = number_field(pos_obj, "line")
+                let character = number_field(pos_obj, "character")
+                result.push(line)
+                result.push(ws.position_byte_offset(uri, line, character))
             i += 1
     return result
 

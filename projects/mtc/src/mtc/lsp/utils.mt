@@ -32,6 +32,58 @@ public function line_at(lines: ref[vec.Vec[str]], index: ptr_uint) -> str:
     return unsafe: read(lp)
 
 
+## Convert an LSP character column — counted in UTF-16 code units, the
+## position encoding this server advertises — to the byte offset within
+## `line_text`.  The compiler's scanners work in bytes, so positions are
+## converted once at the request boundary.  A column past the line's UTF-16
+## length is returned unchanged, which keeps an out-of-range position from
+## matching text the client never meant.
+public function utf16_column_to_byte(line_text: str, column: ptr_uint) -> ptr_uint:
+    var units: ptr_uint = 0
+    var offset: ptr_uint = 0
+    while offset < line_text.len and units < column:
+        let b = line_text.byte_at(offset)
+        if b < ubyte<-(0x80):
+            offset += 1
+            units += 1
+        else if (b & ubyte<-(0xE0)) == ubyte<-(0xC0):
+            offset += 2
+            units += 1
+        else if (b & ubyte<-(0xF0)) == ubyte<-(0xE0):
+            offset += 3
+            units += 1
+        else if (b & ubyte<-(0xF8)) == ubyte<-(0xF0):
+            offset += 4
+            units += 2
+        else:
+            offset += 1
+            units += 1
+    if offset > line_text.len:
+        offset = line_text.len
+    if units >= column:
+        return offset
+    return column
+
+
+## The byte offset of an LSP position in `source`: `line` is 0-based and
+## `character` counts UTF-16 code units.  A line past the end of the text
+## returns `character` unchanged (see `utf16_column_to_byte`).
+public function position_to_byte(source: str, line: ptr_uint, character: ptr_uint) -> ptr_uint:
+    var current: ptr_uint = 0
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < source.len:
+        if source.byte_at(i) == '\n':
+            if current == line:
+                return utf16_column_to_byte(source.slice(start, i - start), character)
+            current += 1
+            start = i + 1
+        i += 1
+    if current == line:
+        return utf16_column_to_byte(source.slice(start, source.len - start), character)
+    return character
+
+
 ## The identifier prefix the user is currently typing, by walking
 ## backward on the cursor line from the character position to the start
 ## of the word (letters, digits, underscore).  Returns "" when there is

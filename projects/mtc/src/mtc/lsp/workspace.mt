@@ -24,6 +24,7 @@ import mtc.semantic.types as types
 import mtc.lsp.definition_index as defidx
 import mtc.lsp.reference_index as refidx
 import mtc.lsp.uri as uri_ops
+import mtc.lsp.utils as lsp_utils
 import mtc.lsp.workspace_index as idx
 
 
@@ -272,6 +273,21 @@ extending Workspace:
                 var err = failure_payload.error
                 err.release()
                 return Option[string.String].none
+
+
+    ## The byte offset of an incoming LSP position (0-based line, character in
+    ## UTF-16 code units) in the document's current text.  Positions are
+    ## converted once at the request boundary so the byte-based scanners see
+    ## the columns a spec client means; an unknown document keeps the raw
+    ## character.
+    public function position_byte_offset(uri: str, line: ptr_uint, character: ptr_uint) -> ptr_uint:
+        var path = uri_ops.file_uri_to_path(uri) else:
+            return character
+        defer: path.release()
+        var source = this.document_source(path.as_str()) else:
+            return character
+        defer: source.release()
+        return lsp_utils.position_to_byte(source.as_str(), line, character)
 
 
     ## The roots the workspace *symbol* index walks: the host's `index_workspace`

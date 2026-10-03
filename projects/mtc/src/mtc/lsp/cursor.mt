@@ -5,9 +5,11 @@
 ## resolution is more precise than raw byte scanning: positions inside string
 ## literals and comments do not match identifier tokens.
 ##
-## LSP positions are 0-based (line, character); lexer tokens are 1-based
-## (line, column).  Character offsets are treated as byte offsets, which is
-## exact for ASCII sources and approximate for multi-byte UTF-8.
+## LSP positions are 0-based (line, character), with `character` counted in
+## UTF-16 code units; lexer tokens are 1-based (line, column), with `column`
+## counted in bytes.  Requests convert the position to a byte offset at the
+## boundary (`workspace.position_byte_offset`), so the helpers here take byte
+## offsets.
 
 import std.str
 import std.string as string
