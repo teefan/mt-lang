@@ -31,11 +31,14 @@ Status: **SELF-HOSTING FIXED POINT ACHIEVED. LSP + DAP + BINDGEN + IMPORTED-BIND
 self-host** (`~/Projects/MilkTea/SimpleGame`, the const-aggregate blocker of
 §0j item 12 — fixed in session 2; the binary initializes raylib and audio and
 runs).
-Stage2 == stage3 byte-identical; `tools/bootstrap.sh` self-test: **516 tests
-across 14 files, 0 failed** (measured 2026-09-27 session 2);
+Stage2 == stage3 byte-identical; the compiler self-test suite is **591 tests
+across 14 files, 0 failed** (re-measured 2026-10-03; 516 at session 2);
 the self-host also builds every example and `test/mt` file the host does (see
 §0j's 2026-09-27 section).
-**Linter parity: 14/16 common rules byte-identical with Ruby on language_baseline.mt.**
+**Linter parity: `language_baseline.mt`'s and `memory_stress_test.mt`'s
+diagnostic arrays are byte-identical to the Ruby host's (98/98 and 10/10, 0
+differing lines; sessions 17–18), and the whole-corpus sweep reads 494 agree /
+115 differ (below).**
 **Raylib parity: 217/219 build and run** (2026-07-16 sweep).
 **Language examples: 15/15 build under `--no-cache`** (2026-09-27; the four that
 failed — `async_network_lobby`, `async_stress_test`, `data_structures`,
@@ -50,20 +53,25 @@ build and run at parity**: `box2d/drop`, `box2d/explosion`, `box3d/ragdoll` and
 config** (`prefer-inline-methods` landed with the LSP diagnostics work; its
 auto-fix is not ported).  Bootstrap via `tools/bootstrap.sh`.
 Test runner now builds in-process (no Ruby delegation).  Vendored library
-recipes complete for all 7 libraries (raylib, glfw, tracy, cjson, box2d,
-sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
+recipes complete for all **11** vendored families (raylib, glfw, tracy, cjson,
+box2d, box3d, sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
-**DAP: 7 modules, 1,050 lines, 29 handler methods dispatched.  `tools/dap_smoke.rb`
+**DAP: 7 modules, ~1,050 lines; the dispatcher answers 26 DAP commands (15 with
+dedicated handlers; `attach`, `evaluate`, `next`/`stepIn`/`stepOut`, `restart`,
+`setVariable`, `setExpression` and `dataBreakpointInfo` return the process
+backend's explicit "not supported" errors until the lldb-dap bridge).  `tools/dap_smoke.rb`
 audits it against the host per request (2026-09-27: capabilities, launch, threads,
 stackTrace, scopes, variables, breakpoints and the whole error surface are identical
-for the process backend; the remaining gaps — build-on-launch, the lldb-dap bridge,
-the debug map — are §10 of `docs/dap-design.md`).**
-**LSP: 37 modules, ~14.4k lines, 29 capabilities advertised, capability-parity with Ruby; feature parity measured at **4 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+for the process backend; re-measured 2026-10-03 — request parity holds, while the
+terminal *event order* differs (`terminated`→`exited` vs `exited`→`terminated`)
+and build-on-launch is missing; the remaining gaps — build-on-launch, the
+lldb-dap bridge, the debug map — are §10 of `docs/dap-design.md`).**
+**LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **4 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **LSP project audit (live counter, 2026-10-01 session 18): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **2 differ**: `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward) and `hover` 1 (`lb@1653:24`, `type quat`); **every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work) and `documentSymbol` (the run carried no host race).**
 **LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **22 differ** (session 13 close): hover 9, documentSymbol 5, semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set) → 22 (session 13's third: codeLens and workspace/symbol 1 → 0 each via the host's token-pair symbol list, documentHighlight 2 → 1, and the token scanner's keyword/heredoc/type-argument rules).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's single survivor needs the host's carried-forward binding resolution (a label token resolving a binding that is out of scope at that line).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
 **LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
-**Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`: 702/702 in **all three modes** — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
+**Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`, re-measured 2026-10-03: **705/705 in all three modes**; the file count drifts with tmp fixtures — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
 **Hover: 9 entries left (session 13 close; §0k classifies them — the four
 nullability renderings (the analyzer's flow/continuation refinement), the two
 destructuring bindings with the match-arm payload (stage 11c), the function-typed
@@ -81,18 +89,18 @@ forwarded by the extension as `--log-level`.**
 **Imported-bindings: 7 modules (incl. registry + methods), ~2,700 lines.  `mtc imported-bindings` CLI command with --all/--check.
 Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (remaining deltas from cosmetic emitter gaps).**
 
-**Remaining CLI gaps: `deps` and `docs` (absent from the self-host command
-list), `--bundle`/`--archive`, `--jobs`, Wasm/emcc.**  `snapshot` and `debug`
+**Remaining CLI gaps: `deps` and `docs` (listed in the ported help text but
+not dispatched — the command falls through to the usage block), and
+`--bundle`/`--archive`, `--jobs` (none parsed in the self source), Wasm/emcc
+(`--platform wasm` parses; `build.mt` ignores it).**  `snapshot` and `debug`
 are implemented (§5.8a); the formatter CST modes (`--tidy`, `--preserve`) landed
 on 2026-09-26 (§7).
-`rake "cli:parity"` (measured 2026-09-28, session 9) is
-**23 match / 38 differ / 0 pending of 61 cases** (the pending case was the
-`format` mode-flag case, now matching; the session-9 `dead-assignment` rule
-closed `lint-warns`); the differing cases are
+`rake "cli:parity"` (re-measured 2026-10-03) is
+**24 match / 37 differ / 0 pending of 61 cases**; the differing cases are
 message text/channel/argument-precedence differences, not missing commands
 (§0j).  Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-**`--sexpr` parity (measured 2026-09-27 session 2 over 702 files): lex 702/702
+**`--sexpr` parity (session-2 snapshot, 2026-09-27; the live numbers are in the Ledger): lex 702/702
 comparable byte-identical; parse 698 comparable files byte-identical with 0
 differences (4 host-side rejections: external files, platform-pinned); `lower`
 39 match / 613 differ / 50 host-rejected / 0 self-rejected** (the host-rejected
@@ -135,6 +143,21 @@ Earlier sessions' records are in §0k (session 22's assignability rule and
 blockers; sessions 5–14's LSP pipeline ports).  The plan files were consolidated
 into this document on 2026-10-03 (session 25); see *Provenance*.
 
+**Audited 2026-10-03 (session 25).**  Re-measured on this tree (sources
+unchanged since session 24): completion **235** differing entries (exact),
+corpus lint **494 agree / 115 differ** (exact), `cli:parity` **24/37/0**
+(exact), `lower` **39/615/51/0** (exact), lex/parse and formatter **0
+differences** (705/705 per mode), `test/mt` **60/0**, self-test suite **591/0**,
+recovery probe **OK**, imported-bindings **3 verified / 25 changed** (exact),
+DAP process-backend request parity (the terminal event order and build-on-launch
+differ — Track 5).  Corrected in the audit: the "516 tests", "14/16 linter
+rules", "37 LSP modules", "29 DAP handlers" and "7 vendored libraries" claims;
+the `--timings`, `static_type_method_references` and scoreboard-LSP-row TODO
+statuses; and the CLI help-text-vs-dispatch nuances.  Not re-run (the tree is
+unchanged since the session-24 green close): the bootstrap fixed point, the
+example/sdl3/raylib sweeps, the LSP harness record/compare, valgrind, and the
+Neovim/VS Code smokes.
+
 ---
 
 ## How to start a work session (read this first)
@@ -151,7 +174,7 @@ for the area you are touching:
 | `lower` dump parity | the program's `lower` track, §0j's records, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min; quote the set) |
 | Example / vendored-family builds (no known failures since 2026-09-27) | §0j's 2026-09-27 section | the 15 top-level examples, `find examples/sdl3 -name '*.mt'`, a raylib sample |
 | CLI behavior parity | the program's CLI track, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
-| Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (preserve/tidy must stay 702/702; canonical is the comment-reattachment delta) |
+| Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (all modes must stay byte-identical — 705/705, file counts drift) |
 | DAP | the program's DAP track, `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both] [--json OUT]` — runs a session on both adapters and prints a per-request diff |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
@@ -214,7 +237,7 @@ this file's records + ledger in the same commit as the code change.
    completion track, then the readiness residue (F9/C2–C6/D2–D4).  Recovery
    parity holds, the stress corpus runs without a crash or hang, and a real
    VS Code session runs clean under valgrind.
-4. **DAP** — phase 1 (process backend, 29 handlers) delivered; the lldb-dap
+4. **DAP** — phase 1 (process backend; 26 commands, 15 dedicated handlers) delivered; the lldb-dap
    bridge is now feasible (`std/libuv.mt` poll + `std/async`) but unstarted
    (`dap-design.md` §10).  The self's `*launch(.mt)` reports `error: Milk Tea
    binary not found: src/main` where the host is `ok` — build-on-launch is the
@@ -263,6 +286,9 @@ workstreams first (the completion class, then the readiness residue), then
 value where the tracks are independent.  (3) The lldb-dap bridge is included (the
 VS Code extension's default backend).
 
+Line references are from the session that wrote the note; re-grep the symbol if a
+line misses — the symbol names are the stable anchors.
+
 ### Definition of done (per track)
 
 - **`lower`**: 0 differing files in `sexpr_parity lower` (residuals only if
@@ -284,7 +310,8 @@ VS Code extension's default backend).
 - **Bindings/bindgen**: `mtc imported-bindings --all --check` 28/28 verified (or
   each residual delta justified as cosmetic with evidence); bindgen output
   reproducible for the repo's bindings.
-- **Formatter**: 702/702 in all three modes stays.
+- **Formatter**: all modes byte-identical (705/705 at the 2026-10-03 audit; the
+  count drifts with tmp fixtures).
 
 ### Track 1 — LSP completion parity (ACTIVE at session 24 close)
 
@@ -313,14 +340,16 @@ fallback, completion-only dot detection (`cursor.member_receiver_at`).  Records:
 ### Track 2 — Linter corpus residue
 
 `tools/lint_parity.rb -q` over `std examples projects/mtc/src`: 609 files,
-**494 agree / 115 differ** (session 23 close; from 357/252 in session 19).
+**494 agree / 115 differ** (session 23 close; re-measured 2026-10-03; from
+357/252 in session 19).
 Closed so far: `redundant-unsafe` 807 → 0, `owning-release-leak` 602/286 → 0/0,
 `owning-release-double` 0/12 → 0/0, `prefer-inline-if` 213 → 0,
 `prefer-struct-with` 93/0 → 0/0, `prefer-conditional-expression` 25 → 0.
-Remaining ranked deltas (self-extra / host-only): `redundant-cast` 74/22,
-`prefer-try` 64/39, `prefer-let` 51/142, `borrow-and-mutate` 27/0, `shadow` 20/0,
-`prefer-own-ptr` 17/45, `constant-condition` 11/1, `prefer-or-pattern` 10/4,
-`loop-single-iteration` 8/2, `unreachable-code` 3/0, `prefer-var-else` 2/0.  All
+Remaining ranked deltas (self-extra / host-only; re-measured 2026-10-03):
+`redundant-cast` 74/22, `prefer-try` 64/39, `prefer-let` 51/142,
+`borrow-and-mutate` 28/0, `shadow` 20/0, `prefer-own-ptr` 16/45,
+`constant-condition` 11/1, `prefer-or-pattern` 10/4, `loop-single-iteration`
+8/2, `unreachable-code` 3/0, `prefer-var-else` 2/0.  All
 differences are pre-existing (the pre-change binary's output is identical on
 them); quote *sets*, not just counts.  Tool: `tools/lint_parity.rb` with
 `--host-cache FILE` (warm fill ~4 min, then ~20 s per full run).
@@ -449,12 +478,15 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    byte-equal (examples: `std show` prints to stdout instead of stderr;
    `build --bogus` reports "accepts a single source path" instead of "unknown
    build option").  Exit: 61/61 on the current corpus.
-2. **Cheap flags/subcommands**: `test --jobs N` (port the host's fork-per-file,
-   order-preserving parallel runner, `cli/commands/test.rb:281-335`) and stop
-   ignoring `--cc/--profile/--platform`; `build --kind static|shared`
-   (`tooling/build.rb` kind handling); `toolchain bootstrap`/`toolchain tools`
-   (`toolchain_cli.rb:68-205`); `bindgen
-   --nullable-policy/--nullable-report/--clang-arg`.
+2. **Cheap flags/subcommands**: `test --jobs N` (the ported help advertises it;
+   nothing parses it today) and `--cc/--profile/--platform` for `test` (port
+   the host's fork-per-file, order-preserving parallel runner,
+   `cli/commands/test.rb:281-335`; `build` already honors `--cc`);
+   `build --kind static|shared` (`tooling/build.rb` kind handling);
+   `toolchain bootstrap`/`toolchain tools` (`toolchain_cli.rb:68-205`; only
+   `doctor` is dispatched today); `bindgen
+   --nullable-policy/--nullable-report/--clang-arg` (advertised in the help,
+   not parsed).
 3. **`--bundle`/`--archive`** (host `build.rb:143-164, 459-464, 962-1032`;
    `asset_pack.rb` MTAP).  `std/tar.mt` and `std/gzip.mt` already exist —
    implement the archive in-language.  Verify: `tar tzf` lists it, extraction
@@ -471,7 +503,8 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    `std/http/server.mt`, reusing the repo's `docs/` assets and `snapshot.js`
    verbatim; `--port/-p`, `--open/-o`, the host's
    `Serving Milk Tea docs at <url>` line.  Acceptance: functional parity (same
-   routes/URLs/content), not byte-identical HTML.
+   routes/URLs/content), not byte-identical HTML.  (The ported help already
+   lists `docs` and its options; nothing is dispatched today.)
 6. **`deps` (largest subsystem, ~3,000 lines + 485-line CLI)** — port
    `lib/milk_tea/packages/*` (manifest, manifest_editor, lock, graph,
    dependency_solver, source_resolver, source_fetcher, source_cache,
@@ -482,7 +515,8 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    manifest/graph, then wire `--locked`/`--frozen` and package-graph resolution
    into `build`/`run`/`check` (the host's `PackageGraph.load` path).  Network via
    `std/http`.  Verify against the host's package fixtures (adapt
-   `test/packages/*` into MT tests) and a local-registry probe.
+   `test/packages/*` into MT tests) and a local-registry probe.  (The ported
+   help lists `deps` and its subcommands; the dispatcher has no `deps` branch.)
 7. **Harness**: add `cli_parity.rb` cases for every command/flag above and
    delete the matching `KNOWN_GAPS` entries as they land; exit: all cases match.
 
@@ -496,7 +530,9 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    write `<output>.mtdbg.json` from `build.mt` after a successful link
    (`build.mt:97-158`).  Add the loader + frame/variable/expression rewriters of
    `dap/server/debug_map.rb:45-225`.
-2. **Build-on-launch.**  `dap/utilities.mt resolve_launch_program` (`:17-41`):
+2. **Build-on-launch.**  Rewrite `dap/utilities.mt`'s `resolve_launch_program`
+   (`:17-41` — today it only accepts a pre-built binary and errors `Milk Tea
+   binary not found: <path> (build with mtc build first)` on a `.mt` source):
    for a `.mt` source, spawn the running compiler (`/proc/self/exe`) as
    `mtc build <program> -o <tmp>/<name> --profile debug`, track temp dirs for
    cleanup, return the runnable path and load its debug map (host
@@ -521,6 +557,9 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    names → scopes/variables → `evaluate`/`next`/`stepIn`/`stepOut`/`continue` →
    `modules` → pause console output).  Finish with a real xvfb VS Code session
    on the default backend.
+6. **Terminal event order (measured 2026-10-03).**  The process backend's final
+   events differ: the host emits `terminated` then `exited`, the self `exited`
+   then `terminated` (`tmp/dap-s25.json`, the `events` row).  Align the order.
 
 ### Track 6 — Imported bindings and bindgen
 
@@ -563,10 +602,11 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   differences Track A left, the host's first-file `documentSymbol` race, the
   `documentHighlight` snapshot carry-forward and the `type quat` asynchronous
   location (`docs/lsp-design.md` §8 is the canonical table).
-- **D2/D3.**  `tools/lsp_project_audit.rb --canonical` (or a documented
-  substitute) to pin the request history so the ±10 drift disappears; an LSP row
-  in `tools/parity_scoreboard.rb` (verify current status).  D4: keep the standing
-  gates exactly as this file's protocol and AGENTS.md list them.
+- **D2.**  `tools/lsp_project_audit.rb --canonical` (or a documented
+  substitute) to pin the request history so the ±10 drift disappears.  **D3 is
+  done**: `tools/parity_scoreboard.rb` has an `lsp` section (`--full`).  D4:
+  keep the standing gates exactly as this file's protocol and AGENTS.md list
+  them.
 - **Stage-plan residue (absorbed; verify each against §0k before starting):**
   - **per-module `ModuleCache`** (edit-latency foundation; closes the
     re-parse/re-analyze of the whole import closure on each content version —
@@ -580,27 +620,38 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     `lsp/semantic_tokens.mt`'s `register_resolved_import`/`build_scan_facts` read
     the alias surface from it.  Verify with the dependency-edit probe
     (edit `std/vec.mt` → a dependent's diagnostics refresh) and valgrind.
-  - **`reserved-primitive-name --fix` use-site renaming** (stage 8): multi-site
-    edits + collision resolution (`resolve_reserved_primitive_name_conflicts!`),
-    `<name>_value` suggestion, `column`/`length`/`symbol_name` on the warning;
-    byte parity vs the host `--fix`.
+  - **`reserved-primitive-name --fix` use-site renaming** (stage 8): a
+    declaration-token edit exists (`reserved_primitive_name_edit`: the
+    `<name>_value` rename fires once at the declaration), but the host's
+    multi-site rewrite (every identifier use + the collision resolution
+    `resolve_reserved_primitive_name_conflicts!`) is missing, as are
+    `column`/`length`/`symbol_name` on the warning; byte parity vs the host
+    `--fix` is the gate.
   - **`prefer-inline-methods` auto-fix** (stage 10): port
     `prefer_inline_methods_edits`, add to `fixable_codes()` — `--fix`,
     `source.fixAll` and the quickfix all see it (host
     `fix_engine.rb:161-…`, title "Inline methods into struct").
-  - **Stage-14 leftovers:** `call_hierarchy` imported/module-qualified callees
-    and extending methods (`call_hierarchy.rb:7-45`); `linked_editing_range`
-    null unless a local binding (`linked_editing_range.rb:7-25`,
-    `rename.rb:302-326`); `typeDefinition`'s surviving null path for imported
-    functions/methods (`definition.rb:27-130, 284-330`); `inlay_hints`
-    receiver-aware callee resolution **and** the host's inferred return-type
-    hints (`inlay_hints.rb:39-97, 143`); `execute_command` unknown commands
-    answer `null`, not `-32601`.  (The module-symbol wrapper landed in session
-    14 — do not redo it.)
-  - **`static_type_method_references`** (stage 15): port
-    `resolve_static_type_reference_target` + `static_type_method_references`
-    into `handle_references` and the code-lens count (`references.rb:7-45`,
-    `completion.rb:560-690`, `code_lens.rb:90`).
+  - **Stage-14 leftovers.**  `call_hierarchy`: same-file top-level functions
+    and extending-block methods resolve; imported / module-qualified callees do
+    not (`call_hierarchy.rb:7-45`).  `linked_editing_range`: any token with
+    same-scope occurrences answers a ranges array (possibly empty); the host's
+    null-unless-a-local-binding gate is missing (`linked_editing_range.rb:7-25`,
+    `rename.rb:302-326`).  `typeDefinition`'s surviving null path for imported
+    functions/methods (`definition.rb:27-130, 284-330`).  `inlay_hints`: local
+    type hints are ported (`emit_type_hints`), but receiver-aware callee
+    resolution and the host's inferred **return**-type hints
+    (`collect_inferred_return_hints`, `inlay_hints.rb:143`) are missing.
+    `execute_command`: unknown commands answer `-32601`, the host answers
+    `null`.  (The module-symbol wrapper landed in session 14;
+    `static_type_method_references`/stage 15 landed in session 8, `c15594c3` —
+    do not redo either.)
+  - **`--timings` breakdowns** (stage 18; partially landed `298481ee`,
+    2026-09-23).  The flag and a total line exist for `format` and `lint`
+    (`print_timings_line`: `format profile <path>: Xms`), but the host's shapes
+    are missing: format's per-phase
+    `(format: …, format.parse: …, format.lex: …)` and lint's
+    `rules=… total=…` + per-rule lines (`formatter.rb:37-59`,
+    `cli/commands/format.rb:173-196`).
   - **Quickfix extras** (stage 16): `Cast expression to <type>` for
     `cannot assign …` (parenthesize non-simple values, wrap in `unsafe:` if
     required); `Import <module>` for unknown-name/type diagnostics
@@ -615,9 +666,6 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     Bindings section (binding-id allocation in the host's order +
     `binding_types`, the 30-entry cap); the Diagnostics section; and the
     harness `normalize` extension for Ruby `object_id` values.
-  - **`format --timings`** (stage 18): the host's phase breakdown in the
-    host's output shape (`formatter.rb:37-59`,
-    `cli/commands/format.rb:173-196`).
   - **The linter's `:fast`/`:full` tier flag** (stage 11's first half):
     `LintOptions.lint_tier` with the host's `full_tier?` gating; the CLI and
     LSP pass `:full` like the host CLI, and diagnostics *scheduling* stays out
@@ -670,19 +718,19 @@ definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds, 14 files / 516 tests / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed | stay green | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (last full run 2026-10-02); self-test suite 14 files / **591 tests** / 0 failed (re-run 2026-10-03) | stay green | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed (re-run 2026-10-03) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 | stay green | per-family sweeps |
-| `sexpr lex` / `parse` | 702/702; 698 comparable / 0 differ | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
-| `cli:parity` | 24 match / 37 differ / 0 pending (61 cases) | all match | `rake "cli:parity"` |
+| `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
+| `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-03) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; 4 documented entries | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | 237 = 235 completion + 2 documented | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
+| LSP project audit | 237 = **235 completion (re-measured 2026-10-03)** + 2 documented | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
 | LSP recovery | 6/6 cases byte-equal | stay green | `tools/lsp_recovery_probe.rb --check` |
-| formatter | 702/702 all three modes | stay green | `ruby tools/format_parity.rb all -j 16` |
-| lint corpus | 494 agree / 115 differ (609 files) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
-| DAP | process-backend parity per request; lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
-| imported-bindings | 3 verified / 25 changed (cosmetic emitter gaps) | 28/28 or each justified | `mtc imported-bindings --all --check` |
+| formatter | 705/705 all three modes (re-measured 2026-10-03; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
+| lint corpus | 494 agree / 115 differ (609 files; re-measured 2026-10-03) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| DAP | process-backend request parity (re-measured 2026-10-03; terminal event order and build-on-launch differ); lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
+| imported-bindings | 3 verified / 25 changed (re-measured 2026-10-03; cosmetic emitter gaps) | 28/28 or each justified | `mtc imported-bindings --all --check` |
 
 Baseline for reference only (Phase 0, session 5): bootstrap 14/0, `test/mt`
 60/0, lex 702/702, parse 698/0, lower 39/613/51/0, cli 22/39, LSP 4 documented,
@@ -6029,8 +6077,9 @@ a `.release()` method), stored in `Program.owning_type_names`, and threaded to
 
 ## 5. Remaining Gaps (2026-07-19, re-measured 2026-09-25 in §0j)
 
-The compiler is at a held fixed point (516 tests across 14 files as of
-2026-09-27; 217/219 raylib — the 2 non-builds are correct rejections).
+The compiler is at a held fixed point (516 tests across 14 files at the
+2026-09-27 session-2 measurement; 591 by 2026-10-02; 217/219 raylib — the 2
+non-builds are correct rejections).
 **Corrected 2026-09-25:** the "13/13 language examples" figure below was stale —
 the self-host built **11 of the 15 top-level examples** then, and four `test/mt`
 files had been silently skipped by the test runner, which hid one more
@@ -6416,8 +6465,9 @@ build/stage2/mtc build examples/language_baseline.mt -I . -o /tmp/lb --no-cache
 # raylib parity sweep (per-file build, compare against the passing baseline)
 ```
 
-A change is safe only if: stage2.c == stage3.c, **14 test files / 516 tests pass
-with 0 failures** (`tools/bootstrap.sh -j 16` reports the count), the language
+A change is safe only if: stage2.c == stage3.c, **14 test files / 591 tests pass
+with 0 failures** (`tools/bootstrap.sh -j 16` reports the count; re-measured
+2026-10-03), the language
 examples do not regress (live baseline: **15 of 15** build, and `examples/sdl3`
 is 34/34), and the raylib passing set does not shrink
 (currently 217; the 2 non-builds must remain clean rejections with Ruby's
