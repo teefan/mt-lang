@@ -384,8 +384,25 @@ Also open from the analyzer track (they gate audit entries and lint rows):
   in a field/argument).  The host folds (`constant_value_for`); the self's
   `is_numeric_literal_valued_expr` sees only literal nodes/`if`-chains.  Evidence
   `tmp/probe-const-narrow.mt`.
+- **Member-assignment immutability** (found in session 28): the host's
+  `infer_lvalue_receiver` rejects `x.field = ...` through an immutable receiver
+  (`cannot assign through immutable <name>`) and the same for `this.field = ...`
+  in a non-editable method (`cannot assign through immutable this`,
+  `expressions.rb:76` and `function_binding.rb:594-605`); the self has no such
+  check at all, so `check` accepts sources the host rejects — and because the
+  host's `--fix` validation (`validated_fixed_source`) sees those errors, the
+  host *refuses* fix batches the self applies (repro: an
+  `extending Counter:` with a second block plus a `this.value = 0` method; the
+  host leaves the file untouched, the self inlines two blocks).  Matching the
+  host means porting the receiver-implicitness ladder (identifier/`this`/
+  index chains, mutable pointers, ref/str views) *and* the generic-method scan.
+- **`prefer-let` and specialized editable calls** (found in session 28,
+  pre-existing): `examples/reflection_advanced.mt`'s `var r` must stay `var`
+  because `r.unpack[CompactHeader]()` is an editable method; the host's
+  validation rejects the rewritten source, the self rewrites it.  The self's
+  editable-site recording misses the specialized editable call.
 
-Records: §0k sessions 19–23.
+Records: §0k sessions 19–23; session 28.
 
 ### Track 3 — Compiler `lower` dump parity
 
@@ -641,10 +658,23 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     `resolve_reserved_primitive_name_conflicts!`) is missing, as are
     `column`/`length`/`symbol_name` on the warning; byte parity vs the host
     `--fix` is the gate.
-  - **`prefer-inline-methods` auto-fix** (stage 10): port
-    `prefer_inline_methods_edits`, add to `fixable_codes()` — `--fix`,
-    `source.fixAll` and the quickfix all see it (host
-    `fix_engine.rb:161-…`, title "Inline methods into struct").
+  - **`prefer-inline-methods` auto-fix** (stage 10) — **DONE (session 28)**:
+    `prefer_inline_methods_edit` ports the host's `prefer_inline_methods_edits`
+    (the struct's last member + a blank line + the `extending` block's method
+    lines, one whole-range edit; non-adjacent layouts are left alone), and the
+    code is in `fixable_codes()`, so `--fix`, `source.fixAll` and the quickfix
+    all see it.  The same commit ports the host's
+    **`validated_fixed_source`** guard: a pass is kept only when a fresh
+    analysis of the fixed source adds no error signature (line, column,
+    message), which is what makes the host refuse batches whose stale line
+    numbers overlap.  Locked by two `fix_engine_test.mt` cases (the canonical
+    inline and the non-adjacent no-op) and a host-vs-self `--fix` sweep
+    (15 examples × 12 rules: 179/180 identical; the one divergence,
+    `reflection_advanced.mt` `prefer-let`, is pre-existing — the host rejects
+    the rewrite because its analysis flags an editable-method call the self
+    does not, Track 2).  Known residue: on a file that carries a
+    *member-assignment immutability* error the host rejects the batch where
+    the self accepts it — same root cause (the missing check, Track 2).
   - **Stage-14 leftovers — DONE (session 28).**  The five items landed with
     harness locks (`tools/lsp_parity.rb` now carries `prepareCallHierarchy/
     method`, `typeDefinition/function|imported|std-member|imported-method`,
@@ -3848,6 +3878,37 @@ parser-recovery, malformed-frame and facts-lag rows).
 `workspace/symbol` all 0); recovery OK; valgrind 0 errors; the Neovim smoke
 passes.  Gates: dev tests 15/0, bootstrap fixed point (15/0), `test/mt` 60/0,
 the analyzer/CLI/lint meters at their ledger values.
+
+### `prefer-inline-methods --fix` and the fix-validation guard (2026-10-03 session 28)
+
+The stage-10 auto-fix plus the guard that makes the fix engine's accept/reject
+decisions match the host's.
+
+- **`prefer_inline_methods_edit`** (`linter/fix_engine.mt`): the host's
+  `prefer_inline_methods_edits` — locate the first `struct <name>` declaration,
+  its last member line, the block's last non-blank line, require the lines
+  between to be blank, then replace `[last_member, ext_end + 1)` with the
+  member line + a blank line + the method lines.  The block's target name is
+  parsed from the warning's line (`extending <Name>:`), since the self's
+  `Warning` carries no `symbol_name`.  Registered in `fixable_codes()`, so
+  `--fix`, `source.fixAll` and the quickfix all see it.
+- **`validated_fixed_source`** (the same file): the host
+  (`tooling/linter.rb:493-514`) keeps a fix pass only when a re-analysis of the
+  fixed source adds no error signature — `(line, column, message)` counts, so a
+  fix that merely *shifts* a pre-existing error's line is rejected too.  The
+  self's `fix_rule_single_pass` now re-parses and re-checks the candidate and
+  compares the diagnostics against the pass's own analysis; a batch that
+  corrupts the source (the multi-block `prefer-inline-methods` case: two edits
+  built from the same lint snapshot with stale line numbers) is discarded.
+- **Locked** by two `fix_engine_test.mt` cases (canonical inline, non-adjacent
+  no-op) and a host-vs-self `lint --fix` sweep over 15 examples × 12 rules:
+  **179/180 byte-identical**; the single divergence
+  (`reflection_advanced.mt` `prefer-let`, `stage2 == self`, so pre-existing) is
+  the self's missing editable-site for a specialized call (`Track 2`).
+- **Residue**: on a source carrying a *member-assignment immutability* error
+  (`this.value = 0` in a non-editable method) the host's validation rejects
+  where the self's analysis reports nothing — the missing
+  `cannot assign through immutable this` check (Track 2, new item).
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

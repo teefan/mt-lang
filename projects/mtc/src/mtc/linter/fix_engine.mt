@@ -1,8 +1,9 @@
 ## Auto-fix engine — applies safe rewrites for a fixable subset of lint
 ## rules, following the Ruby linter's FixEngine multi-pass design: each pass
 ## isolates one rule at a time (fixes re-lint from fresh source, so edits
-## from one rule can never corrupt another rule's positions), and passes
-## repeat until a fixpoint or the pass limit.
+## from one rule can never corrupt another rule's positions), passes
+## repeat until a fixpoint or the pass limit, and a pass is kept only when it
+## introduces no new analysis errors (the host's `validated_fixed_source`).
 ##
 ## Fixable rules:
 ##   prefer-let                `var` never reassigned            → `let`
@@ -15,6 +16,7 @@
 ##   redundant-ignored-match-binding  `as _` in match arm        → delete ` as _`
 ##   redundant-ignored-match-binding  `as _` in match arm        → delete ` as _`
 ##   prefer-let-else           `let x = v; if x == null: ...`    → `let x = v else: ...`
+##   prefer-inline-methods     `extending X:` after `struct X:`   → move methods inline
 ##   reserved-primitive-name   `function int(...)`               → rename declaration
 ##
 ## `unused-import` is intentionally NOT auto-fixable, matching Ruby: removing
@@ -50,6 +52,7 @@ function fixable_codes() -> vec.Vec[str]:
     codes.push("reserved-primitive-name")
     codes.push("prefer-let-else")
     codes.push("prefer-var-else")
+    codes.push("prefer-inline-methods")
     return codes
 
 
@@ -220,7 +223,51 @@ function fix_rule_single_pass(
                 pass
         ri += 1
 
-    return join_lines(ref_of(lines))
+    # Keep the pass only when it introduces no new analysis errors — the
+    # host's `validated_fixed_source`.  A batch that corrupts the source (for
+    # example two `prefer-inline-methods` edits whose stale line numbers
+    # overlap) fails the re-analysis and is discarded.
+    var candidate = join_lines(ref_of(lines))
+    var candidate_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: candidate_diags.release()
+    let candidate_file = parser.parse_source(candidate.as_str(), ref_of(candidate_diags))
+    var candidate_analysis = analyzer.check_source_file(candidate_file)
+    if introduces_new_errors(ref_of(analysis), ref_of(candidate_analysis)):
+        candidate.release()
+        return string.String.from_str(source)
+    return candidate
+
+
+## True when the fixed analysis adds an error signature — a (line, column,
+## message) triple whose count exceeds the original's (the host's
+## `introduces_new_errors?`).
+function introduces_new_errors(original_analysis: ref[analyzer.Analysis], fixed_analysis: ref[analyzer.Analysis]) -> bool:
+    var i: ptr_uint = 0
+    while i < unsafe: read(fixed_analysis).diagnostics.len():
+        let dp = unsafe: read(fixed_analysis).diagnostics.get(i) else:
+            break
+        let d = unsafe: read(dp)
+        let before = count_error_signature(original_analysis, d.line, d.column, d.message)
+        let after = count_error_signature(fixed_analysis, d.line, d.column, d.message)
+        if after > before:
+            return true
+        i += 1
+    return false
+
+
+## How many diagnostics in `analysis` carry the (line, column, message)
+## signature.
+function count_error_signature(analysis: ref[analyzer.Analysis], line: ptr_uint, column: ptr_uint, message: str) -> ptr_uint:
+    var count: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < unsafe: read(analysis).diagnostics.len():
+        let dp = unsafe: read(analysis).diagnostics.get(i) else:
+            break
+        let d = unsafe: read(dp)
+        if d.line == line and d.column == column and d.message.equal(message):
+            count += 1
+        i += 1
+    return count
 
 
 ## Sort warnings by (line, column) descending so edits below never shift the
@@ -295,6 +342,8 @@ public function edits_for_warning(
         return prefer_let_else_edit(lines, line_index, true)
     if code.equal("prefer-var-else"):
         return prefer_let_else_edit(lines, line_index, false)
+    if code.equal("prefer-inline-methods"):
+        return prefer_inline_methods_edit(lines, line_index)
     return Option[FixEdit].none
 
 
@@ -1086,3 +1135,148 @@ function find_reserved_name_on_line(text: str) -> str:
                     pass
         i += 1
     return ""
+
+
+## Move an `extending X:` block's methods inline into the same file's
+## `struct X:` declaration — the host's `prefer_inline_methods_edits`.  Only
+## rewrites when the struct's last member precedes the block with nothing but
+## blank lines between; any other layout would make the move non-local.
+function prefer_inline_methods_edit(lines: ref[vec.Vec[string.String]], line_index: ptr_uint) -> Option[FixEdit]:
+    let ext_start = line_index
+    let name = extending_target_name(line_text(lines, ext_start)) else:
+        return Option[FixEdit].none
+
+    # The first `struct <name>` declaration in the file.
+    var struct_index: ptr_uint = 0
+    var have_struct = false
+    while struct_index < lines.len():
+        if is_struct_declaration(line_text(lines, struct_index), name):
+            have_struct = true
+            break
+        struct_index += 1
+    if not have_struct:
+        return Option[FixEdit].none
+
+    # The struct body's last member line (a blank line ends the body only at
+    # the next top-level declaration).
+    var last_member: ptr_uint = 0
+    var have_member = false
+    var i = struct_index + 1
+    while i < lines.len():
+        let text = line_text(lines, i)
+        if text.len > 0 and not starts_with_indent(text):
+            break
+        if text.len > 0:
+            last_member = i
+            have_member = true
+        i += 1
+    if not have_member or last_member >= ext_start:
+        return Option[FixEdit].none
+
+    # The block's last non-blank line.
+    var ext_end = ext_start
+    i = ext_start + 1
+    while i < lines.len():
+        let text = line_text(lines, i)
+        if text.len > 0 and not starts_with_indent(text):
+            break
+        if text.len > 0:
+            ext_end = i
+        i += 1
+    if ext_end <= ext_start:
+        return Option[FixEdit].none
+
+    # The method lines, trimmed of leading and trailing blank lines.
+    var first = ext_start + 1
+    while first <= ext_end and line_text(lines, first).len == 0:
+        first += 1
+    if first > ext_end:
+        return Option[FixEdit].none
+    var last = ext_end
+    while last > first and line_text(lines, last).len == 0:
+        last -= 1
+
+    # Everything between the struct's body and the block must be blank.
+    i = last_member + 1
+    while i < ext_start:
+        if line_text(lines, i).len > 0:
+            return Option[FixEdit].none
+        i += 1
+
+    # The struct's last member, a blank line, then the block's methods.
+    var new_text = string.String.from_str(line_text(lines, last_member))
+    new_text.append("\n\n")
+    i = first
+    while i <= last:
+        if i > first:
+            new_text.append("\n")
+        new_text.append(line_text(lines, i))
+        i += 1
+
+    return Option[FixEdit].some(value = FixEdit(
+        start_line = last_member,
+        start_char = 0,
+        end_line = ext_end + 1,
+        end_char = 0,
+        new_text = new_text
+    ))
+
+
+## The target name of an `extending <Name>:` block, or none when the line is
+## not that form (only single-name, argument-less blocks are fixable).
+function extending_target_name(text: str) -> Option[str]:
+    var i: ptr_uint = 0
+    while i < text.len and (text.byte_at(i) == ' ' or text.byte_at(i) == '\t'):
+        i += 1
+    if not matches_word_at(text, i, "extending"):
+        return Option[str].none
+    i += "extending".len
+    while i < text.len and (text.byte_at(i) == ' ' or text.byte_at(i) == '\t'):
+        i += 1
+    let start = i
+    while i < text.len and is_word_byte(text.byte_at(i)):
+        i += 1
+    if i == start:
+        return Option[str].none
+    let name_end = i
+    while i < text.len and (text.byte_at(i) == ' ' or text.byte_at(i) == '\t'):
+        i += 1
+    if i >= text.len or text.byte_at(i) != ':':
+        return Option[str].none
+    return Option[str].some(value = text.slice(start, name_end - start))
+
+
+## True when the line declares `struct <name>` (the host's
+## `/\A\s*struct\s+<name>\b/`).
+function is_struct_declaration(text: str, name: str) -> bool:
+    var i: ptr_uint = 0
+    while i < text.len and (text.byte_at(i) == ' ' or text.byte_at(i) == '\t'):
+        i += 1
+    if not matches_word_at(text, i, "struct"):
+        return false
+    i += "struct".len
+    while i < text.len and (text.byte_at(i) == ' ' or text.byte_at(i) == '\t'):
+        i += 1
+    if i + name.len > text.len:
+        return false
+    if not text.slice(i, name.len).equal(name):
+        return false
+    let after = i + name.len
+    return after == text.len or not is_word_byte(text.byte_at(after))
+
+
+## True when `word` appears at `index` on a word boundary.
+function matches_word_at(text: str, index: ptr_uint, word: str) -> bool:
+    if index + word.len > text.len:
+        return false
+    if not text.slice(index, word.len).equal(word):
+        return false
+    let after = index + word.len
+    return after == text.len or not is_word_byte(text.byte_at(after))
+
+
+## True when the line starts with a space or a tab.
+function starts_with_indent(text: str) -> bool:
+    if text.len == 0:
+        return false
+    return text.byte_at(0) == ' ' or text.byte_at(0) == '\t'

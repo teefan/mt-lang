@@ -345,3 +345,64 @@ function test_config_empty_when_missing_keys() -> void:
     if cfg.has_select or cfg.has_ignore:
         expect(false)
     expect_eq(int<-(cfg.max_line_length), 0)
+
+
+# =============================================================================
+#  prefer-inline-methods
+# =============================================================================
+
+## Run the fix engine over `source` with a single selected rule.
+function expect_fixed_select(source: str, expected: str, code: str) -> void:
+    var options = linter.default_lint_options()
+    options.max_line_length = 120
+    var select = vec.Vec[str].create()
+    defer: select.release()
+    select.push(code)
+    options.select = select.as_span()
+    var fixed = fix_engine.fix_source(source, "test.mt", options)
+    defer: fixed.release()
+    expect_eq(fixed.as_str(), expected)
+
+
+@[test]
+function test_fix_prefer_inline_methods() -> void:
+    let source = <<-SRC
+        struct Counter:
+            value: int
+
+        extending Counter:
+            function read() -> int:
+                return this.value
+
+        function main() -> int:
+            var c = Counter(value = 10)
+            return c.read()
+    SRC
+    let expected = <<-SRC
+        struct Counter:
+            value: int
+
+            function read() -> int:
+                return this.value
+
+        function main() -> int:
+            var c = Counter(value = 10)
+            return c.read()
+    SRC
+    expect_fixed_select(source, expected, "prefer-inline-methods")
+
+
+@[test]
+function test_fix_prefer_inline_methods_non_adjacent_is_untouched() -> void:
+    let source = <<-SRC
+        struct Counter:
+            value: int
+
+        function helper() -> int:
+            return 0
+
+        extending Counter:
+            function read() -> int:
+                return this.value
+    SRC
+    expect_fixed_select(source, source, "prefer-inline-methods")
