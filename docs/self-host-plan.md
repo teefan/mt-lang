@@ -68,7 +68,7 @@ terminal *event order* differs (`terminated`→`exited` vs `exited`→`terminate
 and build-on-launch is missing; the remaining gaps — build-on-launch, the
 lldb-dap bridge, the debug map — are §10 of `docs/dap-design.md`).**
 **LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **4 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
-**LSP project audit (live counter, 2026-10-01 session 18): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **2 differ**: `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward) and `hover` 1 (`lb@1653:24`, `type quat`); **every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work) and `documentSymbol` (the run carried no host race).**
+**LSP project audit (live counter, 2026-10-03 session 26): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 7075 entries, **6 differ = `completion` 4 + the 2 documented entries**: completion **4** (235 at the session-24 close; the residue is classified in §0k's part-3 record — the host's synthesized `ref` lifetime, the host giving up on a `map_error` arm binding, and two byte-vs-character positions inside comment lines), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward); **every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work), `definition`/`declaration`/`typeDefinition`/`implementation`/`references` (915 each, 0), `documentSymbol` and the file-level endpoints.**  Earlier live counters: session 18 read 2 differ on the then-6456-entry corpus (the entry count grew with the completion pass), session 13 read 22.
 **LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **22 differ** (session 13 close): hover 9, documentSymbol 5, semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set) → 22 (session 13's third: codeLens and workspace/symbol 1 → 0 each via the host's token-pair symbol list, documentHighlight 2 → 1, and the token scanner's keyword/heredoc/type-argument rules).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's single survivor needs the host's carried-forward binding resolution (a label token resolving a binding that is out of scope at that line).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
 **LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
 **Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`, re-measured 2026-10-03: **705/705 in all three modes**; the file count drifts with tmp fixtures — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
@@ -126,14 +126,18 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 24 close (2026-10-02) — the LSP **completion** class: the
-project audit gained a member-completion pass (`member_completion_positions`) and
-completion moved **600 of 619 entries differing → 366 → 235** across two batches
-(the host's per-receiver merge order, public type aliases in
-`imported_type_members`, alias-qualified type receivers, the order-walking method
-fallback, completion-only dot detection); the full matrix reads **237 = 235
-completion + the 2 documented entries** (`documentHighlight` `lb@704:67`, `hover`
-`type quat` `lb@1653:24`), and every other class is 0.  Session 23 closed
+Last updated: session 26 close (2026-10-03) — the LSP **completion** class again:
+the merge now follows the host's *registration* order (`method_order`), the
+prelude modules join the receiver merge (`import_order`), and the receiver
+families are ported (method-only entries, `this`, arm payloads, builtin
+fields, projections, nested types, tuples, value chains, the narrowed guarded
+local, the global list's buckets); completion moved **235 → 4** and the full
+matrix reads **6 differ = 4 completion + the 2 documented entries**
+(`documentHighlight` `lb@704:67`, `hover` `type quat` `lb@1653:24`), each
+residue classified in §0k's part-3 record.  Session 24 had
+taken completion **600 → 366 → 235** (the merge order, public type aliases in
+`imported_type_members`, alias-qualified type receivers, the order-walking
+method fallback, completion-only dot detection).  Session 23 closed
 `owning-release-leak` 602/286 → 0/0, `owning-release-double` 0/12 → 0/0 (the CFG
 precision analysis) and `prefer-struct-with` 93/0 → 0/0 (the host's gates +
 imported-alias resolution), taking the corpus lint to **494 agree / 115 differ**;
@@ -232,11 +236,13 @@ this file's records + ledger in the same commit as the code change.
    precedence.  The unported subsystems are the program's CLI track.
 3. **LSP feature parity** — **the active phase**.  The harness is at 30/30
    capability keys + its 4 documented differing entries; the project audit is at
-   **237 = 235 completion + the 2 documented** after session 24 (completion
-   600 → 366 → 235); every other class is 0.  The open work is the program's
-   completion track, then the readiness residue (F9/C2–C6/D2–D4).  Recovery
-   parity holds, the stress corpus runs without a crash or hang, and a real
-   VS Code session runs clean under valgrind.
+   **6 differ = 4 completion + the 2 documented entries** after session 26
+   (completion **4**: the host's synthesized `ref` lifetime, the host giving up
+   on a `map_error` arm binding, and two byte-vs-character positions inside
+   comment lines; hover `type quat`; documentHighlight `lb@704:67`).  The open
+   work is the completion residue above, then the readiness residue
+   (F9/C2–C6/D2–D4).  Recovery parity holds, the stress corpus runs without a
+   crash or hang, and a real VS Code session runs clean under valgrind.
 4. **DAP** — phase 1 (process backend; 26 commands, 15 dedicated handlers) delivered; the lldb-dap
    bridge is now feasible (`std/libuv.mt` poll + `std/async`) but unstarted
    (`dap-design.md` §10).  The self's `*launch(.mt)` reports `error: Milk Tea
@@ -313,29 +319,25 @@ line misses — the symbol names are the stable anchors.
 - **Formatter**: all modes byte-identical (705/705 at the 2026-10-03 audit; the
   count drifts with tmp fixtures).
 
-### Track 1 — LSP completion parity (ACTIVE at session 24 close)
+### Track 1 — LSP completion parity (4 entries left; parts 1–3 landed)
 
-Session 24 (the user's `n.` report) added the audit's member-completion pass and
-took the completion class from **600 of 619 entries differing** to **235** (366
-after part 1).  Remaining families, ranked (labels are order-only unless noted):
+Session 24 added the audit's member-completion pass (**600 of 619** entries
+differing) and took the class to **235** in two batches; session 26 ported the
+registration order, the prelude merge and the receiver families to **4**.
+Remaining residue, ranked (each classified in §0k's part-3 record):
 
-| Entries | Family | Approach |
+| Entries | Position | Approach |
 | --- | --- | --- |
-| ~120 | **Order-only**: the same labels, a different array order | the host's merge order is per *type object* across every import; the self's per-module entry order still differs for some receivers (e.g. `docs/data_structures.mt@260`) |
-| 15 | A module that *extends* a type it does not declare has no `<module>.<Type>` entry, so its methods are missing from the merge (`std.iter`'s `Vec.as_iter`) | collect method-only entries from each binding's method table |
-| ~26 | Prelude `Option`/`Result` receivers: the host's `BUILTIN_TYPE_METHOD_SIGNATURES` supplies `unwrap`/`expect`/…; the self's prelude stubs are a different set (and absent from the fallback, correctly) | align the prelude signature set |
-| 15 | `vec.Vec[int].`-style specialized type receivers fall through to the fallback instead of the type-receiver path | route them through it |
-| ~30 | Small resolved-vs-unresolved receiver differences (`lb@123:16`'s `a,b,both`, `lb@1577:27`, `lb@1653`-style positions) | classify per entry with `tmp/comp_diff.rb` |
+| 2 | `mst@10:52`, `mst@11:21` | the audit's positions are character offsets; the self's cursor walk is byte-based (`cursor.mt`'s documented approximation).  A real client sends UTF-16 code units, so this is a genuine (pre-existing) gap: convert positions at the handler boundary, or document the difference in `docs/lsp-design.md` §8 |
+| 1 | `mst@224:18` | the host renders a synthesized `ref` lifetime (`ref[@_mt_0, ubyte]`); decide whether to model the host's lifetime synthesis or document it |
+| 1 | `lb@818:17` | the host's facts fail to type the `map_error` result's arm binding (method fallback where the self answers the field) — the documented "self answers where the host gives up" family; keep documented |
 
-Tools: the audit's `member_completion_positions` pass, `tmp/comp_diff.rb`
-(per-entry label-set / field / order grouping), `tmp/hl_probe.rb --method
-textDocument/completion` — `--warm` sends a diagnostic first (the host answers
-completion only once its facts exist) and the two servers should be probed in
-separate runs.  Already ported (batch 1–2): `merged_receiver_methods` (current
-module + every import in file order, deduped), `imported_type_members` with
-public type aliases, alias-qualified type receivers, the order-walking method
-fallback, completion-only dot detection (`cursor.member_receiver_at`).  Records:
-§0k, "Completion parity, part 1/2".
+Tools: the audit's `member_completion_positions` pass, `tmp/comp_diff2.rb`
+(per-entry receiver context + label-set / field / order grouping),
+`tmp/hl_probe.rb --method textDocument/completion` — `--warm` sends a diagnostic
+first (the host answers completion only once its facts exist) and the two
+servers should be probed in separate runs.  Records: §0k, "Completion parity,
+parts 1–3".
 
 ### Track 2 — Linter corpus residue
 
@@ -718,14 +720,14 @@ definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (last full run 2026-10-02); self-test suite 14 files / **591 tests** / 0 failed (re-run 2026-10-03) | stay green | `tools/bootstrap.sh -j 16` |
+| bootstrap fixed point | holds (2026-10-03 session 26 — `stage2.c == stage3.c`); self-test suite 14 files / **591 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-03) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-03) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 4 documented entries | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | 237 = **235 completion (re-measured 2026-10-03)** + 2 documented | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
+| LSP harness | 30/30 capability keys; 4 documented entries (re-measured 2026-10-03 session 26, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | **6 differ = 4 completion + the 2 documented** (re-measured 2026-10-03 session 26 on 7075 entries; completion 235 → 4 this session) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
 | LSP recovery | 6/6 cases byte-equal | stay green | `tools/lsp_recovery_probe.rb --check` |
 | formatter | 705/705 all three modes (re-measured 2026-10-03; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 494 agree / 115 differ (609 files; re-measured 2026-10-03) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
@@ -3601,6 +3603,89 @@ unless noted):
 | ~26 | Prelude `Option`/`Result` receivers: the host's `BUILTIN_TYPE_METHOD_SIGNATURES` table supplies `unwrap`/`expect`/…; the self's prelude stubs are a different set (and absent from the fallback, correctly) |
 | 15 | `vec.Vec[int].`-style specialized type receivers fall through to the fallback instead of the type-receiver path |
 | ~30 | Small resolved-vs-unresolved receiver differences (`lb@123:16`'s `a,b,both`, `lb@1577:27`, `lb@1653`-style positions) |
+
+*(All of these closed in part 3, below; the class is at 5.)*
+
+### Completion parity, part 3: registration order, the prelude merge and the receiver families (2026-10-03 session 26)
+
+Part 2 left **235** differing completion entries; this session takes the class to
+**4** — the audit's completion pass reads **4 of 619**, the harness stays at
+**30/30 + its 4 documented entries**, the corpus lint at **494 agree / 115
+differ**, and the dev tests (14 files / 0 failed), bootstrap (fixed point +
+14/14) and `test/mt` (60/0) stay green.
+
+**Registration-ordered method tables (the order-only family, ~120 entries).**
+`merged_receiver_methods` iterated `analysis.method_sigs` — a bucketed
+`map_mod.Map` — so each type's method order was hash order, while the host's
+`methods_for_receiver_type` merges in *registration* order (the current module's
+methods for the receiver, then each import's).  New `method_order: vec.Vec[str]`
+records every registration: `Context`/`Analysis`/`ModuleBinding` (the binder's
+`export_methods` appends in declaration order) and each `ImportedTypeMembers`
+(`collect_type_methods` fills it from the binding's order).  `register_method_sig`
+is the one registration point (first registration wins, like the host's
+`methods[name] ||=`), and the merge, the type/value receivers and the imported
+records iterate the vectors instead of the maps.
+
+**Method-only entries (the `as_iter` family, 15 entries).**  A module that
+declares `extending X:` without declaring `X` (std.iter's `Vec.as_iter`) had no
+`ImportedTypeMembers` entry, so its methods never reached the merge.
+`collect_method_only_members` creates entries from each binding's method table;
+they carry `declared = false`, so `type_receiver_known` keeps the host's
+`module_binding.types` gate (a method-only entry is not a type receiver).
+
+**Imports and the prelude merge (the Option/Result family, ~26 entries).**
+`Analysis.import_order` mirrors the host's `facts.imports` key order — the
+file's imports in source order, then the seeded prelude modules
+(`install_prelude_types`) — and the receiver merge follows it, so an
+`Option`/`Result` receiver carries std.option's/std.result's real method sets
+(`is_some` … `unwrap_or_else`; `is_success` … `map_error`) instead of the
+analyzer's prelude stubs.  The global list's import bucket emits the same order
+and the host's *alias* labels (`import std.hash` binds `hash`).
+
+**Receiver resolution (the largest remaining family).**  The value-receiver path
+now mirrors the host's `project_field_receiver_type_for_completion` /
+`project_method_receiver_type_for_completion` (nullable unwrap + one
+`ref`/`ptr`/`const_ptr` projection), and the analyzer records what the host's
+scope snapshot carries: `this_types` (each non-static extending method's
+resolved receiver type — `this.` receivers), arm payload bindings
+(`Option.some as s`, scoped to the enclosing function), the resolved declared
+type of annotated locals (`local_decl_types`, so `SoA[Point, 4]` resolves), the
+narrowed type of a guarded `let` (`unwrap_nullable_type`, so `get(…) else:`
+binds `ptr[int]` and not `ptr[int]?`), and the enclosing function's `FnSig`
+parameter types (`ref[NPC]` projects).  Builtin field tables (vectors, matrices,
+quaternions, `span`'s `data`/`len`, `SoA`'s per-field arrays), nested types
+(`Rectangle.` → `Edge`), tuple fields (`_0`/named), match-arm payload fields and
+the host's `value_chain_completions` (multi-segment paths: `m.col0.`,
+`r.top_edge.`) are ported; field details render the analyzer's resolved field
+type (the host's `ftype.to_s`: `fn `, `docs.language_baseline.Edge`,
+`value: int`).
+
+**Global list.**  Foreign/extern functions join the functions bucket (with the
+*declared* variadic flag for the `…` marker), nested types follow their parent,
+the values bucket registers consts then vars, type aliases come after the other
+types, and the `when` branch declarations (`Analysis.when_declarations`) merge
+into the declaration walks by line (the host's expanded AST keeps them in
+place).
+
+**Remaining completion residue (4, each classified):**
+
+| Entries | Position | Cause |
+| --- | --- | --- |
+| 1 | `mst@224:18` | the host renders a synthesized `ref` lifetime on a struct field (`ref[@_mt_0, ubyte]`; the self `ref[ubyte]`) |
+| 1 | `lb@818:17` | the host's facts fail to type the `map_error` result's arm binding and answer the method fallback where the self answers the field (`f.error`) — the documented "self answers where the host gives up" family |
+| 2 | `mst@10:52`, `mst@11:21` | positions inside comment lines containing multi-byte characters (`§`): the audit's positions are character offsets while the self's cursor walk is byte-based (the documented approximation in `cursor.mt`) |
+
+**The corpus lint caught a real bug on the way.**  The first gate run of this
+batch read **487 agree / 122 differ** with `redundant-unsafe` 0 → 390 self-only —
+every file in `projects/mtc/src` with an `unsafe:` block, untouched files
+included.  Bisecting (a host-built dev binary reproduces it, so it is a source
+bug, not a codegen one) traced it to `binder.mt`: the `member_names` edit had
+dropped the unrelated `type_param_names.set(vr.name, vr.type_params)` line, so
+an importer's binding lost every variant's type parameters.  Restored — and with
+the variant type parameters back, the arm-payload substitution through a
+prelude method (`err_val.error()`) also resolves, closing completion's
+`lb@803:23` **and** the `lb@807:8` hover: both classes now say `Option[int]`
+where they said `Option[E]`.
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

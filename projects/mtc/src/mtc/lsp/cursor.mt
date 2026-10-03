@@ -10,6 +10,7 @@
 ## exact for ASCII sources and approximate for multi-byte UTF-8.
 
 import std.str
+import std.string as string
 import std.vec as vec
 
 import mtc.lsp.utils as utils
@@ -317,13 +318,14 @@ public function type_receiver_at(source: str, line: ptr_uint, character: ptr_uin
     return Option[TypeReceiver].some(value = TypeReceiver(name = name, module_alias = module_alias))
 
 
-## The completion receiver of a member access at the cursor — the last segment
-## of the host's `find_dot_receiver_path`.  Unlike `dot_receiver_at` (which the
-## hover/definition endpoints use and which requires a plain identifier), any
-## dot context yields a receiver here — digit segments and `[…]` groups
-## included — because the host falls back to its method table for a receiver it
-## cannot resolve, so every dot position must answer that fallback.
-public function member_receiver_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[str]:
+## The full dot-receiver path at the cursor — the host's
+## `find_dot_receiver_path`: every identifier segment before the hovered dot,
+## joined by `.`, with `[…]` groups skipped (`a[0].b` gives `a.b`).  Unlike
+## `dot_receiver_at` (which the hover/definition endpoints use and which
+## requires a plain identifier), any dot context yields a path here — digit
+## segments included — because the host falls back to its method table for a
+## receiver it cannot resolve, so every dot position must answer that fallback.
+public function member_receiver_path_at(source: str, line: ptr_uint, character: ptr_uint) -> Option[str]:
     let line_text = source_line(source, line + 1)
     var idx: int = int<-character
     if idx > int<-line_text.len:
@@ -335,8 +337,8 @@ public function member_receiver_at(source: str, line: ptr_uint, character: ptr_u
     if idx < 0 or line_text.byte_at(ptr_uint<-idx) != 46:
         return Option[str].none
 
-    var last_segment: str = ""
-    var have_segment = false
+    var segments = vec.Vec[str].create()
+    defer: segments.release()
     var left: int = idx - 1
     while true:
         # Skip a `[…]` group and its contents.
@@ -357,20 +359,27 @@ public function member_receiver_at(source: str, line: ptr_uint, character: ptr_u
         var start: int = left
         while start >= 0 and utils.is_word_byte(line_text.byte_at(ptr_uint<-start)):
             start -= 1
-        if start < left and not have_segment:
-            # The path is collected right-to-left; the first segment found is
-            # the receiver (the host's `split('.').last`).
-            last_segment = line_text.slice(ptr_uint<-(start + 1), ptr_uint<-(left - start))
-            have_segment = true
+        if start < left:
+            segments.push(line_text.slice(ptr_uint<-(start + 1), ptr_uint<-(left - start)))
 
         if start >= 0 and line_text.byte_at(ptr_uint<-start) == 46:
             left = start - 1
             continue
         break
 
-    if not have_segment:
+    if segments.len() == 0:
         return Option[str].none
-    return Option[str].some(value = last_segment)
+    var path = string.String.create()
+    # Segments were collected right-to-left; join them in source order.
+    var si: ptr_uint = segments.len()
+    while si > 0:
+        si -= 1
+        if si + 1 < segments.len():
+            path.push_byte(46)
+        let seg = segments.get(si) else:
+            break
+        path.append(unsafe: read(seg))
+    return Option[str].some(value = path.as_str())
 
 
 ## The text of 1-based line `line_no` in `source`, without the newline.

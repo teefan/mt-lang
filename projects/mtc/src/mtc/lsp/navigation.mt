@@ -2940,8 +2940,9 @@ function find_method_line_in_type(file: ast.SourceFile, type_name: str, name: st
 
 ## The declared type of a builtin vector/matrix/quaternion field, as the hover
 ## renders it: `vec3.x` → `float`, `mat4.col0` → `vec4`, `quat.w` → `float`
-## (the host's `Types::Vector`/`Matrix`/`Quaternion` field tables).
-function builtin_field_type_name(type_name: str, field_name: str) -> Option[str]:
+## (the host's `Types::Vector`/`Matrix`/`Quaternion` field tables).  Completion's
+## field-chain walk reads the same table.
+public function builtin_field_type_name(type_name: str, field_name: str) -> Option[str]:
     if type_name.equal("vec2"):
         return builtin_vector_field(field_name, 2, "float")
     if type_name.equal("vec3"):

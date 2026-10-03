@@ -25,9 +25,11 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
     var type_alias_types = map_mod.Map[str, types.Type].create()
     var member_keys = map_mod.Map[str, bool].create()
     var method_sigs = map_mod.Map[str, analyzer.FnSig].create()
+    var method_order = vec.Vec[str].create()
     var interfaces = map_mod.Map[str, span[ast.InterfaceMethod]].create()
     var implemented = map_mod.Map[str, span[ast.QualifiedName]].create()
     var match_case_names = map_mod.Map[str, span[str]].create()
+    var member_names = map_mod.Map[str, span[str]].create()
     var opaque_types = map_mod.Map[str, bool].create()
     var private_functions = map_mod.Map[str, analyzer.FnSig].create()
     var private_structs = map_mod.Map[str, span[analyzer.FieldEntry]].create()
@@ -105,6 +107,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     static_member_types.set(e.name, true)
                     export_member_keys(ref_of(member_keys), e.name, e.enum_members)
                     export_case_names(ref_of(match_case_names), e.name, e.enum_members)
+                    export_case_names(ref_of(member_names), e.name, e.enum_members)
                 else:
                     private_static_member_types.set(e.name, true)
                     export_member_keys(ref_of(private_member_keys), e.name, e.enum_members)
@@ -112,6 +115,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 if exports_all or fl.visibility:
                     static_member_types.set(fl.name, true)
                     export_member_keys(ref_of(member_keys), fl.name, fl.flags_members)
+                    export_case_names(ref_of(member_names), fl.name, fl.flags_members)
                 else:
                     private_static_member_types.set(fl.name, true)
                     export_member_keys(ref_of(private_member_keys), fl.name, fl.flags_members)
@@ -121,6 +125,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                     static_member_types.set(vr.name, true)
                     export_arm_keys(ref_of(member_keys), vr.name, vr.variant_arms)
                     export_arm_case_names(ref_of(match_case_names), vr.name, vr.variant_arms)
+                    export_arm_case_names(ref_of(member_names), vr.name, vr.variant_arms)
                 else:
                     private_static_member_types.set(vr.name, true)
                     export_arm_keys(ref_of(private_member_keys), vr.name, vr.variant_arms)
@@ -134,7 +139,7 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
                 else:
                     private_type_aliases.set(ta.name, true)
             ast.Decl.decl_extending_block as ex:
-                export_methods(ref_of(member_keys), ref_of(method_sigs), ref_of(private_member_keys), ref_of(private_method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all, analysis.extending_canonical_names)
+                export_methods(ref_of(member_keys), ref_of(method_sigs), ref_of(method_order), ref_of(private_member_keys), ref_of(private_method_sigs), analysis.method_sigs, ex.type_name, ex.methods, exports_all, analysis.extending_canonical_names)
             ast.Decl.decl_interface as iface:
                 if exports_all or iface.visibility:
                     interfaces.set(iface.name, iface.interface_methods)
@@ -171,9 +176,11 @@ public function bind_module(analysis: analyzer.Analysis) -> analyzer.ModuleBindi
         static_member_types = static_member_types,
         member_keys = member_keys,
         method_sigs = method_sigs,
+        method_order = method_order,
         interfaces = interfaces,
         implemented = implemented,
         match_case_names = match_case_names,
+        member_names = member_names,
         types = opaque_types,
         private_functions = private_functions,
         private_structs = private_structs,
@@ -232,8 +239,10 @@ function export_arm_keys(member_keys: ref[map_mod.Map[str, bool]], type_name: st
 ## (existence, for member access) and their signatures into method_sigs (for
 ## method-call argument checks), keyed by the extended type name.  A method on a
 ## non-exported struct produces harmless dead keys (no importer can hold such a
-## value), so only method visibility is gated.
-function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], private_member_keys: ref[map_mod.Map[str, bool]], private_method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], source_sigs: map_mod.Map[str, analyzer.FnSig], type_ref: ptr[ast.TypeRef], methods: span[ast.Method], exports_all: bool, canonical_names: map_mod.Map[str, str]) -> void:
+## value), so only method visibility is gated.  `method_order` records the
+## exported keys in declaration order, because the LSP's completion merge needs
+## the host's registration order, not a map's bucket order.
+function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], method_order: ref[vec.Vec[str]], private_member_keys: ref[map_mod.Map[str, bool]], private_method_sigs: ref[map_mod.Map[str, analyzer.FnSig]], source_sigs: map_mod.Map[str, analyzer.FnSig], type_ref: ptr[ast.TypeRef], methods: span[ast.Method], exports_all: bool, canonical_names: map_mod.Map[str, str]) -> void:
     let type_name = unsafe: analyzer.qname_to_str(read(type_ref).name)
     # An alias-qualified target (`extending b3.Vec3:`) also exports its methods
     # under the resolved type name, which is what importers' receivers resolve to.
@@ -255,6 +264,7 @@ function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: r
                 unsafe:
                     method_sigs.set(key, read(sig_ptr))
                     private_method_sigs.set(key, read(sig_ptr))
+                method_order.push(key)
             if canonical.len > 0:
                 let canonical_key = analyzer.method_key(canonical, method.name)
                 member_keys.set(canonical_key, true)
@@ -264,4 +274,5 @@ function export_methods(member_keys: ref[map_mod.Map[str, bool]], method_sigs: r
                     unsafe:
                         method_sigs.set(canonical_key, read(canonical_sig_ptr))
                         private_method_sigs.set(canonical_key, read(canonical_sig_ptr))
+                    method_order.push(canonical_key)
         i += 1

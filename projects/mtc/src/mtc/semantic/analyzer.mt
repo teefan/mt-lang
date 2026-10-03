@@ -76,6 +76,14 @@ public struct FieldEntry:
 public struct ImportedTypeMembers:
     fields: span[FieldEntry]
     methods: map_mod.Map[str, FnSig]
+    ## The `methods` keys in registration order, because a map iterates in
+    ## bucket order and the LSP's completion merge needs the host's per-type
+    ## registration order.
+    method_order: vec.Vec[str]
+    ## True when the module *declares* the type (the host's
+    ## `module_binding.types`); a method-only entry from a module that merely
+    ## extends the type is not a type receiver the host resolves.
+    declared: bool
 
 
 ## One name of a destructuring `let (a, b) = …` binding and the type the
@@ -108,6 +116,14 @@ public struct ArmBindingEntry:
     ty: types.Type
 
 
+## The resolved receiver type of one non-static `extending` method — the
+## implicit `this` binding — keyed by the method's line, so the LSP resolves
+## `this.`'s members the way the host's scope binding does.
+public struct ThisTypeEntry:
+    line: ptr_uint
+    ty: types.Type
+
+
 public struct EventInfo:
     name: str
     capacity: int
@@ -131,9 +147,18 @@ public struct ModuleBinding:
     static_member_types: map_mod.Map[str, bool]
     member_keys: map_mod.Map[str, bool]
     method_sigs: map_mod.Map[str, FnSig]
+    ## The `method_sigs` keys in registration order (`<Type>.<method>`), because
+    ## a map iterates in bucket order and the LSP's completion merge needs the
+    ## host's per-type registration order.
+    method_order: vec.Vec[str]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
     implemented: map_mod.Map[str, span[ast.QualifiedName]]
     match_case_names: map_mod.Map[str, span[str]]
+    ## A static member type's member names — enum members, flags members and
+    ## variant arms — the host's `type.members`, which completion lists for a
+    ## type receiver.  Flags members appear only here: flags are not matchable,
+    ## so `match_case_names` omits them.
+    member_names: map_mod.Map[str, span[str]]
     types: map_mod.Map[str, bool]
     private_functions: map_mod.Map[str, FnSig]
     private_structs: map_mod.Map[str, span[FieldEntry]]
@@ -192,6 +217,8 @@ struct Context:
     unions: map_mod.Map[str, span[FieldEntry]]
     method_keys: map_mod.Map[str, bool]
     method_sigs: map_mod.Map[str, FnSig]
+    ## The `method_sigs` keys in registration order (see `ModuleBinding`).
+    method_order: vec.Vec[str]
     ## The seeded prelude modules' method signatures (`Option.unwrap`,
     ## `Result.unwrap`), consulted after the module's own table.  They are not
     ## exported on the `Analysis`: the LSP resolves a member's declaration from
@@ -200,6 +227,8 @@ struct Context:
     static_member_types: map_mod.Map[str, bool]
     match_case_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
+    ## See `ModuleBinding.member_names`.
+    member_names: map_mod.Map[str, span[str]]
     ## The static-member types that are *variants* rather than enums or flags
     ## (`Option`, `Result`, a declared `variant`): an arm resolves the
     ## constructor form `Type.arm(field: T)`, never an enum member's value.
@@ -216,6 +245,13 @@ struct Context:
     ## `editable_receiver_expression_ids`), which the linter's prefer-let needs
     ## because it cannot resolve method kinds itself.
     editable_receiver_sites: vec.Vec[EditableSite]
+    ## See `ThisTypeEntry`: the implicit `this` type of each non-static
+    ## extending method.
+    this_types: vec.Vec[ThisTypeEntry]
+    ## The module names whose method tables the LSP merges for a receiver type,
+    ## in the host's `facts.imports` key order: the file's imports in source
+    ## order, then the seeded prelude modules.
+    import_order: vec.Vec[str]
     ## Identifier arguments passed to an `out`/`inout` foreign parameter, with
     ## the argument's line: the call mutates that binding (the host's
     ## `mutating_argument_identifier_ids`), which the linter's prefer-let needs.
@@ -305,8 +341,13 @@ public struct Analysis:
     value_types: map_mod.Map[str, types.Type]
     method_keys: map_mod.Map[str, bool]
     method_sigs: map_mod.Map[str, FnSig]
+    ## See `ModuleBinding.method_order`: the LSP's completion merge reads this.
+    method_order: vec.Vec[str]
     static_member_types: map_mod.Map[str, bool]
     match_case_names: map_mod.Map[str, span[str]]
+    ## See `ModuleBinding.member_names`: the LSP's type-receiver completion
+    ## lists these (flags members included).
+    member_names: map_mod.Map[str, span[str]]
     ## See `Context.variant_types`.
     variant_types: map_mod.Map[str, bool]
     interfaces: map_mod.Map[str, span[ast.InterfaceMethod]]
@@ -356,6 +397,15 @@ public struct Analysis:
     type_param_names: map_mod.Map[str, span[ast.TypeParam]]
     ## Receiver identifiers of `editable` method calls, with their lines.
     editable_receiver_sites: vec.Vec[EditableSite]
+    ## See `ThisTypeEntry`: the implicit `this` type of each non-static
+    ## extending method, which the LSP resolves a `this.` receiver through.
+    this_types: vec.Vec[ThisTypeEntry]
+    ## See `Context.import_order`: the host's `facts.imports` key order.
+    import_order: vec.Vec[str]
+    ## The declarations of the `when` branches selected for the target platform,
+    ## which the host's expanded AST carries in place; the LSP merges them into
+    ## its declaration walks by line.
+    when_declarations: span[ast.Decl]
     ## Identifier arguments passed to `out`/`inout` foreign parameters, with
     ## their lines (the host's `mutating_argument_identifier_ids`).
     mutating_argument_sites: vec.Vec[EditableSite]
@@ -397,10 +447,12 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         unions = map_mod.Map[str, span[FieldEntry]].create(),
         method_keys = map_mod.Map[str, bool].create(),
         method_sigs = map_mod.Map[str, FnSig].create(),
+        method_order = vec.Vec[str].create(),
         prelude_method_sigs = map_mod.Map[str, FnSig].create(),
         static_member_types = map_mod.Map[str, bool].create(),
         match_case_types = map_mod.Map[str, bool].create(),
         match_case_names = map_mod.Map[str, span[str]].create(),
+        member_names = map_mod.Map[str, span[str]].create(),
         variant_types = map_mod.Map[str, bool].create(),
         functions = map_mod.Map[str, FnSig].create(),
         value_types = map_mod.Map[str, types.Type].create(),
@@ -409,6 +461,8 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         type_params = map_mod.Map[str, span[ast.TypeParamConstraint]].create(),
         type_param_names = map_mod.Map[str, span[ast.TypeParam]].create(),
         editable_receiver_sites = vec.Vec[EditableSite].create(),
+        this_types = vec.Vec[ThisTypeEntry].create(),
+        import_order = vec.Vec[str].create(),
         mutating_argument_sites = vec.Vec[EditableSite].create(),
         mutating_param_indices = map_mod.Map[str, map_mod.Map[ptr_uint, bool]].create(),
         suppressed_type_names = map_mod.Map[str, bool].create(),
@@ -485,8 +539,10 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         value_types = ctx.value_types,
         method_keys = ctx.method_keys,
         method_sigs = ctx.method_sigs,
+        method_order = ctx.method_order,
         static_member_types = ctx.static_member_types,
         match_case_names = ctx.match_case_names,
+        member_names = ctx.member_names,
         variant_types = ctx.variant_types,
         interfaces = ctx.interfaces,
         resolved_expr_types = ctx.resolved_expr_types,
@@ -516,6 +572,9 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         extending_canonical_names = ctx.extending_canonical_names,
         type_param_names = ctx.type_param_names,
         editable_receiver_sites = ctx.editable_receiver_sites,
+        this_types = ctx.this_types,
+        import_order = ctx.import_order,
+        when_declarations = when_extra,
         mutating_argument_sites = ctx.mutating_argument_sites,
         mutating_param_indices = ctx.mutating_param_indices,
         source_path = source_path,
@@ -549,6 +608,8 @@ function collect_import_aliases(ctx: ref[Context], file: ast.SourceFile) -> void
                 let module_name = qname_to_str(imp.path)
                 if not ctx.require_resolved_imports or lookup_binding(ctx, module_name) != null:
                     ctx.import_aliases.set(import_alias_name(imp.path, imp.alias_name), module_name)
+                    if not vec_contains_str(ref_of(ctx.import_order), module_name):
+                        ctx.import_order.push(module_name)
             _:
                 pass
         i += 1
@@ -960,6 +1021,12 @@ function install_prelude_types(ctx: ref[Context]) -> void:
         ctx.import_aliases.set("std.option", "std.option")
     if not ctx.import_aliases.contains("std.result"):
         ctx.import_aliases.set("std.result", "std.result")
+    # The host's `facts.imports` carries the walked imports first and the
+    # prelude modules appended; the LSP's method merge follows that order.
+    if not ctx.module_name.equal("std.option") and not vec_contains_str(ref_of(ctx.import_order), "std.option"):
+        ctx.import_order.push("std.option")
+    if not ctx.module_name.equal("std.result") and not vec_contains_str(ref_of(ctx.import_order), "std.result"):
+        ctx.import_order.push("std.result")
     register_prelude_type(ctx, "Option", "some", "none")
     register_prelude_type(ctx, "Result", "success", "failure")
     # The prelude variants' arm payloads (`Option_some{value: T}` and friends,
@@ -1090,6 +1157,7 @@ function register_builtin_event_types(ctx: ref[Context]) -> void:
         var members = vec.Vec[str].create()
         members.push("full")
         ctx.match_case_names.set("EventError", members.as_span())
+        ctx.member_names.set("EventError", members.as_span())
     if not ctx.type_names.contains("Subscription"):
         ctx.types.set("Subscription", types.Type.ty_named(module_name = "", name = "Subscription"))
 
@@ -1107,6 +1175,7 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
     arms.push(arm_a)
     arms.push(arm_b)
     ctx.match_case_names.set(name, arms.as_span())
+    ctx.member_names.set(name, arms.as_span())
     # Method keys for common prelude methods (existence-only, no type-check).
     # Fallback surface for single-file checks; program builds also merge the
     # real std.option / std.result exports (merge_prelude_binding_methods).
@@ -1120,8 +1189,8 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
         ctx.method_keys.set(method_key(name, "ok"), true)
         # Typed: is_some() -> bool, is_none() -> bool.
         let bool_ty = types.primitive("bool")
-        ctx.method_sigs.set(method_key(name, "is_some"), fn_sig_no_params(name, "is_some", bool_ty))
-        ctx.method_sigs.set(method_key(name, "is_none"), fn_sig_no_params(name, "is_none", bool_ty))
+        register_method_sig(ctx, method_key(name, "is_some"), fn_sig_no_params(name, "is_some", bool_ty))
+        register_method_sig(ctx, method_key(name, "is_none"), fn_sig_no_params(name, "is_none", bool_ty))
     else if arm_a == "success":
         ctx.method_keys.set(method_key(name, "is_success"), true)
         ctx.method_keys.set(method_key(name, "is_failure"), true)
@@ -1135,8 +1204,8 @@ function register_prelude_type(ctx: ref[Context], name: str, arm_a: str, arm_b: 
         ctx.method_keys.set(method_key(name, "error"), true)
         ctx.method_keys.set(method_key(name, "map_error"), true)
         let bool_ty = types.primitive("bool")
-        ctx.method_sigs.set(method_key(name, "is_success"), fn_sig_no_params(name, "is_success", bool_ty))
-        ctx.method_sigs.set(method_key(name, "is_failure"), fn_sig_no_params(name, "is_failure", bool_ty))
+        register_method_sig(ctx, method_key(name, "is_success"), fn_sig_no_params(name, "is_success", bool_ty))
+        register_method_sig(ctx, method_key(name, "is_failure"), fn_sig_no_params(name, "is_failure", bool_ty))
 
 
 ## Register built-in event methods (emit, subscribe, subscribe_once,
@@ -1158,6 +1227,16 @@ function register_event_methods(ctx: ref[Context]) -> void:
 
 function fn_sig_no_params(type_name: str, method_name: str, return_type: types.Type) -> FnSig:
     return FnSig(name = method_name, params = span[ParamEntry](), return_type = return_type, has_return_type = true, method_kind = ast.MethodKind.mk_plain, is_async = false, is_variadic = false, is_extern = false, required_count = 0)
+
+
+## Register a method signature and record its key in `method_order` (a first
+## registration keeps its position, like the host's `methods[name] ||=`): a map
+## iterates in bucket order, and the LSP's completion merge needs the host's
+## per-type registration order.
+function register_method_sig(ctx: ref[Context], key: str, sig: FnSig) -> void:
+    if not ctx.method_sigs.contains(key):
+        ctx.method_order.push(key)
+    ctx.method_sigs.set(key, sig)
 
 
 function check_attribute_applications(ctx: ref[Context], file: ast.SourceFile) -> void:
@@ -1486,11 +1565,11 @@ function collect_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> v
                     enter_extending_type_params(ctx, ex.type_name)
                     let sig = build_fn_sig(ctx, m.name, m.method_params, m.return_type, m.method_kind, m.is_async)
                     if m.method_kind != ast.MethodKind.mk_static or not ctx.method_sigs.contains(key):
-                        ctx.method_sigs.set(key, sig)
+                        register_method_sig(ctx, key, sig)
                     if canonical != base:
                         let canonical_key = method_key(canonical, m.name)
                         if not ctx.method_sigs.contains(canonical_key):
-                            ctx.method_sigs.set(canonical_key, sig)
+                            register_method_sig(ctx, canonical_key, sig)
                     ctx.type_params.clear()
                     ctx.suppressed_type_names.clear()
                     if m.type_params.len > 0:
@@ -1526,16 +1605,21 @@ function collect_enum_variant_members(ctx: ref[Context], file: ast.SourceFile) -
             ast.Decl.decl_enum as e:
                 ctx.static_member_types.set(e.name, true)
                 ctx.match_case_types.set(e.name, true)
-                ctx.match_case_names.set(e.name, enum_member_names(e.enum_members))
+                let names = enum_member_names(e.enum_members)
+                ctx.match_case_names.set(e.name, names)
+                ctx.member_names.set(e.name, names)
                 register_member_names(ctx, e.name, e.enum_members)
             ast.Decl.decl_flags as fl:
                 ctx.static_member_types.set(fl.name, true)
+                ctx.member_names.set(fl.name, enum_member_names(fl.flags_members))
                 register_member_names(ctx, fl.name, fl.flags_members)
             ast.Decl.decl_variant as vr:
                 ctx.static_member_types.set(vr.name, true)
                 ctx.match_case_types.set(vr.name, true)
                 ctx.variant_types.set(vr.name, true)
-                ctx.match_case_names.set(vr.name, variant_arm_names(vr.variant_arms))
+                let names = variant_arm_names(vr.variant_arms)
+                ctx.match_case_names.set(vr.name, names)
+                ctx.member_names.set(vr.name, names)
                 register_arm_names(ctx, vr.name, vr.variant_arms)
             _:
                 pass
@@ -1558,6 +1642,13 @@ function collect_enum_variant_members(ctx: ref[Context], file: ast.SourceFile) -
                     ctx.match_case_names.set(read(entry.key), read(entry.value))
                 if not ctx.match_case_types.contains(read(entry.key)):
                     ctx.match_case_types.set(read(entry.key), true)
+            var member_entries = read(binding_ptr).member_names.entries()
+            while true:
+                if not member_entries.next():
+                    break
+                let entry = member_entries.current()
+                if not ctx.member_names.contains(read(entry.key)):
+                    ctx.member_names.set(read(entry.key), read(entry.value))
 
 
 function register_member_names(ctx: ref[Context], type_name: str, members: span[ast.EnumMember]) -> void:
@@ -2084,6 +2175,10 @@ function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> voi
                     unsafe:
                         m = read(ex.methods.data + j)
                     enter_extending_type_params(ctx, ex.type_name)
+                    if m.method_kind != ast.MethodKind.mk_static:
+                        # `this` is bound in a non-static method only (see
+                        # check_method_body); record it for the LSP.
+                        ctx.this_types.push(ThisTypeEntry(line = m.line, ty = this_type))
                     check_method_body(ctx, this_type, m, ex.type_name)
                     ctx.type_params.clear()
                     j += 1
@@ -4808,7 +4903,45 @@ function collect_imported_type_members(ctx: ref[Context]) -> map_mod.Map[str, Im
         collect_binding_members(module_name, entry.value, false, ref_of(members_by_type))
         collect_binding_members(module_name, entry.value, true, ref_of(members_by_type))
         collect_binding_alias_members(ctx, module_name, entry.value, ref_of(members_by_type))
+        collect_method_only_members(module_name, entry.value, ref_of(members_by_type))
     return members_by_type
+
+
+## A binding's method-only types: a module that declares `extending X:` without
+## declaring `X` itself (std.iter's `Vec.as_iter`) has no struct/union entry, so
+## the LSP's receiver merge would miss its methods — the host's method table is
+## keyed by the type object, which that module has regardless.
+function collect_method_only_members(
+    module_name: str,
+    binding_ptr: ptr[ModuleBinding],
+    members_by_type: ref[map_mod.Map[str, ImportedTypeMembers]],
+) -> void:
+    let method_order = unsafe: read(binding_ptr).method_order
+    var i: ptr_uint = 0
+    while i < method_order.len():
+        let key_ptr = method_order.get(i) else:
+            break
+        let key = unsafe: read(key_ptr)
+        # Method keys are `<Type>.<member>`; a qualified type part keeps its dots.
+        var last_dot: ptr_uint = key.len
+        var k: ptr_uint = 0
+        while k < key.len:
+            if key.byte_at(k) == '.':
+                last_dot = k
+            k += 1
+        if last_dot < key.len:
+            let type_name = key.slice(0, last_dot)
+            var full = string.String.create()
+            full.append(module_name)
+            full.append(".")
+            full.append(type_name)
+            if not members_by_type.contains(full.as_str()):
+                var methods = map_mod.Map[str, FnSig].create()
+                var order = vec.Vec[str].create()
+                collect_type_methods(type_name, binding_ptr, ref_of(methods), ref_of(order))
+                members_by_type.set(full.as_str(), ImportedTypeMembers(
+                    fields = span[FieldEntry](), methods = methods, method_order = order, declared = false))
+        i += 1
 
 
 ## A module's public type aliases: the host's type identity resolves an alias to
@@ -4842,12 +4975,13 @@ function collect_binding_alias_members(
             _:
                 pass
         var methods = map_mod.Map[str, FnSig].create()
-        collect_type_methods(alias_name, binding_ptr, ref_of(methods))
+        var method_order = vec.Vec[str].create()
+        collect_type_methods(alias_name, binding_ptr, ref_of(methods), ref_of(method_order))
         var key = string.String.create()
         key.append(module_name)
         key.append(".")
         key.append(alias_name)
-        members_by_type.set(key.as_str(), ImportedTypeMembers(fields = fields, methods = methods))
+        members_by_type.set(key.as_str(), ImportedTypeMembers(fields = fields, methods = methods, method_order = method_order, declared = true))
 
 
 ## One group of a binding's types (its structs, or its unions) with their methods.
@@ -4865,28 +4999,36 @@ function collect_binding_members(
         let entry = entries.current()
         let type_name = unsafe: read(entry.key)
         var methods = map_mod.Map[str, FnSig].create()
-        collect_type_methods(type_name, binding_ptr, ref_of(methods))
+        var method_order = vec.Vec[str].create()
+        collect_type_methods(type_name, binding_ptr, ref_of(methods), ref_of(method_order))
         var key = string.String.create()
         key.append(module_name)
         key.append(".")
         key.append(type_name)
-        members_by_type.set(key.as_str(), ImportedTypeMembers(fields = unsafe: read(entry.value), methods = methods))
+        members_by_type.set(key.as_str(), ImportedTypeMembers(fields = unsafe: read(entry.value), methods = methods, method_order = method_order, declared = true))
 
 
 ## A type's methods, keyed by their own names: the binding's `method_sigs` are
 ## keyed `<Type>.<method>` (no `static:` marker — the signature's `method_kind`
-## carries that).
-function collect_type_methods(type_name: str, binding_ptr: ptr[ModuleBinding], methods: ref[map_mod.Map[str, FnSig]]) -> void:
+## carries that).  Iterating the binding's `method_order` keeps the host's
+## per-type registration order in `order`.
+function collect_type_methods(type_name: str, binding_ptr: ptr[ModuleBinding], methods: ref[map_mod.Map[str, FnSig]], order: ref[vec.Vec[str]]) -> void:
     var prefix = string.String.create()
     prefix.append(type_name)
     prefix.append(".")
-    var entries = unsafe: read(binding_ptr).method_sigs.entries()
-    while entries.next():
-        let entry = entries.current()
-        let key = unsafe: read(entry.key)
+    let method_order = unsafe: read(binding_ptr).method_order
+    var i: ptr_uint = 0
+    while i < method_order.len():
+        let key_ptr = method_order.get(i) else:
+            break
+        let key = unsafe: read(key_ptr)
         if key.starts_with(prefix.as_str()):
-            let method_name = key.slice(prefix.len(), key.len - prefix.len())
-            methods.set(method_name, unsafe: read(entry.value))
+            let sig_ptr = unsafe: read(binding_ptr).method_sigs.get(key)
+            if sig_ptr != null:
+                let method_name = key.slice(prefix.len(), key.len - prefix.len())
+                methods.set(method_name, unsafe: read(sig_ptr))
+                order.push(method_name)
+        i += 1
 
 
 ## The host does not check a *generic* body — it is checked at instantiation —

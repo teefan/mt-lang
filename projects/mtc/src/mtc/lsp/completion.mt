@@ -23,7 +23,9 @@ import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
+import mtc.lsp.navigation as navigation
 import mtc.lsp.protocol as proto
+import mtc.lsp.scope as scope_mod
 import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.utils as utils
@@ -111,10 +113,21 @@ public function handle_completion(
             type_alias = trecv.value.module_alias
         Option.none:
             pass
-    match cursor.member_receiver_at(source, line, character):
-        Option.some as recv:
+    match cursor.member_receiver_path_at(source, line, character):
+        Option.some as path_payload:
+            let receiver_path = path_payload.value
+            # The receiver is the path's last segment (the host's
+            # `find_dot_receiver`).
+            var segment_start: ptr_uint = 0
+            var pi: ptr_uint = 0
+            while pi < receiver_path.len:
+                if receiver_path.byte_at(pi) == '.':
+                    segment_start = pi + 1
+                pi += 1
+            let receiver = receiver_path.slice(segment_start, receiver_path.len - segment_start)
             var dot_items = dot_receiver_completions(
-                ws, ref_of(analysis), ast_file, file_path.as_str(), uri, recv.value, type_alias, prefix, line)
+                ws, ref_of(analysis), ast_file, file_path.as_str(), uri, receiver, receiver_path,
+                type_alias, prefix, line)
             proto.write_response_raw(id, dot_items.as_str())
             dot_items.release()
             return
@@ -149,6 +162,7 @@ function dot_receiver_completions(
     file_path: str,
     uri: str,
     receiver: str,
+    receiver_path: str,
     type_alias: str,
     prefix: str,
     line: ptr_uint,
@@ -172,18 +186,27 @@ function dot_receiver_completions(
         heap.release(type_items)
         return result
 
-    # 3. Value receiver: fields then methods of the receiver's type.  An
+    # 3. A multi-segment path (`m.col0.`, `r.top_edge.`): the host walks the
+    # intermediate segments through fields before answering.
+    if receiver_path.len > receiver.len:
+        var chain_items = value_chain_completions(analysis, ast_file, receiver_path, line + 1, prefix, uri)
+        if chain_items != null:
+            let result = unsafe: read(chain_items)
+            heap.release(chain_items)
+            return result
+
+    # 4. Value receiver: fields then methods of the receiver's type.  An
     # imported type's members come from the analysis's `imported_type_members`
     # record, since the current module's tables do not carry them.
     match receiver_value_type(analysis, ast_file, receiver, line + 1):
         Option.some as ty:
-            var imported_items = imported_value_receiver_completions(analysis, ast_file, ty.value, prefix, uri)
+            var imported_items = imported_value_receiver_completions(analysis, ty.value, prefix, uri)
             if imported_items != null:
                 let result = unsafe: read(imported_items)
                 heap.release(imported_items)
                 return result
             var value_items = value_receiver_completions(
-                analysis, ast_file, ty.value, prefix, uri, module_text)
+                analysis, ty.value, prefix, uri)
             if value_items != null:
                 let result = unsafe: read(value_items)
                 heap.release(value_items)
@@ -930,12 +953,12 @@ struct ReceiverMethod:
 
 
 ## The host's `methods_for_receiver_type`: the current module's methods for
-## `type_name` in registration order, then every import's (in the file's import
-## order), deduped by key (first wins).  The host renders these items with
-## absolute type names, so callers render with an empty current module.
+## `type_name` in registration order, then every import's (the host's
+## `facts.imports` key order), deduped by key (first wins).  The host renders
+## these items with absolute type names, so callers render with an empty
+## current module.
 function merged_receiver_methods(
     analysis: ref[analyzer.Analysis],
-    ast_file: ast.SourceFile,
     type_name: str,
     sink: ref[vec.Vec[ReceiverMethod]],
     seen: ref[map_mod.Map[str, bool]],
@@ -945,56 +968,52 @@ function merged_receiver_methods(
     prefix.append(type_name)
     prefix.append(".")
 
-    var entries = unsafe: read(analysis).method_sigs.entries()
-    while entries.next():
-        let entry = entries.current()
-        let key = unsafe: read(entry.key)
+    let order = unsafe: read(analysis).method_order
+    var oi: ptr_uint = 0
+    while oi < order.len():
+        let key_ptr = order.get(oi) else:
+            break
+        let key = unsafe: read(key_ptr)
         if key.starts_with(prefix.as_str()):
             let member = key.slice(prefix.len(), key.len - prefix.len())
             if not seen.contains(member):
-                seen.set(member, true)
-                sink.push(ReceiverMethod(
-                    key = member, module_name = unsafe: read(analysis).module_name,
-                    sig = unsafe: read(entry.value)))
+                let sig_ptr = unsafe: read(analysis).method_sigs.get(key)
+                if sig_ptr != null:
+                    seen.set(member, true)
+                    sink.push(ReceiverMethod(
+                        key = member, module_name = unsafe: read(analysis).module_name,
+                        sig = unsafe: read(sig_ptr)))
+        oi += 1
 
+    # Then each imported module's table, in the host's `facts.imports` key
+    # order (the file's imports, then the prelude modules).
+    let import_order = unsafe: read(analysis).import_order
     var ii: ptr_uint = 0
-    while ii < ast_file.imports.len:
-        var d: ast.Decl
-        unsafe:
-            d = read(ast_file.imports.data + ii)
-        match d:
-            ast.Decl.decl_import as imp:
-                var alias = ""
-                match imp.alias_name:
-                    Option.some as a:
-                        alias = a.value
-                    Option.none:
-                        # The implicit alias is the path's last segment.
-                        if imp.path.parts.len > 0:
-                            alias = unsafe: read(imp.path.parts.data + imp.path.parts.len - 1)
-                if alias.len > 0:
-                    let module_ptr = unsafe: read(analysis).imports.get(alias)
-                    if module_ptr != null:
-                        let module_name = unsafe: read(module_ptr)
-                        var key = string.String.create()
-                        defer: key.release()
-                        key.append(module_name)
-                        key.append(".")
-                        key.append(type_name)
-                        let member_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str())
-                        if member_ptr != null:
-                            let methods = unsafe: read(member_ptr).methods
-                            var me = methods.entries()
-                            while me.next():
-                                let e = me.current()
-                                let member = unsafe: read(e.key)
-                                if not seen.contains(member):
-                                    seen.set(member, true)
-                                    sink.push(ReceiverMethod(
-                                        key = member, module_name = module_name,
-                                        sig = unsafe: read(e.value)))
-            _:
-                pass
+    while ii < import_order.len():
+        let module_ptr = import_order.get(ii) else:
+            break
+        let module_name = unsafe: read(module_ptr)
+        var key = string.String.create()
+        defer: key.release()
+        key.append(module_name)
+        key.append(".")
+        key.append(type_name)
+        let member_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str())
+        if member_ptr != null:
+            let members = unsafe: read(member_ptr)
+            var moi: ptr_uint = 0
+            while moi < members.method_order.len():
+                let member_ptr2 = members.method_order.get(moi) else:
+                    break
+                let member = unsafe: read(member_ptr2)
+                if not seen.contains(member):
+                    let sig_ptr = members.methods.get(member)
+                    if sig_ptr != null:
+                        seen.set(member, true)
+                        sink.push(ReceiverMethod(
+                            key = member, module_name = module_name,
+                            sig = unsafe: read(sig_ptr)))
+                moi += 1
         ii += 1
 
 
@@ -1067,6 +1086,76 @@ function emit_receiver_method(
         read(count) = read(count) + 1
 
 
+## The nested types of a struct type receiver (`Rectangle.` → `Edge`), the
+## host's nested-types branch: kind 5, the child's bare name as the label and
+## `Parent.Child` as the detail.  None when the type declares no nested types.
+function nested_type_receiver_items(
+    ast_file: ast.SourceFile,
+    type_name: str,
+    prefix: str,
+    uri: str,
+) -> ptr[string.String]?:
+    # The declaration's own list is the ordered source (the host iterates
+    # `type.nested_types`).
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_struct as s:
+                if s.name.equal(type_name):
+                    return emit_nested_child_items(s.nested_types, type_name, prefix, uri)
+            _:
+                pass
+        di += 1
+    return null
+
+
+## Emit one level of a struct's nested type declarations as completion items.
+function emit_nested_child_items(
+    nested: span[ast.Decl],
+    parent_name: str,
+    prefix: str,
+    uri: str,
+) -> ptr[string.String]?:
+    var items_json = string.String.create()
+    items_json.append("[")
+    var first = true
+    var count: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < nested.len and count < MAX_COMPLETION_ITEMS:
+        var d: ast.Decl
+        unsafe:
+            d = read(nested.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                if prefix_matches(s.name, prefix):
+                    var detail = string.String.create()
+                    defer: detail.release()
+                    detail.append(parent_name)
+                    detail.append(".")
+                    detail.append(s.name)
+                    var sort_text = string.String.create()
+                    defer: sort_text.release()
+                    sort_text.append("1_")
+                    sort_text.append(s.name)
+                    append_item_ext(
+                        ref_of(items_json), s.name, KIND_MODULE_TYPE, detail.as_str(), s.name,
+                        sort_text.as_str(), s.name, uri, 0, "", "", ref_of(first))
+                    count += 1
+            _:
+                pass
+        i += 1
+    items_json.append("]")
+    if count == 0:
+        items_json.release()
+        return null
+    let alloc = heap.must_alloc[string.String](1)
+    unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), false)
+    return alloc
+
+
 ## Completions for a type-name receiver: enum/variant members (kind 22) first,
 ## then the type's methods (kind 6).  Returns null when the receiver is not a
 ## known type name.
@@ -1095,8 +1184,8 @@ function type_receiver_completions(
     var first = true
     var count: ptr_uint = 0
 
-    # Enum/flags/variant members.
-    let members_ptr = unsafe: read(analysis).match_case_names.get(type_name)
+    # Enum/flags/variant members (the host's `type.members`).
+    let members_ptr = unsafe: read(analysis).member_names.get(type_name)
     if members_ptr != null:
         unsafe:
             let members = read(members_ptr)
@@ -1119,6 +1208,13 @@ function type_receiver_completions(
                     count += 1
                 mi += 1
 
+    # Nested types (`Rectangle.` → `Edge`): the host answers with them alone
+    # when they exist.
+    var nested_items = nested_type_receiver_items(ast_file, type_name, prefix, uri)
+    if nested_items != null:
+        items_json.release()
+        return nested_items
+
     # Methods declared on the type — merged across the current module and every
     # import, static only, with the `static:` marker stripped (the host's
     # `completion_items_for_type_receiver`).
@@ -1126,7 +1222,7 @@ function type_receiver_completions(
     defer: methods.release()
     var method_seen = map_mod.Map[str, bool].create()
     defer: method_seen.release()
-    merged_receiver_methods(analysis, ast_file, type_name, ref_of(methods), ref_of(method_seen))
+    merged_receiver_methods(analysis, type_name, ref_of(methods), ref_of(method_seen))
     var mi2: ptr_uint = 0
     while mi2 < methods.len() and count < MAX_COMPLETION_ITEMS:
         let mp = methods.get(mi2) else:
@@ -1145,26 +1241,41 @@ function type_receiver_completions(
     return alloc
 
 
+## The host's `project_receiver_type_for_completion`: a `ref[T]`/`ptr[T]`/
+## `const_ptr[T]` receiver projects to `T` (a `ref`'s lifetime argument is
+## skipped).
+function project_value_receiver_type(ty: types.Type) -> types.Type:
+    match ty:
+        types.Type.ty_generic as g:
+            if g.name.equal("ref") and g.args.len >= 1:
+                return types.pointer_element(ty)
+            if (g.name.equal("ptr") or g.name.equal("const_ptr")) and g.args.len == 1:
+                return unsafe: read(g.args.data + 0)
+            return ty
+        _:
+            return ty
+
+
 ## Completions for a value receiver: the type's fields (kind 8, `0_`) then its
 ## methods (kind 6, `1_`).  Returns null when the type has neither.
 function value_receiver_completions(
     analysis: ref[analyzer.Analysis],
-    ast_file: ast.SourceFile,
     receiver_ty: types.Type,
     prefix: str,
     uri: str,
-    current_module: str,
 ) -> ptr[string.String]?:
-    let type_name = type_to_key_name(receiver_ty)
-    if type_name.len == 0:
-        return null
+    # The host's `project_field_receiver_type_for_completion`: the fields come
+    # from the type with a nullable unwrapped and `ref`/`ptr` projected; the
+    # methods project through `ref`/`ptr` alone.
+    let field_ty = project_value_receiver_type(types.unwrap_nullable(receiver_ty))
+    let type_name = type_to_key_name(field_ty)
 
     var items_json = string.String.create()
     items_json.append("[")
     var first = true
     var count: ptr_uint = 0
 
-    let fields_ptr = unsafe: read(analysis).structs.get(type_name)
+    let fields_ptr = if type_name.len > 0: unsafe: read(analysis).structs.get(type_name) else: null
     if fields_ptr != null:
         let fields = unsafe: read(fields_ptr)
         var fi: ptr_uint = 0
@@ -1172,32 +1283,48 @@ function value_receiver_completions(
             let field = unsafe: read(fields.data + fi)
             if prefix_matches(field.name, prefix):
                 var detail = string.String.create()
+                defer: detail.release()
                 detail.append(field.name)
                 detail.append(": ")
-                detail.append(field_type_text(ast_file, type_name, field.name))
+                var rendered_field = field_type_detail(fields, field.name)
+                detail.append(rendered_field.as_str())
+                rendered_field.release()
                 var sort_text = string.String.create()
+                defer: sort_text.release()
                 sort_text.append("0_")
                 sort_text.append(field.name)
                 append_item_ext(
                     ref_of(items_json), field.name, KIND_FIELD, detail.as_str(), field.name,
                     sort_text.as_str(), field.name, uri, 0, "", "", ref_of(first))
-                sort_text.release()
-                detail.release()
                 count += 1
             fi += 1
+    else:
+        match field_ty:
+            # A match-arm payload binding's type: the arm's declared fields.
+            types.Type.ty_variant_arm_payload as payload:
+                emit_payload_field_items(ref_of(items_json), payload.fields, prefix, uri, ref_of(first), ref_of(count))
+            # A tuple's positional or named fields.
+            types.Type.ty_tuple as tup:
+                emit_tuple_field_items(ref_of(items_json), tup.elements, tup.field_names, prefix, uri, ref_of(first), ref_of(count))
+            _:
+                if type_name.len > 0:
+                    emit_builtin_fields(ref_of(items_json), analysis, field_ty, prefix, uri, ref_of(first), ref_of(count))
 
+    let method_ty = project_value_receiver_type(receiver_ty)
+    let method_name = type_to_key_name(method_ty)
     var methods = vec.Vec[ReceiverMethod].create()
     defer: methods.release()
     var method_seen = map_mod.Map[str, bool].create()
     defer: method_seen.release()
-    merged_receiver_methods(analysis, ast_file, type_name, ref_of(methods), ref_of(method_seen))
-    var mi: ptr_uint = 0
-    while mi < methods.len() and count < MAX_COMPLETION_ITEMS:
-        let mp = methods.get(mi) else:
-            break
-        unsafe:
-            emit_receiver_method(read(mp), false, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
-        mi += 1
+    if method_name.len > 0:
+        merged_receiver_methods(analysis, method_name, ref_of(methods), ref_of(method_seen))
+        var mi: ptr_uint = 0
+        while mi < methods.len() and count < MAX_COMPLETION_ITEMS:
+            let mp = methods.get(mi) else:
+                break
+            unsafe:
+                emit_receiver_method(read(mp), false, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+            mi += 1
 
     items_json.append("]")
     if count == 0:
@@ -1207,6 +1334,213 @@ function value_receiver_completions(
     let alloc = heap.must_alloc[string.String](1)
     unsafe: read(alloc) = wrap_completion_result(ref_of(items_json), count >= MAX_COMPLETION_ITEMS)
     return alloc
+
+
+const VECTOR_COMPONENT_NAMES: array[str, 4] = array[str, 4]("x", "y", "z", "w")
+const MATRIX_COLUMN_NAMES: array[str, 4] = array[str, 4]("col0", "col1", "col2", "col3")
+
+
+## Emit the host's builtin field tables — a vector's `x`/`y`/`z`/`w`, a matrix's
+## columns, a quaternion's components, a `span`'s `data`/`len` and an `SoA`'s
+## per-field arrays (the host's `Types::Vector`/`Matrix`/`Quaternion`/`Span`/
+## `SoA` `fields`).
+function emit_builtin_fields(
+    items_json: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    receiver_ty: types.Type,
+    prefix: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    let name = type_to_key_name(receiver_ty)
+    if name.equal("vec2") or name.equal("vec3") or name.equal("vec4") or
+       name.equal("ivec2") or name.equal("ivec3") or name.equal("ivec4") or name.equal("quat"):
+        let width = vector_field_width(name)
+        let element = if name.starts_with("ivec"): "int" else: "float"
+        var i: ptr_uint = 0
+        while i < width and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+            emit_builtin_field(items_json, VECTOR_COMPONENT_NAMES[i], element, prefix, uri, first, count)
+            i += 1
+        return
+    if name.equal("mat3") or name.equal("mat4"):
+        let dim: ptr_uint = if name.equal("mat3"): 3 else: 4
+        let column = if dim == 3: "vec3" else: "vec4"
+        var i: ptr_uint = 0
+        while i < dim and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+            emit_builtin_field(items_json, MATRIX_COLUMN_NAMES[i], column, prefix, uri, first, count)
+            i += 1
+        return
+    if name.equal("span"):
+        var data_text = string.String.create()
+        defer: data_text.release()
+        data_text.append("ptr[")
+        var element = type_render.qualified_name(types.pointer_element(receiver_ty), "")
+        data_text.append(element.as_str())
+        element.release()
+        data_text.append("]")
+        emit_builtin_field(items_json, "data", data_text.as_str(), prefix, uri, first, count)
+        emit_builtin_field(items_json, "len", "ptr_uint", prefix, uri, first, count)
+        return
+    if name.equal("SoA"):
+        emit_soa_fields(items_json, analysis, receiver_ty, prefix, uri, first, count)
+
+
+## The number of named components a vector type's fields carry (`vec3.x` …).
+function vector_field_width(name: str) -> ptr_uint:
+    if name.equal("vec2") or name.equal("ivec2"):
+        return 2
+    if name.equal("vec3") or name.equal("ivec3"):
+        return 3
+    return 4
+
+
+## An `SoA[T, N]`'s fields: `T`'s own fields, each joined into
+## `array[<field type>, N]` (the host's `Types::SoA#fields`).
+function emit_soa_fields(
+    items_json: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    receiver_ty: types.Type,
+    prefix: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    match receiver_ty:
+        types.Type.ty_generic as g:
+            if g.args.len < 2:
+                return
+            let element_name = type_to_key_name(unsafe: read(g.args.data + 0))
+            let fields_ptr = unsafe: read(analysis).structs.get(element_name) else:
+                return
+            var count_text = type_render.qualified_name(unsafe: read(g.args.data + 1), "")
+            defer: count_text.release()
+            let fields = unsafe: read(fields_ptr)
+            var fi: ptr_uint = 0
+            while fi < fields.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+                let field = unsafe: read(fields.data + fi)
+                var field_ty = string.String.create()
+                defer: field_ty.release()
+                field_ty.append("array[")
+                var rendered_field = field_type_detail(fields, field.name)
+                field_ty.append(rendered_field.as_str())
+                rendered_field.release()
+                field_ty.append(", ")
+                field_ty.append(count_text.as_str())
+                field_ty.append("]")
+                emit_builtin_field(items_json, field.name, field_ty.as_str(), prefix, uri, first, count)
+                fi += 1
+        _:
+            pass
+
+
+## Emit one builtin field item, with a pre-rendered type text.
+function emit_builtin_field(
+    items_json: ref[string.String],
+    name: str,
+    type_text: str,
+    prefix: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    if not prefix_matches(name, prefix):
+        return
+    var detail = string.String.create()
+    defer: detail.release()
+    detail.append(name)
+    detail.append(": ")
+    detail.append(type_text)
+    var sort_text = string.String.create()
+    defer: sort_text.release()
+    sort_text.append("0_")
+    sort_text.append(name)
+    append_item_ext(
+        items_json, name, KIND_FIELD, detail.as_str(), name, sort_text.as_str(), name, uri,
+        0, "", "", first)
+    unsafe:
+        read(count) = read(count) + 1
+
+
+## Emit a tuple receiver's fields — `_0`, `_1`, … for a positional tuple, or the
+## declared names for a named one (the host's `Types::Tuple#fields`).
+function emit_tuple_field_items(
+    items_json: ref[string.String],
+    elements: span[types.Type],
+    field_names: Option[span[str]],
+    prefix: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var i: ptr_uint = 0
+    while i < elements.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        var label = string.String.create()
+        defer: label.release()
+        match field_names:
+            Option.some as names:
+                if i < names.value.len:
+                    label.append(unsafe: read(names.value.data + i))
+            Option.none:
+                pass
+        if label.len() == 0:
+            label.append("_")
+            if i >= 100:
+                label.push_byte(ubyte<-(48 + (i / 100) % 10))
+            if i >= 10:
+                label.push_byte(ubyte<-(48 + (i / 10) % 10))
+            label.push_byte(ubyte<-(48 + i % 10))
+        if prefix_matches(label.as_str(), prefix):
+            var detail = string.String.create()
+            defer: detail.release()
+            detail.append(label.as_str())
+            detail.append(": ")
+            var rendered = type_render.qualified_name(unsafe: read(elements.data + i), "")
+            detail.append(rendered.as_str())
+            rendered.release()
+            var sort_text = string.String.create()
+            defer: sort_text.release()
+            sort_text.append("0_")
+            sort_text.append(label.as_str())
+            append_item_ext(
+                items_json, label.as_str(), KIND_FIELD, detail.as_str(), label.as_str(),
+                sort_text.as_str(), label.as_str(), uri, 0, "", "", first)
+            unsafe:
+                read(count) = read(count) + 1
+        i += 1
+
+
+## Emit a variant arm payload's fields (`Option_some{value: int}` — the host's
+## `Types::VariantArmPayload#fields`), as field items.
+function emit_payload_field_items(
+    items_json: ref[string.String],
+    fields: span[types.PayloadField],
+    prefix: str,
+    uri: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var fi: ptr_uint = 0
+    while fi < fields.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        let field = unsafe: read(fields.data + fi)
+        if prefix_matches(field.name, prefix):
+            var detail = string.String.create()
+            defer: detail.release()
+            detail.append(field.name)
+            detail.append(": ")
+            var rendered = type_render.qualified_name(field.ty, "")
+            detail.append(rendered.as_str())
+            rendered.release()
+            var sort_text = string.String.create()
+            defer: sort_text.release()
+            sort_text.append("0_")
+            sort_text.append(field.name)
+            append_item_ext(
+                items_json, field.name, KIND_FIELD, detail.as_str(), field.name,
+                sort_text.as_str(), field.name, uri, 0, "", "", first)
+            unsafe:
+                read(count) = read(count) + 1
+        fi += 1
 
 
 ## The `(module, type)` an imported type reference names.  The analyzer produces
@@ -1240,7 +1574,6 @@ function imported_type_reference(ty: types.Type) -> Option[ImportedTypeRef]:
 ## local-type path and the method fallback.
 function imported_value_receiver_completions(
     analysis: ref[analyzer.Analysis],
-    ast_file: ast.SourceFile,
     receiver_ty: types.Type,
     prefix: str,
     uri: str,
@@ -1288,7 +1621,7 @@ function imported_value_receiver_completions(
     defer: methods.release()
     var method_seen = map_mod.Map[str, bool].create()
     defer: method_seen.release()
-    merged_receiver_methods(analysis, ast_file, im_name, ref_of(methods), ref_of(method_seen))
+    merged_receiver_methods(analysis, im_name, ref_of(methods), ref_of(method_seen))
     var mi: ptr_uint = 0
     while mi < methods.len() and count < MAX_COMPLETION_ITEMS:
         let mp = methods.get(mi) else:
@@ -1342,36 +1675,17 @@ function append_param_snippet(target: ref[string.String], label: str, params: sp
     target.append(")")
 
 
-## Render a struct/union field's declared type from the AST.  The semantic
-## `FieldEntry.ty` names are resolution-time views, so the AST TypeRef is the
-## safe source (the host reads its own binding's type here).
-function field_type_text(ast_file: ast.SourceFile, type_name: str, field_name: str) -> str:
-    var di: ptr_uint = 0
-    while di < ast_file.declarations.len:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(ast_file.declarations.data + di)
-        match decl:
-            ast.Decl.decl_struct as s:
-                if s.name.equal(type_name):
-                    var fi: ptr_uint = 0
-                    while fi < s.struct_fields.len:
-                        let f = unsafe: read(s.struct_fields.data + fi)
-                        if f.name.equal(field_name):
-                            return ast_formatter.render_type(f.field_type)
-                        fi += 1
-            ast.Decl.decl_union as u:
-                if u.name.equal(type_name):
-                    var ui: ptr_uint = 0
-                    while ui < u.union_fields.len:
-                        let f = unsafe: read(u.union_fields.data + ui)
-                        if f.name.equal(field_name):
-                            return ast_formatter.render_type(f.field_type)
-                        ui += 1
-            _:
-                pass
-        di += 1
-    return ""
+## Render a struct/union field's resolved type the way the host renders a
+## completion field's `ftype` (its `Types::Base#to_s`): the analyzer's field
+## type, fully qualified.
+function field_type_detail(fields: span[analyzer.FieldEntry], field_name: str) -> string.String:
+    var i: ptr_uint = 0
+    while i < fields.len:
+        let f = unsafe: read(fields.data + i)
+        if f.name.equal(field_name):
+            return type_render.qualified_name(f.ty, "")
+        i += 1
+    return string.String.create()
 
 
 ## The file's method list — the host's `method-fallback` answer for a receiver
@@ -1434,18 +1748,112 @@ function extending_base_name(type_name: ptr[ast.TypeRef]?) -> str:
     return unsafe: read(t.name.parts.data + t.name.parts.len - 1)
 
 
+## The host's `value_chain_completions`: a multi-segment receiver path
+## (`mscaled.col0.`, `r.top_edge.`) resolves its first segment as a value, walks
+## the remaining segments through fields, and answers the final type's members.
+## None when a segment does not resolve or the final type has no members.
+function value_chain_completions(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    path: str,
+    cursor_line: ptr_uint,
+    prefix: str,
+    uri: str,
+) -> ptr[string.String]?:
+    var segments = vec.Vec[str].create()
+    defer: segments.release()
+    var start: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i <= path.len:
+        if i == path.len or path.byte_at(i) == '.':
+            segments.push(path.slice(start, i - start))
+            start = i + 1
+        i += 1
+    if segments.len() < 2:
+        return null
+
+    let first_ptr = segments.get(0) else:
+        return null
+    var current_ty = receiver_value_type(analysis, ast_file, unsafe: read(first_ptr), cursor_line) else:
+        return null
+    var si: ptr_uint = 1
+    while si < segments.len():
+        let seg_ptr = segments.get(si) else:
+            break
+        let seg = unsafe: read(seg_ptr)
+        match field_of_type(analysis, current_ty, seg):
+            Option.some as ft:
+                current_ty = ft.value
+            Option.none:
+                return null
+        si += 1
+
+    var imported_items = imported_value_receiver_completions(analysis, current_ty, prefix, uri)
+    if imported_items != null:
+        return imported_items
+    return value_receiver_completions(analysis, current_ty, prefix, uri)
+
+
+## The type of `field_name` on `ty` — a struct field (local, nested or
+## imported) or a builtin vector/matrix/quaternion field, the host's
+## `project_field_receiver_type_for_completion(...).field(name)`.
+function field_of_type(analysis: ref[analyzer.Analysis], ty: types.Type, field_name: str) -> Option[types.Type]:
+    let field_ty = project_value_receiver_type(types.unwrap_nullable(ty))
+    let type_name = type_to_key_name(field_ty)
+    let fields_ptr = unsafe: read(analysis).structs.get(type_name)
+    if fields_ptr != null:
+        let fields = unsafe: read(fields_ptr)
+        var i: ptr_uint = 0
+        while i < fields.len:
+            let f = unsafe: read(fields.data + i)
+            if f.name.equal(field_name):
+                return Option[types.Type].some(value = f.ty)
+            i += 1
+        return Option[types.Type].none
+    match imported_type_reference(field_ty):
+        Option.some as reference:
+            var key = string.String.create()
+            defer: key.release()
+            key.append(reference.value.module_name)
+            key.append(".")
+            key.append(reference.value.name)
+            let member_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str())
+            if member_ptr != null:
+                let members = unsafe: read(member_ptr)
+                var mi: ptr_uint = 0
+                while mi < members.fields.len:
+                    let f = unsafe: read(members.fields.data + mi)
+                    if f.name.equal(field_name):
+                        return Option[types.Type].some(value = f.ty)
+                    mi += 1
+            return Option[types.Type].none
+        Option.none:
+            pass
+    match navigation.builtin_field_type_name(type_name, field_name):
+        Option.some as type_text:
+            return Option[types.Type].some(value = types.primitive(type_text.value))
+        Option.none:
+            return Option[types.Type].none
+
+
 ## Resolve a receiver name to the value's type: the innermost local or
 ## parameter of that name visible at `cursor_line`, else a module-level value.
+## `this` resolves to the enclosing `extending` method's receiver type (the
+## host's implicit scope binding).
 function receiver_value_type(
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
     name: str,
     cursor_line: ptr_uint,
 ) -> Option[types.Type]:
+    if name.equal("this"):
+        return enclosing_this_type(analysis, ast_file, cursor_line)
+
     # Locals and parameters of the enclosing function.
     var best_line: ptr_uint = 0
     var body: ptr[ast.Stmt]? = null
     var params: span[ast.Param] = span[ast.Param]()
+    var enclosing_name: str = ""
     var di: ptr_uint = 0
     while di < ast_file.declarations.len:
         var decl: ast.Decl
@@ -1457,15 +1865,35 @@ function receiver_value_type(
                     best_line = fun.line
                     body = fun.body
                     params = fun.method_params
+                    enclosing_name = fun.name
             _:
                 pass
         di += 1
+
+    # A match-arm payload binding (`Option.some as s`) declared inside the
+    # enclosing function carries the arm's payload type — the host's scope
+    # binding for the arm name.  Bindings of the same name in other functions
+    # are out of scope.
+    if best_line > 0:
+        match arm_binding_type_for(analysis, name, best_line, cursor_line):
+            Option.some as arm_ty:
+                return Option[types.Type].some(value = arm_ty.value)
+            Option.none:
+                pass
 
     var pi: ptr_uint = 0
     while pi < params.len:
         let p = unsafe: read(params.data + pi)
         if p.name.equal(name):
-            # `Param.param_type` is a value, so resolve the TypeRef by name.
+            # A parameter's type is the enclosing function's resolved signature
+            # type (the host's scope binding), so a generic parameter
+            # (`ref[NPC]`) projects like a declared local.  The AST TypeRef is
+            # the fallback for a signature the analysis does not carry.
+            let sig_ptr = unsafe: read(analysis).functions.get(enclosing_name)
+            if sig_ptr != null:
+                let sig = unsafe: read(sig_ptr)
+                if pi < sig.params.len:
+                    return Option[types.Type].some(value = unsafe: read(sig.params.data + pi).ty)
             if p.param_type.name.parts.len == 0:
                 return Option[types.Type].none
             let type_name = unsafe: read(p.param_type.name.parts.data + p.param_type.name.parts.len - 1)
@@ -1499,8 +1927,92 @@ function receiver_value_type(
     return Option[types.Type].none
 
 
-## The type of the local `name` declared in `stmt` at or before
-## `cursor_line`, preferring the analyzer's inferred initializer type.
+## The recorded match-arm payload binding for `name` declared in
+## `[lower_bound, cursor_line]`: the binding with the greatest declaration line.
+function arm_binding_type_for(
+    analysis: ref[analyzer.Analysis],
+    name: str,
+    lower_bound: ptr_uint,
+    cursor_line: ptr_uint,
+) -> Option[types.Type]:
+    var best_line: ptr_uint = 0
+    var found = false
+    var best_ty: types.Type = types.Type.ty_error
+    let entries = unsafe: read(analysis).arm_binding_types
+    var i: ptr_uint = 0
+    while i < entries.len():
+        let ep = entries.get(i) else:
+            break
+        let entry = unsafe: read(ep)
+        if entry.name.equal(name) and entry.line >= lower_bound and entry.line <= cursor_line and entry.line >= best_line:
+            best_line = entry.line
+            found = true
+            best_ty = entry.ty
+        i += 1
+    if not found:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = best_ty)
+
+
+## The receiver type of `this` at `cursor_line`: the recorded `this` type of the
+## nearest `extending` method declared at or before the cursor, when no function
+## intervenes.  None when the cursor is not inside a non-static method.
+function enclosing_this_type(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    cursor_line: ptr_uint,
+) -> Option[types.Type]:
+    var best_line: ptr_uint = 0
+    var found = false
+    var best_ty: types.Type = types.Type.ty_error
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                if fun.line <= cursor_line and fun.line >= best_line:
+                    best_line = fun.line
+                    found = false
+            ast.Decl.decl_extending_block as ex:
+                var mi: ptr_uint = 0
+                while mi < ex.methods.len:
+                    let m = unsafe: read(ex.methods.data + mi)
+                    if m.line <= cursor_line and m.line >= best_line:
+                        best_line = m.line
+                        match this_type_for_line(analysis, m.line):
+                            Option.some as tt:
+                                found = true
+                                best_ty = tt.value
+                            Option.none:
+                                found = false
+                    mi += 1
+            _:
+                pass
+        di += 1
+    if not found:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = best_ty)
+
+
+## The recorded `this` type of the `extending` method declared on `line`.
+function this_type_for_line(analysis: ref[analyzer.Analysis], line: ptr_uint) -> Option[types.Type]:
+    var i: ptr_uint = 0
+    let entries = unsafe: read(analysis).this_types
+    while i < entries.len():
+        let ep = entries.get(i) else:
+            break
+        let entry = unsafe: read(ep)
+        if entry.line == line:
+            return Option[types.Type].some(value = entry.ty)
+        i += 1
+    return Option[types.Type].none
+
+
+## The type of the local `name` declared in `stmt` at or before `cursor_line`:
+## the recorded destructuring type, the analyzer's resolved declared type, or
+## the inferred type of the initializer.
 function find_local_type(
     analysis: ref[analyzer.Analysis],
     stmt: ast.Stmt,
@@ -1510,11 +2022,33 @@ function find_local_type(
     match stmt:
         ast.Stmt.stmt_local as loc:
             if loc.name.equal(name) and loc.line <= cursor_line:
+                # A destructuring binding carries its own per-name type.
+                var di2: ptr_uint = 0
+                let destructures = unsafe: read(analysis).destructure_types
+                while di2 < destructures.len():
+                    let ep = destructures.get(di2) else:
+                        break
+                    let entry = unsafe: read(ep)
+                    if entry.line == loc.line and entry.name.equal(name):
+                        return Option[types.Type].some(value = entry.ty)
+                    di2 += 1
+                # An annotated local carries the analyzer's resolved declared
+                # type; an unannotated one its initializer's inferred type.
+                if loc.stmt_type != null:
+                    let declared_ptr = unsafe: read(analysis).local_decl_types.get(loc.line)
+                    if declared_ptr != null:
+                        return Option[types.Type].some(value = unsafe: read(declared_ptr))
+                    return Option[types.Type].none
                 match type_render.initializer_type(analysis, loc.value):
-                    Option.some as ty:
-                        return Option[types.Type].some(value = ty.value)
+                    Option.some as inited:
+                        # A guarded `let x = … else:` binds the *narrowed*
+                        # success type, which is what the analyzer puts in its
+                        # scope and the host's snapshot carries.
+                        if loc.else_body != null:
+                            return Option[types.Type].some(value = analyzer.unwrap_nullable_type(inited.value))
+                        return Option[types.Type].some(value = inited.value)
                     Option.none:
-                        return type_ref_to_type(analysis, loc.stmt_type)
+                        return Option[types.Type].none
         ast.Stmt.stmt_block as blk:
             var si: ptr_uint = 0
             while si < blk.statements.len:
@@ -1577,6 +2111,33 @@ function type_by_name(analysis: ref[analyzer.Analysis], type_name: str) -> Optio
     return Option[types.Type].some(value = unsafe: read(ty_ptr))
 
 
+## The declarations in the host's AST order: the file's own list with the
+## selected `when` branches' expanded declarations merged in by line (the host
+## expands them in place, so `module_when_func` sits at its branch's position).
+function merged_declarations(ast_file: ast.SourceFile, analysis: ref[analyzer.Analysis]) -> vec.Vec[ast.Decl]:
+    var merged = vec.Vec[ast.Decl].create()
+    let when_decls = unsafe: read(analysis).when_declarations
+    var i: ptr_uint = 0
+    var j: ptr_uint = 0
+    while i < ast_file.declarations.len or j < when_decls.len:
+        var take_when = false
+        if i >= ast_file.declarations.len:
+            take_when = true
+        else if j < when_decls.len:
+            let base_line = scope_mod.decl_start_line(unsafe: read(ast_file.declarations.data + i))
+            let when_line = scope_mod.decl_start_line(unsafe: read(when_decls.data + j))
+            take_when = when_line < base_line
+        if take_when:
+            unsafe:
+                merged.push(read(when_decls.data + j))
+            j += 1
+        else:
+            unsafe:
+                merged.push(read(ast_file.declarations.data + i))
+            i += 1
+    return merged
+
+
 ## The host's global bucket list: functions, types, imports, values, locals,
 ## type constructors, keywords — each with its `sortText` bucket and `data`.
 function build_completions_json(
@@ -1597,18 +2158,35 @@ function build_completions_json(
     var first = true
     var count: ptr_uint = 0
 
+    # The host's AST order: the file's declarations with the selected `when`
+    # branches' expanded declarations merged in by line.
+    var declarations = merged_declarations(ast_file, analysis)
+    defer: declarations.release()
+
     # Functions, in declaration order.
     var di: ptr_uint = 0
-    while di < ast_file.declarations.len and count < MAX_COMPLETION_ITEMS:
-        var decl: ast.Decl
-        unsafe:
-            decl = read(ast_file.declarations.data + di)
+    while di < declarations.len() and count < MAX_COMPLETION_ITEMS:
+        let dp = declarations.get(di) else:
+            break
+        let decl = unsafe: read(dp)
         match decl:
             ast.Decl.decl_function as fun:
                 if prefix_matches(fun.name, prefix):
                     emit_function_item(
                         ref_of(items_json), analysis, fun.name, fun.method_params, fun.return_type,
-                        module_text, uri, ref_of(first), ref_of(count))
+                        false, module_text, uri, ref_of(first), ref_of(count))
+            # The host's `facts.functions` carries foreign/extern declarations
+            # too; their signatures come from the analysis.
+            ast.Decl.decl_extern_function as ef:
+                if prefix_matches(ef.name, prefix):
+                    emit_function_item(
+                        ref_of(items_json), analysis, ef.name, span[ast.Param](), null,
+                        ef.variadic, module_text, uri, ref_of(first), ref_of(count))
+            ast.Decl.decl_foreign_function as ff:
+                if prefix_matches(ff.name, prefix):
+                    emit_function_item(
+                        ref_of(items_json), analysis, ff.name, span[ast.Param](), null,
+                        ff.variadic, module_text, uri, ref_of(first), ref_of(count))
             _:
                 pass
         di += 1
@@ -1616,12 +2194,19 @@ function build_completions_json(
     # Types: the prelude's and the resolved imports' first, then the file's.
     emit_import_type_items(
         ws, ref_of(items_json), analysis, uri, prefix, ref_of(first), ref_of(count))
+    # The host registers the declared types first and the type aliases after
+    # them, each in source order.
     di = 0
-    while di < ast_file.declarations.len and count < MAX_COMPLETION_ITEMS:
-        var decl2: ast.Decl
-        unsafe:
-            decl2 = read(ast_file.declarations.data + di)
-        emit_declared_type_item(ref_of(items_json), decl2, uri, prefix, ref_of(first), ref_of(count))
+    while di < declarations.len() and count < MAX_COMPLETION_ITEMS:
+        let dp2 = declarations.get(di) else:
+            break
+        emit_declared_type_item(ref_of(items_json), unsafe: read(dp2), false, uri, prefix, ref_of(first), ref_of(count))
+        di += 1
+    di = 0
+    while di < declarations.len() and count < MAX_COMPLETION_ITEMS:
+        let dp3 = declarations.get(di) else:
+            break
+        emit_declared_type_item(ref_of(items_json), unsafe: read(dp3), true, uri, prefix, ref_of(first), ref_of(count))
         di += 1
 
     # Imports (resolved only), the prelude pair first.  The file's own roots are
@@ -1632,30 +2217,16 @@ function build_completions_json(
     emit_import_items(
         ws, analysis, ast_file, file_path, ref_of(items_json), uri, prefix, ref_of(first), ref_of(count))
 
-    # Module-level values.
-    di = 0
-    while di < ast_file.declarations.len and count < MAX_COMPLETION_ITEMS:
-        var decl3: ast.Decl
-        unsafe:
-            decl3 = read(ast_file.declarations.data + di)
-        match decl3:
-            ast.Decl.decl_const as c:
-                if prefix_matches(c.name, prefix):
-                    emit_value_item(
-                        ref_of(items_json), analysis, c.name, c.const_type,
-                        module_text, uri, ref_of(first), ref_of(count))
-            ast.Decl.decl_var as v:
-                if prefix_matches(v.name, prefix):
-                    emit_value_item(
-                        ref_of(items_json), analysis, v.name, v.var_type,
-                        module_text, uri, ref_of(first), ref_of(count))
-            _:
-                pass
-        di += 1
+    # Module-level values.  The host registers consts first, then vars — two
+    # passes, each in source order.
+    emit_module_value_items(
+        ref_of(items_json), analysis, declarations.as_span(), true, module_text, uri, prefix, ref_of(first), ref_of(count))
+    emit_module_value_items(
+        ref_of(items_json), analysis, declarations.as_span(), false, module_text, uri, prefix, ref_of(first), ref_of(count))
 
     # Locals visible at the cursor.
     emit_local_binding_items(
-        analysis, ast_file, line + 1, prefix, uri, module_text,
+        analysis, declarations.as_span(), line + 1, prefix, uri, module_text,
         ref_of(items_json), ref_of(first), ref_of(count))
 
     # Type-constructor keywords.
@@ -1707,6 +2278,7 @@ function emit_function_item(
     name: str,
     params: span[ast.Param],
     return_type: ptr[ast.TypeRef]?,
+    variadic: bool,
     current_module: str,
     uri: str,
     first: ref[bool],
@@ -1729,7 +2301,10 @@ function emit_function_item(
         detail.append(name)
         detail.append("(")
         detail.append(params_text.as_str())
-        if sig.is_variadic:
+        # The declared variadic flag: the analysis marks every foreign
+        # signature variadic for argument checking, but the host renders only
+        # the declaration's own `...`.
+        if variadic:
             if params_text.len() > 0:
                 detail.append(", ")
             detail.append("...")
@@ -1765,11 +2340,48 @@ function emit_function_item(
         read(count) = read(count) + 1
 
 
+## Emit the module-level `const` (`consts`) or `var` declarations, in source
+## order — the host's `facts.values` registration order.
+function emit_module_value_items(
+    items_json: ref[string.String],
+    analysis: ref[analyzer.Analysis],
+    declarations: span[ast.Decl],
+    consts: bool,
+    current_module: str,
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var di: ptr_uint = 0
+    while di < declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(declarations.data + di)
+        match decl:
+            ast.Decl.decl_const as c:
+                if consts and prefix_matches(c.name, prefix):
+                    emit_value_item(
+                        items_json, analysis, c.name, c.const_type,
+                        current_module, uri, first, count)
+            ast.Decl.decl_var as v:
+                if not consts and prefix_matches(v.name, prefix):
+                    emit_value_item(
+                        items_json, analysis, v.name, v.var_type,
+                        current_module, uri, first, count)
+            _:
+                pass
+        di += 1
+
+
 ## Emit one type item for a declaration, in the host's kind mapping:
 ## non-generic enums/flags/variants are kind 13, everything else kind 7.
+## `aliases` selects which pass the declaration belongs to: the host registers
+## the declared types first and the type aliases after them.
 function emit_declared_type_item(
     items_json: ref[string.String],
     decl: ast.Decl,
+    aliases: bool,
     uri: str,
     prefix: str,
     first: ref[bool],
@@ -1777,24 +2389,69 @@ function emit_declared_type_item(
 ) -> void:
     match decl:
         ast.Decl.decl_struct as s:
+            if aliases:
+                return
             emit_type_item(items_json, s.name, KIND_CLASS, uri, prefix, first, count)
+            emit_nested_type_items(items_json, s.nested_types, s.name, uri, prefix, first, count)
         ast.Decl.decl_union as u:
+            if aliases:
+                return
             emit_type_item(items_json, u.name, KIND_CLASS, uri, prefix, first, count)
         ast.Decl.decl_enum as e:
+            if aliases:
+                return
             emit_type_item(items_json, e.name, KIND_ENUM, uri, prefix, first, count)
         ast.Decl.decl_flags as fl:
+            if aliases:
+                return
             emit_type_item(items_json, fl.name, KIND_ENUM, uri, prefix, first, count)
         ast.Decl.decl_variant as vr:
+            if aliases:
+                return
             if vr.type_params.len == 0:
                 emit_type_item(items_json, vr.name, KIND_ENUM, uri, prefix, first, count)
             else:
                 emit_type_item(items_json, vr.name, KIND_CLASS, uri, prefix, first, count)
         ast.Decl.decl_type_alias as ta:
+            if not aliases:
+                return
             emit_type_item(items_json, ta.name, KIND_CLASS, uri, prefix, first, count)
         ast.Decl.decl_opaque as op:
+            if aliases:
+                return
             emit_type_item(items_json, op.name, KIND_CLASS, uri, prefix, first, count)
         _:
             pass
+
+
+## Emit a struct's nested type declarations as `Parent.Child` (the host's
+## `facts.types` keys them the same way), directly after the parent.
+function emit_nested_type_items(
+    items_json: ref[string.String],
+    nested: span[ast.Decl],
+    parent_name: str,
+    uri: str,
+    prefix: str,
+    first: ref[bool],
+    count: ref[ptr_uint],
+) -> void:
+    var i: ptr_uint = 0
+    while i < nested.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+        var d: ast.Decl
+        unsafe:
+            d = read(nested.data + i)
+        match d:
+            ast.Decl.decl_struct as s:
+                var qualified = string.String.create()
+                defer: qualified.release()
+                qualified.append(parent_name)
+                qualified.append(".")
+                qualified.append(s.name)
+                emit_type_item(items_json, qualified.as_str(), KIND_CLASS, uri, prefix, first, count)
+                emit_nested_type_items(items_json, s.nested_types, qualified.as_str(), uri, prefix, first, count)
+            _:
+                pass
+        i += 1
 
 
 ## Emit one type item, skipping the host's hidden built-in names.
@@ -1871,7 +2528,15 @@ function emit_module_type_items(
                 unsafe:
                     decl = read(module_file.declarations.data + di)
                 if decl_is_public_type(decl, exports_all):
-                    emit_declared_type_item(items_json, decl, uri, prefix, first, count)
+                    emit_declared_type_item(items_json, decl, false, uri, prefix, first, count)
+                di += 1
+            di = 0
+            while di < module_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
+                var decl2: ast.Decl
+                unsafe:
+                    decl2 = read(module_file.declarations.data + di)
+                if decl_is_public_type(decl2, exports_all):
+                    emit_declared_type_item(items_json, decl2, true, uri, prefix, first, count)
                 di += 1
 
 
@@ -1912,13 +2577,10 @@ function emit_import_items(
     var roots = ws.effective_module_roots_for(file_path)
     defer: roots.release()
 
-    if unsafe: read(analysis).imports.contains("std.option"):
-        emit_import_item(items_json, "std.option", "std.option", uri, prefix, first, count)
-    if unsafe: read(analysis).imports.contains("std.result"):
-        emit_import_item(items_json, "std.result", "std.result", uri, prefix, first, count)
-
     # Import declarations live in `ast_file.imports`, not in the declaration
-    # list; iterating the wrong span is why no alias was ever offered.
+    # list; iterating the wrong span is why no alias was ever offered.  The
+    # label is the import's alias, or the path's last segment when none was
+    # given (`import std.hash` binds `hash`).
     var ii: ptr_uint = 0
     while ii < ast_file.imports.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:
         var imp: ast.Decl
@@ -1933,11 +2595,19 @@ function emit_import_items(
                         Option.some as alias:
                             label = alias.value
                         Option.none:
-                            pass
+                            if import_decl.path.parts.len > 0:
+                                label = unsafe: read(import_decl.path.parts.data + import_decl.path.parts.len - 1)
                     emit_import_item(items_json, label, module_name, uri, prefix, first, count)
             _:
                 pass
         ii += 1
+
+    # The seeded prelude modules follow the walked imports, as the host's
+    # `facts.imports` keys do.
+    if unsafe: read(analysis).imports.contains("std.option"):
+        emit_import_item(items_json, "std.option", "std.option", uri, prefix, first, count)
+    if unsafe: read(analysis).imports.contains("std.result"):
+        emit_import_item(items_json, "std.result", "std.result", uri, prefix, first, count)
 
 
 ## True when the module resolves under the workspace's roots.
@@ -2018,7 +2688,7 @@ function emit_value_item(
 ## declaration order.
 function emit_local_binding_items(
     analysis: ref[analyzer.Analysis],
-    ast_file: ast.SourceFile,
+    declarations: span[ast.Decl],
     cursor_line: ptr_uint,
     prefix: str,
     uri: str,
@@ -2032,10 +2702,10 @@ function emit_local_binding_items(
     var body: ptr[ast.Stmt]? = null
     var params: span[ast.Param] = span[ast.Param]()
     var di: ptr_uint = 0
-    while di < ast_file.declarations.len:
+    while di < declarations.len:
         var decl: ast.Decl
         unsafe:
-            decl = read(ast_file.declarations.data + di)
+            decl = read(declarations.data + di)
         match decl:
             ast.Decl.decl_function as fun:
                 if fun.line <= cursor_line and fun.line >= best_line:
@@ -2228,11 +2898,14 @@ function type_receiver_known(analysis: ref[analyzer.Analysis], type_name: str, a
     key.append(unsafe: read(module_ptr))
     key.append(".")
     key.append(type_name)
-    if a.imported_type_members.contains(key.as_str()):
+    # A method-only entry (the module extends but does not declare the type) is
+    # not a type receiver the host resolves from `module_binding.types`.
+    let member_ptr = a.imported_type_members.get(key.as_str())
+    if member_ptr != null and unsafe: read(member_ptr).declared:
         return true
-    # An imported enum/flags/variant's members are merged into
-    # `match_case_names` under the bare name.
-    return a.match_case_names.contains(type_name)
+    # An imported enum/flags/variant's members are merged into `member_names`
+    # under the bare name.
+    return a.member_names.contains(type_name)
 
 
 ## Resolve a receiver name to its Milk Tea type name (e.g. "v" → "Vec").
