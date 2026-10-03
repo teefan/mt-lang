@@ -344,6 +344,8 @@ public function edits_for_warning(
         return prefer_let_else_edit(lines, line_index, false)
     if code.equal("prefer-inline-methods"):
         return prefer_inline_methods_edit(lines, line_index)
+    if code.equal("unused-import"):
+        return unused_import_edit(lines, line_index)
     return Option[FixEdit].none
 
 
@@ -375,12 +377,16 @@ public function apply_edit(lines: ref[vec.Vec[string.String]], edit: FixEdit) ->
     owned.new_text.release()
 
 
-## Insert `text` (split on newlines) as new lines starting at `index`.
+## Insert `text` (split on newlines, Ruby's `split("\n")` semantics: a
+## trailing newline terminates the last line rather than adding an empty one)
+## as new lines starting at `index`.
 function insert_lines_at(lines: ref[vec.Vec[string.String]], index: ptr_uint, text: str) -> void:
     var insert_at = index
     var start: ptr_uint = 0
     var i: ptr_uint = 0
     while i <= text.len:
+        if i == text.len and i > 0 and text.byte_at(i - 1) == 10:
+            break
         if i == text.len or text.byte_at(i) == 10:
             if not lines.insert(insert_at, string.String.from_str(text.slice(start, i - start))):
                 return
@@ -389,20 +395,42 @@ function insert_lines_at(lines: ref[vec.Vec[string.String]], index: ptr_uint, te
         i += 1
 
 
-## `var` → `let` at the first word-boundary `var` on the line.
+## `var` → `let` at the first word-boundary `var` on the line, as a whole-line
+## rewrite carrying the new line (the host's `prefer_let_edits`).
 function prefer_let_edit(lines: ref[vec.Vec[string.String]], line_index: ptr_uint) -> Option[FixEdit]:
     let text = line_text(lines, line_index)
     match find_word(text, "var"):
         Option.some as pos:
+            var new_line = string.String.create()
+            new_line.append(text.slice(0, pos.value))
+            new_line.append("let")
+            new_line.append(text.slice(pos.value + 3, text.len - pos.value - 3))
+            new_line.append("\n")
             return Option[FixEdit].some(value = FixEdit(
                 start_line = line_index,
-                start_char = pos.value,
-                end_line = line_index,
-                end_char = pos.value + 3,
-                new_text = string.String.from_str("let")
+                start_char = 0,
+                end_line = line_index + 1,
+                end_char = 0,
+                new_text = new_line
             ))
         Option.none:
             return Option[FixEdit].none
+
+
+## The host's `unused-import` edit: delete the import line.  The rule is not in
+## `fixable_codes` (never applied by `--fix`, matching the host's auto-fixable
+## list), but the LSP's quickfix offers it.
+function unused_import_edit(lines: ref[vec.Vec[string.String]], line_index: ptr_uint) -> Option[FixEdit]:
+    let text = line_text(lines, line_index)
+    if not text.trim_ascii_whitespace().starts_with("import"):
+        return Option[FixEdit].none
+    return Option[FixEdit].some(value = FixEdit(
+        start_line = line_index,
+        start_char = 0,
+        end_line = line_index + 1,
+        end_char = 0,
+        new_text = string.String.create()
+    ))
 
 
 ## Delete a final bare `return` line.
@@ -445,7 +473,8 @@ function redundant_else_edit(lines: ref[vec.Vec[string.String]], line_index: ptr
 
     var body_end = first_body
     var probe = first_body
-    while probe < lines.len():
+    let body_limit = content_line_count(lines)
+    while probe < body_limit:
         let text = line_text(lines, probe)
         if text.trim_ascii_whitespace().len == 0 or indent_of(text) >= body_indent:
             body_end = probe
@@ -453,6 +482,8 @@ function redundant_else_edit(lines: ref[vec.Vec[string.String]], line_index: ptr
         else:
             break
 
+    # The replacement is the dedented body (the host's `new_body`): the lines
+    # joined with their newlines, so the text ends with one.
     var replacement = string.String.create()
     var bi = first_body
     while bi <= body_end:
@@ -464,6 +495,7 @@ function redundant_else_edit(lines: ref[vec.Vec[string.String]], line_index: ptr
         else:
             replacement.append(text)
         bi += 1
+    replacement.append("\n")
 
     return Option[FixEdit].some(value = FixEdit(
         start_line = else_index,
@@ -472,6 +504,18 @@ function redundant_else_edit(lines: ref[vec.Vec[string.String]], line_index: ptr
         end_char = 0,
         new_text = replacement
     ))
+
+
+## The number of *content* lines in the buffer: a trailing empty element is
+## `split_lines`' representation of the source's final newline (`"a\n"` is
+## `["a", ""]` while Ruby's `"a\n".lines` is `["a\n"]`), so scans that walk a
+## buffer's real lines must not consume it.
+function content_line_count(lines: ref[vec.Vec[string.String]]) -> ptr_uint:
+    if lines.len() == 0:
+        return 0
+    if line_text(lines, lines.len() - 1).len == 0:
+        return lines.len() - 1
+    return lines.len()
 
 
 ## Delete the trailing comma at the warning's 1-based column.
@@ -696,10 +740,10 @@ function redundant_type_annotation_edit(lines: ref[vec.Vec[string.String]], line
     ))
 
 
-## An LSP-space edit for one diagnostic, computed against `source`.  The
-## whole-line edit mode is converted to an LSP range ending at column 0 of
-## the line after the replaced block, with a trailing newline on non-empty
-## replacement text.
+## An LSP-space edit for one diagnostic, computed against `source`.  The edit
+## is passed through unchanged: the generators carry the host's own ranges and
+## replacement text (whole-line rewrites include their trailing newline), so a
+## code action's TextEdit matches the host's byte for byte.
 public struct LspFixEdit:
     start_line: ptr_uint
     start_char: ptr_uint
@@ -713,24 +757,12 @@ public function lsp_edit_for_warning(source: str, code: str, line: ptr_uint, col
     defer: release_lines(ref_of(lines))
     match edits_for_warning(ref_of(lines), code, line, column, message):
         Option.some as edit:
-            var e = edit.value
-            if e.start_line == e.end_line:
-                return Option[LspFixEdit].some(value = LspFixEdit(
-                    start_line = e.start_line,
-                    start_char = e.start_char,
-                    end_line = e.end_line,
-                    end_char = e.end_char,
-                    new_text = e.new_text
-                ))
-            var text = e.new_text
-            if text.len() > 0:
-                text.append("\n")
             return Option[LspFixEdit].some(value = LspFixEdit(
-                start_line = e.start_line,
-                start_char = 0,
-                end_line = e.end_line,
-                end_char = 0,
-                new_text = text
+                start_line = edit.value.start_line,
+                start_char = edit.value.start_char,
+                end_line = edit.value.end_line,
+                end_char = edit.value.end_char,
+                new_text = edit.value.new_text
             ))
         Option.none:
             return Option[LspFixEdit].none
@@ -1063,11 +1095,13 @@ function prefer_let_else_edit(
     if colon_pos == 0:
         return Option[FixEdit].none
 
-    # Build the replacement: `let x = v else: <body>`
+    # Build the replacement: `let x = v else: <body>` — a whole-line rewrite
+    # whose text ends with the line's newline (the host's shape).
     var replacement = string.String.from_str(decl_text)
     replacement.append(" else:")
     if colon_pos < guard_text.len:
         replacement.append(guard_text.slice(colon_pos, guard_text.len - colon_pos))
+    replacement.append("\n")
 
     return Option[FixEdit].some(value = FixEdit(
         start_line = line_index,
@@ -1203,7 +1237,8 @@ function prefer_inline_methods_edit(lines: ref[vec.Vec[string.String]], line_ind
             return Option[FixEdit].none
         i += 1
 
-    # The struct's last member, a blank line, then the block's methods.
+    # The struct's last member, a blank line, then the block's methods — the
+    # host's text, which ends with the method lines' final newline.
     var new_text = string.String.from_str(line_text(lines, last_member))
     new_text.append("\n\n")
     i = first
@@ -1212,6 +1247,7 @@ function prefer_inline_methods_edit(lines: ref[vec.Vec[string.String]], line_ind
             new_text.append("\n")
         new_text.append(line_text(lines, i))
         i += 1
+    new_text.append("\n")
 
     return Option[FixEdit].some(value = FixEdit(
         start_line = last_member,

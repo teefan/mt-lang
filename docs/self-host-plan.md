@@ -68,7 +68,7 @@ for the process backend; re-measured 2026-10-03 — request parity holds, while 
 terminal *event order* differs (`terminated`→`exited` vs `exited`→`terminated`)
 and build-on-launch is missing; the remaining gaps — build-on-launch, the
 lldb-dap bridge, the debug map — are §10 of `docs/dap-design.md`).**
-**LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **66 requests + 19 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **67 requests + 19 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **LSP project audit (live counter, 2026-10-03 session 27): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 7075 entries, **4 stable differing entries + the host's first-file `documentSymbol` race**: `completion` **2** (the session-26 close read 4; the two byte-vs-character position entries are closed by the request-boundary conversion — the residue is the host's synthesized `ref` lifetime `mst@224:18` and the host giving up on a `map_error` arm binding `lb@818:17`, both documented), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward); the race entry (`docs/data_structures.mt documentSymbol`) appears only when the host's first-file facts lag (measured in the gates run).  **Every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work), `definition`/`declaration`/`typeDefinition`/`implementation`/`references` (915 each, 0), `documentSymbol` and the file-level endpoints.**
 **LSP project audit (previous live counter, 2026-10-03 session 26): 7075 entries, **6 differ = `completion` 4 + the 2 documented entries**: completion **4** (235 at the session-24 close; the residue is classified in §0k's part-3 record — the host's synthesized `ref` lifetime, the host giving up on a `map_error` arm binding, and two byte-vs-character positions inside comment lines), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward).**  Earlier live counters: session 18 read 2 differ on the then-6456-entry corpus (the entry count grew with the completion pass), session 13 read 22.
 **LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **22 differ** (session 13 close): hover 9, documentSymbol 5, semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set) → 22 (session 13's third: codeLens and workspace/symbol 1 → 0 each via the host's token-pair symbol list, documentHighlight 2 → 1, and the token scanner's keyword/heredoc/type-argument rules).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's single survivor needs the host's carried-forward binding resolution (a label token resolving a binding that is out of scope at that line).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
@@ -128,18 +128,22 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 28 close (2026-10-03) — Track 7's **stage-14 leftovers**
-landed with harness locks: `prepareCallHierarchy`'s item shape (always kind 12,
-`receiver_type: null`), `linkedEditingRange`'s local-binding gate and
-empty→null, `inlayHint`'s receiver-aware callee resolution and inferred return
-hints (`-> Task[void]`), `executeCommand`'s unknown→null, and the
-`typeDefinition` verification (on functions and imported methods already
-matching; on directory-form modules the self answers the declaration the
-host's path helper cannot reach — the fifth documented harness entry).  Two
-extras the new fixture surfaced: `workspace/symbol` now walks the host's
-document set (glob-sorted walked files, then warm, then open) and the
-immutable-assignment sema message/range match the host.  The harness corpus is
-**66 requests + 19 probes**, 30/30 capability keys, 5 documented entries; the
+Last updated: session 28 close (2026-10-03) — Track 7's **stage-14 leftovers**,
+the **fix engine** (stage 10 + the host's validation guard) and the
+**quickfix extras** (stage 16) landed with harness locks: `prepareCallHierarchy`'s
+item shape (always kind 12, `receiver_type: null`), `linkedEditingRange`'s
+local-binding gate and empty→null, `inlayHint`'s receiver-aware callee
+resolution and inferred return hints (`-> Task[void]`), `executeCommand`'s
+unknown→null, the `typeDefinition` verification (on functions and imported
+methods already matching; on directory-form modules the self answers the
+declaration the host's path helper cannot reach — the fifth documented harness
+entry), `prefer-inline-methods --fix` plus `validated_fixed_source`, and the
+per-diagnostic code-action branch set with byte-equal titles, the cast and
+import actions and the `diagnostics` echo.  Two extras the new fixture
+surfaced: `workspace/symbol` now walks the host's document set (glob-sorted
+walked files, then warm, then open) and the immutable-assignment sema
+message/range match the host.  The harness corpus is
+**67 requests + 19 probes**, 30/30 capability keys, 5 documented entries; the
 SimpleGame audit stays **4 stable differing entries + the first-file
 `documentSymbol` race**.  Session 27 had converted the request boundary's
 UTF-16 positions to byte offsets (completion 4 → 2).  Session 26 had taken
@@ -708,10 +712,28 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     `(format: …, format.parse: …, format.lex: …)` and lint's
     `rules=… total=…` + per-rule lines (`formatter.rb:37-59`,
     `cli/commands/format.rb:173-196`).
-  - **Quickfix extras** (stage 16): `Cast expression to <type>` for
-    `cannot assign …` (parenthesize non-simple values, wrap in `unsafe:` if
-    required); `Import <module>` for unknown-name/type diagnostics
-    (`code_actions.rb:38-55, 265-285`); titles byte-equal.
+  - **Quickfix extras** (stage 16) — **DONE (session 28)**: the whole
+    per-diagnostic branch set now mirrors the host (`code_actions.rb:29-297`)
+    with byte-equal titles (the host's `STATIC_QUICK_FIX_TITLES` table,
+    including the `null` title for `unused-import`), every action echoing the
+    request's diagnostic object (`diagnostics: [diag]`), the new
+    `Cast expression to <type>` action (the host's line rewrite with its
+    doubled indent reproduced exactly) and the `Import <path>` action (the
+    `data.suggestion` "did you mean" path); `shadow` is the host's
+    annotation-only action, `unused-param` renames to `_x`, the unsafe wrap
+    uses the host's block body and `Wrap statement in unsafe block` title,
+    the match-arms action carries the case list in its title and inserts
+    after the match, and `source.fixAll` is titled `Apply all auto-fixes`.
+    Locked by the harness's `codeAction/quickfixes` entry (nine manufactured
+    diagnostics, one per branch — every action byte-equal) and the fix-engine
+    LSP shapes (whole-line rewrites now carry the host's exact ranges/texts:
+    `prefer-let`, `prefer-let-else`, `redundant-else` — whose buffer scan had
+    to stop treating `split_lines`' trailing empty element as a body line —
+    and `prefer-inline-methods`).
+    **Residue**: `reserved-primitive-name`'s quickfix still renames only the
+    declaration site (stage 8's multi-site rewrite is the open item), and the
+    analyzer produces no "did you mean" suggestions, so the `Import` action
+    only fires for diagnostics a client sends.
   - **`milkTea/debugInfo` byte-parity** (stage 17, highest-risk; partial today —
     the matrix's 4 documented entries include its remainder).  The absorbed
     sub-steps: section order/envelope (Header, Tokens, AST, Parse Errors, Facts,
@@ -791,7 +813,7 @@ definition of done above.
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-03) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 5 documented entries of **66 requests + 19 probes** (re-measured 2026-10-03 session 28, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capability keys; 5 documented entries of **67 requests + 19 probes** (re-measured 2026-10-03 session 28, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **4 stable differ + the host's first-file `documentSymbol` race** (re-measured 2026-10-03 session 27 on 7075 entries: completion 2, hover 1, documentHighlight 1; completion 4 → 2 this session; the race appeared in the gates run and not in the standalone run) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
 | LSP recovery | 6/6 cases byte-equal | stay green | `tools/lsp_recovery_probe.rb --check` |
 | formatter | 705/705 all three modes (re-measured 2026-10-03; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
@@ -3909,6 +3931,60 @@ decisions match the host's.
   (`this.value = 0` in a non-editable method) the host's validation rejects
   where the self's analysis reports nothing — the missing
   `cannot assign through immutable this` check (Track 2, new item).
+
+### Code actions: the host's per-diagnostic branch set, byte-equal (2026-10-03 session 28)
+
+Stage 16.  The self's quickfix dispatch offered a *different* set from the
+host's (`Fix <code>` titles, an `unused-local` action the host has none of,
+engine fixes for rules the host does not route there, no `diagnostics` echo).
+The rewrite mirrors `lsp/server/code_actions.rb:29-297` branch for branch:
+
+- **Titles** (`quick_fix_title`): the host's `STATIC_QUICK_FIX_TITLES` table,
+  and a code with no entry emits a JSON `null` title — which is how the
+  `unused-import` action looks (its engine edit is offered, its title is nil).
+- **The cast action** (new): any `cannot assign … expected T` message; the
+  line's first `=` splits it, a "simple" operand (dotted identifier or numeric
+  literal) is cast bare and anything else parenthesized, and the host
+  re-prefixes the line's indent to the already-indented left side — the doubled
+  indent is reproduced exactly (`        let s = int<-(…)`).
+- **The import action** (new): `unknown type|callable X` with
+  `data.suggestion` "did you mean '<path>'" and a dotted path → `Import
+  <path>`, inserting `import <module>\n` at 0:0.  The self's analyzer emits no
+  suggestions, so this fires only for diagnostics a client echoes.
+- **The rest**: `shadow` = the host's annotation-only action (no edit);
+  `unused-param` = `Rename parameter 'a' to '_a'`; `dead-assignment` = remove
+  the line; the unsafe wrap = the host's block body (`indent + "unsafe:"`,
+  body indented one level) and title; the match arms = the case list in the
+  title and the insertion after the match's last line (`find_match_end_line`);
+  `source.fixAll` = `Apply all auto-fixes`; every action carries
+  `diagnostics: [diag]` (the request's object re-rendered through
+  `std.json.render`).  The `context.only` gate had a real bug — `source.fixAll`
+  defaulted on for *any* non-empty `only` (a `only: ["quickFix"]` request got
+  the fix-all action the host does not send); `want_fixall` now starts false.
+  The self keeps accepting the spec's lowercase `quickfix` spelling where the
+  host checks only `quickFix`.
+- **Engine LSP shapes**: the host's whole-line rewrites carry their new line
+  and a trailing newline; the self's `lsp_edit_for_warning` is now a
+  passthrough and the generators match (`prefer-let` whole-line,
+  `prefer-let-else` and `prefer-inline-methods` trailing newlines,
+  `redundant-else`'s replacement ends with one too).  Fixing
+  `redundant-else` exposed a representation bug: the scan treated
+  `split_lines`' trailing empty element (the source's final newline) as a body
+  line, so the rewrite silently consumed the final newline — the new
+  `content_line_count` keeps it.
+
+**Measured**: the harness's new `codeAction/quickfixes` entry (nine
+manufactured diagnostics, one per branch) is **byte-equal action for action**;
+the corpus is **67 requests + 19 probes** at the same 5 documented entries; the
+`lint --fix` sweep stays 179/180 (the one divergence pre-existing, Track 2) and
+all 15 self-test files pass.  The `LSP fix shapes` also lost their
+`--fix`-only conversion: `apply_edit`'s insertion now splits like Ruby
+(a trailing newline terminates a line instead of adding an empty one).
+
+**Residue**: `reserved-primitive-name`'s quickfix still edits only the
+declaration (stage 8's multi-site rewrite is open); `redundant-cast`'s LSP
+edit is a single spanning edit where the host emits two in the parentheses-only
+case.
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

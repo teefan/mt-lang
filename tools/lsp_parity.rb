@@ -527,6 +527,42 @@ def corpus(dir, paths)
   requests["semanticTokens/range"] = ["textDocument/semanticTokens/range", tc.merge("range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 40, "character" => 0 } })]
   requests["codeLens"] = ["textDocument/codeLens", tc]
   requests["codeAction"] = ["textDocument/codeAction", tc.merge("range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 40, "character" => 0 } }, "context" => { "diagnostics" => [] })]
+  # Every quickfix branch, with diagnostics a real client would echo back:
+  # cast, engine rules, shadow, unused-param, dead-assignment, unsafe wrap,
+  # match arms, unused-import and an import suggestion.
+  requests["codeAction/quickfixes"] = ["textDocument/codeAction", {
+    "textDocument" => { "uri" => main_uri },
+    "range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 47, "character" => 0 } },
+    "context" => { "diagnostics" => [
+      { "range" => { "start" => { "line" => 37, "character" => 8 }, "end" => { "line" => 37, "character" => 9 } },
+        "severity" => 1, "source" => "milk-tea", "message" => "cannot assign str to s: expected int",
+        "data" => { "stage" => "sema" } },
+      { "range" => { "start" => { "line" => 36, "character" => 8 }, "end" => { "line" => 36, "character" => 13 } },
+        "severity" => 4, "source" => "milk-tea", "code" => "prefer-let",
+        "message" => "variable 'total' is never reassigned, prefer 'let'", "data" => { "stage" => "lint" } },
+      { "range" => { "start" => { "line" => 43, "character" => 8 }, "end" => { "line" => 43, "character" => 10 } },
+        "severity" => 4, "source" => "milk-tea", "code" => "shadow",
+        "message" => "local 'a' shadows an earlier binding", "data" => { "stage" => "lint" } },
+      { "range" => { "start" => { "line" => 32, "character" => 17 }, "end" => { "line" => 32, "character" => 18 } },
+        "severity" => 4, "source" => "milk-tea", "code" => "unused-param",
+        "message" => "unused parameter 'a'", "data" => { "stage" => "lint" } },
+      { "range" => { "start" => { "line" => 43, "character" => 8 }, "end" => { "line" => 43, "character" => 10 } },
+        "severity" => 4, "source" => "milk-tea", "code" => "dead-assignment",
+        "message" => "dead assignment to 'a'", "data" => { "stage" => "lint" } },
+      { "range" => { "start" => { "line" => 39, "character" => 13 }, "end" => { "line" => 39, "character" => 14 } },
+        "severity" => 1, "source" => "milk-tea", "message" => "pointer cast requires unsafe",
+        "data" => { "stage" => "sema" } },
+      { "range" => { "start" => { "line" => 38, "character" => 4 }, "end" => { "line" => 38, "character" => 9 } },
+        "severity" => 1, "source" => "milk-tea", "message" => "match on Color is missing cases: blue, red",
+        "data" => { "stage" => "sema" } },
+      { "range" => { "start" => { "line" => 0, "character" => 7 }, "end" => { "line" => 0, "character" => 16 } },
+        "severity" => 4, "source" => "milk-tea", "code" => "unused-import",
+        "message" => "unused import 'mod_alpha'", "data" => { "stage" => "lint" } },
+      { "range" => { "start" => { "line" => 37, "character" => 8 }, "end" => { "line" => 37, "character" => 9 } },
+        "severity" => 1, "source" => "milk-tea", "message" => "unknown type Vec",
+        "data" => { "stage" => "sema", "suggestion" => "did you mean 'std.vec.Vec'?" } },
+    ] }
+  }]
   requests["documentLink"] = ["textDocument/documentLink", tc]
   requests["prepareCallHierarchy"] = ["textDocument/prepareCallHierarchy", at.call("compute(3, 4)")]
   requests["prepareCallHierarchy/imported"] = ["textDocument/prepareCallHierarchy", at.call("alpha.fn_alpha", off: 6)]
