@@ -175,6 +175,38 @@ CONTAINERS_SOURCE = <<~MT
       return int<-n
 MT
 
+# Inlay-hint cases: argument-name hints through direct and receiver-method
+# callees, self-describing arguments, and a function whose return type is not
+# written (the host emits a `-> T` hint for the non-void ones).  Self-contained:
+# an import would drag the fixture's import-resolution diagnostics into the
+# workspace-diagnostic entry.
+INLAY_SOURCE = <<~MT
+  function inlay_compute(a: int, b: int) -> int:
+      return a + b
+
+  struct Sample:
+      x: int
+      y: int
+
+  extending Sample:
+      function sum() -> int:
+          return this.x + this.y
+
+      function scale(f: int) -> int:
+          return this.x * f
+
+  async function af_noarrow():
+      return
+
+  function main() -> int:
+      let s = Sample(x = 1, y = 2)
+      let total = s.sum()
+      total += inlay_compute(3, 4)
+      let scaled = s.scale(2)
+      let _scaled = scaled
+      return total
+MT
+
 def path_to_uri(path)
   "file://#{path.split("/").map { |seg| CGI.escape(seg).gsub("+", "%20") }.join("/")}"
 end
@@ -192,6 +224,7 @@ def build_workspace(dir)
     generics: File.join(dir, "generics.mt"),
     helper: File.join(dir, "helper.mt"),
     user: File.join(dir, "user.mt"),
+    inlay: File.join(dir, "inlay.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
@@ -201,6 +234,7 @@ def build_workspace(dir)
   File.write(paths[:generics], GENERICS_SOURCE)
   File.write(paths[:helper], HELPER_SOURCE)
   File.write(paths[:user], USER_SOURCE)
+  File.write(paths[:inlay], INLAY_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -455,6 +489,9 @@ def corpus(dir, paths)
   requests["definition/compute"] = ["textDocument/definition", at.call("compute(3, 4)")]
   requests["definition/local"] = ["textDocument/definition", at.call("total += s.sum()", within: nil)]
   requests["definition/imported"] = ["textDocument/definition", at.call("alpha.fn_alpha")]
+  requests["definition/imported-member"] = ["textDocument/definition", at.call("alpha.fn_alpha", off: 6)]
+  requests["typeDefinition/std-member"] = ["textDocument/typeDefinition", { "textDocument" => { "uri" => path_to_uri(paths[:containers]) }, "position" => { "line" => 3, "character" => 16 } }]
+  requests["typeDefinition/imported-method"] = ["textDocument/typeDefinition", { "textDocument" => { "uri" => path_to_uri(paths[:containers]) }, "position" => { "line" => 6, "character" => 20 } }]
   requests["declaration/struct"] = ["textDocument/declaration", at.call("Sample(x = 1")]
   requests["typeDefinition/circle"] = ["textDocument/typeDefinition", at.call("Circle(radius")]
   requests["implementation/area"] = ["textDocument/implementation", at.call("c.area()")]
@@ -485,12 +522,20 @@ def corpus(dir, paths)
   requests["rename"] = ["textDocument/rename", at.call("s.sum()", off: 2).merge("newName" => "renamed_sum")]
   requests["linkedEditingRange"] = ["textDocument/linkedEditingRange", at.call("total += s.sum()")]
   requests["inlayHint"] = ["textDocument/inlayHint", { "textDocument" => { "uri" => main_uri }, "range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 40, "character" => 0 } } }]
+  requests["inlayHint/fixture"] = ["textDocument/inlayHint", { "textDocument" => { "uri" => path_to_uri(paths[:inlay]) }, "range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 40, "character" => 0 } } }]
   requests["semanticTokens/full"] = ["textDocument/semanticTokens/full", tc]
   requests["semanticTokens/range"] = ["textDocument/semanticTokens/range", tc.merge("range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 40, "character" => 0 } })]
   requests["codeLens"] = ["textDocument/codeLens", tc]
   requests["codeAction"] = ["textDocument/codeAction", tc.merge("range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 40, "character" => 0 } }, "context" => { "diagnostics" => [] })]
   requests["documentLink"] = ["textDocument/documentLink", tc]
   requests["prepareCallHierarchy"] = ["textDocument/prepareCallHierarchy", at.call("compute(3, 4)")]
+  requests["prepareCallHierarchy/imported"] = ["textDocument/prepareCallHierarchy", at.call("alpha.fn_alpha", off: 6)]
+  requests["prepareCallHierarchy/method"] = ["textDocument/prepareCallHierarchy", at.call("s.sum()", off: 2)]
+  requests["typeDefinition/function"] = ["textDocument/typeDefinition", at.call("compute(3, 4)")]
+  requests["typeDefinition/imported"] = ["textDocument/typeDefinition", at.call("alpha.fn_alpha", off: 6)]
+  requests["linkedEditingRange/type"] = ["textDocument/linkedEditingRange", at.call("struct Sample", within: nil, off: 7)]
+  requests["linkedEditingRange/function"] = ["textDocument/linkedEditingRange", at.call("compute(3, 4)")]
+  requests["executeCommand/unknown"] = ["workspace/executeCommand", { "command" => "mtc.noSuchCommand", "arguments" => [] }]
   requests["prepareTypeHierarchy"] = ["textDocument/prepareTypeHierarchy", at.call("struct Circle", within: nil)]
   requests["diagnostic/pull"] = ["textDocument/diagnostic", tc]
   requests["workspace/diagnostic"] = ["workspace/diagnostic", {}]
@@ -521,6 +566,7 @@ def run_corpus(client, dir, paths)
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:containers]), "languageId" => "milk-tea", "version" => 1, "text" => CONTAINERS_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:generics]), "languageId" => "milk-tea", "version" => 1, "text" => GENERICS_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:helper]), "languageId" => "milk-tea", "version" => 1, "text" => HELPER_SOURCE } })
+  client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:inlay]), "languageId" => "milk-tea", "version" => 1, "text" => INLAY_SOURCE } })
   # `user.mt` stays closed on purpose: the host's pull diagnostics report
   # `unknown callable helper_sum` for the (resolvable) import, while its
   # reference facts resolve it, so opening it would diff the workspace

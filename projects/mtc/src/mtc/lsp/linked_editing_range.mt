@@ -50,11 +50,21 @@ public function handle_linked_editing_range(
             var bindings = scope.collect_bindings(source, ast_file)
             defer: bindings.release()
 
-            var occurrences = cursor.identifier_occurrences(source, name)
-            defer: occurrences.release()
-
             # Find the target line (1-based from AST/cursor)
             let target_line = token_payload.value.line
+
+            # The host gates linked editing on a *local* binding: a token that
+            # does not resolve to a parameter, local, `for` binding or match-arm
+            # binding answers null, and so does an empty range set.
+            match scope.local_binding_line(bindings, name, target_line):
+                Option.none:
+                    proto.write_response(id, json.null_value())
+                    return
+                Option.some:
+                    pass
+
+            var occurrences = cursor.identifier_occurrences(source, name)
+            defer: occurrences.release()
 
             # Build the ranges array, filtering by scope.
             var ranges_json = string.String.create()
@@ -72,6 +82,10 @@ public function handle_linked_editing_range(
                     first = false
                     append_range_json(ref_of(ranges_json), occ.line, occ.column, occ.length)
                 oi += 1
+
+            if first:
+                proto.write_response(id, json.null_value())
+                return
 
             ranges_json.append("]")
 

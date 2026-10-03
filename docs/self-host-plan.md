@@ -68,7 +68,7 @@ for the process backend; re-measured 2026-10-03 — request parity holds, while 
 terminal *event order* differs (`terminated`→`exited` vs `exited`→`terminated`)
 and build-on-launch is missing; the remaining gaps — build-on-launch, the
 lldb-dap bridge, the debug map — are §10 of `docs/dap-design.md`).**
-**LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **4 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag).  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **66 requests + 19 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **LSP project audit (live counter, 2026-10-03 session 27): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 7075 entries, **4 stable differing entries + the host's first-file `documentSymbol` race**: `completion` **2** (the session-26 close read 4; the two byte-vs-character position entries are closed by the request-boundary conversion — the residue is the host's synthesized `ref` lifetime `mst@224:18` and the host giving up on a `map_error` arm binding `lb@818:17`, both documented), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward); the race entry (`docs/data_structures.mt documentSymbol`) appears only when the host's first-file facts lag (measured in the gates run).  **Every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work), `definition`/`declaration`/`typeDefinition`/`implementation`/`references` (915 each, 0), `documentSymbol` and the file-level endpoints.**
 **LSP project audit (previous live counter, 2026-10-03 session 26): 7075 entries, **6 differ = `completion` 4 + the 2 documented entries**: completion **4** (235 at the session-24 close; the residue is classified in §0k's part-3 record — the host's synthesized `ref` lifetime, the host giving up on a `map_error` arm binding, and two byte-vs-character positions inside comment lines), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward).**  Earlier live counters: session 18 read 2 differ on the then-6456-entry corpus (the entry count grew with the completion pass), session 13 read 22.
 **LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **22 differ** (session 13 close): hover 9, documentSymbol 5, semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set) → 22 (session 13's third: codeLens and workspace/symbol 1 → 0 each via the host's token-pair symbol list, documentHighlight 2 → 1, and the token scanner's keyword/heredoc/type-argument rules).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's single survivor needs the host's carried-forward binding resolution (a label token resolving a binding that is out of scope at that line).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
@@ -128,21 +128,23 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 27 close (2026-10-03) — the LSP **completion** class's last
-unintended entries: the request boundary now converts the client's UTF-16
-`character` column to the byte offset the token scanners use
-(`Workspace.position_byte_offset`, applied by `position_params` to every
-position-carrying request, by `extract_selection_positions`, and by
-`rangeFormatting`), so the two byte-vs-character position entries close and
-completion reads **2 differing entries** — the host's synthesized `ref`
-lifetime (`mst@224:18`) and the host giving up on a `map_error` arm binding
-(`lb@818:17`), both documented.  The full matrix reads **4 stable differing
-entries + the host's first-file `documentSymbol` race**, and the session's
-records are in §0k's "The request boundary" record.  Session 26 had taken
+Last updated: session 28 close (2026-10-03) — Track 7's **stage-14 leftovers**
+landed with harness locks: `prepareCallHierarchy`'s item shape (always kind 12,
+`receiver_type: null`), `linkedEditingRange`'s local-binding gate and
+empty→null, `inlayHint`'s receiver-aware callee resolution and inferred return
+hints (`-> Task[void]`), `executeCommand`'s unknown→null, and the
+`typeDefinition` verification (on functions and imported methods already
+matching; on directory-form modules the self answers the declaration the
+host's path helper cannot reach — the fifth documented harness entry).  Two
+extras the new fixture surfaced: `workspace/symbol` now walks the host's
+document set (glob-sorted walked files, then warm, then open) and the
+immutable-assignment sema message/range match the host.  The harness corpus is
+**66 requests + 19 probes**, 30/30 capability keys, 5 documented entries; the
+SimpleGame audit stays **4 stable differing entries + the first-file
+`documentSymbol` race**.  Session 27 had converted the request boundary's
+UTF-16 positions to byte offsets (completion 4 → 2).  Session 26 had taken
 completion **235 → 4** (the merge order, the prelude merge, the receiver
-families); session 24 had taken it **600 → 366 → 235** (the merge order, public
-type aliases in `imported_type_members`, alias-qualified type receivers, the
-order-walking method fallback, completion-only dot detection).  Session 23 closed
+families); session 24 had taken it **600 → 366 → 235**.  Session 23 closed
 `owning-release-leak` 602/286 → 0/0, `owning-release-double` 0/12 → 0/0 (the CFG
 precision analysis) and `prefer-struct-with` 93/0 → 0/0 (the host's gates +
 imported-alias resolution), taking the corpus lint to **494 agree / 115 differ**;
@@ -643,18 +645,30 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     `prefer_inline_methods_edits`, add to `fixable_codes()` — `--fix`,
     `source.fixAll` and the quickfix all see it (host
     `fix_engine.rb:161-…`, title "Inline methods into struct").
-  - **Stage-14 leftovers.**  `call_hierarchy`: same-file top-level functions
-    and extending-block methods resolve; imported / module-qualified callees do
-    not (`call_hierarchy.rb:7-45`).  `linked_editing_range`: any token with
-    same-scope occurrences answers a ranges array (possibly empty); the host's
-    null-unless-a-local-binding gate is missing (`linked_editing_range.rb:7-25`,
-    `rename.rb:302-326`).  `typeDefinition`'s surviving null path for imported
-    functions/methods (`definition.rb:27-130, 284-330`).  `inlay_hints`: local
-    type hints are ported (`emit_type_hints`), but receiver-aware callee
-    resolution and the host's inferred **return**-type hints
-    (`collect_inferred_return_hints`, `inlay_hints.rb:143`) are missing.
-    `execute_command`: unknown commands answer `-32601`, the host answers
-    `null`.  (The module-symbol wrapper landed in session 14;
+  - **Stage-14 leftovers — DONE (session 28).**  The five items landed with
+    harness locks (`tools/lsp_parity.rb` now carries `prepareCallHierarchy/
+    method`, `typeDefinition/function|imported|std-member|imported-method`,
+    `definition/imported-member`, `linkedEditingRange/type|function`,
+    `executeCommand/unknown` and the `inlay.mt` fixture): `call_hierarchy`'s
+    prepare emits the host's always-kind-12 / `receiver_type: null` item
+    (`build_call_hierarchy_item`'s `respond_to?(:receiver_type)` is false on
+    the facts' bindings); `linked_editing_range` applies the host's
+    local-binding gate and answers `null` for empty ranges
+    (`linked_editing_range.rb:7-25`, `rename.rb:302-326`); `inlay_hints` gained
+    the receiver-aware callee resolution (a value's type, a bare type name or
+    an imported type, then the merged method table) and
+    `collect_inferred_return_hints` (the reachable non-void case is the async
+    wrapper, `-> Task[void]`); `executeCommand`'s unknown command answers
+    `null`.  `typeDefinition` on a function or an imported method already
+    resolved; on a *directory-form* module member (`mod_alpha/lib.mt`) the
+    host's `module_path_for_name` gives up where the loader-backed self
+    answers the declaration — the harness's fifth documented entry.
+    Two extras found on the way: the `workspace/symbol` document set now
+    matches the host's `@indexed_documents.keys + @open_documents.keys` (the
+    walked files in `Dir.glob(**/*.mt).sort` order, then the on-demand and open
+    ones), and the immutable-assignment sema error carries the host's message
+    (`cannot assign to immutable <name>`) and its name-length range.
+    (The module-symbol wrapper landed in session 14;
     `static_type_method_references`/stage 15 landed in session 8, `c15594c3` —
     do not redo either.)
   - **`--timings` breakdowns** (stage 18; partially landed `298481ee`,
@@ -683,16 +697,19 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     LSP pass `:full` like the host CLI, and diagnostics *scheduling* stays out
     of scope.  Verify the current state first (§7.3 lists it as open).
 - **The documented entries stay documented** unless their machinery is built for
-  another reason: the harness's 4 (debugInfo remainder, host parser recovery,
-  host hang on a malformed frame, host facts lag) and the audit's 4 — the two
-  pre-existing ones (`documentHighlight` `lb@704:67` — the host's warm snapshot
-  carry-forward, byte-equal cold; `hover` `type quat` `lb@1653:24` — the host's
-  asynchronous index warm; an eager fix adds 153 entries, measured and rejected
-  in session 18) and the two completion residues classified in session 27
-  (`mst@224:18` — the host's synthesized `ref[@_mt_N, T]` lifetime in a field
-  detail, where the self renders the declared `ref[T]`; `lb@818:17` — the
-  `map_error` arm binding the host's facts never type, where the self answers
-  the field and the host falls back to its method table).
+  another reason: the harness's 5 (debugInfo remainder, host parser recovery,
+  host hang on a malformed frame, host facts lag, and — session 28 — the host's
+  directory-form module `typeDefinition` path, where the self answers the
+  imported declaration the host's `module_path_for_name` cannot reach) and the
+  audit's 4 — the two pre-existing ones (`documentHighlight` `lb@704:67` — the
+  host's warm snapshot carry-forward, byte-equal cold; `hover` `type quat`
+  `lb@1653:24` — the host's asynchronous index warm; an eager fix adds 153
+  entries, measured and rejected in session 18) and the two completion residues
+  classified in session 27 (`mst@224:18` — the host's synthesized
+  `ref[@_mt_N, T]` lifetime in a field detail, where the self renders the
+  declared `ref[T]`; `lb@818:17` — the `map_error` arm binding the host's facts
+  never type, where the self answers the field and the host falls back to its
+  method table).
 - **First-file `documentSymbol` race** (±drift, documented): the host's first
   `documentSymbol` answer after `didOpen` can carry its pre-facts tree; the
   gates' audit run read `docs/data_structures.mt documentSymbol` differing,
@@ -744,7 +761,7 @@ definition of done above.
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-03) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 4 documented entries (re-measured 2026-10-03 session 26, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capability keys; 5 documented entries of **66 requests + 19 probes** (re-measured 2026-10-03 session 28, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **4 stable differ + the host's first-file `documentSymbol` race** (re-measured 2026-10-03 session 27 on 7075 entries: completion 2, hover 1, documentHighlight 1; completion 4 → 2 this session; the race appeared in the gates run and not in the standalone run) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
 | LSP recovery | 6/6 cases byte-equal | stay green | `tools/lsp_recovery_probe.rb --check` |
 | formatter | 705/705 all three modes (re-measured 2026-10-03; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
@@ -3755,6 +3772,82 @@ before any code changed.
   test/mt` (60/0), the LSP gate set above.  New
   `projects/mtc/test/lsp_utils_test.mt` pins the ASCII/BMP/astral mappings, the
   out-of-range rule and the line-slicing.
+
+### Stage-14 leftovers: call hierarchy, linked editing, inlay hints, executeCommand (2026-10-03 session 28)
+
+Track 7's five small parity items, each **verified first** (the plan's "verify
+each against §0k before starting"): the old records had drifted —
+`prepareCallHierarchy` on an imported callee answers null on *both* servers
+(the host's `facts.imports[alias].functions` path needs a receiver the harness
+shape has), and `typeDefinition` on a function already resolved.  The corpus
+gained eleven entries plus an `inlay.mt` fixture (**66 requests + 19 probes**),
+and the harness now reads **5 documented entries** — 2 in the request corpus
+(`milkTea/debugInfo`, `typeDefinition/imported`), 3 in the stress probes (the
+parser-recovery, malformed-frame and facts-lag rows).
+
+- **`prepareCallHierarchy`** (`call_hierarchy.mt`): the host's item is always
+  `kind: 12` with `"receiver_type": null` — `build_call_hierarchy_item`'s
+  `binding.respond_to?(:receiver_type)` is false for the facts' callable
+  bindings — so the self's method rendering (kind 6,
+  `receiver_type: "Sample"`) went; `KIND_METHOD`, `render_receiver_type` and
+  the now-unused `ast_formatter` import are gone.
+- **`linkedEditingRange`** (`linked_editing_range.mt`): the host's gate
+  requires a *local* binding (`rename_target_binding_id` + `local_binding_id?`
+  over `LocalDecl`/`Param`/`ForBinding`/`MatchArm`/`MatchExprArm`) and
+  non-empty ranges.  The self answered any same-scope occurrence, so a type or
+  function name returned ranges the host leaves null;
+  `scope.local_binding_line` now provides the gate, and an empty range set
+  answers null.
+- **`inlayHint`** (`inlay_hints.mt`): two gaps the fixture pinned —
+  (a) the host's inferred **return** hints (`collect_inferred_return_hints`):
+  a callable without a written return type whose resolved type is not `void`,
+  which in practice is the async wrapper (`-> Task[void]`) — the self's
+  `has_return_type` carries the same distinction, and the hint is emitted last,
+  in declaration order, like the host's concatenation; (b) **receiver-aware
+  argument hints** (`s.scale(2)`): the receiver resolves to a value type
+  (`navigation.type_of_value`, made public), a bare type name, or an imported
+  declared type, and the signature comes from the current module's
+  `method_sigs` or an import's table, first wins — the host's
+  `methods_for_receiver_type` merge.
+- **`executeCommand`** (`execute_command.mt`): an unknown command answers
+  `null` like the host (was `-32601`).
+- **`typeDefinition`** (verified, then classified): on a function, a std
+  member and an imported *method* both servers agree (the new
+  `typeDefinition/function`, `/std-member`, `/imported-method` and
+  `definition/imported-member` entries lock them); on a **directory-form
+  module** member (`import mod_alpha` → `mod_alpha/lib.mt`) the host answers
+  `null` — its `module_path_for_name` builds `<root>/mod_alpha.mt`, which does
+  not exist — while the loader-backed self answers the declaration.  Kept as
+  the fifth documented entry (self-better, like the audit's `lb@818:17`).
+
+**Two extras the fixture surfaced.**
+
+- **`workspace/symbol`** (`workspace_symbols.mt`): the host's document set is
+  `@indexed_documents.keys + @open_documents.keys` — the workspace-walked
+  documents in `Dir.glob(File.join(root, '**', '*.mt')).sort` order, then the
+  on-demand reads, then the open ones, deduplicated.  The self iterated only
+  the definition index's warm paths then the open documents, so a
+  walked-but-unwarmed file's symbols were missing and the order differed (the
+  index walk itself is readdir order).  The handler now collects the walked
+  paths, sorts them and emits through a shared per-document emitter.  Cost: a
+  `document_source` read per walked file per request (the host caches contents
+  — the F9/C3 content-cache item is the follow-up).
+- **The immutable-assignment sema message** (`diagnostics.mt`, `analyzer.mt`):
+  the self said `cannot assign to immutable binding <name>`; the host says
+  `cannot assign to immutable <name>` and anchors the error at the assignment
+  operator while spanning the *target's name length* (`raise_sema_error` with
+  no node → `current_error_node` = the `AST::Assignment`, whose column is the
+  operator; `source_length` falls back to the target's name).  Both fixed,
+  locked by the fixture's `total += ...` (the same file's diagnostic array is
+  part of the `workspace/diagnostic` entry).
+
+**Measured**: harness **66 requests + 19 probes**, 30/30 capability keys,
+5 documented entries with `--stress`; the SimpleGame audit unchanged at
+**4 stable differing entries + the first-file `documentSymbol` race**
+(completion 2, hover 1, documentHighlight 1 — `diagnostic`, `inlayHint` and
+`workspace/symbol` all 0); recovery OK; valgrind 0 errors; the Neovim smoke
+passes.  Gates: dev tests 15/0, bootstrap fixed point (15/0), `test/mt` 60/0,
+the analyzer/CLI/lint meters at their ledger values.
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

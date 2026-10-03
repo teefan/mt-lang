@@ -37,9 +37,11 @@ public function assign_message(target: types.Type, value: types.Type) -> str:
     return buf.as_str()
 
 
+## `cannot assign to immutable <name>` — the host's identifier-assignment check
+## (`expressions.rb:16`).
 public function assign_to_let_message(name: str) -> str:
     var buf = string.String.create()
-    buf.append("cannot assign to immutable binding ")
+    buf.append("cannot assign to immutable ")
     buf.append(name)
     return buf.as_str()
 

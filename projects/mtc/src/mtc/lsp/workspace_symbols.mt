@@ -26,13 +26,50 @@ public function handle_workspace_symbol(ws: ref[workspace.Workspace], query: str
     var emitted = vec.Vec[string.String].create()
     defer: release_paths(ref_of(emitted))
 
-    # The indexed documents in warm order, then the open ones — the host's
-    # `@indexed_documents.keys + @open_documents.keys`, deduplicated.
+    # The walked workspace documents first, in the host's glob order (its
+    # `@indexed_documents` — the index walk itself is filesystem order), then
+    # the on-demand ones (the definition index's warm order), then the open
+    # documents: the host's `@indexed_documents.keys + @open_documents.keys`,
+    # deduplicated.
+    append_indexed_paths(ws, query, json_text, first, emitted)
     append_document_symbols(ws, defidx.warmed_paths(ref_of(ws.definition_index)), query, json_text, first, emitted)
     append_document_symbols(ws, ws.open_paths_in_order(), query, json_text, first, emitted)
 
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
+
+
+## Emit the symbols of every workspace-walked file, in the host's
+## `Dir.glob(**/*.mt).sort` order.
+function append_indexed_paths(
+    ws: ref[workspace.Workspace],
+    query: str,
+    json_text: ref[string.String],
+    first: ref[bool],
+    emitted: ref[vec.Vec[string.String]],
+) -> void:
+    var paths = vec.Vec[string.String].create()
+    defer: release_paths(ref_of(paths))
+
+    var i: ptr_uint = 0
+    while i < ws.index.entries.len():
+        let ep = ws.index.entries.get(i) else:
+            break
+        let path = unsafe: read(ep).path.as_str()
+        i += 1
+        if path.len == 0 or contains_path(ref_of(paths), path):
+            continue
+        paths.push(string.String.from_str(path))
+
+    paths.sort()
+
+    var pi: ptr_uint = 0
+    while pi < paths.len():
+        let path_ptr = paths.get(pi) else:
+            break
+        pi += 1
+        let path = unsafe: read(path_ptr).as_str()
+        emit_document_symbols(ws, path, query, json_text, first, emitted)
 
 
 ## Emit the symbols of every path in `paths`, skipping documents already
@@ -49,25 +86,38 @@ function append_document_symbols(
     while pi < paths.len:
         let path = unsafe: read(paths.data + pi).as_str()
         pi += 1
-        if path.len == 0 or already_emitted(emitted, path):
-            continue
-        var content = ws.document_source(path) else:
-            continue
-        defer: content.release()
-        emitted.push(string.String.from_str(path))
+        emit_document_symbols(ws, path, query, json_text, first, emitted)
 
-        let symbols = defidx.symbols_for(ref_of(ws.definition_index), path, content.as_str())
-        var si: ptr_uint = 0
-        while si < symbols.len:
-            let symbol = unsafe: read(symbols.data + si)
-            si += 1
-            if query.len > 0 and not contains_case_insensitive(symbol.name.as_str(), query):
-                continue
-            var uri = string.String.create()
-            uri.append("file://")
-            uri.append(path)
-            emit_symbol_json(json_text, first, uri.as_str(), symbol)
-            uri.release()
+
+## One document's symbols: read its current text, extract the token-pair
+## declarations, and emit the entries matching `query`.
+function emit_document_symbols(
+    ws: ref[workspace.Workspace],
+    path: str,
+    query: str,
+    json_text: ref[string.String],
+    first: ref[bool],
+    emitted: ref[vec.Vec[string.String]],
+) -> void:
+    if path.len == 0 or already_emitted(emitted, path):
+        return
+    var content = ws.document_source(path) else:
+        return
+    defer: content.release()
+    emitted.push(string.String.from_str(path))
+
+    let symbols = defidx.symbols_for(ref_of(ws.definition_index), path, content.as_str())
+    var si: ptr_uint = 0
+    while si < symbols.len:
+        let symbol = unsafe: read(symbols.data + si)
+        si += 1
+        if query.len > 0 and not contains_case_insensitive(symbol.name.as_str(), query):
+            continue
+        var uri = string.String.create()
+        uri.append("file://")
+        uri.append(path)
+        emit_symbol_json(json_text, first, uri.as_str(), symbol)
+        uri.release()
 
 
 ## The host's `format_symbol`: a `{name, kind, location}` entry at the symbol's
@@ -105,6 +155,18 @@ function already_emitted(emitted: ref[vec.Vec[string.String]], path: str) -> boo
     var i: ptr_uint = 0
     while i < emitted.len():
         let entry = emitted.get(i) else:
+            break
+        if unsafe: read(entry).as_str().equal(path):
+            return true
+        i += 1
+    return false
+
+
+## True when `paths` already holds `path`.
+function contains_path(paths: ref[vec.Vec[string.String]], path: str) -> bool:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let entry = paths.get(i) else:
             break
         if unsafe: read(entry).as_str().equal(path):
             return true

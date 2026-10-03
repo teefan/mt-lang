@@ -130,7 +130,7 @@ gate_label() {
         format)         echo "formatter parity all modes (702/702)" ;;
         lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;
         unused_import)  echo "unused-import parity (609/609, ~30 min)" ;;
-        harness)        echo "LSP harness 30/30 + 4 documented entries (~3 min)" ;;
+        harness)        echo "LSP harness 30/30 + 5 documented entries (~3 min)" ;;
         recovery)       echo "LSP recovery probe (byte-compared)" ;;
         fixtures)       echo "LSP fixture sweep vs baselines (when tmp/ has it)" ;;
         audit)          echo "full LSP project audit (meter, ~5-15 min)" ;;

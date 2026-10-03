@@ -3699,12 +3699,14 @@ public function is_callable_type(t: types.Type) -> bool:
 
 
 ## Flag an assignment whose target is a name bound by `let`, which is immutable.
+## The host anchors the error at the assignment's operator (the statement's
+## column) and spans the target's name (`source_length` falls back to it).
 function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scope], target: ptr[ast.Expr], line: ptr_uint, column: ptr_uint) -> void:
     unsafe:
         match read(target):
             ast.Expr.expr_identifier as id:
                 if scope_is_let(scope, id.name):
-                    report(ctx, line, column, assign_to_let_message(id.name))
+                    report_at(ctx, line, column, id.name.len, assign_to_let_message(id.name))
             _:
                 pass
 

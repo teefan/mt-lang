@@ -7,7 +7,8 @@ import std.str
 import mtc.lsp.protocol as proto
 
 
-## Handle workspace/executeCommand.  Dispatches on the command name.
+## Handle workspace/executeCommand.  Dispatches on the command name; an
+## unknown command answers `null`, as the host does.
 public function handle_execute_command(params: json.Value, id: json.Value) -> void:
     let command_name = extract_command(params)
     if command_name.equal("mtc.restartServer"):
@@ -15,7 +16,7 @@ public function handle_execute_command(params: json.Value, id: json.Value) -> vo
         # The caller (server.mt) must exit after this handler returns.
         return
 
-    proto.write_error(id, -32601, "unknown command")
+    proto.write_response(id, json.null_value())
 
 
 ## Extract the "command" field from the executeCommand params.

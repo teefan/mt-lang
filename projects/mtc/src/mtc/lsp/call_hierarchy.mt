@@ -13,7 +13,6 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
-import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -22,7 +21,6 @@ import mtc.lsp.workspace_index as idx
 
 
 const KIND_FUNCTION: int = 12
-const KIND_METHOD:   int = 6
 
 
 ## Handle textDocument/prepareCallHierarchy.  Finds a callable symbol at
@@ -57,12 +55,13 @@ public function handle_prepare_call_hierarchy(
             let name = token_payload.value.text
 
             # The host reports the declaration site, preferring a top-level
-            # function and falling back to an extending-block method.
+            # function and falling back to an extending-block method.  Its item
+            # is always kind 12 with a null receiver_type (the facts' callable
+            # bindings carry no receiver), so the self matches that shape even
+            # for methods.
             var found = false
-            var kind: int = KIND_FUNCTION
             var decl_line: ptr_uint = 0
             var decl_column: ptr_uint = 0
-            var receiver_type: str = ""
 
             var di: ptr_uint = 0
             while di < ast_file.declarations.len and not found:
@@ -94,10 +93,8 @@ public function handle_prepare_call_hierarchy(
                                     mfn = read(ext.methods.data + mi)
                                 if mfn.name.equal(name):
                                     found = true
-                                    kind = KIND_METHOD
                                     decl_line = mfn.line
                                     decl_column = mfn.column
-                                    receiver_type = render_receiver_type(ext.type_name)
                                 mi += 1
                         _:
                             pass
@@ -113,12 +110,12 @@ public function handle_prepare_call_hierarchy(
             append_call_item(
                 ref_of(result),
                 name,
-                kind,
+                KIND_FUNCTION,
                 uri,
                 decl_line,
                 decl_column,
                 name.len,
-                receiver_type
+                ""
             )
             result.append("]")
             proto.write_response_raw(id, result.as_str())
@@ -524,13 +521,6 @@ function append_call_item(
         output.append("\"")
     output.append("}}")
 
-
-## Render an extending block's receiver type for the call-hierarchy data.
-function render_receiver_type(type_name: ptr[ast.TypeRef]?) -> str:
-    let t = type_name else:
-        return ""
-    let ty = unsafe: read(t)
-    return ast_formatter.render_type(ty)
 
 function append_incoming_call(
     output: ref[string.String],

@@ -774,8 +774,9 @@ public function ast_for_document(
 ## local or parameter, its recorded type for a module-level value.  The binding
 ## comes from the scope walk, so the innermost enclosing declaration answers — a
 ## same-named local in another function cannot (the host resolves a member
-## receiver from its scope snapshot the same way).
-function type_of_value(
+## receiver from its scope snapshot the same way).  The inlay hints use this for
+## a `receiver.method(...)` callee.
+public function type_of_value(
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
     name: str,

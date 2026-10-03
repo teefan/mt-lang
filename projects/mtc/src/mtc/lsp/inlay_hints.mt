@@ -20,6 +20,7 @@ import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.lsp.cursor as cursor
+import mtc.lsp.navigation as navigation
 import mtc.lsp.protocol as proto
 import mtc.lsp.type_render as type_render
 import mtc.lsp.uri as uri_ops
@@ -96,20 +97,28 @@ public function handle_inlay_hint(
                 ti += 1
                 continue
             if prev_kind == tk.TokenKind.dot:
-                # Only handle `alias.fn(...)` where the receiver is an import alias.
-                let alias_ok = ti > 1
-                if not alias_ok:
+                let receiver_ok = ti > 1
+                if not receiver_ok:
                     ti += 1
                     continue
-                let alias_ptr = tokens.get(ti - 2) else:
+                let receiver_ptr = tokens.get(ti - 2) else:
                     break
-                let alias_tok = unsafe: read(alias_ptr)
-                if alias_tok.kind != tk.TokenKind.identifier:
+                let receiver_tok = unsafe: read(receiver_ptr)
+                if receiver_tok.kind != tk.TokenKind.identifier:
                     ti += 1
                     continue
-                let alias_name = cursor.token_text(source, alias_tok)
-                let module_name_ptr = analysis.imports.get(alias_name)
+                let receiver_name = cursor.token_text(source, receiver_tok)
+                let module_name_ptr = analysis.imports.get(receiver_name)
                 if module_name_ptr == null:
+                    # `value.method(...)` / `Type.method(...)`: the host resolves
+                    # the receiver's type and looks the method up in the merged
+                    # receiver table.
+                    let fn_name = cursor.token_text(source, callee)
+                    match receiver_method_sig_for(analysis, ast_file, receiver_name, fn_name, receiver_tok.line, source):
+                        Option.some as sig:
+                            emit_call_hints(ref_of(json_text), ref_of(emitted), source, ref_of(tokens), ti + 1, sig.value, start_line, end_line)
+                        Option.none:
+                            pass
                     ti += 1
                     continue
 
@@ -162,6 +171,10 @@ public function handle_inlay_hint(
     # Type-annotation hints for inferred locals, after the parameter hints —
     # the host's collect_inferred_type_hints.
     emit_type_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), start_line, end_line)
+
+    # Return-type hints for callables whose return type was not written, last —
+    # the host's collect_inferred_return_hints.
+    emit_return_hints(ref_of(json_text), ref_of(emitted), ast_file, ref_of(analysis), start_line, end_line)
 
     json_text.append("]")
     proto.write_response_raw(id, json_text.as_str())
@@ -291,6 +304,99 @@ function is_error_type(ty: types.Type) -> bool:
             return true
         _:
             return false
+
+
+## Return-type hints for callables whose return type was not written — the
+## host's collect_inferred_return_hints: for each top-level function and
+## extending-block method in source order, `-> <type>` after the declared name
+## when the resolved return type is not `void`.  (With the return type omitted
+## the body is void, so in practice this is the async wrapper, `Task[void]`.)
+function emit_return_hints(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    file: ast.SourceFile,
+    analysis: ref[analyzer.Analysis],
+    start_line: ptr_uint,
+    end_line: ptr_uint,
+) -> void:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_function as fun:
+                let sig_ptr = unsafe: read(analysis).functions.get(fun.name)
+                if sig_ptr != null:
+                    emit_return_hint(json_text, emitted, fun.name, fun.line, fun.column, unsafe: read(sig_ptr), start_line, end_line)
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    let method = unsafe: read(ext.methods.data + mi)
+                    match find_method_sig(analysis, method.name):
+                        Option.some as sig:
+                            emit_return_hint(json_text, emitted, method.name, method.line, method.column, sig.value, start_line, end_line)
+                        Option.none:
+                            pass
+                    mi += 1
+            _:
+                pass
+        di += 1
+
+
+## The first-registered method signature named `name` in the analysis' method
+## table — the host's `facts.methods.each_value` scan for the method name.
+function find_method_sig(analysis: ref[analyzer.Analysis], name: str) -> Option[analyzer.FnSig]:
+    var suffix = string.String.create()
+    defer: suffix.release()
+    suffix.append(".")
+    suffix.append(name)
+    var i: ptr_uint = 0
+    unsafe:
+        let order = read(analysis).method_order
+        while i < order.len():
+            let key_ptr = order.get(i) else:
+                break
+            let key = read(key_ptr)
+            if key.ends_with(suffix.as_str()):
+                let sig_ptr = read(analysis).method_sigs.get(key)
+                if sig_ptr != null:
+                    return Option[analyzer.FnSig].some(value = read(sig_ptr))
+            i += 1
+    return Option[analyzer.FnSig].none
+
+
+## One `-> <type>` hint for a callable without a written return type.
+function emit_return_hint(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    name: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    sig: analyzer.FnSig,
+    start_line: ptr_uint,
+    end_line: ptr_uint,
+) -> void:
+    if sig.has_return_type:
+        return
+    var label = type_render.short_name(sig.return_type)
+    defer: label.release()
+    if label.as_str().equal("void"):
+        return
+    let line_zero = if line > 0: line - 1 else: 0z
+    if line_zero < start_line or line_zero > end_line:
+        return
+    let name_end = if column > 0: (column - 1) + name.len else: name.len
+    if unsafe: read(emitted) > 0:
+        json_text.append(",")
+    unsafe: read(emitted) = read(emitted) + 1
+    json_text.append("{\"position\":{\"line\":")
+    json_text.append_format(f"#{line_zero}")
+    json_text.append(",\"character\":")
+    json_text.append_format(f"#{name_end}")
+    json_text.append("},\"label\":\"-> ")
+    proto.append_escaped(json_text, label.as_str())
+    json_text.append("\",\"kind\":1,\"paddingRight\":false}")
 
 
 ## Emit one hint per positional argument of the call whose lparen is at
@@ -447,4 +553,105 @@ function find_function_params(decls: span[ast.Decl], fn_name: str) -> Option[ana
             _:
                 pass
         di += 1
+    return Option[analyzer.FnSig].none
+
+
+## The signature of a `receiver.method(...)` callee: resolve the receiver to a
+## type name — a local/parameter/module value's type first, then a type name
+## (declared locally or imported) — and find the method in the current module's
+## table or an import's (the host's `methods_for_receiver_type` merge, first
+## registration wins).
+function receiver_method_sig_for(
+    analysis: ref[analyzer.Analysis],
+    ast_file: ast.SourceFile,
+    receiver_name: str,
+    member: str,
+    receiver_line: ptr_uint,
+    source: str,
+) -> Option[analyzer.FnSig]:
+    var type_name: str = ""
+    match navigation.type_of_value(analysis, ast_file, receiver_name, receiver_line, source):
+        Option.some as ty:
+            type_name = receiver_key_name(ty.value)
+        Option.none:
+            type_name = type_receiver_key_name(analysis, receiver_name)
+    if type_name.len == 0:
+        return Option[analyzer.FnSig].none
+    return receiver_method_sig(analysis, type_name, member)
+
+
+## The method-dispatch name of a receiver's value type (`Vec[int]` → "Vec"; a
+## nullable unwraps).
+function receiver_key_name(ty: types.Type) -> str:
+    match ty:
+        types.Type.ty_generic as g:
+            return g.name
+        types.Type.ty_named as n:
+            return n.name
+        types.Type.ty_imported as im:
+            return im.name
+        types.Type.ty_opaque as op:
+            return op.name
+        types.Type.ty_nullable:
+            return receiver_key_name(types.unwrap_nullable(ty))
+        _:
+            return ""
+
+
+## A *type* receiver's name (`Sample.static(...)`, an imported type spelled
+## bare): a locally declared type, or a type one of the imports declares.
+function type_receiver_key_name(analysis: ref[analyzer.Analysis], name: str) -> str:
+    unsafe:
+        if read(analysis).types.get(name) != null:
+            return name
+        if read(analysis).type_names.contains(name):
+            return name
+    let import_order = unsafe: read(analysis).import_order
+    var i: ptr_uint = 0
+    while i < import_order.len():
+        let module_ptr = import_order.get(i) else:
+            break
+        let module_name = unsafe: read(module_ptr)
+        var key = string.String.create()
+        defer: key.release()
+        key.append(module_name)
+        key.append(".")
+        key.append(name)
+        let entry_ptr = unsafe: read(analysis).imported_type_members.get(key.as_str())
+        if entry_ptr != null and unsafe: read(entry_ptr).declared:
+            return name
+        i += 1
+    return ""
+
+
+## One method's signature by receiver type name (the host's
+## `methods_for_receiver_type` lookup): the current module's table first, then
+## each import's, in the host's import order.
+function receiver_method_sig(analysis: ref[analyzer.Analysis], type_name: str, member: str) -> Option[analyzer.FnSig]:
+    var key = string.String.create()
+    defer: key.release()
+    key.append(type_name)
+    key.append(".")
+    key.append(member)
+    let local_ptr = unsafe: read(analysis).method_sigs.get(key.as_str())
+    if local_ptr != null:
+        return Option[analyzer.FnSig].some(value = unsafe: read(local_ptr))
+
+    let import_order = unsafe: read(analysis).import_order
+    var i: ptr_uint = 0
+    while i < import_order.len():
+        let module_ptr = import_order.get(i) else:
+            break
+        let module_name = unsafe: read(module_ptr)
+        var members_key = string.String.create()
+        defer: members_key.release()
+        members_key.append(module_name)
+        members_key.append(".")
+        members_key.append(type_name)
+        let entry_ptr = unsafe: read(analysis).imported_type_members.get(members_key.as_str())
+        if entry_ptr != null:
+            let sig_ptr = unsafe: read(entry_ptr).methods.get(member)
+            if sig_ptr != null:
+                return Option[analyzer.FnSig].some(value = unsafe: read(sig_ptr))
+        i += 1
     return Option[analyzer.FnSig].none
