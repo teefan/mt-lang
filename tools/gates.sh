@@ -224,7 +224,9 @@ gates_valgrind() {
 exec valgrind --error-exitcode=99 --log-file=$ROOT/$log $ROOT/build/stage2/mtc "\$@"
 EOF
     chmod +x "$wrapper"
-    ruby tools/lsp_parity.rb record --server "$wrapper" --out tmp/lsp-self-vg-gates.json --stress --timeout 120 >/dev/null 2>&1
+    # The wrapper is the self *binary* (spawned with the `lsp` argument), not a
+    # server kind — passing it as `--server` would run it with no arguments.
+    ruby tools/lsp_parity.rb record --server self --self "$wrapper" --out tmp/lsp-self-vg-gates.json --stress --timeout 120 >/dev/null 2>&1
     local rc=$?
     grep -A3 "ERROR SUMMARY" "$log" | tail -2
     [ $rc -eq 0 ] || return $rc

@@ -48,9 +48,12 @@ public struct ParseCacheEntry:
 ## loaded and bound, which the single-file `analyzer.check_source_file` path
 ## cannot do (imported generics and their members stay unresolved there).
 ## The owning Program is retained so the analysis' name/type views stay valid.
+## `cache_generation` is the module cache's generation at build time: any edit
+## or re-analysis since then makes this entry stale and it is rebuilt.
 public struct AnalysisCacheEntry:
     path: string.String
     content_hash: uint
+    cache_generation: ptr_uint
     program: loader.Program
     analysis: analyzer.Analysis
 
@@ -90,6 +93,10 @@ public struct Workspace:
     diagnostic_cache: DiagnosticCache
     analysis_cache: map_mod.Map[string.String, AnalysisCacheEntry]
     parse_cache: map_mod.Map[string.String, ParseCacheEntry]
+    ## The cross-program module cache: parsed modules and their analyses shared
+    ## by every Program this workspace builds, so an edit re-analyzes only the
+    ## edited module and its dependents (see `loader.ModuleCache`).
+    module_cache: loader.ModuleCache
     ## Files whose content changed since the index was built: they are re-indexed
     ## in place on the next request that needs the index, so symbol search,
     ## completion and references see the edit without a full re-walk.
@@ -126,6 +133,7 @@ extending Workspace:
             diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create()),
             analysis_cache = map_mod.Map[string.String, AnalysisCacheEntry].create(),
             parse_cache = map_mod.Map[string.String, ParseCacheEntry].create(),
+            module_cache = loader.create_module_cache(),
             index_dirty = vec.Vec[string.String].create(),
             semantic_token_cache = map_mod.Map[string.String, SemanticTokenCacheEntry].create(),
             config_request_id = 0,
@@ -160,6 +168,8 @@ extending Workspace:
         this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
         release_analysis_cache(ref_of(this.analysis_cache))
         this.analysis_cache = map_mod.Map[string.String, AnalysisCacheEntry].create()
+        loader.release_module_cache(ref_of(this.module_cache))
+        this.module_cache = loader.create_module_cache()
         release_parse_cache(ref_of(this.parse_cache))
         this.parse_cache = map_mod.Map[string.String, ParseCacheEntry].create()
         release_dirty_paths(ref_of(this.index_dirty))
@@ -179,6 +189,7 @@ extending Workspace:
             Option.some as path_payload:
                 this.track_open_path(path_payload.value.as_str())
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
+                loader.invalidate_module_cache(ref_of(this.module_cache))
                 this.mark_index_dirty(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
                 refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
@@ -193,6 +204,7 @@ extending Workspace:
             Option.some as path_payload:
                 this.track_open_path(path_payload.value.as_str())
                 this.open_docs.set(path_payload.value, string.String.from_str(text))
+                loader.invalidate_module_cache(ref_of(this.module_cache))
                 this.mark_index_dirty(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
                 refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
@@ -207,6 +219,7 @@ extending Workspace:
             Option.some as path_payload:
                 this.untrack_open_path(path_payload.value.as_str())
                 this.open_docs.remove(path_payload.value)
+                loader.invalidate_module_cache(ref_of(this.module_cache))
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
                 refidx.forget(ref_of(this.reference_index), path_payload.value.as_str())
                 # The buffer is gone: re-read the file (its saved content).
@@ -629,6 +642,7 @@ extending Workspace:
         this.cancelled_ids.release()
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         release_semantic_token_cache(ref_of(this.semantic_token_cache))
+        loader.release_module_cache(ref_of(this.module_cache))
         if this.index_built:
             idx.release_index(ref_of(this.index))
 
@@ -744,12 +758,12 @@ public function analysis_entry_for(ws: ref[Workspace], path: str) -> Option[ptr[
     if cached_ptr != null:
         unsafe:
             let cached = read(cached_ptr)
-            if cached.content_hash == current_hash:
+            if cached.content_hash == current_hash and cached.cache_generation == ws.module_cache.generation:
                 return Option[ptr[AnalysisCacheEntry]].some(value = cached_ptr)
 
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
-    var program = loader.check_program_with_source(path, roots.as_span(), resolver_mod.Platform.linux, content.as_str(), true)
+    var program = loader.check_program_with_source(path, roots.as_span(), resolver_mod.Platform.linux, content.as_str(), true, ptr_of(ws.module_cache), ptr_of(ws.open_docs))
 
     if program.analyses.len() == 0:
         program.release()
@@ -772,6 +786,7 @@ public function analysis_entry_for(ws: ref[Workspace], path: str) -> Option[ptr[
     ws.analysis_cache.set(string.String.from_str(path), AnalysisCacheEntry(
         path = string.String.from_str(path),
         content_hash = current_hash,
+        cache_generation = ws.module_cache.generation,
         program = program,
         analysis = analysis,
     ))

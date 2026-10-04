@@ -128,37 +128,28 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 28 close (2026-10-03) — Track 7's **stage-14 leftovers**,
-the **fix engine** (stage 10 + the host's validation guard), the **quickfix
-extras** (stage 16) and the **`reserved-primitive-name` multi-site rename**
-(stage 8) landed with harness locks: `prepareCallHierarchy`'s
-item shape (always kind 12, `receiver_type: null`), `linkedEditingRange`'s
-local-binding gate and empty→null, `inlayHint`'s receiver-aware callee
-resolution and inferred return hints (`-> Task[void]`), `executeCommand`'s
-unknown→null, the `typeDefinition` verification (on functions and imported
-methods already matching; on directory-form modules the self answers the
-declaration the host's path helper cannot reach — the fifth documented harness
-entry), `prefer-inline-methods --fix` plus `validated_fixed_source`, the
-per-diagnostic code-action branch set with byte-equal titles, the cast and
-import actions and the `diagnostics` echo, and the reserved-name rename
-(`_fn`/`_module`/`_value`, every use site, the `_2` conflict bump).  Two extras
-the new fixture surfaced: `workspace/symbol` now walks the host's document set
-(glob-sorted walked files, then warm, then open) and the immutable-assignment
-sema message/range match the host.  The harness corpus is
-**68 requests + 19 probes**, 30/30 capability keys, 5 documented entries; the
-SimpleGame audit stays **4 stable differing entries + the first-file
-`documentSymbol` race**.  Session 27 had converted the request boundary's
-UTF-16 positions to byte offsets (completion 4 → 2).  Session 26 had taken
-completion **235 → 4** (the merge order, the prelude merge, the receiver
-families); session 24 had taken it **600 → 366 → 235**.  Session 23 closed
-`owning-release-leak` 602/286 → 0/0, `owning-release-double` 0/12 → 0/0 (the CFG
-precision analysis) and `prefer-struct-with` 93/0 → 0/0 (the host's gates +
-imported-alias resolution), taking the corpus lint to **494 agree / 115 differ**;
-`--sexpr` lower on the same tree reads 39/615/51/0 (the session-17 set).
-Earlier sessions' records are in §0k (session 22's assignability rule and
-`inline_if_too_wide?`; sessions 19–21's corpus work; sessions 15–18's foundational
-blockers; sessions 5–14's LSP pipeline ports).  The plan files were consolidated
-into this document on 2026-10-03 (session 25); see *Provenance*.
+Last updated: session 29 close (2026-10-04) — the **per-module `ModuleCache`**
+(loader + workspace) landed: an edit now re-parses and re-analyzes only the
+edited module and its dependents.  **Edit latency on
+`SimpleGame/src/main.mt`: 54.3 → 5.0 ms median `didChange`** (target ≤ ~10 ms;
+`didOpen` ~52 ms cold); the dependency-edit probe (direct, two-hop, created and
+restored imports) fails 3 checks on the pre-change binary and passes all on the
+new one; imported modules now honor **open editor buffers** (the host's
+`source_overrides`), which also closed 22 entries across the LSP fixture
+workspaces (0 added).  Harness 30/30 keys at 5 documented entries, audit 4
+stable entries (completion 2, hover 1, documentHighlight 1; race not seen),
+recovery OK, valgrind 0 errors over the 68+19 drive, `test/mt` 60/0, bootstrap
+fixed point (15 files / **606 tests** / 0 failed), examples emit-c 49/49,
+`cli:parity` 24/37/0.  `tools/gates.sh`'s valgrind gate had been passing its
+wrapper via `--server` (spawned with no arguments) — it now actually runs
+(`--server self --self <wrapper>`).  Session 28 had closed Track 7's
+stage-14 leftovers (call hierarchy / linked editing / inlay hints /
+executeCommand), the fix engine (stage 10 + `validated_fixed_source`), the
+per-diagnostic code-action set (stage 16) and the `reserved-primitive-name`
+multi-site rename (stage 8); sessions 24–27 had taken completion 600 → 2 and
+converted the request boundary's UTF-16 positions to byte offsets.  Earlier
+sessions' records are in §0k; the plan files were consolidated into this
+document on 2026-10-03 (session 25); see *Provenance*.
 
 **Audited 2026-10-03 (session 25).**  Re-measured on this tree (sources
 unchanged since session 24): completion **235** differing entries (exact),
@@ -249,14 +240,17 @@ this file's records + ledger in the same commit as the code change.
    cases (session 22); the differ on message text, output channel and argument
    precedence.  The unported subsystems are the program's CLI track.
 3. **LSP feature parity** — **the active phase**.  The harness is at 30/30
-   capability keys + its 4 documented differing entries; the project audit is at
+   capability keys + its 5 documented differing entries; the project audit is at
    **4 stable differing entries + the host's first-file `documentSymbol` race**
-   after session 27 (completion **2**: the host's synthesized `ref` lifetime and
+   (completion **2**: the host's synthesized `ref` lifetime and
    the host giving up on a `map_error` arm binding — the two byte-vs-character
    position entries closed with the request-boundary conversion; hover
    `type quat`; documentHighlight `lb@704:67`).  The completion class's
-   *unintended* entries are now 0; the open work is the readiness residue
-   (F9/C2–C6/D2–D4), then the optional `ref`-lifetime modeling.  Recovery parity
+   *unintended* entries are now 0; session 29 closed the **per-module
+   `ModuleCache`** (5.0 ms median per edit, 54.3 before) and made imported
+   modules honor open editor buffers.  The open work is the readiness residue
+   (F9/C2–C6/D2–D4), the `debugInfo` byte-parity remainder, then the optional
+   `ref`-lifetime modeling.  Recovery parity
    holds, the stress corpus runs without a crash or hang, and a real VS Code
    session runs clean under valgrind.
 4. **DAP** — phase 1 (process backend; 26 commands, 15 dedicated handlers) delivered; the lldb-dap
@@ -321,7 +315,8 @@ line misses — the symbol names are the stable anchors.
 - **LSP**: harness at 0 unintended entries (only the documented rows); the
   audit's completion class closed (0 unintended); `milkTea/debugInfo` byte-equal
   after object-id normalization; `[LSP perf]` ≤ ~10 ms per edit after the
-  per-module cache; valgrind clean.
+  per-module cache — **met 2026-10-04: 5.0 ms median, session 29**; valgrind
+  clean (0 errors on the 68+19 drive).
 - **Linter**: per-rule counts/messages/severities/positions equal the host on
   `language_baseline.mt`, `memory_stress_test.mt` **and** the 609-file corpus
   sweep.
@@ -660,18 +655,27 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   keep the standing gates exactly as this file's protocol and AGENTS.md list
   them.
 - **Stage-plan residue (absorbed; verify each against §0k before starting):**
-  - **per-module `ModuleCache`** (edit-latency foundation; closes the
-    re-parse/re-analyze of the whole import closure on each content version —
-    the remaining 39 ms → target ≤ ~10 ms/edit on `SimpleGame/src/main.mt`).
-    Design: `lsp.Workspace`-owned cache keyed by resolved path →
-    `{content_hash, owned source, the SAME AST instance (resolved_expr_types is
-    pointer-keyed), analysis, ModuleBinding, lex/parse diagnostics, direct-import
-    versions}`; `module_loader.check_program_with_source` consults it,
-    `parse_all` skips unmodified modules, `check_and_bind_module` reuses when the
-    module's hash and every direct import's version are unchanged;
-    `lsp/semantic_tokens.mt`'s `register_resolved_import`/`build_scan_facts` read
-    the alias surface from it.  Verify with the dependency-edit probe
-    (edit `std/vec.mt` → a dependent's diagnostics refresh) and valgrind.
+  - **per-module `ModuleCache`** (edit-latency foundation) — **DONE (session 29,
+    2026-10-04)**: `lsp.Workspace` owns a `loader.ModuleCache` keyed by resolved
+    path → `{content_hash, the parsed module (owned source, AST, lex/parse
+    diagnostics), version, analysis, ModuleBinding, direct-import paths +
+    versions}`; `check_program_with_source` consults it, `parse_all` reuses a
+    module whose content hash matches, and the check loop reuses an analysis
+    when the module's import-path list matches its snapshot and every forward
+    import's version matches (cycle back-edges skipped).  The workspace's
+    per-root Program entries are validated against the cache's generation
+    (`change`/`open`/`close` bump it), so an edit anywhere invalidates
+    dependents' cached Programs and the rebuild re-analyzes exactly the edited
+    module's dependent closure.  The same change closes a pre-existing parity
+    gap the probe exposed: imported modules now parse from **open editor
+    buffers** when present (the host's `source_overrides`), not disk.
+    **Measured: 54.3 → 5.0 ms median per edit** on `SimpleGame/src/main.mt`
+    (target ≤ ~10 ms; `didOpen` unchanged at ~52 ms); the dependency-edit probe
+    (direct + two-hop + create/restore; `tmp/lsp_dependency_probe.rb`) went 3
+    FAILures on the pre-change binary → all PASS; the LSP fixture sweep closed
+    22 entries across the probe workspaces (0 added); valgrind: 0 errors over
+    the 68+19 harness drive.  Record: §0k, "The per-module `ModuleCache`"
+    (session 29).
   - **`reserved-primitive-name --fix` use-site renaming** (stage 8) — **DONE
     (session 28)**: the linter now collects the host's
     `ReservedPrimitiveNameFix` set — a fix per module-level binding
@@ -830,21 +834,23 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
 
 ## Ledger and scoreboard
 
-Newest verified numbers (session 24 close, 2026-10-02) — re-measure only the
+Newest verified numbers (session 29 close, 2026-10-04) — re-measure only the
 classes a change can move, and only when the tree moved.  Target = the
 definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (2026-10-03 session 27 — `stage2.c == stage3.c`); self-test suite 15 files / **596 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed (re-run 2026-10-03) | stay green | `build/stage2/mtc test test/mt -I .` |
-| examples / sdl3 / raylib | 15/15, 34/34, 217/219 | stay green | per-family sweeps |
+| bootstrap fixed point | holds (2026-10-04 session 29 — `stage2.c == stage3.c`); self-test suite 15 files / **606 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed (re-run 2026-10-04) | stay green | `build/stage2/mtc test test/mt -I .` |
+| examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-04: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
-| `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-03) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 5 documented entries of **68 requests + 19 probes** (re-measured 2026-10-03 session 28, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | **4 stable differ + the host's first-file `documentSymbol` race** (re-measured 2026-10-03 session 27 on 7075 entries: completion 2, hover 1, documentHighlight 1; completion 4 → 2 this session; the race appeared in the gates run and not in the standalone run) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
-| LSP recovery | 6/6 cases byte-equal | stay green | `tools/lsp_recovery_probe.rb --check` |
+| `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-04) | all match | `rake "cli:parity"` |
+| LSP harness | 30/30 capability keys; 5 documented entries of **68 requests + 19 probes** (re-measured 2026-10-04 session 29, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | **4 stable differ + the host's first-file `documentSymbol` race** (re-measured 2026-10-04 session 29 on 7075 entries: completion 2, hover 1, documentHighlight 1; the race was not seen in either run this time) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
+| LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-04) | stay green | `tools/lsp_recovery_probe.rb --check` |
+| LSP edit latency | **5.0 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 10 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
+| LSP valgrind | 0 errors over the 68+19 harness drive (2026-10-04; 7,375,764 B definitely lost — pre-existing analyzer/cache leaks) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
 | formatter | 705/705 all three modes (re-measured 2026-10-03; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 494 agree / 115 differ (609 files; re-measured 2026-10-03) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | process-backend request parity (re-measured 2026-10-03; terminal event order and build-on-launch differ); lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
@@ -4055,6 +4061,83 @@ unresolved-import guard, and the analyzer's reserved-name *errors* differ (the
 host errors on module-level reserved names too, with its own message; the self
 checks only locals/params, with another message).
 
+### The per-module `ModuleCache`: an edit re-analyzes only its own module and its dependents (2026-10-04 session 29)
+
+Track 7's edit-latency foundation.  Every content version used to re-parse and
+re-analyze the whole import closure (measured 54.3 ms per edit on
+`SimpleGame/src/main.mt`); the loader now keeps a workspace-owned cache of
+parsed modules and their analyses, so an edit costs one parse + one analysis +
+the dependents' re-checks.
+
+- **`loader.ModuleCache`** (`module_loader.mt`) is keyed by resolved module
+  path.  Each entry owns the parsed module (source, AST, lex/parse diagnostics),
+  its analysis and export binding on the heap, an analysis **version** assigned
+  from the cache counter on every parse/re-analysis, and a snapshot of its
+  **direct-import paths + versions** taken when the analysis was built.
+- **`check_program_with_source`** takes an optional cache (and the open-document
+  map).  `parse_all` reuses a cached module whose content hash matches (the
+  freshly read copy is dropped) — including the AST, which matters because
+  `resolved_expr_types` is pointer-keyed.  `module_needs_rebuild` decides
+  analysis reuse at check time: the module's resolved import-path list must
+  match its snapshot and every **forward** direct import's version must match
+  (a cycle back-edge is skipped — the module's check could not see that
+  dependency's binding, and comparing it would thrash the `std.option` ↔
+  `std.result` cycle).  A moved version cascades through direct edges in
+  dependency order, so a rebuild chain stops exactly at the edited module's
+  dependents; dependency-order checks mean no fixpoint is needed.
+- **Cross-program invalidation** (`lsp/workspace.mt`): each per-root Program
+  entry records the module cache's **generation**; `open`/`change`/`close` bump
+  it and every lookup validates it, so an edit to an imported module invalidates
+  the dependent's cached Program and the rebuild re-analyzes the changed chain.
+  Without this, a dependent answered its stale snapshot until edited itself —
+  the dependency probe's pre-change behaviour.
+- **Open buffers beat disk for imports** (the host's `source_overrides`): the
+  loader consults the workspace's `open_docs` before reading a module from disk.
+  This was a pre-existing parity gap the dependency probe exposed: an unsaved
+  edit to an imported module previously reached no dependent at all.
+- **Ownership**: cache entries own module storage; cache-built Programs hold
+  shallow copies and release only the modules vector (`Program.modules_owned`);
+  a replaced entry releases its module, its previous analysis' retained
+  diagnostics and its snapshots (`release_module_cache_entry`), while analysis
+  *contents* keep the compiler's arena-leak convention.  A stale Program is
+  never read after its entry is replaced: the generation moves first
+  (`release_entry_analysis` documents the argument).  The CLI path (`cache =
+  null`) keeps its exact previous ownership and behavior.
+
+**Measured.**  Edit cycles on `SimpleGame/src/main.mt` (`tmp/lsp_edit_perf.rb`,
+10 edits): **didChange 54.3 → 5.0 ms median** (min 4.8, max 5.4; the
+diagnostic pull 0.2 ms; `didOpen` unchanged at ~52 ms — the cold build of the
+whole closure).  Dependency probe (`tmp/lsp_dependency_probe.rb`: direct
+signature edit, two-hop field-type chain via a mid module, create + restore):
+the pre-change binary fails 3 checks, the new one passes all.  `mtc test`: 15
+files / 0 failed (5 new `module_loader_test.mt` cases: unchanged-closure reuse
+(2 parses/2 analyses → unchanged), root-only re-analysis (+1/+1), dependency
+cascade (+1 parse/+2 analyses and the dependent's new diagnostic), a created
+import (the importer re-analyzes when its unresolved import appears), and the
+open-buffer override).  CLI paths byte-identical (check and emit-c against the
+pre-change binary on `language_baseline.mt` and error probes).  Gates on the
+frozen tree: bootstrap fixed point (stage2.c == stage3.c, 15/0), `test/mt`
+60/0, `cli:parity` 24/37/0, examples 49/49 same, fixtures closed 22 entries
+(0 added), audit 4 stable entries (completion 2, hover 1, documentHighlight 1;
+diagnostic/definition/references/typeDefinition/inlayHint/workspace-symbol all
+0), harness 30/30 keys at 5 documented entries, recovery OK, valgrind over the
+68+19 harness drive 0 errors (7,375,764 bytes definitely lost — the drive's
+standing analyzer/cache leaks, not new errors), Neovim hover OK.
+
+**Fixed on the way (tools):** `gates.sh`'s valgrind gate passed its wrapper to
+`lsp_parity.rb` as `--server <wrapper>`, which spawns the wrapper with **no
+arguments** (the compiler CLI, not `lsp`); it is a meter gate, so the broken
+invocation never failed the run.  It now passes `--server self --self
+<wrapper>`, and the gate genuinely runs the 68+19 drive under valgrind (0
+errors on this commit).
+
+**Residue:** `[LSP perf]` on a *closed* dependency re-reads and hashes every
+closure file per rebuild (open documents come from memory); the F9/C2–C3
+memory items still stand (this session's drive leaks are the pre-existing
+analyzer/cache ones).  `lsp/semantic_tokens.mt` still reads its alias surface
+through the single-file parse cache, not the module cache — a follow-up only if
+a token request ever shows up in the latency budget.
+
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
 `owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`
@@ -5129,19 +5212,13 @@ rows byte-identical); and the DAP items in `dap-design.md` §10.
 
 **Remaining, highest value first:**
 
-1. **Edit latency: cache loader analyses per module** (`module_loader.mt`).
-   Every content version re-parses and re-analyzes the whole import closure
-   (measured: 38 ms per edit on `SimpleGame/src/main.mt` with `std.raylib`,
-   against the host's 15–25 ms per request).  Design: a `ModuleCache` (owned by
-   the LSP `Workspace`, passed to `check_program_with_source`) keyed by
-   `(path, content hash)`, each entry recording the *versions* of the module's
-   direct imports; a module is re-analyzed when its own hash changes or any
-   direct import's version moved (the version bump cascades, so dependents of
-   dependents invalidate too, like the host's facts cache).  Entries own their
-   source text (the AST views it) — the same ownership rule as
-   `Workspace.parsed_analysis_for`.  Verify: `[LSP perf]` lines drop below
-   ~10 ms per edit, and the LSP harness plus a dependency-edit probe (edit
-   `std/vec.mt`, expect the dependent's diagnostics to refresh) stay green.
+1. **Edit latency: cache loader analyses per module** — **CLOSED (session 29,
+   2026-10-04)**: the `ModuleCache` landed as designed (direct-import version
+   snapshots, cascade through the dependent closure, plus the open-buffer
+   override for imports).  `[LSP perf]` reads **5.0 ms median per edit** on
+   `SimpleGame/src/main.mt` (was 54.3), and the dependency-edit probe passes
+   where the pre-change binary failed 3 checks.  See §0k's "The per-module
+   `ModuleCache`" record; the next open LSP item is 2.
 2. **`milkTea/debugInfo` remainder** (1 of 55 requests; the acceptance re-scope
    in the "Stage 8" record below still applies): the AST, Facts and Bindings
    sections and the histogram's tie order.  The token table, header and parse

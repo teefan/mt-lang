@@ -2,6 +2,7 @@
 # compiler.  Run with: mtc test projects/mtc/test/module_loader_test.mt
 
 import std.fs as fs
+import std.map as map_mod
 import std.path as path_ops
 import std.str
 import std.string as string
@@ -1427,3 +1428,154 @@ function test_imported_struct_static_return_is_clean() -> void:
     defer: program.release()
 
     expect_eq(int<-program.diagnostic_count(), 0)
+
+
+# =============================================================================
+#  Module cache: closure reuse, the dependency-version cascade, created
+#  imports and open-buffer overrides.
+# =============================================================================
+
+const LIB_ADD_MIXED: str = <<-SRC
+public function add(a: int, b: str) -> int:
+    return a
+SRC
+
+const GHOST_MODULE: str = <<-SRC
+public function ghost() -> int:
+    return 0
+SRC
+
+
+## Load main.mt through the module cache (and optional open-buffer overrides).
+function load_main_with_cache(root: ref[string.String], cache: ptr[loader.ModuleCache]?, open_docs: ptr[map_mod.Map[string.String, string.String]]?) -> loader.Program:
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    return loader.check_program_with_source(main_path.as_str(), roots.as_span(), resolver.Platform.linux, "", false, cache, open_docs)
+
+
+@[test]
+function test_module_cache_reuses_an_unchanged_closure() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "lib.mt", LIB_ADD), "could not write lib.mt")
+    expect(write_file(root.as_str(), "main.mt", MAIN_ADD_CORRECT), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    var first = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-first.diagnostic_count(), 0)
+    expect_eq(int<-cache.parse_count, 2)
+    expect_eq(int<-cache.analysis_count, 2)
+    first.release()
+
+    # Nothing changed: both modules reuse their parse and their analysis.
+    var second = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-second.diagnostic_count(), 0)
+    expect_eq(int<-cache.parse_count, 2)
+    expect_eq(int<-cache.analysis_count, 2)
+    second.release()
+
+
+@[test]
+function test_module_cache_reanalyzes_only_the_changed_root() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "lib.mt", LIB_ADD), "could not write lib.mt")
+    expect(write_file(root.as_str(), "main.mt", MAIN_ADD_CORRECT), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    var first = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-first.diagnostic_count(), 0)
+    first.release()
+
+    expect(write_file(root.as_str(), "main.mt", MAIN_ADD_ARITY), "could not rewrite main.mt")
+    var second = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect(second.has_diagnostic_containing("expects"))
+    expect_eq(int<-cache.parse_count, 3)
+    expect_eq(int<-cache.analysis_count, 3)
+    second.release()
+
+
+@[test]
+function test_module_cache_cascades_to_dependents() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "lib.mt", LIB_ADD), "could not write lib.mt")
+    expect(write_file(root.as_str(), "main.mt", MAIN_ADD_CORRECT), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    var first = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-first.diagnostic_count(), 0)
+    first.release()
+
+    # The dependency changes: it re-parses, and both it and its dependent
+    # re-analyze, so the dependent's diagnostics reflect the new signature.
+    expect(write_file(root.as_str(), "lib.mt", LIB_ADD_MIXED), "could not rewrite lib.mt")
+    var second = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect(second.has_diagnostic_containing("expects str"))
+    expect_eq(int<-cache.parse_count, 3)
+    expect_eq(int<-cache.analysis_count, 4)
+    second.release()
+
+
+@[test]
+function test_module_cache_picks_up_a_created_import() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "main.mt", S_MOD_MAIN_IMPORT_GHOST), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    var first = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect(first.has_diagnostic_containing("module not found"))
+    expect_eq(int<-cache.parse_count, 1)
+
+    # The missing module appears on disk: the next run parses and checks it and
+    # re-analyzes the importer, whose resolved-import set changed.
+    expect(write_file(root.as_str(), "ghost.mt", GHOST_MODULE), "could not write ghost.mt")
+    var second = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-second.diagnostic_count(), 0)
+    expect_eq(int<-cache.parse_count, 2)
+    expect_eq(int<-cache.analysis_count, 3)
+    second.release()
+
+
+@[test]
+function test_module_cache_uses_open_buffers_for_imports() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "lib.mt", LIB_ADD), "could not write lib.mt")
+    expect(write_file(root.as_str(), "main.mt", MAIN_ADD_CORRECT), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    var first = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-first.diagnostic_count(), 0)
+    first.release()
+
+    # An open, unsaved buffer overrides the dependency's disk content (the
+    # host's source_overrides): the importer's diagnostics reflect it.
+    var open_docs = map_mod.Map[string.String, string.String].create()
+    defer: open_docs.release()
+    var lib_path = path_ops.join(root.as_str(), "lib.mt")
+    defer: lib_path.release()
+    open_docs.set(string.String.from_str(lib_path.as_str()), string.String.from_str(LIB_ADD_MIXED))
+
+    var second = load_main_with_cache(ref_of(root), ptr_of(cache), ptr_of(open_docs))
+    expect(second.has_diagnostic_containing("expects str"))
+    expect_eq(int<-cache.parse_count, 3)
+    expect_eq(int<-cache.analysis_count, 4)
+    second.release()

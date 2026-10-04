@@ -11,6 +11,7 @@
 
 import std.fs as fs
 import std.map as map_mod
+import std.mem.heap as heap
 import std.path as path_ops
 import std.str as text
 import std.string as string
@@ -69,6 +70,10 @@ public struct Program:
     ## Module paths that failed to resolve (mirrors the Ruby loader's
     ## `unresolved_import_paths`): the linter skips `unused-import` for them.
     unresolved_import_paths: vec.Vec[string.String]
+    ## True when the Program owns its `modules`.  A cache-built Program (see
+    ## `ModuleCache`) holds shallow copies of the cache's modules — the cache
+    ## owns their storage — so `release` frees only the modules vector itself.
+    modules_owned: bool
 
 
 extending LoadedModule:
@@ -194,13 +199,14 @@ extending Program:
 
 
     public editable function release() -> void:
-        var i: ptr_uint = 0
-        while i < this.modules.len():
-            let module_ptr = this.modules.get(i) else:
-                break
-            unsafe:
-                read(module_ptr).release()
-            i += 1
+        if this.modules_owned:
+            var i: ptr_uint = 0
+            while i < this.modules.len():
+                let module_ptr = this.modules.get(i) else:
+                    break
+                unsafe:
+                    read(module_ptr).release()
+                i += 1
         this.modules.release()
         this.order.release()
 
@@ -220,6 +226,326 @@ extending Program:
                 read(up).release()
             u += 1
         this.unresolved_import_paths.release()
+
+
+## One module's cached parse state plus — once the module has been checked in
+## some run — its analysis and export binding.  Owned by a `ModuleCache`; the
+## AST and the analyses follow the compiler's arena-leak convention (an
+## analysis' contents are never torn down beyond the diagnostics vector a
+## rebuild must replace, and a re-parsed module leaks its old AST exactly as a
+## fresh parse does).
+public struct ModuleCacheEntry:
+    content_hash: uint
+    module: LoadedModule
+    ## Analysis identity, assigned from the cache's counter on every parse or
+    ## re-analysis.  Dependents snapshot it and re-analyze when it moves.
+    version: ptr_uint
+    ## The resolved direct-import paths recorded when `analysis_ptr` was last
+    ## built, and those imports' `version` values at that moment.  A different
+    ## path set — an import added, removed, created or deleted — or a moved
+    ## import version forces the module's re-analysis.
+    import_paths: vec.Vec[string.String]
+    dep_versions: vec.Vec[ptr_uint]
+    ## Null between the parse phase and the module's first check in a run; set
+    ## once the module has been analyzed and replaced on every re-analysis.
+    analysis_ptr: ptr[analyzer.Analysis]?
+    binding_ptr: ptr[analyzer.ModuleBinding]?
+
+
+## The workspace-owned cross-program module cache: one entry per resolved module
+## path, shared by every Program the workspace builds, so an edit re-parses and
+## re-analyzes only the edited module and its dependents instead of the whole
+## import closure.  `generation` moves whenever any entry's parse or analysis
+## identity changes (and on document edits, where the cache has not yet seen the
+## new content); a Program cached at an older generation is rebuilt before use.
+## `parse_count`/`analysis_count` are verification counters.
+public struct ModuleCache:
+    entries: map_mod.Map[string.String, ModuleCacheEntry]
+    generation: ptr_uint
+    version_counter: ptr_uint
+    parse_count: ptr_uint
+    analysis_count: ptr_uint
+
+
+## Per-run state threaded through the loader: each module's resolved
+## direct-import paths (index-aligned with the run's module list) and the open
+## editor buffers that override a module's disk content (the host's
+## `source_overrides`).  The vectors stay empty and unread when the run has no
+## cache.
+struct LoadRun:
+    cache: ptr[ModuleCache]?
+    open_docs: ptr[map_mod.Map[string.String, string.String]]?
+    dep_paths: vec.Vec[vec.Vec[string.String]]
+
+
+public function create_module_cache() -> ModuleCache:
+    return ModuleCache(
+        entries = map_mod.Map[string.String, ModuleCacheEntry].create(),
+        generation = 0,
+        version_counter = 0,
+        parse_count = 0,
+        analysis_count = 0,
+    )
+
+
+## Force every Program cached against this cache to rebuild on its next lookup.
+## Called on document edits, whose content the cache has not seen yet.
+public function invalidate_module_cache(cache: ref[ModuleCache]) -> void:
+    cache.generation += 1
+
+
+public function release_module_cache(cache: ref[ModuleCache]) -> void:
+    var entries_iter = cache.entries.entries()
+    while entries_iter.next():
+        let entry = entries_iter.current()
+        unsafe:
+            var entry_value = read(entry.value)
+            release_module_cache_entry(ref_of(entry_value))
+    cache.entries.release()
+
+
+function release_module_cache_entry(entry: ref[ModuleCacheEntry]) -> void:
+    entry.module.release()
+    release_paths_vec(entry.import_paths)
+    var versions = entry.dep_versions
+    versions.release()
+    release_entry_analysis(entry)
+
+
+## Release a replaced entry's heap analysis and binding.  The old analysis may
+## still be shallow-copied inside stale Programs, but those are never read: a
+## replaced entry always moves the cache's generation, and every Program is
+## validated against it before use.
+function release_entry_analysis(entry: ref[ModuleCacheEntry]) -> void:
+    let analysis_mem = entry.analysis_ptr
+    if analysis_mem != null:
+        unsafe:
+            var analysis_value = read(analysis_mem)
+            analysis_value.diagnostics.release()
+        heap.release(analysis_mem)
+        entry.analysis_ptr = null
+    let binding_mem = entry.binding_ptr
+    if binding_mem != null:
+        heap.release(binding_mem)
+        entry.binding_ptr = null
+
+
+## Look up an entry by resolved path.  The returned pointer addresses the map's
+## storage; it stays valid until the map is mutated.
+function module_cache_entry(cache: ptr[ModuleCache]?, path: str) -> ptr[ModuleCacheEntry]?:
+    if cache == null:
+        return null
+    var key = string.String.from_str(path)
+    defer: key.release()
+    return unsafe: read(cache).entries.get(key)
+
+
+## Store a freshly parsed module, replacing (and releasing) any previous entry
+## for `path`.  A changed content hash invalidates the old analysis, so it is
+## dropped with the module.
+function module_cache_store_module(cache: ptr[ModuleCache]?, path: str, content_hash: uint, module_value: LoadedModule) -> void:
+    if cache == null:
+        return
+    var lookup = string.String.from_str(path)
+    defer: lookup.release()
+    var next_version: ptr_uint = 0
+    unsafe:
+        next_version = read(cache).version_counter + 1
+        read(cache).version_counter = next_version
+    unsafe:
+        match read(cache).entries.remove_entry(lookup):
+            Option.some as removed:
+                var removed_entry = removed.value
+                removed_entry.key.release()
+                var old_entry = removed_entry.value
+                release_module_cache_entry(ref_of(old_entry))
+            Option.none:
+                pass
+        read(cache).entries.set(string.String.from_str(path), ModuleCacheEntry(
+            content_hash = content_hash,
+            module = module_value,
+            version = next_version,
+            import_paths = vec.Vec[string.String].create(),
+            dep_versions = vec.Vec[ptr_uint].create(),
+            analysis_ptr = null,
+            binding_ptr = null,
+        ))
+        read(cache).parse_count = read(cache).parse_count + 1
+        read(cache).generation = read(cache).generation + 1
+
+
+## Record the analysis and export binding just built for the module at `path`,
+## replacing any previous ones, and take ownership of the run's resolved import
+## paths for the module, snapshotting their current versions.  The diagnostics
+## vector is retained — entry teardown owns it — because a reused module
+## re-emits its sema diagnostics from here.
+function module_cache_store_analysis(cache: ptr[ModuleCache]?, path: str, module_index: ptr_uint, run: ref[LoadRun], analysis_value: analyzer.Analysis, binding_value: analyzer.ModuleBinding) -> void:
+    if cache == null:
+        return
+    let entry_ptr = module_cache_entry(cache, path) else:
+        return
+    var next_version: ptr_uint = 0
+    unsafe:
+        next_version = read(cache).version_counter + 1
+        read(cache).version_counter = next_version
+    unsafe:
+        let old_analysis = read(entry_ptr).analysis_ptr
+        if old_analysis != null:
+            var old_value = read(old_analysis)
+            old_value.diagnostics.release()
+            heap.release(old_analysis)
+        let old_binding = read(entry_ptr).binding_ptr
+        if old_binding != null:
+            heap.release(old_binding)
+        release_paths_vec(read(entry_ptr).import_paths)
+        var old_versions = read(entry_ptr).dep_versions
+        old_versions.release()
+        let analysis_mem = ptr[analyzer.Analysis]<-heap.must_alloc[analyzer.Analysis](1)
+        read(analysis_mem) = analysis_value
+        read(entry_ptr).analysis_ptr = analysis_mem
+        let binding_mem = ptr[analyzer.ModuleBinding]<-heap.must_alloc[analyzer.ModuleBinding](1)
+        read(binding_mem) = binding_value
+        read(entry_ptr).binding_ptr = binding_mem
+        read(entry_ptr).version = next_version
+        let slot = run.dep_paths.get(module_index)
+        if slot != null:
+            var versions = vec.Vec[ptr_uint].create()
+            var dep_list = read(slot)
+            var di: ptr_uint = 0
+            while di < dep_list.len():
+                let dep_path_ptr = dep_list.get(di) else:
+                    break
+                let dep_entry_ptr = module_cache_entry(cache, read(dep_path_ptr).as_str())
+                if dep_entry_ptr != null:
+                    versions.push(read(dep_entry_ptr).version)
+                else:
+                    versions.push(0)
+                di += 1
+            read(entry_ptr).import_paths = read(slot)
+            read(entry_ptr).dep_versions = versions
+            read(slot) = vec.Vec[string.String].create()
+        read(cache).analysis_count = read(cache).analysis_count + 1
+        read(cache).generation = read(cache).generation + 1
+
+
+## Release a run's bookkeeping vectors.  Slots whose paths were moved into
+## cache entries are empty by then, so this frees only what the run still owns.
+function release_load_run(run: ref[LoadRun]) -> void:
+    var i: ptr_uint = 0
+    while i < run.dep_paths.len():
+        let slot = run.dep_paths.get(i) else:
+            break
+        unsafe:
+            release_paths_vec(read(slot))
+        i += 1
+    run.dep_paths.release()
+
+
+## Release an owned path vector: each element String, then the vector itself.
+## The caller passes the vector by value, so the (shared) backing storage is
+## freed exactly once; a container that keeps using its slot must replace it.
+function release_paths_vec(paths: vec.Vec[string.String]) -> void:
+    var owned = paths
+    var i: ptr_uint = 0
+    while i < owned.len():
+        let path_ptr = owned.get(i) else:
+            break
+        unsafe:
+            read(path_ptr).release()
+        i += 1
+    owned.release()
+
+
+## A content fingerprint for the module cache.
+function fnv1a_hash(content: str) -> uint:
+    var hash: uint = 2166136261
+    var i: ptr_uint = 0
+    while i < content.len:
+        hash = (hash ^ uint<-content.byte_at(i)) * 16777619
+        i += 1
+    return hash
+
+
+## True when two resolved-import-path lists are element-wise equal.
+function import_paths_equal(left: span[string.String], right: span[string.String]) -> bool:
+    if left.len != right.len:
+        return false
+    var i: ptr_uint = 0
+    while i < left.len:
+        unsafe:
+            if not read(left.data + i).as_str().equal(read(right.data + i).as_str()):
+                return false
+        i += 1
+    return true
+
+
+## True when a module's cached analysis cannot be reused: it has no analysis
+## yet (its content was re-parsed or the entry is new), its resolved direct
+## import set changed, or a direct import it was analyzed against has moved to
+## a new analysis version.  A cycle's back-edge — a dependency checked after
+## this module — is skipped: the module's check could not see that dependency's
+## binding, so its result is independent of it.  A dependency that resolved but
+## produced no module (a read failure) is treated conservatively as changed.
+function module_needs_rebuild(cache: ptr[ModuleCache]?, run: ref[LoadRun], module_index: ptr_uint, modules: ref[vec.Vec[LoadedModule]], visited: ref[map_mod.Map[str, ptr_uint]], order_positions: ref[vec.Vec[ptr_uint]]) -> bool:
+    let module_ptr = modules.get(module_index) else:
+        return true
+    var module_value: LoadedModule
+    unsafe:
+        module_value = read(module_ptr)
+
+    let entry_ptr = module_cache_entry(cache, module_value.path.as_str()) else:
+        return true
+    var entry: ModuleCacheEntry
+    unsafe:
+        entry = read(entry_ptr)
+    if entry.analysis_ptr == null:
+        return true
+
+    let dep_list_ptr = run.dep_paths.get(module_index) else:
+        return true
+    var dep_list: vec.Vec[string.String]
+    unsafe:
+        dep_list = read(dep_list_ptr)
+    if not import_paths_equal(entry.import_paths.as_span(), dep_list.as_span()):
+        return true
+
+    let this_pos_ptr = order_positions.get(module_index) else:
+        return true
+    var this_pos: ptr_uint
+    unsafe:
+        this_pos = read(this_pos_ptr)
+
+    var di: ptr_uint = 0
+    while di < dep_list.len():
+        let dep_path_ptr = dep_list.get(di) else:
+            break
+        var dep_path: str
+        unsafe:
+            dep_path = read(dep_path_ptr).as_str()
+        let dep_index_ptr = visited.get(dep_path) else:
+            return true
+        var dep_index: ptr_uint
+        unsafe:
+            dep_index = read(dep_index_ptr)
+        let dep_pos_ptr = order_positions.get(dep_index) else:
+            return true
+        var dep_pos: ptr_uint
+        unsafe:
+            dep_pos = read(dep_pos_ptr)
+        if dep_pos < this_pos:
+            let dep_entry_ptr = module_cache_entry(cache, dep_path) else:
+                return true
+            let snapshot_ptr = entry.dep_versions.get(di) else:
+                return true
+            var dep_version: ptr_uint
+            var snapshot_version: ptr_uint
+            unsafe:
+                dep_version = read(dep_entry_ptr).version
+                snapshot_version = read(snapshot_ptr)
+            if dep_version != snapshot_version:
+                return true
+        di += 1
+    return false
 
 
 ## Load and check the program rooted at `root_path`, resolving imports against
@@ -277,15 +603,21 @@ public function absolute_path(path: str) -> string.String:
 
 
 public function check_program(root_path: str, roots: span[str], platform: resolver.Platform) -> Program:
-    return check_program_with_source(root_path, roots, platform, "", false)
+    return check_program_with_source(root_path, roots, platform, "", false, null, null)
 
 
 ## check_program with an explicit root-module source override.  When
 ## `root_source` is non-empty it is parsed as the root module's text instead of
 ## reading the file from disk — the LSP analyses unsaved editor buffers.
-## Imported modules always read from disk.  `require_resolved_imports` selects
-## the LSP's unresolved-import handling (aliases stay unbound).
-public function check_program_with_source(root_path: str, roots: span[str], platform: resolver.Platform, root_source: str, require_resolved_imports: bool) -> Program:
+## `open_docs` maps absolute paths to open editor buffers; a module with a
+## buffer is parsed from it, otherwise from disk (the host's
+## `source_overrides`).  `require_resolved_imports` selects the LSP's
+## unresolved-import handling (aliases stay unbound).  A non-null `cache`
+## reuses already parsed modules and — when a module's own content and every
+## direct import's analysis are unchanged — the module's analysis and export
+## binding, so an edit only re-parses and re-analyzes the edited module and its
+## dependents instead of the whole import closure.
+public function check_program_with_source(root_path: str, roots: span[str], platform: resolver.Platform, root_source: str, require_resolved_imports: bool, cache: ptr[ModuleCache]?, open_docs: ptr[map_mod.Map[string.String, string.String]]?) -> Program:
     # Normalize the module roots to absolute paths once so every resolved
     # module path is absolute and consistent with the Ruby loader.
     var owned_roots = vec.Vec[string.String].create()
@@ -307,6 +639,15 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
     var diagnostics = vec.Vec[LoadDiagnostic].create()
     var unresolved_import_paths = vec.Vec[string.String].create()
 
+    # Per-run bookkeeping: each module's resolved import paths and the open
+    # editor buffers.  The vectors stay empty and unread when `cache` is null.
+    var run = LoadRun(
+        cache = cache,
+        open_docs = open_docs,
+        dep_paths = vec.Vec[vec.Vec[string.String]].create(),
+    )
+    defer: release_load_run(ref_of(run))
+
     # Absolutize the root path so module-name inference can match it against
     # the normalized (absolute) roots, like Ruby's File.expand_path in load_file.
     var root_abs = absolute_path(root_path)
@@ -321,8 +662,8 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
     # PreludeInstaller.  Parsing them first also makes them dependency-first in
     # `order`, so they are checked before any consumer.  A prelude that cannot be
     # resolved is skipped silently (the analyzer still synthesizes the types).
-    seed_prelude_module("std.option", norm_roots, platform, root_name_owner.as_str(), "", ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics), ref_of(unresolved_import_paths))
-    seed_prelude_module("std.result", norm_roots, platform, root_name_owner.as_str(), "", ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics), ref_of(unresolved_import_paths))
+    seed_prelude_module("std.option", norm_roots, platform, root_name_owner.as_str(), "", ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics), ref_of(unresolved_import_paths), ref_of(run))
+    seed_prelude_module("std.result", norm_roots, platform, root_name_owner.as_str(), "", ref_of(modules), ref_of(visited), ref_of(on_stack), ref_of(order), ref_of(diagnostics), ref_of(unresolved_import_paths), ref_of(run))
 
     # `parse_all` takes ownership of the resolved path, so keep a copy for the
     # post-parse root reordering below.
@@ -341,6 +682,7 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
         ref_of(order),
         ref_of(diagnostics),
         ref_of(unresolved_import_paths),
+        ref_of(run),
     )
 
     # When the requested root was already parsed as a prelude dependency
@@ -369,7 +711,30 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
             order = reordered
 
     on_stack.release()
-    visited.release()
+
+    # Each module's position in the check order, so the reuse decision can tell
+    # a cycle's back-edge (checked after the module) from a forward dependency.
+    # `visited` maps a module's direct imports to their module indices, so it
+    # stays alive through the check loop.
+    var order_positions = vec.Vec[ptr_uint].create()
+    defer: order_positions.release()
+    if cache != null:
+        var init_i: ptr_uint = 0
+        while init_i < modules.len():
+            order_positions.push(modules.len())
+            init_i += 1
+        var pos_i: ptr_uint = 0
+        while pos_i < order.len():
+            let module_index_ptr = order.get(pos_i) else:
+                break
+            var module_index: ptr_uint
+            unsafe:
+                module_index = read(module_index_ptr)
+            let position_ptr = order_positions.get(module_index) else:
+                break
+            unsafe:
+                read(position_ptr) = pos_i
+            pos_i += 1
 
     # Check each module in dependency-first order, accumulating export bindings
     # so a module's imports are already bound before it is checked.  (Per the
@@ -390,8 +755,15 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
         let index = unsafe: read(index_ptr)
         let module_ptr = modules.get(index) else:
             break
-        check_and_bind_module(module_ptr, bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports)
+        var rebuilt = true
+        if cache != null:
+            rebuilt = module_needs_rebuild(cache, ref_of(run), index, ref_of(modules), ref_of(visited), ref_of(order_positions))
+        if rebuilt:
+            check_and_bind_module(module_ptr, index, bindings_ptr, ref_of(analyses), ref_of(diagnostics), require_resolved_imports, ref_of(run))
+        else:
+            reuse_cached_module(module_ptr, cache, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
         oi += 1
+    visited.release()
 
     var owning_type_names = build_owning_type_names(ref_of(analyses))
 
@@ -414,7 +786,7 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
         ci += 1
     analyses.release()
 
-    return Program(modules = modules, order = order, analyses = canonical_analyses, diagnostics = diagnostics, owning_type_names = owning_type_names, root_index = root_index, unresolved_import_paths = unresolved_import_paths)
+    return Program(modules = modules, order = order, analyses = canonical_analyses, diagnostics = diagnostics, owning_type_names = owning_type_names, root_index = root_index, unresolved_import_paths = unresolved_import_paths, modules_owned = cache == null)
 
 
 ## Canonical module order: depth-first post-order over the module names sorted
@@ -582,6 +954,7 @@ function seed_prelude_module(
     order: ref[vec.Vec[ptr_uint]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
     unresolved_import_paths: ref[vec.Vec[string.String]],
+    run: ref[LoadRun],
 ) -> void:
     match resolver.resolve_module_path(module_name, roots, platform):
         Result.success as resolved_ok:
@@ -592,10 +965,25 @@ function seed_prelude_module(
             if module_name == skip_path:
                 resolved_ok.value.release()
                 return
-            parse_all(resolved_ok.value, roots, platform, "", root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths)
+            parse_all(resolved_ok.value, roots, platform, "", root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
         Result.failure as failure:
             var error = failure.error
             error.release()
+
+
+## The open editor buffer for a module path, when the client has the document
+## open — the host's `source_overrides`.  The returned String is an owned copy
+## the caller (the parsed module) keeps; None when the module reads from disk.
+function module_buffer_source(run: ref[LoadRun], key: str) -> Option[string.String]:
+    let open_docs = run.open_docs
+    if open_docs == null:
+        return Option[string.String].none
+    var buffer_key = string.String.from_str(key)
+    defer: buffer_key.release()
+    let buffer_ptr = unsafe: read(open_docs).get(buffer_key)
+    if buffer_ptr == null:
+        return Option[string.String].none
+    return Option[string.String].some(value = string.String.from_str(unsafe: read(buffer_ptr).as_str()))
 
 
 ## Depth-first transitive parse.  Uses three-colour marking: `on_stack` (gray,
@@ -614,6 +1002,7 @@ function parse_all(
     order: ref[vec.Vec[ptr_uint]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
     unresolved_import_paths: ref[vec.Vec[string.String]],
+    run: ref[LoadRun],
 ) -> void:
     var owned_path = resolved
     let key = owned_path.as_str()
@@ -640,24 +1029,56 @@ function parse_all(
     if root_source.len > 0 and key.equal(root_key):
         source = string.String.from_str(root_source)
     else:
-        match fs.read_text(key):
-            Result.failure as failure:
-                var error = failure.error
-                diagnostics.push(LoadDiagnostic(
-                    path = string.String.from_str(key),
-                    line = 0,
-                    column = 0,
-                    length = 0,
-                    message = string.String.from_str("source file not found"),
-                    severity = "error",
-                    code = "module/error",
-                    symbol_name = string.String.from_str(""),
-                ))
-                error.release()
+        match module_buffer_source(run, key):
+            Option.some as buffered_source:
+                source = buffered_source.value
+            Option.none:
+                match fs.read_text(key):
+                    Result.failure as failure:
+                        var error = failure.error
+                        diagnostics.push(LoadDiagnostic(
+                            path = string.String.from_str(key),
+                            line = 0,
+                            column = 0,
+                            length = 0,
+                            message = string.String.from_str("source file not found"),
+                            severity = "error",
+                            code = "module/error",
+                            symbol_name = string.String.from_str(""),
+                        ))
+                        error.release()
+                        owned_path.release()
+                        return
+                    Result.success as payload:
+                        source = payload.value
+
+    # Cache reuse: identical content means the cached parse — its owned source,
+    # the AST, and the captured lex/parse diagnostics — is still current.  The
+    # freshly read copy (or the root-source copy) is dropped.  The module's
+    # cached path is what the walk's maps key on, because the released
+    # `owned_path` would dangle as a map key.
+    if run.cache != null:
+        let entry_ptr = module_cache_entry(run.cache, key)
+        if entry_ptr != null:
+            var reused = false
+            unsafe:
+                reused = read(entry_ptr).content_hash == fnv1a_hash(source.as_str())
+            if reused:
+                source.release()
                 owned_path.release()
+                var cached: LoadedModule
+                unsafe:
+                    cached = read(entry_ptr).module
+                let cached_key = cached.path.as_str()
+                modules.push(cached)
+                let index = modules.len() - 1
+                run.dep_paths.push(vec.Vec[string.String].create())
+                on_stack.set(cached_key, true)
+                recurse_imports(cached.source_file, cached_key, index, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
+                let _dropped = on_stack.remove(cached_key)
+                visited.set(cached_key, index)
+                order.push(index)
                 return
-            Result.success as payload:
-                source = payload.value
 
     var parse_diagnostics = vec.Vec[pstate.ParseDiagnostic].create()
     var lex_diagnostics = vec.Vec[token_mod.LexDiagnostic].create()
@@ -665,17 +1086,21 @@ function parse_all(
     let module_name = resolver.infer_module_name(key, roots)
 
     on_stack.set(key, true)
-    modules.push(LoadedModule(
+    let loaded = LoadedModule(
         module_name = module_name,
         path = owned_path,
         source = source,
         source_file = source_file,
         parse_diagnostics = parse_diagnostics,
         lex_diagnostics = lex_diagnostics,
-    ))
+    )
+    modules.push(loaded)
     let index = modules.len() - 1
+    if run.cache != null:
+        module_cache_store_module(run.cache, key, fnv1a_hash(source.as_str()), loaded)
+        run.dep_paths.push(vec.Vec[string.String].create())
 
-    recurse_imports(source_file, key, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths)
+    recurse_imports(source_file, key, index, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
 
     let _dropped = on_stack.remove(key)
     visited.set(key, index)
@@ -687,6 +1112,7 @@ function parse_all(
 function recurse_imports(
     source_file: ast.SourceFile,
     importer_path: str,
+    importer_index: ptr_uint,
     roots: span[str],
     platform: resolver.Platform,
     root_key: str,
@@ -697,6 +1123,7 @@ function recurse_imports(
     order: ref[vec.Vec[ptr_uint]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
     unresolved_import_paths: ref[vec.Vec[string.String]],
+    run: ref[LoadRun],
 ) -> void:
     var i: ptr_uint = 0
     while i < source_file.imports.len:
@@ -708,6 +1135,11 @@ function recurse_imports(
                 var module_name = analyzer.qname_to_str(imported.path)
                 match resolver.resolve_module_path(module_name, roots, platform):
                     Result.success as resolved_ok:
+                        if run.cache != null:
+                            let slot = run.dep_paths.get(importer_index)
+                            if slot != null:
+                                unsafe:
+                                    read(slot).push(string.String.from_str(resolved_ok.value.as_str()))
                         parse_all(
                             resolved_ok.value,
                             roots,
@@ -720,6 +1152,7 @@ function recurse_imports(
                             order,
                             diagnostics,
                             unresolved_import_paths,
+                            run,
                         )
                     Result.failure as resolve_failure:
                         var error = resolve_failure.error
@@ -747,17 +1180,48 @@ function recurse_imports(
 ## program-wide list, register the module's own export binding, and retain its
 ## `Analysis` for the Lowering stage.  Parse and lex diagnostics are reported
 ## first; semantic analysis still runs on the recovered AST, mirroring the
-## host's LSP pipeline.
+## host's LSP pipeline.  With a cache in use the analysis (and its retained
+## diagnostics) is also stored back into the module's entry.
 function check_and_bind_module(
     module_ptr: ptr[LoadedModule],
+    module_index: ptr_uint,
     bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]],
     analyses: ref[vec.Vec[analyzer.Analysis]],
     diagnostics: ref[vec.Vec[LoadDiagnostic]],
     require_resolved_imports: bool,
+    run: ref[LoadRun],
 ) -> void:
-    unsafe:
-        let loaded = read(module_ptr)
+    let loaded = unsafe: read(module_ptr)
 
+    # Semantic analysis runs even when the parser reported errors: the
+    # recovered AST still yields facts and diagnostics, matching the host's
+    # LSP pipeline (which continues past parse errors).
+    var analysis: analyzer.Analysis
+    if require_resolved_imports:
+        analysis = analyzer.check_module_requiring_resolved_imports(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+    else:
+        analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
+
+    emit_module_diagnostics(loaded, analysis.diagnostics.as_span(), diagnostics)
+
+    if run.cache != null:
+        # Keep the analysis' diagnostics: the entry owns them and a later run
+        # that reuses this module re-emits them from there.
+        let binding = binder.bind_module(analysis)
+        module_cache_store_analysis(run.cache, loaded.path.as_str(), module_index, run, analysis, binding)
+        unsafe:
+            read(bindings_ptr).set(loaded.module_name.as_str(), binding)
+    else:
+        analysis.diagnostics.release()
+        unsafe:
+            read(bindings_ptr).set(loaded.module_name.as_str(), binder.bind_module(analysis))
+    analyses.push(analysis)
+
+
+## Append a loaded module's lexer, parser and semantic diagnostics (as owned
+## LoadDiagnostic copies) to the program-wide list, in pipeline order.
+function emit_module_diagnostics(loaded: LoadedModule, sema: span[analyzer.SemanticDiagnostic], diagnostics: ref[vec.Vec[LoadDiagnostic]]) -> void:
+    unsafe:
         # Lexer diagnostics come first and are always reported (the host emits
         # `lex/error` items alongside the parser's recovered errors).
         var li: ptr_uint = 0
@@ -794,19 +1258,11 @@ function check_and_bind_module(
             ))
             pi += 1
 
-        # Semantic analysis runs even when the parser reported errors: the
-        # recovered AST still yields facts and diagnostics, matching the host's
-        # LSP pipeline (which continues past parse errors).
-        var analysis: analyzer.Analysis
-        if require_resolved_imports:
-            analysis = analyzer.check_module_requiring_resolved_imports(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
-        else:
-            analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
         var si: ptr_uint = 0
-        while si < analysis.diagnostics.len():
-            let sema_ptr = analysis.diagnostics.get(si) else:
-                break
-            let sema_diag = read(sema_ptr)
+        while si < sema.len:
+            var sema_diag: analyzer.SemanticDiagnostic
+            unsafe:
+                sema_diag = read(sema.data + si)
             diagnostics.push(LoadDiagnostic(
                 path = string.String.from_str(loaded.path.as_str()),
                 line = sema_diag.line,
@@ -818,7 +1274,29 @@ function check_and_bind_module(
                 symbol_name = string.String.from_str(""),
             ))
             si += 1
-        analysis.diagnostics.release()
 
-        read(bindings_ptr).set(loaded.module_name.as_str(), binder.bind_module(analysis))
-        analyses.push(analysis)
+
+## Reuse a cached module's analysis: re-emit its diagnostics (the entry retains
+## them) and re-register its export binding, without re-analyzing it.
+function reuse_cached_module(
+    module_ptr: ptr[LoadedModule],
+    cache: ptr[ModuleCache]?,
+    bindings_ptr: ptr[map_mod.Map[str, analyzer.ModuleBinding]],
+    analyses: ref[vec.Vec[analyzer.Analysis]],
+    diagnostics: ref[vec.Vec[LoadDiagnostic]],
+) -> void:
+    let loaded = unsafe: read(module_ptr)
+    let entry_ptr = module_cache_entry(cache, loaded.path.as_str()) else:
+        return
+    var analysis_mem: ptr[analyzer.Analysis]?
+    var binding_mem: ptr[analyzer.ModuleBinding]?
+    unsafe:
+        analysis_mem = read(entry_ptr).analysis_ptr
+        binding_mem = read(entry_ptr).binding_ptr
+    if analysis_mem != null:
+        let analysis_value = unsafe: read(analysis_mem)
+        emit_module_diagnostics(loaded, analysis_value.diagnostics.as_span(), diagnostics)
+        analyses.push(analysis_value)
+    if binding_mem != null:
+        unsafe:
+            read(bindings_ptr).set(loaded.module_name.as_str(), read(binding_mem))
