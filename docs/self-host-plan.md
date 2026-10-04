@@ -128,27 +128,26 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 30 close (2026-10-04) — Track 7's **F9 readiness items**
-landed: `release_scan_facts` frees a token scan's tables (with a `key_storage`
-owner for the composite keys), the reference index bounds its retained text
-(32 MiB) and skips unchanged closed documents by `(size, mtime)` via a
-`DocumentStamp`, and the request paths that re-read/re-parse per request now
-come from the module cache (`cached_module_surface` for import surfaces;
-references takes its AST/analysis from `analysis_entry_for` instead of an
-eager discarded parse).  A new **soak** driver (`tools/lsp_soak.rb` + the
-`soak` meter gate) measures the long-session profile: full mixed-cycle RSS
-growth on a ~5k-line synthetic workspace fell **15.2 → 9.7 MB/cycle**; the
-residual is the compiler's per-parse leak convention (AST/token allocations
-"one file per run and exits"), which now blocks C4's RSS ceiling and is
-recorded as the follow-up.  Harness 30/30 keys at 5 documented entries, audit
-4 stable entries (token/references rewiring is byte-neutral), recovery OK,
-valgrind 0 errors over the 68+19 drive (7,138,997 B definitely lost),
-`[LSP perf]` 4.9 ms median per edit, 16 test files / 611 tests.  Session 29
-had landed the **per-module `ModuleCache`** (54.3 → 5.0 ms per edit, open
-buffers honored for imports); sessions 24–28 the completion class, the fix
-engine, the code-action set and the reserved-name rename.  Earlier sessions'
-records are in §0k; the plan files were consolidated into this document on
-2026-10-03 (session 25); see *Provenance*.
+Last updated: session 31 close (2026-10-04) — the **LSP close-out** landed:
+`--timings` now emits the host's shapes (a shared `mtc.profile` with per-phase
+format output and the lint `rules=/total=`, per-rule rows and file-profile
+block); the linter gained the `:fast`/`:full` tier with the host's
+`full_tier?` gating (default `full`, so CLI/LSP behavior is unchanged); the
+project audit gained **`--canonical`** (a warm-up pass pins the request
+history — two canonical runs return identical differing sets, so the ±drift is
+gone for verification); six **client-behaviour probes** (`c5/…`) were added to
+the harness and exposed two fixed gaps (`didChangeConfiguration`'s formatter
+mode was ignored; watched-file changes never entered the symbol index); and
+the deliberate differences are one table in `docs/lsp-design.md` §8.  The
+canonical audit's warm state also surfaced **residue**: four `references`
+entries where the host's warm candidate coverage is wider, and the
+builtin-type hover locations (Track 7).  Measured: harness 30/30 keys at 5
+documented entries (68 requests + 27 probes), recovery OK, `test` 16 files / 0
+failed, and the `--timings` shapes verified against the host.  Session 30 had
+landed the F9 readiness items (ScanFacts release, the index bound/stamp cache,
+module-cache request paths, the soak driver).  Earlier sessions' records are in
+§0k; the plan files were consolidated into this document on 2026-10-03
+(session 25); see *Provenance*.
 
 **Audited 2026-10-03 (session 25).**  Re-measured on this tree (sources
 unchanged since session 24): completion **235** differing entries (exact),
@@ -177,7 +176,7 @@ for the area you are touching:
 | Workstream | Read | Verify with |
 | --- | --- | --- |
 | LSP completion parity (**closed in session 27** — 2 documented entries) | the program's Track 1 + §0k's part-1/2/3 and "The request boundary" records | `tools/lsp_project_audit.rb --workspace DIR` (its member-completion pass); `tmp/hl_probe.rb --method textDocument/completion` (`--warm` first for the host) |
-| LSP feature parity / audit residue | the program's LSP track + §0k; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host\|self`, `compare`, `--stress`), `tools/lsp_project_audit.rb --workspace DIR` (per-file, every position, both servers live), `tools/lsp_soak.rb` (RSS slope), plus valgrind and the headless-Neovim smoke for behavior changes |
+| LSP feature parity / audit residue | the program's LSP track + §0k; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host\|self`, `compare`, `--stress`), `tools/lsp_project_audit.rb --workspace DIR` (per-file, every position, both servers live; add `--canonical` to pin the warm-up history when verifying), `tools/lsp_soak.rb` (RSS slope), plus valgrind and the headless-Neovim smoke for behavior changes |
 | Linter corpus residue | the program's linter track + §0k's sessions 19–23 | `ruby tools/lint_parity.rb -q` (609 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
 | `lower` dump parity | the program's `lower` track, §0j's records, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min; quote the set) |
 | Example / vendored-family builds (no known failures since 2026-09-27) | §0j's 2026-09-27 section | the 15 top-level examples, `find examples/sdl3 -name '*.mt'`, a raylib sample |
@@ -353,17 +352,20 @@ parts 1–3" and "The request boundary".
 
 ### Track 2 — Linter corpus residue
 
-`tools/lint_parity.rb -q` over `std examples projects/mtc/src`: 609 files,
-**494 agree / 115 differ** (session 23 close; re-measured 2026-10-03; from
-357/252 in session 19).
+`tools/lint_parity.rb -q` over `std examples projects/mtc/src`: 610 files,
+**493 agree / 117 differ** (re-measured 2026-10-04 session 31; from 357/252 in
+session 19 — the last +1 file/–1 agree/+2 differ is the sweep linting this
+session's own new/changed compiler sources, `profile.mt` among them; the
+changed files carry the same ranked deltas below).
 Closed so far: `redundant-unsafe` 807 → 0, `owning-release-leak` 602/286 → 0/0,
 `owning-release-double` 0/12 → 0/0, `prefer-inline-if` 213 → 0,
 `prefer-struct-with` 93/0 → 0/0, `prefer-conditional-expression` 25 → 0.
-Remaining ranked deltas (self-extra / host-only; re-measured 2026-10-03):
-`redundant-cast` 74/22, `prefer-try` 64/39, `prefer-let` 51/142,
-`borrow-and-mutate` 28/0, `shadow` 20/0, `prefer-own-ptr` 16/45,
+Remaining ranked deltas (self-extra / host-only; re-measured 2026-10-04
+session 31):
+`redundant-cast` 74/25, `prefer-try` 66/39, `prefer-let` 60/141,
+`borrow-and-mutate` 29/0, `shadow` 20/0, `prefer-own-ptr` 16/45,
 `constant-condition` 11/1, `prefer-or-pattern` 10/4, `loop-single-iteration`
-8/2, `unreachable-code` 3/0, `prefer-var-else` 2/0.  All
+9/2, `unreachable-code` 3/0, `prefer-var-else` 2/0.  All
 differences are pre-existing (the pre-change binary's output is identical on
 them); quote *sets*, not just counts.  Tool: `tools/lint_parity.rb` with
 `--host-cache FILE` (warm fill ~4 min, then ~20 s per full run).
@@ -656,19 +658,34 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   the remaining per-request `parser.parse_source` sites (~38) and a per-parse
   arena are the follow-up (see §0k session 30's "Soak profile and the
   long-session blocker").
-- **C5 client behaviours.**  workspace folders, `didChangeConfiguration`, watched
-  files, `includeDeclaration: false`, cancellation, closed-file edits —
-  cross-check against the host and add harness cases for any that differ.
-- **C6 deliberate differences, one table.**  Keep and document: malformed-frame
-  recovery, synchronous facts (no lag), faster cold start, the recovery-adjacent
-  differences Track A left, the host's first-file `documentSymbol` race, the
-  `documentHighlight` snapshot carry-forward and the `type quat` asynchronous
-  location (`docs/lsp-design.md` §8 is the canonical table).
-- **D2.**  `tools/lsp_project_audit.rb --canonical` (or a documented
-  substitute) to pin the request history so the ±10 drift disappears.  **D3 is
-  done**: `tools/parity_scoreboard.rb` has an `lsp` section (`--full`).  D4:
-  keep the standing gates exactly as this file's protocol and AGENTS.md list
-  them.
+- **C5 client behaviours** — **DONE (session 31, 2026-10-04)**: the harness's
+  stress section now measures six client-behaviour probes (`c5/…`):
+  `references` with `includeDeclaration: false`, a `didChangeConfiguration`
+  formatter-mode switch (and back), a watched file created on disk, a
+  `$/cancelRequest` for an unknown id, an added workspace folder, and a
+  closed-file disk edit (hover before/after, no notification).  Two real gaps
+  surfaced and were fixed: the self ignored `settings.milkTea.format.mode` in
+  `didChangeConfiguration` (it now applies it with the host's fallback paths),
+  and a watched-file change never entered the workspace symbol index (changed
+  paths are now marked dirty and their definition/reference entries dropped).
+  Every probe is byte-equal to the host now; the two fixes are in
+  `workspace_notifications.mt`.
+- **C6 deliberate differences, one table** — **DONE (session 31)**: the
+  canonical table is in `docs/lsp-design.md` §8 (12 rows: the malformed-frame
+  recovery, synchronous facts, cold start, parser-recovery layout, the host's
+  `documentSymbol` race and the three warm-facts artifacts, the directory-form
+  `typeDefinition`, the two completion residues, the reference-index bound and
+  the `debugInfo` remainder), each with its direction and the tool that pins
+  it, plus the verification checklist.
+- **D2.** — **DONE (session 31)**: `tools/lsp_project_audit.rb --canonical`
+  sends the whole request history twice and records the second pass, pinning
+  the warm-up history; two canonical runs return **identical** differing sets
+  (verified), and the canonical run replaces the ±drift as the verification
+  mode (see the record).  **D3 is done**:
+  `tools/parity_scoreboard.rb` has an `lsp` section (`--full`).  D4: keep the
+  standing gates exactly as this file's protocol and AGENTS.md list them (the
+  gates keep the fast non-canonical audit; use `--canonical` when verifying a
+  fix).
 - **Stage-plan residue (absorbed; verify each against §0k before starting):**
   - **per-module `ModuleCache`** (edit-latency foundation) — **DONE (session 29,
     2026-10-04)**: `lsp.Workspace` owns a `loader.ModuleCache` keyed by resolved
@@ -753,13 +770,19 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     (The module-symbol wrapper landed in session 14;
     `static_type_method_references`/stage 15 landed in session 8, `c15594c3` —
     do not redo either.)
-  - **`--timings` breakdowns** (stage 18; partially landed `298481ee`,
-    2026-09-23).  The flag and a total line exist for `format` and `lint`
-    (`print_timings_line`: `format profile <path>: Xms`), but the host's shapes
-    are missing: format's per-phase
-    `(format: …, format.parse: …, format.lex: …)` and lint's
-    `rules=… total=…` + per-rule lines (`formatter.rb:37-59`,
-    `cli/commands/format.rb:173-196`).
+  - **`--timings` breakdowns** (stage 18) — **DONE (session 31, 2026-10-04)**:
+    the host's shapes are implemented on a shared `mtc.profile.Profile` (the
+    host's `Linter::Profile`): `format` records `format`/`format.lex`/
+    `format.parse`/`format.ast` or `format.cst`/`format.cst_fmt`/
+    `format.normalize`/`format.wrap`/`format.blank_lines` per mode and prints
+    `format profile <path>: <ms>ms (<phases ≥ 0.1ms, descending>)`; `lint`
+    records per-rule (`rule.<code>`) and structural phases and prints the
+    host's `lint profile <path> (lint scan|pre-fix scan): rules=… total=…`,
+    the per-rule rows (`<code>: <n>x total=… avg=… share=…%`, 12 rows), the
+    `non-rule hot phases` line, then the `Profile (lint): N file(s)` block and
+    `Total:`.  Verified shape-by-shape against the host on
+    `examples/language_baseline.mt` and a fix run; the numbers themselves are
+    not compared (nondeterministic).  Record: §0k session 31.
   - **Quickfix extras** (stage 16) — **DONE (session 28)**: the whole
     per-diagnostic branch set now mirrors the host (`code_actions.rb:29-297`)
     with byte-equal titles (the host's `STATIC_QUICK_FIX_TITLES` table,
@@ -792,10 +815,40 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     Bindings section (binding-id allocation in the host's order +
     `binding_types`, the 30-entry cap); the Diagnostics section; and the
     harness `normalize` extension for Ruby `object_id` values.
-  - **The linter's `:fast`/`:full` tier flag** (stage 11's first half):
-    `LintOptions.lint_tier` with the host's `full_tier?` gating; the CLI and
-    LSP pass `:full` like the host CLI, and diagnostics *scheduling* stays out
-    of scope.  Verify the current state first (§7.3 lists it as open).
+  - **The linter's `:fast`/`:full` tier flag** (stage 11's first half) —
+    **DONE (session 31, 2026-10-04)**: `LintOptions.lint_tier` (`LintTier.fast`/
+    `full`, default `full`, so the CLI and LSP behave exactly as before) with
+    the host's `full_tier?` gating: the per-body flow rules (dead-assignment,
+    unreachable, borrow, constant-condition, redundant-null-check,
+    loop-single-iteration), the If/Match preference rules (`prefer-inline-if`,
+    `prefer-conditional-expression` (if and match), `prefer-or-pattern`,
+    `prefer-try`, `prefer-is-variant`), `prefer-struct-with` and `doc-tag` are
+    full-tier only; the release rule is full-tier only in **proc** bodies (the
+    host's `visit_function`/`ProcExpr` asymmetry); everything else runs in both.
+    Locked by three `linter_test.mt` cases (fast skips the flow rules, full
+    runs them, fast keeps an always-on rule).  Diagnostics scheduling stays out
+    of scope, as planned.
+- **Canonical-audit residue (session 31, warm-state, new)** — the canonical
+  (warm-up) audit's differing set is the honest steady-state one; beyond the
+  documented rows it surfaces:
+  - **Four `references` entries** (`docs/data_structures.mt@34:25`, `@112:29`,
+    `@167:37`, `@195:37`): the host's warm list includes many more `std/` files
+    (25 entries vs the self's 4 at `@34:25`; e.g. `binary_heap`, `graph`,
+    `sparse_set`), i.e. its identifier-index / reverse-import candidate
+    coverage at steady state is wider than the self's.  Follow-up: give the
+    self's reference candidate set the host's module-index reverse dependents
+    (the self's index (refidx/`reverse_import_dependents_for`) only covers
+    what its requests have noted plus the loader's import edges).
+  - **Two `hover` entries** (`ds@140:33`, `colors.mt@12:46`, builtin `str`):
+    once the host's definition index warms it appends
+    `Defined at: std/str.mt:58` to builtin-type hovers; the self omits
+    builtin/std type locations — the same family as the documented
+    `type quat` row (an eager fix was measured at 153 extra entries and
+    rejected, session 18).
+  Neither is a regression from session 31 (its changes do not touch
+  references/hover); they were previously invisible because the non-canonical
+  audit sampled different positions and ran with the host's index only
+  partially warm.  Record: §0k session 31.
 - **The documented entries stay documented** unless their machinery is built for
   another reason: the harness's 5 (debugInfo remainder, host parser recovery,
   host hang on a malformed frame, host facts lag, and — session 28 — the host's
@@ -855,20 +908,20 @@ definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (2026-10-04 session 30 — `stage2.c == stage3.c`); self-test suite 16 files / **611 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed (re-run 2026-10-04) | stay green | `build/stage2/mtc test test/mt -I .` |
+| bootstrap fixed point | holds (2026-10-04 session 31 — `stage2.c == stage3.c`); self-test suite 16 files / **614 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
+| `test/mt` | 60 files / 0 failed (re-run 2026-10-04 session 31) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-04: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
-| `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-04) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 5 documented entries of **68 requests + 19 probes** (re-measured 2026-10-04 session 30, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | **4 stable differ + the host's first-file `documentSymbol` race** (re-measured 2026-10-04 session 30 on 7075 entries: completion 2, hover 1, documentHighlight 1; the race appeared in the gates run and not in the standalone run) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
+| `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-04 session 31 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
+| LSP harness | 30/30 capability keys; 5 documented entries of **68 requests + 27 probes** (re-measured 2026-10-04 session 31, `--stress` included; the 8 `c5/` client-behaviour probes all equal) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | **canonical (warm) set: 10 differ** (2026-10-04 session 31, `--cap 200`: the 4 documented completion/highlight + 2 builtin-hover rows + **4 new references warm-coverage rows** — Track 7's canonical-audit residue).  Non-canonical runs read 4–5 with ±drift; two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-04) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
-| LSP valgrind | 0 errors over the 68+19 harness drive (2026-10-04 session 30; 7,138,997 B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
+| LSP valgrind | 0 errors over the 68+27 harness drive (2026-10-04 session 31; 7,817,709 B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | **9.7 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 15.2; `--cycles 100`; the gate's `--cycles 200` reads ~10.8) — the residual is the per-parse leak convention, no ceiling until it is owned | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
-| formatter | 705/705 all three modes (re-measured 2026-10-03; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
-| lint corpus | 494 agree / 115 differ (609 files; re-measured 2026-10-03) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| formatter | 708/708 all three modes byte-identical (re-measured 2026-10-04 session 31; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
+| lint corpus | 493 agree / 117 differ (610 files; re-measured 2026-10-04 session 31 — the sweep lints the compiler's own sources, so this session's edits moved it from 494/115; the deltas are the documented ranked rules) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | process-backend request parity (re-measured 2026-10-03; terminal event order and build-on-launch differ); lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
 | imported-bindings | 3 verified / 25 changed (re-measured 2026-10-03; cosmetic emitter gaps) | 28/28 or each justified | `mtc imported-bindings --all --check` |
 
@@ -4218,6 +4271,82 @@ exposed.
   run **serially** — a soak or test run in parallel with the audit starves it
   and turns timeouts into mass false differences (seen once this session,
   re-run clean).
+
+### LSP close-out: `--timings`, the lint tier, canonical audits, client behaviours and the differences table (2026-10-04 session 31)
+
+Track 7's remaining readiness residue plus the stage-18/stage-11 leftovers.
+
+- **`--timings` breakdowns (stage 18)**: a new `mtc.profile` module carries the
+  host's `Linter::Profile` (named phases with totals and call counts, the
+  descending-total renderings, `rule.*` rows and the shared monotonic clock).
+  `tidy.format_source_profiled` records `format` plus each mode's steps
+  (`format.lex`/`format.parse`/`format.ast` for the AST modes,
+  `format.cst`/`format.cst_fmt`/`format.normalize`/`format.wrap`/
+  `format.blank_lines` for the CST ones) and the format command prints the
+  host's single-file line (leading blank line, phases ≥ 0.1 ms, descending,
+  last after the output).  The linter takes `LintOptions.profile` and records
+  `rule.<code>` for every rule it dispatches (`unused-import`,
+  `reserved-primitive-name`, the per-body group, `doc-tag`, `event-capacity`,
+  `trailing-list-comma`, `prefer-inline-methods`, `line-too-long`,
+  `missing-return`; the combined prefer-else pass records as
+  `prefer_let_else`) plus structural `visit_decl`/`flow.graph` phases; the lint
+  command prints the host's shapes — `lint profile <path> (lint scan|pre-fix
+  scan): rules=… total=…`, the rows (`<code>: <n>x total=… avg=… share=…%`,
+  12), `non-rule hot phases`, then `Profile (lint): N file(s)` + `Total:` (the
+  clean path prints only the file block, as the host does).  Verified against
+  the host shape-by-shape on `language_baseline.mt` and a `--fix` run; the
+  numbers themselves are nondeterministic and are not compared anywhere (the
+  `cli_parity` `lint-timings` case can therefore never be byte-equal — a
+  normalizer for `[0-9.]+ms` is the Track 4 follow-up).
+- **Linter `:fast`/`:full` tier (stage 11, first half)**: `LintOptions.lint_tier`
+  (`LintTier.fast`/`full`, default `full`) with the host's `full_tier?` gating
+  — the six per-body flow rules, the If/Match preference rules (including
+  `prefer-is-variant`), `prefer-struct-with` and `doc-tag` are full-only, and
+  the release rule is full-only in **proc** bodies only (the host's
+  `visit_function` vs `ProcExpr` asymmetry).  The CLI/LSP keep passing `full`
+  (the default) so nothing observable changes; diagnostics scheduling stays out
+  of scope.  Three `linter_test.mt` cases lock it (fast skips the flow rules,
+  full runs them, fast keeps an always-on rule).
+- **D2 — canonical audit mode**: `tools/lsp_project_audit.rb --canonical` sends
+  the identical request history twice and records the second pass, so both
+  servers are equally warm; `--canonical-settle SEC` (default 1.0) waits in
+  between.  Two canonical runs at `--cap 30` returned **identical differing
+  sets**; the drift's source is the host's asynchronous warm-up, and the
+  canonical run is now the verification mode (the gates keep the fast
+  non-canonical audit).
+- **The canonical audit's full run surfaced warm-state residue** (new, detailed
+  in Track 7): 10 differing entries — the 4 documented completion/highlight
+  ones plus the builtin-type hover family (`type quat`, `str`) and **four
+  `references` entries** (`docs/data_structures.mt@34:25`, `@112:29`,
+  `@167:37`, `@195:37`) where the host's warm candidate coverage includes many
+  more `std/` files (25 vs 4 at `@34:25`).  Neither class is a session-31
+  regression (this session's changes do not touch references/hover).
+- **C5 client behaviours**: six measured probes in the harness's stress section
+  (`c5/…`): `references` with `includeDeclaration: false`, a
+  `didChangeConfiguration` formatter-mode switch and back, a watched file
+  created on disk, a `$/cancelRequest` for an unknown id, an added workspace
+  folder, and a closed-file disk edit.  Two real gaps surfaced and were fixed
+  in `workspace_notifications.mt`: `didChangeConfiguration` now applies
+  `settings.milkTea.format.mode` (with the host's `milk_tea`/bare-`format`
+  fallbacks), and `didChangeWatchedFiles` now marks each changed path dirty in
+  the workspace symbol index (and drops its definition/reference entries), so a
+  created file joins `workspace/symbol` on the next query like the host's.  All
+  six probes are byte-equal.
+- **C6**: the deliberate-differences table is `docs/lsp-design.md` §8 (12 rows
+  with direction and pinning tool, plus the verification checklist).
+- **Measured**: bootstrap fixed point (16 files / **614 tests** / 0 failed),
+  `test/mt` 60/0, `cli:parity` 24/37/0 (unchanged), formatter 708/708 all three
+  modes, harness 30/30 keys and the 5 documented entries (the new `c5/` probes
+  included, all equal), recovery OK, the canonical audit's 10-entry set above,
+  valgrind 0 errors over the (now 68+27) harness drive, Neovim hover OK, soak
+  10.8 MB/cycle (200 cycles, the meter).  The lint corpus reads **610 files /
+  493 agree / 117 differ** — the drift from the recorded 609/494/115 is the
+  sweep linting this session's own compiler sources (the changed files carry
+  the documented `prefer-let`/`prefer-try`/`redundant-cast`
+  float-widening/prefer-let-else column deltas), not a linter regression.
+  Residue: the builtin-hover/canonical references rows (Track 7), the
+  `cli_parity` timings normalizer, and the canonical audit staying a
+  session-verification run rather than a gate.
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

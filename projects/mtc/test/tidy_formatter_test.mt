@@ -18,14 +18,14 @@ import mtc.lexer.token as tok
 
 ## `:tidy` with the default maximum line length.
 function format_tidy(source: str) -> string.String:
-    let formatted = tidy.format_tidy(source, "test.mt", 120) else:
+    let formatted = tidy.format_tidy(source, "test.mt", 120, null) else:
         return string.String.from_str("FAIL: tidy refused to format")
     return formatted
 
 
 ## `:preserve` (CST reconstruct).
 function format_preserve(source: str) -> string.String:
-    let formatted = tidy.format_preserve(source) else:
+    let formatted = tidy.format_preserve(source, null) else:
         return string.String.from_str("FAIL: preserve refused to format")
     return formatted
 

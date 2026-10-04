@@ -54,6 +54,7 @@ import mtc.linter.nullcheck as nullcheck
 import mtc.linter.own_ptr as own_ptr
 import mtc.linter.constprop as constprop
 import mtc.linter.redundant_cast as redundant_cast
+import mtc.profile as profile_mod
 
 
 ## `column` is the 1-based character column of the offending token and
@@ -67,6 +68,15 @@ public struct Warning:
     code: str
     message: str
     severity: str
+
+
+## The linter's two tiers (the host's `Linter.normalize_lint_tier`): the `full`
+## tier runs every rule; `fast` skips the rules the host's `full_tier?` gates
+## (the per-body flow rules, the If/Match preference rules, `prefer-struct-with`
+## and `doc-tag`).  The CLI and the LSP both pass `full`.
+public enum LintTier: ubyte
+    fast = 0
+    full = 1
 
 
 ## Options for one lint pass — the single funnel the CLI (`check`/`lint`), the
@@ -93,6 +103,11 @@ public struct LintOptions:
     ## loader program's analyses: `unused-import` credits imports whose methods
     ## or hook functions are used indirectly.
     method_providers: span[scope_tracking.ImportMethodProvider]
+    ## When set, the pass records per-rule phases into this profile (the
+    ## `--timings` breakdown); null runs unprofiled.
+    profile: ptr[profile_mod.Profile]?
+    ## Which rule set to run (`full` by default, matching the host's CLI/LSP).
+    lint_tier: LintTier
 
 
 ## All-default options: no owning types, no unresolved imports, every rule,
@@ -108,6 +123,8 @@ public function default_lint_options() -> LintOptions:
         ignore = span[str](),
         analysis = null,
         method_providers = span[scope_tracking.ImportMethodProvider](),
+        profile = null,
+        lint_tier = LintTier.full,
     )
 
 
@@ -192,19 +209,27 @@ public function lint_source_with(
 
     # unused-import, before the declaration walk (the host's
     # `check_unused_imports`).
+    lint_profile = options.profile
+    lint_full_tier = options.lint_tier == LintTier.full
     var unused_imports = vec.Vec[scope_tracking.ScopeWarning].create()
     defer: unused_imports.release()
+    let unused_started = lint_profile_mark()
     scope_tracking.lint_unused_imports(file, path, options.unresolved_import_paths, options.method_providers, options.analysis, ref_of(unused_imports))
+    lint_profile_done("rule.unused_import", unused_started)
     drain_scope_warnings(ref_of(unused_imports), ref_of(warnings))
 
     # Module-level reserved names (the host's `seed_module_bindings`).
+    let reserved_started = lint_profile_mark()
     lint_reserved_module_names(file, path, ref_of(warnings))
+    lint_profile_done("rule.reserved_primitive_name", reserved_started)
 
+    let walk_started = lint_profile_mark()
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
             visit_decl(file.declarations.data + i, path, ref_of(warnings))
         i += 1
+    lint_profile_done("visit_decl", walk_started)
     lint_scope_ctx = null
     lint_ptr_state = null
     lint_cast_ctx = null
@@ -221,17 +246,30 @@ public function lint_source_with(
         release_reserved_name_fixes(ref_of(reserved_fixes))
 
     # Whole-file passes run after the walk, matching Ruby's emission order.
-    lint_doc_tags(file.declarations, source, path, ref_of(warnings))
+    # `doc-tag` is full-tier only (the host's `emit_doc_tag_warnings` gate).
+    if lint_full_tier:
+        let doc_tag_started = lint_profile_mark()
+        lint_doc_tags(file.declarations, source, path, ref_of(warnings))
+        lint_profile_done("rule.doc_tag", doc_tag_started)
+    let events_started = lint_profile_mark()
     lint_events(file.declarations, "", path, ref_of(warnings))
+    lint_profile_done("rule.event_capacity", events_started)
+    let commas_started = lint_profile_mark()
     lint_trailing_commas(file.declarations, lexed.tokens.as_span(), path, ref_of(warnings))
+    lint_profile_done("rule.trailing_list_comma", commas_started)
+    let inline_methods_started = lint_profile_mark()
     lint_prefer_inline_methods(file.declarations, path, ref_of(warnings))
+    lint_profile_done("rule.prefer_inline_methods", inline_methods_started)
+    let line_long_started = lint_profile_mark()
     lint_line_too_long(source, lexed.tokens, path, max_line_length, ref_of(warnings))
+    lint_profile_done("rule.line_too_long", line_long_started)
 
     # `# lint: ignore` / `# lint: ignore(a, b)` comments, then the rule filter.
     apply_suppressions(ref_of(warnings), source, lexed.trivia.as_span())
     lexed.tokens.release()
     lexed.trivia.release()
     filter_rules(ref_of(warnings), options, ref_of(config))
+    lint_profile = null
     return warnings
 
 
@@ -874,6 +912,30 @@ var lint_owning_type_names: span[str] = span[str]()
 ## The file's source lines (the host's `@source_lines`), for the source-line
 ## spans the rules anchor on.  `null` outside a lint pass.
 var lint_source_lines: ptr[vec.Vec[str]]? = null
+
+
+## The `--timings` profile a lint pass records into (the caller's
+## `LintOptions.profile`); null outside a profiled pass.
+var lint_profile: ptr[profile_mod.Profile]? = null
+
+
+## The active lint tier (the host's `full_tier?`): set by `lint_source_with`
+## from the options; the walk's gated rules read it.
+var lint_full_tier: bool = true
+
+
+## A phase start for the profile (0 when not profiling, so instrumented sites
+## pay nothing).
+function lint_profile_mark() -> double:
+    if lint_profile == null:
+        return 0.0
+    return profile_mod.now_ms()
+
+
+## Record the phase `name` started at `mark`.
+function lint_profile_done(name: str, mark: double) -> void:
+    if lint_profile != null:
+        profile_mod.record(lint_profile, name, profile_mod.now_ms() - mark)
 
 
 
@@ -2471,21 +2533,46 @@ function visit_assignment_target(target: ptr[ast.Expr], path: str, warnings: ref
 ## host caches one `statement_flow_analysis` per statement list and reuses it
 ## across its rule group; each rule's own solve (liveness, constant
 ## propagation) still runs inside its rule, once per body.
-function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]], proc_context: bool) -> void:
     let b = body else:
         return
     var flow_cfg = flow_builder.empty_cfg()
     var graph = flow_graph.empty_graph()
     defer: flow_graph.graph_release(ref_of(graph))
+    let graph_started = lint_profile_mark()
     flow_builder.build_graph_into(ref_of(flow_cfg), ref_of(graph), params, b)
-    lint_dead_body(ref_of(flow_cfg), ref_of(graph), path, warnings)
-    lint_unreachable_in_body(body, path, warnings)
-    borrow_check_body(body, path, warnings)
-    lint_const_cond_in_body(ref_of(flow_cfg), ref_of(graph), path, warnings)
-    lint_null_check_body(body, path, warnings)
-    lint_loop_single_in_body(body, path, warnings)
-    ownership_walk_body(body, path, warnings, lint_owning_type_names, ref_of(graph))
+    lint_profile_done("flow.graph", graph_started)
+    # The per-body flow rules are full-tier only (the host's `full_tier?`).
+    if lint_full_tier:
+        let dead_started = lint_profile_mark()
+        lint_dead_body(ref_of(flow_cfg), ref_of(graph), path, warnings)
+        lint_profile_done("rule.dead_assignment", dead_started)
+        let unreachable_started = lint_profile_mark()
+        lint_unreachable_in_body(body, path, warnings)
+        lint_profile_done("rule.unreachable_code", unreachable_started)
+        let borrow_started = lint_profile_mark()
+        borrow_check_body(body, path, warnings)
+        lint_profile_done("rule.borrow_and_mutate", borrow_started)
+        let const_started = lint_profile_mark()
+        lint_const_cond_in_body(ref_of(flow_cfg), ref_of(graph), path, warnings)
+        lint_profile_done("rule.constant_condition", const_started)
+        let null_started = lint_profile_mark()
+        lint_null_check_body(body, path, warnings)
+        lint_profile_done("rule.redundant_null_check", null_started)
+        let loop_started = lint_profile_mark()
+        lint_loop_single_in_body(body, path, warnings)
+        lint_profile_done("rule.loop_single_iteration", loop_started)
+    # The release rule runs for functions always; the host gates it for proc
+    # bodies only (`visit_expression`'s ProcExpr arm).
+    if lint_full_tier or not proc_context:
+        let release_started = lint_profile_mark()
+        ownership_walk_body(body, path, warnings, lint_owning_type_names, ref_of(graph))
+        lint_profile_done("rule.owning_release", release_started)
+    let prefer_started = lint_profile_mark()
     prefer_else_walk_body(body, path, warnings)
+    # The combined prefer-let-else/prefer-var-else pass (the host's two phases
+    # share this walk).
+    lint_profile_done("rule.prefer_let_else", prefer_started)
 
 
 function lint_null_check_body(body: ptr[ast.Stmt]?, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -2592,10 +2679,12 @@ function visit_function_decl(
             scope_declare_param(p.name, p.line, p.column, path, warnings)
             pi += 1
     visit_body(body, path, warnings)
-    lint_body_rules(params, body, path, warnings)
+    lint_body_rules(params, body, path, warnings, false)
     check_redundant_return(return_type, body, path, warnings)
     scope_pop(path, warnings)
+    let missing_started = lint_profile_mark()
     check_missing_return(name, line, return_type, body, path, warnings)
+    lint_profile_done("rule.missing_return", missing_started)
     if generic_body:
         lint_generic_depth -= 1
         scope_set_generic(lint_generic_depth)
@@ -2696,8 +2785,10 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     scope_pop(path, warnings)
                 check_redundant_else(iff.branches, iff.else_body, iff.else_line, path, warnings)
                 check_duplicate_if_conditions(iff.branches, path, warnings)
-                check_prefer_inline_if(iff.branches, iff.else_body, iff.is_inline, iff.line, iff.else_line, path, warnings)
-                check_prefer_conditional_expression_if(iff.branches, iff.else_body, iff.line, first_branch_column(iff.branches), path, warnings)
+                # The If-preference rules are full-tier only.
+                if lint_full_tier:
+                    check_prefer_inline_if(iff.branches, iff.else_body, iff.is_inline, iff.line, iff.else_line, path, warnings)
+                    check_prefer_conditional_expression_if(iff.branches, iff.else_body, iff.line, first_branch_column(iff.branches), path, warnings)
             ast.Stmt.stmt_while as wh:
                 lint_loop_depth += 1
                 visit_expr(wh.condition, path, warnings)
@@ -2738,9 +2829,11 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                     scope_pop(path, warnings)
                     ai += 1
                 scope_set_match_arm_depth(saved_arm_depth)
-                check_prefer_or_pattern_stmt(mt.arms, path, warnings)
-                check_prefer_conditional_expression_match(mt.arms, mt.line, mt.column, path, warnings)
-                check_prefer_try_stmt(mt.arms, path, warnings)
+                # The Match-preference rules are full-tier only.
+                if lint_full_tier:
+                    check_prefer_or_pattern_stmt(mt.arms, path, warnings)
+                    check_prefer_conditional_expression_match(mt.arms, mt.line, mt.column, path, warnings)
+                    check_prefer_try_stmt(mt.arms, path, warnings)
             ast.Stmt.stmt_ret as r:
                 visit_expr_opt(r.value, path, warnings)
                 if r.value != null:
@@ -2863,7 +2956,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
                         scope_declare_param(p.name, p.line, p.column, path, warnings)
                         pi += 1
                 visit_body(pr.body, path, warnings)
-                lint_body_rules(pr.method_params, pr.body, path, warnings)
+                lint_body_rules(pr.method_params, pr.body, path, warnings, true)
                 scope_pop(path, warnings)
             ast.Expr.expr_await as aw:
                 visit_expr(aw.expression, path, warnings)
@@ -2902,10 +2995,13 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
     unsafe:
         match read(expr):
             ast.Expr.expr_call as call:
-                check_prefer_struct_with(expr, call.callee, call.args, path, warnings)
+                if lint_full_tier:
+                    check_prefer_struct_with(expr, call.callee, call.args, path, warnings)
             ast.Expr.expr_match as mm:
-                check_prefer_or_pattern_expr(mm.arms, path, warnings)
-                check_prefer_is_variant_expr(mm.arms, mm.line, mm.column, mm.length, mm.desugared_from_is, path, warnings)
+                # The Match-expression preference rules are full-tier only.
+                if lint_full_tier:
+                    check_prefer_or_pattern_expr(mm.arms, path, warnings)
+                    check_prefer_is_variant_expr(mm.arms, mm.line, mm.column, mm.length, mm.desugared_from_is, path, warnings)
             _:
                 pass
 

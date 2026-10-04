@@ -1524,3 +1524,45 @@ function test_prefer_struct_with_unnamed_argument_suppressed() -> void:
     var warns = lint_text_with_analysis(source)
     defer: warns.release()
     expect_eq(int<-(count_code(ref_of(warns), "prefer-struct-with")), 0)
+
+
+# =============================================================================
+#  Lint tier (the host's `full_tier?` gates)
+# =============================================================================
+
+const TIER_DEAD_SOURCE: str = <<-SRC
+function demo() -> int:
+    var x: int
+    x = 1
+    x = 2
+    return x
+SRC
+
+const TIER_LONG_LINE_SOURCE: str = "function demo(a: int) -> void:\n    consume(first_argument, second_argument, third_argument, fourth_argument, fifth_argument, sixth_argument, seventh_argument)\n"
+
+
+@[test]
+function test_fast_tier_skips_the_flow_rules() -> void:
+    var options = linter.default_lint_options()
+    options.lint_tier = linter.LintTier.fast
+    var warns = lint_with_options(TIER_DEAD_SOURCE, options)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "dead-assignment")), 0)
+
+
+@[test]
+function test_full_tier_runs_the_flow_rules() -> void:
+    var options = linter.default_lint_options()
+    var warns = lint_with_options(TIER_DEAD_SOURCE, options)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "dead-assignment")), 1)
+
+
+@[test]
+function test_fast_tier_keeps_the_always_on_rules() -> void:
+    # `line-too-long` is not gated: the fast tier still reports it.
+    var options = linter.default_lint_options()
+    options.lint_tier = linter.LintTier.fast
+    var warns = lint_with_options(TIER_LONG_LINE_SOURCE, options)
+    defer: warns.release()
+    expect_eq(int<-(count_code(ref_of(warns), "line-too-long")), 1)

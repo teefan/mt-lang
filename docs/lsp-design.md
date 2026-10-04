@@ -564,10 +564,28 @@ recovery result:
   server down.  The host now emits non-ASCII bytes raw, byte-identical to the
   self-host's `c_string_literal`; the headless-Neovim smoke renders the `mat4`
   hover through a real client.
-- **Deliberate differences** (kept, and to be listed here as one table once
-  Track C lands): malformed-frame recovery (`-32700` + keep serving where the
-  host hangs), synchronous facts with no lag, a faster cold start, and the
-  reference index's retained-text bound (session 30 — past 32 MiB the oldest
-  noted documents are evicted and re-read on demand, so a document re-noted
-  after an eviction answers in a later index position than the host's
-  whole-session order; result *sets* are unaffected).
+- **Deliberate differences — the canonical table** (session 30).  Everything
+  here is *kept*: each row is either a documented harness/audit entry or a
+  deliberate self-host improvement, with the verification tool that pins it.
+
+  | # | Difference | Direction | Pinned by |
+  | --- | --- | --- | --- |
+  | 1 | A malformed frame answers `-32700` and the session keeps serving; the host hangs/exits | self-better | `lsp_parity --stress` (`stress/malformed-frame+parseError`), recovery probe |
+  | 2 | Facts are computed synchronously (no lag); the host's first answer after `didOpen` can trail its content (its facts warm asynchronously) | self-better (host artifact) | `stress/unicode+semanticTokens`, the audit's first-file `documentSymbol` race |
+  | 3 | Faster cold start (the workspace walk/index and first answers) | self-better | `tools/lsp_cold_start.rb` |
+  | 4 | Parser recovery: the self's recovered buffer carries fewer diagnostic items than the host's and the lexer/`parse_param` recovery points differ (host-side artifacts of its rescue layout) | self-better | `stress/unterminated-source+diagnostic`, the recovery probe's cases |
+  | 5 | The host's first-file `documentSymbol` after `didOpen` can carry its pre-facts tree (a race in the host's warm-up) | host artifact | `lsp_project_audit` (±drift row) |
+  | 6 | `documentHighlight` `lb@704:67`: the host answers from its carried-forward warm-facts snapshot; the self resolves the label's binding in scope (byte-equal cold) | host artifact | `lsp_project_audit` |
+  | 7 | `hover` on a builtin/std type (`type quat` `lb@1653:24`; `str` at `ds@140:33`, `colors.mt@12:46` once warm): the host's answer gains the cross-file `Defined at` location only once its definition index warms; the self omits builtin-type locations (an eager fix adds 153 entries — measured and rejected, session 18) | host artifact | `lsp_project_audit` (canonical) |
+  | 8 | `typeDefinition` on a *directory-form* module member (`import mod_alpha` → `mod_alpha/lib.mt`): the host's `module_path_for_name` gives up (`null`); the loader-backed self answers the declaration | self-better | `lsp_parity` (`typeDefinition/imported`) |
+  | 9 | Completion `mst@224:18`: the host leaks a synthesized `ref[@_mt_N, T]` lifetime into a field detail; the self renders the declared `ref[T]` | self-better (documented; modeling the host's auto-lifetime waits on a separate item) | `lsp_project_audit` |
+  | 10 | Completion `lb@818:17`: the host's facts fail to type a `map_error` arm binding and fall back to the method table; the self answers the field | self-better | `lsp_project_audit` |
+  | 11 | The reference index bounds its retained text (32 MiB): past it the oldest noted documents are evicted with their hash/stamp entries and re-read on demand, so a document re-noted after an eviction answers in a later index position than the host's whole-session order (result *sets* unaffected) | self-better (long sessions) | `lsp_index_test.mt` (the bound), the audit (small workspaces never evict) |
+  | 12 | `milkTea/debugInfo` renders the header, token table and parse errors only; the host's AST/Facts/Bindings sections embed Ruby `object_id`s, host binding ids and Ruby AST class names | not ported (documented) | `lsp_parity` (`milkTea/debugInfo`) |
+
+  The *checklist* for anything not in this table: `tools/lsp_parity.rb
+  compare` must show only its documented entries, `tools/lsp_recovery_probe.rb
+  --check` must pass, and the audit's differing set must match the rows above
+  (run it with `--canonical` when verifying: the warm-up pass pins the request
+  history, so two canonical runs return identical differing sets — the
+  non-canonical ±drift comes from the host's asynchronous warm-up).

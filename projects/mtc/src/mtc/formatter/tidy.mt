@@ -20,6 +20,7 @@ import mtc.linter.config as lint_config
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.pretty_printer.ast_formatter as ast_formatter
+import mtc.profile as profile_mod
 
 
 const DEFAULT_MAX_LINE_LENGTH: ptr_uint = 120
@@ -72,13 +73,25 @@ public function parse_format_mode(name: str) -> Option[FormatMode]:
 ## `Formatter.format_source`.  `explicit_max_line_length` of 0 means "resolve
 ## from the linter config, else the default" (the host's `explicit: nil`).
 public function format_source(source: str, path: str, mode: FormatMode, explicit_max_line_length: ptr_uint) -> Option[string.String]:
+    return format_source_profiled(source, path, mode, explicit_max_line_length, null)
+
+
+## `format_source` with the host's `--timings` phase profile: the outer
+## `format` phase plus each mode's steps (`format.lex`/`format.parse`/
+## `format.ast` for the AST modes; `format.cst`, `format.normalize`,
+## `format.wrap`, `format.blank_lines`, `format.cst_fmt` for the CST modes).
+public function format_source_profiled(source: str, path: str, mode: FormatMode, explicit_max_line_length: ptr_uint, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
+    let started = profile_mod.now_ms()
+    var result = Option[string.String].none
     match mode:
         FormatMode.preserve:
-            return format_preserve(source)
+            result = format_preserve(source, profile)
         FormatMode.tidy:
-            return format_tidy(source, path, resolve_max_line_length(path, explicit_max_line_length))
+            result = format_tidy(source, path, resolve_max_line_length(path, explicit_max_line_length), profile)
         _:
-            return format_canonical(source)
+            result = format_canonical(source, profile)
+    profile_mod.record(profile, "format", profile_mod.now_ms() - started)
+    return result
 
 
 ## `Formatter.resolve_max_line_length`.
@@ -92,49 +105,69 @@ public function resolve_max_line_length(path: str, explicit: ptr_uint) -> ptr_ui
 
 
 ## `:preserve` — CST reconstruct, verbatim.
-public function format_preserve(source: str) -> Option[string.String]:
+public function format_preserve(source: str, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
     var diags = vec.Vec[tok.LexDiagnostic].create()
     defer: diags.release()
+    let cst_started = profile_mod.now_ms()
     var cst_file = cst.build_cst(source, ref_of(diags))
+    profile_mod.record(profile, "format.cst", profile_mod.now_ms() - cst_started)
     defer: cst.release_cst(ref_of(cst_file))
     if diags.len() > 0:
         return Option[string.String].none
-    return Option[string.String].some(value = cst.reconstruct(cst_file))
+    let fmt_started = profile_mod.now_ms()
+    var result = cst.reconstruct(cst_file)
+    profile_mod.record(profile, "format.cst_fmt", profile_mod.now_ms() - fmt_started)
+    return Option[string.String].some(value = result)
 
 
 ## `:safe` / `:canonical` — AST pretty printer with comment reattachment
 ## (trivia from a `lex_with_trivia` pass, as the host's `canonical_format` does).
-public function format_canonical(source: str) -> Option[string.String]:
+public function format_canonical(source: str, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
     var diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: diags.release()
+    let parse_started = profile_mod.now_ms()
     var file = parser.parse_source(source, ref_of(diags))
+    profile_mod.record(profile, "format.parse", profile_mod.now_ms() - parse_started)
     if diags.len() > 0:
         return Option[string.String].none
     var lex_diags = vec.Vec[tok.LexDiagnostic].create()
     defer: lex_diags.release()
+    let lex_started = profile_mod.now_ms()
     var lexed = lexer.lex_with_trivia(source, ref_of(lex_diags))
+    profile_mod.record(profile, "format.lex", profile_mod.now_ms() - lex_started)
+    let ast_started = profile_mod.now_ms()
     var result = ast_formatter.format_source_file_with_trivia(file, source, lexed.trivia.as_span())
+    profile_mod.record(profile, "format.ast", profile_mod.now_ms() - ast_started)
     lexed.tokens.release()
     lexed.trivia.release()
     return Option[string.String].some(value = result)
 
 
 ## `:tidy` — CST normalize → wrap → blank lines.
-public function format_tidy(source: str, path: str, max_line_length: ptr_uint) -> Option[string.String]:
+public function format_tidy(source: str, path: str, max_line_length: ptr_uint, profile: ptr[profile_mod.Profile]?) -> Option[string.String]:
     var diags = vec.Vec[tok.LexDiagnostic].create()
     defer: diags.release()
+    let cst_started = profile_mod.now_ms()
     var cst_file = cst.build_cst(source, ref_of(diags))
-    defer: cst.release_cst(cst_file)
+    profile_mod.record(profile, "format.cst", profile_mod.now_ms() - cst_started)
+    defer: cst.release_cst(ref_of(cst_file))
     if diags.len() > 0:
         return Option[string.String].none
 
+    let norm_started = profile_mod.now_ms()
     var normalized = cst.reconstruct_normalized(cst_file)
+    profile_mod.record(profile, "format.normalize", profile_mod.now_ms() - norm_started)
     defer: normalized.release()
 
+    let wrap_started = profile_mod.now_ms()
     var wrapped = wrap_long_argument_lists(normalized.as_str(), max_line_length, path)
+    profile_mod.record(profile, "format.wrap", profile_mod.now_ms() - wrap_started)
     defer: wrapped.release()
 
-    return Option[string.String].some(value = normalize_blank_lines(wrapped.as_str()))
+    let blank_started = profile_mod.now_ms()
+    var result = normalize_blank_lines(wrapped.as_str())
+    profile_mod.record(profile, "format.blank_lines", profile_mod.now_ms() - blank_started)
+    return Option[string.String].some(value = result)
 
 
 # =============================================================================

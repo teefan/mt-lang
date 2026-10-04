@@ -15,7 +15,13 @@
 # Usage:
 #   ruby tools/lsp_project_audit.rb --workspace DIR [--self BIN]
 #                                  [--cap N] [--timeout SEC] [--max-diffs N]
-#                                  [--json OUT] [--only METHOD]
+#                                  [--json OUT] [--only METHOD] [--canonical]
+#
+# `--canonical` sends the whole request history twice and records the second
+# pass: both servers' caches, indexes and facts are equally warm when the
+# recorded pass runs, which pins the per-request history and removes the
+# warm-up drift (the first pass's responses are discarded; `--canonical-settle
+# SEC` waits between the passes for asynchronous warm-up, default 1.0).
 #
 # Exit status: 0 when every recorded response matches.
 
@@ -285,6 +291,8 @@ timeout_s = 20
 max_diffs = 40
 json_out = nil
 only = nil
+canonical = false
+canonical_settle_s = 1.0
 until ARGV.empty?
   a = ARGV.shift
   case a
@@ -295,6 +303,8 @@ until ARGV.empty?
   when "--max-diffs" then max_diffs = ARGV.shift.to_i
   when "--json" then json_out = ARGV.shift
   when "--only" then only = ARGV.shift
+  when "--canonical" then canonical = true
+  when "--canonical-settle" then canonical_settle_s = ARGV.shift.to_f
   else abort "unknown option: #{a}"
   end
 end
@@ -390,62 +400,78 @@ restart = lambda do |kind|
 end
 servers.each_value { |s| s[:restart] = restart }
 
-files.each do |path|
-  uri = path_to_uri(path)
-  rel = relative(path, workspace)
-  positions = identifier_positions(sources[path], cap)
+# One pass over every file.  `collect` is false for the canonical warm-up
+# pass: it sends the identical request history — so both servers' caches,
+# indexes and facts end up equally warm — but discards the responses.
+run_pass = lambda do |collect|
+  files.each do |path|
+    uri = path_to_uri(path)
+    rel = relative(path, workspace)
+    positions = identifier_positions(sources[path], cap)
 
-  # Warm the server's facts for this document first: the host recomputes them
-  # lazily, so its very first answer after `didOpen` can lag behind the content
-  # (the self-host computes synchronously).  These requests are discarded.
-  both(servers, "textDocument/hover", { "textDocument" => { "uri" => uri }, "position" => { "line" => 0, "character" => 0 } })
-  both(servers, "textDocument/documentSymbol", { "textDocument" => { "uri" => uri } })
-  sleep 0.3
+    # Warm the server's facts for this document first: the host recomputes them
+    # lazily, so its very first answer after `didOpen` can lag behind the content
+    # (the self-host computes synchronously).  These requests are discarded.
+    both(servers, "textDocument/hover", { "textDocument" => { "uri" => uri }, "position" => { "line" => 0, "character" => 0 } })
+    both(servers, "textDocument/documentSymbol", { "textDocument" => { "uri" => uri } })
+    sleep 0.3
 
-  file_level.each do |method|
-    next if only && !method.include?(only)
-
-    params = { "textDocument" => { "uri" => uri } }
-    results["#{rel} #{method}"] = both(servers, method, params)
-  end
-
-  positions.each do |line, col|
-    positions_params = {
-      "textDocument" => { "uri" => uri },
-      "position" => { "line" => line, "character" => col },
-    }
-    position_level.each do |method|
+    file_level.each do |method|
       next if only && !method.include?(only)
 
-      params = positions_params
-      if method == "textDocument/references"
-        params = positions_params.merge("context" => { "includeDeclaration" => true })
-      end
-      results["#{rel}@#{line}:#{col} #{method}"] = both(servers, method, params)
+      params = { "textDocument" => { "uri" => uri } }
+      response = both(servers, method, params)
+      results["#{rel} #{method}"] = response if collect
     end
-  end
 
-  # Member completion at every `.` — the shape the editor drives while typing
-  # (`n.` on a struct value, `rl.` on a module alias).  The host's handler
-  # ignores the text after the cursor, so a valid buffer's dot position covers
-  # the same path as the bare-`n.` mid-edit case.
-  member_positions = member_completion_positions(sources[path], cap)
-  unless only && !"textDocument/completion".include?(only)
-    member_positions.each do |line, col|
-      results["#{rel}@#{line}:#{col} textDocument/completion"] = both(
-        servers, "textDocument/completion",
+    positions.each do |line, col|
+      positions_params = {
         "textDocument" => { "uri" => uri },
-        "position" => { "line" => line, "character" => col }
-      )
+        "position" => { "line" => line, "character" => col },
+      }
+      position_level.each do |method|
+        next if only && !method.include?(only)
+
+        params = positions_params
+        if method == "textDocument/references"
+          params = positions_params.merge("context" => { "includeDeclaration" => true })
+        end
+        response = both(servers, method, params)
+        results["#{rel}@#{line}:#{col} #{method}"] = response if collect
+      end
     end
+
+    # Member completion at every `.` — the shape the editor drives while typing
+    # (`n.` on a struct value, `rl.` on a module alias).  The host's handler
+    # ignores the text after the cursor, so a valid buffer's dot position covers
+    # the same path as the bare-`n.` mid-edit case.
+    member_positions = member_completion_positions(sources[path], cap)
+    unless only && !"textDocument/completion".include?(only)
+      member_positions.each do |line, col|
+        response = both(
+          servers, "textDocument/completion",
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => line, "character" => col }
+        )
+        results["#{rel}@#{line}:#{col} textDocument/completion"] = response if collect
+      end
+    end
+    warn "#{collect ? 'audited' : 'warmed'} #{rel}: #{positions.size} positions, #{member_positions.size} member dots"
   end
-  warn "audited #{rel}: #{positions.size} positions, #{member_positions.size} member dots"
+
+  # workspace/symbol across the project (one query covers the file walk).
+  unless only
+    response = both(servers, "workspace/symbol", { "query" => "" })
+    results["workspace/symbol"] = response if collect
+  end
 end
 
-# workspace/symbol across the project (one query covers the file walk).
-unless only
-  results["workspace/symbol"] = both(servers, "workspace/symbol", { "query" => "" })
+if canonical
+  warn "canonical mode: warm-up pass (responses discarded)"
+  run_pass.call(false)
+  sleep canonical_settle_s
 end
+run_pass.call(true)
 
 servers.each_value { |s| s[:client].collect_stderr }
 stderr = servers.transform_values { |s| s[:client].stderr_lines.last(200) }

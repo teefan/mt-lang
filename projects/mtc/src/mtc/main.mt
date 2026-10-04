@@ -7,6 +7,7 @@
 import std.env as env
 import std.fs as fs
 import std.fmt as fmt_mod
+import std.mem.heap as heap
 import std.path as path_ops
 import std.str
 import std.string as string
@@ -25,6 +26,7 @@ import mtc.parser.ast as ast
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.pretty_printer.ir_formatter as ir_formatter
 import mtc.formatter.tidy as tidy
+import mtc.profile as profile_mod
 import mtc.loader.path_resolver as resolver
 import mtc.loader.package_manifest as package_manifest
 import mtc.loader.module_loader as loader
@@ -928,12 +930,15 @@ function lint_command(args: span[str]) -> int:
     var total_warnings: ptr_uint = 0
     var files_with_warnings: ptr_uint = 0
 
+    # The `--timings` profiles, one per linted file, printed after the scan.
+    var timing_entries = vec.Vec[LintTimingEntry].create()
+    defer: release_lint_timing_entries(ref_of(timing_entries))
+
     var fi: ptr_uint = 0
     while fi < source_files.len():
         let fp_ptr = source_files.get(fi) else:
             break
         let fp = unsafe: read(fp_ptr).as_str()
-        let lint_started_ms = monotonic_ms()
         if cli_verbose:
             if fix_mode:
                 stdio.print_format(c"fixing %.*s\n", int<-(fp.len), fp.data)
@@ -999,9 +1004,18 @@ function lint_command(args: span[str]) -> int:
                             options.mutating_sites = read(root_analysis_ptr).mutating_argument_sites.as_span()
                             options.analysis = root_analysis_ptr
 
+                var file_profile: ptr[profile_mod.Profile]? = null
+                if timings:
+                    file_profile = new_heap_profile()
+                options.profile = file_profile
+
                 if fix_mode:
+                    let fix_started_ms = monotonic_ms()
                     var fixed = fix_engine.fix_source(src.as_str(), fp, options)
                     defer: fixed.release()
+                    if timings:
+                        push_lint_timing(ref_of(timing_entries), fp, file_profile, monotonic_ms() - fix_started_ms, true)
+                        file_profile = null
                     if not fixed.as_str().equal(src.as_str()):
                         match fs.write_text(fp, fixed.as_str()):
                             Result.success:
@@ -1028,10 +1042,13 @@ function lint_command(args: span[str]) -> int:
                 var providers = scope_tracking.build_import_method_providers(file, lint_program.analyses.as_span())
                 defer: providers.release()
                 options.method_providers = providers.as_span()
+                let lint_scan_started_ms = monotonic_ms()
                 var warns = linter.lint_source_with(file, src.as_str(), fp, options)
+                let lint_scan_total_ms = monotonic_ms() - lint_scan_started_ms
                 defer: warns.release()
                 if timings:
-                    print_timings_line("lint", fp, monotonic_ms() - lint_started_ms)
+                    push_lint_timing(ref_of(timing_entries), fp, file_profile, lint_scan_total_ms, false)
+                    file_profile = null
                 if warns.len() > 0:
                     files_with_warnings += 1
                 total_warnings += warns.len()
@@ -1055,6 +1072,9 @@ function lint_command(args: span[str]) -> int:
         fi += 1
 
     if fix_mode:
+        if timings:
+            print_lint_rule_profiles(ref_of(timing_entries))
+            print_lint_file_profiles(ref_of(timing_entries))
         return 0
 
     if total_warnings == 0:
@@ -1065,7 +1085,14 @@ function lint_command(args: span[str]) -> int:
             stdio.print_format(c"clean %.*s\n", int<-(ip_str.len), ip_str.data)
         else:
             stdio.print_format(c"clean %d file(s)\n", int<-(source_files.len()))
+        # The host prints only the file-profile block for a clean run.
+        if timings:
+            print_lint_file_profiles(ref_of(timing_entries))
         return 0
+
+    if timings:
+        print_lint_rule_profiles(ref_of(timing_entries))
+        print_lint_file_profiles(ref_of(timing_entries))
 
     let noun = if total_warnings == 1: "warning" else: "warnings"
     var files_str = string.String.create()
@@ -3523,39 +3550,46 @@ function format_command(args: span[str]) -> int:
         else:
             stdio.print_format(c"checking %.*s\n", int<-(path.len), path.data)
 
-    let started_ms = monotonic_ms()
+    var format_profile = profile_mod.create()
+    defer: profile_mod.release(ref_of(format_profile))
+    var profile_ptr: ptr[profile_mod.Profile]? = null
+    if timings:
+        profile_ptr = ptr_of(format_profile)
+
     match fs.read_text(path):
         Result.success as content:
             var source = content.value
             defer: source.release()
             let source_text = source.as_str()
 
-            var formatted = tidy.format_source(source_text, path, mode, explicit_max_line_length) else:
+            let started_ms = monotonic_ms()
+            var formatted = tidy.format_source_profiled(source_text, path, mode, explicit_max_line_length, profile_ptr) else:
                 stdio.print_format(c"error: %.*s: parse error\n", int<-(path.len), path.data)
                 return 1
             defer: formatted.release()
             let fmt_text = formatted.as_str()
-            if timings:
-                print_timings_line("format", path, monotonic_ms() - started_ms)
 
+            var exit_code = 0
             if write_mode:
                 match fs.write_text(path, fmt_text):
                     Result.success:
                         stdio.print_format(c"formatted %.*s\n", int<-(path.len), path.data)
-                        return 0
                     Result.failure as err:
                         var msg = err.error
                         defer: msg.release()
                         stdio.print_format(c"error: cannot write %.*s\n", int<-(path.len), path.data)
-                        return 1
-            if check_mode:
+                        exit_code = 1
+            else if check_mode:
                 if source_text == fmt_text:
                     stdio.print_format(c"already formatted %.*s\n", int<-(path.len), path.data)
-                    return 0
-                stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
-                return 1
-            stdio.print_format(c"%.*s", int<-(fmt_text.len), fmt_text.data)
-            return 0
+                else:
+                    stdio.print_format(c"needs formatting %.*s\n", int<-(path.len), path.data)
+                    exit_code = 1
+            else:
+                stdio.print_format(c"%.*s", int<-(fmt_text.len), fmt_text.data)
+            if timings:
+                print_format_profile(path, monotonic_ms() - started_ms, ref_of(format_profile))
+            return exit_code
         Result.failure as err:
             var msg = err.error
             defer: msg.release()
@@ -3596,17 +3630,217 @@ function monotonic_ms() -> double:
     return double<-ts.tv_sec * 1000.0 + double<-ts.tv_nsec / 1000000.0
 
 
-## Print a `--timings` profile line (`<label> profile <path>: <ms>ms`).
-function print_timings_line(label: str, path: str, ms: double) -> void:
-    var buf = string.String.create()
-    defer: buf.release()
-    buf.append(label)
-    buf.append(" profile ")
-    buf.append(path)
-    buf.append(": ")
-    fmt_mod.append_double_precision(ref_of(buf), ms, 1)
-    buf.append("ms")
-    stdio.print_format(c"%.*s\n", int<-(buf.as_str().len), buf.as_str().data)
+## The host's single-file format profile: a leading blank line, then
+## `format profile <path>: <%.1f>ms (<phases >= 0.1ms, by descending total>)`.
+function print_format_profile(path: str, total_ms: double, profile: ref[profile_mod.Profile]) -> void:
+    var line = string.String.create()
+    defer: line.release()
+    line.push_byte(10)
+    line.append("format profile ")
+    line.append(path)
+    line.append(": ")
+    fmt_mod.append_double_precision(ref_of(line), total_ms, 1)
+    line.append("ms")
+    var phases = profile_mod.phases_desc_text(profile, 0.1, true)
+    defer: phases.release()
+    if phases.len() > 0:
+        line.append(" (")
+        line.append(phases.as_str())
+        line.append(")")
+    stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+
+
+## One linted file's `--timings` profile (the host's `lint_profiles` entry):
+## its path, the per-rule phase profile (heap-allocated; the entry owns it),
+## the scan's total milliseconds, and which scan produced it.
+struct LintTimingEntry:
+    path: string.String
+    profile: ptr[profile_mod.Profile]
+    total_ms: double
+    pre_fix: bool
+
+
+## A heap profile for one linted file.
+function new_heap_profile() -> ptr[profile_mod.Profile]:
+    let memory = unsafe: ptr[profile_mod.Profile]<-heap.must_alloc[profile_mod.Profile](1)
+    unsafe:
+        read(memory) = profile_mod.create()
+    return memory
+
+
+## Release a heap profile and its storage.
+function release_heap_profile(profile: ptr[profile_mod.Profile]) -> void:
+    unsafe:
+        var value = read(profile)
+        profile_mod.release(ref_of(value))
+    heap.release(profile)
+
+
+## Move one file's profile into the timing entries (a no-op without a profile).
+function push_lint_timing(entries: ref[vec.Vec[LintTimingEntry]], path: str, profile: ptr[profile_mod.Profile]?, total_ms: double, pre_fix: bool) -> void:
+    let p = profile else:
+        return
+    entries.push(LintTimingEntry(path = string.String.from_str(path), profile = p, total_ms = total_ms, pre_fix = pre_fix))
+
+
+function release_lint_timing_entries(entries: ref[vec.Vec[LintTimingEntry]]) -> void:
+    var i: ptr_uint = 0
+    while i < entries.len():
+        let ep = entries.get(i) else:
+            break
+        unsafe:
+            var entry = read(ep)
+            entry.path.release()
+            release_heap_profile(entry.profile)
+        i += 1
+    entries.release()
+
+
+## The host's `print_lint_rule_profiles`: per file, `lint profile <path>
+## (<mode>): rules=… total=…`, the per-rule rows (code, count, total, average,
+## share), then the non-rule hot phases.
+function print_lint_rule_profiles(entries: ref[vec.Vec[LintTimingEntry]]) -> void:
+    var ei: ptr_uint = 0
+    while ei < entries.len():
+        let ep = entries.get(ei) else:
+            break
+        var entry = unsafe: read(ep)
+        var profile_value = unsafe: read(entry.profile)
+        let rule_total = profile_mod.prefix_total_ms(ref_of(profile_value), "rule.")
+        let overall_total = profile_mod.total_ms(ref_of(profile_value))
+
+        var line = string.String.create()
+        defer: line.release()
+        line.append("lint profile ")
+        line.append(entry.path.as_str())
+        line.append(if entry.pre_fix: " (pre-fix scan): rules=" else: " (lint scan): rules=")
+        fmt_mod.append_double_precision(ref_of(line), rule_total, 1)
+        line.append("ms total=")
+        fmt_mod.append_double_precision(ref_of(line), overall_total, 1)
+        line.append("ms")
+        stdio.print_format(c"%.*s\n", int<-(line.as_str().len), line.as_str().data)
+
+        var rows = profile_mod.rule_rows(ref_of(profile_value), 12, 0.0)
+        defer: release_rule_rows(ref_of(rows))
+        if rows.len() == 0:
+            stdio.print_format(c"  no rule timing data captured\n")
+        else:
+            var ri: ptr_uint = 0
+            while ri < rows.len():
+                let rp = rows.get(ri) else:
+                    break
+                let row = unsafe: read(rp)
+                var row_text = string.String.create()
+                defer: row_text.release()
+                row_text.append("  ")
+                row_text.append(row.code.as_str())
+                row_text.append_format(f":#{row.count}x total=")
+                fmt_mod.append_double_precision(ref_of(row_text), row.total_ms, 1)
+                row_text.append("ms avg=")
+                fmt_mod.append_double_precision(ref_of(row_text), row.avg_ms, 2)
+                row_text.append("ms share=")
+                fmt_mod.append_double_precision(ref_of(row_text), row.share, 1)
+                row_text.append("%")
+                stdio.print_format(c"%.*s\n", int<-(row_text.as_str().len), row_text.as_str().data)
+                ri += 1
+        var hot = profile_mod.hot_phases_text(ref_of(profile_value), 5, 1.0)
+        defer: hot.release()
+        if hot.len() > 0:
+            var hot_line = string.String.create()
+            defer: hot_line.release()
+            hot_line.append("  non-rule hot phases: ")
+            hot_line.append(hot.as_str())
+            stdio.print_format(c"%.*s\n", int<-(hot_line.as_str().len), hot_line.as_str().data)
+        ei += 1
+
+
+function release_rule_rows(rows: ref[vec.Vec[profile_mod.RuleRow]]) -> void:
+    var i: ptr_uint = 0
+    while i < rows.len():
+        let rp = rows.get(i) else:
+            break
+        unsafe:
+            var row = read(rp)
+            row.code.release()
+        i += 1
+    rows.release()
+
+
+## The host's `print_lint_file_profiles`: a blank line, `Profile (lint): N
+## file(s)`, each file's non-rule phases (>= 1ms) by descending total, and the
+## summed total.
+function print_lint_file_profiles(entries: ref[vec.Vec[LintTimingEntry]]) -> void:
+    if entries.len() == 0:
+        return
+    var order = vec.Vec[ptr_uint].create()
+    defer: order.release()
+    var i: ptr_uint = 0
+    while i < entries.len():
+        let ep = entries.get(i) else:
+            break
+        let total = unsafe: read(ep).total_ms
+        order.push(i)
+        var j = i
+        while j > 0:
+            let prev_ptr = order.get(j - 1) else:
+                break
+            let prev_index = unsafe: read(prev_ptr)
+            let prev_entry_ptr = entries.get(prev_index) else:
+                break
+            let prev_total = unsafe: read(prev_entry_ptr).total_ms
+            if prev_total >= total:
+                break
+            let cur_ptr = order.get(j) else:
+                break
+            unsafe:
+                read(cur_ptr) = prev_index
+            j -= 1
+        let slot_ptr = order.get(j) else:
+            break
+        unsafe:
+            read(slot_ptr) = i
+        i += 1
+
+    var header = string.String.create()
+    defer: header.release()
+    header.push_byte(10)
+    header.append("Profile (lint): ")
+    header.append_format(f"#{order.len()} file(s)")
+    stdio.print_format(c"%.*s\n", int<-(header.as_str().len), header.as_str().data)
+
+    var total: double = 0.0
+    var oi: ptr_uint = 0
+    while oi < order.len():
+        let idx_ptr = order.get(oi) else:
+            break
+        let idx = unsafe: read(idx_ptr)
+        let entry_ptr = entries.get(idx) else:
+            break
+        var entry = unsafe: read(entry_ptr)
+        total = total + entry.total_ms
+        var profile_value = unsafe: read(entry.profile)
+        var phases = profile_mod.phases_desc_text(ref_of(profile_value), 1.0, false)
+        defer: phases.release()
+        var file_line = string.String.create()
+        defer: file_line.release()
+        file_line.append("  ")
+        file_line.append(entry.path.as_str())
+        file_line.append(": ")
+        fmt_mod.append_double_precision(ref_of(file_line), entry.total_ms, 1)
+        file_line.append("ms")
+        if phases.len() > 0:
+            file_line.append(" (")
+            file_line.append(phases.as_str())
+            file_line.append(")")
+        stdio.print_format(c"%.*s\n", int<-(file_line.as_str().len), file_line.as_str().data)
+        oi += 1
+
+    var total_line = string.String.create()
+    defer: total_line.release()
+    total_line.append("Total: ")
+    fmt_mod.append_double_precision(ref_of(total_line), total, 1)
+    total_line.append("ms")
+    stdio.print_format(c"%.*s\n", int<-(total_line.as_str().len), total_line.as_str().data)
 
 
 function j2_path(a: str, b: str) -> string.String:

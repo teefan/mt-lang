@@ -760,6 +760,63 @@ def run_stress(client, dir, paths)
   client.notify("workspace/didChangeWorkspaceFolders", { "event" => { "added" => [], "removed" => [] } })
   client.notify("workspace/willRenameFiles", { "files" => [{ "oldUri" => main_uri, "newUri" => path_to_uri(File.join(dir, "renamed.mt")) }] })
 
+  # 9. client-behaviour probes (C5): measured outcomes for the notification
+  # paths the corpus does not cover — configuration changes, watched files,
+  # workspace-folder events, cancellation and closed-file disk edits.  Probes
+  # 1–7 left main.mt on the unicode source, so restore a known state first.
+  version += 1
+  client.notify("textDocument/didChange", {
+    "textDocument" => { "uri" => main_uri, "version" => version },
+    "contentChanges" => [{ "text" => MAIN_SOURCE }],
+  })
+
+  # 9a. references with includeDeclaration: false.
+  ref_line, ref_col = find_pos(MAIN_SOURCE, "compute(3, 4)")
+  outcomes["c5/references-no-declaration"] = client.request("textDocument/references", {
+    "textDocument" => { "uri" => main_uri },
+    "position" => { "line" => ref_line, "character" => ref_col },
+    "context" => { "includeDeclaration" => false },
+  })
+
+  # 9b. a configuration change switches the formatter mode for the next format.
+  client.notify("workspace/didChangeConfiguration", {
+    "settings" => { "milkTea" => { "format" => { "mode" => "preserve" } } },
+  })
+  outcomes["c5/config-preserve+formatting"] = client.request("textDocument/formatting", { "textDocument" => { "uri" => main_uri }, "options" => { "tabSize" => 4, "insertSpaces" => true } })
+  client.notify("workspace/didChangeConfiguration", {
+    "settings" => { "milkTea" => { "format" => { "mode" => "tidy" } } },
+  })
+  outcomes["c5/config-tidy+formatting"] = client.request("textDocument/formatting", { "textDocument" => { "uri" => main_uri }, "options" => { "tabSize" => 4, "insertSpaces" => true } })
+
+  # 9c. a watched file appears on disk while the server runs.
+  watched_path = File.join(dir, "watched.mt")
+  File.write(watched_path, "public function watched_marker() -> int:\n    return 7\n")
+  client.notify("workspace/didChangeWatchedFiles", { "changes" => [{ "uri" => path_to_uri(watched_path), "type" => 1 }] })
+  outcomes["c5/watched-created+workspaceSymbol"] = client.request("workspace/symbol", { "query" => "watched_marker" })
+
+  # 9d. a cancellation notification for an unknown id must not disturb the
+  # next request (real in-flight cancellation is not drivable frame-by-frame).
+  client.notify("$/cancelRequest", { "id" => 987_654 })
+  outcomes["c5/cancel-then-hover"] = client.request("textDocument/hover", { "textDocument" => { "uri" => main_uri }, "position" => { "line" => 0, "character" => 0 } })
+
+  # 9e. adding a workspace folder while the current root remains.
+  extra_dir = File.join(dir, "extra_ws")
+  FileUtils.mkdir_p(extra_dir)
+  File.write(File.join(extra_dir, "extra.mt"), "public function extra_marker() -> int:\n    return 9\n")
+  client.notify("workspace/didChangeWorkspaceFolders", { "event" => { "added" => [{ "uri" => path_to_uri(extra_dir), "name" => "extra_ws" }], "removed" => [] } })
+  outcomes["c5/workspace-folder-added+workspaceSymbol"] = client.request("workspace/symbol", { "query" => "extra_marker" })
+
+  # 9f. a closed file is edited on disk: hover before the edit, then after —
+  # the client sends no notification, so this pins each server's content-cache
+  # semantics for closed documents.
+  scratch_uri = path_to_uri(paths[:scratch])
+  client.notify("textDocument/didOpen", { "textDocument" => { "uri" => scratch_uri, "languageId" => "milk-tea", "version" => 1, "text" => "function scratch_fn() -> int:\n    return 1\n" } })
+  outcomes["c5/closed-edit-before"] = client.request("textDocument/hover", { "textDocument" => { "uri" => scratch_uri }, "position" => { "line" => 0, "character" => 10 } })
+  client.notify("textDocument/didClose", { "textDocument" => { "uri" => scratch_uri } })
+  File.write(paths[:scratch], "function scratch_renamed() -> int:\n    return 2\n")
+  sleep 0.2
+  outcomes["c5/closed-edit-after-hover"] = client.request("textDocument/hover", { "textDocument" => { "uri" => scratch_uri }, "position" => { "line" => 0, "character" => 10 } })
+
   outcomes
 end
 
