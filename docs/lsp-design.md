@@ -1,22 +1,24 @@
 # Self-Host LSP Architecture
 
-Status: **Server implemented — 29 capabilities advertised at Ruby parity, and now
+Status: **Server implemented — 30 capabilities advertised at Ruby parity, and now
 measured against the host by `tools/lsp_parity.rb`.**
-Last updated: 2026-09-26 (stage 5 closed the formatting entries: trivia-aware
-lexing, the CST reconstruct and the tidy pipeline are self-hosted, and
-`tools/format_parity.rb` measures tidy/preserve 702/702 byte-identical).
-37 modules, ~14.4k lines, 29 capabilities advertised at Ruby parity.
+Last updated: 2026-10-04 (session 33: the `milkTea/debugInfo` AST section is
+byte-equal and the remaining difference is the Facts/Bindings sections; the
+formatter measures 712/712 in all three modes).
+42 modules, ~29.3k lines, 30 capabilities advertised at Ruby parity.
 
 > **Parity is measured by the self-vs-host harness, not by capability
 > advertisement.**  `tools/lsp_parity.rb` (`record --server host|self`,
-> `compare`, `--stress`) drives an out-of-process corpus of 55 requests — every
+> `compare`, `--stress`) drives an out-of-process corpus of 70 requests — every
 > endpoint plus the `codeLens`/`completionItem`/`documentLink` resolve calls a
-> real editor makes — and 15 adversarial probes, and diffs normalized responses.
-> As of 2026-09-30 (session 17) it reports 30/30 capability keys identical and
-> **4 differing entries** with `--stress` (1 request — `milkTea/debugInfo`'s
-> token-kind line — and 3 stress probes), all deliberate and documented (the host
-> hanging on a malformed frame, the host's facts lag, and two "at least as good"
-> extensions) — every differing entry is catalogued by family in
+> real editor makes — and 27 adversarial probes, and diffs normalized responses.
+> As of 2026-10-04 (session 33) it reports 30/30 capability keys identical and
+> **5 differing entries** with `--stress` (2 request-level — `milkTea/debugInfo`'s
+> Facts/Bindings remainder and the directory-form module `typeDefinition` — and
+> 3 stress probes), all deliberate and documented (the host hanging on a
+> malformed frame, the host's facts lag, the host's parser recovery, and the
+> self answering where the host gives up) — every differing entry is catalogued
+> by family in
 > [self-host-plan.md §0k](./self-host-plan.md#0k-2026-092526-session--lsp-parity-harness--gap-closure),
 > which is the live status; the per-feature claims below are self-host-side
 > results that the harness now confirms or contradicts entry by entry.
@@ -142,13 +144,13 @@ projects/mtc/src/mtc/
   semantic/         ← existing
   parser/           ← existing
 
-  lsp/              ← (37 modules, ~14.4k lines)
+  lsp/              ← (42 modules, ~29.3k lines)
     protocol.mt     ← JSON-RPC transport (Content-Length framing, outgoing requests)
     server.mt       ← message loop, if/else handler dispatch, response routing
     workspace.mt    ← document state, module roots, lazy symbol-index, diagnostic/semantic
                        token caches, cancel tracking, config request tracking
     diagnostics.mt  ← error → LSP diagnostic conversion (push + pull)
-    lifecycle.mt    ← initialize (29 capabilities), shutdown, configure
+    lifecycle.mt    ← initialize (30 capabilities), shutdown, configure
     text_docs.mt    ← didOpen, didChange, didClose, didSave
     uri.mt          ← file:// URI percent-decode
     cursor.mt       ← shared token-at-position resolution (Phase 0)
@@ -466,12 +468,12 @@ fixed the same day.
 
 | Aspect | Ruby LSP | Self-Host LSP |
 |--------|----------|---------------|
-| Lines | ~12,200 | ~14.4k (37 modules) |
+| Lines | ~14.4k (38 files) | ~29.3k (42 modules) |
 | Threads | Worker pool (8 threads) | Single-threaded |
-| Dispatch | 22 mixin modules | if/else chain (53 methods) |
+| Dispatch | 25 mixin modules | if/else chain (55 methods) |
 | JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
 | Transport | Stdio `Content-Length` framing | Same (getchar loop) |
-| Capabilities | 29 advertised | 29 advertised (parity) |
+| Capabilities | 30 advertised | 30 advertised (parity) |
 | Caches | Multi-layer (tokens, AST, facts, semantic tokens) | Per-file diagnostic/semantic-token caches + workspace-symbol index |
 | Module resolution | `ModuleLoader` (shared) | Same `module_loader.mt` |
 | Linter | Ruby `Linter.lint_source` | Same `linter.lint_source` |
@@ -581,7 +583,7 @@ recovery result:
   | 9 | Completion `mst@224:18`: the host leaks a synthesized `ref[@_mt_N, T]` lifetime into a field detail; the self renders the declared `ref[T]` | self-better (documented; modeling the host's auto-lifetime waits on a separate item) | `lsp_project_audit` |
   | 10 | Completion `lb@818:17`: the host's facts fail to type a `map_error` arm binding and fall back to the method table; the self answers the field | self-better | `lsp_project_audit` |
   | 11 | The reference index bounds its retained text (32 MiB): past it the oldest noted documents are evicted with their hash/stamp entries and re-read on demand, so a document re-noted after an eviction answers in a later index position than the host's whole-session order (result *sets* unaffected) | self-better (long sessions) | `lsp_index_test.mt` (the bound), the audit (small workspaces never evict) |
-  | 12 | `milkTea/debugInfo` renders the header, token table and parse errors only; the host's AST/Facts/Bindings sections embed Ruby `object_id`s, host binding ids and Ruby AST class names | not ported (documented) | `lsp_parity` (`milkTea/debugInfo`) |
+  | 12 | `milkTea/debugInfo`: the header, token table, AST tree, parse errors and diagnostics are byte-equal (session 33); the host's Facts and Bindings sections embed Ruby `object_id`s and binding ids allocated in the host's analysis order — not ported yet | remainder documented | `lsp_parity` (`milkTea/debugInfo`) |
 
   The *checklist* for anything not in this table: `tools/lsp_parity.rb
   compare` must show only its documented entries, `tools/lsp_recovery_probe.rb

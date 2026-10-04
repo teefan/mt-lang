@@ -14,7 +14,7 @@
 - [How to start a work session](#how-to-start-a-work-session-read-this-first)
 - [The program — ranked remaining work](#the-program--ranked-remaining-work)
 - [Ledger and scoreboard](#ledger-and-scoreboard)
-- §0k — LSP / linter / formatter records and the session history (sessions 4–24)
+- §0k — LSP / linter / formatter records and the session history (sessions 4–33)
 - §0j — stress, parse and `lower` records · §0i, §0h, §0a–§0f — older sessions
 - §1–§7 — subsystem records · Appendix (working notes) · Provenance
 
@@ -31,15 +31,15 @@ Status: **SELF-HOSTING FIXED POINT ACHIEVED. LSP + DAP + BINDGEN + IMPORTED-BIND
 self-host** (`~/Projects/MilkTea/SimpleGame`, the const-aggregate blocker of
 §0j item 12 — fixed in session 2; the binary initializes raylib and audio and
 runs).
-Stage2 == stage3 byte-identical; the compiler self-test suite is **596 tests
-across 15 files, 0 failed** (re-measured 2026-10-03 session 27; 591 at session
-26, 516 at session 2);
+Stage2 == stage3 byte-identical; the compiler self-test suite is **618 tests
+across 17 files, 0 failed** (re-measured 2026-10-04 session 33; 596 at session
+27, 516 at session 2);
 the self-host also builds every example and `test/mt` file the host does (see
 §0j's 2026-09-27 section).
 **Linter parity: `language_baseline.mt`'s and `memory_stress_test.mt`'s
 diagnostic arrays are byte-identical to the Ruby host's (98/98 and 10/10, 0
-differing lines; sessions 17–18), and the whole-corpus sweep reads 494 agree /
-115 differ (below).**
+differing lines; sessions 17–18), and the whole-corpus sweep reads 496 agree /
+117 differ of 613 files (below).**
 **Raylib parity: 217/219 build and run** (2026-07-16 sweep).
 **Language examples: 15/15 build under `--no-cache`** (2026-09-27; the four that
 failed — `async_network_lobby`, `async_stress_test`, `data_structures`,
@@ -49,10 +49,13 @@ that builds also matches the host's stdout+exit (sampled: `integration_test`,
 `reflection_advanced`, `language_baseline`, `event_stress_test`). **The vendored example families now
 build and run at parity**: `box2d/drop`, `box2d/explosion`, `box3d/ragdoll` and
 `box3d/box_stack` produce byte-identical stdout under both compilers, and
-`examples/sdl3` files `check` clean (§0j items 5–13). **`mtc lint` has 37 rules plus `--fix`
-(10 auto-fixable rules, byte-identical output vs Ruby) and `.mt-lint.yml`
-config** (`prefer-inline-methods` landed with the LSP diagnostics work; its
-auto-fix is not ported).  Bootstrap via `tools/bootstrap.sh`.
+`examples/sdl3` files `check` clean (§0j items 5–13). **`mtc lint` implements 41 of the host's
+43 rules plus `--fix` (12 of the host's 13 auto-fixable rules; the `lint --fix`
+sweep over 15 examples × 12 rules is 179/180 byte-identical, the one divergence
+pre-existing — Track 2) and `.mt-lint.yml` config**; unported (audit, session 33): the
+host's `directional-ffi-arg` and `platform-api-drift` rules and the
+`redundant-unsafe` fix generator (`prefer-inline-methods`'s auto-fix landed in
+session 28).  Bootstrap via `tools/bootstrap.sh`.
 Test runner now builds in-process (no Ruby delegation).  Vendored library
 recipes complete for all **11** vendored families (raylib, glfw, tracy, cjson,
 box2d, box3d, sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
@@ -68,18 +71,16 @@ for the process backend; re-measured 2026-10-03 — request parity holds, while 
 terminal *event order* differs (`terminated`→`exited` vs `exited`→`terminated`)
 and build-on-launch is missing; the remaining gaps — build-on-launch, the
 lldb-dap bridge, the debug map — are §10 of `docs/dap-design.md`).**
-**LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **68 requests + 19 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**LSP: 42 modules, ~29.3k lines (2026-10-04 session 33 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `debugInfo` Facts/Bindings remainder as of session 33, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **70 requests + 27 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **LSP project audit (live counter, 2026-10-03 session 27): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 7075 entries, **4 stable differing entries + the host's first-file `documentSymbol` race**: `completion` **2** (the session-26 close read 4; the two byte-vs-character position entries are closed by the request-boundary conversion — the residue is the host's synthesized `ref` lifetime `mst@224:18` and the host giving up on a `map_error` arm binding `lb@818:17`, both documented), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward); the race entry (`docs/data_structures.mt documentSymbol`) appears only when the host's first-file facts lag (measured in the gates run).  **Every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work), `definition`/`declaration`/`typeDefinition`/`implementation`/`references` (915 each, 0), `documentSymbol` and the file-level endpoints.**
 **LSP project audit (previous live counter, 2026-10-03 session 26): 7075 entries, **6 differ = `completion` 4 + the 2 documented entries**: completion **4** (235 at the session-24 close; the residue is classified in §0k's part-3 record — the host's synthesized `ref` lifetime, the host giving up on a `map_error` arm binding, and two byte-vs-character positions inside comment lines), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward).**  Earlier live counters: session 18 read 2 differ on the then-6456-entry corpus (the entry count grew with the completion pass), session 13 read 22.
 **LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **22 differ** (session 13 close): hover 9, documentSymbol 5, semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set) → 22 (session 13's third: codeLens and workspace/symbol 1 → 0 each via the host's token-pair symbol list, documentHighlight 2 → 1, and the token scanner's keyword/heredoc/type-argument rules).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's single survivor needs the host's carried-forward binding resolution (a label token resolving a binding that is out of scope at that line).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
 **LSP recovery (`tools/lsp_recovery_probe.rb --check`, 2026-09-28 session 9): the six-edit corpus of mid-edit states (truncated `n.`/`a.inner.`, unterminated string/block, half-typed `import`, cut-off expression) is at **recovery parity — all six cases byte-equal**, after the parser's panic-based unwinding, the parse/lex location suffix, and the four lint/analyzer knock-ons it exposed (§0k, session 9).**
-**Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`, re-measured 2026-10-03: **705/705 in all three modes**; the file count drifts with tmp fixtures — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
-**Hover: 9 entries left (session 13 close; §0k classifies them — the four
-nullability renderings (the analyzer's flow/continuation refinement), the two
-destructuring bindings with the match-arm payload (stage 11c), the function-typed
-field's `fn ` (the host's `Types::Function#to_s`, the compiler stages'
-function-type names item), `type quat`'s cross-file location, and the member
-chain's third segment).**
+**Formatting: the CST-backed `:tidy` / `:preserve` modes are self-hosted and byte-identical to the host across the repository (`tools/format_parity.rb`, re-measured 2026-10-04 session 33: **712/712 in all three modes**; the file count drifts with tmp fixtures — the canonical printer reattaches comments and trivia like the host); the LSP's `formatting` and `rangeFormatting` entries are closed.**
+**Hover: 1 entry left in the audit — the documented `type quat` cross-file
+location `lb@1653:24` (session 13's list of 9 was cut by the completion-parity
+sessions and the request-boundary conversion; the classification history is
+§0k's session-13 and part-3 records).**
 **LSP stability: zero SIGSEGV/SIGABRT crashes; UTF-8 boundary auto-adjust; parser/lexer recoverable.**
 **LSP logging: structured stderr, version+revision announcement, a `[LSP perf] req <method> <ms>`
 line per request (the host's shape), default level `info`, and `milkTea.lsp.logLevel`
@@ -88,7 +89,7 @@ forwarded by the extension as `--log-level`.**
 **Code lens: reference counts with deduplication; all index entries queried.**
 **References: cross-file via workspace index; definition: local variables supported.**
 **Signature help: method calls and extending-block methods resolved.**
-**Imported-bindings: 7 modules (incl. registry + methods), ~2,700 lines.  `mtc imported-bindings` CLI command with --all/--check.
+**Imported-bindings: 7 modules (incl. registry + methods), ~2,900 lines.  `mtc imported-bindings` CLI command with --all/--check.
 Byte-identical raymath output. 3 verified / 25 changed across all 28 bindings (remaining deltas from cosmetic emitter gaps).**
 
 **Remaining CLI gaps: `deps` and `docs` (listed in the ported help text but
@@ -102,13 +103,15 @@ on 2026-09-26 (§7).
 message text/channel/argument-precedence differences, not missing commands
 (§0j).  Toolchain doctor is self-hosted; bootstrap/tools subcommands deferred.
 
-**`--sexpr` parity (session-2 snapshot, 2026-09-27; the live numbers are in the Ledger): lex 702/702
-comparable byte-identical; parse 698 comparable files byte-identical with 0
+**`--sexpr` parity (re-measured 2026-10-04 session 33; the history is
+session 2, 2026-09-27): lex 712/712
+comparable byte-identical; parse 708 comparable files byte-identical with 0
 differences (4 host-side rejections: external files, platform-pinned); `lower`
-39 match / 613 differ / 50 host-rejected / 0 self-rejected** (the host-rejected
-bucket is only `external` and platform-pinned files; one file became
-byte-identical in session 2 and every family whose first difference was closed
-moved 15–63 KB deeper into its dump).  The ref/lifetime and dyn vtable
+39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files** (the
+host-rejected bucket is only `external` and platform-pinned files; the counts
+above session 17's 615 are the tree's own new sources since — the match count
+is unchanged and every family whose first difference was closed moved 15–63 KB
+deeper into its dump).  The ref/lifetime and dyn vtable
 categories are closed, and so are the three levers §0j ranked first —
 **raw-module method linkage naming**, **unsigned literals in the unsigned
 domain** (`18446744073709551615`, provenance-tracked so `~0` still prints `-1`)
@@ -155,7 +158,14 @@ where the pattern/bound is a literal; one node-count difference remains on
 `examples/language_baseline.mt` (6759 vs 6760).  Before it, session 32's
 accuracy pass (qualified enum/flags members, member-before-binding order,
 exact inlay ranges) and the `static:` completion leak fix; sessions 29–31 the
-LSP readiness items and close-out.  Earlier sessions' records are in §0k; the
+LSP readiness items and close-out.  **This session also audited this document
+against the tree**: the header's test/linter/harness/formatter/corpus counts,
+the Ledger's stamps and the `lower`/lint measurements were refreshed;
+the audit surfaced **two unported host lint rules (`directional-ffi-arg`,
+`platform-api-drift`) and one unported host fix (`redundant-unsafe`)**,
+now recorded in Track 2; and `docs/lsp-design.md`'s header, harness paragraph
+and comparison rows were brought to the same counts (42 modules / ~29.3k lines,
+30 capabilities, 70+27 corpus, 712/712 formatter).  Earlier sessions' records are in §0k; the
 plan files were consolidated into this document on 2026-10-03 (session 25);
 see *Provenance*.
 
@@ -191,7 +201,7 @@ for the area you are touching:
 | `lower` dump parity | the program's `lower` track, §0j's records, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min; quote the set) |
 | Example / vendored-family builds (no known failures since 2026-09-27) | §0j's 2026-09-27 section | the 15 top-level examples, `find examples/sdl3 -name '*.mt'`, a raylib sample |
 | CLI behavior parity | the program's CLI track, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
-| Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (all modes must stay byte-identical — 705/705, file counts drift) |
+| Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (all modes must stay byte-identical — 712/712, file counts drift) |
 | DAP | the program's DAP track, `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both] [--json OUT]` — runs a session on both adapters and prints a per-request diff |
 | Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
@@ -239,9 +249,9 @@ this file's records + ledger in the same commit as the code change.
    a 40-file raylib sample, `test/mt` 60/60 with 0 failures).  Six root causes are
    recorded in §0j's 2026-09-27 section; regressions should show up as a build
    failure in those sweeps.
-1. **`lower` dump parity** — session-17 measurement: **39 match / 615 differ /
-   51 host-rejected / 0 self-rejected** (the count drifts with the tmp fixtures;
-   quote the set).  The ranked items are the program's `lower` track; the biggest
+1. **`lower` dump parity** — session-33 measurement: **39 match / 622 differ /
+   51 host-rejected / 0 self-rejected of 712 files** (the count drifts with the
+   tree's own sources and the tmp fixtures; quote the set).  The ranked items are the program's `lower` track; the biggest
    single mover is item 1 (opaque declaration naming/`forward_declarable`, the
    first difference for all 34 sdl3 files).
 2. **CLI behavior parity** — **24 match / 37 differ / 0 pending** of 61 harness
@@ -325,10 +335,11 @@ line misses — the symbol names are the stable anchors.
   audit's completion class closed (0 unintended); `milkTea/debugInfo` byte-equal
   after object-id normalization; `[LSP perf]` ≤ ~10 ms per edit after the
   per-module cache — **met 2026-10-04: 5.0 ms median, session 29**; valgrind
-  clean (0 errors on the 68+19 drive).
+  clean (0 errors on the harness drive).
 - **Linter**: per-rule counts/messages/severities/positions equal the host on
-  `language_baseline.mt`, `memory_stress_test.mt` **and** the 609-file corpus
-  sweep.
+  `language_baseline.mt`, `memory_stress_test.mt` **and** the whole-corpus sweep
+  (613 files at the session-33 audit), and every host rule/fix exists (two rules
+  and one fix are unported — Track 2's session-33 audit note).
 - **DAP**: a real VS Code session debugs a `.mt` program end-to-end with the
   default `lldb-dap` backend (breakpoints, stepping, evaluate; frames/locals
   shown as Milk Tea names via the debug map); process backend unchanged;
@@ -336,8 +347,8 @@ line misses — the symbol names are the stable anchors.
 - **Bindings/bindgen**: `mtc imported-bindings --all --check` 28/28 verified (or
   each residual delta justified as cosmetic with evidence); bindgen output
   reproducible for the repo's bindings.
-- **Formatter**: all modes byte-identical (705/705 at the 2026-10-03 audit; the
-  count drifts with tmp fixtures).
+- **Formatter**: all modes byte-identical (712/712 at the 2026-10-04 session-33
+  audit; the count drifts with the tree's own sources and tmp fixtures).
 
 ### Track 1 — LSP completion parity (2 documented entries left; parts 1–3 landed and the position residue closed)
 
@@ -363,23 +374,33 @@ parts 1–3" and "The request boundary".
 
 ### Track 2 — Linter corpus residue
 
-`tools/lint_parity.rb -q` over `std examples projects/mtc/src`: 610 files,
-**493 agree / 117 differ** (re-measured 2026-10-04 session 31; from 357/252 in
-session 19 — the last +1 file/–1 agree/+2 differ is the sweep linting this
-session's own new/changed compiler sources, `profile.mt` among them; the
-changed files carry the same ranked deltas below).
+`tools/lint_parity.rb -q` over `std examples projects/mtc/src`: 613 files,
+**496 agree / 117 differ** (re-measured 2026-10-04 session 33; from 357/252 in
+session 19 — the +3 files/+3 agrees over session 31 are the sweep linting this
+session's own new compiler sources, `debug_ast.mt`/`debug_text.mt`/
+`float_text.mt`; the changed files carry the same ranked deltas below).
 Closed so far: `redundant-unsafe` 807 → 0, `owning-release-leak` 602/286 → 0/0,
 `owning-release-double` 0/12 → 0/0, `prefer-inline-if` 213 → 0,
 `prefer-struct-with` 93/0 → 0/0, `prefer-conditional-expression` 25 → 0.
 Remaining ranked deltas (self-extra / host-only; re-measured 2026-10-04
-session 31):
+session 33):
 `redundant-cast` 74/25, `prefer-try` 66/39, `prefer-let` 60/141,
 `borrow-and-mutate` 29/0, `shadow` 20/0, `prefer-own-ptr` 16/45,
 `constant-condition` 11/1, `prefer-or-pattern` 10/4, `loop-single-iteration`
-9/2, `unreachable-code` 3/0, `prefer-var-else` 2/0.  All
+9/2, `unreachable-code` 4/0, `prefer-var-else` 2/0.  All
 differences are pre-existing (the pre-change binary's output is identical on
 them); quote *sets*, not just counts.  Tool: `tools/lint_parity.rb` with
 `--host-cache FILE` (warm fill ~4 min, then ~20 s per full run).
+
+**Audit (session 33): two host rules and one host fix are absent.**  The host's
+`KNOWN_RULE_CODES` (`linter.rb:21-64`) has **43** entries; the self's linter
+emits **41** — `directional-ffi-arg` (`linter/rules.rb:513-531`) and
+`platform-api-drift` (`linter/imports_platform.rb:32-62`, sibling
+platform-variant API-surface drift) are not ported.  The host's
+`AUTO_FIXABLE_RULE_CODES` has **13** entries; the self's `fixable_codes()` has
+**12** (`redundant-unsafe` has no fix generator).  Neither rule's diagnostics
+appear in the sweep's per-rule deltas, so a corpus file that triggers them
+would be the first visible difference.
 
 Also open from the analyzer track (they gate audit entries and lint rows):
 
@@ -436,8 +457,9 @@ Records: §0k sessions 19–23; session 28.
 
 Work in §0j's ranked order; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16` and re-rank.  Current set:
-**39 match / 615 differ / 51 host-rejected / 0 self-rejected** (session 17; the
-file count drifts with the tmp fixtures — quote the set).
+**39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files**
+(session 33; the count drifts with the tree's own sources and the tmp fixtures —
+quote the set).
 
 1. **Opaque declarations** (`IR::OpaqueDecl` item 1; the first difference for all
    34 sdl3 files; dump-only, builds fixed).  `lowering.mt:1473
@@ -935,18 +957,18 @@ definition of done above.
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
 | bootstrap fixed point | holds (2026-10-04 session 33 — `stage2.c == stage3.c`); self-test suite 17 files / **618 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
-| `test/mt` | 60 files / 0 failed (re-run 2026-10-04 session 31) | stay green | `build/stage2/mtc test test/mt -I .` |
-| examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-04: 49/49 same, 0 differ) | stay green | per-family sweeps |
-| `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
+| `test/mt` | 60 files / 0 failed (re-run 2026-10-04 session 33) | stay green | `build/stage2/mtc test test/mt -I .` |
+| examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-04 session 33: 49/49 same, 0 differ) | stay green | per-family sweeps |
+| `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (re-measured 2026-10-04 session 33; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files (re-measured 2026-10-04 session 33; the +7 files/differs over session 17's 615 are this session's own new compiler sources — match count unchanged) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-04 session 31 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; 5 documented entries of **70 requests + 27 probes** (re-measured 2026-10-04 session 33; the `milkTea/debugInfo` entry now differs only in the missing Facts/Bindings sections — Header/Tokens/AST/Parse Errors/Diagnostics are byte-equal) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | **canonical (warm) set: 10 differ** (2026-10-04 session 31, `--cap 200`: the 4 documented completion/highlight + 2 builtin-hover rows + **4 new references warm-coverage rows** — Track 7's canonical-audit residue).  Non-canonical runs read 4–5 with ±drift; two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
-| LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-04) | stay green | `tools/lsp_recovery_probe.rb --check` |
+| LSP project audit | **canonical (warm) set: 10 differ** (2026-10-04 session 31, `--cap 200`: the 4 documented completion/highlight + 2 builtin-hover rows + **4 new references warm-coverage rows** — Track 7's canonical-audit residue).  Non-canonical runs read 4–5 with ±drift (session 33's gate read **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
+| LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-04 session 33) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
-| LSP valgrind | 0 errors over the 68+27 harness drive (2026-10-04 session 31; 7,817,709 B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
+| LSP valgrind | 0 errors over the harness drive (2026-10-04 session 33; ~7.8M B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | **9.7 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 15.2; `--cycles 100`; the gate's `--cycles 200` reads ~10.8) — the residual is the per-parse leak convention, no ceiling until it is owned | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
-| formatter | 708/708 all three modes byte-identical (re-measured 2026-10-04 session 31; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
+| formatter | 712/712 all three modes byte-identical (re-measured 2026-10-04 session 33; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 496 agree / 117 differ (613 files; re-measured 2026-10-04 session 33 — the sweep lints the compiler's own sources, so this session's three new files moved it from 493/117 of 610; the deltas are the documented ranked rules) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | process-backend request parity (re-measured 2026-10-03; terminal event order and build-on-launch differ); lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
 | imported-bindings | 3 verified / 25 changed (re-measured 2026-10-03; cosmetic emitter gaps) | 28/28 or each justified | `mtc imported-bindings --all --check` |
@@ -5656,23 +5678,22 @@ rows byte-identical); and the DAP items in `dap-design.md` §10.
    `lldb_dap_backend.rb` is the 152-line reference and the extension's default
    backend is `lldb-dap`, (c) emit `<output>.mtdbg.json` from `mtc build` (the
    map only has to match *our* symbol names), (d) pause diagnostics + `modules`.
-5. **Feature-audit leftovers** (measured 2026-09-27 with the audit table in this
-   section's commits; all small): `callHierarchy prepare` returns null where the
-   host resolves the callee; `linkedEditingRange` returns a result where the
-   host returns null; `typeDefinition` on a *function* returns null where the
-   host jumps to its declaration; `inlayHint` emits more argument-name hints
-   than the host (mostly correct — `rl.init_window(width, …)` — with one
-   mislabelled `text:` where the method's parameter is `name:`, i.e. the callee
-   resolved to the wrong `create`); `executeCommand` answers MethodNotFound
-   where the host answers null (deliberate: the spec allows it, and we advertise
-   only `mtc.restartServer`).
+5. **Feature-audit leftovers — CLOSED (session 28, 2026-10-03)**: each item was
+   verified against the host first and then fixed or classified —
+   `prepareCallHierarchy` answers the host's always-kind-12 null-receiver item
+   (null on an imported callee *on both servers*), `linkedEditingRange` applies
+   the host's local-binding gate (null for types/functions and empty ranges),
+   `typeDefinition` on a function already resolved, `inlayHint` gained the
+   receiver-aware callee resolution (the mislabelled `text:` case is gone), and
+   `executeCommand` now answers `null` for an unknown command.  Records: §0k's
+   "Stage-14 leftovers" (session 28); the harness locks each with an entry.
 6. **`dead-assignment` policy** — **CLOSED (session 9)**: the rule now matches the
    host (`linter/cfg.mt` skips declaration-origin writes and never-read bindings,
    and the warning carries the host's message and `warning` severity); the one
    structural difference left is that the liveness walk keys on *names* where the
    host keys on binding ids, which can only show in shadowed-name cases.
-7. **Compiler-side work** is §0j (`lower` dump parity 39/613, CLI message parity,
-   `deps`/`--bundle`/`--jobs`/Wasm); the example and `test/mt` build failures it
+7. **Compiler-side work** is §0j (`lower` dump parity 39/622 of 712 files,
+   CLI message parity, `deps`/`--bundle`/`--jobs`/Wasm); the example and `test/mt` build failures it
    used to list are fixed (2026-09-27).
    Note for that work: `f"{{"` is **not** an escape in Milk Tea — both compilers
    emit two literal braces (the DAP's `exited` body relied on Ruby habits and
