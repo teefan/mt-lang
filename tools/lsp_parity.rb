@@ -207,6 +207,17 @@ INLAY_SOURCE = <<~MT
       return total
 MT
 
+# A reserved-primitive-name binding with uses: the code action renames the
+# declaration and every site in one action.
+RESERVED_SOURCE = <<~MT
+  function int(a: int, b: int) -> int:
+      return a + b
+
+  function main() -> int:
+      let x = int(1, 2)
+      return x
+MT
+
 def path_to_uri(path)
   "file://#{path.split("/").map { |seg| CGI.escape(seg).gsub("+", "%20") }.join("/")}"
 end
@@ -225,6 +236,7 @@ def build_workspace(dir)
     helper: File.join(dir, "helper.mt"),
     user: File.join(dir, "user.mt"),
     inlay: File.join(dir, "inlay.mt"),
+    reserved: File.join(dir, "reserved.mt"),
   }
   File.write(paths[:alpha], ALPHA_SOURCE)
   File.write(paths[:beta], BETA_SOURCE)
@@ -235,6 +247,7 @@ def build_workspace(dir)
   File.write(paths[:helper], HELPER_SOURCE)
   File.write(paths[:user], USER_SOURCE)
   File.write(paths[:inlay], INLAY_SOURCE)
+  File.write(paths[:reserved], RESERVED_SOURCE)
   File.write(File.join(dir, "assets", "file.txt"), "hello\n")
   paths
 end
@@ -572,6 +585,18 @@ def corpus(dir, paths)
   requests["linkedEditingRange/type"] = ["textDocument/linkedEditingRange", at.call("struct Sample", within: nil, off: 7)]
   requests["linkedEditingRange/function"] = ["textDocument/linkedEditingRange", at.call("compute(3, 4)")]
   requests["executeCommand/unknown"] = ["workspace/executeCommand", { "command" => "mtc.noSuchCommand", "arguments" => [] }]
+  # A `reserved-primitive-name` diagnostic: the action renames the binding at
+  # its declaration and every use.
+  requests["codeAction/reserved-name"] = ["textDocument/codeAction", {
+    "textDocument" => { "uri" => path_to_uri(paths[:reserved]) },
+    "range" => { "start" => { "line" => 0, "character" => 0 }, "end" => { "line" => 0, "character" => 0 } },
+    "context" => { "diagnostics" => [
+      { "range" => { "start" => { "line" => 0, "character" => 9 }, "end" => { "line" => 0, "character" => 12 } },
+        "severity" => 2, "source" => "milk-tea", "code" => "reserved-primitive-name",
+        "message" => "function 'int' uses reserved built-in type name 'int'; rename it before this becomes a hard error",
+        "data" => { "stage" => "lint" } },
+    ] }
+  }]
   requests["prepareTypeHierarchy"] = ["textDocument/prepareTypeHierarchy", at.call("struct Circle", within: nil)]
   requests["diagnostic/pull"] = ["textDocument/diagnostic", tc]
   requests["workspace/diagnostic"] = ["workspace/diagnostic", {}]
@@ -603,6 +628,9 @@ def run_corpus(client, dir, paths)
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:generics]), "languageId" => "milk-tea", "version" => 1, "text" => GENERICS_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:helper]), "languageId" => "milk-tea", "version" => 1, "text" => HELPER_SOURCE } })
   client.notify("textDocument/didOpen", { "textDocument" => { "uri" => path_to_uri(paths[:inlay]), "languageId" => "milk-tea", "version" => 1, "text" => INLAY_SOURCE } })
+  # `reserved.mt` stays closed: its reserved-name *sema* error differs between
+  # the engines (Track 2), and only the open documents feed
+  # `workspace/diagnostic`.  The code-action request reads it from disk.
   # `user.mt` stays closed on purpose: the host's pull diagnostics report
   # `unknown callable helper_sum` for the (resolvable) import, while its
   # reference facts resolve it, so opening it would diff the workspace

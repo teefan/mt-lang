@@ -37,6 +37,8 @@ import std.map as map_mod
 import std.hash
 
 import mtc.parser.ast as ast
+import mtc.parser.parser as parser
+import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.semantic.control_flow.builder as flow_builder
@@ -180,6 +182,14 @@ public function lint_source_with(
     defer: ptr_state.release()
     lint_ptr_state = ptr_of(ptr_state)
 
+    # The reserved-primitive-name rename fixes the seed and the declaration
+    # walk collect (the host's `@reserved_primitive_name_fixes`).  The collector
+    # API moves them out through `lint_reserved_out` instead of releasing them.
+    var reserved_fixes = vec.Vec[ReservedNameFix].create()
+    var reserved_module_fix = map_mod.Map[str, ptr_uint].create()
+    lint_reserved_fixes = ptr_of(reserved_fixes)
+    lint_reserved_module_fix = ptr_of(reserved_module_fix)
+
     # unused-import, before the declaration walk (the host's
     # `check_unused_imports`).
     var unused_imports = vec.Vec[scope_tracking.ScopeWarning].create()
@@ -199,6 +209,16 @@ public function lint_source_with(
     lint_ptr_state = null
     lint_cast_ctx = null
     lint_source_lines = null
+    lint_reserved_fixes = null
+    lint_reserved_module_fix = null
+    reserved_module_fix.release()
+    if lint_reserved_out != null:
+        # The collector takes the fixes (the caller releases them).
+        unsafe:
+            read(lint_reserved_out) = reserved_fixes
+        lint_reserved_out = null
+    else:
+        release_reserved_name_fixes(ref_of(reserved_fixes))
 
     # Whole-file passes run after the walk, matching Ruby's emission order.
     lint_doc_tags(file.declarations, source, path, ref_of(warnings))
@@ -2308,6 +2328,13 @@ function scope_declare_local(name: str, line: ptr_uint, column: ptr_uint, is_var
         return
     if name.len == 0 or name.starts_with("_"):
         return
+    reserved_resolve_conflicts(name)
+    var reserved_fix: ptr_uint = 0
+    if is_reserved_type_name(name):
+        var visible = map_mod.Map[str, bool].create()
+        defer: visible.release()
+        reserved_visible_names(ref_of(visible))
+        reserved_fix = reserved_register(path, line, column, name, "local", ref_of(visible), warnings)
     let ctx = unsafe: ref_of(read(c))
     if scope_tracking.ctx_shadows_outer(ctx, name):
         var buf = string.String.create()
@@ -2315,9 +2342,7 @@ function scope_declare_local(name: str, line: ptr_uint, column: ptr_uint, is_var
         buf.append(name)
         buf.append("' shadows a binding from an outer scope")
         push_warning_at(warnings, path, line, column, name.len, "shadow", buf.as_str(), "warning")
-    if is_reserved_type_name(name):
-        reserved_name_warn(path, line, name, "local", warnings)
-    scope_tracking.ctx_declare_local(ctx, name, line, column, is_var)
+    scope_tracking.ctx_declare_local(ctx, name, line, column, is_var, reserved_fix)
 
 
 function scope_declare_param(name: str, line: ptr_uint, column: ptr_uint, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
@@ -2325,20 +2350,41 @@ function scope_declare_param(name: str, line: ptr_uint, column: ptr_uint, path: 
         return
     if name.len == 0 or name.starts_with("_"):
         return
+    reserved_resolve_conflicts(name)
+    var reserved_fix: ptr_uint = 0
     if is_reserved_type_name(name):
-        reserved_name_warn(path, line, name, "parameter", warnings)
+        var visible = map_mod.Map[str, bool].create()
+        defer: visible.release()
+        reserved_visible_names(ref_of(visible))
+        reserved_fix = reserved_register(path, line, column, name, "parameter", ref_of(visible), warnings)
     let ctx = unsafe: ref_of(read(c))
-    scope_tracking.ctx_declare_param(ctx, name, line, column)
+    scope_tracking.ctx_declare_param(ctx, name, line, column, reserved_fix)
 
 
-function scope_mark_used(name: str) -> void:
+## Mark `name` used at (line, column).  When no local binding matches, a
+## module-level reserved-name binding may claim the use (the host's
+## `mark_used` falls through to `@module_bindings`).
+function scope_mark_used_at(name: str, line: ptr_uint, column: ptr_uint) -> void:
     let c = lint_scope_ctx else:
         return
     let ctx = unsafe: ref_of(read(c))
-    scope_tracking.ctx_mark_used(ctx, name)
+    let resolved = scope_tracking.ctx_mark_used(ctx, name)
+    if resolved == 0 and line > 0 and column > 0:
+        reserved_record_module_use(name, line, column)
+    else if resolved > 1:
+        reserved_record_use(resolved - 2, line, column)
     let p = lint_ptr_state else:
         return
     unsafe: read(p).record_use(name, lint_unsafe_depth)
+
+
+## Record a use of a module-level binding that no local shadows.
+function reserved_record_module_use(name: str, line: ptr_uint, column: ptr_uint) -> void:
+    let module_fix = lint_reserved_module_fix else:
+        return
+    let index_ptr = unsafe: read(module_fix).get(name) else:
+        return
+    reserved_record_use(unsafe: read(index_ptr), line, column)
 
 
 function scope_mark_mutated(target: ptr[ast.Expr]) -> void:
@@ -2568,7 +2614,7 @@ function visit_decl(decl: ptr[ast.Decl], path: str, warnings: ref[vec.Vec[Warnin
                 while j < ex.methods.len:
                     let m = read(ex.methods.data + j)
                     if is_reserved_type_name(m.name):
-                        reserved_name_warn(path, m.line, m.name, "function", warnings)
+                        reserved_name_warn(path, m.line, m.column, m.name, "function", warnings)
                     visit_function_decl(m.name, m.type_params, m.method_params, m.return_type, m.body, m.line, generic_block, path, warnings)
                     j += 1
             ast.Decl.decl_const as c:
@@ -2626,7 +2672,7 @@ function visit_stmt(stmt: ptr[ast.Stmt], path: str, warnings: ref[vec.Vec[Warnin
                 if not asgn.operator.equal("="):
                     match read(asgn.target):
                         ast.Expr.expr_identifier as id:
-                            scope_mark_used(id.name)
+                            scope_mark_used_at(id.name, id.line, id.column)
                         _:
                             pass
                 visit_assignment_target(asgn.target, path, warnings)
@@ -2749,7 +2795,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
     unsafe:
         match read(expr):
             ast.Expr.expr_identifier as id:
-                scope_mark_used(id.name)
+                scope_mark_used_at(id.name, id.line, id.column)
             ast.Expr.expr_binary_op as b:
                 visit_expr(b.left, path, warnings)
                 visit_expr(b.right, path, warnings)
@@ -2785,7 +2831,7 @@ function visit_expr(expr: ptr[ast.Expr], path: str, warnings: ref[vec.Vec[Warnin
                 scope_visit_typeref(al.target_type)
             ast.Expr.expr_offsetof as off:
                 scope_visit_typeref(off.target_type)
-                scope_mark_used(off.field)
+                scope_mark_used_at(off.field, 0, 0)
             ast.Expr.expr_if as iff:
                 visit_expr(iff.condition, path, warnings)
                 visit_expr(iff.then_expr, path, warnings)
@@ -6012,50 +6058,362 @@ function is_reserved_type_name(name: str) -> bool:
     return false
 
 
-## The host's `seed_module_bindings` warning half: a module-level declaration
-## (function, constant, module variable, event, extern/foreign function) whose
-## name is a reserved value type is reported before the declaration walk.
+## The host's `RESERVED_IMPORT_ALIAS_NAMES`: an import alias only collides with
+## the prelude type names, never with the primitives.
+function is_reserved_import_alias_name(name: str) -> bool:
+    return name.equal("Option") or name.equal("Result")
+
+
+## The host's `seed_module_bindings` warning half plus its rename fixes: a
+## module-level declaration (function, constant, module variable, event,
+## extern/foreign function) or import alias whose name is a reserved value type
+## is reported before the declaration walk, and registers a rename fix whose
+## sites are the declaration and every identifier use (the host's
+## `@reserved_primitive_name_fixes`).
 function lint_reserved_module_names(file: ast.SourceFile, path: str, warnings: ref[vec.Vec[Warning]]) -> void:
+    # The host seeds the import aliases first, then the declarations.
+    var import_names = map_mod.Map[str, bool].create()
+    defer: import_names.release()
+    reserved_collect_import_names(file, ref_of(import_names))
+
+    var ii: ptr_uint = 0
+    while ii < file.imports.len:
+        unsafe:
+            match read(file.imports.data + ii):
+                ast.Decl.decl_import as imp:
+                    let local_name = reserved_import_local_name(imp.path, imp.alias_name)
+                    if local_name.len > 0 and not local_name.starts_with("_"):
+                        # The host's `RESERVED_IMPORT_ALIAS_NAMES`: only
+                        # `Option`/`Result`, not the primitive type names.
+                        if is_reserved_import_alias_name(local_name):
+                            reserved_register(path, imp.line, imp.column, local_name, "import alias", ref_of(import_names), warnings)
+                _:
+                    pass
+        ii += 1
+
+    var declared_names = map_mod.Map[str, bool].create()
+    defer: declared_names.release()
+    reserved_collect_declared_names(file, ref_of(declared_names))
+
     var i: ptr_uint = 0
     while i < file.declarations.len:
         unsafe:
             match read(file.declarations.data + i):
                 ast.Decl.decl_function as fun:
                     if is_reserved_type_name(fun.name):
-                        reserved_name_warn(path, fun.line, fun.name, "function", warnings)
+                        reserved_register(path, fun.line, fun.column, fun.name, "function", ref_of(declared_names), warnings)
                 ast.Decl.decl_const as c:
                     if is_reserved_type_name(c.name):
-                        reserved_name_warn(path, c.line, c.name, "constant", warnings)
+                        reserved_register(path, c.line, c.column, c.name, "constant", ref_of(declared_names), warnings)
                 ast.Decl.decl_var as v:
                     if is_reserved_type_name(v.name):
-                        reserved_name_warn(path, v.line, v.name, "module variable", warnings)
+                        reserved_register(path, v.line, v.column, v.name, "module variable", ref_of(declared_names), warnings)
                 ast.Decl.decl_event as ev:
                     if is_reserved_type_name(ev.name):
-                        reserved_name_warn(path, ev.line, ev.name, "event", warnings)
+                        reserved_register(path, ev.line, ev.column, ev.name, "event", ref_of(declared_names), warnings)
                 ast.Decl.decl_extern_function as ef:
                     if is_reserved_type_name(ef.name):
-                        reserved_name_warn(path, ef.line, ef.name, "function", warnings)
+                        reserved_register(path, ef.line, reserved_name_column(ef.line, ef.name), ef.name, "function", ref_of(declared_names), warnings)
                 ast.Decl.decl_foreign_function as ff:
                     if is_reserved_type_name(ff.name):
-                        reserved_name_warn(path, ff.line, ff.name, "function", warnings)
+                        reserved_register(path, ff.line, reserved_name_column(ff.line, ff.name), ff.name, "function", ref_of(declared_names), warnings)
                 _:
                     pass
         i += 1
 
 
-## The host's `warn_reserved_primitive_type_params`, at the head of a function
-## inside its scope.
+## One reserved-name site: the 1-based position of the name and its length.
+public struct ReservedNameSite:
+    line: ptr_uint
+    column: ptr_uint
+    length: ptr_uint
+
+
+## One binding's rename fix: every site that spells its name, and the
+## replacement the sites become (the host's `ReservedPrimitiveNameFix`).
+public struct ReservedNameFix:
+    kind_label: str
+    original_name: str
+    replacement_base_name: str
+    replacement_name: str
+    sites: vec.Vec[ReservedNameSite]
+
+
+## The fixes collected by the lint pass in flight (the host's
+## `@reserved_primitive_name_fixes`), the module-level name → fix index
+## (1-based; 0 = none), and the out-vector `collect_reserved_primitive_name_fixes`
+## hands the fixes to.
+var lint_reserved_fixes: ptr[vec.Vec[ReservedNameFix]]? = null
+var lint_reserved_module_fix: ptr[map_mod.Map[str, ptr_uint]]? = null
+var lint_reserved_out: ptr[vec.Vec[ReservedNameFix]]? = null
+
+
+## Release the fixes and their site vectors.
+public function release_reserved_name_fixes(fixes: ref[vec.Vec[ReservedNameFix]]) -> void:
+    var i: ptr_uint = 0
+    while i < fixes.len():
+        let fp = fixes.get(i) else:
+            break
+        unsafe:
+            var entry = read(fp)
+            entry.sites.release()
+        i += 1
+    fixes.release()
+
+
+## The host's `suggested_reserved_primitive_name`.
+function reserved_suggested_name(name: str, kind_label: str) -> str:
+    var buf = string.String.create()
+    buf.append(name)
+    if kind_label.equal("function"):
+        buf.append("_fn")
+    else if kind_label.equal("import alias"):
+        buf.append("_module")
+    else:
+        buf.append("_value")
+    return buf.as_str()
+
+
+## The host's `next_available_reserved_primitive_name`: append `_2`, `_3`…
+## until the candidate is not among the names in play.
+function reserved_next_available(base: str, unavailable: ref[map_mod.Map[str, bool]]) -> str:
+    if not unsafe: read(unavailable).contains(base):
+        return base
+    var suffix: ptr_uint = 2
+    while true:
+        var buf = string.String.create()
+        buf.append(base)
+        buf.append("_")
+        buf.append_format(f"#{suffix}")
+        let candidate = buf.as_str()
+        if not unsafe: read(unavailable).contains(candidate):
+            return candidate
+        buf.release()
+        suffix += 1
+
+
+## The local name an import binds: its alias, else its path's last segment.
+function reserved_import_local_name(path: ast.QualifiedName, alias_name: Option[str]) -> str:
+    match alias_name:
+        Option.some as alias:
+            return alias.value
+        Option.none:
+            pass
+    if path.parts.len == 0:
+        return ""
+    return unsafe: read(path.parts.data + path.parts.len - 1)
+
+
+## The 1-based column of `name` as a whole word on 1-based line `line`, or 0
+## when the line is unavailable or does not spell the name.  Extern and foreign
+## declarations carry no column of their own.
+function reserved_name_column(line: ptr_uint, name: str) -> ptr_uint:
+    let lines = lint_source_lines else:
+        return 0
+    if line == 0 or line > unsafe: read(lines).len():
+        return 0
+    let lp = unsafe: read(lines).get(line - 1) else:
+        return 0
+    let text = unsafe: read(lp)
+    if name.len == 0 or name.len > text.len:
+        return 0
+    var i: ptr_uint = 0
+    while i + name.len <= text.len:
+        if text.slice(i, name.len).equal(name):
+            let before_ok = i == 0 or not is_word_byte(text.byte_at(i - 1))
+            let after = i + name.len
+            let after_ok = after >= text.len or not is_word_byte(text.byte_at(after))
+            if before_ok and after_ok:
+                return i + 1
+        i += 1
+    return 0
+
+
+## Every module-level declaration name in the file (the host's
+## `declared_callable_names`).
+function reserved_collect_declared_names(file: ast.SourceFile, names: ref[map_mod.Map[str, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.declarations.len:
+        unsafe:
+            match read(file.declarations.data + i):
+                ast.Decl.decl_function as fun:
+                    names.set(fun.name, true)
+                ast.Decl.decl_const as c:
+                    names.set(c.name, true)
+                ast.Decl.decl_var as v:
+                    names.set(v.name, true)
+                ast.Decl.decl_event as ev:
+                    names.set(ev.name, true)
+                ast.Decl.decl_extern_function as ef:
+                    names.set(ef.name, true)
+                ast.Decl.decl_foreign_function as ff:
+                    names.set(ff.name, true)
+                _:
+                    pass
+        i += 1
+
+
+## Every import's local name.
+function reserved_collect_import_names(file: ast.SourceFile, names: ref[map_mod.Map[str, bool]]) -> void:
+    var i: ptr_uint = 0
+    while i < file.imports.len:
+        unsafe:
+            match read(file.imports.data + i):
+                ast.Decl.decl_import as imp:
+                    let name = reserved_import_local_name(imp.path, imp.alias_name)
+                    if name.len > 0:
+                        names.set(name, true)
+                _:
+                    pass
+        i += 1
+
+
+## The host's `visible_binding_names`: every module binding and in-scope local
+## (their names and the replacements the fixes would rename them to).
+function reserved_visible_names(visible: ref[map_mod.Map[str, bool]]) -> void:
+    reserved_visible_fix_names(visible)
+    reserved_visible_scope_names(visible)
+
+
+function reserved_visible_fix_names(visible: ref[map_mod.Map[str, bool]]) -> void:
+    let fixes_ptr = lint_reserved_fixes else:
+        return
+    var fi: ptr_uint = 0
+    while fi < unsafe: read(fixes_ptr).len():
+        let fp = unsafe: read(fixes_ptr).get(fi) else:
+            break
+        let fix = unsafe: read(fp)
+        visible.set(fix.original_name, true)
+        visible.set(fix.replacement_name, true)
+        fi += 1
+
+
+function reserved_visible_scope_names(visible: ref[map_mod.Map[str, bool]]) -> void:
+    let c = lint_scope_ctx else:
+        return
+    let ctx = unsafe: ref_of(read(c))
+    var si: ptr_uint = 0
+    while si < unsafe: read(c).scope_count:
+        let start = scope_tracking.ctx_scope_start(ctx, si)
+        let count = scope_tracking.ctx_scope_count(ctx, si)
+        var ei: ptr_uint = 0
+        while ei < count:
+            let binding = scope_tracking.ctx_entry(ctx, start, ei)
+            if binding.name.len > 0:
+                visible.set(binding.name, true)
+            ei += 1
+        si += 1
+
+
+## The host's `resolve_reserved_primitive_name_conflicts!`: when a new
+## declaration takes the name another fix would rename to, that fix's
+## replacement is bumped past the names in play.
+function reserved_resolve_conflicts(declared: str) -> void:
+    let fixes_ptr = lint_reserved_fixes else:
+        return
+    var visible = map_mod.Map[str, bool].create()
+    defer: visible.release()
+    reserved_visible_names(ref_of(visible))
+
+    var i: ptr_uint = 0
+    while i < unsafe: read(fixes_ptr).len():
+        let fp = unsafe: read(fixes_ptr).get(i) else:
+            break
+        let fix = unsafe: read(fp)
+        if fix.replacement_name.equal(declared):
+            let bumped = reserved_next_available(fix.replacement_base_name, ref_of(visible))
+            unsafe:
+                read(fp).replacement_name = bumped
+            visible.set(bumped, true)
+        i += 1
+
+
+## Register a reserved-name warning and — for a binding a rename can reach —
+## the fix itself (the host's `register_reserved_primitive_name_fix`).
+## Returns 1 + the fix's index, or 0 when no fix was registered.
+function reserved_register(
+    path: str,
+    line: ptr_uint,
+    column: ptr_uint,
+    name: str,
+    kind_label: str,
+    unavailable: ref[map_mod.Map[str, bool]],
+    warnings: ref[vec.Vec[Warning]],
+) -> ptr_uint:
+    reserved_name_warn(path, line, column, name, kind_label, warnings)
+    if line == 0 or column == 0:
+        return 0
+    let fixes_ptr = lint_reserved_fixes else:
+        return 0
+    let base = reserved_suggested_name(name, kind_label)
+    let replacement = reserved_next_available(base, unavailable)
+
+    var sites = vec.Vec[ReservedNameSite].create()
+    sites.push(ReservedNameSite(line = line, column = column, length = name.len))
+    let index = unsafe: read(fixes_ptr).len()
+    unsafe:
+        read(fixes_ptr).push(ReservedNameFix(
+            kind_label = kind_label,
+            original_name = name,
+            replacement_base_name = base,
+            replacement_name = replacement,
+            sites = sites,
+        ))
+    # Module-level bindings answer identifier uses no local shadows.
+    if kind_label.equal("function") or kind_label.equal("constant") or kind_label.equal("module variable") or kind_label.equal("event") or kind_label.equal("import alias"):
+        let module_fix = lint_reserved_module_fix else:
+            return index + 1
+        unsafe: read(module_fix).set(name, index)
+    return index + 1
+
+
+## Record the identifier use at (line, column) against the fix at `index`.
+function reserved_record_use(index: ptr_uint, line: ptr_uint, column: ptr_uint) -> void:
+    if line == 0 or column == 0:
+        return
+    let fixes_ptr = lint_reserved_fixes else:
+        return
+    if index >= unsafe: read(fixes_ptr).len():
+        return
+    let fp = unsafe: read(fixes_ptr).get(index) else:
+        return
+    let fix = unsafe: read(fp)
+    unsafe:
+        read(fp).sites.push(ReservedNameSite(line = line, column = column, length = fix.original_name.len))
+
+
+## The fixes the most recent lint pass collected.
+public function reserved_name_fixes() -> vec.Vec[ReservedNameFix]:
+    let fixes_ptr = lint_reserved_fixes else:
+        return vec.Vec[ReservedNameFix].create()
+    return unsafe: read(fixes_ptr)
+
+
+## Collect the reserved-primitive-name rename fixes for `source` — the host's
+## `collect_reserved_primitive_name_fixes`.  The caller releases the result
+## with `release_reserved_name_fixes`.
+public function collect_reserved_primitive_name_fixes(source: str, path: str, options: LintOptions) -> vec.Vec[ReservedNameFix]:
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    let file = parser.parse_source(source, ref_of(parse_diags))
+    var collected = vec.Vec[ReservedNameFix].create()
+    lint_reserved_out = ptr_of(collected)
+    var warnings = lint_source_with(file, source, path, options)
+    warnings.release()
+    return collected
+
+
 function reserved_type_params_warn(type_params: span[ast.TypeParam], path: str, warnings: ref[vec.Vec[Warning]]) -> void:
     var i: ptr_uint = 0
     while i < type_params.len:
         unsafe:
             let tp = read(type_params.data + i)
             if is_reserved_type_name(tp.name):
-                reserved_name_warn(path, tp.line, tp.name, "type parameter", warnings)
+                reserved_name_warn(path, tp.line, tp.column, tp.name, "type parameter", warnings)
         i += 1
 
 
-function reserved_name_warn(path: str, line: ptr_uint, name: str, kind_label: str, warnings: ref[vec.Vec[Warning]]) -> void:
+function reserved_name_warn(path: str, line: ptr_uint, column: ptr_uint, name: str, kind_label: str, warnings: ref[vec.Vec[Warning]]) -> void:
     var buf = string.String.create()
     buf.append(kind_label)
     buf.append(" '")
@@ -6063,7 +6421,7 @@ function reserved_name_warn(path: str, line: ptr_uint, name: str, kind_label: st
     buf.append("' uses reserved built-in type name '")
     buf.append(name)
     buf.append("'; rename it before this becomes a hard error")
-    push_warning(warnings, path, line, "reserved-primitive-name", buf.as_str(), "warning")
+    push_warning_at(warnings, path, line, column, name.len, "reserved-primitive-name", buf.as_str(), "warning")
 
 
 # =============================================================================

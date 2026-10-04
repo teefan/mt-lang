@@ -215,7 +215,9 @@ function append_fix_for_diagnostic(
 
             append_cast_expression_fix(json_text, emitted, uri, source, diag, info, message)
 
-            if info.code.equal("reserved-primitive-name") or is_engine_quickfix_code(info.code):
+            if info.code.equal("reserved-primitive-name"):
+                append_reserved_name_fix(json_text, emitted, uri, source, diag, info)
+            else if is_engine_quickfix_code(info.code):
                 append_engine_fix(json_text, emitted, uri, source, diag, info, message)
             else if info.code.equal("line-too-long"):
                 append_line_wrap_fix(json_text, emitted, uri, source, diag, info)
@@ -335,7 +337,155 @@ function append_diag_echo(json_text: ref[string.String], diag: json.Value) -> vo
     json_text.append("]")
 
 
-## `Cast expression to T` for a `cannot assign … expected T` diagnostic — the
+## `reserved-primitive-name` → `Rename 'x' to 'x_value'`, rewriting every site
+## the binding is spelled at — the host's multi-site reserved-name action
+## (`code_actions.rb:70-97`).
+function append_reserved_name_fix(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    uri: str,
+    source: str,
+    diag: json.Value,
+    info: DiagnosticInfo,
+) -> void:
+    var file_path = uri_ops.file_uri_to_path(uri) else:
+        return
+    defer: file_path.release()
+    var options = linter_mod.default_lint_options()
+    var fixes = linter_mod.collect_reserved_primitive_name_fixes(source, file_path.as_str(), options)
+    defer: linter_mod.release_reserved_name_fixes(ref_of(fixes))
+
+    var fi: ptr_uint = 0
+    while fi < fixes.len():
+        let fp = fixes.get(fi) else:
+            break
+        let fix = unsafe: read(fp)
+        fi += 1
+        if fix.sites.len() == 0:
+            continue
+        let first_ptr = fix.sites.get(0) else:
+            continue
+        let first = unsafe: read(first_ptr)
+        # The host matches the fix by its declaration site.
+        if first.line != info.line + 1 or first.column != info.start_char + 1:
+            continue
+
+        var title = string.String.create()
+        defer: title.release()
+        title.append("Rename '")
+        title.append(fix.original_name)
+        title.append("' to '")
+        title.append(fix.replacement_name)
+        title.append("'")
+        emit_reserved_name_action(json_text, emitted, diag, uri, title.as_str(), fix)
+        return
+
+
+## Emit the reserved-name action: every site is an in-line replacement, ordered
+## by (line, column) like the host's `sort_by`.
+function emit_reserved_name_action(
+    json_text: ref[string.String],
+    emitted: ref[ptr_uint],
+    diag: json.Value,
+    uri: str,
+    title: str,
+    fix: linter_mod.ReservedNameFix,
+) -> void:
+    var site_lines = vec.Vec[ptr_uint].create()
+    defer: site_lines.release()
+    var site_columns = vec.Vec[ptr_uint].create()
+    defer: site_columns.release()
+    var site_lengths = vec.Vec[ptr_uint].create()
+    defer: site_lengths.release()
+
+    var si: ptr_uint = 0
+    while si < fix.sites.len():
+        let sp = fix.sites.get(si) else:
+            break
+        let site = unsafe: read(sp)
+        var seen = false
+        var check: ptr_uint = 0
+        while check < site_lines.len():
+            let l = site_lines.get(check) else:
+                break
+            let c = site_columns.get(check) else:
+                break
+            if unsafe: read(l) == site.line and unsafe: read(c) == site.column:
+                seen = true
+                break
+            check += 1
+        if not seen:
+            site_lines.push(site.line)
+            site_columns.push(site.column)
+            site_lengths.push(site.length)
+        si += 1
+
+    # Ascending by (line, column).
+    let n = site_lines.len()
+    var i: ptr_uint = 1
+    while i < n:
+        var j = i
+        while j > 0:
+            let prev_line_ptr = site_lines.get(j - 1) else:
+                break
+            let prev_column_ptr = site_columns.get(j - 1) else:
+                break
+            let cur_line_ptr = site_lines.get(j) else:
+                break
+            let cur_column_ptr = site_columns.get(j) else:
+                break
+            let prev_line = unsafe: read(prev_line_ptr)
+            let prev_column = unsafe: read(prev_column_ptr)
+            let cur_line = unsafe: read(cur_line_ptr)
+            let cur_column = unsafe: read(cur_column_ptr)
+            if prev_line < cur_line or (prev_line == cur_line and prev_column <= cur_column):
+                break
+            site_lines.swap(j - 1, j)
+            site_columns.swap(j - 1, j)
+            site_lengths.swap(j - 1, j)
+            j -= 1
+        i += 1
+
+    if unsafe: read(emitted) > 0:
+        json_text.append(",")
+    unsafe:
+        read(emitted) = read(emitted) + 1
+
+    json_text.append("{\"title\":\"")
+    proto.append_escaped(json_text, title)
+    json_text.append("\",\"kind\":\"quickFix\"")
+    append_diag_echo(json_text, diag)
+    json_text.append(",\"edit\":{\"changes\":{\"")
+    proto.append_escaped(json_text, uri)
+    json_text.append("\":[")
+
+    var k: ptr_uint = 0
+    while k < n:
+        let line_ptr = site_lines.get(k) else:
+            break
+        let column_ptr = site_columns.get(k) else:
+            break
+        let length_ptr = site_lengths.get(k) else:
+            break
+        let line = unsafe: read(line_ptr)
+        let column = unsafe: read(column_ptr)
+        let length = unsafe: read(length_ptr)
+        if k > 0:
+            json_text.append(",")
+        json_text.append("{\"range\":{\"start\":{\"line\":")
+        json_text.append_format(f"#{line - 1}")
+        json_text.append(",\"character\":")
+        json_text.append_format(f"#{column - 1}")
+        json_text.append("},\"end\":{\"line\":")
+        json_text.append_format(f"#{line - 1}")
+        json_text.append(",\"character\":")
+        json_text.append_format(f"#{(column - 1) + length}")
+        json_text.append("}},\"newText\":\"")
+        proto.append_escaped(json_text, fix.replacement_name)
+        json_text.append("\"}")
+        k += 1
+
+    json_text.append("]}}}")
 ## host's cast quickfix (`code_actions.rb:38-67`): the line's first `=` splits
 ## the assignment, a simple operand is cast bare and anything else is
 ## parenthesized.  The host prefixes the line's indent to the already indented

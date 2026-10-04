@@ -68,7 +68,7 @@ for the process backend; re-measured 2026-10-03 — request parity holds, while 
 terminal *event order* differs (`terminated`→`exited` vs `exited`→`terminated`)
 and build-on-launch is missing; the remaining gaps — build-on-launch, the
 lldb-dap bridge, the debug map — are §10 of `docs/dap-design.md`).**
-**LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **67 requests + 19 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
+**LSP: 40 modules, ~24.6k lines (2026-10-03 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `milkTea/debugInfo` remainder, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **68 requests + 19 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **LSP project audit (live counter, 2026-10-03 session 27): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 7075 entries, **4 stable differing entries + the host's first-file `documentSymbol` race**: `completion` **2** (the session-26 close read 4; the two byte-vs-character position entries are closed by the request-boundary conversion — the residue is the host's synthesized `ref` lifetime `mst@224:18` and the host giving up on a `map_error` arm binding `lb@818:17`, both documented), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward); the race entry (`docs/data_structures.mt documentSymbol`) appears only when the host's first-file facts lag (measured in the gates run).  **Every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work), `definition`/`declaration`/`typeDefinition`/`implementation`/`references` (915 each, 0), `documentSymbol` and the file-level endpoints.**
 **LSP project audit (previous live counter, 2026-10-03 session 26): 7075 entries, **6 differ = `completion` 4 + the 2 documented entries**: completion **4** (235 at the session-24 close; the residue is classified in §0k's part-3 record — the host's synthesized `ref` lifetime, the host giving up on a `map_error` arm binding, and two byte-vs-character positions inside comment lines), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward).**  Earlier live counters: session 18 read 2 differ on the then-6456-entry corpus (the entry count grew with the completion pass), session 13 read 22.
 **LSP project audit (live counter, 2026-09-29 session 13): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 6456 entries, **22 differ** (session 13 close): hover 9, documentSymbol 5, semanticTokens 5, diagnostic 2, documentHighlight 1; codeLens, workspace/symbol and definition/declaration/typeDefinition/implementation/**references 0**.  The progression is 1328 (session start) → 332 (sessions 6–9) → 269 (session 10) → 224 (session 11: hover 32 → 14) → 56 (session 12: the definition pipeline) → 37 (session 13: the cross-file definition index — Track C1 — definition/declaration 5 → 0 each, typeDefinition 4 → 0, implementation 1 → 0, hover 13 → 9) → 25 (session 13's second batch: documentHighlight 14 → 2, the host's binding node set) → 22 (session 13's third: codeLens and workspace/symbol 1 → 0 each via the host's token-pair symbol list, documentHighlight 2 → 1, and the token scanner's keyword/heredoc/type-argument rules).  The per-method counters move a few entries between runs because the host's definition index and facts caches warm up as the audit proceeds, so treat each counter as ±10 and compare *sets of differing keys* when verifying a fix.  The hover residue is the analyzer's flow-refinement family (4), stage 11c's payload/destructuring bindings (3), the `fn ` field rendering (1) and a member chain's third segment (1); documentHighlight's single survivor needs the host's carried-forward binding resolution (a label token resolving a binding that is out of scope at that line).  Hover/definition/declaration/typeDefinition are at **0 differing entries** on the probe fixtures (`tmp/probe-ws`, `probe4`–`probe6`, `fieldprobe`, `thisprobe`; `probe2` keeps its 2 deliberate answers), and so are their references; `hover-probe4` closed 6 navigation entries in this session.  Cold start (session 13, `tools/lsp_cold_start.rb`): spawn → the first `workspace/symbol` response fell from 2723.5 ms to **213.3 ms** on SimpleGame and from 2455.1 ms to **2.3 ms** on a one-file project (the index walk is the workspace root now, not every module root).  Residue classified in §0k.**
@@ -129,21 +129,23 @@ names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
 Last updated: session 28 close (2026-10-03) — Track 7's **stage-14 leftovers**,
-the **fix engine** (stage 10 + the host's validation guard) and the
-**quickfix extras** (stage 16) landed with harness locks: `prepareCallHierarchy`'s
+the **fix engine** (stage 10 + the host's validation guard), the **quickfix
+extras** (stage 16) and the **`reserved-primitive-name` multi-site rename**
+(stage 8) landed with harness locks: `prepareCallHierarchy`'s
 item shape (always kind 12, `receiver_type: null`), `linkedEditingRange`'s
 local-binding gate and empty→null, `inlayHint`'s receiver-aware callee
 resolution and inferred return hints (`-> Task[void]`), `executeCommand`'s
 unknown→null, the `typeDefinition` verification (on functions and imported
 methods already matching; on directory-form modules the self answers the
 declaration the host's path helper cannot reach — the fifth documented harness
-entry), `prefer-inline-methods --fix` plus `validated_fixed_source`, and the
+entry), `prefer-inline-methods --fix` plus `validated_fixed_source`, the
 per-diagnostic code-action branch set with byte-equal titles, the cast and
-import actions and the `diagnostics` echo.  Two extras the new fixture
-surfaced: `workspace/symbol` now walks the host's document set (glob-sorted
-walked files, then warm, then open) and the immutable-assignment sema
-message/range match the host.  The harness corpus is
-**67 requests + 19 probes**, 30/30 capability keys, 5 documented entries; the
+import actions and the `diagnostics` echo, and the reserved-name rename
+(`_fn`/`_module`/`_value`, every use site, the `_2` conflict bump).  Two extras
+the new fixture surfaced: `workspace/symbol` now walks the host's document set
+(glob-sorted walked files, then warm, then open) and the immutable-assignment
+sema message/range match the host.  The harness corpus is
+**68 requests + 19 probes**, 30/30 capability keys, 5 documented entries; the
 SimpleGame audit stays **4 stable differing entries + the first-file
 `documentSymbol` race**.  Session 27 had converted the request boundary's
 UTF-16 positions to byte offsets (completion 4 → 2).  Session 26 had taken
@@ -405,6 +407,21 @@ Also open from the analyzer track (they gate audit entries and lint rows):
   because `r.unpack[CompactHeader]()` is an editable method; the host's
   validation rejects the rewritten source, the self rewrites it.  The self's
   editable-site recording misses the specialized editable call.
+- **The `--fix` unresolved-import guard** (found in session 28, pre-existing):
+  the host's `fix_source_single_pass` refuses to fix *any* rule when an import
+  did not resolve ("facts are incomplete … leave such sources to the author");
+  the self always proceeds, so on such files it applies fixes the host
+  withholds (repro: `import alpha_mod as Option` where the module is not
+  resolvable).  The self's fix engine has `options.unresolved_import_paths`
+  but never consults it; the CLI lint path must fill it like `check` does.
+- **The analyzer's reserved-name errors** (found in session 28): the host
+  raises `function int uses reserved built-in type name int` (no linter
+  phrasing) for module-level declarations and `local int uses reserved
+  built-in type name int` for locals; the self checks only locals/params and
+  with a different message (`local int shadows a reserved type name`), and its
+  module-level functions/consts/vars/events have no sema check at all
+  (`ensure_non_reserved_value_type_name!`/`ensure_non_reserved_name!`,
+  `type_declaration.rb:322-862`, `function_binding.rb:217-227`).
 
 Records: §0k sessions 19–23; session 28.
 
@@ -655,13 +672,25 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     `lsp/semantic_tokens.mt`'s `register_resolved_import`/`build_scan_facts` read
     the alias surface from it.  Verify with the dependency-edit probe
     (edit `std/vec.mt` → a dependent's diagnostics refresh) and valgrind.
-  - **`reserved-primitive-name --fix` use-site renaming** (stage 8): a
-    declaration-token edit exists (`reserved_primitive_name_edit`: the
-    `<name>_value` rename fires once at the declaration), but the host's
-    multi-site rewrite (every identifier use + the collision resolution
-    `resolve_reserved_primitive_name_conflicts!`) is missing, as are
-    `column`/`length`/`symbol_name` on the warning; byte parity vs the host
-    `--fix` is the gate.
+  - **`reserved-primitive-name --fix` use-site renaming** (stage 8) — **DONE
+    (session 28)**: the linter now collects the host's
+    `ReservedPrimitiveNameFix` set — a fix per module-level binding
+    (function → `_fn`, import alias → `_module` via
+    `RESERVED_IMPORT_ALIAS_NAMES` = `Option`/`Result` only, everything else →
+    `_value`), per local and per parameter — with the declaration site plus
+    every identifier use, attributed through the scope walk (an identifier that
+    resolves to a local records against *that* binding, so a shadowed module
+    binding keeps only its declaration), the host's `_2`/`_3` conflict
+    resolution against the visible names, and the warning's column/length.
+    `--fix` applies every site right-to-left (`apply_reserved_name_fixes`), and
+    the LSP's quickfix is the host's multi-edit `Rename 'x' to 'y'` action,
+    matched by declaration site.  Locked by the harness's
+    `codeAction/reserved-name` entry and three `fix_engine_test.mt` cases
+    (uses, conflict, shadow).  **Residue**: the CLI `--fix` path lacks the
+    host's unresolved-import guard (`fix_source_single_pass` returns the source
+    unchanged when an import did not resolve), so on such files the self still
+    applies fixes the host withholds (Track 2); and the analyzer's own
+    reserved-name errors differ (Track 2).
   - **`prefer-inline-methods` auto-fix** (stage 10) — **DONE (session 28)**:
     `prefer_inline_methods_edit` ports the host's `prefer_inline_methods_edits`
     (the struct's last member + a blank line + the `extending` block's method
@@ -813,7 +842,7 @@ definition of done above.
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-03) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 5 documented entries of **67 requests + 19 probes** (re-measured 2026-10-03 session 28, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capability keys; 5 documented entries of **68 requests + 19 probes** (re-measured 2026-10-03 session 28, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **4 stable differ + the host's first-file `documentSymbol` race** (re-measured 2026-10-03 session 27 on 7075 entries: completion 2, hover 1, documentHighlight 1; completion 4 → 2 this session; the race appeared in the gates run and not in the standalone run) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
 | LSP recovery | 6/6 cases byte-equal | stay green | `tools/lsp_recovery_probe.rb --check` |
 | formatter | 705/705 all three modes (re-measured 2026-10-03; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
@@ -3981,10 +4010,50 @@ all 15 self-test files pass.  The `LSP fix shapes` also lost their
 `--fix`-only conversion: `apply_edit`'s insertion now splits like Ruby
 (a trailing newline terminates a line instead of adding an empty one).
 
-**Residue**: `reserved-primitive-name`'s quickfix still edits only the
-declaration (stage 8's multi-site rewrite is open); `redundant-cast`'s LSP
-edit is a single spanning edit where the host emits two in the parentheses-only
-case.
+**Residue**: `redundant-cast`'s LSP edit is a single spanning edit where the
+host emits two in the parentheses-only case.  (The reserved-name quickfix's
+single-site rewrite was closed later in the session — see the
+`reserved-primitive-name` record below.)
+
+### `reserved-primitive-name`: the multi-site rename (2026-10-03 session 28)
+
+Stage 8.  The self's fix renamed the *first* reserved word on the warning's
+line to `<name>_value` — the wrong suffix for functions (`_fn`) and import
+aliases (`_module`), no use sites, no conflict resolution, and a warning
+without a column.  The port follows the host's `reserved_names.rb`:
+
+- **Collection** (`linter.mt`): the seed pass registers a fix per import alias
+  (only `Option`/`Result` collide, `RESERVED_IMPORT_ALIAS_NAMES`) and per
+  module declaration (functions/extern/foreign → `_fn`, consts/vars/events →
+  `_value`), and the declaration walk registers locals/params (`_value`); each
+  fix carries its declaration site and the warning now carries the host's
+  column/length.  `next_available_reserved_primitive_name` computes
+  `<base>`, `<base>_2`, … against the names in play, and the conflict pass
+  re-runs on every declaration, bumping any fix that wants the newly declared
+  name.
+- **Use sites**: the identifier-expression arm records the position against the
+  binding the scope walk resolves — `ctx_mark_used` now returns the innermost
+  entry's fix index (0 = no local, 1 = local without a fix, 2 + index = with
+  one), so a local `int` shadowing a module `int` claims its own uses
+  (`return int` → `int_value`, the module's stays `int_fn`).  Module bindings
+  answer through a name → fix map when no local matched.
+- **Applying**: `--fix` applies every site right-to-left
+  (`apply_reserved_name_fixes`, deduplicated, bounds-checked through
+  `apply_edit`); the LSP action is the host's `Rename 'x' to 'y'` with one edit
+  per site, matched by declaration site (`code_actions.rb:70-97`).
+
+**Measured**: the fixtures match the host byte for byte — a function with three
+uses (`int_fn`), a const (`int_value`), an `int_fn` name collision
+(`int_fn_2`), and the shadow case; the harness's new
+`codeAction/reserved-name` entry (a closed `reserved.mt` fixture, so its sema
+error stays out of `workspace/diagnostic`) is byte-equal; the corpus is
+**68 requests + 19 probes** at 2 request-level + 3 stress documented entries,
+and the `lint --fix` sweep stays 179/180.
+
+**Found on the way (Track 2):** the CLI `--fix` path lacks the host's
+unresolved-import guard, and the analyzer's reserved-name *errors* differ (the
+host errors on module-level reserved names too, with its own message; the self
+checks only locals/params, with another message).
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

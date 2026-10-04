@@ -47,6 +47,10 @@ public struct Binding:
     binding_kind: ptr_uint
     allow_prefer_let: bool
     mutated: bool
+    ## 1 + the index of this binding's `reserved-primitive-name` fix, or 0 when
+    ## it has none (the host's `binding.fix_index`): an identifier that
+    ## resolves to this binding records a rename site.
+    reserved_fix: ptr_uint
 
 public struct ScopeEntry:
     name: str
@@ -161,30 +165,33 @@ public function ctx_entry(ctx: ref[ScopeCtx], start: ptr_uint, offset: ptr_uint)
 
 ## The host's `declare_local`: ignored names (`_`-prefixed) never enter a
 ## scope, so they draw no shadow/unused-local/prefer-let.
-public function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint, is_var: bool) -> void:
+public function ctx_declare_local(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint, is_var: bool, reserved_fix: ptr_uint) -> void:
     let c = unsafe: read(ctx)
     if c.scope_count == 0 or name.len == 0:
         return
     if name.starts_with("_"):
         return
     let allow = is_var and c.generic_function_depth == 0
-    let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_LOCAL, allow_prefer_let = allow, mutated = false)
+    let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_LOCAL, allow_prefer_let = allow, mutated = false, reserved_fix = reserved_fix)
     unsafe:
         scope_add_entry_buf(c.buf, c.scope_starts[c.scope_count - 1], c.scope_counts[c.scope_count - 1], name, bd)
     read(ctx).scope_counts[c.scope_count - 1] = c.scope_counts[c.scope_count - 1] + 1
 
 
-public function ctx_declare_param(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint) -> void:
+public function ctx_declare_param(ctx: ref[ScopeCtx], name: str, line: ptr_uint, col: ptr_uint, reserved_fix: ptr_uint) -> void:
     if name.len == 0 or name.starts_with("_"):
         return
     let c = unsafe: read(ctx)
-    let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_PARAM, allow_prefer_let = false, mutated = false)
+    let bd = Binding(name = name, line = line, column = col, used = false, binding_kind = BINDING_PARAM, allow_prefer_let = false, mutated = false, reserved_fix = reserved_fix)
     unsafe:
         scope_add_entry_buf(c.buf, c.scope_starts[c.scope_count - 1], c.scope_counts[c.scope_count - 1], name, bd)
     read(ctx).scope_counts[c.scope_count - 1] = c.scope_counts[c.scope_count - 1] + 1
 
 
-public function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> void:
+## Mark the innermost binding named `name` used and return 0 when no local
+## matches, 1 when it matches without a reserved-name fix, or 2 + the fix's
+## index when it has one.
+public function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> ptr_uint:
     let c = unsafe: read(ctx)
     var si = c.scope_count
     while si > 0:
@@ -193,9 +200,13 @@ public function ctx_mark_used(ctx: ref[ScopeCtx], name: str) -> void:
             match scope_find_entry_buf(c.buf, c.scope_starts[si], c.scope_counts[si], name):
                 Option.some as idx:
                     read(c.buf + c.scope_starts[si] + idx.value).binding.used = true
-                    return
+                    let reserved_fix = read(c.buf + c.scope_starts[si] + idx.value).binding.reserved_fix
+                    if reserved_fix == 0:
+                        return 1
+                    return reserved_fix + 1
                 Option.none:
                     pass
+    return 0
 
 
 public function visit_typeref(tr: ptr[ast.TypeRef], ctx: ref[ScopeCtx]) -> void:

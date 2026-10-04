@@ -406,3 +406,76 @@ function test_fix_prefer_inline_methods_non_adjacent_is_untouched() -> void:
                 return this.value
     SRC
     expect_fixed_select(source, source, "prefer-inline-methods")
+
+
+# =============================================================================
+#  reserved-primitive-name
+# =============================================================================
+
+@[test]
+function test_fix_reserved_name_renames_every_use() -> void:
+    let source = <<-SRC
+        function int(a: int, b: int) -> int:
+            return a + b
+
+        function main() -> int:
+            let x = int(1, 2)
+            let y = int(3, 4)
+            return x + y
+    SRC
+    let expected = <<-SRC
+        function int_fn(a: int, b: int) -> int:
+            return a + b
+
+        function main() -> int:
+            let x = int_fn(1, 2)
+            let y = int_fn(3, 4)
+            return x + y
+    SRC
+    expect_fixed_select(source, expected, "reserved-primitive-name")
+
+
+@[test]
+function test_fix_reserved_name_bumps_a_conflict() -> void:
+    let source = <<-SRC
+        function int() -> int:
+            return 1
+
+        function int_fn() -> int:
+            return 2
+
+        function main() -> int:
+            return int() + int_fn()
+    SRC
+    let expected = <<-SRC
+        function int_fn_2() -> int:
+            return 1
+
+        function int_fn() -> int:
+            return 2
+
+        function main() -> int:
+            return int_fn_2() + int_fn()
+    SRC
+    expect_fixed_select(source, expected, "reserved-primitive-name")
+
+
+@[test]
+function test_fix_reserved_name_shadowed_use_is_the_locals() -> void:
+    let source = <<-SRC
+        function int() -> int:
+            return 1
+
+        function main() -> int:
+            let int = 5
+            return int
+    SRC
+    let expected = <<-SRC
+        function int_fn() -> int:
+            return 1
+
+        function main() -> int:
+            let int_value = 5
+            return int_value
+    SRC
+    expect_fixed_select(source, expected, "reserved-primitive-name")

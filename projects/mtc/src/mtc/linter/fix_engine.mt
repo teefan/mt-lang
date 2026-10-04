@@ -182,6 +182,16 @@ function fix_rule_single_pass(
         # Never rewrite a file that does not parse.
         return string.String.from_str(source)
 
+    # `reserved-primitive-name` renames a binding at every site it is spelled —
+    # a pass of its own over the linter's collected fixes (the host's
+    # `fix_source_single_pass` reserved-name phase).
+    if code.equal("reserved-primitive-name"):
+        var reserved_fixes = linter.collect_reserved_primitive_name_fixes(source, path, options)
+        defer: linter.release_reserved_name_fixes(ref_of(reserved_fixes))
+        if reserved_fixes.len() == 0:
+            return string.String.from_str(source)
+        return apply_reserved_name_fixes(source, ref_of(reserved_fixes))
+
     # Lint the way the command did: with the analysis-backed facts, so a rule
     # that would rewrite `var v` while `v.push(1)` needs it never fires.
     # The semantic maps are keyed by expression pointer, so the analysis must
@@ -336,8 +346,6 @@ public function edits_for_warning(
         return redundant_type_annotation_edit(lines, line_index)
     if code.equal("redundant-ignored-match-binding"):
         return redundant_ignored_match_binding_edit(lines, line_index)
-    if code.equal("reserved-primitive-name"):
-        return reserved_primitive_name_edit(lines, line_index)
     if code.equal("prefer-let-else"):
         return prefer_let_else_edit(lines, line_index, true)
     if code.equal("prefer-var-else"):
@@ -1112,63 +1120,107 @@ function prefer_let_else_edit(
     ))
 
 
-## Rename a reserved-primitive-name binding.  Generates a replacement name
-## (e.g. `int_value`) and renames all occurrences at word boundaries in the
-## entire source buffer.
-function reserved_primitive_name_edit(
-    lines: ref[vec.Vec[string.String]],
-    line_index: ptr_uint,
-) -> Option[FixEdit]:
-    let text = line_text(lines, line_index)
-    # Find the reserved name word on the line.
-    let name = find_reserved_name_on_line(text)
-    if name.len == 0:
-        return Option[FixEdit].none
+## Apply every collected reserved-name fix: each site's name becomes its
+## binding's replacement, applied right-to-left so earlier columns keep their
+## positions (the host's `apply_reserved_primitive_name_fixes`).
+function apply_reserved_name_fixes(source: str, fixes: ref[vec.Vec[linter.ReservedNameFix]]) -> string.String:
+    var lines = split_lines(source)
+    defer: release_lines(ref_of(lines))
 
-    # Generate replacement: `name_value`
-    var replacement = string.String.from_str(name)
-    replacement.append("_value")
+    var site_lines = vec.Vec[ptr_uint].create()
+    defer: site_lines.release()
+    var site_columns = vec.Vec[ptr_uint].create()
+    defer: site_columns.release()
+    var site_lengths = vec.Vec[ptr_uint].create()
+    defer: site_lengths.release()
+    var site_texts = vec.Vec[str].create()
+    defer: site_texts.release()
 
-    # Find the exact position of the name on this line.
-    match find_substr(text, name):
-        Option.some as pos:
-            return Option[FixEdit].some(value = FixEdit(
-                start_line = line_index,
-                start_char = pos.value,
-                end_line = line_index,
-                end_char = pos.value + name.len,
-                new_text = replacement
-            ))
-        Option.none:
-            replacement.release()
-            return Option[FixEdit].none
+    var fi: ptr_uint = 0
+    while fi < fixes.len():
+        let fp = fixes.get(fi) else:
+            break
+        let fix = unsafe: read(fp)
+        var si: ptr_uint = 0
+        while si < fix.sites.len():
+            let sp = fix.sites.get(si) else:
+                break
+            let site = unsafe: read(sp)
+            if not reserved_site_seen(ref_of(site_lines), ref_of(site_columns), site.line, site.column):
+                site_lines.push(site.line)
+                site_columns.push(site.column)
+                site_lengths.push(site.length)
+                site_texts.push(fix.replacement_name)
+            si += 1
+        fi += 1
 
-
-## Find the first reserved type name appearing as a word on a line.
-## Returns "" if none found.
-function find_reserved_name_on_line(text: str) -> str:
-    var names: array[str, 30] = array[str, 30](
-        "bool", "byte", "short", "int", "long",
-        "ubyte", "ushort", "uint", "ulong",
-        "char", "float", "double",
-        "void", "str", "cstr",
-        "vec2", "vec3", "vec4",
-        "ivec2", "ivec3", "ivec4",
-        "mat3", "mat4", "quat",
-        "ptr", "ref", "span", "own",
-        "type", "fn"
-    )
-    var i: ptr_uint = 0
-    while i < 30:
-        let n = names[i]
-        if n.len > 0:
-            match find_word(text, n):
-                Option.some:
-                    return n
-                Option.none:
-                    pass
+    # Descending by (line, column): an insertion sort over the parallel
+    # vectors, the site counts are small.
+    let n = site_lines.len()
+    var i: ptr_uint = 1
+    while i < n:
+        var j = i
+        while j > 0:
+            let prev_line_ptr = site_lines.get(j - 1) else:
+                break
+            let prev_column_ptr = site_columns.get(j - 1) else:
+                break
+            let cur_line_ptr = site_lines.get(j) else:
+                break
+            let cur_column_ptr = site_columns.get(j) else:
+                break
+            let prev_line = unsafe: read(prev_line_ptr)
+            let prev_column = unsafe: read(prev_column_ptr)
+            let cur_line = unsafe: read(cur_line_ptr)
+            let cur_column = unsafe: read(cur_column_ptr)
+            if prev_line > cur_line or (prev_line == cur_line and prev_column >= cur_column):
+                break
+            site_lines.swap(j - 1, j)
+            site_columns.swap(j - 1, j)
+            site_lengths.swap(j - 1, j)
+            site_texts.swap(j - 1, j)
+            j -= 1
         i += 1
-    return ""
+
+    var k: ptr_uint = 0
+    while k < n:
+        let line_ptr = site_lines.get(k) else:
+            break
+        let column_ptr = site_columns.get(k) else:
+            break
+        let length_ptr = site_lengths.get(k) else:
+            break
+        let text_ptr = site_texts.get(k) else:
+            break
+        let line = unsafe: read(line_ptr)
+        let column = unsafe: read(column_ptr)
+        let length = unsafe: read(length_ptr)
+        let text = unsafe: read(text_ptr)
+        if line > 0 and column > 0:
+            apply_edit(lines = ref_of(lines), edit = FixEdit(
+                start_line = line - 1,
+                start_char = column - 1,
+                end_line = line - 1,
+                end_char = column - 1 + length,
+                new_text = string.String.from_str(text)
+            ))
+        k += 1
+
+    return join_lines(ref_of(lines))
+
+
+## True when (line, column) is already among the recorded sites.
+function reserved_site_seen(site_lines: ref[vec.Vec[ptr_uint]], site_columns: ref[vec.Vec[ptr_uint]], line: ptr_uint, column: ptr_uint) -> bool:
+    var i: ptr_uint = 0
+    while i < site_lines.len():
+        let l = site_lines.get(i) else:
+            break
+        let c = site_columns.get(i) else:
+            break
+        if unsafe: read(l) == line and unsafe: read(c) == column:
+            return true
+        i += 1
+    return false
 
 
 ## Move an `extending X:` block's methods inline into the same file's
