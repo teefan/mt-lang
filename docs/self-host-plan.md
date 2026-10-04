@@ -128,34 +128,36 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 32 close (2026-10-04) — an **LSP accuracy pass** over
-`examples/language_baseline.mt` (both servers driven side by side, results
-judged semantically) found and fixed three real defects: the qualified
-**enum/flags member** hover/definition (a stub: `Type.member` at a hardcoded
-line 1, flags members resolving to `null`) now renders the host's
-`member: Type = <value>` at the member's declaration; a **dotted member could
-lose to a same-named local** (the host resolves member accesses ahead of its
-name tables — the flags probe answered a local); and **inlay hints used a
-line-only range** where the host's check is position-exact.  The parity corpus
-gained `hover/enum-member` + `definition/enum-member` (now 70 requests + 27
-probes) and the three fixes are locked by it; probes across three files (203
-outcomes) are 0-different, the harness differing set is the 5 documented
-entries, tests 16 files / 0 failed, and the fixture sweep added nothing.
-A follow-up report — accepting completion on a value receiver inserted
-`static:create(...)`, the internal method-table key (invalid source) — was
-fixed in **both** implementations: a value receiver skips static methods
-(they belong to the type receiver) and the method-fallback's labels are bare;
-the host's own completion test gained an assertion that no `static:` key
-reaches the wire (its value-receiver assertion had passed vacuously).
-Deferred: pointing `alias.Enum.member` hovers at the imported declaration
-(the host's classifier misses it — Track 7).  Session 31 had closed Track 7's
-residue (`--timings` shapes via the shared `mtc.profile`, the linter
-`:fast`/`:full` tier with the host's `full_tier?` gating, the canonical audit
-that pins the warm-up drift, the client-behaviour probes and the §8
-differences table); session 30 the F9 readiness items (ScanFacts release, the
-index bound/stamp cache, module-cache request paths, the soak driver).
-Earlier sessions' records are in §0k; the plan files were consolidated into
-this document on 2026-10-03 (session 25); see *Provenance*.
+Last updated: session 33 close (2026-10-04) — the **`milkTea/debugInfo`
+remainder** (stage 17) landed its first half: the Header, Tokens, **AST**,
+Parse Errors and Diagnostics sections are **byte-equal to the host** on the
+harness fixture, and the self-only `Workspace` section is gone.  The histogram
+tie order is **not** `ruby_qsort` (the plan's note was wrong): with every key a
+Fixnum, `sort_by` goes through MRI's *uniform* introsort
+(`rb_uniform_intro_sort_2`, `enum.c`), ported in `debug_info.mt` after
+validating the model against MRI on 5000 random count tables (qs6 and glibc's
+`qsort_r` were built and rejected — both differ).  The AST section is a port of
+the host's generic `Data`-member renderer: per-class member tables with the
+host's labels/skip rules, compact reprs, the fn/proc/tuple/dyn nodes the self
+encodes inside `TypeRef`, wildcard arms (`id:_`), statement `when` branches as
+`MatchArm`, module `when` branches as `WhenBranch`, `Data#to_s` format-part
+reprs, and `assign_node_ids`' map sizes (126/126 on the fixture; exact across
+the fixture set).  `c_backend`'s `double_to_str` moved to a shared
+`mtc/float_text.mt` (the debug AST needs Ruby's `Float#to_s`, not C's `%g`).
+**Facts and Bindings remain** (the analyzer's type/value registration order, a
+ValueBinding/binding-id model, `binding_types`).  The harness stays at its 5
+documented entries, the audit at its 4 (the fixture sweep closed 5, added 0),
+and the gates are green: bootstrap fixed point (17 files / 618 tests / 0
+failed), `test/mt` 60/0, examples 49/49, recovery OK, valgrind 0 errors, soak
+10.8 MB/cycle.  Residue: the self's expression *literals* carry no positions,
+so the host's locations for match-arm headers and `RangeExpr` columns differ
+where the pattern/bound is a literal; one node-count difference remains on
+`examples/language_baseline.mt` (6759 vs 6760).  Before it, session 32's
+accuracy pass (qualified enum/flags members, member-before-binding order,
+exact inlay ranges) and the `static:` completion leak fix; sessions 29–31 the
+LSP readiness items and close-out.  Earlier sessions' records are in §0k; the
+plan files were consolidated into this document on 2026-10-03 (session 25);
+see *Provenance*.
 
 **Audited 2026-10-03 (session 25).**  Re-measured on this tree (sources
 unchanged since session 24): completion **235** differing entries (exact),
@@ -254,9 +256,10 @@ this file's records + ledger in the same commit as the code change.
    `type quat`; documentHighlight `lb@704:67`).  The completion class's
    *unintended* entries are now 0; session 29 closed the **per-module
    `ModuleCache`** (5.0 ms median per edit, 54.3 before) and made imported
-   modules honor open editor buffers.  The open work is the readiness residue
-   (F9/C2–C6/D2–D4), the `debugInfo` byte-parity remainder, then the optional
-   `ref`-lifetime modeling.  Recovery parity
+   modules honor open editor buffers.  The open work is the `debugInfo`
+   Facts/Bindings remainder (its first half landed in session 33), the
+   readiness residue's soak ceiling (C4), then the optional `ref`-lifetime
+   modeling.  Recovery parity
    holds, the stress corpus runs without a crash or hang, and a real VS Code
    session runs clean under valgrind.
 4. **DAP** — phase 1 (process backend; 26 commands, 15 dedicated handlers) delivered; the lldb-dap
@@ -813,16 +816,22 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     declaration site (stage 8's multi-site rewrite is the open item), and the
     analyzer produces no "did you mean" suggestions, so the `Import` action
     only fires for diagnostics a client sends.
-  - **`milkTea/debugInfo` byte-parity** (stage 17, highest-risk; partial today —
-    the matrix's 4 documented entries include its remainder).  The absorbed
-    sub-steps: section order/envelope (Header, Tokens, AST, Parse Errors, Facts,
-    Bindings, Diagnostics; drop the self-only `Workspace` section); the
-    histogram tie order (port `ruby_qsort` for that exact sort); the AST section
-    (`format_ast`/`compact_ast_repr` + the host's node-id semantics
-    (`core/ast.rb:316-356`)); the Facts section (`format_facts` shapes); the
-    Bindings section (binding-id allocation in the host's order +
-    `binding_types`, the 30-entry cap); the Diagnostics section; and the
-    harness `normalize` extension for Ruby `object_id` values.
+  - **`milkTea/debugInfo` byte-parity** (stage 17, highest-risk; **first half
+    landed in session 33**).  Done: section order/envelope (the self-only
+    `Workspace` section is gone), the **histogram tie order** (MRI's *uniform*
+    introsort — `rb_uniform_intro_sort_2`; the old "port `ruby_qsort`" note was
+    wrong, see the session-33 record), the **Diagnostics** section and the
+    **AST** section (`format_ast`/`compact_ast_repr` + the host's node-id
+    semantics (`core/ast.rb:316-356`)); all byte-equal on the harness fixture.
+    Remaining: the **Facts** section (`format_facts` shapes — needs the
+    analyzer's type/value registration order, ValueBinding/binding-id views per
+    function and its method-set grouping) and the **Bindings** section
+    (binding-id allocation in the host's order + `binding_types`, the 30-entry
+    cap), plus the harness `normalize` extension for Ruby `object_id` values.
+    Residue (session 33): the self's expression *literals* have no line/column,
+    so the host's locations for match-arm headers and `RangeExpr` columns differ
+    where the pattern/bound is a literal (a parser-wide AST change if pursued),
+    and `examples/language_baseline.mt`'s node count reads 6759 vs 6760.
   - **The linter's `:fast`/`:full` tier flag** (stage 11's first half) —
     **DONE (session 31, 2026-10-04)**: `LintOptions.lint_tier` (`LintTier.fast`/
     `full`, default `full`, so the CLI and LSP behave exactly as before) with
@@ -866,7 +875,8 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   machinery is in `imported_enum_member_result`, which computes the declaration
   and then clears it) — decide and document it, don't drift into it.
 - **The documented entries stay documented** unless their machinery is built for
-  another reason: the harness's 5 (debugInfo remainder, host parser recovery,
+  another reason: the harness's 5 (`debugInfo`'s Facts/Bindings remainder as of
+  session 33, host parser recovery,
   host hang on a malformed frame, host facts lag, and — session 28 — the host's
   directory-form module `typeDefinition` path, where the self answers the
   imported declaration the host's `module_path_for_name` cannot reach) and the
@@ -918,26 +928,26 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
 
 ## Ledger and scoreboard
 
-Newest verified numbers (session 30 close, 2026-10-04) — re-measure only the
+Newest verified numbers (session 33 close, 2026-10-04) — re-measure only the
 classes a change can move, and only when the tree moved.  Target = the
 definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (2026-10-04 session 31 — `stage2.c == stage3.c`); self-test suite 16 files / **614 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
+| bootstrap fixed point | holds (2026-10-04 session 33 — `stage2.c == stage3.c`); self-test suite 17 files / **618 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-04 session 31) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-04: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files (re-measured 2026-10-04 session 33; the +7 files/differs over session 17's 615 are this session's own new compiler sources — match count unchanged) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-04 session 31 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 5 documented entries of **70 requests + 27 probes** (re-measured 2026-10-04 session 32, `--stress` included; the 8 `c5/` probes and the session-32 `hover/enum-member` + `definition/enum-member` entries all equal) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capability keys; 5 documented entries of **70 requests + 27 probes** (re-measured 2026-10-04 session 33; the `milkTea/debugInfo` entry now differs only in the missing Facts/Bindings sections — Header/Tokens/AST/Parse Errors/Diagnostics are byte-equal) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 10 differ** (2026-10-04 session 31, `--cap 200`: the 4 documented completion/highlight + 2 builtin-hover rows + **4 new references warm-coverage rows** — Track 7's canonical-audit residue).  Non-canonical runs read 4–5 with ±drift; two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-04) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
 | LSP valgrind | 0 errors over the 68+27 harness drive (2026-10-04 session 31; 7,817,709 B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | **9.7 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 15.2; `--cycles 100`; the gate's `--cycles 200` reads ~10.8) — the residual is the per-parse leak convention, no ceiling until it is owned | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 708/708 all three modes byte-identical (re-measured 2026-10-04 session 31; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
-| lint corpus | 493 agree / 117 differ (610 files; re-measured 2026-10-04 session 31 — the sweep lints the compiler's own sources, so this session's edits moved it from 494/115; the deltas are the documented ranked rules) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 496 agree / 117 differ (613 files; re-measured 2026-10-04 session 33 — the sweep lints the compiler's own sources, so this session's three new files moved it from 493/117 of 610; the deltas are the documented ranked rules) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | process-backend request parity (re-measured 2026-10-03; terminal event order and build-on-launch differ); lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
 | imported-bindings | 3 verified / 25 changed (re-measured 2026-10-03; cosmetic emitter gaps) | 28/28 or each justified | `mtc imported-bindings --all --check` |
 
@@ -4450,6 +4460,98 @@ carries the breakage the old insertion produced (its parse error cascades
 through every request on that file) — the user's file needs that line removed
 or replaced (`node.Node.create(c"World")`).
 
+### `milkTea/debugInfo`: the histogram tie order, the Diagnostics section and the AST tree (2026-10-04 session 33)
+
+Stage 17's first half.  The host's dump has seven sections; the self rendered
+four (Header, Tokens, Parse Errors, plus a self-only `Workspace` section).
+Everything except **Facts** and **Bindings** is now byte-equal on the harness
+fixture:
+
+- **The histogram's tie order is MRI's *uniform* introsort, not `ruby_qsort`.**
+  The plan's note ("port `ruby_qsort`") was wrong: `Array#sort_by` /
+  `Hash#sort_by` build `[key, value]` pairs and sort them with `sort_by_cmp`,
+  and when every computed key is a Fixnum (`-count` is) the *uniform* path
+  `rb_uniform_intro_sort_2` (`enum.c`) runs instead — a depth-limited introsort
+  (Hoare partition around `med3_val`, insertion sort ≤ 16, heapsort after
+  `2·⌊log2 n⌋` levels, with an already-descending short-circuit).  Found by
+  building the candidates (MRI's `ruby_qsort`/qs6 from `util.c`, glibc's
+  `qsort_r`) and comparing permutations against Ruby's on the fixture and on
+  random tables: qs6 and glibc both disagree with Ruby, the uniform introsort
+  matches.  The Ruby-side transliteration was validated on **5000 random count
+  tables** before porting; `debug_info.mt`'s `histogram_intro_sort` reproduces
+  it (the one port bug found — a flipped child comparison in `heap_down` — is
+  covered by `debug_info_test.mt`'s alternating-count case).
+- **The Diagnostics section** renders the loader-backed analysis' semantic
+  diagnostics in the host's shape (`E ERROR   sema/error [Ln 42, Col 14]: …`);
+  the self-only `Workspace` section is gone.
+- **The AST section** ports the host's generic renderer (`format_ast`,
+  `compact_ast_repr`, `value_repr`, `ast_node_header`).  The host walks Ruby
+  `Data` members, so each host class has a hand-written counterpart with its
+  member order, labels and skip rules (`line`/`column`/`length`/`module_kind`/
+  `visibility`/`name` never render as members; `name` feeds the header).
+  Behaviours reproduced deliberately: `EnumDecl`/`FlagsDecl` render **no**
+  children (their `members` field shadows `Data#members`); `body` members are
+  statement arrays on the host while the self wraps them in `stmt_block` (the
+  wrapper never renders); `MethodDef`'s and `InterfaceMethodDecl`'s `kind`
+  always renders; a non-compact single child renders with no member label; a
+  compact child renders `member: repr`; `value_repr`'s 57-char `...`
+  truncation; `Data#to_s` inside format-string part reprs; the synthesized
+  `FunctionType`/`ProcType`/`TupleType`/`DynType` nodes the self encodes inside
+  `TypeRef`; tuple-element arrays; `TypeArg(<compact value>)`; wildcard match
+  arms as `pattern: id:_` with the arm's location from the pattern; statement
+  `when` branches rendered as `MatchArm` (the host parses them with
+  `parse_match_arms`) while module `when` branches are `WhenBranch`;
+  `AttributeDecl` symbol targets (`:field`); `ValueTypeParam ◆ N`; `DetachExpr`'s
+  synthetic `ExpressionStmt` body; `LocalDecl`'s nil name for destructuring;
+  `else_binding` as an Identifier.  The AST section is **byte-equal on the
+  harness fixture** (158 lines) and down to two `RangeExpr Col 0` rows on
+  `examples/language_baseline.mt`.
+- **Node counts**: `node_ids`/`node_path_ids` are the **sizes of the host's
+  maps** — the number of distinct AST objects its `assign_node_ids` traversal
+  reaches (a re-visit overwrites the same key, so the count does not double).
+  `count_ast_nodes` mirrors the traversal: blocks contribute their statements
+  (never the wrapper), nested `parallel` body arrays are not traversed, an
+  implicit enum member's synthesized value expression is not counted, and a
+  numeric type argument is an `IntegerLiteral`/`FloatLiteral` on the host while
+  the self encodes it as a position-less `TypeRef`.  The counts are exact on
+  the fixture set (main 126/126, containers 69, generics 152, inlay 78,
+  scratch 6) and read 6759 vs the host's 6760 on `language_baseline.mt` (one
+  node, not yet located; recorded as residue).
+- **`fmt.append_double` is C's `%g`**, not Ruby's `Float#to_s`, and the debug
+  AST needs the latter: `c_backend`'s `double_to_str` + helpers moved to the
+  new `mtc/float_text.mt`, shared by the backend and the debug renderer.  New
+  files also: `mtc/lsp/debug_text.mt` (Ruby inspect/truncation helpers,
+  `append_rule`) and `mtc/lsp/debug_ast.mt` (the renderer + counter).
+- **Tests**: `projects/mtc/test/debug_info_test.mt` pins the introsort
+  (the fixture table, a tie pair, an ascending-reversal case, an
+  n > 16 alternating case that exercises the partition path and the heapsort
+  fallback, and the descending short-circuit) — 17 files / **618 tests** / 0
+  failed.
+
+**Measured** (gates on the frozen tree): bootstrap fixed point holds (stage2 ==
+stage3; 17 files / 618 tests / 0 failed); `test/mt` 60/0; `cli:parity`
+unchanged; examples 49/49 same; `sexpr lower` 39 match / 622 differ / 51
+host-rejected / 0 self-rejected of 712 files (the +7 files and differs over
+session 17's 615 are this session's own new compiler sources; the match count
+is unchanged, so no file regressed); LSP harness 30/30 keys at the **5
+documented entries** (the debugInfo entry now differs only in the missing
+Facts/Bindings sections); recovery OK; the fixture sweep closed 5 entries (0
+added); audit 4 stable entries; valgrind 0 errors; Neovim smoke OK; soak
+10.8 MB/cycle (unchanged); lint corpus 613 files / 496 agree / 117 differ (the
++3 files/agrees are this session's new sources).
+
+**Residue for the second half** (the next item): the Facts section needs the
+analyzer's type/value registration order (the maps are hash-ordered) plus
+ValueBinding ids and the per-function binding views (`body_params`,
+`body_return_type`, `instances`, the AST node); the Bindings section needs the
+host's binding-id allocation order, the identifier/declaration node maps and
+`binding_types`; the harness `normalize` gains the `object_id` rule.  The
+literal-position gap (the self's `expr_integer_literal`/`expr_float_literal`/
+`expr_string_literal`/`expr_bool_literal`/`expr_null_literal`/`expr_format_string`
+have no line/column, so a match-arm header or `RangeExpr` column whose pattern
+or bound is a literal cannot match the host) is a parser-wide AST change, not
+part of this item unless pursued deliberately.
+
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 
 `owning-release-double` was anchored on the *receiver* (`heap.release_and_null(x)`
@@ -5531,10 +5633,14 @@ rows byte-identical); and the DAP items in `dap-design.md` §10.
    `SimpleGame/src/main.mt` (was 54.3), and the dependency-edit probe passes
    where the pre-change binary failed 3 checks.  See §0k's "The per-module
    `ModuleCache`" record; the next open LSP item is 2.
-2. **`milkTea/debugInfo` remainder** (1 of 55 requests; the acceptance re-scope
-   in the "Stage 8" record below still applies): the AST, Facts and Bindings
-   sections and the histogram's tie order.  The token table, header and parse
-   errors are done and byte-identical.
+2. **`milkTea/debugInfo` remainder** (1 of the harness's 5 documented entries;
+   **first half DONE, session 33**): the header, token table, parse errors,
+   **AST tree** and **Diagnostics** are byte-identical to the host, and the
+   histogram's tie order is MRI's uniform introsort.  Left: the **Facts** and
+   **Bindings** sections (the analyzer's type/value registration order,
+   ValueBinding ids, `binding_types`, the binding-id allocation order) and the
+   harness `normalize` extension for `object_id` values.  The session-33 record
+   lists the residue (literal positions, a one-node count difference).
 3. **Parser recovery parity** (row 3, narrowed by session 9): our lexer/parser
    recover (outline, tokens and sema keep working, and lex/parse errors are
    reported), and the panic-based unwinding now removes the extra sema/lint items

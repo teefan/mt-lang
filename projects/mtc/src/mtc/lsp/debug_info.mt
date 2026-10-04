@@ -1,14 +1,15 @@
 ## Debug info handler — the `milkTea/debugInfo` request.  Renders the host's
-## sections (`lib/milk_tea/tooling/debug_info_formatter.rb`):
+## sections (`lib/milk_tea/tooling/debug_info_formatter.rb`), in its order:
 ##
 ##   Header        file path and content size
 ##   Tokens        every token: lexeme, kind, location, semantic class
 ##   Parse Errors  parser diagnostics
-##   Workspace     open documents and index state (self-host addition)
+##   Diagnostics   the semantic snapshot's diagnostics
 ##
-## The host's AST / Facts / Bindings sections render Ruby object ids, binding ids
-## and Ruby AST class names; docs/self-host-plan.md §0k records what matching
-## them requires.
+## The AST / Facts / Bindings sections render Ruby object ids, binding ids and
+## Ruby AST class names; docs/self-host-plan.md §0k records what matching them
+## requires.  The histogram's tie order is MRI's `rb_uniform_intro_sort_2`
+## (see `histogram_intro_sort`).
 
 import std.fmt
 import std.json as json
@@ -18,12 +19,15 @@ import std.vec as vec
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
+import mtc.lsp.debug_ast as debug_ast
+import mtc.lsp.debug_text as debug_text
 import mtc.lsp.protocol as proto
 import mtc.lsp.semantic_tokens as semtok
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
+import mtc.semantic.analyzer as analyzer
 
 
 ## The debug dump for the document named by the request's `textDocument.uri`.
@@ -51,6 +55,12 @@ public function build_debug_text(ws: ref[workspace.Workspace], uri: str) -> stri
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: tokens.release()
 
+    # Parse before emitting: the AST section renders this parse's tree and the
+    # parse errors are its diagnostics.
+    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: parse_diags.release()
+    var file = parser.parse_source(source, ref_of(parse_diags))
+
     # The line count the host prints is `content.count("\n") + 1`; the lexer's
     # last line is the same number.
     append_header(ref_of(text), file_path.as_str(), source, last_token_line(ref_of(tokens)))
@@ -58,13 +68,16 @@ public function build_debug_text(ws: ref[workspace.Workspace], uri: str) -> stri
     var classes = semtok.semantic_class_entries(ws, file_path.as_str(), source)
     defer: classes.release()
     append_token_section(ref_of(text), source, ref_of(tokens), ref_of(classes))
-
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    let _file = parser.parse_source(source, ref_of(parse_diags))
+    debug_ast.append_ast_section(ref_of(text), file)
     append_parse_errors(ref_of(text), ref_of(parse_diags))
 
-    append_workspace_section(ref_of(text), ws)
+    # The semantic snapshot (the host's `get_tooling_snapshot`): the
+    # loader-backed analysis the other requests share.
+    let entry_ptr = workspace.analysis_entry_for(ws, file_path.as_str()) else:
+        text.append("\n\n── Diagnostics  (not available) ──")
+        return text
+    var entry = unsafe: read(entry_ptr)
+    append_diagnostics_text(ref_of(text), ref_of(entry.analysis))
     return text
 
 
@@ -98,7 +111,7 @@ function append_token_section(
     target.append("  (")
     append_token_histogram(target, tokens)
     target.append(") ")
-    append_rule(target, 50)
+    debug_text.append_rule(target, 50)
 
     let max_len = token_table_lexeme_width(tokens)
     var ti: ptr_uint = 0
@@ -116,7 +129,7 @@ function append_token_section(
         append_right_padded(target, column_text.as_str(), 3)
         column_text.release()
         target.append("  ")
-        var inspected = ruby_inspect(lexeme)
+        var inspected = debug_text.ruby_inspect(lexeme)
         append_right_padded(target, inspected.as_str(), max_len + 2)
         inspected.release()
         target.append("  ")
@@ -154,84 +167,232 @@ function token_table_lexeme_width(tokens: ref[vec.Vec[token_mod.Token]]) -> ptr_
     return width
 
 
-## `75 identifier, 36 newline, ...`: kinds by descending count, ties in the order
-## they first appear in the token stream (the host's `group_by` order).
+## One histogram row: a token kind and its token count.
+public struct HistogramEntry:
+    kind: tk.TokenKind
+    count: ptr_uint
+
+
+## `75 identifier, 36 newline, ...`: the host sorts the per-kind counts with
+## Ruby's `sort_by { |_k, v| -v }`.  Every key there is a Fixnum, so the sort
+## goes through MRI's *uniform* introsort (`rb_uniform_intro_sort_2`, `enum.c`),
+## not `ruby_qsort` — and it is not stable, so equal counts come out in its
+## order, not insertion order.  This port reproduces that order exactly
+## (validated against MRI over random count tables and the corpus fixture).
 function append_token_histogram(target: ref[string.String], tokens: ref[vec.Vec[token_mod.Token]]) -> void:
-    var kinds = vec.Vec[tk.TokenKind].create()
-    defer: kinds.release()
-    var counts = vec.Vec[ptr_uint].create()
-    defer: counts.release()
+    var entries = vec.Vec[HistogramEntry].create()
+    defer: entries.release()
 
     var i: ptr_uint = 0
     while i < tokens.len():
         let tp = tokens.get(i) else:
             break
         let kind = unsafe: read(tp).kind
-        var ki: ptr_uint = 0
+        var ei: ptr_uint = 0
         var found = false
-        while ki < kinds.len():
-            let kp = kinds.get(ki) else:
+        while ei < entries.len():
+            let ep = entries.get(ei) else:
                 break
-            if unsafe: read(kp) == kind:
-                let cp = counts.get(ki) else:
-                    break
-                unsafe: read(cp) = read(cp) + 1
+            if unsafe: read(ep).kind == kind:
+                unsafe: read(ep).count += 1
                 found = true
                 break
-            ki += 1
+            ei += 1
         if not found:
-            kinds.push(kind)
-            counts.push(1)
+            entries.push(HistogramEntry(kind = kind, count = 1))
         i += 1
 
-    # Insertion sort by descending count: stable, so equal counts keep the order
-    # their kind first appeared in.
-    var a: ptr_uint = 1
-    while a < kinds.len():
-        let count_a = counts.get(a) else:
-            break
-        let kind_a = kinds.get(a) else:
-            break
-        let entry_count = unsafe: read(count_a)
-        let entry_kind = unsafe: read(kind_a)
-        var b = a
-        while b > 0:
-            let prev_ptr = counts.get(b - 1) else:
-                break
-            let prev_count = unsafe: read(prev_ptr)
-            if prev_count >= entry_count:
-                break
-            let cur_count = counts.get(b) else:
-                break
-            let cur_kind = kinds.get(b) else:
-                break
-            let prev_kind_ptr = kinds.get(b - 1) else:
-                break
-            unsafe:
-                read(cur_count) = prev_count
-                read(cur_kind) = read(prev_kind_ptr)
-            b -= 1
-        let final_count = counts.get(b) else:
-            break
-        let final_kind = kinds.get(b) else:
-            break
-        unsafe:
-            read(final_count) = entry_count
-            read(final_kind) = entry_kind
-        a += 1
+    histogram_intro_sort(ref_of(entries))
 
     var h: ptr_uint = 0
-    while h < kinds.len():
+    while h < entries.len():
         if h > 0:
             target.append(", ")
-        let count_ptr = counts.get(h) else:
-            break
-        let kind_ptr = kinds.get(h) else:
-            break
-        target.append_format(f"#{unsafe: read(count_ptr)}")
+        let entry = histogram_entry(ref_of(entries), h)
+        target.append_format(f"#{entry.count}")
         target.append(" ")
-        target.append(token_mod.kind_name(unsafe: read(kind_ptr)))
+        target.append(token_mod.kind_name(entry.kind))
         h += 1
+
+
+## `rb_uniform_intro_sort_2`: sort unless already descending by count, then the
+## depth-limited introsort (quicksort → heapsort after 2*floor(log2 n) levels,
+## insertion sort for regions of 16 or fewer).  The comparison is on the
+## host's key `-count`, i.e. a descending comparison on counts.
+public function histogram_intro_sort(entries: ref[vec.Vec[HistogramEntry]]) -> void:
+    let n = entries.len()
+    if n < 2:
+        return
+
+    # Already descending by count (the host's `rb_uniform_is_larger` probe).
+    var sorted = true
+    var i: ptr_uint = 1
+    while i < n:
+        if histogram_entry(entries, i - 1).count < histogram_entry(entries, i).count:
+            sorted = false
+            break
+        i += 1
+    if sorted:
+        return
+
+    # d = floor(log2(n)); the introsort budget is `d << 1`.
+    var depth: ptr_uint = 0
+    var value = n
+    while value > 1:
+        value /= 2
+        depth += 1
+    histogram_quicksort_intro(entries, 0, n, depth * 2)
+
+
+## `uless` on the three counts: the median count of `a`, `b`, `c`.
+function histogram_med3(a: ptr_uint, b: ptr_uint, c: ptr_uint) -> ptr_uint:
+    if a > b:
+        if b > c:
+            return b
+        if c > a:
+            return a
+        return c
+    if c > b:
+        return b
+    if a > c:
+        return a
+    return c
+
+
+function histogram_entry(entries: ref[vec.Vec[HistogramEntry]], index: ptr_uint) -> HistogramEntry:
+    let p = entries.get(index) else:
+        return HistogramEntry(kind = tk.TokenKind.eof, count = 0)
+    return unsafe: read(p)
+
+
+function histogram_count_at(entries: ref[vec.Vec[HistogramEntry]], index: ptr_uint) -> ptr_uint:
+    return histogram_entry(entries, index).count
+
+
+function histogram_swap(entries: ref[vec.Vec[HistogramEntry]], left: ptr_uint, right: ptr_uint) -> void:
+    if left == right:
+        return
+    let a = histogram_entry(entries, left)
+    let b = histogram_entry(entries, right)
+    let lp = entries.get(left) else:
+        return
+    let rp = entries.get(right) else:
+        return
+    unsafe:
+        read(lp) = b
+        read(rp) = a
+
+
+## `rb_uniform_insertionsort_2`, indices [lo, hi).
+function histogram_insertion_sort(entries: ref[vec.Vec[HistogramEntry]], lo: ptr_uint, hi: ptr_uint) -> void:
+    if hi - lo < 2:
+        return
+    var index = lo + 1
+    while index < hi:
+        let tmp = histogram_entry(entries, index)
+        var j = index
+        var k = index
+        if tmp.count > histogram_count_at(entries, lo):
+            while lo < j:
+                k -= 1
+                let src = histogram_entry(entries, k)
+                let dst = entries.get(j) else:
+                    return
+                unsafe: read(dst) = src
+                j = k
+        else:
+            while true:
+                k -= 1
+                if tmp.count <= histogram_count_at(entries, k):
+                    break
+                let src = histogram_entry(entries, k)
+                let dst = entries.get(j) else:
+                    return
+                unsafe: read(dst) = src
+                j = k
+        let dst = entries.get(j) else:
+            return
+        unsafe: read(dst) = tmp
+        index += 1
+
+
+## `rb_uniform_heap_down_2`.
+function histogram_heap_down(entries: ref[vec.Vec[HistogramEntry]], lo: ptr_uint, offset: ptr_uint, len: ptr_uint) -> void:
+    let tmp = histogram_entry(entries, lo + offset)
+    var pos = offset
+    while true:
+        let child = (pos << 1) + 1
+        if child > len:
+            break
+        var bigger = child
+        if child < len and histogram_count_at(entries, lo + child) > histogram_count_at(entries, lo + child + 1):
+            bigger += 1
+        if tmp.count <= histogram_count_at(entries, lo + bigger):
+            break
+        let dst = entries.get(lo + pos) else:
+            return
+        let src = histogram_entry(entries, lo + bigger)
+        unsafe: read(dst) = src
+        pos = bigger
+    let dst = entries.get(lo + pos) else:
+        return
+    unsafe: read(dst) = tmp
+
+
+## `rb_uniform_heapsort_2`.
+function histogram_heapsort(entries: ref[vec.Vec[HistogramEntry]], lo: ptr_uint, hi: ptr_uint) -> void:
+    let n = hi - lo
+    if n < 2:
+        return
+    var offset = n / 2
+    while offset > 0:
+        offset -= 1
+        histogram_heap_down(entries, lo, offset, n - 1)
+    offset = n - 1
+    while offset > 0:
+        histogram_swap(entries, lo, lo + offset)
+        offset -= 1
+        histogram_heap_down(entries, lo, 0, offset)
+
+
+## `rb_uniform_quicksort_intro_2`: Hoare partition around the median of first,
+## middle and last counts, falling back to heapsort when the depth budget runs
+## out.  `i`/`j` are signed: the algorithm can step one element outside the
+## region before the final `j + 1` (which the C pointer arithmetic absorbs).
+function histogram_quicksort_intro(entries: ref[vec.Vec[HistogramEntry]], lo: ptr_uint, hi: ptr_uint, depth: ptr_uint) -> void:
+    if hi - lo <= 16:
+        histogram_insertion_sort(entries, lo, hi)
+        return
+    if depth == 0:
+        histogram_heapsort(entries, lo, hi)
+        return
+
+    let lo_i = ptr_int<-lo
+    let hi_i = ptr_int<-hi
+    let mid = lo_i + ((hi_i - lo_i) / 2)
+    let x = histogram_med3(
+        histogram_count_at(entries, lo),
+        histogram_count_at(entries, ptr_uint<-mid),
+        histogram_count_at(entries, hi - 1),
+    )
+    var i = lo_i
+    var j = hi_i - 1
+    while true:
+        while histogram_count_at(entries, ptr_uint<-i) > x:
+            i += 1
+        while x > histogram_count_at(entries, ptr_uint<-j):
+            j -= 1
+        if i <= j:
+            histogram_swap(entries, ptr_uint<-i, ptr_uint<-j)
+            i += 1
+            j -= 1
+        if i > j:
+            break
+    j += 1
+    if hi_i - j > 1:
+        histogram_quicksort_intro(entries, ptr_uint<-j, hi, depth - 1)
+    if i - lo_i > 1:
+        histogram_quicksort_intro(entries, lo, ptr_uint<-i, depth - 1)
 
 
 function append_parse_errors(target: ref[string.String], errors: ref[vec.Vec[pstate.ParseDiagnostic]]) -> void:
@@ -241,7 +402,7 @@ function append_parse_errors(target: ref[string.String], errors: ref[vec.Vec[pst
         target.append(" ──")
         return
     target.append("  ")
-    append_rule(target, 55)
+    debug_text.append_rule(target, 55)
     var i: ptr_uint = 0
     while i < errors.len():
         let ep = errors.get(i) else:
@@ -256,71 +417,35 @@ function append_parse_errors(target: ref[string.String], errors: ref[vec.Vec[pst
         i += 1
 
 
-## Self-host addition: the workspace state the server holds (the host has no
-## equivalent section).
-function append_workspace_section(target: ref[string.String], ws: ref[workspace.Workspace]) -> void:
-    target.append("\n\n── Workspace (self-host) ")
-    append_rule(target, 44)
-    target.append("\n  root: ")
-    target.append(ws.root_path.as_str())
-    target.append("\n  module roots: ")
-    target.append_format(f"#{ws.module_roots.len()}")
-    target.append("\n  open documents: ")
-    target.append_format(f"#{ws.open_document_count()}")
-    target.append("\n  index built: ")
-    target.append(if ws.index_built: "yes" else: "no")
-    target.append("\n  index entries: ")
-    target.append_format(f"#{ws.index_entries()}")
-    target.append("\n  open files:")
-    var keys = ws.open_docs.keys()
-    while true:
-        let kp = keys.next() else:
-            break
-        target.append("\n    ")
-        target.append(unsafe: read(kp).as_str())
+## `── Diagnostics  N  (E errors, W warnings, ...)` plus one row per diagnostic
+## (`  E ERROR   sema/error [Ln 42, Col 14]: unknown name alpha`).  The host
+## renders its tooling snapshot's diagnostics — the semantic analysis' errors,
+## not the loader's import/parse diagnostics or the linter's warnings.
+function append_diagnostics_text(target: ref[string.String], analysis: ref[analyzer.Analysis]) -> void:
+    let count = analysis.diagnostics.len()
+    if count == 0:
+        target.append("\n\n── Diagnostics  0 ──")
+        return
 
+    target.append("\n\n── Diagnostics  ")
+    target.append_format(f"#{count}")
+    target.append("  (")
+    target.append_format(f"#{count} errors")
+    target.append(")  ")
+    debug_text.append_rule(target, 50)
 
-## `"lexeme"` with the escapes Ruby's `String#inspect` produces.
-function ruby_inspect(lexeme: str) -> string.String:
-    var text = string.String.from_str(lexeme)
-    var escaped = escape_all(text)
-    text.release()
-    var quoted = string.String.create()
-    quoted.append("\"")
-    quoted.append(escaped.as_str())
-    escaped.release()
-    quoted.append("\"")
-    return quoted
-
-
-function escape_all(text: string.String) -> string.String:
-    var pairs = vec.Vec[string.String].create()
-    defer: pairs.release()
-    pairs.push(string.String.from_str("\\"))
-    pairs.push(string.String.from_str("\""))
-    pairs.push(string.String.from_str("\n"))
-    pairs.push(string.String.from_str("\t"))
-    pairs.push(string.String.from_str("\r"))
-    var replacements = vec.Vec[string.String].create()
-    defer: replacements.release()
-    replacements.push(string.String.from_str("\\\\"))
-    replacements.push(string.String.from_str("\\\""))
-    replacements.push(string.String.from_str("\\n"))
-    replacements.push(string.String.from_str("\\t"))
-    replacements.push(string.String.from_str("\\r"))
-
-    var current = string.String.from_str(text.as_str())
     var i: ptr_uint = 0
-    while i < pairs.len():
-        let needle = pairs.get(i) else:
+    while i < count:
+        let dp = analysis.diagnostics.get(i) else:
             break
-        let replacement = replacements.get(i) else:
-            break
-        var next = unsafe: current.replace(read(needle).as_str(), read(replacement).as_str())
-        current.release()
-        current = next
+        let d = unsafe: read(dp)
+        target.append("\n  E ERROR   sema/error [Ln ")
+        target.append_format(f"#{d.line}")
+        target.append(", Col ")
+        target.append_format(f"#{d.column}")
+        target.append("]: ")
+        target.append(d.message)
         i += 1
-    return current
 
 
 ## `%3d`: right-aligned in `width`.
@@ -350,13 +475,6 @@ function uint_to_str(value: ptr_uint) -> string.String:
     var text = string.String.create()
     text.append_format(f"#{value}")
     return text
-
-
-function append_rule(target: ref[string.String], count: ptr_uint) -> void:
-    var i: ptr_uint = 0
-    while i < count:
-        target.append("─")
-        i += 1
 
 
 public function handle_debug_info(ws: ref[workspace.Workspace], params: json.Value, id: json.Value) -> void:
