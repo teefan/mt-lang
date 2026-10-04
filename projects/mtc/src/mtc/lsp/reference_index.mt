@@ -49,6 +49,23 @@ public struct ReferenceEntry:
     length: ptr_uint
 
 
+## A document's last-observed disk state, so an unchanged closed document is
+## neither re-read nor re-lexed on the next lookup.  (The host re-reads through
+## its content cache; the stat is the self-host's bound on that work.)
+public struct DocumentStamp:
+    size: ptr_uint
+    modified_seconds: ptr_int
+    modified_nanoseconds: ptr_int
+
+
+## The retained-text budget for indexed documents.  Past this many bytes the
+## oldest documents are dropped and re-indexed on demand — the host keeps every
+## noted document's text forever, so this is a deliberate self-host bound for
+## long sessions (documents evicted and re-noted answer in a later index
+## position than the host would).
+public const MAX_RETAINED_TEXT_BYTES: ptr_uint = 33554432
+
+
 public struct ReferenceIndex:
     ## Documents in tokenization order.  A re-indexed document moves to the end,
     ## as the host's re-appended entries do.
@@ -56,12 +73,23 @@ public struct ReferenceIndex:
     ## path → the document's stored content hash, so an unchanged document is a
     ## no-op and an edited one is re-indexed.
     hashes: map_mod.Map[string_mod.String, uint]
+    ## path → the disk state the document was last read at (closed documents
+    ## only; open buffers are compared by content hash).
+    stamps: map_mod.Map[string_mod.String, DocumentStamp]
+    ## The indexed documents' total source bytes, against `max_retained_bytes`.
+    retained_bytes: ptr_uint
+    ## The retained-text budget (`MAX_RETAINED_TEXT_BYTES` by default; tests
+    ## shrink it).
+    max_retained_bytes: ptr_uint
 
 
 public function create() -> ReferenceIndex:
     return ReferenceIndex(
         documents = vec.Vec[ptr[IndexedDocument]].create(),
         hashes = map_mod.Map[string_mod.String, uint].create(),
+        stamps = map_mod.Map[string_mod.String, DocumentStamp].create(),
+        retained_bytes = 0,
+        max_retained_bytes = MAX_RETAINED_TEXT_BYTES,
     )
 
 
@@ -74,11 +102,43 @@ public function release(index: ref[ReferenceIndex]) -> void:
         di += 1
     index.documents.release()
     index.hashes.release()
+    index.stamps.release()
+
+
+## True when the recorded disk stamp for `path` equals the observed one, so the
+## document's text need not be re-read.
+public function matches_stamp(index: ref[ReferenceIndex], path: str, size: ptr_uint, modified_seconds: ptr_int, modified_nanoseconds: ptr_int) -> bool:
+    var key = string_mod.String.from_str(path)
+    defer: key.release()
+    let stamp_ptr = index.stamps.get(key)
+    if stamp_ptr == null:
+        return false
+    let stamp = unsafe: read(stamp_ptr)
+    return stamp.size == size and stamp.modified_seconds == modified_seconds and stamp.modified_nanoseconds == modified_nanoseconds
+
+
+## Record the disk state `path` was last read at.
+public function record_stamp(index: ref[ReferenceIndex], path: str, size: ptr_uint, modified_seconds: ptr_int, modified_nanoseconds: ptr_int) -> void:
+    var key = string_mod.String.from_str(path)
+    defer: key.release()
+    let stamp_ptr = index.stamps.get(key)
+    if stamp_ptr != null:
+        unsafe:
+            read(stamp_ptr).size = size
+            read(stamp_ptr).modified_seconds = modified_seconds
+            read(stamp_ptr).modified_nanoseconds = modified_nanoseconds
+        return
+    index.stamps.set(string_mod.String.from_str(path), DocumentStamp(
+        size = size,
+        modified_seconds = modified_seconds,
+        modified_nanoseconds = modified_nanoseconds,
+    ))
 
 
 ## Record `path`'s identifier tokens, lexing `source` — the host's
 ## `index_identifier_tokens` reached through `get_tokens`.  A document whose
 ## content is unchanged is left alone; a changed one is re-indexed at the end.
+## Past the retained-text budget the oldest documents are dropped.
 public function note(index: ref[ReferenceIndex], path: str, source: str) -> void:
     var hash_key = string_mod.String.from_str(path)
     defer: hash_key.release()
@@ -87,7 +147,13 @@ public function note(index: ref[ReferenceIndex], path: str, source: str) -> void
     if stored_hash != null:
         if unsafe: read(stored_hash) == hash:
             return
+        # Update the hash in place (the map keeps its existing key) and drop the
+        # document; it is re-pushed at the end below.
+        unsafe:
+            read(stored_hash) = hash
         drop_document(index, path)
+    else:
+        index.hashes.set(string_mod.String.from_str(path), hash)
 
     let allocated = heap.must_alloc[IndexedDocument](1)
     let document = unsafe: ptr[IndexedDocument]<-allocated
@@ -103,13 +169,8 @@ public function note(index: ref[ReferenceIndex], path: str, source: str) -> void
             identifiers = identifiers,
         )
     index.documents.push(document)
-
-    var hash_slot = index.hashes.set(string_mod.String.from_str(path), hash)
-    match hash_slot:
-        Option.some as previous:
-            let _ = previous
-        Option.none:
-            pass
+    index.retained_bytes = index.retained_bytes + source.len
+    enforce_text_bound(index)
 
 
 ## Drop `path`'s index entry: the host's `remove_identifier_index_entries` (its
@@ -117,13 +178,55 @@ public function note(index: ref[ReferenceIndex], path: str, source: str) -> void
 public function forget(index: ref[ReferenceIndex], path: str) -> void:
     var key = string_mod.String.from_str(path)
     defer: key.release()
-    let removed = index.hashes.remove(key)
-    match removed:
-        Option.some as value:
-            let _ = value
+    match index.hashes.remove_entry(key):
+        Option.some as removed:
+            var removed_entry = removed.value
+            unsafe:
+                removed_entry.key.release()
         Option.none:
             return
     drop_document(index, path)
+    var stamp_key = string_mod.String.from_str(path)
+    defer: stamp_key.release()
+    match index.stamps.remove_entry(stamp_key):
+        Option.some as removed_stamp:
+            var stamp_entry = removed_stamp.value
+            unsafe:
+                stamp_entry.key.release()
+        Option.none:
+            pass
+
+
+## Drop the oldest indexed documents until the retained text is within the
+## budget.  The most recently noted document is always kept (a single document
+## larger than the budget must not thrash).  The hash and stamp entries go with
+## the document, so a later lookup re-reads and re-indexes it.
+function enforce_text_bound(index: ref[ReferenceIndex]) -> void:
+    while index.retained_bytes > index.max_retained_bytes and index.documents.len() > 1:
+        let front_slot = index.documents.get(0) else:
+            break
+        let front = unsafe: read(front_slot)
+        var front_path = string_mod.String.from_str(unsafe: read(front).path.as_str())
+        var hash_key = string_mod.String.from_str(front_path.as_str())
+        var stamp_key = string_mod.String.from_str(front_path.as_str())
+        drop_document(index, front_path.as_str())
+        match index.hashes.remove_entry(hash_key):
+            Option.some as removed:
+                var removed_entry = removed.value
+                unsafe:
+                    removed_entry.key.release()
+            Option.none:
+                pass
+        match index.stamps.remove_entry(stamp_key):
+            Option.some as removed_stamp:
+                var stamp_entry = removed_stamp.value
+                unsafe:
+                    stamp_entry.key.release()
+            Option.none:
+                pass
+        hash_key.release()
+        stamp_key.release()
+        front_path.release()
 
 
 ## True when `path` has been indexed — the host's `@indexed_uris` membership.
@@ -219,6 +322,11 @@ function drop_document(index: ref[ReferenceIndex], path: str) -> void:
         if matches:
             match index.documents.remove(di):
                 Option.some as removed:
+                    let removed_len = unsafe: read(removed.value).source.len()
+                    if removed_len <= index.retained_bytes:
+                        index.retained_bytes = index.retained_bytes - removed_len
+                    else:
+                        index.retained_bytes = 0
                     release_document(removed.value)
                 Option.none:
                     pass

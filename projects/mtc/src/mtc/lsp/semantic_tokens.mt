@@ -16,6 +16,7 @@ import std.vec as vec
 import mtc.lexer.lexer as lexer_mod
 import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk_mod
+import mtc.loader.module_loader as loader_mod
 import mtc.loader.path_resolver as resolver_mod
 import mtc.parser.parser as parser
 import mtc.parser.ast as ast
@@ -348,6 +349,57 @@ struct ScanFacts:
     ## the name renders `decorator` + declaration (the host's attribute override
     ## table, built from the AST).
     attribute_decls: map_mod.Map[ptr_uint, bool]
+    ## Owns the composite-key buffers (`alias.member`, `Type.field`, ...) the
+    ## maps above hold `str` views into.  `release_scan_facts` frees them with
+    ## the maps, so a token request's tables do not accumulate.
+    key_storage: vec.Vec[string.String]
+
+
+## Release one scan's classification tables (the request's token data is built
+## before this runs, so nothing reads them afterwards).
+function release_scan_facts(facts: ref[ScanFacts]) -> void:
+    facts.functions.release()
+    facts.types.release()
+    facts.structs.release()
+    facts.interfaces.release()
+    facts.values.release()
+    facts.imports.release()
+    facts.alias_functions.release()
+    facts.alias_types.release()
+    facts.alias_interfaces.release()
+    facts.alias_values.release()
+    facts.alias_readonly_values.release()
+    facts.readonly_values.release()
+    facts.static_members.release()
+    facts.nested_type_keys.release()
+    facts.callable_fields.release()
+    facts.receiver_structs.release()
+    facts.attribute_decls.release()
+    facts.bindings.release()
+    release_type_param_scopes(ref_of(facts.type_param_scopes))
+
+    # The maps are gone; the key buffers can follow (the composite keys are the
+    # only allocated strings — the rest of the keys view the AST or the source).
+    var ki: ptr_uint = 0
+    while ki < facts.key_storage.len():
+        let key_ptr = facts.key_storage.get(ki) else:
+            break
+        unsafe:
+            read(key_ptr).release()
+        ki += 1
+    facts.key_storage.release()
+
+
+function release_type_param_scopes(scopes: ref[vec.Vec[scope.TypeParamScope]]) -> void:
+    var si: ptr_uint = 0
+    while si < scopes.len():
+        let scope_ptr = scopes.get(si) else:
+            break
+        unsafe:
+            var names = read(scope_ptr).names
+            names.release()
+        si += 1
+    scopes.release()
 
 
 struct TokenClass:
@@ -1539,7 +1591,7 @@ function merge_bool_keys(source: ref[map_mod.Map[str, bool]], target: ref[map_mo
 ## (`""` for the scanned file's own declarations, `"alias."` for an import) —
 ## the host's `static_method_binding_for_receiver`, which is what tells a
 ## static call (`NPC.max_hp()`) apart from a variant arm (`Option.some(...)`).
-function collect_static_members(methods: ref[map_mod.Map[str, analyzer.FnSig]], prefix: str, target: ref[map_mod.Map[str, bool]]) -> void:
+function collect_static_members(methods: ref[map_mod.Map[str, analyzer.FnSig]], prefix: str, target: ref[map_mod.Map[str, bool]], storage: ref[vec.Vec[string.String]]) -> void:
     var entries = methods.entries()
     while true:
         if not entries.next():
@@ -1556,6 +1608,7 @@ function collect_static_members(methods: ref[map_mod.Map[str, analyzer.FnSig]], 
                 buf.append(prefix)
                 buf.append(key)
                 target.set(buf.as_str(), true)
+                storage.push(buf)
 
 
 ## Record a module's exported surface under `alias.` keys.
@@ -1577,11 +1630,11 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
     defer: alias_prefix.release()
     alias_prefix.append(alias)
     alias_prefix.push_byte(46)
-    collect_static_members(ref_of(read(analysis).method_sigs), alias_prefix.as_str(), ref_of(facts.static_members))
+    collect_static_members(ref_of(read(analysis).method_sigs), alias_prefix.as_str(), ref_of(facts.static_members), ref_of(facts.key_storage))
     # The host's `methods_for_receiver_type` merges every imported module's
     # methods by the bare type name, so `vec.Vec.create` and a bare
     # `Vec.create` resolve alike.
-    collect_static_members(ref_of(read(analysis).method_sigs), "", ref_of(facts.static_members))
+    collect_static_members(ref_of(read(analysis).method_sigs), "", ref_of(facts.static_members), ref_of(facts.key_storage))
     unsafe:
         var fkeys = read(analysis).functions.keys()
         while true:
@@ -1620,6 +1673,7 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
             break
         var key = qualified_member_key(alias, unsafe: read(fp))
         facts.alias_functions.set(key.as_str(), true)
+        facts.key_storage.push(key)
         i += 1
     i = 0
     while i < types.len():
@@ -1627,6 +1681,7 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
             break
         var key = qualified_member_key(alias, unsafe: read(tp))
         facts.alias_types.set(key.as_str(), true)
+        facts.key_storage.push(key)
         i += 1
     i = 0
     while i < interfaces.len():
@@ -1634,6 +1689,7 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
             break
         var key = qualified_member_key(alias, unsafe: read(ip))
         facts.alias_interfaces.set(key.as_str(), true)
+        facts.key_storage.push(key)
         i += 1
     i = 0
     while i < values.len():
@@ -1641,6 +1697,7 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
             break
         var key = qualified_member_key(alias, unsafe: read(vp))
         facts.alias_values.set(key.as_str(), true)
+        facts.key_storage.push(key)
         i += 1
     i = 0
     while i < readonly_values.len():
@@ -1648,11 +1705,16 @@ function collect_alias_exports(facts: ref[ScanFacts], alias: str, analysis: ref[
             break
         var key = qualified_member_key(alias, unsafe: read(vp))
         facts.alias_readonly_values.set(key.as_str(), true)
+        facts.key_storage.push(key)
         i += 1
 
 
 ## Register one import's exported surface when the module resolves.  Unresolved
 ## imports contribute nothing: the alias stays unknown, matching the host.
+## The module cache serves the import's analysis — the same loader-backed
+## analysis every other request sees, which honors open buffers — so an
+## unchanged import is neither re-read nor re-parsed here; a cold one is loaded
+## (and cached) through the workspace once.
 function register_resolved_import(
     ws: ref[workspace.Workspace],
     facts: ref[ScanFacts],
@@ -1667,23 +1729,42 @@ function register_resolved_import(
         Result.success as resolved_ok:
             var resolved = resolved_ok.value
             defer: resolved.release()
-            var dep_source_opt = fs_mod.read_text(resolved.as_str())
-            match dep_source_opt:
-                Result.success as payload:
-                    var dep_source = payload.value
-                    defer: dep_source.release()
-                    var dep_diags = vec.Vec[pstate.ParseDiagnostic].create()
-                    defer: dep_diags.release()
-                    let dep_file = parser.parse_source(dep_source.as_str(), ref_of(dep_diags))
-                    var dep_analysis = analyzer.check_source_file(dep_file)
+            match loader_mod.cached_module_surface(ptr_of(ws.module_cache), resolved.as_str()):
+                Option.some as surface:
                     facts.imports.set(alias, true)
-                    collect_alias_exports(facts, alias, ref_of(dep_analysis), dep_file)
-                Result.failure as fail:
-                    var err = fail.error
-                    err.release()
+                    collect_alias_exports(facts, alias, ref_of(surface.value.analysis), surface.value.source_file)
+                Option.none:
+                    match workspace.analysis_entry_for(ws, resolved.as_str()):
+                        Option.some as entry_payload:
+                            var entry = unsafe: read(entry_payload.value)
+                            facts.imports.set(alias, true)
+                            collect_alias_exports(facts, alias, ref_of(entry.analysis), entry.analysis.source_file)
+                        Option.none:
+                            register_import_from_disk(facts, alias, resolved.as_str())
         Result.failure as resolve_failure:
             var rerr = resolve_failure.error
             rerr.release()
+
+
+## Cold fallback: parse and check the import directly when neither the module
+## cache nor the workspace's loader-backed analysis could serve it.
+function register_import_from_disk(facts: ref[ScanFacts], alias: str, resolved: str) -> void:
+    match fs_mod.read_text(resolved):
+        Result.success as payload:
+            var dep_source = payload.value
+            defer: dep_source.release()
+            var dep_diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer: dep_diags.release()
+            let dep_file = parser.parse_source(dep_source.as_str(), ref_of(dep_diags))
+            var dep_analysis = analyzer.check_source_file(dep_file)
+            facts.imports.set(alias, true)
+            collect_alias_exports(facts, alias, ref_of(dep_analysis), dep_file)
+            # The scan keeps only the exported surface; the dependency
+            # analysis' own diagnostics are not part of it.
+            dep_analysis.diagnostics.release()
+        Result.failure as fail:
+            var err = fail.error
+            err.release()
 
 
 function dotted_qname(path: ast.QualifiedName) -> string.String:
@@ -1732,6 +1813,7 @@ function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, an
         receiver_structs = map_mod.Map[str, bool].create(),
         type_param_scopes = scope.collect_type_param_scopes(source, file),
         attribute_decls = map_mod.Map[ptr_uint, bool].create(),
+        key_storage = vec.Vec[string.String].create(),
     )
     var analysis_value = unsafe: read(analysis)
     facts.callable_value_sites = analysis_value.callable_value_sites.as_span()
@@ -1746,10 +1828,10 @@ function build_scan_facts(ws: ref[workspace.Workspace], file: ast.SourceFile, an
         merge_type_keys(ref_of(analysis_value.type_alias_types), ref_of(facts.types))
         merge_interface_keys(ref_of(analysis_value.interfaces), ref_of(facts.interfaces))
         merge_type_keys(ref_of(analysis_value.value_types), ref_of(facts.values))
-        collect_static_members(ref_of(analysis_value.method_sigs), "", ref_of(facts.static_members))
+        collect_static_members(ref_of(analysis_value.method_sigs), "", ref_of(facts.static_members), ref_of(facts.key_storage))
     collect_const_names(file, ref_of(facts.readonly_values))
     collect_attribute_decl_names(file, ref_of(facts.attribute_decls))
-    collect_nested_type_keys(file.declarations, "", ref_of(facts.nested_type_keys), ref_of(facts.receiver_structs), ref_of(facts.callable_fields), ref_of(analysis_value))
+    collect_nested_type_keys(file.declarations, "", ref_of(facts.nested_type_keys), ref_of(facts.receiver_structs), ref_of(facts.callable_fields), ref_of(analysis_value), ref_of(facts.key_storage))
 
 
     var i: ptr_uint = 0
@@ -1808,6 +1890,7 @@ function compute_token_data(
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
     var facts = build_scan_facts(ws, ast_file, ref_of(analysis), roots.as_span(), source)
+    defer: release_scan_facts(ref_of(facts))
 
     let tokens = all_tokens.as_span()
     var data = vec.Vec[uint].create()
@@ -2348,6 +2431,7 @@ public function semantic_class_entries(
     var roots = ws.effective_module_roots_for(path)
     defer: roots.release()
     var facts = build_scan_facts(ws, ast_file, ref_of(analysis), roots.as_span(), source)
+    defer: release_scan_facts(ref_of(facts))
 
     let tokens = all_tokens.as_span()
     var in_decorator = false
@@ -2660,6 +2744,7 @@ function scan_nested_type_member(facts: ref[ScanFacts], tokens: span[token_mod.T
     if scan_kind_at(tokens, recv) != tk_mod.TokenKind.identifier:
         return false
     var key = string.String.create()
+    defer: key.release()
     key.append(scan_lexeme_at(tokens, recv, source))
     key.append(".")
     key.append(scan_lexeme_at(tokens, index, source))
@@ -2680,6 +2765,7 @@ function scan_callable_field_call(facts: ref[ScanFacts], tokens: span[token_mod.
     let receiver_name = scan_lexeme_at(tokens, recv, source)
     let member_name = scan_lexeme_at(tokens, index, source)
     var prefix = string.String.create()
+    defer: prefix.release()
     prefix.append(receiver_name)
     prefix.append(".")
     var entries = unsafe: read(facts).receiver_structs.entries()
@@ -2692,7 +2778,11 @@ function scan_callable_field_call(facts: ref[ScanFacts], tokens: span[token_mod.
         field_key.append(key.slice(prefix.len(), key.len - prefix.len()))
         field_key.append(".")
         field_key.append(member_name)
-        if unsafe: read(facts).callable_fields.contains(field_key.as_str()):
+        var found = false
+        unsafe:
+            found = read(facts).callable_fields.contains(field_key.as_str())
+        field_key.release()
+        if found:
             return true
     return false
 
@@ -2709,6 +2799,7 @@ function collect_nested_type_keys(
     receivers: ref[map_mod.Map[str, bool]],
     callable_fields: ref[map_mod.Map[str, bool]],
     analysis: ref[analyzer.Analysis],
+    storage: ref[vec.Vec[string.String]],
 ) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
@@ -2721,15 +2812,16 @@ function collect_nested_type_keys(
                         key.append(".")
                         key.append(s.name)
                         keys.set(key.as_str(), true)
-                    collect_struct_callable_fields(s.name, analysis, callable_fields)
-                    collect_nested_decl_names(s.nested_types, s.name, keys, receivers, callable_fields, analysis)
-                    collect_nested_type_keys(s.nested_types, s.name, keys, receivers, callable_fields, analysis)
+                        storage.push(key)
+                    collect_struct_callable_fields(s.name, analysis, callable_fields, storage)
+                    collect_nested_decl_names(s.nested_types, s.name, keys, receivers, callable_fields, analysis, storage)
+                    collect_nested_type_keys(s.nested_types, s.name, keys, receivers, callable_fields, analysis, storage)
                 ast.Decl.decl_function as fun:
-                    collect_receiver_struct_names(fun.body, receivers, analysis)
+                    collect_receiver_struct_names(fun.body, receivers, analysis, storage)
                 ast.Decl.decl_extending_block as ex:
                     var mi: ptr_uint = 0
                     while mi < ex.methods.len:
-                        collect_receiver_struct_names(read(ex.methods.data + mi).body, receivers, analysis)
+                        collect_receiver_struct_names(read(ex.methods.data + mi).body, receivers, analysis, storage)
                         mi += 1
                 _:
                     pass
@@ -2745,6 +2837,7 @@ function collect_nested_decl_names(
     receivers: ref[map_mod.Map[str, bool]],
     callable_fields: ref[map_mod.Map[str, bool]],
     analysis: ref[analyzer.Analysis],
+    storage: ref[vec.Vec[string.String]],
 ) -> void:
     var i: ptr_uint = 0
     while i < decls.len:
@@ -2756,19 +2849,21 @@ function collect_nested_decl_names(
                     key.append(".")
                     key.append(s.name)
                     keys.set(key.as_str(), true)
+                    storage.push(key)
                 ast.Decl.decl_enum as e:
                     var ekey = string.String.create()
                     ekey.append(owner)
                     ekey.append(".")
                     ekey.append(e.name)
                     keys.set(ekey.as_str(), true)
+                    storage.push(ekey)
                 _:
                     pass
         i += 1
 
 
 ## `<Struct>.<field>` for every field whose declared type is a function/proc.
-function collect_struct_callable_fields(struct_name: str, analysis: ref[analyzer.Analysis], callable_fields: ref[map_mod.Map[str, bool]]) -> void:
+function collect_struct_callable_fields(struct_name: str, analysis: ref[analyzer.Analysis], callable_fields: ref[map_mod.Map[str, bool]], storage: ref[vec.Vec[string.String]]) -> void:
     let fields_ptr = unsafe: read(analysis).structs.get(struct_name) else:
         return
     let fields = unsafe: read(fields_ptr)
@@ -2781,12 +2876,13 @@ function collect_struct_callable_fields(struct_name: str, analysis: ref[analyzer
             key.append(".")
             key.append(field.name)
             callable_fields.set(key.as_str(), true)
+            storage.push(key)
         i += 1
 
 
 ## Local binding name -> struct type name for `let x = Struct(...)` declarations
 ## (the receiver shape a callable-field call reads).
-function collect_receiver_struct_names(body: ptr[ast.Stmt]?, receivers: ref[map_mod.Map[str, bool]], analysis: ref[analyzer.Analysis]) -> void:
+function collect_receiver_struct_names(body: ptr[ast.Stmt]?, receivers: ref[map_mod.Map[str, bool]], analysis: ref[analyzer.Analysis], storage: ref[vec.Vec[string.String]]) -> void:
     let b = body else:
         return
     unsafe:
@@ -2808,6 +2904,7 @@ function collect_receiver_struct_names(body: ptr[ast.Stmt]?, receivers: ref[map_
                                                     key.append(".")
                                                     key.append(id.name)
                                                     receivers.set(key.as_str(), true)
+                                                    storage.push(key)
                                             _:
                                                 pass
                                     _:
@@ -2815,13 +2912,13 @@ function collect_receiver_struct_names(body: ptr[ast.Stmt]?, receivers: ref[map_
                         _:
                             pass
                     i += 1
-                collect_receiver_struct_names_in_stmts(blk.statements, receivers, analysis)
+                collect_receiver_struct_names_in_stmts(blk.statements, receivers, analysis, storage)
             _:
                 pass
 
 
 ## Recurse `collect_receiver_struct_names` into nested bodies.
-function collect_receiver_struct_names_in_stmts(stmts: span[ast.Stmt], receivers: ref[map_mod.Map[str, bool]], analysis: ref[analyzer.Analysis]) -> void:
+function collect_receiver_struct_names_in_stmts(stmts: span[ast.Stmt], receivers: ref[map_mod.Map[str, bool]], analysis: ref[analyzer.Analysis], storage: ref[vec.Vec[string.String]]) -> void:
     var i: ptr_uint = 0
     while i < stmts.len:
         unsafe:
@@ -2829,22 +2926,22 @@ function collect_receiver_struct_names_in_stmts(stmts: span[ast.Stmt], receivers
                 ast.Stmt.stmt_if as iff:
                     var bi: ptr_uint = 0
                     while bi < iff.branches.len:
-                        collect_receiver_struct_names(read(iff.branches.data + bi).body, receivers, analysis)
+                        collect_receiver_struct_names(read(iff.branches.data + bi).body, receivers, analysis, storage)
                         bi += 1
-                    collect_receiver_struct_names(iff.else_body, receivers, analysis)
+                    collect_receiver_struct_names(iff.else_body, receivers, analysis, storage)
                 ast.Stmt.stmt_while as w:
-                    collect_receiver_struct_names(w.body, receivers, analysis)
+                    collect_receiver_struct_names(w.body, receivers, analysis, storage)
                 ast.Stmt.stmt_for as f:
-                    collect_receiver_struct_names(f.body, receivers, analysis)
+                    collect_receiver_struct_names(f.body, receivers, analysis, storage)
                 ast.Stmt.stmt_match as m:
                     var mi: ptr_uint = 0
                     while mi < m.arms.len:
-                        collect_receiver_struct_names(read(m.arms.data + mi).body, receivers, analysis)
+                        collect_receiver_struct_names(read(m.arms.data + mi).body, receivers, analysis, storage)
                         mi += 1
                 ast.Stmt.stmt_unsafe as u:
-                    collect_receiver_struct_names(u.body, receivers, analysis)
+                    collect_receiver_struct_names(u.body, receivers, analysis, storage)
                 ast.Stmt.stmt_defer as d:
-                    collect_receiver_struct_names(d.body, receivers, analysis)
+                    collect_receiver_struct_names(d.body, receivers, analysis, storage)
                 _:
                     pass
         i += 1

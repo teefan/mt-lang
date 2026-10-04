@@ -137,6 +137,7 @@ gate_label() {
         examples)       echo "example emit-c sweeps: examples/*.mt + examples/sdl3" ;;
         valgrind_lsp)   echo "valgrind over an LSP drive (0 errors)" ;;
         neovim)         echo "headless-Neovim smoke (when tmp/ has the script)" ;;
+        soak)           echo "long-session soak meter (~25 s): RSS slope for mixed requests" ;;
         bindings)       echo "imported-bindings --all --check" ;;
         dap)            echo "DAP smoke (both adapters)" ;;
         *)              echo "$1" ;;
@@ -164,6 +165,7 @@ gate_cmd() {
         examples)      echo "gates_examples" ;;
         valgrind_lsp)  echo "command -v valgrind >/dev/null && gates_valgrind || echo 'skipped: valgrind not installed'" ;;
         neovim)        echo "gates_neovim" ;;
+        soak)          echo "ruby tools/lsp_soak.rb --quiet" ;;
         bindings)      echo "build/stage2/mtc imported-bindings --all --check" ;;
         dap)           echo "ruby tools/dap_smoke.rb" ;;
         *)             echo "true" ;;
@@ -188,6 +190,7 @@ gate_summary() {
         examples)       echo "^examples same=|DIFF " ;;
         valgrind_lsp)   echo "ERROR SUMMARY|skipped" ;;
         neovim)         echo "HOVER|Error|skipped" ;;
+        soak)           echo "^label=" ;;
         *)              echo "." ;;
     esac
 }
@@ -239,7 +242,7 @@ gates_for_area() {
     case "$1" in
         analyzer)  echo "bootstrap test_mt cli_parity scoreboard lint_parity unused_import harness recovery fixtures audit examples valgrind_lsp neovim" ;;
         linter)    echo "bootstrap test_mt cli_parity scoreboard lint_parity unused_import harness fixtures audit" ;;
-        lsp)       echo "bootstrap harness recovery fixtures audit valgrind_lsp neovim" ;;
+        lsp)       echo "bootstrap harness recovery fixtures audit valgrind_lsp neovim soak" ;;
         codegen)   echo "bootstrap test_mt sexpr_lower examples" ;;
         parser)    echo "bootstrap sexpr_lex sexpr_parse recovery cli_parity scoreboard" ;;
         loader)    echo "bootstrap test_mt cli_parity audit examples" ;;

@@ -128,28 +128,27 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 29 close (2026-10-04) — the **per-module `ModuleCache`**
-(loader + workspace) landed: an edit now re-parses and re-analyzes only the
-edited module and its dependents.  **Edit latency on
-`SimpleGame/src/main.mt`: 54.3 → 5.0 ms median `didChange`** (target ≤ ~10 ms;
-`didOpen` ~52 ms cold); the dependency-edit probe (direct, two-hop, created and
-restored imports) fails 3 checks on the pre-change binary and passes all on the
-new one; imported modules now honor **open editor buffers** (the host's
-`source_overrides`), which also closed 22 entries across the LSP fixture
-workspaces (0 added).  Harness 30/30 keys at 5 documented entries, audit 4
-stable entries (completion 2, hover 1, documentHighlight 1; race not seen),
-recovery OK, valgrind 0 errors over the 68+19 drive, `test/mt` 60/0, bootstrap
-fixed point (15 files / **606 tests** / 0 failed), examples emit-c 49/49,
-`cli:parity` 24/37/0.  `tools/gates.sh`'s valgrind gate had been passing its
-wrapper via `--server` (spawned with no arguments) — it now actually runs
-(`--server self --self <wrapper>`).  Session 28 had closed Track 7's
-stage-14 leftovers (call hierarchy / linked editing / inlay hints /
-executeCommand), the fix engine (stage 10 + `validated_fixed_source`), the
-per-diagnostic code-action set (stage 16) and the `reserved-primitive-name`
-multi-site rename (stage 8); sessions 24–27 had taken completion 600 → 2 and
-converted the request boundary's UTF-16 positions to byte offsets.  Earlier
-sessions' records are in §0k; the plan files were consolidated into this
-document on 2026-10-03 (session 25); see *Provenance*.
+Last updated: session 30 close (2026-10-04) — Track 7's **F9 readiness items**
+landed: `release_scan_facts` frees a token scan's tables (with a `key_storage`
+owner for the composite keys), the reference index bounds its retained text
+(32 MiB) and skips unchanged closed documents by `(size, mtime)` via a
+`DocumentStamp`, and the request paths that re-read/re-parse per request now
+come from the module cache (`cached_module_surface` for import surfaces;
+references takes its AST/analysis from `analysis_entry_for` instead of an
+eager discarded parse).  A new **soak** driver (`tools/lsp_soak.rb` + the
+`soak` meter gate) measures the long-session profile: full mixed-cycle RSS
+growth on a ~5k-line synthetic workspace fell **15.2 → 9.7 MB/cycle**; the
+residual is the compiler's per-parse leak convention (AST/token allocations
+"one file per run and exits"), which now blocks C4's RSS ceiling and is
+recorded as the follow-up.  Harness 30/30 keys at 5 documented entries, audit
+4 stable entries (token/references rewiring is byte-neutral), recovery OK,
+valgrind 0 errors over the 68+19 drive (7,138,997 B definitely lost),
+`[LSP perf]` 4.9 ms median per edit, 16 test files / 611 tests.  Session 29
+had landed the **per-module `ModuleCache`** (54.3 → 5.0 ms per edit, open
+buffers honored for imports); sessions 24–28 the completion class, the fix
+engine, the code-action set and the reserved-name rename.  Earlier sessions'
+records are in §0k; the plan files were consolidated into this document on
+2026-10-03 (session 25); see *Provenance*.
 
 **Audited 2026-10-03 (session 25).**  Re-measured on this tree (sources
 unchanged since session 24): completion **235** differing entries (exact),
@@ -178,7 +177,7 @@ for the area you are touching:
 | Workstream | Read | Verify with |
 | --- | --- | --- |
 | LSP completion parity (**closed in session 27** — 2 documented entries) | the program's Track 1 + §0k's part-1/2/3 and "The request boundary" records | `tools/lsp_project_audit.rb --workspace DIR` (its member-completion pass); `tmp/hl_probe.rb --method textDocument/completion` (`--warm` first for the host) |
-| LSP feature parity / audit residue | the program's LSP track + §0k; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host\|self`, `compare`, `--stress`), `tools/lsp_project_audit.rb --workspace DIR` (per-file, every position, both servers live), plus valgrind and the headless-Neovim smoke for behavior changes |
+| LSP feature parity / audit residue | the program's LSP track + §0k; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host\|self`, `compare`, `--stress`), `tools/lsp_project_audit.rb --workspace DIR` (per-file, every position, both servers live), `tools/lsp_soak.rb` (RSS slope), plus valgrind and the headless-Neovim smoke for behavior changes |
 | Linter corpus residue | the program's linter track + §0k's sessions 19–23 | `ruby tools/lint_parity.rb -q` (609 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
 | `lower` dump parity | the program's `lower` track, §0j's records, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min; quote the set) |
 | Example / vendored-family builds (no known failures since 2026-09-27) | §0j's 2026-09-27 section | the 15 top-level examples, `find examples/sdl3 -name '*.mt'`, a raylib sample |
@@ -632,15 +631,31 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
 
 ### Track 7 — LSP readiness and residue
 
-- **F9 readiness foundations (C2/C3).**  `ScanFacts` is never released (session 14
-  extended it with the binding vector and the type-parameter scopes); the
-  reference index keeps an owned copy of every noted document's text (C2);
-  `note_document_tokens` re-reads and re-hashes per request (C3).  Bound both and
-  cache by (mtime, size)/content hash; verify with a long-session soak and
-  valgrind (~12.7 MB "definitely lost" over the session-19 harness drive, 0
-  memory errors).
-- **C4 large files/workspaces.**  Add a soak target (≥5k lines, ≥10k requests,
-  mixed methods, timeouts + valgrind + RSS ceiling) to the gates.
+- **F9 readiness foundations (C2/C3)** — **DONE (session 30, 2026-10-04)**:
+  `release_scan_facts` frees one token scan's tables (the ~20 maps/vecs, the
+  binding and type-parameter vectors, and a `key_storage` vector that owns the
+  composite `<alias>.<member>` / `<Type>.<field>` keys), called at both build
+  sites; the reference index bounds its retained text
+  (`max_retained_bytes`, 32 MiB default) by dropping the oldest documents with
+  their hash/stamp entries, and `note_document_tokens` indexes open buffers
+  without a copy and skips an unchanged closed document by its recorded
+  `(mtime, size)` (`DocumentStamp`); hashes/stamps update in place and
+  `forget`/eviction release their map keys.  Measured: valgrind 0 errors over
+  the 68+19 harness drive (7,138,997 B definitely lost — the analyzer's
+  per-analysis small strings, not these tables).  Record: §0k session 30.
+- **C4 large files/workspaces** — the driver landed (session 30):
+  `tools/lsp_soak.rb` generates a ~5k-line synthetic workspace and drives
+  mixed requests (`--cycles 2500` is the ≥10k-request target), reporting the
+  RSS slope; the `soak` meter gate runs a short version per commit.  **The RSS
+  ceiling is blocked on the per-parse leak convention**: on the soak workspace
+  a full mixed cycle still grows RSS ~9.7 MB (15.2 before session 30), because
+  every parse leaks its AST/token/analysis allocations (the parser allocates
+  with `heap.must_alloc` "one file per run and exits" — true for the CLI, not
+  for a long-lived server).  Session 30 removed the *avoidable* parses on the
+  edit path (import surfaces and references now come from the module cache);
+  the remaining per-request `parser.parse_source` sites (~38) and a per-parse
+  arena are the follow-up (see §0k session 30's "Soak profile and the
+  long-session blocker").
 - **C5 client behaviours.**  workspace folders, `didChangeConfiguration`, watched
   files, `includeDeclaration: false`, cancellation, closed-file edits —
   cross-check against the host and add harness cases for any that differ.
@@ -834,23 +849,24 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
 
 ## Ledger and scoreboard
 
-Newest verified numbers (session 29 close, 2026-10-04) — re-measure only the
+Newest verified numbers (session 30 close, 2026-10-04) — re-measure only the
 classes a change can move, and only when the tree moved.  Target = the
 definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (2026-10-04 session 29 — `stage2.c == stage3.c`); self-test suite 15 files / **606 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
+| bootstrap fixed point | holds (2026-10-04 session 30 — `stage2.c == stage3.c`); self-test suite 16 files / **611 tests** / 0 failed | stay green | `tools/bootstrap.sh -j 16` |
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-04) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-04: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-04) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 5 documented entries of **68 requests + 19 probes** (re-measured 2026-10-04 session 29, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | **4 stable differ + the host's first-file `documentSymbol` race** (re-measured 2026-10-04 session 29 on 7075 entries: completion 2, hover 1, documentHighlight 1; the race was not seen in either run this time) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
+| LSP harness | 30/30 capability keys; 5 documented entries of **68 requests + 19 probes** (re-measured 2026-10-04 session 30, `--stress` included) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | **4 stable differ + the host's first-file `documentSymbol` race** (re-measured 2026-10-04 session 30 on 7075 entries: completion 2, hover 1, documentHighlight 1; the race appeared in the gates run and not in the standalone run) | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` |
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-04) | stay green | `tools/lsp_recovery_probe.rb --check` |
-| LSP edit latency | **5.0 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 10 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
-| LSP valgrind | 0 errors over the 68+19 harness drive (2026-10-04; 7,375,764 B definitely lost — pre-existing analyzer/cache leaks) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
+| LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
+| LSP valgrind | 0 errors over the 68+19 harness drive (2026-10-04 session 30; 7,138,997 B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
+| LSP soak | **9.7 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 15.2; `--cycles 100`; the gate's `--cycles 200` reads ~10.8) — the residual is the per-parse leak convention, no ceiling until it is owned | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 705/705 all three modes (re-measured 2026-10-03; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 494 agree / 115 differ (609 files; re-measured 2026-10-03) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | process-backend request parity (re-measured 2026-10-03; terminal event order and build-on-launch differ); lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
@@ -4132,11 +4148,76 @@ invocation never failed the run.  It now passes `--server self --self
 errors on this commit).
 
 **Residue:** `[LSP perf]` on a *closed* dependency re-reads and hashes every
-closure file per rebuild (open documents come from memory); the F9/C2–C3
-memory items still stand (this session's drive leaks are the pre-existing
-analyzer/cache ones).  `lsp/semantic_tokens.mt` still reads its alias surface
-through the single-file parse cache, not the module cache — a follow-up only if
-a token request ever shows up in the latency budget.
+closure file per rebuild (open documents come from memory) — **session 30
+reduced this for the token path** (import surfaces now come from the module
+cache) and for references (the loader analysis replaces an eager discarded
+parse).  The F9/C2–C3 memory items were **closed in session 30** (the analysis
+small-strings leak remains the pre-existing convention).
+
+### Readiness: scan tables released, the index bounded and stamp-cached, request paths served from the module cache (2026-10-04 session 30)
+
+Track 7's F9/C2–C3, plus the avoidable per-request re-reads the new soak
+exposed.
+
+- **ScanFacts release** (`semantic_tokens.mt`): one token scan builds ~20
+  maps/vecs plus the binding and type-parameter vectors, and nothing freed
+  them.  `release_scan_facts` (called at both `build_scan_facts` sites) now
+  releases all of it, and a new `key_storage` vector owns the composite
+  `<alias>.<member>` / `<Type>.<field>` key buffers the maps hold `str` views
+  into — every key builder pushes its buffer there (alias exports, static
+  members, nested type keys, callable fields, receiver structs).  Two lookup
+  paths that built keys without releasing them (`scan_nested_type_member`,
+  `scan_callable_field_call`'s per-candidate `field_key`) release now.
+- **Reference index bound + stamp cache (C2/C3)** (`reference_index.mt`,
+  `workspace.mt`): `note_document_tokens` indexes an open document's buffer
+  directly (no `document_source` copy) and for a closed document compares the
+  file's `(size, mtime)` against a recorded `DocumentStamp` before reading and
+  lexing — an unchanged closed document costs one `stat` instead of a read +
+  two hashes.  The index tracks `retained_bytes` and drops the oldest documents
+  (with their hash and stamp entries, so a re-note re-reads them) past
+  `max_retained_bytes` (32 MiB default; a field so tests shrink it).  Hashes
+  and stamps update **in place** (the old code leaked a path `String` per
+  re-index), and `forget`/eviction release their map keys.
+- **Module-cache request paths**: `loader.cached_module_surface` hands out a
+  cached module's `{source_file, analysis}` by value, and
+  `register_resolved_import` prefers it — the token scanner no longer re-reads
+  and re-parses every import per request (a cold import is warmed through
+  `analysis_entry_for`, with the old direct parse kept as a last-resort
+  fallback).  `handle_references` now takes its AST/analysis from
+  `analysis_entry_for` (the loader analysis the other requests share) and only
+  parses single-file when the document does not load — its old eager parse ran
+  and was discarded on every request.
+- **Soak profile and the long-session blocker**: `tools/lsp_soak.rb` generates
+  a ~5k-line synthetic workspace (two ~500-line imports, cross-references) and
+  drives mixed cycles (edit + `semanticTokens/full` + `diagnostic` +
+  `references`, hover every tenth), reporting the RSS slope; a `soak` meter
+  gate runs a short pass per commit.  On that workspace the full-cycle slope
+  went **15.2 → 9.7 MB/cycle** (100 cycles: 1.52 → 0.97 GB); the breakdown
+  after the changes is roughly 3.5 MB for the per-edit Program rebuild,
+  3.5 MB for the token path's single-file parse, 2.2 MB for the references
+  path, plus hover.  **The residue is the per-parse leak convention**: a
+  valgrind attribution run shows the biggest losses are the lexer's
+  `Vec[Token]` buffers and parser AST vectors (`parse_params`, …) allocated
+  with `heap.must_alloc` — the parser documents "one file per run and exits",
+  which is true for the CLI and false for a long-lived server.  A real RSS
+  ceiling (C4) needs per-parse ownership (an arena the LSP can release when a
+  parse is replaced) or the remaining ~38 per-request `parser.parse_source`
+  sites routed through the shared caches; both are their own work items.
+- **Tests**: four `lsp_index_test.mt` cases (note idempotence, re-index order,
+  the retained-text bound with a synthetic budget, stamps + `forget`) and one
+  `module_loader_test.mt` case (`cached_module_surface` cold → served), for
+  **16 files / 611 tests / 0 failed**.
+- **Measured**: harness 30/30 keys at the 5 documented entries; audit 4 stable
+  entries (completion 2, hover 1, documentHighlight 1; references/semantic
+  tokens/diagnostic all 0 — the token and references rewiring is
+  byte-neutral); recovery OK; valgrind 0 errors over the 68+19 drive
+  (7,138,997 B definitely lost, the analyzer's per-analysis small strings);
+  `[LSP perf]` stays 4.9 ms median per edit on `SimpleGame/src/main.mt`.
+- **Found on the way**: `workspace.note_document_source` is dead (no callers),
+  left in place; the fixture sweep's probe workspaces and the audits should be
+  run **serially** — a soak or test run in parallel with the audit starves it
+  and turns timeouts into mass false differences (seen once this session,
+  re-run clean).
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

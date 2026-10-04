@@ -354,14 +354,38 @@ extending Workspace:
         refidx.note(ref_of(this.reference_index), path, source)
 
     ## Index the document's identifier tokens, reading its current text (the
-    ## open buffer or disk).  A document whose text is unchanged is a no-op.
+    ## open buffer or disk).  An unchanged document is a no-op: an open one by
+    ## the index's content hash, a closed one by its recorded (mtime, size), so
+    ## an unchanged closed document is neither re-read nor re-lexed.
     public editable function note_document_tokens(path: str) -> void:
         if path.len == 0:
             return
-        var content = this.document_source(path) else:
+        # An open document's buffer is its current content; index it directly
+        # (no disk read, no copy: the index keeps its own stored text).
+        var open_key = string.String.from_str(path)
+        defer: open_key.release()
+        let open_ptr = this.open_docs.get(open_key)
+        if open_ptr != null:
+            refidx.note(ref_of(this.reference_index), path, unsafe: read(open_ptr).as_str())
             return
-        defer: content.release()
-        refidx.note(ref_of(this.reference_index), path, content.as_str())
+
+        # A closed document: skip the read and the lex when the file's stat
+        # matches what was indexed.
+        match fs_mod.metadata(path):
+            Result.success as meta:
+                let stamp = meta.value
+                if refidx.matches_stamp(ref_of(this.reference_index), path, stamp.size, stamp.modified_seconds, stamp.modified_nanoseconds):
+                    return
+                match fs_mod.read_text(path):
+                    Result.success as content:
+                        var source = content.value
+                        defer: source.release()
+                        refidx.note(ref_of(this.reference_index), path, source.as_str())
+                        refidx.record_stamp(ref_of(this.reference_index), path, stamp.size, stamp.modified_seconds, stamp.modified_nanoseconds)
+                    Result.failure:
+                        pass
+            Result.failure:
+                pass
 
 
     ## Admit a document to the cross-file definition index: the host's

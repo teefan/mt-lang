@@ -330,6 +330,32 @@ function release_entry_analysis(entry: ref[ModuleCacheEntry]) -> void:
         entry.binding_ptr = null
 
 
+## A cached module's parse and analysis, handed out by value for consumers that
+## only need the surface (the semantic-token scanner's import aliases).
+public struct CachedModuleSurface:
+    source_file: ast.SourceFile
+    analysis: analyzer.Analysis
+
+
+## The cached parsed module and analysis for `path`, when the cache holds both.
+## None means the module has not been loaded through the cache yet — callers
+## fall back to their own load (and the workspace's loader-backed analysis
+## warms the cache for the next request).
+public function cached_module_surface(cache: ptr[ModuleCache]?, path: str) -> Option[CachedModuleSurface]:
+    let entry_ptr = module_cache_entry(cache, path) else:
+        return Option[CachedModuleSurface].none
+    var entry: ModuleCacheEntry
+    unsafe:
+        entry = read(entry_ptr)
+    let analysis_mem = entry.analysis_ptr
+    if analysis_mem == null:
+        return Option[CachedModuleSurface].none
+    return Option[CachedModuleSurface].some(value = CachedModuleSurface(
+        source_file = entry.module.source_file,
+        analysis = unsafe: read(analysis_mem),
+    ))
+
+
 ## Look up an entry by resolved path.  The returned pointer addresses the map's
 ## storage; it stays valid until the map is mutated.
 function module_cache_entry(cache: ptr[ModuleCache]?, path: str) -> ptr[ModuleCacheEntry]?:

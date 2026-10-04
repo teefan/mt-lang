@@ -60,11 +60,23 @@ public function handle_references(
         proto.write_response_raw(id, "[]")
         return
 
+    # The loader-backed analysis carries the document's imports and is shared
+    # with the other requests; a single-file parse is only needed when the
+    # document does not load.  (The eager parse this replaces ran — and was
+    # discarded — on every request.)
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
     defer: parse_diags.release()
-    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-    var file_ast = nav_mod.ast_for_document(ws, file_path.as_str(), parsed_file)
-    var analysis = nav_mod.analysis_for_document(ws, file_path.as_str(), parsed_file)
+    var file_ast: ast.SourceFile
+    var analysis: analyzer.Analysis
+    match workspace.analysis_entry_for(ws, file_path.as_str()):
+        Option.some as entry_payload:
+            var entry = unsafe: read(entry_payload.value)
+            file_ast = entry.analysis.source_file
+            analysis = entry.analysis
+        Option.none:
+            let parsed_file = parser.parse_source(source, ref_of(parse_diags))
+            file_ast = parsed_file
+            analysis = analyzer.check_source_file(parsed_file)
 
     var entries = vec.Vec[refidx.ReferenceEntry].create()
     defer: entries.release()

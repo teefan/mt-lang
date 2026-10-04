@@ -1579,3 +1579,34 @@ function test_module_cache_uses_open_buffers_for_imports() -> void:
     expect_eq(int<-cache.parse_count, 3)
     expect_eq(int<-cache.analysis_count, 4)
     second.release()
+
+
+@[test]
+function test_module_cache_surface_follows_a_cached_check() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "lib.mt", LIB_ADD), "could not write lib.mt")
+    expect(write_file(root.as_str(), "main.mt", MAIN_ADD_CORRECT), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+    var lib_path = path_ops.join(root.as_str(), "lib.mt")
+    defer: lib_path.release()
+
+    # Cold: the import has no surface yet.
+    match loader.cached_module_surface(ptr_of(cache), lib_path.as_str()):
+        Option.some:
+            expect(false, "surface before any load")
+        Option.none:
+            pass
+
+    var program = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    defer: program.release()
+
+    # After a cached check the import's analysis is served by value.
+    match loader.cached_module_surface(ptr_of(cache), lib_path.as_str()):
+        Option.some as surface:
+            expect(surface.value.analysis.functions.contains("add"))
+        Option.none:
+            expect(false, "missing surface after a cached check")

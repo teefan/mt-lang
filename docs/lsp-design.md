@@ -545,10 +545,16 @@ recovery result:
   path's `find_token_at` → `get_tokens` → `get_content`.  `tools/lsp_cold_start.rb`
   measures spawn → the first `workspace/symbol` response at **2723.5 → 213.3 ms**
   on `~/Projects/MilkTea/SimpleGame` and **2455.1 → 2.3 ms** on a one-file project
-  (baseline: a binary built from the session-12 tree).  Still open: the reference
-  index keeps an owned copy of every noted document's text (unbounded in long
-  sessions, C2); `note_document_tokens` re-reads and re-hashes a file per request
-  (C3); and there is no large-file/long-session soak in the gates yet (C4).
+  (baseline: a binary built from the session-12 tree).  Closed in session 30
+  (2026-10-04): the reference index bounds its retained text (past
+  `MAX_RETAINED_TEXT_BYTES` = 32 MiB the oldest documents are dropped with
+  their hash/stamp entries and re-read on demand) and `note_document_tokens`
+  skips an unchanged closed document by its recorded `(size, mtime)` instead
+  of re-reading and re-hashing it per request (C2/C3); the long-session soak
+  driver (`tools/lsp_soak.rb`) and its `soak` meter gate landed.  C4's RSS
+  ceiling still waits on the per-parse leak convention — see
+  `docs/self-host-plan.md` §0k session 30 ("Soak profile and the long-session
+  blocker").
 - **Non-ASCII doc strings** (session 10).  The host's C backend emitted
   `String#inspect`'s `\xNN` escapes, and a C hex escape absorbs every following
   hex digit, so `"4\xC3\x974"` compiled to `4`, `0xC3`, `t` with a stale byte
@@ -560,4 +566,8 @@ recovery result:
   hover through a real client.
 - **Deliberate differences** (kept, and to be listed here as one table once
   Track C lands): malformed-frame recovery (`-32700` + keep serving where the
-  host hangs), synchronous facts with no lag, and a faster cold start.
+  host hangs), synchronous facts with no lag, a faster cold start, and the
+  reference index's retained-text bound (session 30 — past 32 MiB the oldest
+  noted documents are evicted and re-read on demand, so a document re-noted
+  after an eviction answers in a later index position than the host's
+  whole-session order; result *sets* are unaffected).
