@@ -128,26 +128,28 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 31 close (2026-10-04) — the **LSP close-out** landed:
-`--timings` now emits the host's shapes (a shared `mtc.profile` with per-phase
-format output and the lint `rules=/total=`, per-rule rows and file-profile
-block); the linter gained the `:fast`/`:full` tier with the host's
-`full_tier?` gating (default `full`, so CLI/LSP behavior is unchanged); the
-project audit gained **`--canonical`** (a warm-up pass pins the request
-history — two canonical runs return identical differing sets, so the ±drift is
-gone for verification); six **client-behaviour probes** (`c5/…`) were added to
-the harness and exposed two fixed gaps (`didChangeConfiguration`'s formatter
-mode was ignored; watched-file changes never entered the symbol index); and
-the deliberate differences are one table in `docs/lsp-design.md` §8.  The
-canonical audit's warm state also surfaced **residue**: four `references`
-entries where the host's warm candidate coverage is wider, and the
-builtin-type hover locations (Track 7).  Measured: harness 30/30 keys at 5
-documented entries (68 requests + 27 probes), recovery OK, `test` 16 files / 0
-failed, and the `--timings` shapes verified against the host.  Session 30 had
-landed the F9 readiness items (ScanFacts release, the index bound/stamp cache,
-module-cache request paths, the soak driver).  Earlier sessions' records are in
-§0k; the plan files were consolidated into this document on 2026-10-03
-(session 25); see *Provenance*.
+Last updated: session 32 close (2026-10-04) — an **LSP accuracy pass** over
+`examples/language_baseline.mt` (both servers driven side by side, results
+judged semantically) found and fixed three real defects: the qualified
+**enum/flags member** hover/definition (a stub: `Type.member` at a hardcoded
+line 1, flags members resolving to `null`) now renders the host's
+`member: Type = <value>` at the member's declaration; a **dotted member could
+lose to a same-named local** (the host resolves member accesses ahead of its
+name tables — the flags probe answered a local); and **inlay hints used a
+line-only range** where the host's check is position-exact.  The parity corpus
+gained `hover/enum-member` + `definition/enum-member` (now 70 requests + 27
+probes) and the three fixes are locked by it; probes across three files (203
+outcomes) are 0-different, the harness differing set is the 5 documented
+entries, tests 16 files / 0 failed, and the fixture sweep added nothing.
+Deferred: pointing `alias.Enum.member` hovers at the imported declaration
+(the host's classifier misses it — Track 7).  Session 31 had closed Track 7's
+residue (`--timings` shapes via the shared `mtc.profile`, the linter
+`:fast`/`:full` tier with the host's `full_tier?` gating, the canonical audit
+that pins the warm-up drift, the client-behaviour probes and the §8
+differences table); session 30 the F9 readiness items (ScanFacts release, the
+index bound/stamp cache, module-cache request paths, the soak driver).
+Earlier sessions' records are in §0k; the plan files were consolidated into
+this document on 2026-10-03 (session 25); see *Provenance*.
 
 **Audited 2026-10-03 (session 25).**  Re-measured on this tree (sources
 unchanged since session 24): completion **235** differing entries (exact),
@@ -849,6 +851,14 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   references/hover); they were previously invisible because the non-canonical
   audit sampled different positions and ran with the host's index only
   partially warm.  Record: §0k session 31.
+- **Imported enum/flags member locations (session 32, deferred)**: for
+  `alias.Enum.member` the self resolves the member text but deliberately drops
+  the location — the host's `type_name_member_access?` classifier misses the
+  aliased receiver, so its hover has no `Defined at` and its go-to-definition
+  is the generic fallback, and the self matches that.  Pointing both at the
+  imported declaration would be a documented self-better difference (the
+  machinery is in `imported_enum_member_result`, which computes the declaration
+  and then clears it) — decide and document it, don't drift into it.
 - **The documented entries stay documented** unless their machinery is built for
   another reason: the harness's 5 (debugInfo remainder, host parser recovery,
   host hang on a malformed frame, host facts lag, and — session 28 — the host's
@@ -914,7 +924,7 @@ definition of done above.
 | `sexpr lex` / `parse` | 705/705; 702 comparable / 0 differ (re-measured 2026-10-03; file counts drift) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 615 differ / 51 host-rejected / 0 self-rejected (re-measured 2026-10-03) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-04 session 31 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; 5 documented entries of **68 requests + 27 probes** (re-measured 2026-10-04 session 31, `--stress` included; the 8 `c5/` client-behaviour probes all equal) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP harness | 30/30 capability keys; 5 documented entries of **70 requests + 27 probes** (re-measured 2026-10-04 session 32, `--stress` included; the 8 `c5/` probes and the session-32 `hover/enum-member` + `definition/enum-member` entries all equal) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 10 differ** (2026-10-04 session 31, `--cap 200`: the 4 documented completion/highlight + 2 builtin-hover rows + **4 new references warm-coverage rows** — Track 7's canonical-audit residue).  Non-canonical runs read 4–5 with ±drift; two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-04) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
@@ -4347,6 +4357,55 @@ Track 7's remaining readiness residue plus the stage-18/stage-11 leftovers.
   Residue: the builtin-hover/canonical references rows (Track 7), the
   `cli_parity` timings normalizer, and the canonical audit staying a
   session-verification run rather than a gate.
+
+### LSP accuracy: qualified enum/flags members, member-before-binding order, exact inlay ranges (2026-10-04 session 32)
+
+A user-requested accuracy pass over `examples/language_baseline.mt` (hover,
+completion, navigation, outline, diagnostics; both servers driven side by side
+with a curated probe table, then judged semantically).  Three real defects:
+
+- **Qualified enum/flags members were a stub.**  `resolve_enum_member` (the
+  `EnumType.member` arm) rendered `Type.member` at a hardcoded `line = 1`, with
+  the member lookup keyed on `match_case_names` — which omits *flags* members
+  (flags are not matchable), so `Mask.a` hovered `null` and `State.running`
+  claimed `Defined at: <file>:1` with a definition at line 0.  The host's shape
+  is `member: Type` plus the explicit value rendered by its AST formatter
+  (`running: State = 1`, `a: Mask = 1 << 0`; an implicit member carries no
+  value) located at the member's own declaration.  The self now does exactly
+  that: an in-file scan of the enum/flags declaration, then an imported-module
+  fallback that scans the importing file's modules' cached ASTs (via
+  `analysis_entry_for`, no reparse) — but the imported result deliberately
+  keeps **no location**, because the host's `type_name_member_access?`
+  classifier misses `alias.Enum.member` (its hover has no `Defined at` and its
+  definition answer is the generic fallback); pointing at the imported
+  declaration is recorded as a Track 7 improvement candidate.  A new public
+  `ast_formatter.render_expression_text` renders the value expression the same
+  way the host's `enum_member_value_text` does.
+- **A dotted member could lose to a same-named local.**  `handle_hover` calls
+  `resolve_local_hover` before the member arms, so `Mask.a` with a local `a` in
+  scope answered the local (the host resolves member accesses ahead of its name
+  tables).  `resolve_local_hover` now returns none for a token with a dot
+  receiver; the member/method arms in `resolve_cursor` handle it, which also
+  fixes field-read shadows (`let x = s.x` with a local `x`).
+- **Inlay hints used a line-only range.**  The host's `position_in_range?`
+  compares (line, character) at both ends; the self compared lines, so a hint
+  at the request's end line past the end column was emitted where the host
+  omits it (found when a corpus line landed exactly on `line 40, char 0`).  The
+  request's characters now thread through as a `HintRange` and every check
+  (call, local, return) uses the host's predicate.  The semantic-token range
+  path stays line-granular — the host's is too.
+
+**Locked by the corpus**: the harness gained `hover/enum-member` and
+`definition/enum-member` (`Color.green` in the synthetic workspace) and now
+covers 70 requests + 27 probes; the inlayHint entry's fixed range exposes the
+boundary.  **Measured**: probes on `language_baseline.mt` (26 positions, 82
+outcomes), on a copy with extra member contexts (103 outcomes) and on an
+imported-enum/flags fixture (18 outcomes) — **0 host/self differences**; the
+harness's differing set is the 5 documented entries (both new corpus entries
+byte-equal); tests 16 files / 0 failed; the fixture sweep's 14 workspaces all
+"added 0"; the audit reads the 4 documented entries plus the documented
+first-file `documentSymbol` race.  Deferred: the imported-member location
+improvement (Track 7 residue).
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

@@ -334,7 +334,7 @@ function dispatch_method(ws: ref[workspace.Workspace], method: str, msg: proto.M
     else if method == "textDocument/inlayHint":
         let uri = extract_text_doc_uri(msg.params)
         var range = extract_range_lines(msg.params)
-        inlay.handle_inlay_hint(ws, uri, range.start_line, range.end_line, msg.id)
+        inlay.handle_inlay_hint(ws, uri, range.start_line, range.start_char, range.end_line, range.end_char, msg.id)
     else if method == "textDocument/onTypeFormatting":
         var pos = position_params(ws, msg.params)
         on_type.handle_on_type_formatting(ws, pos.uri, pos.line, extract_trigger_character(msg.params), msg.id)
@@ -500,11 +500,13 @@ function extract_selection_positions(ws: ref[workspace.Workspace], uri: str, par
 ## Extract the start/end line pair from a range-carrying request params.
 struct RangeLines:
     start_line: ptr_uint
+    start_char: ptr_uint
     end_line: ptr_uint
+    end_char: ptr_uint
 
 
 function extract_range_lines(params: json.Value) -> RangeLines:
-    var result = RangeLines(start_line = 0, end_line = 0)
+    var result = RangeLines(start_line = 0, start_char = 0, end_line = 0, end_char = 0)
     let obj_ptr = params.as_object()
     if obj_ptr == null:
         return result
@@ -520,11 +522,13 @@ function extract_range_lines(params: json.Value) -> RangeLines:
             let start_obj = read(start_ptr).as_object()
             if start_obj != null:
                 result.start_line = number_field(start_obj, "line")
+                result.start_char = number_field(start_obj, "character")
         let end_ptr = read(range_obj).get("end")
         if end_ptr != null:
             let end_obj = read(end_ptr).as_object()
             if end_obj != null:
                 result.end_line = number_field(end_obj, "line")
+                result.end_char = number_field(end_obj, "character")
     return result
 
 

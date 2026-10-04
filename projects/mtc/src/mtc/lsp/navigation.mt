@@ -1594,11 +1594,16 @@ function resolve_cursor(
                 let module_ptr = analysis.imports.get(recv.value)
                 if module_ptr != null:
                     return resolve_module_member(ws, read(module_ptr), target.text)
-            # `EnumType.member`: render the enum member — but a *variant*'s arms
-            # are not members with values; they resolve through the arm-name arms
-            # below, which render the constructor form (`Kind.ident(name: str)`).
-            if analysis.static_member_types.contains(recv.value) and not analysis.variant_types.contains(recv.value):
-                return resolve_enum_member(recv.value, target.text, source, ref_of(analysis))
+            # `EnumType.member`: render the enum or flags member (`running: State
+            # = 1`) at its declaration — but a *variant*'s arms are not members
+            # with values; they resolve through the arm-name arms below, which
+            # render the constructor form (`Kind.ident(name: str)`).
+            if not analysis.variant_types.contains(recv.value) and (analysis.static_member_types.contains(recv.value) or analysis.member_names.contains(recv.value)):
+                match resolve_enum_member(ws, ast_file, recv.value, target.text, ref_of(analysis)):
+                    Option.some as member_hit:
+                        return Option[CursorResult].some(value = member_hit.value)
+                    Option.none:
+                        pass
         Option.none:
             pass
 
@@ -2436,36 +2441,124 @@ public function file_uri_for_path(path: str) -> string.String:
     return result
 
 
-## Render hover for an enum type member access like `Color.red` or
-## `State.running`.  Receives the enum type name and the member identifier.
-function resolve_enum_member(type_name: str, member: str, source: str, analysis: ref[analyzer.Analysis]) -> Option[CursorResult]:
-    let matches_ptr = unsafe: read(analysis).match_case_names.get(type_name)
-    if matches_ptr == null:
-        return Option[CursorResult].none
-    let members = unsafe: read(matches_ptr)
-    var mi: ptr_uint = 0
-    var found = false
-    while mi < members.len:
-        if unsafe: read(members.data + mi) == member:
-            found = true
-            break
-        mi += 1
-    if not found:
-        return Option[CursorResult].none
+## The hover/definition result for a qualified enum or flags *member* access
+## (`State.running`, `Mask.a`) — the host's `resolve_enum_member_hover_info`
+## and `enum_member_definition_location`: `member: <type>` plus the member's
+## explicit value rendered the formatter's way (`= 1`, `= 1 << 0`; an implicit
+## member carries no value — the host's `enum_member_value_text` returns nil for
+## it), located at the member's own declaration.  The type is looked up in the
+## current file first, then across the imported modules (the host resolves the
+## type's declaring module through its import bindings).
+function resolve_enum_member(
+    ws: ref[workspace.Workspace],
+    file: ast.SourceFile,
+    type_name: str,
+    member_name: str,
+    analysis: ref[analyzer.Analysis],
+) -> Option[CursorResult]:
+    match enum_member_result_in_file(file, type_name, member_name):
+        Option.some as hit:
+            return Option[CursorResult].some(value = hit.value)
+        Option.none:
+            pass
+    return imported_enum_member_result(ws, analysis, type_name, member_name)
 
-    var hover = string.String.create()
-    hover.append(type_name)
-    hover.append(".")
-    hover.append(member)
-    return Option[CursorResult].some(value = CursorResult(
-        line = 1,
-        column = 0,
-        name_len = member.len,
-        hover_text = hover,
-        docs = string.String.create(),
-        target_uri = string.String.create(),
-        from_modules = string.String.create()
-    ))
+
+## The enum or flags declaration `type_name` in `file` and its member
+## `member_name`, or none when this file declares no such type/member.
+function enum_member_result_in_file(file: ast.SourceFile, type_name: str, member_name: str) -> Option[CursorResult]:
+    var di: ptr_uint = 0
+    while di < file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(file.declarations.data + di)
+        match decl:
+            ast.Decl.decl_enum as en:
+                if en.name.equal(type_name):
+                    return member_result_in_members(file, en.name, en.enum_members, member_name)
+            ast.Decl.decl_flags as fl:
+                if fl.name.equal(type_name):
+                    return member_result_in_members(file, fl.name, fl.flags_members, member_name)
+            _:
+                pass
+        di += 1
+    return Option[CursorResult].none
+
+
+## `member: Type[ = value]` for `member_name` among one enum/flags declaration's
+## members, located at the member's own declaration.
+function member_result_in_members(
+    file: ast.SourceFile,
+    type_name: str,
+    members: span[ast.EnumMember],
+    member_name: str,
+) -> Option[CursorResult]:
+    var mi: ptr_uint = 0
+    while mi < members.len:
+        let member = unsafe: read(members.data + mi)
+        if member.name.equal(member_name):
+            var hover = string.String.create()
+            hover.append(member.name)
+            hover.append(": ")
+            hover.append(type_name)
+            # Only an explicit value renders: the parser synthesizes implicit
+            # values for auto-increment, and the host prints nothing for those.
+            if member.value_explicit:
+                let value_expr = member.value
+                if value_expr != null:
+                    hover.append(" = ")
+                    hover.append(ast_formatter.render_expression_text(file, unsafe: read(value_expr)))
+            return Option[CursorResult].some(value = CursorResult(
+                line = member.line,
+                column = if member.column > 0: member.column - 1 else: 0z,
+                name_len = member.name.len,
+                hover_text = hover,
+                docs = string.String.create(),
+                target_uri = string.String.create(),
+                from_modules = string.String.create()
+            ))
+        mi += 1
+    return Option[CursorResult].none
+
+
+## The imported-type fallback: the first imported module whose own AST declares
+## the enum or flags type with that member (the host resolves the type's owning
+## module; the LSP's analysis keeps only the imported module names).  The
+## module AST comes from the workspace analysis cache, so the scan costs no
+## reparse.
+##
+## The result carries the member text but **no location**: the host's
+## `type_name_member_access?` classifier does not fire for an
+## `alias.Enum.member` receiver, so its hover has no `Defined at` line and its
+## definition answer is the generic fallback — the self matches that (an
+## improvement pointing at the imported declaration would be a documented
+## difference; see the plan's Track 7 residue).
+function imported_enum_member_result(
+    ws: ref[workspace.Workspace],
+    analysis: ref[analyzer.Analysis],
+    type_name: str,
+    member_name: str,
+) -> Option[CursorResult]:
+    var names = unsafe: read(ref_of(analysis.imports)).values()
+    while true:
+        let name_ptr = names.next() else:
+            return Option[CursorResult].none
+        let module_name = unsafe: read(name_ptr)
+        var module_path = resolve_module_source_path(ws, module_name) else:
+            continue
+        defer: module_path.release()
+        let entry = workspace.analysis_entry_for(ws, module_path.as_str()) else:
+            continue
+        let module_file = unsafe: read(entry).analysis.source_file
+        match enum_member_result_in_file(module_file, type_name, member_name):
+            Option.some as hit:
+                var located = hit.value
+                located.line = 0
+                located.column = 0
+                return Option[CursorResult].some(value = located)
+            Option.none:
+                pass
+    return Option[CursorResult].none
 
 
 ## A declaration whose own name token the cursor is on: its 1-based line and the
@@ -4043,6 +4136,12 @@ function resolve_local_hover(
     defer: cw.release()
     let source = cw.as_str()
     if source.len == 0:
+        return Option[CursorResult].none
+
+    # A dotted member (`Mask.a`, `d.push_back(…)`, `State.running`) is never a
+    # bare binding: the host resolves member accesses ahead of its name tables,
+    # so a same-named local must not answer for the member token.
+    if cursor.dot_receiver_at(source, line, character).is_some():
         return Option[CursorResult].none
 
     var name_opt = find_token_str(source, line, character)

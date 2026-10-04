@@ -68,6 +68,7 @@ MAIN_SOURCE = <<~MT
       let s = Sample(x = 1, y = 2)
       total += s.sum()
       total += compute(3, 4)
+      let _color = Color.green
       total += alpha.fn_alpha(10)
       let c = Circle(radius = 1.0)
       let area = c.area()
@@ -496,6 +497,10 @@ def corpus(dir, paths)
   requests["hover/struct"] = ["textDocument/hover", at.call("struct Sample", within: nil)]
   requests["hover/local"] = ["textDocument/hover", at.call("let s = Sample")]
   requests["hover/method-call"] = ["textDocument/hover", at.call("s.sum()")]
+  # A qualified enum member: `member: Type = <value>` at the member's own
+  # declaration (the enum-member arm, not the receiver's type).
+  requests["hover/enum-member"] = ["textDocument/hover", at.call("Color.green", off: 6)]
+  requests["definition/enum-member"] = ["textDocument/definition", at.call("Color.green", off: 6)]
   requests["hover/imported-fn"] = ["textDocument/hover", at.call("alpha.fn_alpha")]
   requests["hover/field"] = ["textDocument/hover", at.call("x = 1, y = 2")]
   requests["hover/keyword"] = ["textDocument/hover", { "textDocument" => { "uri" => main_uri }, "position" => { "line" => 0, "character" => 0 } }]

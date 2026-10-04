@@ -470,6 +470,18 @@ function render_type_ptr(t: ptr[ast.TypeRef]?) -> str:
         return render_type(read(tp))
 
 
+## Render one expression the formatter's way (`Formatter#render_expression`),
+## used by hover's enum-member value text (`Mask.a` → `1 << 0`; the host's
+## `enum_member_value_text`).  `file` only supplies the formatter's module kind.
+public function render_expression_text(file: ast.SourceFile, e: ast.Expr) -> str:
+    var f = new_formatter(file)
+    defer:
+        f.comments.release()
+        f.blank_lines.release()
+        f.line_starts.release()
+    return render_expression(ref_of(f), e, 0)
+
+
 public function render_type(t: ast.TypeRef) -> str:
     if t.is_fn or t.is_proc:
         let kw = if t.is_proc: "proc" else: "fn"
