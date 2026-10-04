@@ -265,21 +265,24 @@ module MilkTea
               result = []
               facts.methods.each do |_recv_type, methods|
                 methods.each do |mname, binding|
-                  next unless prefix.empty? || mname.start_with?(prefix)
+                  # Static methods are keyed `static:<name>`; label and insert
+                  # the bare name so accepting the item writes valid source.
+                  display_name = mname.delete_prefix("static:")
+                  next unless prefix.empty? || display_name.start_with?(prefix)
 
                   params_str = format_params(binding.type.params)
                   item = {
-                    label:      mname,
+                    label:      display_name,
                     kind:       6,  # Method
-                    detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
-                    insertText: mname,
-                    sortText:   "0_#{mname}",
-                    data:       completion_data(mname),
+                    detail:     "#{display_name}(#{params_str}) -> #{binding.type.return_type}",
+                    insertText: display_name,
+                    sortText:   "0_#{display_name}",
+                    data:       completion_data(display_name),
                   }
                   if (ld = label_details_for_params(params_str, nil))
                     item[:labelDetails] = ld
                   end
-                  if (snippet = snippet_for_callable(mname, binding.type.params))
+                  if (snippet = snippet_for_callable(display_name, binding.type.params))
                     item[:insertText] = snippet
                     item[:insertTextFormat] = 2
                   end
@@ -726,6 +729,10 @@ module MilkTea
           method_receiver_type = project_method_receiver_type_for_completion(receiver_type)
           methods = methods_for_receiver_type(facts, method_receiver_type)
           methods.each do |mname, binding|
+            # A static method belongs to the type receiver (`Player.zero`), not
+            # to a value receiver — and its table key (`static:<name>`) must
+            # never reach a label or the inserted text.
+            next if mname.start_with?("static:")
             next unless prefix.empty? || mname.start_with?(prefix)
 
             params_str = format_params(binding.type.params)

@@ -572,6 +572,11 @@ class HoverCompletionDefinitionAuditTest < Minitest::Test
         assert_includes labels, "is_alive", "completion should include method 'is_alive'"
         assert_includes labels, "heal", "completion should include editable method 'heal'"
         refute_includes labels, "create", "completion on value should NOT include static method 'create'"
+        # The method table keys static methods `static:<name>`; that key must
+        # never reach a label or the inserted text (it would insert invalid
+        # source when accepted).
+        raw = items.flat_map { |i| [i["label"], i["insertText"]] }.compact
+        refute raw.any? { |text| text.start_with?("static:") }, "no raw static: table keys on the wire"
       end
     end
   end

@@ -141,6 +141,12 @@ gained `hover/enum-member` + `definition/enum-member` (now 70 requests + 27
 probes) and the three fixes are locked by it; probes across three files (203
 outcomes) are 0-different, the harness differing set is the 5 documented
 entries, tests 16 files / 0 failed, and the fixture sweep added nothing.
+A follow-up report — accepting completion on a value receiver inserted
+`static:create(...)`, the internal method-table key (invalid source) — was
+fixed in **both** implementations: a value receiver skips static methods
+(they belong to the type receiver) and the method-fallback's labels are bare;
+the host's own completion test gained an assertion that no `static:` key
+reaches the wire (its value-receiver assertion had passed vacuously).
 Deferred: pointing `alias.Enum.member` hovers at the imported declaration
 (the host's classifier misses it — Track 7).  Session 31 had closed Track 7's
 residue (`--timings` shapes via the shared `mtc.profile`, the linter
@@ -4406,6 +4412,43 @@ byte-equal); tests 16 files / 0 failed; the fixture sweep's 14 workspaces all
 "added 0"; the audit reads the 4 documented entries plus the documented
 first-file `documentSymbol` race.  Deferred: the imported-member location
 improvement (Track 7 residue).
+
+### Completion labels: the `static:` table-key leak (2026-10-04 session 32, second commit)
+
+A user report: accepting a completion on a value receiver inserted
+`n.static:create(name)` — invalid source (a live parse error in the user's
+`SimpleGame/src/main.mt`).  Root cause: the host's method table keys static
+methods `static:<name>`, and `completion_items_for_value_receiver` used the raw
+key for the item's **label, detail, insertText, sortText and data**, so the
+prefix filter (`mname.start_with?(prefix)`) never matched a typed prefix
+either.  The host's own audit test asserted the *intended* behavior
+(`refute_includes labels, "create", "completion on value should NOT include
+static method 'create'"`) — it had passed vacuously, because the mangled label
+hid the static method from the assertion.
+
+Fix, in both implementations (parity kept):
+- a **value** receiver's completion skips static methods — they belong to the
+  type receiver (`Player.` → `zero`), which already stripped the key;
+- the unresolved-receiver **method-fallback** keeps every method but emits the
+  **bare** name (never a `static:` key) as label/insert/detail/data;
+- the self's `emit_receiver_method` takes a `ReceiverMethodScope`
+  (statics-only / instances-only / all) instead of the `static_only` flag, so
+  the three call-site classes are explicit.
+
+The host test gained an assertion that no label or `insertText` starts with
+`static:`.
+
+**Verified**: `n.` on `SimpleGame/src/main.mt` → the two fields, no static
+(host and self byte-equal); `mod_a.Box.` → `create` with the
+`create(${1:value})` snippet; a typed prefix (`b2.cr`) → `create` via the
+fallback; host LSP tests green (`completion_test` 20 runs, the audit test 28 —
+previously 1 failure); self tests 16 files / 0 failed; the harness's differing
+set stays the 5 documented entries; the fixture sweep 14/14 "added 0"; and the
+project audit on a *clean copy* of SimpleGame reads the 4 documented entries.
+The live SimpleGame audit reads 147 entries only because `src/main.mt` still
+carries the breakage the old insertion produced (its parse error cascades
+through every request on that file) — the user's file needs that line removed
+or replaced (`node.Node.create(c"World")`).
 
 ### The owning-release pair: the host's release rules (2026-10-01 session 18)
 

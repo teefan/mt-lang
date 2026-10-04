@@ -1017,14 +1017,23 @@ function merged_receiver_methods(
         ii += 1
 
 
-## Emit one merged receiver method in the host's shape.  `static_only` is the
-## type-receiver path, which emits static methods alone and strips the
-## `static:` marker from the label; a value receiver keeps the registered key
-## as its label (the host labels a value receiver's static methods
-## `static:create`).
+## The method kinds a receiver completion emits.  The host's branches: a
+## *type* receiver takes static methods alone (`Player.` → `zero`), a *value*
+## receiver the instance members — a static method belongs to the type, not the
+## value — and the unresolved-receiver fallback everything (its labels are
+## still the bare names: a static method's table key is `static:<name>`, which
+## must never reach the wire).
+enum ReceiverMethodScope: ubyte
+    statics_only = 0
+    instances_only = 1
+    all = 2
+
+
+## Emit one merged receiver method in the host's shape, for the method kinds
+## `scope` selects; every path labels and inserts the method's bare name.
 function emit_receiver_method(
     entry: ReceiverMethod,
-    static_only: bool,
+    scope: ReceiverMethodScope,
     prefix: str,
     sort_prefix: str,
     uri: str,
@@ -1033,15 +1042,12 @@ function emit_receiver_method(
     count: ref[ptr_uint],
 ) -> void:
     let is_static = entry.sig.method_kind == ast.MethodKind.mk_static
-    if static_only and not is_static:
+    if scope == ReceiverMethodScope.statics_only and not is_static:
+        return
+    if scope == ReceiverMethodScope.instances_only and is_static:
         return
     var label = string.String.create()
     defer: label.release()
-    # The self's method tables key methods by their bare name (`method_kind`
-    # carries staticness); the host's labels, which these mirror, carry the
-    # `static:` prefix on a value receiver and strip it on a type receiver.
-    if is_static and not static_only:
-        label.append("static:")
     label.append(entry.key)
     if not prefix_matches(label.as_str(), prefix):
         return
@@ -1228,7 +1234,7 @@ function type_receiver_completions(
         let mp = methods.get(mi2) else:
             break
         unsafe:
-            emit_receiver_method(read(mp), true, prefix, "0_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+            emit_receiver_method(read(mp), ReceiverMethodScope.statics_only, prefix, "0_", uri, ref_of(items_json), ref_of(first), ref_of(count))
         mi2 += 1
 
     items_json.append("]")
@@ -1323,7 +1329,7 @@ function value_receiver_completions(
             let mp = methods.get(mi) else:
                 break
             unsafe:
-                emit_receiver_method(read(mp), false, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+                emit_receiver_method(read(mp), ReceiverMethodScope.instances_only, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
             mi += 1
 
     items_json.append("]")
@@ -1627,7 +1633,7 @@ function imported_value_receiver_completions(
         let mp = methods.get(mi) else:
             break
         unsafe:
-            emit_receiver_method(read(mp), false, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+            emit_receiver_method(read(mp), ReceiverMethodScope.instances_only, prefix, "1_", uri, ref_of(items_json), ref_of(first), ref_of(count))
         mi += 1
 
     items_json.append("]")
@@ -1692,7 +1698,7 @@ function field_type_detail(fields: span[analyzer.FieldEntry], field_name: str) -
 ## it cannot resolve.  The host iterates its method table by receiver type in
 ## first-registration order, which is this file's declaration order (inline
 ## methods are desugared into `extending` blocks by the parser); each method
-## carries the resolved signature and the `static:` label a value receiver gets.
+## carries the resolved signature and is labeled by its bare name.
 function method_fallback_completions(
     analysis: ref[analyzer.Analysis],
     ast_file: ast.SourceFile,
@@ -1728,7 +1734,7 @@ function method_fallback_completions(
                         if sig_ptr != null:
                             emit_receiver_method(
                                 ReceiverMethod(key = mfn.name, module_name = "", sig = unsafe: read(sig_ptr)),
-                                false, prefix, "0_", uri, ref_of(items_json), ref_of(first), ref_of(count))
+                                ReceiverMethodScope.all, prefix, "0_", uri, ref_of(items_json), ref_of(first), ref_of(count))
                         mi += 1
             _:
                 pass
