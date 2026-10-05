@@ -131,13 +131,13 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 38 (2026-10-05) — **C4 part 1: the parser/lexer scratch
-release** takes the full-cycle soak slope **3.96 → 3.17 MB/cycle** (the gate
-read 3.19 at `--cycles 200`; peak RSS 417 → 336 MB at 100 cycles): the lexer's
-token vectors, the parser's token-stream copy, its name maps and
-`pending_decls` are freed at parse end.  The residual is the AST/analysis
-allocation graph; the per-entry region ownership (C4 parts 2–4) lands next.
-Session 37 had routed the per-request parse
+Last updated: session 38 (2026-10-05) — **C4 in progress: part 1 released the
+parser/lexer scratch** (the full-cycle soak slope fell **3.96 → 3.17 MB/cycle**;
+the gate read 3.19 at `--cycles 200`; peak RSS 417 → 336 MB at 100 cycles) and
+**part 2 landed the `heap.Region` allocator and the scoped heap routing**
+(inert — no caller activates a region yet; the gate re-read 3190.5 KB/cycle and
+`heap_region_test.mt` joined the suite at 19 files).  The loader/parse-cache
+integration (parts 3–4) is the remainder.  Session 37 had routed the per-request parse
 sites through the shared caches, cutting the full-cycle slope
 **11.4 → 3.96 MB/cycle** (the gate read 3.98 at `--cycles 200`); the residual is
 the per-edit loader parse+analysis leak (per-parse ownership is the remaining
@@ -735,10 +735,12 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   what is missing is ownership of the AST/analysis internals.  **Part 1 (session
   38, 2026-10-05):** the parser and lexer scratch buffers (the two token vectors,
   the name maps, `pending_decls`, the indent stack) are released at parse end —
-  the soak slope fell **3.96 → 3.17 MB/cycle** (gate 3.19).  The per-entry
-  region ownership designed in session 38 (a growable `heap.Region`, a scoped
-  allocator switch, per-entry parse/analysis regions, superseded regions
-  quarantined to the request boundary) is parts 2–4.  Record: §0k
+  the soak slope fell **3.96 → 3.17 MB/cycle** (gate 3.19).  **Part 2 (session
+  38):** the `heap.Region` growable bump allocator and the scoped heap routing
+  (`begin_region`/`end_region`; region-owned `release`/`resize` semantics) landed
+  inert, locked by `heap_region_test.mt`.  **Parts 3–4** wire the loader and the
+  LSP parse cache to per-entry parse/analysis regions, with superseded regions
+  quarantined to the request boundary.  Record: §0k
   session 38; §0k session 37; §0k session 30's "Soak profile and the long-session blocker".
 - **C5 client behaviours** — **DONE (session 31, 2026-10-04)**: the harness's
   stress section now measures six client-behaviour probes (`c5/…`):
@@ -1012,7 +1014,7 @@ definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (2026-10-05 session 37 — `stage2.c == stage3.c`); self-test suite 18 files / 0 failed (the file count includes session 34's `debug_map_test.mt`) | stay green | `tools/bootstrap.sh -j 16` |
+| bootstrap fixed point | holds (2026-10-05 session 38 part 2 — `stage2.c == stage3.c`); self-test suite 19 files / 0 failed (session 34's `debug_map_test.mt` and session 38's `heap_region_test.mt` included) | stay green | `tools/bootstrap.sh -j 16` |
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
@@ -1023,7 +1025,7 @@ definition of done above.
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-05 session 37) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
 | LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 37; ~7.8M B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
-| LSP soak | **3.17 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (`--cycles 100`; the session-38 gate's `--cycles 200` read **3.19**; was 3.96/3.98 — session 38 part 1 released the parser/lexer token and scratch buffers, peak RSS 417 → 336 MB at 100 cycles).  The residual is the AST/analysis allocation graph; the per-entry regions (C4 parts 2–4) land next | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
+| LSP soak | **3.17 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (`--cycles 100`; the session-38 gates' `--cycles 200` read **3.19** in both parts — part 2's region allocator is inert).  Part 1 released the parser/lexer token and scratch buffers (from 3.96/3.98; peak RSS 417 → 336 MB at 100 cycles); the residual is the AST/analysis allocation graph, which the loader/parse-cache region integration (parts 3–4) owns | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical (re-measured 2026-10-04 session 33; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 496 agree / 120 differ (616 files; re-measured 2026-10-05 session 35 — the +3 files/+3 differs over session 33's 613/117 are session 34's new compiler sources, two of which differ, plus session 34's edits to existing sources; the session-35 edits flip no file — `analyzer.mt` was already a differing file at HEAD) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | **zero differing rows** on the whole `dap_smoke` matrix (2026-10-04 session 34 — process backend, fake-adapter lldb and real `/usr/bin/lldb-dap` sessions), except the documented self-better `lldb-real frame0 name` (self `add`, host `main_add` — the host's cache-hit map loss); valgrind 0 errors on both backends | VS Code end-to-end under lldb-dap (manual) | `ruby tools/dap_smoke.rb` |
@@ -1067,6 +1069,20 @@ and follows as parts 2–4.
   examples 49/49, recovery OK, harness 30/30 at 4 documented entries, fixture sweep closed
   5 / added 0, valgrind 0 errors, Neovim smoke OK, soak 3.19.  Targeted valgrind on an
   example build: 0 errors.
+- **Part 2 (`std/mem/heap.mt`): the `Region` allocator and the scoped routing.**  A region
+  is a growable bump allocator: a geometric block list, a per-allocation 16-byte size
+  header, `contains` via `reinterpret[ptr_uint]` block ranges, resize = new payload +
+  copy, `release()` frees every block.  While a region is active
+  (`begin_region`/`end_region`, nesting save/restore), `alloc_bytes`,
+  `alloc_bytes_aligned`, `alloc_zeroed_bytes` and `resize_bytes` serve from it, and
+  `release_bytes` on region memory is a no-op; with no active region every path is libc
+  exactly as before (one global load, no scans).  Region bookkeeping allocates through
+  libc directly, so a region's blocks can never be captured by another region.
+  Locked by `projects/mtc/test/heap_region_test.mt` (7 cases: multi-block growth,
+  zeroing, resize preservation, the release no-op, libc-vs-region containment, nesting,
+  container buffers).  Inert by construction and by measurement: soak 3190.5 KB/cycle
+  (part 1: 3190.3), `test/mt` 60/0, examples 49/49, harness 4 documented, valgrind 0
+  errors, bootstrap fixed point at 19 test files / 0 failed.
 
 ### Session 37 (2026-10-05) — the soak: per-request parses routed through the shared caches
 
