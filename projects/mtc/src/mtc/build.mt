@@ -6,6 +6,7 @@
 
 import std.fs as fs
 import std.fmt as fmt
+import std.log as log
 import std.path as path_ops
 import std.process as process
 import std.string as string
@@ -13,6 +14,7 @@ import std.str
 import std.time as time
 import std.vec as vec
 
+import mtc.debug_map as debug_map
 import mtc.loader.module_loader as loader
 import mtc.ir as ir
 import mtc.c_backend.c_backend as c_backend
@@ -152,6 +154,7 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
                     Result.failure as rm_failure:
                         var rm_err = rm_failure.error
                         rm_err.release()
+                write_debug_map(ir_program, output_path)
                 return Result[string.String, string.String].success(value = string.String.from_str(output_path))
             var message = string.String.from_str("C compiler exited with an error:\n")
             message.append(result.stderr.as_str())
@@ -163,6 +166,24 @@ public function build(program: loader.Program, ir_program: ir.Program, output_pa
             message.append(c_compiler)
             message.append("'")
             return Result[string.String, string.String].failure(error = message)
+
+
+## Write the `<output>.mtdbg.json` sidecar from the lowered IR.  A sidecar
+## write failure must not fail the build: the binary is the deliverable, and
+## the DAP bridge merely loses frame-name mapping without the map.
+function write_debug_map(ir_program: ir.Program, output_path: str) -> void:
+    var program_copy = ir_program
+    var sidecar = debug_map.sidecar_path_for(output_path)
+    defer: sidecar.release()
+    var map = debug_map.from_ir(ref_of(program_copy), output_path)
+    defer: debug_map.release(ref_of(map))
+    match debug_map.write(ref_of(map), sidecar.as_str()):
+        Result.success:
+            pass
+        Result.failure as failure:
+            var message = failure.error
+            log.warn(message.as_str())
+            message.release()
 
 
 ## The `-I<root>/std/c` flag for the first root that contains a `std/c` directory,

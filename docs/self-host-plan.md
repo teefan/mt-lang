@@ -603,14 +603,16 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
 
 ### Track 5 — DAP (debug map → build-on-launch → pause/modules → lldb-dap bridge)
 
-1. **Debug map (prerequisite).**  New `dap/debug_map.mt`: walk
-   `ir.Program.functions` (`ir.mt:191-226`) collecting params and `stmt_local`
-   locals (`:110`) with line/`source_path`, serialize the host's shape
-   (`{version, functions:[{name,cName,params,locals,sourcePath,line}],
-   binaryPath, programSourcePath}` — `tooling/debug_map.rb:9-50,130-196`) and
-   write `<output>.mtdbg.json` from `build.mt` after a successful link
-   (`build.mt:97-158`).  Add the loader + frame/variable/expression rewriters of
-   `dap/server/debug_map.rb:45-225`.
+1. **Debug map (prerequisite).**  **Emission landed (session 34, 2026-10-04)**:
+   `projects/mtc/src/mtc/debug_map.mt` ports the host's model + writer + loader
+   (`lib/milk_tea/tooling/debug_map.rb`: Entry/Function shapes, `from_ir`,
+   `collect_locals`, `first_statement_*`, relative payload paths, tolerant
+   `load_for_binary`), `build.mt`'s success branch writes
+   `<output>.mtdbg.json` (a write failure only warns — the binary stays the
+   deliverable), and `projects/mtc/test/debug_map_test.mt` locks the model and
+   the write→load round trip.  The self's map is semantically equal to the
+   host's on the smoke fixture.  The DAP-side frame/variable/expression
+   rewriters (host `dap/server/debug_map.rb:45–225`) land with item 4.
 2. **Build-on-launch.**  Rewrite `dap/utilities.mt`'s `resolve_launch_program`
    (`:17-41` — today it only accepts a pre-built binary and errors `Milk Tea
    binary not found: <path> (build with mtc build first)` on a `.mt` source):
