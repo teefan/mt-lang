@@ -10,9 +10,6 @@ import std.string as string
 import std.vec as vec
 
 import mtc.parser.ast as ast
-import mtc.parser.parser as parser
-import mtc.parser.state as pstate
-import mtc.semantic.analyzer as analyzer
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.uri as uri_ops
@@ -43,9 +40,10 @@ public function handle_prepare_call_hierarchy(
     defer: content.release()
 
     let source = content.as_str()
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    var ast_file = doc.ast_file
     let token_opt = cursor.identifier_at(source, line, character)
     match token_opt:
         Option.none:
@@ -152,10 +150,11 @@ public function handle_incoming_calls(
         match fs_mod.read_text(path):
             Result.success as payload:
                 var content = payload.value
-                var parse_diags2 = vec.Vec[pstate.ParseDiagnostic].create()
-                defer: parse_diags2.release()
-                var ast_file2 = parser.parse_source(content.as_str(), ref_of(parse_diags2))
-                var analysis2 = analyzer.check_source_file(ast_file2)
+                let doc = workspace.document_analysis_for(ws, path) else:
+                    content.release()
+                    ri += 1
+                    continue
+                var ast_file2 = doc.ast_file
 
                 let source = content.as_str()
                 var occurrences = cursor.identifier_occurrences(source, name)
@@ -213,9 +212,10 @@ public function handle_outgoing_calls(
     defer: content.release()
 
     let source = content.as_str()
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    var ast_file = doc.ast_file
 
     # Find the function body for `name`.
     var collected = vec.Vec[CalleeRef].create()

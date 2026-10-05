@@ -17,7 +17,6 @@ import std.log as log
 
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
-import mtc.parser.state as pstate
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
@@ -93,16 +92,14 @@ public function handle_completion(
         heap.release(import_items)
         return
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    # The loader-backed analysis binds the imported modules, so a value's
-    # imported type resolves (`var n = node.Node.create(…)`); the single-file
-    # analysis is the fallback when the document cannot be loaded.
-    var maybe_analysis = workspace.analysis_for(ws, file_path.as_str())
-    var analysis = if maybe_analysis.is_some(): maybe_analysis.unwrap() else: analyzer.check_source_file(ast_file)
-    if maybe_analysis.is_some():
-        ast_file = analysis.source_file
+    # The AST and analysis come from the shared caches — the loader-backed entry
+    # when the document loads (imports bound, so a value's imported type
+    # resolves: `var n = node.Node.create(…)`), else the single-file pair.
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        proto.write_response_raw(id, "[]")
+        return
+    var ast_file = doc.ast_file
+    var analysis = doc.analysis
 
     # Dot-receiver context.  The host answers every dot receiver from the
     # receiver chain — and, failing that, from the file's method list — so the
@@ -588,12 +585,9 @@ function module_member_completions(
         Result.success as path_payload:
             var module_path = path_payload.value
             defer: module_path.release()
-            var module_source = ws.document_source(module_path.as_str()) else:
+            let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
                 return null
-            defer: module_source.release()
-            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: parse_diags.release()
-            var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
+            var module_file = module_doc.ast_file
             var items_json = string.String.create()
             items_json.append("[")
             var first = true
@@ -2521,12 +2515,9 @@ function emit_module_type_items(
         Result.success as path_payload:
             var module_path = path_payload.value
             defer: module_path.release()
-            var module_source = ws.document_source(module_path.as_str()) else:
+            let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
                 return
-            defer: module_source.release()
-            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: parse_diags.release()
-            var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
+            var module_file = module_doc.ast_file
             let exports_all = module_file.module_kind == ast.ModuleKind.module_raw
             var di: ptr_uint = 0
             while di < module_file.declarations.len and unsafe: read(count) < MAX_COMPLETION_ITEMS:

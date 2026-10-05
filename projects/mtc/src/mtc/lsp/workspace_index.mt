@@ -229,50 +229,61 @@ public function collect_file_symbols_with_source(
             var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
             defer: parse_diags.release()
             var ast_file = parser.parse_source(source.as_str(), ref_of(parse_diags))
-            index.files.push(FileImports(
-                path = string_mod.String.from_str(canonical.value.as_str()),
-                imports = collect_resolved_imports(ast_file, roots),
-            ))
-
-            var di: ptr_uint = 0
-            while di < ast_file.declarations.len:
-                var decl: ast.Decl
-                unsafe:
-                    decl = read(ast_file.declarations.data + di)
-                let sym_kind = decl_symbol_kind(decl)
-                if sym_kind >= 0:
-                    let info = decl_name_and_line(decl)
-                    if info.name.len > 0:
-                        index.entries.push(Entry(
-                            name = string_mod.String.from_str(info.name),
-                            kind = sym_kind,
-                            path = string_mod.String.from_str(canonical.value.as_str()),
-                            line = info.line,
-                            column = info.column,
-                        ))
-                match decl:
-                    ast.Decl.decl_extending_block as ext:
-                        var mi: ptr_uint = 0
-                        while mi < ext.methods.len:
-                            var mfn: ast.Method
-                            unsafe:
-                                mfn = read(ext.methods.data + mi)
-                            if mfn.name.len > 0:
-                                index.entries.push(Entry(
-                                    name = string_mod.String.from_str(mfn.name),
-                                    kind = 12,
-                                    path = string_mod.String.from_str(canonical.value.as_str()),
-                                    line = mfn.line,
-                                    column = mfn.column,
-                                ))
-                            mi += 1
-                    _:
-                        pass
-                di += 1
+            collect_file_symbols_from_ast(canonical.value.as_str(), index, roots, ast_file)
             canonical.value.release()
         Result.failure as failure_payload:
             var err = failure_payload.error
             err.release()
+
+
+## Index one already-parsed file — the dirty re-index path hands in the loader's
+## cached raw tree, so an edited file is not parsed a second time.
+public function collect_file_symbols_from_ast(
+    canonical_path: str,
+    index: ref[Index],
+    roots: ref[vec.Vec[string_mod.String]],
+    ast_file: ast.SourceFile,
+) -> void:
+    index.files.push(FileImports(
+        path = string_mod.String.from_str(canonical_path),
+        imports = collect_resolved_imports(ast_file, roots),
+    ))
+
+    var di: ptr_uint = 0
+    while di < ast_file.declarations.len:
+        var decl: ast.Decl
+        unsafe:
+            decl = read(ast_file.declarations.data + di)
+        let sym_kind = decl_symbol_kind(decl)
+        if sym_kind >= 0:
+            let info = decl_name_and_line(decl)
+            if info.name.len > 0:
+                index.entries.push(Entry(
+                    name = string_mod.String.from_str(info.name),
+                    kind = sym_kind,
+                    path = string_mod.String.from_str(canonical_path),
+                    line = info.line,
+                    column = info.column,
+                ))
+        match decl:
+            ast.Decl.decl_extending_block as ext:
+                var mi: ptr_uint = 0
+                while mi < ext.methods.len:
+                    var mfn: ast.Method
+                    unsafe:
+                        mfn = read(ext.methods.data + mi)
+                    if mfn.name.len > 0:
+                        index.entries.push(Entry(
+                            name = string_mod.String.from_str(mfn.name),
+                            kind = 12,
+                            path = string_mod.String.from_str(canonical_path),
+                            line = mfn.line,
+                            column = mfn.column,
+                        ))
+                    mi += 1
+            _:
+                pass
+        di += 1
 
 
 ## Resolve each import of `ast_file` to the file it names, so the reference

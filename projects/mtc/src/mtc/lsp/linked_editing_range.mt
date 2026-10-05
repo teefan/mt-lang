@@ -7,8 +7,6 @@ import std.str
 import std.string as string
 import std.vec as vec
 
-import mtc.parser.parser as parser
-import mtc.parser.state as pstate
 import mtc.lsp.cursor as cursor
 import mtc.lsp.protocol as proto
 import mtc.lsp.scope as scope
@@ -36,9 +34,10 @@ public function handle_linked_editing_range(
     defer: content.release()
 
     let source = content.as_str()
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    var ast_file = doc.ast_file
 
     let token_opt = cursor.identifier_at(source, line, character)
     match token_opt:

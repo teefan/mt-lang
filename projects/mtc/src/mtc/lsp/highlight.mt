@@ -13,8 +13,6 @@ import mtc.lsp.scope as scope_mod
 import mtc.lsp.uri as uri_ops
 import mtc.lsp.workspace as workspace
 import mtc.parser.ast as ast
-import mtc.parser.parser as parser
-import mtc.parser.state as pstate
 
 
 ## Handle textDocument/documentHighlight.
@@ -47,9 +45,10 @@ public function handle_document_highlight(
     # highlight must not light up a same-named local in an unrelated function
     # (`var v` in two demos).  Every other name keeps the whole-file rule.
     var scoped_line = Option[ptr_uint].none
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        proto.write_response_raw(id, "null")
+        return
+    var ast_file = doc.ast_file
     var bindings = scope_mod.collect_bindings(source, ast_file)
     defer: bindings.release()
     scoped_line = scope_mod.local_binding_line(ref_of(bindings), target.text, line + 1)

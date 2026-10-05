@@ -167,11 +167,10 @@ public function count_declaration_references(
     defer: content.release()
     let source = content.as_str()
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-    var file_ast = nav_mod.ast_for_document(ws, file_path, parsed_file)
-    var analysis = nav_mod.analysis_for_document(ws, file_path, parsed_file)
+    let doc = workspace.document_analysis_for(ws, file_path) else:
+        return 0
+    var file_ast = doc.ast_file
+    var analysis = doc.analysis
 
     if not module_level_name(ref_of(analysis), name):
         return 0
@@ -1022,14 +1021,10 @@ function resolve_static_receiver_method(
     var owner_path = nav_mod.resolve_module_source_path(ws, owner) else:
         return Option[StaticMethodTarget].none
     defer: owner_path.release()
-    var owner_source = ws.document_source(owner_path.as_str()) else:
+    let owner_doc = workspace.document_analysis_for(ws, owner_path.as_str()) else:
         return Option[StaticMethodTarget].none
-    defer: owner_source.release()
-    var owner_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: owner_diags.release()
-    var owner_parsed = parser.parse_source(owner_source.as_str(), ref_of(owner_diags))
-    var owner_ast = nav_mod.ast_for_document(ws, owner_path.as_str(), owner_parsed)
-    var owner_analysis = nav_mod.analysis_for_document(ws, owner_path.as_str(), owner_parsed)
+    var owner_ast = owner_doc.ast_file
+    var owner_analysis = owner_doc.analysis
 
     match extending_method_declaration(owner_ast, ref_of(owner_analysis), receiver.name, method_name):
         Option.some as declared:
@@ -1237,11 +1232,10 @@ function static_reference_matches(
     let token = cursor.identifier_at(source, entry.line - 1, entry.column - 1) else:
         return false
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-    var file_ast = nav_mod.ast_for_document(ws, entry.path, parsed_file)
-    var analysis = nav_mod.analysis_for_document(ws, entry.path, parsed_file)
+    let doc = workspace.document_analysis_for(ws, entry.path) else:
+        return false
+    var file_ast = doc.ast_file
+    var analysis = doc.analysis
 
     let token_end = entry.column - 1 + entry.length
     match cursor.type_receiver_at(source, entry.line - 1, token_end):

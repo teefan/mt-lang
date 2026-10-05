@@ -442,12 +442,19 @@ extending Workspace:
                 break
             let path = unsafe: read(dp).as_str()
             idx.remove_file(ref_of(this.index), path)
-            match this.document_source(path):
-                Option.some as content:
-                    idx.collect_file_symbols_with_source(path, ref_of(this.index), ref_of(this.module_roots), content.value.as_str())
-                    content.value.release()
+            # The loader's cached raw tree re-indexes the edited file without a
+            # second parse; a file with no loader entry falls back to reading
+            # and parsing it.
+            match document_raw_ast(this, path):
+                Option.some as ast_payload:
+                    idx.collect_file_symbols_from_ast(path, ref_of(this.index), ref_of(this.module_roots), ast_payload.value)
                 Option.none:
-                    pass
+                    match this.document_source(path):
+                        Option.some as content:
+                            idx.collect_file_symbols_with_source(path, ref_of(this.index), ref_of(this.module_roots), content.value.as_str())
+                            content.value.release()
+                        Option.none:
+                            pass
             di += 1
         release_dirty_paths(ref_of(this.index_dirty))
 
@@ -760,6 +767,119 @@ public function parsed_analysis_for(ws: ref[Workspace], path: str, source: str) 
         ws.parse_cache.remove(cache_key)
     ws.parse_cache.set(string.String.from_str(path), entry)
     return Option[ParseCacheEntry].some(value = entry)
+
+
+## The AST and analysis for a document's current text, from one tree:
+## the loader-backed pair when the file loads (imports bound, shared with every
+## other request and cached per content version), else the single-file
+## parse+check.  Consumers that would otherwise parse the document per request
+## route through this; the AST and analysis always come from the same tree,
+## because `resolved_expr_types` is keyed by expression pointer.
+public struct DocumentAnalysis:
+    ast_file: ast.SourceFile
+    analysis: analyzer.Analysis
+    ## The raw parse's declaration count (before the analyzer appends the
+    ## declarations `emit` statements produce), for the outline's cutoff.
+    parsed_declaration_count: ptr_uint
+
+
+public function document_analysis_for(ws: ref[Workspace], path: str) -> Option[DocumentAnalysis]:
+    let entry_opt = analysis_entry_for(ws, path)
+    match entry_opt:
+        Option.some as ep:
+            let entry = unsafe: read(ep.value)
+            return Option[DocumentAnalysis].some(value = DocumentAnalysis(
+                ast_file = entry.analysis.source_file,
+                analysis = entry.analysis,
+                parsed_declaration_count = root_module_declaration_count(entry.program, entry.analysis.module_name),
+            ))
+        Option.none:
+            pass
+    var content = ws.document_source(path) else:
+        return Option[DocumentAnalysis].none
+    defer: content.release()
+    let parsed = parsed_analysis_for(ws, path, content.as_str()) else:
+        return Option[DocumentAnalysis].none
+    return Option[DocumentAnalysis].some(value = DocumentAnalysis(
+        ast_file = parsed.ast_file,
+        analysis = parsed.analysis,
+        parsed_declaration_count = parsed.ast_file.declarations.len,
+    ))
+
+
+## The parse errors the loader recorded for `path`'s root module, or none when
+## the document has no loader entry (the caller then parses for itself).  Lets a
+## handler keep its parse-error bail without an eager parse.
+public function document_parse_error_count(ws: ref[Workspace], path: str) -> Option[ptr_uint]:
+    let entry_opt = analysis_entry_for(ws, path)
+    match entry_opt:
+        Option.some as ep:
+            let entry = unsafe: read(ep.value)
+            var count: ptr_uint = 0
+            var mi: ptr_uint = 0
+            while mi < entry.program.modules.len():
+                let mp = entry.program.modules.get(mi) else:
+                    break
+                let m = unsafe: read(mp)
+                if m.module_name.as_str().equal(entry.analysis.module_name):
+                    count = m.parse_diagnostics.len()
+                    break
+                mi += 1
+            return Option[ptr_uint].some(value = count)
+        Option.none:
+            return Option[ptr_uint].none
+
+
+## The raw parse's declaration count for the root module: the Program's
+## `modules` are dependency-first while `analyses` (and `root_index`) are
+## canonical, so the root is found by module name.  Falls back to the analysis'
+## own tree when the module is absent.
+function root_module_declaration_count(program: loader.Program, module_name: str) -> ptr_uint:
+    var mi: ptr_uint = 0
+    while mi < program.modules.len():
+        let mp = program.modules.get(mi) else:
+            break
+        let m = unsafe: read(mp)
+        if m.module_name.as_str().equal(module_name):
+            return m.source_file.declarations.len
+        mi += 1
+    return 0
+
+
+## The loader's raw parse tree for `path` (the module's own `source_file`, before
+## the analysis appends the declarations `emit` statements produce), or none when
+## the document has no loader entry.  The workspace index re-indexes an edited
+## file from this tree instead of parsing it again.
+public function document_raw_ast(ws: ref[Workspace], path: str) -> Option[ast.SourceFile]:
+    let entry_opt = analysis_entry_for(ws, path)
+    match entry_opt:
+        Option.some as ep:
+            let entry = unsafe: read(ep.value)
+            var canonical_ok = false
+            var canonical: string.String
+            match fs_mod.canonicalize(path):
+                Result.success as cp:
+                    canonical = cp.value
+                    canonical_ok = true
+                Result.failure as fp:
+                    var err = fp.error
+                    err.release()
+            var mi: ptr_uint = 0
+            while mi < entry.program.modules.len():
+                let mp = entry.program.modules.get(mi) else:
+                    break
+                let m = unsafe: read(mp)
+                let matches = if canonical_ok: m.path.as_str().equal(canonical.as_str()) else: m.path.as_str().equal(path)
+                if matches:
+                    if canonical_ok:
+                        canonical.release()
+                    return Option[ast.SourceFile].some(value = m.source_file)
+                mi += 1
+            if canonical_ok:
+                canonical.release()
+        Option.none:
+            pass
+    return Option[ast.SourceFile].none
 
 
 ## The whole cache entry (loader-backed program + analysis) for `path`.  The

@@ -6,7 +6,6 @@
 ## functions, types, namespaces (import aliases), and parameters.
 
 import std.fmt
-import std.fs as fs_mod
 import std.json as json
 import std.map as map_mod
 import std.str
@@ -1740,31 +1739,22 @@ function register_resolved_import(
                             facts.imports.set(alias, true)
                             collect_alias_exports(facts, alias, ref_of(entry.analysis), entry.analysis.source_file)
                         Option.none:
-                            register_import_from_disk(facts, alias, resolved.as_str())
+                            register_import_from_disk(ws, facts, alias, resolved.as_str())
         Result.failure as resolve_failure:
             var rerr = resolve_failure.error
             rerr.release()
 
 
-## Cold fallback: parse and check the import directly when neither the module
-## cache nor the workspace's loader-backed analysis could serve it.
-function register_import_from_disk(facts: ref[ScanFacts], alias: str, resolved: str) -> void:
-    match fs_mod.read_text(resolved):
-        Result.success as payload:
-            var dep_source = payload.value
-            defer: dep_source.release()
-            var dep_diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: dep_diags.release()
-            let dep_file = parser.parse_source(dep_source.as_str(), ref_of(dep_diags))
-            var dep_analysis = analyzer.check_source_file(dep_file)
-            facts.imports.set(alias, true)
-            collect_alias_exports(facts, alias, ref_of(dep_analysis), dep_file)
-            # The scan keeps only the exported surface; the dependency
-            # analysis' own diagnostics are not part of it.
-            dep_analysis.diagnostics.release()
-        Result.failure as fail:
-            var err = fail.error
-            err.release()
+## Cold fallback: check the import through the shared document cache when
+## neither the module cache nor the workspace's loader-backed analysis could
+## serve it.
+function register_import_from_disk(ws: ref[workspace.Workspace], facts: ref[ScanFacts], alias: str, resolved: str) -> void:
+    var dep_doc = workspace.document_analysis_for(ws, resolved) else:
+        return
+    facts.imports.set(alias, true)
+    collect_alias_exports(facts, alias, ref_of(dep_doc.analysis), dep_doc.ast_file)
+    # The scan keeps only the exported surface; the cached dependency
+    # analysis' own diagnostics stay with its cache entry.
 
 
 function dotted_qname(path: ast.QualifiedName) -> string.String:
@@ -1880,9 +1870,11 @@ function compute_token_data(
     var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: all_tokens.release()
 
-    # The parse and single-file check are shared with the other features through
-    # the workspace's parse cache: on a large file they cost more than the scan.
-    let parsed = workspace.parsed_analysis_for(ws, path, source) else:
+    # The parse and check are shared with the other features through the
+    # workspace's caches — the loader-backed entry when the document loads
+    # (already built by the diagnostics publish after an edit), else the
+    # single-file parse cache.  On a large file they cost more than the scan.
+    let parsed = workspace.document_analysis_for(ws, path) else:
         return vec.Vec[uint].create()
     var ast_file = parsed.ast_file
     var analysis = parsed.analysis
@@ -2423,7 +2415,7 @@ public function semantic_class_entries(
     var all_tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
     defer: all_tokens.release()
 
-    let parsed = workspace.parsed_analysis_for(ws, path, source) else:
+    let parsed = workspace.document_analysis_for(ws, path) else:
         return entries
     var ast_file = parsed.ast_file
     var analysis = parsed.analysis
@@ -2672,7 +2664,10 @@ public function token_kind_to_type(kind: tk_mod.TokenKind) -> uint:
     return TOKEN_KEYWORD
 
 
-## Build a SemanticTokens data array JSON.
+## Build a SemanticTokens data array JSON.  The integer emission goes through
+## `fmt.append_uint` — `append_format(f"#{v}")` allocates a temporary per value,
+## which the per-token data array turns into tens of thousands of leaks per
+## request on a large file.
 function build_tokens_json(data: ref[vec.Vec[uint]]) -> string.String:
     var result = string.String.create()
     result.append("{\"data\":[")
@@ -2685,7 +2680,7 @@ function build_tokens_json(data: ref[vec.Vec[uint]]) -> string.String:
             result.append(",")
         first = false
         unsafe:
-            result.append_format(f"#{read(v_ptr)}")
+            fmt.append_uint(ref_of(result), read(v_ptr))
         di += 1
     result.append("]}")
     return result

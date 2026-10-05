@@ -156,14 +156,10 @@ public function handle_inlay_hint(
                         var module_path = path_payload.value
                         defer: module_path.release()
 
-                        var module_source = ws.document_source(module_path.as_str()) else:
+                        let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
                             ti += 1
                             continue
-                        defer: module_source.release()
-
-                        var parse_diags_mod = vec.Vec[pstate.ParseDiagnostic].create()
-                        defer: parse_diags_mod.release()
-                        var module_file = parser.parse_source(module_source.as_str(), ref_of(parse_diags_mod))
+                        var module_file = module_doc.ast_file
 
                         let psig = find_function_params(module_file.declarations, fn_name)
                         match psig:

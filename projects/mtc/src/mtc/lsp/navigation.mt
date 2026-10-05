@@ -100,10 +100,9 @@ function resolve_local_definition(
     name: str,
     target_line: ptr_uint,
 ) -> Option[CursorResult]:
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-    var ast_file = ast_for_document(ws, file_path, parsed_file)
+    let doc = workspace.document_analysis_for(ws, file_path) else:
+        return Option[CursorResult].none
+    var ast_file = doc.ast_file
 
     # The host resolves a binding only through the cursor's own completion
     # frame; the scope walk's region model is the self's equivalent, and it
@@ -701,11 +700,10 @@ public function handle_type_definition(
         Option.none:
             pass
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-    var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
-    var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        return
+    var ast_file = doc.ast_file
+    var analysis = doc.analysis
 
     # A type or interface this document declares: its own declaration.  The
     # host answers `module_member_definition_location` for the *current* module
@@ -768,6 +766,21 @@ public function ast_for_document(
     let entry = workspace.analysis_entry_for(ws, file_path) else:
         return parsed_file
     return unsafe: read(entry).analysis.source_file
+
+
+## The document's parse-error count: the loader's recorded count when the
+## document loads (no parse), else a fresh parse's — so a handler can keep its
+## parse-error bail without parsing on every request.
+function parse_error_count_for(ws: ref[workspace.Workspace], file_path: str, source: str) -> ptr_uint:
+    let recorded = workspace.document_parse_error_count(ws, file_path)
+    match recorded:
+        Option.some as count:
+            return count.value
+        Option.none:
+            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
+            defer: parse_diags.release()
+            var _parsed = parser.parse_source(source, ref_of(parse_diags))
+            return parse_diags.len()
 
 
 ## The type of the value named `name` at `target_line`: its inferred type for a
@@ -1074,9 +1087,10 @@ public function handle_implementation(
         proto.write_response_raw(id, "[]")
         return
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        proto.write_response(id, json.null_value())
+        return
+    var ast_file = doc.ast_file
 
     var json_text = string.String.create()
     defer: json_text.release()
@@ -1092,7 +1106,7 @@ public function handle_implementation(
         proto.write_response_raw(id, json_text.as_str())
         return
 
-    var analysis = analyzer.check_source_file(ast_file)
+    var analysis = doc.analysis
 
     if not analysis.interfaces.contains(target.text):
         proto.write_response_raw(id, "[]")
@@ -1167,11 +1181,10 @@ function append_method_implementation_locations(
         pi += 1
         var content = ws.document_source(path) else:
             continue
-        var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-        var parsed_file = parser.parse_source(content.as_str(), ref_of(parse_diags))
-        parse_diags.release()
-        let file = ast_for_document(ws, path, parsed_file)
-        var analysis = analysis_for_document(ws, path, parsed_file)
+        let doc = workspace.document_analysis_for(ws, path) else:
+            continue
+        let file = doc.ast_file
+        var analysis = doc.analysis
 
         var type_iter = analysis.implemented_interfaces.entries()
         while type_iter.next():
@@ -1265,10 +1278,9 @@ function alias_member_module_path(
 
     match cursor.dot_receiver_at(source, line, character):
         Option.some as recv:
-            var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-            defer: parse_diags.release()
-            var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-            var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
+            let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+                return Option[string.String].none
+            var analysis = doc.analysis
             unsafe:
                 let module_ptr = analysis.imports.get(recv.value)
                 if module_ptr != null:
@@ -1571,17 +1583,16 @@ function resolve_cursor(
         Option.none:
             pass
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-    if parse_diags.len() > 0:
+    if parse_error_count_for(ws, file_path.as_str(), source) > 0:
         return Option[CursorResult].none
 
     # The facts come from the loader-backed analysis, as the host's do: a
     # standalone check carries no import bindings, so every `alias.Type` and
     # `alias.member` reference would resolve to `<error>`.
-    var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
-    var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        return Option[CursorResult].none
+    var ast_file = doc.ast_file
+    var analysis = doc.analysis
     var module_roots = ws.effective_module_roots_for(file_path.as_str())
     defer: module_roots.release()
     var current_module = resolver.infer_module_name(file_path.as_str(), module_roots.as_span())
@@ -1745,11 +1756,11 @@ function resolve_type_method_hover(
         let owner_source = ws.document_source(owner_path.as_str()) else:
             target_uri.release()
             return Option[CursorResult].none
-        var owner_diags = vec.Vec[pstate.ParseDiagnostic].create()
-        defer: owner_diags.release()
-        var owner_parsed = parser.parse_source(owner_source.as_str(), ref_of(owner_diags))
-        decl_file = ast_for_document(ws, owner_path.as_str(), owner_parsed)
-        var owner_analysis = analysis_for_document(ws, owner_path.as_str(), owner_parsed)
+        let owner_doc = workspace.document_analysis_for(ws, owner_path.as_str()) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        decl_file = owner_doc.ast_file
+        var owner_analysis = owner_doc.analysis
         decl_signature = method_sig_for_type(ref_of(owner_analysis), receiver.name, method_name)
         decl_source = owner_source.as_str()
         target_uri.release()
@@ -2011,11 +2022,10 @@ function field_hover_result(
         return Option[CursorResult].none
     defer: decl_source.release()
 
-    var decl_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: decl_diags.release()
-    var decl_parsed = parser.parse_source(decl_source.as_str(), ref_of(decl_diags))
-    var decl_file = ast_for_document(ws, decl_path, decl_parsed)
-    var decl_analysis = analysis_for_document(ws, decl_path, decl_parsed)
+    let decl_doc = workspace.document_analysis_for(ws, decl_path) else:
+        return Option[CursorResult].none
+    var decl_file = decl_doc.ast_file
+    var decl_analysis = decl_doc.analysis
 
     var field_type = types.Type.ty_error
     var found = false
@@ -2161,11 +2171,11 @@ function resolve_member_method_hover(
         let owner_source = ws.document_source(owner_path.as_str()) else:
             target_uri.release()
             return Option[CursorResult].none
-        var owner_diags = vec.Vec[pstate.ParseDiagnostic].create()
-        defer: owner_diags.release()
-        var owner_parsed = parser.parse_source(owner_source.as_str(), ref_of(owner_diags))
-        decl_file = ast_for_document(ws, owner_path.as_str(), owner_parsed)
-        var owner_analysis = analysis_for_document(ws, owner_path.as_str(), owner_parsed)
+        let owner_doc = workspace.document_analysis_for(ws, owner_path.as_str()) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        decl_file = owner_doc.ast_file
+        var owner_analysis = owner_doc.analysis
         decl_signature = method_sig_for_type(ref_of(owner_analysis), type_name, method_name)
         decl_source = owner_source.as_str()
         target_uri.release()
@@ -2243,14 +2253,13 @@ function imported_type_method_hover(
         var module_source = ws.document_source(module_path.as_str()) else:
             continue
         defer: module_source.release()
-        var module_diags = vec.Vec[pstate.ParseDiagnostic].create()
-        defer: module_diags.release()
-        var parsed_module = parser.parse_source(module_source.as_str(), ref_of(module_diags))
-        var module_analysis = analysis_for_document(ws, module_path.as_str(), parsed_module)
+        let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
+            continue
+        var module_analysis = module_doc.analysis
         let found = method_sig_for_type(ref_of(module_analysis), type_name, method_name)
         match found:
             Option.some as found_sig:
-                let decl_file = ast_for_document(ws, module_path.as_str(), parsed_module)
+                let decl_file = module_doc.ast_file
                 let decl_line = find_method_line_in_type(decl_file, type_name, method_name)
                 if decl_line > 0:
                     var hover = method_signature_text(found_sig.value, method_name, module_name)
@@ -2277,11 +2286,10 @@ function resolve_module_member(ws: ref[workspace.Workspace], module_name: str, m
         return Option[CursorResult].none
     defer: module_source.release()
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var parsed_module = parser.parse_source(module_source.as_str(), ref_of(parse_diags))
-    var module_file = ast_for_document(ws, module_path.as_str(), parsed_module)
-    var module_analysis = analysis_for_document(ws, module_path.as_str(), parsed_module)
+    let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
+        return Option[CursorResult].none
+    var module_file = module_doc.ast_file
+    var module_analysis = module_doc.analysis
 
     # A type the module exports: the host's `module_binding.types` arm renders
     # `type <name>` (with no `=` target, unlike a file-local type hover) and
@@ -3559,11 +3567,11 @@ function field_declaration_hover(
     line: ptr_uint,
     character: ptr_uint,
 ) -> Option[CursorResult]:
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    if parse_diags.len() > 0:
+    if parse_error_count_for(ws, file_path, source) > 0:
         return Option[CursorResult].none
+    let doc = workspace.document_analysis_for(ws, file_path) else:
+        return Option[CursorResult].none
+    var ast_file = doc.ast_file
 
     let target_line = line + 1
     var di: ptr_uint = 0
@@ -3579,7 +3587,7 @@ function field_declaration_hover(
                     # `Field.column` is 1-based; the request's character is 0-based.
                     let field_column = if f.column > 0: f.column - 1 else: 0z
                     if f.line == target_line and field_column <= character and field_column + f.name.len > character:
-                        var analysis = analysis_for_document(ws, file_path, ast_file)
+                        var analysis = doc.analysis
                         var module_roots = ws.effective_module_roots_for(file_path)
                         defer: module_roots.release()
                         var current_module = resolver.infer_module_name(file_path, module_roots.as_span())
@@ -3667,14 +3675,9 @@ function variant_arm_from_module(ws: ref[workspace.Workspace], module_name: str,
     var module_path = resolve_module_source_path(ws, module_name) else:
         return Option[CursorResult].none
     defer: module_path.release()
-    var module_source = ws.document_source(module_path.as_str()) else:
+    let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
         return Option[CursorResult].none
-    defer: module_source.release()
-    var module_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: module_diags.release()
-    var module_parsed = parser.parse_source(module_source.as_str(), ref_of(module_diags))
-    let module_file = ast_for_document(ws, module_path.as_str(), module_parsed)
-    return variant_arm_name_in_file(module_file, name)
+    return variant_arm_name_in_file(module_doc.ast_file, name)
 
 
 ## `Type.arm(field: T, …)` for the first declared variant in `file` with an arm
@@ -3821,13 +3824,9 @@ function variant_arm_label_hover(
         var module_path = resolve_module_source_path(ws, module_name) else:
             return Option[CursorResult].none
         defer: module_path.release()
-        var module_source = ws.document_source(module_path.as_str()) else:
+        let module_doc = workspace.document_analysis_for(ws, module_path.as_str()) else:
             return Option[CursorResult].none
-        defer: module_source.release()
-        var module_diags = vec.Vec[pstate.ParseDiagnostic].create()
-        defer: module_diags.release()
-        var module_parsed = parser.parse_source(module_source.as_str(), ref_of(module_diags))
-        decl_file = ast_for_document(ws, module_path.as_str(), module_parsed)
+        decl_file = module_doc.ast_file
 
     match variant_arm_field_type_text(decl_file, variant_name, arm_name, field_name):
         Option.some as arm_field:
@@ -3945,11 +3944,10 @@ function named_argument_label_hover(
             if alias_tok.kind == tk.TokenKind.identifier:
                 module_alias = cursor.token_text(source, alias_tok)
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-    var ast_file = ast_for_document(ws, file_path, parsed_file)
-    var analysis = analysis_for_document(ws, file_path, parsed_file)
+    let doc = workspace.document_analysis_for(ws, file_path) else:
+        return Option[CursorResult].none
+    var ast_file = doc.ast_file
+    var analysis = doc.analysis
 
     var module_roots = ws.effective_module_roots_for(file_path)
     defer: module_roots.release()
@@ -4008,13 +4006,9 @@ function named_argument_label_hover(
     var lookup_path = resolve_module_source_path(ws, lookup_module) else:
         return Option[CursorResult].none
     defer: lookup_path.release()
-    var lookup_source = ws.document_source(lookup_path.as_str()) else:
+    let lookup_doc = workspace.document_analysis_for(ws, lookup_path.as_str()) else:
         return Option[CursorResult].none
-    defer: lookup_source.release()
-    var lookup_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: lookup_diags.release()
-    var lookup_parsed = parser.parse_source(lookup_source.as_str(), ref_of(lookup_diags))
-    var lookup_analysis = analysis_for_document(ws, lookup_path.as_str(), lookup_parsed)
+    var lookup_analysis = lookup_doc.analysis
 
     # The head must name a type; a re-exported alias (`type Color = c.Color`)
     # moves the lookup to the module that declares the type.
@@ -4041,11 +4035,11 @@ function named_argument_label_hover(
             target_uri.release()
             return Option[CursorResult].none
         defer: decl_source.release()
-        var decl_diags = vec.Vec[pstate.ParseDiagnostic].create()
-        defer: decl_diags.release()
-        var decl_parsed = parser.parse_source(decl_source.as_str(), ref_of(decl_diags))
-        decl_file = ast_for_document(ws, decl_path.as_str(), decl_parsed)
-        decl_analysis = analysis_for_document(ws, decl_path.as_str(), decl_parsed)
+        let decl_doc = workspace.document_analysis_for(ws, decl_path.as_str()) else:
+            target_uri.release()
+            return Option[CursorResult].none
+        decl_file = decl_doc.ast_file
+        decl_analysis = decl_doc.analysis
         field_token = find_field_token_in_type(decl_source.as_str(), type_name, field_name)
         target_uri = file_uri_for_path(decl_path.as_str())
     else:
@@ -4157,11 +4151,10 @@ function resolve_local_hover(
         Option.none:
             pass
 
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var parsed_file = parser.parse_source(source, ref_of(parse_diags))
-    var ast_file = ast_for_document(ws, file_path.as_str(), parsed_file)
-    var analysis = analysis_for_document(ws, file_path.as_str(), parsed_file)
+    let doc = workspace.document_analysis_for(ws, file_path.as_str()) else:
+        return Option[CursorResult].none
+    var ast_file = doc.ast_file
+    var analysis = doc.analysis
 
     # The file's own module name, so a type declared here renders qualified
     # (`main.Sample`) and the renderer can report `*From main*`, as the host

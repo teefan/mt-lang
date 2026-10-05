@@ -14,8 +14,6 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.loader.package_manifest as package_manifest
 import mtc.parser.ast as ast
-import mtc.parser.parser as parser
-import mtc.parser.state as pstate
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
@@ -60,26 +58,18 @@ public function handle_document_symbols(ws: ref[workspace.Workspace], uri: str, 
 
     # A file that is mid-edit usually has parse errors; the host still reports
     # the symbols it could parse, so the outline stays usable while typing.
-    var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
-    var ast_file = parser.parse_source(source, ref_of(parse_diags))
-    let parsed_declaration_count = ast_file.declarations.len
-
-    # The loader-backed analysis binds imported modules, so a local's inferred
-    # type resolves through them (`Vec[int]`); the single-file analysis is the
-    # fallback when the document cannot be loaded.
-    var maybe_analysis = workspace.analysis_for(ws, owned_path.as_str())
-    var analysis = if maybe_analysis.is_some(): maybe_analysis.unwrap() else: analyzer.check_source_file(ast_file)
-    # The loader parses its own AST and `resolved_expr_types` is keyed by
-    # expression pointer, so the walk must use the tree the analysis was built
-    # from when the loader path succeeded.
-    if maybe_analysis.is_some():
-        ast_file = analysis.source_file
+    # The AST and analysis come from the shared caches (the loader entry when
+    # the document loads), so the outline no longer parses per request.
+    let doc = workspace.document_analysis_for(ws, owned_path.as_str()) else:
+        proto.write_error(id, -32800, "symbol request failed: empty file")
+        return
+    var ast_file = doc.ast_file
+    var analysis = doc.analysis
     # The analyzer appends the declarations `emit` statements produce to the
     # file's declaration list; the host's outline lists each one where it is
     # written — inside its enclosing const function's body — so the walk emits
     # them there and stops before the appended tail.
-    let emitted_start = if maybe_analysis.is_some(): parsed_declaration_count else: ast_file.declarations.len
+    let emitted_start = doc.parsed_declaration_count
 
     var json_text = string.String.create()
     defer: json_text.release()

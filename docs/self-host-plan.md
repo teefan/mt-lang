@@ -131,17 +131,16 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 36 close (2026-10-05) — **warm references parity**: the
-reference index now records each noted document's import names and
-`dependent_documents` matches the host's `reverse_import_dependents_for` over
-*every* known document, closing the canonical audit's four
-references warm-coverage rows (**10 → 6 differing entries, closed 4, added 0**;
-the non-canonical set is unchanged).  Session 35 had closed
-**`milkTea/debugInfo` byte-parity**: the Facts and Bindings sections render the
-host's binding-id model, the AST section carries the cached AST's `SourceFile`
-header, and the harness normalizes Ruby `object_id` values — the whole dump is
-**byte-equal on the harness fixture** and the harness's fifth documented entry
-is closed (4 remain).  Session 34 (2026-10-04) closed **DAP Track 5**.  The
+Last updated: session 37 close (2026-10-05) — **LSP soak: the per-request parse
+sites are routed through the shared caches**, cutting the full-cycle slope
+**11.4 → 3.96 MB/cycle** (the gate read 3.98 at `--cycles 200`); the residual is
+the per-edit loader parse+analysis leak (per-parse ownership is the remaining
+C4 blocker, documented in Track 7).  Session 36 had closed the canonical
+audit's four references warm-coverage rows (**10 → 6 differing entries**,
+closed 4, added 0); session 35 closed **`milkTea/debugInfo` byte-parity** (the
+Facts and Bindings sections, the cached-AST `SourceFile` header and the
+harness's `object_id` normalization — the harness's fifth documented entry,
+4 remain); session 34 (2026-10-04) closed **DAP Track 5**.  The
 self-host's `mtc dap` is at parity with the Ruby host on `tools/dap_smoke.rb`'s
 whole matrix: the process backend (now starting the program at
 `configurationDone`, `terminated`→`exited` with the real exit code) and the
@@ -706,16 +705,25 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
 - **C4 large files/workspaces** — the driver landed (session 30):
   `tools/lsp_soak.rb` generates a ~5k-line synthetic workspace and drives
   mixed requests (`--cycles 2500` is the ≥10k-request target), reporting the
-  RSS slope; the `soak` meter gate runs a short version per commit.  **The RSS
-  ceiling is blocked on the per-parse leak convention**: on the soak workspace
-  a full mixed cycle still grows RSS ~9.7 MB (15.2 before session 30), because
-  every parse leaks its AST/token/analysis allocations (the parser allocates
-  with `heap.must_alloc` "one file per run and exits" — true for the CLI, not
-  for a long-lived server).  Session 30 removed the *avoidable* parses on the
-  edit path (import surfaces and references now come from the module cache);
-  the remaining per-request `parser.parse_source` sites (~38) and a per-parse
-  arena are the follow-up (see §0k session 30's "Soak profile and the
-  long-session blocker").
+  RSS slope; the `soak` meter gate runs a short version per commit.  **The
+  per-request parse sites are routed through the shared caches (session 37,
+  2026-10-05)**: the full-cycle slope went **11.4 → 3.96 MB/cycle** (the gate's
+  `--cycles 200` read **3.98**, was 11.5) on the same workspace — the token
+  path, navigation's 18 sites, references, completion, the hierarchies,
+  symbols, signature help, highlight, rename, linked editing, inlay hints and
+  the index's per-edit re-index now take the AST and analysis from
+  `workspace.document_analysis_for`/`analysis_entry_for` (the loader entry when
+  the document loads; the single-file parse cache otherwise) instead of parsing
+  per request.  **The residual RSS growth (~3.9 MB/cycle, every mode alike) is
+  the per-edit loader parse+analysis leak** — the parser/analyzer allocate with
+  `heap.must_alloc` "one file per run and exits" — true for the CLI, not for a
+  long-lived server.  A real ceiling needs per-parse ownership (an arena the
+  LSP can release when a superseded cache entry is replaced); the valgrind
+  attribution (session 37) shows the dominant blocks are the lexer's
+  `Vec[Token]` buffers and the parser/analyzer vectors, and the replaced
+  entries' *heap copies* are already released (`release_entry_analysis`) —
+  what is missing is ownership of the AST/analysis internals.  Record: §0k
+  session 37; §0k session 30's "Soak profile and the long-session blocker".
 - **C5 client behaviours** — **DONE (session 31, 2026-10-04)**: the harness's
   stress section now measures six client-behaviour probes (`c5/…`):
   `references` with `includeDeclaration: false`, a `didChangeConfiguration`
@@ -999,7 +1007,7 @@ definition of done above.
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-05 session 35) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
 | LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 35; ~7.8M B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
-| LSP soak | **9.7 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 15.2; `--cycles 100`; the session-35 gate's `--cycles 200` read **11.5**) — the residual is the per-parse leak convention, no ceiling until it is owned | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
+| LSP soak | **3.96 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 11.4 before session 37; `--cycles 100`; the session-37 gate's `--cycles 200` read **3.98**) — all modes now converge to ~3.9, the per-edit loader parse+analysis leak; no ceiling until parse ownership lands (Track 7's C4) | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical (re-measured 2026-10-04 session 33; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 496 agree / 120 differ (616 files; re-measured 2026-10-05 session 35 — the +3 files/+3 differs over session 33's 613/117 are session 34's new compiler sources, two of which differ, plus session 34's edits to existing sources; the session-35 edits flip no file — `analyzer.mt` was already a differing file at HEAD) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | **zero differing rows** on the whole `dap_smoke` matrix (2026-10-04 session 34 — process backend, fake-adapter lldb and real `/usr/bin/lldb-dap` sessions), except the documented self-better `lldb-real frame0 name` (self `add`, host `main_add` — the host's cache-hit map loss); valgrind 0 errors on both backends | VS Code end-to-end under lldb-dap (manual) | `ruby tools/dap_smoke.rb` |
@@ -1014,6 +1022,60 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 37 (2026-10-05) — the soak: per-request parses routed through the shared caches
+
+Goal: the last open LSP item — Track 7's C4 readiness residue ("the remaining
+per-request `parser.parse_source` sites (~38)").  The parse sites are now
+routed through the workspace's shared caches; the residual growth is the
+per-edit parse ownership, documented below.
+
+- **`workspace.document_analysis_for(ws, path)`** (new): the AST and analysis
+  for a document's current text from *one* tree — the loader-backed entry when
+  the file loads (imports bound, shared with the diagnostics publish and every
+  other request, cached per content version), else the single-file parse cache
+  (`parsed_analysis_for`).  `DocumentAnalysis` also carries
+  `parsed_declaration_count` (the raw parse's declaration count, for the
+  outline's emit-tail cutoff) and `document_parse_error_count` /
+  `document_raw_ast` expose the loader's recorded parse errors and raw tree.
+  Two subtleties fixed on the way: the Program's `modules` are dependency-first
+  while `analyses`/`root_index` are canonical, so the root module is found **by
+  module name** (a `modules[root_index]` lookup read the wrong module and an
+  outline walked past its tree — valgrind caught it); and
+  `document_analysis_for` reads the source itself only on the fallback path.
+- **Routed sites**: `semantic_tokens`' two consumers (the full/range/delta
+  scanner and `semantic_class_entries`), navigation's 18 sites (hover,
+  definition/typeDefinition/implementation, the local/owner/module/decl
+  resolvers — with the parse-error bails kept through
+  `parse_error_count_for`), `references` (module-level and static-method
+  helpers and the per-candidate verifier), `completion` (the main handler and
+  the two module-member passes), `call_hierarchy`/`type_hierarchy` (request
+  docs and the index loops), `symbols`, `signature_help`, `highlight`,
+  `rename`, `linked_editing_range`, `inlay_hints`, and the workspace index's
+  per-edit re-index (`workspace_index.collect_file_symbols_from_ast`, fed the
+  loader's raw tree from `document_raw_ast`).  The two remaining
+  `parse_source` calls in those paths are deliberate fallbacks (the
+  no-loader-entry case) plus the CLI's `snapshot_semantic_entries`.
+- **One allocation fix**: `semantic_tokens.build_tokens_json` emitted each data
+  value through `append_format(f"#{v}")` — a temporary per value (42k blocks
+  per edited request on the soak workspace).  It now uses `fmt.append_uint`.
+- **Measured** (`tools/lsp_soak.rb`, same synthetic ~5k-line workspace):
+  full-cycle slope **11.4 → 3.96 MB/cycle** at `--cycles 100`, and the gate's
+  `--cycles 200` run read **3.98** (was 11.5); tokens 8.8 → 3.87, refs 5.8 →
+  3.88, diag 3.95 (unchanged).  Every mode now converges to ~3.9 MB/cycle: the
+  per-edit loader parse+analysis leak (the parser/analyzer allocate with
+  `heap.must_alloc` "one file per run and exits"; a superseded entry's heap
+  copies are released but its AST/analysis internals are not owned).  A real
+  ceiling needs the per-parse arena/ownership work item — the valgrind
+  attribution shows the lexer `Vec[Token]` buffers and the parser/analyzer
+  vectors dominating, with the index walk and the prelude seeds as one-time
+  costs.
+- **Verification**: harness 30/30 at **4 documented entries** (1 differing
+  entry in the non-stress corpus: the documented directory-form
+  `typeDefinition`); canonical audit **6 → 6, closed 0, added 0** (the routing
+  is behavior-neutral); recovery OK; fixture sweep closed 5 / 0 added; audit 4
+  (meter); valgrind 0 errors; Neovim smoke OK; bootstrap fixed point + 18/0
+  tests.  (`tools/gates.sh --run` on the frozen tree.)
 
 ### Session 36 (2026-10-05) — warm references parity: the reverse-import candidate set
 
