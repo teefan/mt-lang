@@ -264,17 +264,21 @@ this file's records + ledger in the same commit as the code change.
    *unintended* entries are now 0; session 29 closed the **per-module
    `ModuleCache`** (5.0 ms median per edit, 54.3 before) and made imported
    modules honor open editor buffers.  Session 35 closed the **`debugInfo`**
-   Facts/Bindings remainder: the dump is byte-equal on the fixture (the
-   harness normalizes Ruby object ids).  The open work is the
-   readiness residue's soak ceiling (C4), then the optional `ref`-lifetime
-   modeling.  Recovery parity
+   Facts/Bindings remainder (the dump is byte-equal on the fixture; the harness
+   normalizes Ruby object ids), session 36 closed the canonical audit's four
+   `references` warm-coverage rows (**10 → 6 differing entries**, closed 4,
+   added 0), and session 37 routed every per-request parse through the shared
+   caches (**soak 11.4 → 3.96 MB/cycle**).  The remaining LSP work is the
+   per-parse ownership residual (C4's blocker: the per-edit parse+analysis
+   leak), then the optional `ref`-lifetime modeling.  Recovery parity
    holds, the stress corpus runs without a crash or hang, and a real VS Code
    session runs clean under valgrind.
-4. **DAP** — phase 1 (process backend; 26 commands, 15 dedicated handlers) delivered; the lldb-dap
-   bridge is now feasible (`std/libuv.mt` poll + `std/async`) but unstarted
-   (`dap-design.md` §10).  The self's `*launch(.mt)` reports `error: Milk Tea
-   binary not found: src/main` where the host is `ok` — build-on-launch is the
-   first DAP item (program track 5).
+4. **DAP** — **DONE (session 34, 2026-10-04)**: the process backend and the
+   lldb-dap bridge (the VS Code extension's default) are at parity on
+   `tools/dap_smoke.rb`'s whole matrix — build-on-launch, the debug-map
+   rewrites, breakpoint sync, pause diagnostics, reverse requests and a real
+   `/usr/bin/lldb-dap` session included.  The live VS Code F5 check is the one
+   remaining manual step (`docs/dap-design.md` §10).
 
 ### Session kickoff prompt (copy-paste template)
 
@@ -990,23 +994,23 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
 
 ## Ledger and scoreboard
 
-Newest verified numbers (session 35 close, 2026-10-05) — re-measure only the
+Newest verified numbers (session 37 close, 2026-10-05) — re-measure only the
 classes a change can move, and only when the tree moved.  Target = the
 definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (2026-10-05 session 35 — `stage2.c == stage3.c`); self-test suite 18 files / 0 failed (the file count includes session 34's `debug_map_test.mt`) | stay green | `tools/bootstrap.sh -j 16` |
+| bootstrap fixed point | holds (2026-10-05 session 37 — `stage2.c == stage3.c`); self-test suite 18 files / 0 failed (the file count includes session 34's `debug_map_test.mt`) | stay green | `tools/bootstrap.sh -j 16` |
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files (re-measured 2026-10-04 session 33; the +7 files/differs over session 17's 615 are this session's own new compiler sources — match count unchanged) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 35: `milkTea/debugInfo` is **byte-equal** after the Facts/Bindings port and the `object_id` normalization; the remaining 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 session 36, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0).  Non-canonical runs read 4–5 with ±drift (session 36's gate read **4**, session 35's **5**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
-| LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-05 session 35) | stay green | `tools/lsp_recovery_probe.rb --check` |
+| LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 37: `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port and the `object_id` normalization; the remaining 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
+| LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-05 session 37) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
-| LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 35; ~7.8M B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
+| LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 37; ~7.8M B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | **3.96 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 11.4 before session 37; `--cycles 100`; the session-37 gate's `--cycles 200` read **3.98**) — all modes now converge to ~3.9, the per-edit loader parse+analysis leak; no ceiling until parse ownership lands (Track 7's C4) | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical (re-measured 2026-10-04 session 33; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 496 agree / 120 differ (616 files; re-measured 2026-10-05 session 35 — the +3 files/+3 differs over session 33's 613/117 are session 34's new compiler sources, two of which differ, plus session 34's edits to existing sources; the session-35 edits flip no file — `analyzer.mt` was already a differing file at HEAD) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
@@ -5970,8 +5974,12 @@ rows byte-identical); and the DAP items in `dap-design.md` §10.
    `SimpleGame/src/main.mt` (was 54.3), and the dependency-edit probe passes
    where the pre-change binary failed 3 checks.  See §0k's "The per-module
    `ModuleCache`" record; the next open LSP item is the readiness residue's
-   soak ceiling (C4) — the canonical-audit residue's four references rows are
-   closed (session 36) and its two builtin-hover rows are documented/rejected.
+   per-parse **ownership** residual (C4) — session 37 routed the per-request
+   parses through the shared caches (soak 11.4 → 3.96 MB/cycle) and closed the
+   soak's addressable half; the remaining ~3.9 MB/cycle is the per-edit
+   parse+analysis leak (Track 7's C4).  The canonical-audit residue's four
+   references rows are closed (session 36) and its two builtin-hover rows are
+   documented/rejected.
 2. **`milkTea/debugInfo` remainder** — **CLOSED (session 35, 2026-10-05)**:
    the **Facts** and **Bindings** sections, the cached-AST `SourceFile`
    header/`node_path_ids` residue and the harness's `object_id` normalization
