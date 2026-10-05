@@ -125,12 +125,12 @@ gate_label() {
         sexpr_lex)      echo "sexpr lex parity (705/705)" ;;
         sexpr_parse)    echo "sexpr parse parity (701 comparable / 0 differ)" ;;
         sexpr_lower)    echo "sexpr lower parity (meter, ~3 min)" ;;
-        cli_parity)     echo "CLI parity (meter, expected 23/38/0)" ;;
+        cli_parity)     echo "CLI parity (meter, expected 24/37/0)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
         format)         echo "formatter parity all modes (702/702)" ;;
         lint_parity)    echo "corpus-wide lint parity (meter, ~5 min)" ;;
-        unused_import)  echo "unused-import parity (609/609, ~30 min)" ;;
-        harness)        echo "LSP harness 30/30 + 5 documented entries (~3 min)" ;;
+        unused_import)  echo "unused-import parity (616/616, ~30 min)" ;;
+        harness)        echo "LSP harness 30/30 + 4 documented entries (~3 min)" ;;
         recovery)       echo "LSP recovery probe (byte-compared)" ;;
         fixtures)       echo "LSP fixture sweep vs baselines (when tmp/ has it)" ;;
         audit)          echo "full LSP project audit (meter, ~5-15 min)" ;;

@@ -3138,3 +3138,54 @@ function test_module_level_value_narrows_through_a_guard() -> void:
             return take(g)
     SRC
     expect_clean(source)
+
+
+@[test]
+function test_binding_ids_follow_the_hosts_allocation_order() -> void:
+    # The `milkTea/debugInfo` Bindings section's model: an instance method's
+    # `this` takes its id at declaration time (in source order, before the
+    # function parameters' ids), then each body's locals in check order — the
+    # reference values were recorded from the Ruby host on this exact source.
+    let source = "struct Sample:\n    x: int\n\nextending Sample:\n    function sum() -> int:\n        return this.x\n\nfunction compute(a: int, b: int) -> int:\n    return a + b\n\nfunction main() -> int:\n    let s = Sample(x = 1)\n    var total = 0\n    total += s.sum()\n    return total\n"
+    var pdiags = vec.Vec[pstate.ParseDiagnostic].create()
+    defer: pdiags.release()
+    let file = parser.parse_source(source, ref_of(pdiags))
+    expect_eq(int<-pdiags.len(), 0)
+    var analysis = analyzer.check_source_file(file)
+    defer: analysis.diagnostics.release()
+
+    let expected_ids = array[ptr_uint, 5](1, 2, 3, 4, 5)
+    let expected_types = array[str, 5]("Sample", "int", "int", "Sample", "int")
+    expect_eq(int<-analysis.binding_types.len(), 5)
+    var i: ptr_uint = 0
+    while i < 5:
+        let bp = analysis.binding_types.get(i) else:
+            expect(false, "binding_types entry missing")
+            return
+        let entry = unsafe: read(bp)
+        expect_eq(int<-entry.id, int<-expected_ids[i])
+        expect(types.type_to_string(entry.ty) == expected_types[i], "binding type")
+        i += 1
+
+    # Identifier uses in check order: compute's a, b; main's total, s, total;
+    # sum's this.  A `+=` assignment records its target once, like the host.
+    let expected_site_ids = array[ptr_uint, 6](2, 3, 5, 4, 5, 1)
+    expect_eq(int<-analysis.identifier_sites.len(), 6)
+    i = 0
+    while i < 6:
+        let sp = analysis.identifier_sites.get(i) else:
+            expect(false, "identifier_sites entry missing")
+            return
+        expect_eq(int<-unsafe: read(sp).id, int<-expected_site_ids[i])
+        i += 1
+
+    # Declaration sites: the parameters at declare time, then main's locals.
+    let expected_decl_ids = array[ptr_uint, 4](2, 3, 4, 5)
+    expect_eq(int<-analysis.declaration_sites.len(), 4)
+    i = 0
+    while i < 4:
+        let dp = analysis.declaration_sites.get(i) else:
+            expect(false, "declaration_sites entry missing")
+            return
+        expect_eq(int<-unsafe: read(dp).id, int<-expected_decl_ids[i])
+        i += 1

@@ -22,25 +22,34 @@ import mtc.lsp.debug_text as debug_text
 
 ## ── Section entry ────────────────────────────────────────────────────────────
 
-public function append_ast_section(target: ref[string.String], file: ast.SourceFile) -> void:
+## `module_name`: the workspace's inferred module name, which the host's cached
+## AST carries (`SourceFile [Ln 1]`, `module_name: QualifiedName(main)`); the
+## host's `node_path_ids` map is empty on the LSP path and never renders.
+public function append_ast_section(target: ref[string.String], file: ast.SourceFile, module_name: str) -> void:
     target.append("\n\n── AST  1 SourceFile, ")
     target.append_format(f"#{file.imports.len} imports, ")
     target.append_format(f"#{file.directives.len} directives, ")
     target.append_format(f"#{file.declarations.len} declarations ")
     debug_text.append_rule(target, 50)
 
-    # The root: `SourceFile` with the host's members imports, directives,
-    # declarations, node_ids, node_path_ids.  `node_ids`/`node_path_ids` always
-    # render (non-empty hashes), so they are the last two members; the arrays
-    # before them are never the last rendered member.
-    ast_header(target, "", true, "SourceFile", false, "", 0z, 0z)
+    # The root: `SourceFile` with the host's members module_name, imports,
+    # directives, declarations, node_ids.  The host's cached AST is a re-wrap
+    # with `line: ast.line || 1` and `node_ids` only (`node_path_ids` is the
+    # default empty hash and `skip_child_value?` drops it).
+    ast_header(target, "", true, "SourceFile", false, "", 1z, 0z)
 
     let cp = "   "
+    if module_name.len > 0:
+        var qname = string.String.create()
+        defer: qname.release()
+        qname.append("QualifiedName(")
+        qname.append(module_name)
+        qname.append(")")
+        ast_leaf(target, cp, false, "module_name", qname.as_str())
     render_decl_array(target, file.imports, cp, false, "imports")
     render_decl_array(target, file.directives, cp, false, "directives")
     render_decl_array(target, file.declarations, cp, false, "declarations")
-    render_count_leaf(target, cp, false, "node_ids", count_ast_nodes(file))
-    render_count_leaf(target, cp, true, "node_path_ids", count_ast_nodes(file))
+    render_count_leaf(target, cp, true, "node_ids", count_ast_nodes(file))
 
 
 ## ── Line helpers ─────────────────────────────────────────────────────────────
@@ -136,9 +145,15 @@ function expr_column(e: ast.Expr) -> ptr_uint:
 
 
 ## `Kind ◆ name [Ln N, Col M]`.
-function ast_header(target: ref[string.String], prefix: str, is_last: bool, kind: str, has_name: bool, name: str, line: ptr_uint, column: ptr_uint) -> void:
-    var text = string.String.create()
+public function ast_header(target: ref[string.String], prefix: str, is_last: bool, kind: str, has_name: bool, name: str, line: ptr_uint, column: ptr_uint) -> void:
+    var text = ast_header_text(kind, has_name, name, line, column)
     defer: text.release()
+    ast_line(target, prefix, is_last, text.as_str())
+
+
+## The header's text without the tree connector (`FunctionDef ◆ compute [Ln 33, Col 10]`).
+public function ast_header_text(kind: str, has_name: bool, name: str, line: ptr_uint, column: ptr_uint) -> string.String:
+    var text = string.String.create()
     text.append(kind)
     if has_name:
         text.append(" ◆ ")
@@ -150,7 +165,7 @@ function ast_header(target: ref[string.String], prefix: str, is_last: bool, kind
             text.append(", Col ")
             text.append_format(f"#{column}")
         text.append("]")
-    ast_line(target, prefix, is_last, text.as_str())
+    return text
 
 
 ## `◆ <member> (N):` — an array member that has children.

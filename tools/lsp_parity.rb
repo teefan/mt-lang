@@ -267,7 +267,12 @@ def normalize(value, workspace)
   when Array
     value.map { |v| normalize(v, workspace) }
   when String
-    value.gsub(workspace, "<WS>").gsub(%r{file://<WS>}, "file://<WS>")
+    value.gsub(workspace, "<WS>")
+         .gsub(%r{file://<WS>}, "file://<WS>")
+         # `milkTea/debugInfo`'s Bindings section renders the host's Ruby
+         # object ids (and the self's node keys) per site; only the binding-id
+         # sequence is comparable across implementations.
+         .gsub(/obj \d+ → binding_id:/, "obj <OBJ> → binding_id:")
   else
     value
   end

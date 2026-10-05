@@ -107,6 +107,21 @@ public struct CallableValueSite:
     column: ptr_uint
 
 
+## One identifier use resolved to a scope binding: the identifier's node key
+## and the binding's id, in resolution order (the host's
+## `binding_resolution.identifier_binding_ids`).
+public struct BindingSite:
+    node: ptr_uint
+    id: ptr_uint
+
+
+## One binding id's type, in allocation order (the host's
+## `binding_resolution.binding_types`).
+public struct BindingTypeEntry:
+    id: ptr_uint
+    ty: types.Type
+
+
 ## An `as name` variant match-arm binding: the arm's declaration position and
 ## the payload type the binding carries, so the LSP can hover it the way the
 ## host's scope snapshot answers.
@@ -328,6 +343,43 @@ struct Context:
     diagnostics: vec.Vec[SemanticDiagnostic]
     uses_parallel_for: bool
     event_types: map_mod.Map[str, EventInfo]
+    ## The next host-shaped binding id (1-based; `milkTea/debugInfo`'s Bindings
+    ## section renders the allocation order).  See `allocate_binding_id`.
+    next_binding_id: ptr_uint
+    ## Identifier uses resolved to a scope binding, in resolution order.
+    identifier_sites: vec.Vec[BindingSite]
+    ## Declaration nodes (params, locals, match arms, for/else bindings) with
+    ## their binding ids, in declaration order.
+    declaration_sites: vec.Vec[BindingSite]
+    ## Every binding's type, keyed by id (the host's `@binding_type_by_id`);
+    ## the debug dump materializes the entries in id order.
+    binding_type_by_id: map_mod.Map[ptr_uint, types.Type]
+    ## The host's `@preassigned_local_binding_ids`: the current body's binding
+    ## ids, keyed by `binding_key` (`line * 1000000 + column`).  Reset per body.
+    preassigned_ids: map_mod.Map[ptr_uint, ptr_uint]
+    ## Declaration-pass records, keyed by the function/method node key: the
+    ## first parameter's id, and an instance method's `this` id.
+    param_id_base: map_mod.Map[ptr_uint, ptr_uint]
+    this_binding_ids: map_mod.Map[ptr_uint, ptr_uint]
+    ## Module-level values (const/var/event) with their binding ids; an
+    ## identifier use of one records like a scope binding does.
+    value_binding_ids: map_mod.Map[str, ptr_uint]
+    ## Module-declared type names in registration order (the host's `facts.types`
+    ## order after the builtin and prelude blocks).
+    module_type_order: vec.Vec[str]
+    ## Interface names in declaration order (the host's `facts.interfaces`
+    ## order).
+    interface_order: vec.Vec[str]
+    ## Each extending method's resolved receiver type, keyed like `method_sigs`
+    ## (`milkTea/debugInfo`'s Methods section renders `on <receiver>:` and
+    ## `fn <receiver>.<name>`).
+    method_receiver_types: map_mod.Map[str, types.Type]
+    ## Each resolved import's exported-symbol count (types + functions + values),
+    ## for the debug dump's Imports block.
+    import_symbol_counts: map_mod.Map[str, ptr_uint]
+    ## True while checking a body the host only name-checks (a generic body):
+    ## no ids are allocated and no sites recorded there.
+    suppress_binding_records: bool
     module_name: str
 
 
@@ -416,6 +468,27 @@ public struct Analysis:
     # The module's source file path, propagated so lowering can emit `#line`
     # directives that map generated C back to the .mt source (debug builds).
     source_path: str
+    ## See `BindingSite`: identifier uses → binding id, in resolution order.
+    identifier_sites: vec.Vec[BindingSite]
+    ## See `BindingSite`: declaration nodes → binding id, in declaration order.
+    declaration_sites: vec.Vec[BindingSite]
+    ## See `BindingTypeEntry`: every binding's type, in allocation order.
+    binding_types: vec.Vec[BindingTypeEntry]
+    ## See `Context.value_binding_ids`: module values → binding ids.
+    value_binding_ids: map_mod.Map[str, ptr_uint]
+    ## See `Context.param_id_base` / `Context.this_binding_ids`: declaration
+    ## node keys → the first parameter's id / an instance method's `this` id.
+    param_id_base: map_mod.Map[ptr_uint, ptr_uint]
+    this_binding_ids: map_mod.Map[ptr_uint, ptr_uint]
+    ## See `Context.module_type_order`: module-declared types in registration
+    ## order.
+    module_type_order: vec.Vec[str]
+    ## See `Context.interface_order`.
+    interface_order: vec.Vec[str]
+    ## See `Context.method_receiver_types`.
+    method_receiver_types: map_mod.Map[str, types.Type]
+    ## See `Context.import_symbol_counts`.
+    import_symbol_counts: map_mod.Map[str, ptr_uint]
 
 
 public function check_source_file(file: ast.SourceFile) -> Analysis:
@@ -500,6 +573,19 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         diagnostics = vec.Vec[SemanticDiagnostic].create(),
         uses_parallel_for = false,
         event_types = map_mod.Map[str, EventInfo].create(),
+        next_binding_id = 1,
+        identifier_sites = vec.Vec[BindingSite].create(),
+        declaration_sites = vec.Vec[BindingSite].create(),
+        binding_type_by_id = map_mod.Map[ptr_uint, types.Type].create(),
+        preassigned_ids = map_mod.Map[ptr_uint, ptr_uint].create(),
+        param_id_base = map_mod.Map[ptr_uint, ptr_uint].create(),
+        this_binding_ids = map_mod.Map[ptr_uint, ptr_uint].create(),
+        value_binding_ids = map_mod.Map[str, ptr_uint].create(),
+        module_type_order = vec.Vec[str].create(),
+        interface_order = vec.Vec[str].create(),
+        method_receiver_types = map_mod.Map[str, types.Type].create(),
+        import_symbol_counts = map_mod.Map[str, ptr_uint].create(),
+        suppress_binding_records = false,
         module_name = module_name,
     )
     let source = expand_emit_declarations(file)
@@ -520,6 +606,10 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
     collect_variant_arm_fields(ref_of(ctx), when_extra)
     check_attribute_applications(ref_of(ctx), source)
     collect_extending_methods(ref_of(ctx), source)
+    # The host allocates its binding ids across two declaration phases — values
+    # (`declare_top_level_values`) then function/method parameters
+    # (`declare_functions`) — before any body is checked.
+    allocate_declaration_binding_ids(ref_of(ctx), source.declarations, when_extra)
     collect_enum_variant_members(ref_of(ctx), source)
     collect_interfaces(ref_of(ctx), source)
     register_event_methods(ref_of(ctx))
@@ -578,7 +668,446 @@ public function check_module_opts(file: ast.SourceFile, imported_modules: ptr[ma
         mutating_argument_sites = ctx.mutating_argument_sites,
         mutating_param_indices = ctx.mutating_param_indices,
         source_path = source_path,
+        identifier_sites = ctx.identifier_sites,
+        declaration_sites = ctx.declaration_sites,
+        binding_types = materialize_binding_types(ref_of(ctx)),
+        value_binding_ids = ctx.value_binding_ids,
+        param_id_base = ctx.param_id_base,
+        this_binding_ids = ctx.this_binding_ids,
+        module_type_order = ctx.module_type_order,
+        interface_order = ctx.interface_order,
+        method_receiver_types = ctx.method_receiver_types,
+        import_symbol_counts = ctx.import_symbol_counts,
     )
+
+
+# =============================================================================
+#  Binding ids — the host's `@next_binding_id` allocation order and the
+#  identifier/declaration/type records its `binding_resolution` snapshot carries
+#  (`milkTea/debugInfo`'s Bindings section renders them).
+# =============================================================================
+
+## A node key for bindings that have no stable AST pointer (a `let … else`
+## binding, a for binding): the source position packs into one integer.  Both
+## the preassign walk and the check-time binding site compute the same key.
+public function binding_key(line: ptr_uint, column: ptr_uint) -> ptr_uint:
+    return line * 1000000 + column
+
+
+## The host's `allocate_binding_id`: ids start at 1 and increase in allocation
+## order.
+public function allocate_binding_id(ctx: ref[Context]) -> ptr_uint:
+    let id = ctx.next_binding_id
+    ctx.next_binding_id += 1
+    return id
+
+
+## Record a binding's type (the host's `@binding_type_by_id[id] = …` at
+## `value_binding`).  A re-recording for the same id overwrites; the id order
+## comes from allocation, so the rendered order stays stable.
+public function record_binding_type(ctx: ref[Context], id: ptr_uint, ty: types.Type) -> void:
+    if id == 0:
+        return
+    ctx.binding_type_by_id.set(id, ty)
+
+
+## The host's `@binding_type_by_id` in id order: every id that received a
+## binding, ascending.  Ids allocated but never bound (a discarded `_` local)
+## are invisible, exactly as the host's hash is.
+public function materialize_binding_types(ctx: ref[Context]) -> vec.Vec[BindingTypeEntry]:
+    var entries = vec.Vec[BindingTypeEntry].create()
+    var id: ptr_uint = 1
+    while id < ctx.next_binding_id:
+        let tp = ctx.binding_type_by_id.get(id)
+        if tp != null:
+            entries.push(BindingTypeEntry(id = id, ty = unsafe: read(tp)))
+        id += 1
+    return entries
+
+
+## Record an identifier use resolved to a binding (the host's
+## `record_identifier_binding`).
+public function record_identifier_site(ctx: ref[Context], node: ptr_uint, id: ptr_uint) -> void:
+    if id == 0:
+        return
+    ctx.identifier_sites.push(BindingSite(node = node, id = id))
+
+
+## Record a declaration node with its binding id (the host's
+## `record_declaration_binding`).
+public function record_declaration_site(ctx: ref[Context], node: ptr_uint, id: ptr_uint) -> void:
+    if id == 0:
+        return
+    ctx.declaration_sites.push(BindingSite(node = node, id = id))
+
+
+## The host's `@preassigned_local_binding_ids[node.object_id] ||= allocate_binding_id`:
+## a preassigned id, or a fresh one for a node the preassign walk did not cover.
+## A generic body (which the host only name-checks) allocates nothing.
+public function preassigned_binding_id_for(ctx: ref[Context], key: ptr_uint) -> ptr_uint:
+    if ctx.suppress_binding_records:
+        return 0
+    let existing = ctx.preassigned_ids.get(key)
+    if existing != null:
+        return unsafe: read(existing)
+    let id = allocate_binding_id(ctx)
+    ctx.preassigned_ids.set(key, id)
+    return id
+
+
+# =============================================================================
+#  Binding-id declaration pass and per-body preassignment
+# =============================================================================
+
+## Allocate the declaration-time binding ids in the host's phase order:
+## module-level values (const/var/event) in source order, then every function's
+## and method's parameters in source order (`this` first for an instance
+## method).  The host's `declare_top_level_values` → `declare_functions`
+## `value_binding` calls allocate exactly these ids.  Parameter declaration
+## sites are recorded here, as the host records them at declare time.
+function allocate_declaration_binding_ids(ctx: ref[Context], declarations: span[ast.Decl], when_extra: span[ast.Decl]) -> void:
+    allocate_value_binding_ids(ctx, declarations)
+    allocate_value_binding_ids(ctx, when_extra)
+    allocate_callable_binding_ids(ctx, declarations)
+    allocate_callable_binding_ids(ctx, when_extra)
+
+
+function allocate_value_binding_ids(ctx: ref[Context], declarations: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(declarations.data + i)
+        match d:
+            ast.Decl.decl_const as c:
+                allocate_value_binding_id(ctx, c.name)
+            ast.Decl.decl_var as v:
+                allocate_value_binding_id(ctx, v.name)
+            ast.Decl.decl_event as e:
+                allocate_value_binding_id(ctx, e.name)
+            _:
+                pass
+        i += 1
+
+
+function allocate_value_binding_id(ctx: ref[Context], name: str) -> void:
+    if name.len == 0 or ctx.value_binding_ids.contains(name):
+        return
+    let id = allocate_binding_id(ctx)
+    ctx.value_binding_ids.set(name, id)
+    let ty = ctx.value_types.get(name)
+    if ty != null:
+        record_binding_type(ctx, id, unsafe: read(ty))
+
+
+function allocate_callable_binding_ids(ctx: ref[Context], declarations: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(declarations.data + i)
+        let node = unsafe: reinterpret[ptr_uint](declarations.data + i)
+        match d:
+            ast.Decl.decl_function as fun:
+                allocate_param_binding_ids(ctx, node, fun.method_params.data, fun.method_params.len, ctx.functions.get(fun.name))
+            ast.Decl.decl_extern_function as fun:
+                allocate_foreign_param_binding_ids(ctx, node, fun.extern_params.data, fun.extern_params.len, ctx.functions.get(fun.name))
+            ast.Decl.decl_foreign_function as fun:
+                allocate_foreign_param_binding_ids(ctx, node, fun.foreign_params.data, fun.foreign_params.len, ctx.functions.get(fun.name))
+            ast.Decl.decl_extending_block as ex:
+                var base: str = ""
+                unsafe:
+                    base = qname_to_str(read(ex.type_name).name)
+                var j: ptr_uint = 0
+                while j < ex.methods.len:
+                    var m: ast.Method
+                    unsafe:
+                        m = read(ex.methods.data + j)
+                    let method_node = unsafe: reinterpret[ptr_uint](ex.methods.data + j)
+                    allocate_method_binding_ids(ctx, method_node, m, ctx.method_sigs.get(method_key(base, m.name)))
+                    j += 1
+            _:
+                pass
+        i += 1
+
+
+## A function's or method's parameters, in order.  `node` is the declaration's
+## key; the first parameter's id is remembered so the body check can give each
+## parameter the same id.  Each parameter's declaration site is recorded here,
+## as the host records it at declare time.
+function allocate_param_binding_ids(ctx: ref[Context], node: ptr_uint, params: ptr[ast.Param], count: ptr_uint, sig: ptr[FnSig]?) -> void:
+    if count == 0:
+        return
+    ctx.param_id_base.set(node, ctx.next_binding_id)
+    var i: ptr_uint = 0
+    while i < count:
+        let id = allocate_binding_id(ctx)
+        record_declaration_site(ctx, unsafe: reinterpret[ptr_uint](params + i), id)
+        var param_ty: types.Type = types.Type.ty_error
+        if sig != null:
+            let s = unsafe: read(sig)
+            if i < s.params.len:
+                param_ty = unsafe: read(s.params.data + i).ty
+        record_binding_type(ctx, id, param_ty)
+        i += 1
+
+
+function allocate_foreign_param_binding_ids(ctx: ref[Context], node: ptr_uint, params: ptr[ast.ForeignParam], count: ptr_uint, sig: ptr[FnSig]?) -> void:
+    if count == 0:
+        return
+    ctx.param_id_base.set(node, ctx.next_binding_id)
+    var i: ptr_uint = 0
+    while i < count:
+        let id = allocate_binding_id(ctx)
+        record_declaration_site(ctx, unsafe: reinterpret[ptr_uint](params + i), id)
+        var param_ty: types.Type = types.Type.ty_error
+        if sig != null:
+            let s = unsafe: read(sig)
+            if i < s.params.len:
+                param_ty = unsafe: read(s.params.data + i).ty
+        record_binding_type(ctx, id, param_ty)
+        i += 1
+
+
+## A method's `this` (instance methods only) precedes its parameters — the
+## host's `declare_function_binding` builds `body_params` in that order.  The
+## `this` type is recorded when the block resolves the receiver.
+function allocate_method_binding_ids(ctx: ref[Context], node: ptr_uint, m: ast.Method, sig: ptr[FnSig]?) -> void:
+    if m.method_kind != ast.MethodKind.mk_static:
+        let this_id = allocate_binding_id(ctx)
+        ctx.this_binding_ids.set(node, this_id)
+    allocate_param_binding_ids(ctx, node, m.method_params.data, m.method_params.len, sig)
+
+
+## The host's `preassign_local_binding_ids`: give every local declaration,
+## match-arm binding and for binding in `body` its binding id, in the host's
+## walk order, before the body is checked.
+function preassign_body_binding_ids(ctx: ref[Context], body: ptr[ast.Stmt]?) -> void:
+    ctx.preassigned_ids.clear()
+    let b = body else:
+        return
+    preassign_stmt_binding_ids(ctx, unsafe: read(b))
+
+
+function preassign_binding_id_at(ctx: ref[Context], key: ptr_uint) -> void:
+    if ctx.preassigned_ids.contains(key):
+        return
+    ctx.preassigned_ids.set(key, allocate_binding_id(ctx))
+
+
+function preassign_stmt_span_binding_ids(ctx: ref[Context], statements: span[ast.Stmt]) -> void:
+    var i: ptr_uint = 0
+    while i < statements.len:
+        preassign_stmt_binding_ids(ctx, unsafe: read(statements.data + i))
+        i += 1
+
+
+function preassign_stmt_binding_ids(ctx: ref[Context], s: ast.Stmt) -> void:
+    match s:
+        ast.Stmt.stmt_block as blk:
+            preassign_stmt_span_binding_ids(ctx, blk.statements)
+        ast.Stmt.stmt_local as l:
+            preassign_binding_id_at(ctx, binding_key(l.line, l.column))
+            let lv = l.value
+            if lv != null:
+                preassign_expr_binding_ids(ctx, unsafe: read(lv))
+            let leb = l.else_body
+            match l.else_binding:
+                Option.some:
+                    if leb != null:
+                        preassign_binding_id_at(ctx, binding_key(l.else_binding_line, l.else_binding_column))
+                Option.none:
+                    pass
+            if leb != null:
+                preassign_stmt_binding_ids(ctx, unsafe: read(leb))
+        ast.Stmt.stmt_assignment as a:
+            preassign_expr_binding_ids(ctx, unsafe: read(a.target))
+            preassign_expr_binding_ids(ctx, unsafe: read(a.value))
+        ast.Stmt.stmt_if as i:
+            var bi: ptr_uint = 0
+            while bi < i.branches.len:
+                var br: ast.IfBranch = unsafe: read(i.branches.data + bi)
+                preassign_expr_binding_ids(ctx, unsafe: read(br.condition))
+                preassign_stmt_binding_ids(ctx, unsafe: read(br.body))
+                bi += 1
+            let ieb = i.else_body
+            if ieb != null:
+                preassign_stmt_binding_ids(ctx, unsafe: read(ieb))
+        ast.Stmt.stmt_while as w:
+            preassign_expr_binding_ids(ctx, unsafe: read(w.condition))
+            let wb = w.body
+            if wb != null:
+                preassign_stmt_binding_ids(ctx, unsafe: read(wb))
+        ast.Stmt.stmt_for as fr:
+            var fi: ptr_uint = 0
+            while fi < fr.bindings.len:
+                var binding: ast.ForBinding = unsafe: read(fr.bindings.data + fi)
+                preassign_binding_id_at(ctx, binding_key(binding.line, binding.column))
+                fi += 1
+            var ii: ptr_uint = 0
+            while ii < fr.iterables.len:
+                preassign_expr_binding_ids(ctx, unsafe: read(fr.iterables.data + ii))
+                ii += 1
+            let fb = fr.body
+            if fb != null:
+                preassign_stmt_binding_ids(ctx, unsafe: read(fb))
+        ast.Stmt.stmt_match as m:
+            preassign_expr_binding_ids(ctx, unsafe: read(m.scrutinee))
+            preassign_match_arm_span_binding_ids(ctx, m.arms)
+        ast.Stmt.stmt_ret as r:
+            let rv = r.value
+            if rv != null:
+                preassign_expr_binding_ids(ctx, unsafe: read(rv))
+        ast.Stmt.stmt_defer as d:
+            let de = d.expression
+            if de != null:
+                preassign_expr_binding_ids(ctx, unsafe: read(de))
+            let db = d.body
+            if db != null:
+                preassign_stmt_binding_ids(ctx, unsafe: read(db))
+        ast.Stmt.stmt_unsafe as u:
+            let ub = u.body
+            if ub != null:
+                preassign_stmt_binding_ids(ctx, unsafe: read(ub))
+        ast.Stmt.stmt_expression as e:
+            preassign_expr_binding_ids(ctx, unsafe: read(e.expression))
+        ast.Stmt.stmt_static_assert as sa:
+            preassign_expr_binding_ids(ctx, unsafe: read(sa.condition))
+            let sm = sa.message
+            if sm != null:
+                preassign_expr_binding_ids(ctx, unsafe: read(sm))
+        ast.Stmt.stmt_error_block as eb:
+            preassign_stmt_binding_ids(ctx, unsafe: read(eb.body))
+        _:
+            pass
+
+
+function preassign_match_arm_span_binding_ids(ctx: ref[Context], arms: span[ast.MatchArm]) -> void:
+    var ai: ptr_uint = 0
+    while ai < arms.len:
+        var arm: ast.MatchArm = unsafe: read(arms.data + ai)
+        let ap = arm.pattern
+        if ap != null:
+            preassign_expr_binding_ids(ctx, unsafe: read(ap))
+        match arm.binding_name:
+            Option.some:
+                preassign_binding_id_at(ctx, binding_key(arm.binding_line, arm.binding_column))
+            Option.none:
+                pass
+        preassign_pattern_argument_binding_ids(ctx, arm.pattern)
+        let ab = arm.body
+        if ab != null:
+            preassign_stmt_binding_ids(ctx, unsafe: read(ab))
+        ai += 1
+
+
+function preassign_match_expr_arm_span_binding_ids(ctx: ref[Context], arms: span[ast.MatchExprArm]) -> void:
+    var ai: ptr_uint = 0
+    while ai < arms.len:
+        var arm: ast.MatchExprArm = unsafe: read(arms.data + ai)
+        let ap = arm.pattern
+        if ap != null:
+            preassign_expr_binding_ids(ctx, unsafe: read(ap))
+        match arm.binding_name:
+            Option.some:
+                preassign_binding_id_at(ctx, binding_key(arm.binding_line, arm.binding_column))
+            Option.none:
+                pass
+        preassign_pattern_argument_binding_ids(ctx, arm.pattern)
+        preassign_expr_binding_ids(ctx, unsafe: read(arm.value))
+        ai += 1
+
+
+## A struct-pattern call's positional identifier arguments bind
+## (`Point(x, y)`): the host's preassign allocates an id for each unnamed
+## identifier argument.
+function preassign_pattern_argument_binding_ids(ctx: ref[Context], pattern: ptr[ast.Expr]?) -> void:
+    let p = pattern else:
+        return
+    unsafe:
+        match read(p):
+            ast.Expr.expr_call as cl:
+                var i: ptr_uint = 0
+                while i < cl.args.len:
+                    var arg: ast.Argument = read(cl.args.data + i)
+                    var unnamed = false
+                    match arg.arg_name:
+                        Option.none:
+                            unnamed = true
+                        Option.some:
+                            pass
+                    if unnamed:
+                        match read(arg.arg_value):
+                            ast.Expr.expr_identifier as id:
+                                preassign_binding_id_at(ctx, binding_key(id.line, id.column))
+                            _:
+                                pass
+                    i += 1
+            _:
+                pass
+
+
+function preassign_expr_binding_ids(ctx: ref[Context], e: ast.Expr) -> void:
+    unsafe:
+        match e:
+            ast.Expr.expr_member_access as ma:
+                preassign_expr_binding_ids(ctx, read(ma.receiver))
+            ast.Expr.expr_index_access as ix:
+                preassign_expr_binding_ids(ctx, read(ix.receiver))
+                preassign_expr_binding_ids(ctx, read(ix.index))
+            ast.Expr.expr_specialization as sp:
+                preassign_expr_binding_ids(ctx, read(sp.callee))
+            ast.Expr.expr_call as cl:
+                preassign_expr_binding_ids(ctx, read(cl.callee))
+                var i: ptr_uint = 0
+                while i < cl.args.len:
+                    var arg: ast.Argument = read(cl.args.data + i)
+                    preassign_expr_binding_ids(ctx, read(arg.arg_value))
+                    i += 1
+            ast.Expr.expr_unary_op as u:
+                preassign_expr_binding_ids(ctx, read(u.operand))
+            ast.Expr.expr_binary_op as b:
+                preassign_expr_binding_ids(ctx, read(b.left))
+                preassign_expr_binding_ids(ctx, read(b.right))
+            ast.Expr.expr_range as r:
+                preassign_expr_binding_ids(ctx, read(r.start_expr))
+                preassign_expr_binding_ids(ctx, read(r.end_expr))
+            ast.Expr.expr_if as ife:
+                preassign_expr_binding_ids(ctx, read(ife.condition))
+                preassign_expr_binding_ids(ctx, read(ife.then_expr))
+                preassign_expr_binding_ids(ctx, read(ife.else_expr))
+            ast.Expr.expr_match as me:
+                preassign_expr_binding_ids(ctx, read(me.scrutinee))
+                preassign_match_expr_arm_span_binding_ids(ctx, me.arms)
+            ast.Expr.expr_unsafe as u:
+                preassign_expr_binding_ids(ctx, read(u.expression))
+            ast.Expr.expr_prefix_cast as c:
+                preassign_expr_binding_ids(ctx, read(c.expression))
+            ast.Expr.expr_await as aw:
+                preassign_expr_binding_ids(ctx, read(aw.expression))
+            ast.Expr.expr_format_string as fs:
+                var pi: ptr_uint = 0
+                while pi < fs.parts.len:
+                    var part: ast.FormatStringPart = read(fs.parts.data + pi)
+                    match part:
+                        ast.FormatStringPart.fmt_expr as fe:
+                            preassign_expr_binding_ids(ctx, read(fe.expression))
+                        ast.FormatStringPart.fmt_text:
+                            pass
+                    pi += 1
+            ast.Expr.expr_proc as pr:
+                preassign_stmt_binding_ids(ctx, read(pr.body))
+            ast.Expr.expr_named as n:
+                preassign_expr_binding_ids(ctx, read(n.value))
+            ast.Expr.expr_expression_list as el:
+                var ei: ptr_uint = 0
+                while ei < el.elements.len:
+                    preassign_expr_binding_ids(ctx, read(el.elements.data + ei))
+                    ei += 1
+            ast.Expr.expr_detach as dt:
+                preassign_expr_binding_ids(ctx, read(dt.expression))
+            _:
+                pass
 
 
 function report(ctx: ref[Context], line: ptr_uint, column: ptr_uint, message: str) -> void:
@@ -610,6 +1139,7 @@ function collect_import_aliases(ctx: ref[Context], file: ast.SourceFile) -> void
                     ctx.import_aliases.set(import_alias_name(imp.path, imp.alias_name), module_name)
                     if not vec_contains_str(ref_of(ctx.import_order), module_name):
                         ctx.import_order.push(module_name)
+                    record_import_symbol_count(ctx, module_name)
             _:
                 pass
         i += 1
@@ -642,6 +1172,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
             ast.Decl.decl_struct as s:
                 declare_type(ctx, s.name, s.line, s.column)
                 ctx.types.set(s.name, types.Type.ty_named(module_name = ctx.module_name, name = s.name))
+                register_module_type_name(ctx, s.name)
                 ctx.type_param_names.set(s.name, s.type_params)
                 ctx.implemented.set(s.name, s.impl_list)
                 register_nested_struct_types(ctx, s.nested_types, s.name)
@@ -649,19 +1180,24 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
             ast.Decl.decl_union as u:
                 declare_type(ctx, u.name, u.line, u.column)
                 ctx.types.set(u.name, types.Type.ty_named(module_name = ctx.module_name, name = u.name))
+                register_module_type_name(ctx, u.name)
             ast.Decl.decl_enum as e:
                 declare_type(ctx, e.name, e.line, e.column)
                 ctx.types.set(e.name, types.Type.ty_named(module_name = ctx.module_name, name = e.name))
+                register_module_type_name(ctx, e.name)
             ast.Decl.decl_flags as fl:
                 declare_type(ctx, fl.name, fl.line, fl.column)
                 ctx.types.set(fl.name, types.Type.ty_named(module_name = ctx.module_name, name = fl.name))
+                register_module_type_name(ctx, fl.name)
             ast.Decl.decl_variant as vr:
                 declare_type(ctx, vr.name, vr.line, vr.column)
                 ctx.types.set(vr.name, types.Type.ty_named(module_name = ctx.module_name, name = vr.name))
+                register_module_type_name(ctx, vr.name)
                 ctx.type_param_names.set(vr.name, vr.type_params)
             ast.Decl.decl_opaque as op:
                 declare_type(ctx, op.name, op.line, op.column)
                 ctx.types.set(op.name, types.Type.ty_named(module_name = ctx.module_name, name = op.name))
+                register_module_type_name(ctx, op.name)
                 ctx.implemented.set(op.name, op.opaque_implements)
             ast.Decl.decl_type_alias as ta:
                 # Only register the alias here: its target may name a type that
@@ -688,6 +1224,7 @@ function declare_named_types(ctx: ref[Context], file: ast.SourceFile) -> void:
                 let resolved = resolve_type(ctx, ta.target)
                 ctx.type_alias_types.set(ta.name, resolved)
                 ctx.types.set(ta.name, resolved)
+                register_module_type_name(ctx, ta.name)
             _:
                 pass
         i += 1
@@ -698,6 +1235,26 @@ function declare_type(ctx: ref[Context], name: str, line: ptr_uint, column: ptr_
         report(ctx, line, column, dup_message("type", name))
         return
     ctx.type_names.set(name, true)
+
+
+## Track a module-declared type's registration position (the host's
+## `facts.types` order); first registration wins.
+function register_module_type_name(ctx: ref[Context], name: str) -> void:
+    if not vec_contains_str(ref_of(ctx.module_type_order), name):
+        ctx.module_type_order.push(name)
+
+
+## The exported-symbol count the debug dump's Imports block prints
+## (`types + functions + values`), 0 for a module the loader did not resolve.
+## The self's `ModuleBinding` splits the public type surface across its
+## per-kind maps (`types` holds opaques and unions; enums/flags/variants live in
+## `static_member_types`; aliases in `type_alias_types`), so the count sums them.
+function record_import_symbol_count(ctx: ref[Context], module_name: str) -> void:
+    let binding_ptr = lookup_binding(ctx, module_name) else:
+        ctx.import_symbol_counts.set(module_name, 0)
+        return
+    let binding = unsafe: read(binding_ptr)
+    ctx.import_symbol_counts.set(module_name, binding.structs.len() + binding.types.len() + binding.static_member_types.len() + binding.type_alias_types.len() + binding.functions.len() + binding.value_types.len())
 
 
 function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl], parent_name: str) -> void:
@@ -717,6 +1274,7 @@ function register_nested_struct_types(ctx: ref[Context], nested: span[ast.Decl],
                 if not ctx.type_names.contains(s.name):
                     declare_type(ctx, s.name, s.line, s.column)
                 ctx.types.set(qname, types.Type.ty_named(module_name = ctx.module_name, name = qname))
+                register_module_type_name(ctx, qname)
                 register_nested_struct_types(ctx, s.nested_types, qname)
                 register_struct_events(ctx, s.struct_events)
             _:
@@ -1025,8 +1583,10 @@ function install_prelude_types(ctx: ref[Context]) -> void:
     # prelude modules appended; the LSP's method merge follows that order.
     if not ctx.module_name.equal("std.option") and not vec_contains_str(ref_of(ctx.import_order), "std.option"):
         ctx.import_order.push("std.option")
+        record_import_symbol_count(ctx, "std.option")
     if not ctx.module_name.equal("std.result") and not vec_contains_str(ref_of(ctx.import_order), "std.result"):
         ctx.import_order.push("std.result")
+        record_import_symbol_count(ctx, "std.result")
     register_prelude_type(ctx, "Option", "some", "none")
     register_prelude_type(ctx, "Result", "success", "failure")
     # The prelude variants' arm payloads (`Option_some{value: T}` and friends,
@@ -2141,7 +2701,7 @@ function check_functions(ctx: ref[Context], file: ast.SourceFile) -> void:
             d = read(file.declarations.data + i)
         match d:
             ast.Decl.decl_function as fun:
-                check_function_body(ctx, fun.name, fun.line, fun.type_params, fun.method_params, fun.return_type, fun.body, fun.is_async)
+                check_function_body(ctx, unsafe: reinterpret[ptr_uint](file.declarations.data + i), fun.name, fun.line, fun.type_params, fun.method_params, fun.return_type, fun.body, fun.is_async)
             _:
                 pass
         i += 1
@@ -2160,6 +2720,9 @@ function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> voi
         match d:
             ast.Decl.decl_extending_block as ex:
                 var this_type: types.Type = types.Type.ty_error
+                var base: str = ""
+                unsafe:
+                    base = qname_to_str(read(ex.type_name).name)
                 enter_suppressed_extending_target(ctx, ex.type_name)
                 # The block's own type parameters must be in scope while the
                 # receiver type resolves, or `extending StateMachine[State,
@@ -2175,11 +2738,12 @@ function check_extending_methods(ctx: ref[Context], file: ast.SourceFile) -> voi
                     unsafe:
                         m = read(ex.methods.data + j)
                     enter_extending_type_params(ctx, ex.type_name)
+                    ctx.method_receiver_types.set(method_key(base, m.name), this_type)
                     if m.method_kind != ast.MethodKind.mk_static:
                         # `this` is bound in a non-static method only (see
                         # check_method_body); record it for the LSP.
                         ctx.this_types.push(ThisTypeEntry(line = m.line, ty = this_type))
-                    check_method_body(ctx, this_type, m, ex.type_name)
+                    check_method_body(ctx, this_type, m, ex.type_name, unsafe: reinterpret[ptr_uint](ex.methods.data + j))
                     ctx.type_params.clear()
                     j += 1
             _:
@@ -2203,6 +2767,8 @@ function collect_interfaces(ctx: ref[Context], file: ast.SourceFile) -> void:
         match d:
             ast.Decl.decl_interface as iface:
                 ctx.interfaces.set(iface.name, iface.interface_methods)
+                if not vec_contains_str(ref_of(ctx.interface_order), iface.name):
+                    ctx.interface_order.push(iface.name)
             _:
                 pass
         i += 1
@@ -2401,7 +2967,22 @@ function scope_get_storage(scope: ref[sscope.Scope], name: str) -> ptr[types.Typ
     return sscope.scope_get_storage(scope, name)
 
 
-function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method, target_type_name: ptr[ast.TypeRef]) -> void:
+function scope_set_binding_id(scope: ref[sscope.Scope], name: str, id: ptr_uint) -> void:
+    sscope.scope_set_binding_id(scope, name, id)
+
+
+function scope_get_binding_id(scope: ref[sscope.Scope], name: str) -> ptr_uint:
+    return sscope.scope_get_binding_id(scope, name)
+
+
+function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Method, target_type_name: ptr[ast.TypeRef], node: ptr_uint) -> void:
+    var receiver_generic = false
+    unsafe:
+        receiver_generic = read(target_type_name).arguments.len > 0
+    let is_generic = m.type_params.len > 0 or receiver_generic
+    ctx.suppress_binding_records = is_generic
+    if not is_generic:
+        preassign_body_binding_ids(ctx, m.body)
     enter_suppressed_extending_target(ctx, target_type_name)
     enter_type_params(ctx, m.type_params)
     var scope = scope_create()
@@ -2409,6 +2990,11 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     if m.method_kind != ast.MethodKind.mk_static:
         scope_set(ref_of(scope), "this", this_type)
         scope_set_storage(ref_of(scope), "this", this_type)
+        let this_id = ctx.this_binding_ids.get(node)
+        if this_id != null:
+            let tid = unsafe: read(this_id)
+            scope_set_binding_id(ref_of(scope), "this", tid)
+            record_binding_type(ctx, tid, this_type)
     var seen = map_mod.Map[str, bool].create()
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
@@ -2423,6 +3009,7 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
         let param_ty = resolve_type_value(ctx, p.param_type)
         scope_set(ref_of(scope), p.name, param_ty)
         scope_set_storage(ref_of(scope), p.name, param_ty)
+        scope_set_binding_id(ref_of(scope), p.name, declared_param_id(ctx, node, pi))
         pi += 1
     seen.release()
     var ret = types.primitive("void")
@@ -2433,13 +3020,29 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), m.body, null)
     ctx.inside_async = false
     check_definite_assignment(ctx, m.method_params, m.body)
+    ctx.suppress_binding_records = false
     ctx.type_params.clear()
     ctx.suppressed_type_names.clear()
 
 
-function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_params: span[ast.TypeParam], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool) -> void:
+## The declaration-pass id of a function/method parameter (0 when generic or
+## unallocated).
+function declared_param_id(ctx: ref[Context], node: ptr_uint, index: ptr_uint) -> ptr_uint:
+    if ctx.suppress_binding_records:
+        return 0
+    let base = ctx.param_id_base.get(node)
+    if base == null:
+        return 0
+    return unsafe: read(base) + index
+
+
+function check_function_body(ctx: ref[Context], node: ptr_uint, name: str, line: ptr_uint, type_params: span[ast.TypeParam], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool) -> void:
     let b = body else:
         return
+    let is_generic = type_params.len > 0
+    ctx.suppress_binding_records = is_generic
+    if not is_generic:
+        preassign_body_binding_ids(ctx, body)
     enter_type_params(ctx, type_params)
     var scope = scope_create()
     scope_enter(ref_of(scope))
@@ -2457,6 +3060,7 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
         let param_ty = resolve_type_value(ctx, p.param_type)
         scope_set(ref_of(scope), p.name, param_ty)
         scope_set_storage(ref_of(scope), p.name, param_ty)
+        scope_set_binding_id(ref_of(scope), p.name, declared_param_id(ctx, node, pi))
         pi += 1
     seen.release()
     # Generic value params (`[N: int]`) are compile-time integer constants.
@@ -2493,6 +3097,7 @@ function check_function_body(ctx: ref[Context], name: str, line: ptr_uint, type_
     ctx.inside_async = false
     ctx.flow_active = false
     check_definite_assignment(ctx, params, b)
+    ctx.suppress_binding_records = false
     ctx.type_params.clear()
     ctx.suppressed_type_names.clear()
 
@@ -2723,7 +3328,7 @@ function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: Chec
                     if incompatible_value(chk.ret, vt, rv):
                         report(ctx, expr_source_line(rv), expr_source_column(rv), return_mismatch_message(chk.ret, vt))
             ast.Stmt.stmt_local as l:
-                check_local(ctx, scope, chk, l.is_let, l.name, l.stmt_type, l.value, l.else_binding, l.else_body, l.destructure_bindings, l.line, l.column)
+                check_local(ctx, scope, chk, l.is_let, l.name, l.stmt_type, l.value, l.else_binding, l.else_body, l.destructure_bindings, l.line, l.column, l.else_binding_line, l.else_binding_column)
             ast.Stmt.stmt_if as i:
                 # The host's IfStmt arm: each branch is checked with the previous
                 # branches' falsy refinements in scope, and an if whose every
@@ -3514,13 +4119,19 @@ function bind_for_binding_types(ctx: ref[Context], scope: ref[sscope.Scope], bin
     while i < bindings.len:
         var binding_name: str = ""
         var binding_ty: types.Type = types.Type.ty_error
+        var binding_id: ptr_uint = 0
         unsafe:
-            binding_name = read(bindings.data + i).name
+            let binding = read(bindings.data + i)
+            binding_name = binding.name
+            binding_id = preassigned_binding_id_for(ctx, binding_key(binding.line, binding.column))
         if i < iterables.len:
             var iterable_ptr: ptr[ast.Expr] = unsafe: iterables.data + i
             binding_ty = for_binding_type(ctx, scope, iterable_ptr, threaded)
         scope_set(scope, binding_name, binding_ty)
         scope_set_storage(scope, binding_name, binding_ty)
+        scope_set_binding_id(scope, binding_name, binding_id)
+        record_binding_type(ctx, binding_id, binding_ty)
+        record_declaration_site(ctx, unsafe: reinterpret[ptr_uint](bindings.data + i), binding_id)
         i += 1
 
 
@@ -3711,7 +4322,12 @@ function check_assign_target_immutable(ctx: ref[Context], scope: ref[sscope.Scop
                 pass
 
 
-function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, else_binding: Option[str], else_body: ptr[ast.Stmt]?, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint) -> void:
+function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, is_let: bool, name: str, stmt_type: ptr[ast.TypeRef]?, value: ptr[ast.Expr]?, else_binding: Option[str], else_body: ptr[ast.Stmt]?, destructure_bindings: Option[span[str]], line: ptr_uint, column: ptr_uint, else_line: ptr_uint, else_column: ptr_uint) -> void:
+    # The declaration's binding id, consumed even when the binding is discarded
+    # (`let _ = …` burns an id): the host's preassigned allocation happens for
+    # every LocalDecl.
+    let statement_key = binding_key(line, column)
+    let statement_binding_id = preassigned_binding_id_for(ctx, statement_key)
     # Destructuring bindings: each name carries the tuple element (or struct
     # field) at its position, the host's `check_local_decl_tuple_destructure`.
     # The per-name types are recorded for the LSP; the initializer itself is
@@ -3723,6 +4339,7 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
             let dv = value
             if dv != null:
                 value_ty = infer_expr_inner(ctx, scope, dv)
+            var bound_any = false
             var di: ptr_uint = 0
             while di < names.value.len:
                 var field_ty: types.Type = types.Type.ty_error
@@ -3737,9 +4354,14 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
                     if not dn == "_":
                         scope_set(scope, dn, field_ty)
                         scope_set_storage(scope, dn, field_ty)
+                        scope_set_binding_id(scope, dn, statement_binding_id)
+                        record_binding_type(ctx, statement_binding_id, field_ty)
                         ctx.destructure_types.push(DestructureTypeEntry(line = line, name = dn, ty = field_ty))
+                        bound_any = true
                 di += 1
-            check_local_else_body(ctx, scope, chk, else_binding, else_body, value_ty)
+            if bound_any:
+                record_declaration_site(ctx, statement_key, statement_binding_id)
+            check_local_else_body(ctx, scope, chk, else_binding, else_body, value_ty, else_line, else_column)
             return
         Option.none:
             pass
@@ -3785,6 +4407,10 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
     scope_set(scope, name, final_ty)
     let storage_ty = if has_guard and is_let: value_type else: final_ty
     scope_set_storage(scope, name, storage_ty)
+    if not name.equal("_"):
+        scope_set_binding_id(scope, name, statement_binding_id)
+        record_binding_type(ctx, statement_binding_id, final_ty)
+        record_declaration_site(ctx, statement_key, statement_binding_id)
 
     if is_let:
         scope_set_let(scope, name)
@@ -3792,22 +4418,27 @@ function check_local(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlag
     if is_reserved_name(name):
         report(ctx, line, column, reserved_local_message(name))
 
-    check_local_else_body(ctx, scope, chk, else_binding, else_body, value_type)
+    check_local_else_body(ctx, scope, chk, else_binding, else_body, value_type, else_line, else_column)
 
 
 ## The host's `check_local_decl_let_else` else-block half: check the guard's
 ## else body in a scope that also carries its `else as name` binding (the
 ## initializer's error type, `Result[T, E]`'s `E`).  The `let x = optional else:`
 ## form has no binding.  A body-less guard has nothing to check.
-function check_local_else_body(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, else_binding: Option[str], else_body: ptr[ast.Stmt]?, value_type: types.Type) -> void:
+function check_local_else_body(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, else_binding: Option[str], else_body: ptr[ast.Stmt]?, value_type: types.Type, else_line: ptr_uint, else_column: ptr_uint) -> void:
     let body = else_body else:
         return
     scope_enter(scope)
     match else_binding:
         Option.some as binding:
             let err_ty = let_else_error_type(value_type)
+            let else_key = binding_key(else_line, else_column)
+            let else_id = preassigned_binding_id_for(ctx, else_key)
             scope_set(scope, binding.value, err_ty)
             scope_set_storage(scope, binding.value, err_ty)
+            scope_set_binding_id(scope, binding.value, else_id)
+            record_binding_type(ctx, else_id, err_ty)
+            record_declaration_site(ctx, else_key, else_id)
         Option.none:
             pass
     check_body(ctx, scope, chk, body)
@@ -4066,7 +4697,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
             ast.Expr.expr_char_literal:
                 return types.primitive("ubyte")
             ast.Expr.expr_identifier as id:
-                return infer_identifier(ctx, scope, id.name, id.line, id.column)
+                return infer_identifier(ctx, scope, unsafe: reinterpret[ptr_uint](ep), id.name, id.line, id.column)
             ast.Expr.expr_binary_op as b:
                 return infer_binary(ctx, scope, b.operator, b.left, b.right)
             ast.Expr.expr_unary_op as u:
@@ -4262,13 +4893,17 @@ function is_known_value_identifier(ctx: ref[Context], name: str) -> bool:
     return false
 
 
-function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], name: str, line: ptr_uint, column: ptr_uint) -> types.Type:
+function infer_identifier(ctx: ref[Context], scope: ref[sscope.Scope], node_key: ptr_uint, name: str, line: ptr_uint, column: ptr_uint) -> types.Type:
     let local = scope_get(scope, name)
     if local != null:
+        record_identifier_site(ctx, node_key, scope_get_binding_id(scope, name))
         unsafe:
             return read(local)
     let global = ctx.value_types.get(name)
     if global != null:
+        let global_id = ctx.value_binding_ids.get(name)
+        if global_id != null:
+            record_identifier_site(ctx, node_key, unsafe: read(global_id))
         unsafe:
             return read(global)
     # Declared functions/externs and other referenceable names carry no
@@ -4311,8 +4946,13 @@ function bind_match_arm_names(ctx: ref[Context], scope: ref[sscope.Scope], scrut
                         binding_ty = payload_ty.value
                     Option.none:
                         pass
+            let arm_key = binding_key(line, column)
+            let arm_id = preassigned_binding_id_for(ctx, arm_key)
             scope_set(scope, bn.value, binding_ty)
             scope_set_storage(scope, bn.value, binding_ty)
+            scope_set_binding_id(scope, bn.value, arm_id)
+            record_binding_type(ctx, arm_id, binding_ty)
+            record_declaration_site(ctx, arm_key, arm_id)
             ctx.arm_binding_types.push(ArmBindingEntry(line = line, name = bn.value, ty = binding_ty))
         Option.none:
             pass
@@ -4325,11 +4965,21 @@ function bind_match_arm_names(ctx: ref[Context], scope: ref[sscope.Scope], scrut
                 while i < cl.args.len:
                     var arg: ast.Argument
                     arg = read(cl.args.data + i)
+                    var arg_named = false
+                    match arg.arg_name:
+                        Option.some:
+                            arg_named = true
+                        Option.none:
+                            pass
                     match read(arg.arg_value):
                         ast.Expr.expr_identifier as id:
                             if not id.name == "_":
+                                let arg_id = if arg_named: 0 else: preassigned_binding_id_for(ctx, binding_key(id.line, id.column))
                                 scope_set(scope, id.name, types.Type.ty_error)
                                 scope_set_storage(scope, id.name, types.Type.ty_error)
+                                if not arg_named:
+                                    scope_set_binding_id(scope, id.name, arg_id)
+                                    record_binding_type(ctx, arg_id, types.Type.ty_error)
                         _:
                             pass
                     i += 1
