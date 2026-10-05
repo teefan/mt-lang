@@ -131,16 +131,17 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 35 close (2026-10-05) — **`milkTea/debugInfo`
-byte-parity completed**: the Facts and Bindings sections render the host's
-binding-id model (the analyzer allocates host-shaped ids at declaration time and
-per body, records identifier/declaration sites and binding types, and keeps
-registration orders for types/interfaces/functions/values/methods/imports), the
-AST section carries the cached AST's `SourceFile` header and drops the
-never-rendered `node_path_ids` map, and the harness normalizes Ruby `object_id`
-values — the whole dump is **byte-equal on the harness fixture** and the
-harness's fifth documented entry is closed (4 remain).  Session 34
-(2026-10-04) closed **DAP Track 5**.  The
+Last updated: session 36 close (2026-10-05) — **warm references parity**: the
+reference index now records each noted document's import names and
+`dependent_documents` matches the host's `reverse_import_dependents_for` over
+*every* known document, closing the canonical audit's four
+references warm-coverage rows (**10 → 6 differing entries, closed 4, added 0**;
+the non-canonical set is unchanged).  Session 35 had closed
+**`milkTea/debugInfo` byte-parity**: the Facts and Bindings sections render the
+host's binding-id model, the AST section carries the cached AST's `SourceFile`
+header, and the harness normalizes Ruby `object_id` values — the whole dump is
+**byte-equal on the harness fixture** and the harness's fifth documented entry
+is closed (4 remain).  Session 34 (2026-10-04) closed **DAP Track 5**.  The
 self-host's `mtc dap` is at parity with the Ruby host on `tools/dap_smoke.rb`'s
 whole matrix: the process backend (now starting the program at
 `configurationDone`, `terminated`→`exited` with the real exit code) and the
@@ -896,27 +897,30 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
     Locked by three `linter_test.mt` cases (fast skips the flow rules, full
     runs them, fast keeps an always-on rule).  Diagnostics scheduling stays out
     of scope, as planned.
-- **Canonical-audit residue (session 31, warm-state, new)** — the canonical
-  (warm-up) audit's differing set is the honest steady-state one; beyond the
-  documented rows it surfaces:
+- **Canonical-audit residue (session 31, warm-state; the references half closed
+  in session 36)** — the canonical (warm-up) audit's differing set is the honest
+  steady-state one; beyond the documented rows it surfaced:
   - **Four `references` entries** (`docs/data_structures.mt@34:25`, `@112:29`,
-    `@167:37`, `@195:37`): the host's warm list includes many more `std/` files
-    (25 entries vs the self's 4 at `@34:25`; e.g. `binary_heap`, `graph`,
-    `sparse_set`), i.e. its identifier-index / reverse-import candidate
-    coverage at steady state is wider than the self's.  Follow-up: give the
-    self's reference candidate set the host's module-index reverse dependents
-    (the self's index (refidx/`reverse_import_dependents_for`) only covers
-    what its requests have noted plus the loader's import edges).
+    `@167:37`, `@195:37`) — **CLOSED (session 36, 2026-10-05)**: the host's warm
+    list included many more `std/` files (25 entries vs the self's 4 at
+    `@34:25`; e.g. `binary_heap`, `graph`, `sparse_set`) because the self's
+    static-method reference candidates came from the workspace index alone,
+    while the host's `reverse_import_dependents_for` covers every document it
+    knows.  `reference_index.documents_importing` (the import names each noted
+    document carries) plus the name-based `dependent_documents` now match the
+    host: canonical **10 → 6 differing entries, closed 4, added 0**; the
+    non-canonical set is unchanged (5 → 5, the documented 4 + drift).  Record:
+    §0k session 36.
   - **Two `hover` entries** (`ds@140:33`, `colors.mt@12:46`, builtin `str`):
     once the host's definition index warms it appends
     `Defined at: std/str.mt:58` to builtin-type hovers; the self omits
     builtin/std type locations — the same family as the documented
     `type quat` row (an eager fix was measured at 153 extra entries and
     rejected, session 18).
-  Neither is a regression from session 31 (its changes do not touch
-  references/hover); they were previously invisible because the non-canonical
-  audit sampled different positions and ran with the host's index only
-  partially warm.  Record: §0k session 31.
+  The hover rows are not a regression from session 31 (its changes do not touch
+  hover); they were previously invisible because the non-canonical audit sampled
+  different positions and ran with the host's index only partially warm.
+  Record: §0k sessions 31 and 36.
 - **Imported enum/flags member locations (session 32, deferred)**: for
   `alias.Enum.member` the self resolves the member text but deliberately drops
   the location — the host's `type_name_member_access?` classifier misses the
@@ -991,7 +995,7 @@ definition of done above.
 | `sexpr lower` | 39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files (re-measured 2026-10-04 session 33; the +7 files/differs over session 17's 615 are this session's own new compiler sources — match count unchanged) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 35: `milkTea/debugInfo` is **byte-equal** after the Facts/Bindings port and the `object_id` normalization; the remaining 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | **canonical (warm) set: 10 differ** (2026-10-04 session 31, `--cap 200`: the 4 documented completion/highlight + 2 builtin-hover rows + **4 new references warm-coverage rows** — Track 7's canonical-audit residue).  Non-canonical runs read 4–5 with ±drift (session 35's gate read **5**, session 33's **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
+| LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 session 36, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0).  Non-canonical runs read 4–5 with ±drift (session 36's gate read **4**, session 35's **5**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-05 session 35) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
 | LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 35; ~7.8M B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
@@ -1010,6 +1014,59 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 36 (2026-10-05) — warm references parity: the reverse-import candidate set
+
+Goal: the canonical audit's last four *unintended* entries — the `references`
+positions whose warm candidate set was narrower than the host's
+(`docs/data_structures.mt@34:25`, `@112:29`, `@167:37`, `@195:37`; at `@34:25`
+the host returns 25 occurrences against the self's 4).
+
+Root cause: the target is a static method reached through a type receiver
+(`vec.Vec[int].create()`), so `handle_references` takes the
+`static_type_method_references` path, whose candidates are the import
+dependents of the declaring module.  The self computed them from the
+*workspace index* only (`ws_idx.dependents_of` over `Index.files`, filled by
+the workspace-root walk), so a module file the loader had fetched for another
+file's facts — the repo `std/` files `graph.mt`, `spatial.mt`, `sparse_set.mt`,
+`binary_heap.mt`, all importers of `std.vec` — was never a candidate.  The
+host's `reverse_import_dependents_for` is built over *all* documents it knows:
+its `ensure_full_reverse_import_index` iterates
+`@indexed_documents + @open_documents` and reads each one's imports (the host's
+content cache memoizes every file a request touched, including modules fetched
+through analysis, so tokenizing a navigation target is enough).
+
+Fix:
+
+- **`reference_index.mt`**: `IndexedDocument` now records its import module
+  names (views into the stored source); `collect_document_metadata` lexes once
+  and fills both the identifier tokens and the dotted name after each `import`
+  (before `as`); `documents_importing(index, module_name, results)` answers a
+  module's importers in index (tokenization) order — the host's
+  reverse-dependents lookup; `release_document` releases the new vector.
+- **`references.mt`**: `dependent_documents` takes the declaring module's
+  *name* plus its path; candidates = the reference index's importers of the
+  name ∪ the workspace index's resolved-path dependents, filtered by
+  `document_known_to_host` exactly as before.  The module-level arm passes the
+  request analysis' `module_name`; the static-method arm infers the location
+  file's module name via `resolver.infer_module_name` over the workspace's
+  effective module roots (`module_name_for_source_path`), matching the host's
+  `target_facts.module_name`.  The output order stays the reference index's
+  document order — the same order the host's identifier index gives.
+- **`lsp_index_test.mt`**: `test_reference_index_records_document_imports` pins
+  the importers in index order and the re-note update (an import removed by an
+  edit drops the document).
+
+Measured: the canonical audit (`--canonical --cap 200`, SimpleGame) went
+**10 → 6 differing entries, closed 4, added 0** — the four references
+positions; the residue is the documented completion 2 / documentHighlight 1 /
+hover 3 (the hover rows being the documented `type quat` and the two
+builtin-hover warm artifacts).  The non-canonical audit is **5 → 5, closed 0,
+added 0** (the documented 4 + the `documentSymbol` drift; this session's gate
+run read **4**).  Gates (`tools/gates.sh --run`): dev build + 18/0 tests,
+bootstrap fixed point + 18/0, harness 30/30 at **4 documented entries**,
+recovery OK, fixture sweep closed 5 / 0 added, audit 4 (meter), valgrind 0
+errors, Neovim smoke OK, soak 11.5 MB/cycle at `--cycles 200` (unchanged).
 
 ### Session 35 (2026-10-05) — `milkTea/debugInfo` bytes: the Facts and Bindings sections
 
@@ -5850,8 +5907,9 @@ rows byte-identical); and the DAP items in `dap-design.md` §10.
    override for imports).  `[LSP perf]` reads **5.0 ms median per edit** on
    `SimpleGame/src/main.mt` (was 54.3), and the dependency-edit probe passes
    where the pre-change binary failed 3 checks.  See §0k's "The per-module
-   `ModuleCache`" record; the next open LSP items are the readiness residue's
-   soak ceiling (C4) and the canonical-audit residue (Track 7).
+   `ModuleCache`" record; the next open LSP item is the readiness residue's
+   soak ceiling (C4) — the canonical-audit residue's four references rows are
+   closed (session 36) and its two builtin-hover rows are documented/rejected.
 2. **`milkTea/debugInfo` remainder** — **CLOSED (session 35, 2026-10-05)**:
    the **Facts** and **Bindings** sections, the cached-AST `SourceFile`
    header/`node_path_ids` residue and the harness's `object_id` normalization

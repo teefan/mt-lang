@@ -3,6 +3,7 @@
 # Run with: mtc test projects/mtc/test/lsp_index_test.mt
 
 import std.str
+import std.string as string
 import std.vec as vec
 
 import mtc.lsp.reference_index as refidx
@@ -44,6 +45,50 @@ function test_reference_index_reindex_moves_document_to_the_end() -> void:
         expect(false, "missing second entry")
     expect(unsafe: read(first).path.equal("/b.mt"))
     expect(unsafe: read(second).path.equal("/a.mt"))
+
+
+@[test]
+function test_reference_index_records_document_imports() -> void:
+    # The index records each noted document's import module names, so the
+    # references path can ask for a module's importers (the host's
+    # `reverse_import_dependents_for` over its indexed documents).
+    var index = refidx.create()
+    defer: refidx.release(ref_of(index))
+
+    refidx.note(ref_of(index), "/a.mt", "import std.vec as vec\n\nlet a = 1\n")
+    refidx.note(ref_of(index), "/b.mt", "import std.map\nimport std.vec\n\nlet b = 2\n")
+    refidx.note(ref_of(index), "/c.mt", "import std.str\n\nlet c = 3\n")
+
+    var importers = vec.Vec[string.String].create()
+    defer: release_importers(ref_of(importers))
+    refidx.documents_importing(ref_of(index), "std.vec", ref_of(importers))
+    expect_eq(int<-importers.len(), 2)
+    let first = importers.get(0) else:
+        expect(false, "missing first importer")
+    expect(unsafe: read(first).as_str().equal("/a.mt"))
+    let second = importers.get(1) else:
+        expect(false, "missing second importer")
+    expect(unsafe: read(second).as_str().equal("/b.mt"))
+
+    # A re-note without the import drops the document from the importers.
+    refidx.note(ref_of(index), "/a.mt", "let a = 1\n")
+    var after = vec.Vec[string.String].create()
+    defer: release_importers(ref_of(after))
+    refidx.documents_importing(ref_of(index), "std.vec", ref_of(after))
+    expect_eq(int<-after.len(), 1)
+    let only = after.get(0) else:
+        expect(false, "missing importer after re-note")
+    expect(unsafe: read(only).as_str().equal("/b.mt"))
+
+
+function release_importers(paths: ref[vec.Vec[string.String]]) -> void:
+    var i: ptr_uint = 0
+    while i < paths.len():
+        let p = paths.get(i) else:
+            break
+        unsafe: read(p).release()
+        i += 1
+    paths.release()
 
 
 @[test]

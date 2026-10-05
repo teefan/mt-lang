@@ -16,6 +16,7 @@ import std.str
 import std.string as string_mod
 import std.vec as vec
 
+import mtc.loader.path_resolver as resolver
 import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
@@ -383,7 +384,7 @@ function collect_module_level_references(
 
     var candidates = vec.Vec[string_mod.String].create()
     defer: release_paths(ref_of(candidates))
-    dependent_documents(ws, file_path, ref_of(candidates))
+    dependent_documents(ws, analysis.module_name, file_path, ref_of(candidates))
     collect_candidate_entries(ws, name, ref_of(candidates), results)
 
 
@@ -777,29 +778,51 @@ function walk_reference_expr_opt(w: ref[ReferenceScan], bindings: ref[vec.Vec[sc
 #  Cross-file occurrences
 # =============================================================================
 
-## The documents that import `module_path` — the host's
+## The documents that import `module_name` — the host's
 ## `reverse_import_dependents_for`, which is built over the documents the
 ## server knows: its open ones, the ones whose content or tokens a request has
-## touched, and — because `initialized` starts a background thread that indexes
-## the workspace root — every `.mt` file under the root.
+## touched (the reference index, which records each noted document's imports),
+## and every `.mt` file under the workspace root (the workspace index, whose
+## walked files carry their resolved import edges), plus — because `initialized`
+## starts a background thread that indexes the workspace root — every `.mt` file
+## under the root.
 function dependent_documents(
     ws: ref[workspace.Workspace],
-    module_path: str,
+    module_name: str,
+    target_path: str,
     results: ref[vec.Vec[string_mod.String]],
 ) -> void:
     ws.build_index_if_needed()
-    var dependents = ws_idx.dependents_of(ref_of(ws.index), module_path)
-    defer: dependents.release()
+    var candidates = vec.Vec[string_mod.String].create()
+    defer: release_paths(ref_of(candidates))
 
+    refidx.documents_importing(ref_of(ws.reference_index), module_name, ref_of(candidates))
+
+    var dependents = ws_idx.dependents_of(ref_of(ws.index), target_path)
+    defer: dependents.release()
     var di: ptr_uint = 0
     while di < dependents.len():
         let dp = dependents.get(di) else:
             break
+        candidates.push(string_mod.String.from_str(unsafe: read(dp).as_str()))
         di += 1
-        let path = unsafe: read(dp).as_str()
-        if not document_known_to_host(ws, path):
-            continue
-        results.push(string_mod.String.from_str(path))
+
+    var ci: ptr_uint = 0
+    while ci < candidates.len():
+        let cp = candidates.get(ci) else:
+            break
+        let path = unsafe: read(cp).as_str()
+        if document_known_to_host(ws, path):
+            results.push(string_mod.String.from_str(path))
+        ci += 1
+
+
+## The inferred module name of a source file (`…/std/vec.mt` -> `std.vec`), the
+## name importers write and the host's `facts.module_name` carries.
+function module_name_for_source_path(ws: ref[workspace.Workspace], path: str) -> string_mod.String:
+    var roots = ws.effective_module_roots_for(path)
+    defer: roots.release()
+    return resolver.infer_module_name(path, roots.as_span())
 
 
 ## True when the host would count `path` among its known documents: open, or
@@ -1166,7 +1189,9 @@ function collect_static_method_references(
 ) -> void:
     var candidates = vec.Vec[string_mod.String].create()
     defer: release_paths(ref_of(candidates))
-    dependent_documents(ws, target.location_path.as_str(), ref_of(candidates))
+    var target_module = module_name_for_source_path(ws, target.location_path.as_str())
+    defer: target_module.release()
+    dependent_documents(ws, target_module.as_str(), target.location_path.as_str(), ref_of(candidates))
     candidates.push(string_mod.String.from_str(target.location_path.as_str()))
 
     var entries = vec.Vec[refidx.ReferenceEntry].create()

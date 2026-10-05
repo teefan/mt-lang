@@ -34,11 +34,13 @@ struct IdentifierToken:
 
 
 ## One indexed document: its text (which the token views point into), its path,
-## and its identifier tokens in source order.
+## its identifier tokens in source order, and its import module names (views into
+## the same text) — the reverse-import edges `documents_importing` needs.
 struct IndexedDocument:
     path: string_mod.String
     source: string_mod.String
     identifiers: vec.Vec[IdentifierToken]
+    imports: vec.Vec[str]
 
 
 ## A reference hit: the document (by path) and the identifier token.
@@ -161,12 +163,15 @@ public function note(index: ref[ReferenceIndex], path: str, source: str) -> void
     # before the struct assignment moves it into place.
     var stored_source = string_mod.String.from_str(source)
     var stored_path = string_mod.String.from_str(path)
-    var identifiers = collect_identifiers(stored_source.as_str())
+    var identifiers = vec.Vec[IdentifierToken].create()
+    var imports = vec.Vec[str].create()
+    collect_document_metadata(stored_source.as_str(), ref_of(identifiers), ref_of(imports))
     unsafe:
         read(document) = IndexedDocument(
             path = stored_path,
             source = stored_source,
             identifiers = identifiers,
+            imports = imports,
         )
     index.documents.push(document)
     index.retained_bytes = index.retained_bytes + source.len
@@ -339,12 +344,39 @@ function release_document(document: ptr[IndexedDocument]) -> void:
         read(document).path.release()
         read(document).source.release()
         read(document).identifiers.release()
+        read(document).imports.release()
 
 
-## Every identifier token of `source` in source order, as views into it.
-function collect_identifiers(source: str) -> vec.Vec[IdentifierToken]:
-    var identifiers = vec.Vec[IdentifierToken].create()
+## The indexed documents whose imports name `module_name`, in index order — the
+## host's `@reverse_import_dependents` lookup
+## (`ensure_full_reverse_import_index` over its indexed and open documents).
+public function documents_importing(index: ref[ReferenceIndex], module_name: str, results: ref[vec.Vec[string_mod.String]]) -> void:
+    var di: ptr_uint = 0
+    while di < index.documents.len():
+        let dp = index.documents.get(di) else:
+            break
+        let document = unsafe: read(dp)
+        var matched = false
+        var doc_path: str = ""
+        unsafe:
+            let doc = read(document)
+            doc_path = doc.path.as_str()
+            var ii: ptr_uint = 0
+            while ii < doc.imports.len():
+                let ip = doc.imports.get(ii) else:
+                    break
+                if read(ip).equal(module_name):
+                    matched = true
+                    break
+                ii += 1
+        if matched:
+            results.push(string_mod.String.from_str(doc_path))
+        di += 1
 
+
+## Every identifier token of `source` in source order, as views into it, plus
+## its import module names (the dotted path after each `import`, before `as`).
+function collect_document_metadata(source: str, identifiers: ref[vec.Vec[IdentifierToken]], imports: ref[vec.Vec[str]]) -> void:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
     defer: lex_diags.release()
     var tokens = lexer_mod.lex_reporting(source, ref_of(lex_diags))
@@ -363,8 +395,40 @@ function collect_identifiers(source: str) -> vec.Vec[IdentifierToken]:
                     column = tok.column,
                     length = tok.end_offset - tok.start_offset,
                 ))
+        else if tok.kind == tk.TokenKind.tk_import:
+            collect_import_name(source, ref_of(tokens), ti, imports)
         ti += 1
-    return identifiers
+
+
+## The dotted module name of the `import` at token index `import_index`
+## (`import std.vec as vec` -> `std.vec`).
+function collect_import_name(source: str, tokens: ref[vec.Vec[token_mod.Token]], import_index: ptr_uint, imports: ref[vec.Vec[str]]) -> void:
+    var start: ptr_uint = 0
+    var end: ptr_uint = 0
+    var found = false
+    var ti = import_index + 1
+    while ti < tokens.len():
+        let tp = tokens.get(ti) else:
+            break
+        let tok = unsafe: read(tp)
+        if tok.kind != tk.TokenKind.identifier:
+            break
+        if not found:
+            start = tok.start_offset
+            found = true
+        end = tok.end_offset
+        # A `.` continues the dotted name; anything else ends it (`as`, newline,
+        # end of file).
+        let dot_index = ti + 1
+        if dot_index >= tokens.len():
+            break
+        let dot_tp = tokens.get(dot_index) else:
+            break
+        if unsafe: read(dot_tp).kind != tk.TokenKind.dot:
+            break
+        ti += 2
+    if found and end > start and start < source.len and end <= source.len:
+        imports.push(unsafe: str(data = source.data + start, len = end - start))
 
 
 function source_hash(text: str) -> uint:
