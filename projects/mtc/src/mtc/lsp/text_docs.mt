@@ -46,6 +46,7 @@ public function handle_did_change(ws: ref[workspace.Workspace], params: json.Val
             var updated = apply_content_changes(src.value.as_str(), params)
             ws.change(uri, updated.as_str())
             updated.release()
+            src.value.release()
         Option.none:
             var updated = apply_content_changes("", params)
             ws.change(uri, updated.as_str())

@@ -2537,6 +2537,7 @@ function lint_body_rules(params: span[ast.Param], body: ptr[ast.Stmt]?, path: st
     let b = body else:
         return
     var flow_cfg = flow_builder.empty_cfg()
+    defer: flow_builder.cfg_release(ref_of(flow_cfg))
     var graph = flow_graph.empty_graph()
     defer: flow_graph.graph_release(ref_of(graph))
     let graph_started = lint_profile_mark()

@@ -228,6 +228,9 @@ public function collect_file_symbols_with_source(
             defer: source.release()
             var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
             defer: parse_diags.release()
+            # The collected entries own their strings, so they cannot allocate
+            # inside a region that outlives neither the index nor them; the
+            # walk's AST stays arena-leaked like every other one-shot parse.
             var ast_file = parser.parse_source(source.as_str(), ref_of(parse_diags))
             collect_file_symbols_from_ast(canonical.value.as_str(), index, roots, ast_file)
             canonical.value.release()

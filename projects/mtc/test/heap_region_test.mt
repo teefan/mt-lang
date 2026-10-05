@@ -25,7 +25,7 @@ function test_region_routes_allocations_across_blocks() -> void:
             expect(false, "a grown block allocation lands in the region")
         i += 1
     heap.end_region(previous)
-    region.release()
+    region.release_all()
     let outside = heap.must_alloc[int](4)
     if region.contains(unsafe: ptr[void]<-outside):
         expect(false, "a post-release allocation is not region memory")
@@ -45,7 +45,7 @@ function test_region_zeroed_allocations_are_zeroed() -> void:
                 expect(false, "a zeroed allocation is zeroed")
         i += 1
     heap.end_region(previous)
-    region.release()
+    region.release_all()
     return
 
 
@@ -69,7 +69,7 @@ function test_region_resize_preserves_content() -> void:
                 expect(false, "resize preserves the old content")
         i += 1
     heap.end_region(previous)
-    region.release()
+    region.release_all()
     return
 
 
@@ -83,7 +83,7 @@ function test_region_release_is_a_noop_for_region_memory() -> void:
     if not region.contains(unsafe: ptr[void]<-data):
         expect(false, "releasing region memory does not free it")
     heap.end_region(previous)
-    region.release()
+    region.release_all()
     return
 
 
@@ -100,7 +100,7 @@ function test_region_contains_only_its_own_allocations() -> void:
         expect(false, "a libc allocation resized inside a region stays on the heap")
     heap.end_region(previous)
     heap.release(grown)
-    region.release()
+    region.release_all()
     return
 
 
@@ -121,8 +121,8 @@ function test_region_nesting_restores_the_previous() -> void:
     if not outer.contains(unsafe: ptr[void]<-after_inner):
         expect(false, "the outer region is active again")
     heap.end_region(previous)
-    outer.release()
-    inner.release()
+    outer.release_all()
+    inner.release_all()
     return
 
 
@@ -147,5 +147,5 @@ function test_region_owns_container_buffers() -> void:
     var table = map_mod.Map[long, long].create()
     table.set(1, 2)
     heap.end_region(previous)
-    region.release()
+    region.release_all()
     return

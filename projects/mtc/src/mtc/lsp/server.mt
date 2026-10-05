@@ -95,6 +95,9 @@ public function run(args: span[str]) -> int:
                 else:
                     log.warn("lsp: malformed message ignored")
                     proto.write_error(json.null_value(), -32700, "Parse error")
+        # A handled request's borrowed views die with it: the regions that
+        # superseded parses and analyses retired can be freed at this boundary.
+        ws.drain_retired_regions()
 
     log.info("lsp: server stopped")
     return 0

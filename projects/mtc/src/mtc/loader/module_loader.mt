@@ -209,6 +209,8 @@ extending Program:
                 i += 1
         this.modules.release()
         this.order.release()
+        this.analyses.release()
+        this.owning_type_names.release()
 
         var d: ptr_uint = 0
         while d < this.diagnostics.len():
@@ -230,10 +232,9 @@ extending Program:
 
 ## One module's cached parse state plus — once the module has been checked in
 ## some run — its analysis and export binding.  Owned by a `ModuleCache`; the
-## AST and the analyses follow the compiler's arena-leak convention (an
-## analysis' contents are never torn down beyond the diagnostics vector a
-## rebuild must replace, and a re-parsed module leaks its old AST exactly as a
-## fresh parse does).
+## parse and analysis allocations live in the entry's regions and are released
+## (or retired to the cache's quarantine) when the entry or its analysis is
+## replaced.
 public struct ModuleCacheEntry:
     content_hash: uint
     module: LoadedModule
@@ -250,6 +251,13 @@ public struct ModuleCacheEntry:
     ## once the module has been analyzed and replaced on every re-analysis.
     analysis_ptr: ptr[analyzer.Analysis]?
     binding_ptr: ptr[analyzer.ModuleBinding]?
+    ## The regions that own this version's parse (AST, token buffers, spans,
+    ## synthesized strings, the diagnostics vectors' buffers) and analysis
+    ## (the analyzer context's maps/vecs, types, diagnostics) allocations.
+    ## Both are freed when the entry is replaced; the modules' own String
+    ## fields, `import_paths` and `dep_versions` are ordinary heap.
+    parse_region: heap.Region
+    analysis_region: heap.Region
 
 
 ## The workspace-owned cross-program module cache: one entry per resolved module
@@ -265,6 +273,11 @@ public struct ModuleCache:
     version_counter: ptr_uint
     parse_count: ptr_uint
     analysis_count: ptr_uint
+    ## Superseded entries' regions, kept alive until the request boundary
+    ## (`drain_retired_regions`): a request may still hold borrowed views into
+    ## a region it replaced mid-request (the token scanner's module surfaces),
+    ## so freeing at replacement would be a use-after-free.
+    retired_regions: vec.Vec[heap.Region]
 
 
 ## Per-run state threaded through the loader: each module's resolved
@@ -285,6 +298,7 @@ public function create_module_cache() -> ModuleCache:
         version_counter = 0,
         parse_count = 0,
         analysis_count = 0,
+        retired_regions = vec.Vec[heap.Region].create(),
     )
 
 
@@ -295,33 +309,68 @@ public function invalidate_module_cache(cache: ref[ModuleCache]) -> void:
 
 
 public function release_module_cache(cache: ref[ModuleCache]) -> void:
+    drain_retired_regions(cache)
     var entries_iter = cache.entries.entries()
     while entries_iter.next():
         let entry = entries_iter.current()
         unsafe:
             var entry_value = read(entry.value)
-            release_module_cache_entry(ref_of(entry_value))
+            release_module_cache_entry(ref_of(entry_value), null)
     cache.entries.release()
 
 
-function release_module_cache_entry(entry: ref[ModuleCacheEntry]) -> void:
-    entry.module.release()
+## Free the regions of entries superseded since the last drain.  Called at the
+## request boundary, when no request-local value can still borrow them.
+public function drain_retired_regions(cache: ref[ModuleCache]) -> void:
+    var i: ptr_uint = 0
+    while i < cache.retired_regions.len():
+        let region_ptr = cache.retired_regions.get(i) else:
+            break
+        unsafe:
+            read(region_ptr).release_all()
+        i += 1
+    cache.retired_regions.clear()
+
+
+## Move a superseded region to the cache's quarantine instead of freeing it: a
+## request may still hold borrowed views into it (see `retired_regions`).
+function retire_region(cache: ptr[ModuleCache]?, region: heap.Region) -> void:
+    if cache == null or region.block_count == 0:
+        return
+    unsafe:
+        read(cache).retired_regions.push(region)
+
+
+## Release an entry's heap fields and its regions.  With `cache` non-null the
+## regions are quarantined; teardown callers pass null and free immediately.
+## The module's name/path/source Strings and `import_paths`/`dep_versions` are
+## ordinary heap (allocated outside the parse/analysis scopes); the AST and the
+## parse/lex diagnostics vectors' buffers are region-owned, so
+## `LoadedModule.release`'s vector releases are deliberately not run here.
+function release_module_cache_entry(entry: ref[ModuleCacheEntry], cache: ptr[ModuleCache]?) -> void:
+    entry.module.module_name.release()
+    entry.module.path.release()
+    entry.module.source.release()
+    if cache != null:
+        retire_region(cache, entry.parse_region)
+        retire_region(cache, entry.analysis_region)
+    else:
+        entry.parse_region.release_all()
+        entry.analysis_region.release_all()
     release_paths_vec(entry.import_paths)
     var versions = entry.dep_versions
     versions.release()
-    release_entry_analysis(entry)
+    release_entry_nodes(entry)
 
 
-## Release a replaced entry's heap analysis and binding.  The old analysis may
-## still be shallow-copied inside stale Programs, but those are never read: a
-## replaced entry always moves the cache's generation, and every Program is
-## validated against it before use.
-function release_entry_analysis(entry: ref[ModuleCacheEntry]) -> void:
+## Release a replaced entry's heap analysis and binding structs.  Their
+## internals live in the entry's analysis region, which the caller releases or
+## quarantines.  The old analysis may still be shallow-copied inside stale
+## Programs, but those are never read: a replaced entry always moves the
+## cache's generation, and every Program is validated against it before use.
+function release_entry_nodes(entry: ref[ModuleCacheEntry]) -> void:
     let analysis_mem = entry.analysis_ptr
     if analysis_mem != null:
-        unsafe:
-            var analysis_value = read(analysis_mem)
-            analysis_value.diagnostics.release()
         heap.release(analysis_mem)
         entry.analysis_ptr = null
     let binding_mem = entry.binding_ptr
@@ -369,7 +418,13 @@ function module_cache_entry(cache: ptr[ModuleCache]?, path: str) -> ptr[ModuleCa
 ## Store a freshly parsed module, replacing (and releasing) any previous entry
 ## for `path`.  A changed content hash invalidates the old analysis, so it is
 ## dropped with the module.
-function module_cache_store_module(cache: ptr[ModuleCache]?, path: str, content_hash: uint, module_value: LoadedModule) -> void:
+function module_cache_store_module(
+    cache: ptr[ModuleCache]?,
+    path: str,
+    content_hash: uint,
+    module_value: LoadedModule,
+    parse_region: heap.Region,
+) -> void:
     if cache == null:
         return
     var lookup = string.String.from_str(path)
@@ -384,7 +439,7 @@ function module_cache_store_module(cache: ptr[ModuleCache]?, path: str, content_
                 var removed_entry = removed.value
                 removed_entry.key.release()
                 var old_entry = removed_entry.value
-                release_module_cache_entry(ref_of(old_entry))
+                release_module_cache_entry(ref_of(old_entry), cache)
             Option.none:
                 pass
         read(cache).entries.set(string.String.from_str(path), ModuleCacheEntry(
@@ -395,6 +450,8 @@ function module_cache_store_module(cache: ptr[ModuleCache]?, path: str, content_
             dep_versions = vec.Vec[ptr_uint].create(),
             analysis_ptr = null,
             binding_ptr = null,
+            parse_region = parse_region,
+            analysis_region = heap.create_region(),
         ))
         read(cache).parse_count = read(cache).parse_count + 1
         read(cache).generation = read(cache).generation + 1
@@ -405,7 +462,15 @@ function module_cache_store_module(cache: ptr[ModuleCache]?, path: str, content_
 ## paths for the module, snapshotting their current versions.  The diagnostics
 ## vector is retained — entry teardown owns it — because a reused module
 ## re-emits its sema diagnostics from here.
-function module_cache_store_analysis(cache: ptr[ModuleCache]?, path: str, module_index: ptr_uint, run: ref[LoadRun], analysis_value: analyzer.Analysis, binding_value: analyzer.ModuleBinding) -> void:
+function module_cache_store_analysis(
+    cache: ptr[ModuleCache]?,
+    path: str,
+    module_index: ptr_uint,
+    run: ref[LoadRun],
+    analysis_value: analyzer.Analysis,
+    binding_value: analyzer.ModuleBinding,
+    analysis_region: heap.Region,
+) -> void:
     if cache == null:
         return
     let entry_ptr = module_cache_entry(cache, path) else:
@@ -417,12 +482,12 @@ function module_cache_store_analysis(cache: ptr[ModuleCache]?, path: str, module
     unsafe:
         let old_analysis = read(entry_ptr).analysis_ptr
         if old_analysis != null:
-            var old_value = read(old_analysis)
-            old_value.diagnostics.release()
             heap.release(old_analysis)
         let old_binding = read(entry_ptr).binding_ptr
         if old_binding != null:
             heap.release(old_binding)
+        retire_region(cache, read(entry_ptr).analysis_region)
+        read(entry_ptr).analysis_region = heap.create_region()
         release_paths_vec(read(entry_ptr).import_paths)
         var old_versions = read(entry_ptr).dep_versions
         old_versions.release()
@@ -432,6 +497,7 @@ function module_cache_store_analysis(cache: ptr[ModuleCache]?, path: str, module
         let binding_mem = ptr[analyzer.ModuleBinding]<-heap.must_alloc[analyzer.ModuleBinding](1)
         read(binding_mem) = binding_value
         read(entry_ptr).binding_ptr = binding_mem
+        read(entry_ptr).analysis_region = analysis_region
         read(entry_ptr).version = next_version
         let slot = run.dep_paths.get(module_index)
         if slot != null:
@@ -790,6 +856,7 @@ public function check_program_with_source(root_path: str, roots: span[str], plat
             reuse_cached_module(module_ptr, cache, bindings_ptr, ref_of(analyses), ref_of(diagnostics))
         oi += 1
     visited.release()
+    bindings.release()
 
     var owning_type_names = build_owning_type_names(ref_of(analyses))
 
@@ -854,6 +921,11 @@ function canonical_analysis_order(analyses: span[analyzer.Analysis]) -> vec.Vec[
         let idx = unsafe: read(idx_ptr)
         result.push(unsafe: read(analyses.data + idx))
         oi += 1
+    by_name.release()
+    names.release()
+    visited.release()
+    on_stack.release()
+    ordered_names.release()
     return result
 
 
@@ -884,6 +956,7 @@ function visit_analysis_name(analyses: span[analyzer.Analysis], by_name: ref[map
     on_stack.set(name, false)
     visited.set(name, true)
     ordered.push(name)
+    deps.release()
 
 
 function str_vec_contains(items: span[str], value: str) -> bool:
@@ -1108,7 +1181,19 @@ function parse_all(
 
     var parse_diagnostics = vec.Vec[pstate.ParseDiagnostic].create()
     var lex_diagnostics = vec.Vec[token_mod.LexDiagnostic].create()
+    # With a cache in use the parse's allocations — token buffers, AST nodes and
+    # vectors, synthesized strings, the two diagnostics vectors' buffers — belong
+    # to this region, which the module's cache entry owns and releases when the
+    # entry is replaced.  Everything around the parse call (the read source, the
+    # module name, the walk's maps and vectors, the cache store) stays ordinary
+    # heap, so it must not run while the region is active.
+    var parse_region = heap.create_region()
+    var previous_region: ptr[heap.Region]? = null
+    if run.cache != null:
+        previous_region = heap.begin_region(ptr_of(parse_region))
     let source_file = parser.parse_source_reporting(source.as_str(), ref_of(parse_diagnostics), ref_of(lex_diagnostics))
+    if run.cache != null:
+        heap.end_region(previous_region)
     let module_name = resolver.infer_module_name(key, roots)
 
     on_stack.set(key, true)
@@ -1123,7 +1208,7 @@ function parse_all(
     modules.push(loaded)
     let index = modules.len() - 1
     if run.cache != null:
-        module_cache_store_module(run.cache, key, fnv1a_hash(source.as_str()), loaded)
+        module_cache_store_module(run.cache, key, fnv1a_hash(source.as_str()), loaded, parse_region)
         run.dep_paths.push(vec.Vec[string.String].create())
 
     recurse_imports(source_file, key, index, roots, platform, root_key, root_source, modules, visited, on_stack, order, diagnostics, unresolved_import_paths, run)
@@ -1221,23 +1306,32 @@ function check_and_bind_module(
 
     # Semantic analysis runs even when the parser reported errors: the
     # recovered AST still yields facts and diagnostics, matching the host's
-    # LSP pipeline (which continues past parse errors).
+    # LSP pipeline (which continues past parse errors).  With a cache in use
+    # the analyzer's and binder's allocations — the context's maps and vectors,
+    # the types it allocates, the binding's tables, the retained diagnostics
+    # vector — belong to the analysis region, which the entry owns and releases
+    # (or quarantines) when the analysis is replaced.  The emitted diagnostic
+    # copies and the `analyses` vector are ordinary heap: they run outside.
+    var analysis_region = heap.create_region()
+    var previous_region: ptr[heap.Region]? = null
+    if run.cache != null:
+        previous_region = heap.begin_region(ptr_of(analysis_region))
     var analysis: analyzer.Analysis
     if require_resolved_imports:
         analysis = analyzer.check_module_requiring_resolved_imports(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
     else:
         analysis = analyzer.check_module(loaded.source_file, bindings_ptr, loaded.module_name.as_str(), loaded.path.as_str())
-
-    emit_module_diagnostics(loaded, analysis.diagnostics.as_span(), diagnostics)
-
     if run.cache != null:
+        let binding = binder.bind_module(analysis)
+        heap.end_region(previous_region)
+        emit_module_diagnostics(loaded, analysis.diagnostics.as_span(), diagnostics)
         # Keep the analysis' diagnostics: the entry owns them and a later run
         # that reuses this module re-emits them from there.
-        let binding = binder.bind_module(analysis)
-        module_cache_store_analysis(run.cache, loaded.path.as_str(), module_index, run, analysis, binding)
+        module_cache_store_analysis(run.cache, loaded.path.as_str(), module_index, run, analysis, binding, analysis_region)
         unsafe:
             read(bindings_ptr).set(loaded.module_name.as_str(), binding)
     else:
+        emit_module_diagnostics(loaded, analysis.diagnostics.as_span(), diagnostics)
         analysis.diagnostics.release()
         unsafe:
             read(bindings_ptr).set(loaded.module_name.as_str(), binder.bind_module(analysis))

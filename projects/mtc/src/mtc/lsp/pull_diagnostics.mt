@@ -66,6 +66,7 @@ public function handle_document_diagnostic(
     var diagnostics = diag.collect_diagnostics(ws, uri, file_path.as_str(), source)
 
     var diag_json = string.String.create()
+    defer: diag_json.release()
     append_json_value_into(ref_of(diag_json), diagnostics)
     json.release_value(diagnostics)
 

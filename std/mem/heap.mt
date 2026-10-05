@@ -34,10 +34,10 @@ public function mul_overflows(left: ptr_uint, right: ptr_uint) -> bool:
 #
 # A region is a growable bump allocator.  While a region is active, the heap's
 # allocation functions serve requests from it; releasing region memory is a
-# no-op and the memory is freed in one step by `Region.release()`.  The LSP's
-# module cache owns one region per parsed module version and releases it when a
-# superseded entry is replaced.  CLI runs never activate a region and keep the
-# plain libc path.
+# no-op and the memory is freed in one step by `Region.release_all()`.  The
+# LSP's module cache owns one region per parsed module version and releases it
+# when a superseded entry is replaced.  CLI runs never activate a region and
+# keep the plain libc path.
 
 public const region_header_bytes: ptr_uint = 16
 public const region_min_block_bytes: ptr_uint = 16384
@@ -152,7 +152,7 @@ extending Region:
     ## Bump-allocate `size_bytes` aligned to `alignment` (a power of two up to
     ## `region_max_alignment`).  Null for a zero size, an unsupported alignment
     ## or out-of-memory.
-    public editable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
+    public editable function alloc_aligned_bytes(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
         if size_bytes == 0:
             return null
         if alignment == 0:
@@ -181,7 +181,7 @@ extending Region:
     ## Resize a region-owned allocation: shrink updates the header in place;
     ## grow allocates a new payload and copies (the old payload stays abandoned
     ## in its block, like every bump allocation).
-    public editable function resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
+    public editable function resize_payload(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
         if memory == null or size_bytes == 0:
             return null
         unsafe:
@@ -191,7 +191,7 @@ extending Region:
             if size_bytes <= old_size:
                 read(header - 2) = size_bytes
                 return memory
-            let grown = this.alloc_bytes_aligned(size_bytes, minimum_alignment) else:
+            let grown = this.alloc_aligned_bytes(size_bytes, minimum_alignment) else:
                 return null
             cstring.copy_bytes(ptr[void]<-grown, ptr[void]<-source, old_size)
             return ptr[void]<-grown
@@ -199,7 +199,7 @@ extending Region:
 
     ## Free every block and reset the region.  Only this call frees region
     ## memory; `heap.release_bytes` on region memory is a no-op.
-    public editable function release() -> void:
+    public editable function release_all() -> void:
         let blocks = this.blocks else:
             return
         var i: ptr_uint = 0
@@ -224,7 +224,7 @@ public function alloc_bytes(size_bytes: ptr_uint) -> ptr[void]?:
     let region = active_region
     if region != null:
         unsafe:
-            let memory = read(region).alloc_bytes_aligned(size_bytes, minimum_alignment) else:
+            let memory = read(region).alloc_aligned_bytes(size_bytes, minimum_alignment) else:
                 return null
             return ptr[void]<-memory
 
@@ -252,7 +252,7 @@ public function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -
     let region = active_region
     if region != null and normalized_alignment <= region_max_alignment:
         unsafe:
-            let memory = read(region).alloc_bytes_aligned(size_bytes, normalized_alignment) else:
+            let memory = read(region).alloc_aligned_bytes(size_bytes, normalized_alignment) else:
                 return null
             return ptr[void]<-memory
 
@@ -288,7 +288,7 @@ public function alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr_uint
     let region = active_region
     if region != null:
         unsafe:
-            let memory = read(region).alloc_bytes_aligned(count * element_size_bytes, minimum_alignment) else:
+            let memory = read(region).alloc_aligned_bytes(count * element_size_bytes, minimum_alignment) else:
                 return null
             cstring.set_bytes(ptr[void]<-memory, 0, count * element_size_bytes)
             return ptr[void]<-memory
@@ -342,7 +342,7 @@ public function resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[vo
             return alloc_bytes(size_bytes)
         unsafe:
             if read(region).contains(memory):
-                return read(region).resize_bytes(memory, size_bytes)
+                return read(region).resize_payload(memory, size_bytes)
 
     return libc.realloc(memory, size_bytes)
 
@@ -363,7 +363,7 @@ public function must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> p
 ## the caller's binding to null it. For idempotent safe-release syntax, see
 ## `release_and_null[T]` or use a scope-bound allocator such as `arena.Arena`.
 ## Memory owned by the active region is a no-op here: a region frees its
-## allocations only through `Region.release()`.
+## allocations only through `Region.release_all()`.
 public function release_bytes(memory: ptr[void]?) -> void:
     if memory == null:
         return

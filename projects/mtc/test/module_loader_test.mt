@@ -1528,6 +1528,34 @@ function test_module_cache_cascades_to_dependents() -> void:
 
 
 @[test]
+function test_module_cache_retires_and_drains_superseded_regions() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
+        expect(false, "could not create temp dir")
+    defer: cleanup_dir(ref_of(root))
+    expect(write_file(root.as_str(), "lib.mt", LIB_ADD), "could not write lib.mt")
+    expect(write_file(root.as_str(), "main.mt", MAIN_ADD_CORRECT), "could not write main.mt")
+
+    var cache = loader.create_module_cache()
+    defer: loader.release_module_cache(ref_of(cache))
+
+    var first = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect_eq(int<-first.diagnostic_count(), 0)
+    first.release()
+    expect_eq(int<-cache.retired_regions.len(), 0)
+
+    # Replacing the edited entry's parse and analysis quarantines the old
+    # regions: they stay alive until the request boundary, then the drain frees
+    # them.
+    expect(write_file(root.as_str(), "main.mt", MAIN_ADD_ARITY), "could not rewrite main.mt")
+    var second = load_main_with_cache(ref_of(root), ptr_of(cache), null)
+    expect(second.has_diagnostic_containing("expects"))
+    expect(cache.retired_regions.len() > 0)
+    loader.drain_retired_regions(ref_of(cache))
+    expect_eq(int<-cache.retired_regions.len(), 0)
+    second.release()
+
+
+@[test]
 function test_module_cache_picks_up_a_created_import() -> void:
     var root = fs.create_temporary_directory_in_system_temp("mtc_l3_") else:
         expect(false, "could not create temp dir")

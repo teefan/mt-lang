@@ -131,13 +131,17 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 38 (2026-10-05) — **C4 in progress: part 1 released the
-parser/lexer scratch** (the full-cycle soak slope fell **3.96 → 3.17 MB/cycle**;
-the gate read 3.19 at `--cycles 200`; peak RSS 417 → 336 MB at 100 cycles) and
-**part 2 landed the `heap.Region` allocator and the scoped heap routing**
-(inert — no caller activates a region yet; the gate re-read 3190.5 KB/cycle and
-`heap_region_test.mt` joined the suite at 19 files).  The loader/parse-cache
-integration (parts 3–4) is the remainder.  Session 37 had routed the per-request parse
+Last updated: session 38 (2026-10-05) — **C4 landed: the LSP's per-parse
+ownership**.  Parts 1–2 released the parser/lexer scratch (3.96 → 3.17 MB/cycle)
+and landed the `heap.Region` allocator with the scoped heap routing; parts 3–4
+wired the loader's module-cache entries and the LSP parse cache to per-entry
+parse/analysis regions, quarantined superseded regions to the request boundary,
+and released the residue the valgrind stacks exposed (the linter's per-body
+`Cfg`, `didChange`'s source copy, the diagnostic-cache strings, the publish/diag
+JSON trees, per-run Program containers).  The soak is now **68 KB/cycle raw
+(19.9 least-squares) at `--cycles 200`**, level ~33 MB (was 656 MB); the new
+`steady` mode reads ~0.  Harness and audit hold at their documented sets,
+valgrind 0 errors.  Session 37 had routed the per-request parse
 sites through the shared caches, cutting the full-cycle slope
 **11.4 → 3.96 MB/cycle** (the gate read 3.98 at `--cycles 200`); the residual is
 the per-edit loader parse+analysis leak (per-parse ownership is the remaining
@@ -732,16 +736,22 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   attribution (session 37) shows the dominant blocks are the lexer's
   `Vec[Token]` buffers and the parser/analyzer vectors, and the replaced
   entries' *heap copies* are already released (`release_entry_analysis`) —
-  what is missing is ownership of the AST/analysis internals.  **Part 1 (session
-  38, 2026-10-05):** the parser and lexer scratch buffers (the two token vectors,
-  the name maps, `pending_decls`, the indent stack) are released at parse end —
-  the soak slope fell **3.96 → 3.17 MB/cycle** (gate 3.19).  **Part 2 (session
-  38):** the `heap.Region` growable bump allocator and the scoped heap routing
-  (`begin_region`/`end_region`; region-owned `release`/`resize` semantics) landed
-  inert, locked by `heap_region_test.mt`.  **Parts 3–4** wire the loader and the
-  LSP parse cache to per-entry parse/analysis regions, with superseded regions
-  quarantined to the request boundary.  Record: §0k
-  session 38; §0k session 37; §0k session 30's "Soak profile and the long-session blocker".
+  what is missing is ownership of the AST/analysis internals.  **Landed in session
+  38 (2026-10-05).**  Part 1 released the parser and lexer scratch buffers (the
+  two token vectors, the name maps, `pending_decls`, the indent stack; 3.96 →
+  3.17 MB/cycle).  Part 2 added the `heap.Region` growable bump allocator and
+  the scoped heap routing (`begin_region`/`end_region`; region-owned
+  `release`/`resize` semantics), locked by `heap_region_test.mt`.  Parts 3–4
+  gave every module-cache entry a parse and an analysis region and the parse
+  cache its own region, quarantined superseded regions to the request boundary
+  (`retired_regions` + the server-loop drain), and released the residue the
+  measurements exposed (the linter's per-body `Cfg`, `didChange`'s source copy,
+  the diagnostic-cache/publish/pull strings, per-run Program containers).  The
+  soak is **68 KB/cycle raw / 19.9 LS at `--cycles 200`** (level 656 → 33 MB).
+  Remaining, documented: the workspace-index walk's one-time arena-leaked ASTs
+  (a level, not a slope) and the loader's small `qname_to_str` lookup strings;
+  the deliberate-difference row for the reference-index bound stays.  Record:
+  §0k session 38; §0k session 37; §0k session 30's "Soak profile and the long-session blocker".
 - **C5 client behaviours** — **DONE (session 31, 2026-10-04)**: the harness's
   stress section now measures six client-behaviour probes (`c5/…`):
   `references` with `includeDeclaration: false`, a `didChangeConfiguration`
@@ -1020,12 +1030,12 @@ definition of done above.
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
 | `sexpr lower` | 39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files (re-measured 2026-10-04 session 33; the +7 files/differs over session 17's 615 are this session's own new compiler sources — match count unchanged) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
-| LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 37: `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port and the `object_id` normalization; the remaining 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
+| LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
+| LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-05 session 37) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
-| LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 37; ~7.8M B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
-| LSP soak | **3.17 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (`--cycles 100`; the session-38 gates' `--cycles 200` read **3.19** in both parts — part 2's region allocator is inert).  Part 1 released the parser/lexer token and scratch buffers (from 3.96/3.98; peak RSS 417 → 336 MB at 100 cycles); the residual is the AST/analysis allocation graph, which the loader/parse-cache region integration (parts 3–4) owns | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
+| LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 38); the definitely-lost residue is down to ~64 KB per 10-cycle soak (was ~7.8 MB), dominated by the one-time index walk's arena-leaked ASTs | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
+| LSP soak | **68.1 KB/cycle raw / 19.9 KB/cycle least-squares** at `--cycles 200` on the synthetic ~5k-line workspace (session 38 close; was 3.96/3.98 MB/cycle — the per-edit AST/analysis leak is now owned by per-entry regions and drained per request; level 656 → 33 MB peak; the new `steady` mode reads 12.6 raw / 0.0 LS, `diag` 12.0 LS).  Residue: the one-time index walk's arena-leaked ASTs (~600 KB per workspace build, a level not a slope, documented) | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical (re-measured 2026-10-04 session 33; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 496 agree / 120 differ (616 files; re-measured 2026-10-05 session 35 — the +3 files/+3 differs over session 33's 613/117 are session 34's new compiler sources, two of which differ, plus session 34's edits to existing sources; the session-35 edits flip no file — `analyzer.mt` was already a differing file at HEAD) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | **zero differing rows** on the whole `dap_smoke` matrix (2026-10-04 session 34 — process backend, fake-adapter lldb and real `/usr/bin/lldb-dap` sessions), except the documented self-better `lldb-real frame0 name` (self `add`, host `main_add` — the host's cache-hit map loss); valgrind 0 errors on both backends | VS Code end-to-end under lldb-dap (manual) | `ruby tools/dap_smoke.rb` |
@@ -1083,6 +1093,52 @@ and follows as parts 2–4.
   container buffers).  Inert by construction and by measurement: soak 3190.5 KB/cycle
   (part 1: 3190.3), `test/mt` 60/0, examples 49/49, harness 4 documented, valgrind 0
   errors, bootstrap fixed point at 19 test files / 0 failed.
+- **Part 3 (`module_loader.mt`, `workspace.mt`, `server.mt`): the per-entry regions.**
+  With a cache in use, `parse_all` runs the parse inside a fresh parse region and
+  `check_and_bind_module` runs `analyzer.check_module*` + `binder.bind_module` inside a
+  fresh analysis region; the entry owns both.  Entry teardown releases the module's
+  name/path/source Strings and `import_paths`/`dep_versions` (ordinary heap) plus the
+  regions (which own the AST, the diagnostics buffers and the analysis internals); the two
+  `release_module_cache_entry`/`release_entry_analysis` sites branch explicitly instead of
+  releasing region internals.  **Superseded regions are quarantined, not freed**
+  (`ModuleCache.retired_regions`) and drained at the request boundary from the server loop
+  (`Workspace.drain_retired_regions`), because request-local values can still borrow a
+  region they replaced mid-request (the token scanner's module surfaces) — freeing at
+  replacement would be a use-after-free.  The audit caught a name-resolution collision the
+  new methods introduced: `Region.release`/`alloc_bytes_aligned`/`resize_bytes` shadowed the
+  module-level `heap.release`/`heap.alloc_bytes_aligned`/`heap.resize_bytes` for the host's
+  facts, so `heap.release(raw)` resolved differently on the two servers; the methods are
+  now `release_all`/`alloc_aligned_bytes`/`resize_payload`.  Locked by a
+  `module_loader_test.mt` case (retire > 0, drain 0).
+- **Part 4 (parse cache + the residue the measurements exposed).**  `ParseCacheEntry` owns
+  a region around `parser.parse_source` + `analyzer.check_source_file` (the diagnostics
+  buffer included); stale regions retire to `Workspace.retired_regions`; `Workspace.release`
+  now releases the parse/analysis caches.  The valgrind-soak stacks then attributed the
+  remaining per-request leaks: the linter leaked the per-body `Cfg` (fixed with
+  `flow_builder.cfg_release` via defer in `lint_body_rules`), `didChange` never released
+  its `document_source` copy, and the diagnostic cache/publish/the `diagnostic` pull
+  dropped Strings (all released now).  Also released: `Program.release`'s
+  `analyses`/`owning_type_names` vectors, the per-run `bindings` map,
+  `canonical_analysis_order`'s containers and `visit_analysis_name`'s `deps`.  Tried and
+  reverted: a region around the workspace-index walk — the index mutates its own persistent
+  vecs during collection, and containers that outlive a scope must not allocate into it
+  (the soak caught the invalid `realloc` immediately); that invariant is now recorded at
+  the site.
+- **Soak tool**: a `steady` mode (requests only, no `didChange`) that must read ~0, the
+  final RSS appended as a sample, and a `slope_ls` least-squares slope that excludes the
+  warm-up sample.
+- **Measured (final)**: full soak **3.96 MB/cycle → 68.1 KB/cycle raw / 19.9 KB/cycle LS**
+  at `--cycles 200` (level 656 → 33 MB; `steady` 12.6 raw / 0.0 LS; `diag` 12.0 LS).
+  Valgrind over the harness drive: 0 errors; the definitely-lost residue is ~64 KB per
+  10-cycle soak, dominated by the one-time index walk's arena-leaked ASTs.
+- **Verification (final, frozen tree)**: bootstrap fixed point (19 files / 0 failed),
+  `test/mt` 60/0, sexpr lex 717/717 + parse 713 comparable / 0 differ, examples 49/49,
+  recovery OK, canonical audit **4** differing entries (the documented set), harness **4**
+  documented on a fresh host+self pair (the gate's pairing read 5 because the *host*
+  nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration`
+  after `willRenameFiles` — host-vs-host records agree and a fresh host+self pair reads 4,
+  so the self matches the host's stable answer), fixture sweep closed 5 / added 0, valgrind
+  0 errors, Neovim OK, lint corpus 496/120 unchanged, soak 68.1/19.9.
 
 ### Session 37 (2026-10-05) — the soak: per-request parses routed through the shared caches
 

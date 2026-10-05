@@ -126,6 +126,7 @@ public function publish_for_uri(ws: ref[workspace.Workspace], uri: str, root_pat
     var diagnostics = collect_diagnostics(ws, uri, root_path, source)
 
     var params = json.create_object_value()
+    defer: json.release_value(params)
     let params_obj = params.as_object() else:
         json.release_value(diagnostics)
         return

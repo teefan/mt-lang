@@ -61,6 +61,14 @@ public function cfg_clear(cfg: ref[Cfg]) -> void:
     cfg.next_id = 1
 
 
+## Release a Cfg's owned containers.  The caller owns the Cfg created by
+## `empty_cfg()` and releases it once every body it serves is done.
+public function cfg_release(cfg: ref[Cfg]) -> void:
+    cfg.nodes.release()
+    cfg.binding_map.release()
+    cfg.binding_names.release()
+
+
 ## ---------------------------------------------------------------------------
 ##  Public entry points
 ## ---------------------------------------------------------------------------

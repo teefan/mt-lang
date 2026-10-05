@@ -42,7 +42,7 @@ while i < ARGV.length
   else abort "unknown option #{ARGV[i]}"
   end
 end
-abort "unknown mode #{mode}" unless %w[full tokens diag refs].include?(mode)
+abort "unknown mode #{mode}" unless %w[full tokens diag refs steady].include?(mode)
 
 ## Generate the synthetic workspace once: ~5k lines of declarations plus two
 ## ~500-line modules with cross references.
@@ -126,6 +126,19 @@ def rss_kb(pid)
   [rss&.to_i || 0, peak&.to_i || 0]
 end
 
+## Least-squares RSS slope (KB/cycle) over the samples after the first
+## (warm-up) one — a slope that excludes the one-time startup cost.
+def least_squares_slope(samples)
+  points = samples.drop(1)
+  return 0.0 if points.length < 2
+  count = points.length.to_f
+  mean_x = points.sum { |s| s[0] } / count
+  mean_y = points.sum { |s| s[1] } / count
+  num = points.sum { |s| (s[0] - mean_x) * (s[1] - mean_y) }
+  den = points.sum { |s| (s[0] - mean_x)**2 }
+  den.zero? ? 0.0 : num / den
+end
+
 uri = path_to_uri(full)
 request(stdin_write, stdout_read, "initialize",
         { "processId" => Process.pid, "rootUri" => path_to_uri(workspace), "capabilities" => {} })
@@ -137,22 +150,27 @@ write_msg(stdin_write, { "jsonrpc" => "2.0", "method" => "textDocument/didOpen",
 samples = []
 started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 cycles.times do |n|
-  text = n.even? ? base + "\n# soak\n" : base
-  write_msg(stdin_write, { "jsonrpc" => "2.0", "method" => "textDocument/didChange",
-                           "params" => { "textDocument" => { "uri" => uri, "version" => n + 2 },
-                                         "contentChanges" => [{ "text" => text }] } })
-  if mode == "full" || mode == "tokens"
+  # `steady` sends the same requests against unchanged content: with correct
+  # ownership every mode must read a ~0 slope, so this isolates request-path
+  # leaks from the per-edit parse/analysis path.
+  unless mode == "steady"
+    text = n.even? ? base + "\n# soak\n" : base
+    write_msg(stdin_write, { "jsonrpc" => "2.0", "method" => "textDocument/didChange",
+                             "params" => { "textDocument" => { "uri" => uri, "version" => n + 2 },
+                                           "contentChanges" => [{ "text" => text }] } })
+  end
+  if mode == "steady" || mode == "full" || mode == "tokens"
     request(stdin_write, stdout_read, "textDocument/semanticTokens/full", { "textDocument" => { "uri" => uri } })
   end
-  if mode == "full" || mode == "diag"
+  if mode == "steady" || mode == "full" || mode == "diag"
     request(stdin_write, stdout_read, "textDocument/diagnostic", { "textDocument" => { "uri" => uri } })
   end
-  if mode == "full" || mode == "refs"
+  if mode == "steady" || mode == "full" || mode == "refs"
     request(stdin_write, stdout_read, "textDocument/references",
             { "textDocument" => { "uri" => uri }, "position" => { "line" => 3, "character" => 10 },
               "context" => { "includeDeclaration" => true } })
   end
-  if mode == "full" && (n % 10).zero?
+  if mode == "steady" || (mode == "full" && (n % 10).zero?)
     request(stdin_write, stdout_read, "textDocument/hover",
             { "textDocument" => { "uri" => uri }, "position" => { "line" => 3, "character" => 10 } })
   end
@@ -165,6 +183,7 @@ end
 
 rss, peak = rss_kb(pid)
 elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+samples << [cycles, rss, peak] unless samples.last && samples.last[0] == cycles
 
 begin
   stdin_write.close
@@ -177,6 +196,8 @@ err_file.close
 
 baseline = samples.empty? ? rss : samples.first[1]
 slope = cycles.positive? ? (rss - baseline).to_f / cycles : 0.0
+ls_slope = least_squares_slope(samples)
 puts "label=#{label || bin} mode=#{mode} cycles=#{cycles} elapsed=#{elapsed.round(1)}s " \
-     "final_rss=#{rss}KB peak_rss=#{peak}KB slope=#{format('%.1f', slope)}KB/cycle"
+     "final_rss=#{rss}KB peak_rss=#{peak}KB slope=#{format('%.1f', slope)}KB/cycle " \
+     "slope_ls=#{format('%.1f', ls_slope)}KB/cycle"
 samples.each { |n, r, p| puts "  cycle #{n}: rss=#{r}KB peak=#{p}KB" } unless quiet

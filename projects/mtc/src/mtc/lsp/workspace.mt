@@ -6,6 +6,7 @@
 
 import std.fs as fs_mod
 import std.map as map_mod
+import std.mem.heap as heap
 import std.path as path_ops
 import std.str
 import std.string as string
@@ -42,6 +43,9 @@ public struct ParseCacheEntry:
     source: string.String
     ast_file: ast.SourceFile
     analysis: analyzer.Analysis
+    ## The region that owns the AST's and the single-file analysis' internals
+    ## (nodes, vectors, strings); freed when the entry is replaced.
+    region: heap.Region
 
 
 ## A loader-backed analysis of one document: the whole import closure is
@@ -116,6 +120,9 @@ public struct Workspace:
     dependency_resolution_mode: string.String
     platform_override: string.String
     strict_current_root_diagnostics: bool
+    ## Regions of replaced parse-cache entries, kept alive until the request
+    ## boundary (see `drain_retired_regions`).
+    retired_regions: vec.Vec[heap.Region]
 
 
 extending Workspace:
@@ -146,6 +153,7 @@ extending Workspace:
             dependency_resolution_mode = string.String.create(),
             platform_override = string.String.create(),
             strict_current_root_diagnostics = false,
+            retired_regions = vec.Vec[heap.Region].create(),
         )
 
 
@@ -164,6 +172,7 @@ extending Workspace:
         this.module_roots.push(string.String.from_str(path))
         discover_project_root(path, ref_of(this.module_roots))
         append_compiler_module_roots(path, ref_of(this.module_roots))
+        this.drain_retired_regions()
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         this.diagnostic_cache = DiagnosticCache(entries = map_mod.Map[string.String, DiagnosticCacheEntry].create())
         release_analysis_cache(ref_of(this.analysis_cache))
@@ -188,7 +197,7 @@ extending Workspace:
         match path_result:
             Option.some as path_payload:
                 this.track_open_path(path_payload.value.as_str())
-                this.open_docs.set(path_payload.value, string.String.from_str(text))
+                this.set_open_doc(path_payload.value, text)
                 loader.invalidate_module_cache(ref_of(this.module_cache))
                 this.mark_index_dirty(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
@@ -203,7 +212,7 @@ extending Workspace:
         match path_result:
             Option.some as path_payload:
                 this.track_open_path(path_payload.value.as_str())
-                this.open_docs.set(path_payload.value, string.String.from_str(text))
+                this.set_open_doc(path_payload.value, text)
                 loader.invalidate_module_cache(ref_of(this.module_cache))
                 this.mark_index_dirty(path_payload.value.as_str())
                 defidx.forget(ref_of(this.definition_index), path_payload.value.as_str())
@@ -230,6 +239,18 @@ extending Workspace:
                         saved.value.release()
                     Option.none:
                         pass
+            Option.none:
+                pass
+
+
+    ## Store a document's text, releasing the buffer it replaces (`set` returns
+    ## the previous value on an existing key and drops it otherwise).
+    public editable function set_open_doc(path: string.String, text: str) -> void:
+        let previous = this.open_docs.set(path, string.String.from_str(text))
+        match previous:
+            Option.some as old:
+                var old_text = old.value
+                old_text.release()
             Option.none:
                 pass
 
@@ -564,6 +585,16 @@ extending Workspace:
         diagnostics_json: string.String,
     ) -> void:
         var key = string.String.from_str(path)
+        # Replace any previous entry (releasing its strings).
+        var lookup = string.String.from_str(path)
+        defer: lookup.release()
+        let stale_ptr = this.diagnostic_cache.entries.get(lookup)
+        if stale_ptr != null:
+            unsafe:
+                var stale = read(stale_ptr)
+                stale.result_id.release()
+                stale.diagnostics_json.release()
+            this.diagnostic_cache.entries.remove(lookup)
         var entry = DiagnosticCacheEntry(
             source_hash = source_hash,
             result_id = result_id,
@@ -655,7 +686,24 @@ extending Workspace:
         this.config_request_id = 0
 
 
+    ## Free the regions superseded parses/analyses retired since the last call.
+    ## Called at the request boundary (the server loop) and on teardown, when no
+    ## request-local value can still borrow them; freeing at replacement would
+    ## be a use-after-free for values a request still holds.
+    public editable function drain_retired_regions() -> void:
+        loader.drain_retired_regions(ref_of(this.module_cache))
+        var i: ptr_uint = 0
+        while i < this.retired_regions.len():
+            let region_ptr = this.retired_regions.get(i) else:
+                break
+            unsafe:
+                read(region_ptr).release_all()
+            i += 1
+        this.retired_regions.clear()
+
+
     public editable function release() -> void:
+        this.drain_retired_regions()
         this.root_path.release()
         release_module_roots(ref_of(this.module_roots))
         defidx.release(ref_of(this.definition_index))
@@ -673,6 +721,8 @@ extending Workspace:
         this.cancelled_ids.release()
         release_diagnostic_cache(ref_of(this.diagnostic_cache))
         release_semantic_token_cache(ref_of(this.semantic_token_cache))
+        release_analysis_cache(ref_of(this.analysis_cache))
+        release_parse_cache(ref_of(this.parse_cache))
         loader.release_module_cache(ref_of(this.module_cache))
         if this.index_built:
             idx.release_index(ref_of(this.index))
@@ -705,6 +755,7 @@ function release_parse_cache(cache: ref[map_mod.Map[string.String, ParseCacheEnt
         unsafe:
             var entry_value = read(entry.value)
             entry_value.source.release()
+            entry_value.region.release_all()
     cache.release()
 
 
@@ -747,23 +798,36 @@ public function parsed_analysis_for(ws: ref[Workspace], path: str, source: str) 
     var source_owner = string.String.from_str(source)
     let owned_source = source_owner.as_str()
     var parse_diags = vec.Vec[pstate.ParseDiagnostic].create()
-    defer: parse_diags.release()
+    # The parse's and single-file check's allocations — AST nodes and vectors,
+    # synthesized strings, the diagnostics buffer, the analysis' internals —
+    # belong to this region, which the entry owns and releases (or retires) on
+    # replacement.  `parse_diags`' buffer is region-owned, so it is not
+    # released here.
+    var region = heap.create_region()
+    let previous = heap.begin_region(ptr_of(region))
     var ast_file = parser.parse_source(owned_source, ref_of(parse_diags))
     var analysis = analyzer.check_source_file(ast_file)
+    let parse_error_count = parse_diags.len()
+    heap.end_region(previous)
 
     var entry = ParseCacheEntry(
         content_hash = current_hash,
-        parse_error_count = parse_diags.len(),
+        parse_error_count = parse_error_count,
         source = source_owner,
         ast_file = ast_file,
         analysis = analysis,
+        region = region,
     )
-    # Replace (and release) any stale entry for this path; `set` owns the key.
+    # Replace any stale entry for this path; `set` owns the key.  The stale
+    # entry's region is retired to the workspace quarantine (a request may still
+    # hold views into it) and freed at the request boundary.
     let stale_ptr = ws.parse_cache.get(cache_key)
     if stale_ptr != null:
         unsafe:
             var stale = read(stale_ptr)
             stale.source.release()
+            if stale.region.block_count > 0:
+                ws.retired_regions.push(stale.region)
         ws.parse_cache.remove(cache_key)
     ws.parse_cache.set(string.String.from_str(path), entry)
     return Option[ParseCacheEntry].some(value = entry)

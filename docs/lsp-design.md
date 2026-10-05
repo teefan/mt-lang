@@ -103,7 +103,19 @@ architecture (§self-host-plan) and bootstrap design (§bootstrap-design):
 5. **Explicit memory management.** Uses the compiler's existing pattern:
    `vec.Vec` + `map_mod.Map` with `defer release()`. No GC pressure, no
    hidden allocations. Workspace state (document content, diagnostics, caches)
-   is owned by a `Workspace` struct that implements `release()`.
+   is owned by a `Workspace` struct that implements `release()`.  Parse and
+   analysis allocations are owned in bulk: a loader module-cache entry and a
+   parse-cache entry each hold growable `heap.Region`s for their AST/analysis
+   internals — `heap.begin_region` routes every allocation the parse/analysis
+   call makes into the region, so a superseded entry frees its whole graph in
+   one `Region.release_all()` instead of following the "one file per run and
+   exits" leak convention.  Superseded regions are **not** freed at
+   replacement: they move to a quarantine list (`ModuleCache.retired_regions`,
+   `Workspace.retired_regions`) and are drained at the request boundary in the
+   server loop, because a request can still hold borrowed views into a region
+   it replaced mid-request.  Containers that outlive a region scope (the
+   workspace symbol index, the workspace's own maps) must never be mutated
+   while a region is active — their storage would become region-owned.
 
 6. **Source-only stdlib.** All stages load the same `std/` tree
    (§bootstrap-design §4.2). The LSP requires no new stdlib modules beyond
