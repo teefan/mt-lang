@@ -131,8 +131,14 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 37 close (2026-10-05) — **LSP soak: the per-request parse
-sites are routed through the shared caches**, cutting the full-cycle slope
+Last updated: session 38 (2026-10-05) — **C4 part 1: the parser/lexer scratch
+release** takes the full-cycle soak slope **3.96 → 3.17 MB/cycle** (the gate
+read 3.19 at `--cycles 200`; peak RSS 417 → 336 MB at 100 cycles): the lexer's
+token vectors, the parser's token-stream copy, its name maps and
+`pending_decls` are freed at parse end.  The residual is the AST/analysis
+allocation graph; the per-entry region ownership (C4 parts 2–4) lands next.
+Session 37 had routed the per-request parse
+sites through the shared caches, cutting the full-cycle slope
 **11.4 → 3.96 MB/cycle** (the gate read 3.98 at `--cycles 200`); the residual is
 the per-edit loader parse+analysis leak (per-parse ownership is the remaining
 C4 blocker, documented in Track 7).  Session 36 had closed the canonical
@@ -726,8 +732,14 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   attribution (session 37) shows the dominant blocks are the lexer's
   `Vec[Token]` buffers and the parser/analyzer vectors, and the replaced
   entries' *heap copies* are already released (`release_entry_analysis`) —
-  what is missing is ownership of the AST/analysis internals.  Record: §0k
-  session 37; §0k session 30's "Soak profile and the long-session blocker".
+  what is missing is ownership of the AST/analysis internals.  **Part 1 (session
+  38, 2026-10-05):** the parser and lexer scratch buffers (the two token vectors,
+  the name maps, `pending_decls`, the indent stack) are released at parse end —
+  the soak slope fell **3.96 → 3.17 MB/cycle** (gate 3.19).  The per-entry
+  region ownership designed in session 38 (a growable `heap.Region`, a scoped
+  allocator switch, per-entry parse/analysis regions, superseded regions
+  quarantined to the request boundary) is parts 2–4.  Record: §0k
+  session 38; §0k session 37; §0k session 30's "Soak profile and the long-session blocker".
 - **C5 client behaviours** — **DONE (session 31, 2026-10-04)**: the harness's
   stress section now measures six client-behaviour probes (`c5/…`):
   `references` with `includeDeclaration: false`, a `didChangeConfiguration`
@@ -1011,7 +1023,7 @@ definition of done above.
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-05 session 37) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
 | LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 37; ~7.8M B definitely lost — the analyzer's per-analysis small strings) | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
-| LSP soak | **3.96 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 11.4 before session 37; `--cycles 100`; the session-37 gate's `--cycles 200` read **3.98**) — all modes now converge to ~3.9, the per-edit loader parse+analysis leak; no ceiling until parse ownership lands (Track 7's C4) | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
+| LSP soak | **3.17 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (`--cycles 100`; the session-38 gate's `--cycles 200` read **3.19**; was 3.96/3.98 — session 38 part 1 released the parser/lexer token and scratch buffers, peak RSS 417 → 336 MB at 100 cycles).  The residual is the AST/analysis allocation graph; the per-entry regions (C4 parts 2–4) land next | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical (re-measured 2026-10-04 session 33; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 496 agree / 120 differ (616 files; re-measured 2026-10-05 session 35 — the +3 files/+3 differs over session 33's 613/117 are session 34's new compiler sources, two of which differ, plus session 34's edits to existing sources; the session-35 edits flip no file — `analyzer.mt` was already a differing file at HEAD) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | **zero differing rows** on the whole `dap_smoke` matrix (2026-10-04 session 34 — process backend, fake-adapter lldb and real `/usr/bin/lldb-dap` sessions), except the documented self-better `lldb-real frame0 name` (self `add`, host `main_add` — the host's cache-hit map loss); valgrind 0 errors on both backends | VS Code end-to-end under lldb-dap (manual) | `ruby tools/dap_smoke.rb` |
@@ -1026,6 +1038,35 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 38 (2026-10-05) — C4 part 1: the parser/lexer scratch release
+
+Goal: start Track 7's C4 (per-parse ownership — the ~3.9 MB/cycle LSP residual) with its
+zero-ownership-risk half: the parser's token and scratch allocations, which the session-37
+valgrind attribution ranked first ("the lexer's `Vec[Token]` buffers").  The per-entry
+region work is designed (a growable `heap.Region` behind a scoped allocator switch,
+per-entry parse/analysis regions, superseded regions quarantined to the request boundary)
+and follows as parts 2–4.
+
+- **`parser.mt`**: the three entry points (`parse`, `parse_reporting`,
+  `parse_source_reporting`) now hold the lexer's token vector and release it right after
+  `ts.create` copies it, and release the finished `ParserState`'s scratch — the stream
+  copy, the three known-name maps, the type-parameter list and `pending_decls` — through
+  `release_parser_scratch`.  The embedded-interpolation sub-parse releases its raw and
+  filtered token vectors, its stream copy and its own `pending_decls`; it never touches
+  the maps or the type-parameter list it shares with the parent, and it deliberately keeps
+  `padded` (the parsed expression's string views point into it).  The AST holds no
+  references into any released buffer: token lexemes are views into the source text and
+  every AST list owns its backing buffer.
+- **`lexer.mt`**: `lex`, `lex_reporting` and `lex_with_trivia` release the indent stack
+  (previously leaked once per lex).
+- **Measured**: the soak slope fell **3.96 → 3.17 MB/cycle** on the dev build (the gate's
+  stage2 at `--cycles 200` read **3.19**, was 3.98; peak RSS 417 → 336 MB at 100 cycles).
+- **Verification** (`tools/gates.sh` on the frozen tree): bootstrap fixed point (18 files /
+  0 failed), `test/mt` 60/0, sexpr lex 716/716 and parse 712 comparable / 0 differ,
+  examples 49/49, recovery OK, harness 30/30 at 4 documented entries, fixture sweep closed
+  5 / added 0, valgrind 0 errors, Neovim smoke OK, soak 3.19.  Targeted valgrind on an
+  example build: 0 errors.
 
 ### Session 37 (2026-10-05) — the soak: per-request parses routed through the shared caches
 

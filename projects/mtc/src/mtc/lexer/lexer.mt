@@ -103,6 +103,7 @@ public function lex(source: str) -> vec.Vec[tok.Token]:
     lex_lines(ref_of(session))
     let tokens = emit_eof(ref_of(session))
     session.trivia.release()
+    session.indent_stack.release()
     return tokens
 
 
@@ -122,6 +123,7 @@ public function lex_reporting(source: str, diagnostics: ref[vec.Vec[tok.LexDiagn
     lex_lines(ref_of(session))
     let tokens = emit_eof(ref_of(session))
     session.trivia.release()
+    session.indent_stack.release()
     return tokens
 
 
@@ -143,6 +145,7 @@ public function lex_with_trivia(source: str, diagnostics: ref[vec.Vec[tok.LexDia
     session.indent_stack.push(0)
     lex_lines(ref_of(session))
     let tokens = emit_eof(ref_of(session))
+    session.indent_stack.release()
     return triv.CstLexResult(tokens = tokens, trivia = session.trivia)
 
 

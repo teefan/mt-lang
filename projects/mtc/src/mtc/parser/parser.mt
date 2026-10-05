@@ -748,8 +748,10 @@ function parse_embedded_expr(s: ref[pstate.ParserState], source: str, line: ptr_
         padded.push_byte(' ')
         c += 1
     padded.append(source)
+    # `padded` is deliberately retained: the parsed expression's string views
+    # (identifiers, literal lexemes) point into `padded_source`.
     let padded_source = padded.as_str()
-    let raw_tokens = lexer.lex(padded_source)
+    var raw_tokens = lexer.lex(padded_source)
     var tokens = vec.Vec[token_mod.Token].create()
     var skipping = true
     var ti: ptr_uint = 0
@@ -764,6 +766,7 @@ function parse_embedded_expr(s: ref[pstate.ParserState], source: str, line: ptr_
             skipping = false
             tokens.push(read(t))
         ti += 1
+    raw_tokens.release()
     var sub = pstate.ParserState(
         stream = ts.create(tokens),
         source = padded_source,
@@ -784,7 +787,11 @@ function parse_embedded_expr(s: ref[pstate.ParserState], source: str, line: ptr_
         panic_message = c"",
         pending_decls = vec.Vec[ast.Decl].create(),
     )
-    return parse_expression(ref_of(sub))
+    tokens.release()
+    let parsed = parse_expression(ref_of(sub))
+    sub.stream.tokens.release()
+    sub.pending_decls.release()
+    return parsed
 
 
 function append_escaped_byte(buf: ref[string.String], ch: ubyte) -> void:
@@ -805,14 +812,29 @@ function alloc_decl(s: ref[pstate.ParserState]) -> own[ast.Decl]:
     return heap_mod.must_alloc[ast.Decl](1)
 
 
+## Release a finished parser state's owned scratch: the token stream copy, the
+## known-name lookup maps, the type-parameter name list and the pending
+## declaration buffer.  The AST holds no references into any of them — token
+## lexemes are views into the source text and every AST list owns its own
+## backing buffer.
+function release_parser_scratch(s: ref[pstate.ParserState]) -> void:
+    s.stream.tokens.release()
+    s.known_type_names.release()
+    s.known_import_aliases.release()
+    s.known_generic_callable_names.release()
+    s.current_type_param_names.release()
+    s.pending_decls.release()
+
+
 # =============================================================================
 #  Public API
 # =============================================================================
 
 public function parse(source: str) -> bool:
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    var lexed = lexer.lex_reporting(source, ref_of(lex_diags))
     var state = pstate.ParserState(
-        stream = ts.create(lexer.lex_reporting(source, ref_of(lex_diags))),
+        stream = ts.create(lexed),
         source = source,
         step_counter = 0,
         in_inline_block_body = false,
@@ -831,16 +853,19 @@ public function parse(source: str) -> bool:
         panic_message = c"",
         pending_decls = vec.Vec[ast.Decl].create(),
     )
+    lexed.release()
     lex_diags.release()
     seed_known_names(ref_of(state))
     let file = parse_source_file(ref_of(state))
+    release_parser_scratch(ref_of(state))
     return source_file_decl_count(file) > 0
 
 
 public function parse_reporting(source: str, errors: ref[vec.Vec[pstate.ParseDiagnostic]]) -> (bool, ptr_uint):
     var lex_diags = vec.Vec[token_mod.LexDiagnostic].create()
+    var lexed = lexer.lex_reporting(source, ref_of(lex_diags))
     var state = pstate.ParserState(
-        stream = ts.create(lexer.lex_reporting(source, ref_of(lex_diags))),
+        stream = ts.create(lexed),
         source = source,
         step_counter = 0,
         in_inline_block_body = false,
@@ -859,9 +884,11 @@ public function parse_reporting(source: str, errors: ref[vec.Vec[pstate.ParseDia
         panic_message = c"",
         pending_decls = vec.Vec[ast.Decl].create(),
     )
+    lexed.release()
     lex_diags.release()
     seed_known_names(ref_of(state))
     let file = parse_source_file(ref_of(state))
+    release_parser_scratch(ref_of(state))
     return (errors.len() == 0, source_file_decl_count(file))
 
 
@@ -884,8 +911,9 @@ public function parse_source_reporting(
     errors: ref[vec.Vec[pstate.ParseDiagnostic]],
     lex_errors: ref[vec.Vec[token_mod.LexDiagnostic]],
 ) -> ast.SourceFile:
+    var lexed = lexer.lex_reporting(source, lex_errors)
     var state = pstate.ParserState(
-        stream = ts.create(lexer.lex_reporting(source, lex_errors)),
+        stream = ts.create(lexed),
         source = source,
         step_counter = 0,
         in_inline_block_body = false,
@@ -904,8 +932,11 @@ public function parse_source_reporting(
         panic_message = c"",
         pending_decls = vec.Vec[ast.Decl].create(),
     )
+    lexed.release()
     seed_known_names(ref_of(state))
-    return parse_source_file(ref_of(state))
+    let file = parse_source_file(ref_of(state))
+    release_parser_scratch(ref_of(state))
+    return file
 
 
 function source_file_decl_count(file: ast.SourceFile) -> ptr_uint:
