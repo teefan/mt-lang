@@ -624,12 +624,16 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    cache carries the sidecar (`build_cache.store`/`materialize`), so cached
    builds keep their map where the host skips it.  The `process` event's
    `name` is now appended (it was emitted empty).
-3. **Pause diagnostics + `modules`.**  Dispatch `modules` in
-   `handlers.mt:27-93` and load the map from the backend's response (host
-   `debug_map.rb:13-36`); make `handle_pause` emit the host's console `output`
-   event built from a `stackTrace` (`pause_diagnostics.rb:7-53`).
+3. **Pause diagnostics + `modules`.**  **Landed (session 34, 2026-10-04)**: a
+   pause-requested stop issues the 8-level `stackTrace` and emits the host's
+   console `output` summary (`pause_diagnostics.rb`'s informative-frame
+   selection and formatting ported), the SIGSTOP exception stop is rewritten
+   to `reason: "pause"`, and the `modules`-driven map fallback loads a sidecar
+   from the adapter's module list when a stackTrace arrives without one.
+   `modules` is dispatched through the generic forwarding path.
 4. **lldb-dap bridge (largest/riskiest).**  **Landed (session 34, 2026-10-04;
-   frame/variable rewrites and pause diagnostics land with item 3's commit)**:
+   frame/variable/expression rewrites, breakpoint sync and pause diagnostics
+   included)**:
    `dap/lldb_backend.mt` (transport: spawn, Content-Length framing to the
    adapter's stdin, pending request table with 5 s deadlines, the 15 s reverse
    table) + `dap/lldb_policy.mt` (policy: deferred client initialize with the

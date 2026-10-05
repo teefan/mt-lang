@@ -27,6 +27,8 @@ public const KIND_DISCONNECT:     int = 8
 public const KIND_SYNC_BREAKPOINTS: int = 9
 public const KIND_SYNC_FUNCTIONS: int = 10
 public const KIND_SYNC_EXCEPTIONS: int = 11
+public const KIND_PAUSE_STACK:   int = 12
+public const KIND_MODULES:       int = 13
 
 
 ## A request sent to lldb-dap, awaiting its response.
@@ -34,8 +36,10 @@ public struct PendingRequest:
     adapter_seq: ptr_uint
     client_seq: ptr_uint
     command: string.String
+    arguments_text: string.String
     deadline: ptr_uint
     kind: int
+    arg_a: ptr_uint
 
 
 ## An adapter request forwarded to the client, awaiting the client's response.
@@ -69,6 +73,10 @@ public struct Backend:
     pending_start_arguments: string.String
     has_deferred_config: bool
     deferred_config_client_seq: ptr_uint
+    breakpoints_synced: bool
+    has_deferred_stack: bool
+    deferred_stack_client_seq: ptr_uint
+    deferred_stack_arguments: string.String
     pending: vec.Vec[PendingRequest]
     pending_client: vec.Vec[PendingClientRequest]
 
@@ -97,6 +105,10 @@ public function create() -> Backend:
         pending_start_arguments = string.String.create(),
         has_deferred_config = false,
         deferred_config_client_seq = 0,
+        breakpoints_synced = false,
+        has_deferred_stack = false,
+        deferred_stack_client_seq = 0,
+        deferred_stack_arguments = string.String.create(),
         pending = vec.Vec[PendingRequest].create(),
         pending_client = vec.Vec[PendingClientRequest].create(),
     )
@@ -110,6 +122,7 @@ public function release(backend: ref[Backend]) -> void:
     backend.capabilities_text.release()
     backend.pending_start_command.release()
     backend.pending_start_arguments.release()
+    backend.deferred_stack_arguments.release()
 
 
 function release_pending(entries: ref[vec.Vec[PendingRequest]]) -> void:
@@ -119,6 +132,7 @@ function release_pending(entries: ref[vec.Vec[PendingRequest]]) -> void:
             let entry = entries.get(i)
             if entry != null:
                 read(entry).command.release()
+                read(entry).arguments_text.release()
         i += 1
     entries.release()
 
@@ -180,6 +194,9 @@ public function stop(backend: ref[Backend]) -> void:
     backend.pending_start_command.clear()
     backend.pending_start_arguments.clear()
     backend.has_deferred_config = false
+    backend.breakpoints_synced = false
+    backend.has_deferred_stack = false
+    backend.deferred_stack_arguments.clear()
 
 
 ## Send one request to the adapter and record it as pending.
@@ -191,6 +208,22 @@ public function send(
     kind: int,
     deadline: ptr_uint,
 ) -> ptr_uint:
+    return send_as(backend, command, command, arguments_json, client_seq, kind, deadline, 0)
+
+
+## Like `send`, but the pending entry remembers `response_command` as the
+## command the client's response carries (e.g. a setVariable request forwarded
+## as setExpression), and an extra context word (`arg_a`).
+public function send_as(
+    backend: ref[Backend],
+    wire_command: str,
+    response_command: str,
+    arguments_json: str,
+    client_seq: ptr_uint,
+    kind: int,
+    deadline: ptr_uint,
+    arg_a: ptr_uint,
+) -> ptr_uint:
     let seq = backend.next_seq
     backend.next_seq = seq + 1
 
@@ -199,7 +232,7 @@ public function send(
     frame.append("{\"seq\":")
     frame.append_format(f"#{seq}")
     frame.append(",\"type\":\"request\",\"command\":\"")
-    proto.append_escaped(ref_of(frame), command)
+    proto.append_escaped(ref_of(frame), wire_command)
     frame.append("\",\"arguments\":")
     if arguments_json.len > 0:
         frame.append(arguments_json)
@@ -208,12 +241,17 @@ public function send(
     frame.append("}")
 
     let _sent = write_frame_to_child(ref_of(backend.child), frame.as_str())
+
+    var arguments_text = string.String.create()
+    arguments_text.append(arguments_json)
     backend.pending.push(PendingRequest(
         adapter_seq = seq,
         client_seq = client_seq,
-        command = string.String.from_str(command),
+        command = string.String.from_str(response_command),
+        arguments_text = arguments_text,
         deadline = deadline,
         kind = kind,
+        arg_a = arg_a,
     ))
     return seq
 

@@ -115,6 +115,14 @@ function dispatch_lldb(
         lldb_policy.terminate(ses, lldb_backend_ref, seq, msg.seq, msg.arguments)
     else if command == "disconnect":
         lldb_policy.disconnect(ses, lldb_backend_ref, seq, msg.seq, msg.arguments)
+    else if command == "setBreakpoints":
+        lldb_policy.set_breakpoints(ses, lldb_backend_ref, seq, msg.seq, msg.arguments)
+    else if command == "stackTrace":
+        lldb_policy.stack_trace(ses, lldb_backend_ref, seq, msg.seq, msg.arguments)
+    else if command == "setVariable":
+        lldb_policy.request_set_variable(ses, lldb_backend_ref, seq, msg.seq, msg.arguments)
+    else if command == "evaluate" or command == "setExpression" or command == "dataBreakpointInfo":
+        lldb_policy.forward_rewritten(ses, lldb_backend_ref, seq, msg.seq, command, msg.arguments)
     else if command == "pause":
         lldb_backend_ref.pause_requested = true
         lldb_policy.forward_command(ses, lldb_backend_ref, seq, msg.seq, command, msg.arguments)

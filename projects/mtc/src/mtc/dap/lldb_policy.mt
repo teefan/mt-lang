@@ -4,13 +4,16 @@
 ## requests, timeouts and shutdown.  Ports `dap/server/lldb_backend.rb` plus the
 ## transport half's response routing from `dap/lldb_dap_backend.rb`.
 
+import std.fs as fs_mod
 import std.json as json
+import std.path as path_ops
 import std.process as process
 import std.str
 import std.string as string
 import std.time as time
 import std.vec as vec
 
+import mtc.debug_map as debug_map
 import mtc.dap.lldb_backend as lldb
 import mtc.dap.protocol as proto
 import mtc.dap.session as session
@@ -80,6 +83,7 @@ public function start_debugging(
     backend.auto_continue_after_config = command.equal("launch") and not stop_on_entry
     backend.has_stopped_thread = false
     backend.has_continued_signature = false
+    load_debug_map(ses, runnable_path)
 
     if not backend.running:
         var adapter = adapter_command(ses, arguments)
@@ -151,6 +155,7 @@ function proceed_configuration(
     if not backend.running:
         wire.write_error_command(ses.reserve_seq(), client_seq, "configurationDone", "lldb-dap backend is not running")
         return
+    sync_breakpoints(ses, backend)
     let _ = lldb.send(
         backend,
         "configurationDone",
@@ -240,10 +245,12 @@ public function pump(ses: ref[session.Session], backend: ref[lldb.Backend]) -> v
 
     drain_adapter_stderr(backend)
 
-    let framer = backend.framer
-    if framer == null:
-        return
     while true:
+        if not backend.running:
+            return
+        let framer = backend.framer
+        if framer == null:
+            return
         let next = proto.framer_next(unsafe: ref_of(read(framer)))
         match next:
             Option.some as payload:
@@ -252,6 +259,11 @@ public function pump(ses: ref[session.Session], backend: ref[lldb.Backend]) -> v
             Option.none:
                 break
 
+    if not backend.running:
+        return
+    let framer = backend.framer
+    if framer == null:
+        return
     unsafe:
         if read(framer).eof or read(framer).malformed:
             fail_pending(ses, backend, "backend closed")
@@ -298,6 +310,7 @@ function handle_response(ses: ref[session.Session], backend: ref[lldb.Backend], 
             var pending = taken.value
             dispatch_response(ses, backend, pending, msg)
             pending.command.release()
+            pending.arguments_text.release()
 
 
 function dispatch_response(
@@ -395,11 +408,45 @@ function dispatch_response(
 
     if pending.kind == lldb.KIND_FORWARD:
         if msg.success:
+            rewrite_forward_response(ses, pending, ref_of(body_text))
             wire.write_response_command(ses.reserve_seq(), pending.client_seq, pending.command.as_str(), body_text.as_str())
         else:
             var message = backend_error_message(msg)
             defer: message.release()
             wire.write_error_command(ses.reserve_seq(), pending.client_seq, pending.command.as_str(), message.as_str())
+        return
+
+    if pending.kind == lldb.KIND_SYNC_BREAKPOINTS:
+        if msg.success:
+            emit_breakpoint_changes(ses, pending, msg)
+        return
+
+    if pending.kind == lldb.KIND_PAUSE_STACK:
+        var diagnostic = pause_diagnostic_text(pending.arg_a, msg)
+        defer: diagnostic.release()
+        var body = string.String.create()
+        defer: body.release()
+        body.append("{\"category\":\"console\",\"output\":\"")
+        proto.append_escaped(ref_of(body), diagnostic.as_str())
+        body.append("\\n\"}")
+        wire.write_event(ses.reserve_seq(), "output", body.as_str())
+        return
+
+    if pending.kind == lldb.KIND_MODULES:
+        if msg.success:
+            load_debug_map_from_modules(ses, msg.body)
+        if backend.has_deferred_stack:
+            backend.has_deferred_stack = false
+            let deferred_args = backend.deferred_stack_arguments.as_str()
+            let deferred_seq = backend.deferred_stack_client_seq
+            let _ = lldb.send(
+                backend,
+                "stackTrace",
+                deferred_args,
+                deferred_seq,
+                lldb.KIND_FORWARD,
+                deadline_after(REQUEST_TIMEOUT_SECONDS),
+            )
         return
 
     if pending.kind == lldb.KIND_TERMINATE:
@@ -453,6 +500,7 @@ function handle_event(ses: ref[session.Session], backend: ref[lldb.Backend], msg
         return
 
     if event_name.equal("stopped"):
+        let paused = backend.pause_requested
         var body_text = event_body_text(msg.body)
         defer: body_text.release()
         if backend.pause_requested:
@@ -473,6 +521,8 @@ function handle_event(ses: ref[session.Session], backend: ref[lldb.Backend], msg
         backend.has_continued_signature = false
         let seq = ses.reserve_seq()
         wire.write_event(seq, "stopped", body_text.as_str())
+        if paused and backend.has_stopped_thread:
+            request_pause_diagnostics(ses, backend)
         return
 
     if event_name.equal("continued"):
@@ -578,6 +628,7 @@ function expire_pendings(ses: ref[session.Session], backend: ref[lldb.Backend]) 
                     if pending.kind == lldb.KIND_START:
                         backend.start_pending = false
                     pending.command.release()
+                    pending.arguments_text.release()
                 Option.none:
                     pass
         k += 1
@@ -631,6 +682,7 @@ function fail_pending(ses: ref[session.Session], backend: ref[lldb.Backend], rea
                 if client_seq != 0:
                     wire.write_error_command(ses.reserve_seq(), client_seq, read(entry).command.as_str(), reason)
                 read(entry).command.release()
+                read(entry).arguments_text.release()
         i += 1
     backend.pending.clear()
     backend.start_pending = false
@@ -1038,6 +1090,1155 @@ function lowercase_copy(text: str) -> string.String:
 
 function deadline_after(seconds: ptr_uint) -> ptr_uint:
     return ptr_uint<-time.now() + seconds
+
+
+# =============================================================================
+#  Debug-map rewrites, breakpoint sync and pause diagnostics
+# =============================================================================
+
+## Load the runnable's debug-map sidecar (launch/attach); tolerant when absent.
+public function load_debug_map(ses: ref[session.Session], runnable_path: str) -> void:
+    ses.clear_debug_map()
+    if runnable_path.len == 0:
+        return
+    match debug_map.load_for_binary(runnable_path):
+        Option.some as loaded:
+            ses.set_debug_map(loaded.value)
+        Option.none:
+            pass
+
+
+## stackTrace forwarding with the modules fallback (the host's
+## `maybe_load_debug_map_from_backend_modules`).
+public function stack_trace(
+    ses: ref[session.Session],
+    backend: ref[lldb.Backend],
+    seq: ptr_uint,
+    req_seq: ptr_uint,
+    arguments: json.Value,
+) -> void:
+    if not backend.running:
+        wire.write_error(seq, req_seq, "lldb-dap backend is not running")
+        return
+    if ses.debug_map == null and capability_flag(backend, "supportsModulesRequest"):
+        backend.has_deferred_stack = true
+        backend.deferred_stack_client_seq = req_seq
+        var args_text = render_value_text(arguments)
+        backend.deferred_stack_arguments.assign(args_text.as_str())
+        args_text.release()
+        let _ = lldb.send(backend, "modules", "{}", 0, lldb.KIND_MODULES, deadline_after(REQUEST_TIMEOUT_SECONDS))
+        return
+    var args_text = render_value_text(arguments)
+    defer: args_text.release()
+    let _ = lldb.send(
+        backend,
+        "stackTrace",
+        args_text.as_str(),
+        req_seq,
+        lldb.KIND_FORWARD,
+        deadline_after(REQUEST_TIMEOUT_SECONDS),
+    )
+
+
+## setVariable with the host's fallbacks: prefer the adapter's setVariable,
+## else setExpression through the scope's frame, else the host's error.
+public function request_set_variable(
+    ses: ref[session.Session],
+    backend: ref[lldb.Backend],
+    seq: ptr_uint,
+    req_seq: ptr_uint,
+    arguments: json.Value,
+) -> void:
+    if not backend.running:
+        wire.write_error(seq, req_seq, "lldb-dap backend is not running")
+        return
+
+    if capability_flag(backend, "supportsSetVariable"):
+        var args_text = rewrite_set_variable_arguments(ses, arguments)
+        defer: args_text.release()
+        let _ = lldb.send(backend, "setVariable", args_text.as_str(), req_seq, lldb.KIND_FORWARD, deadline_after(REQUEST_TIMEOUT_SECONDS))
+        return
+
+    if capability_flag(backend, "supportsSetExpression"):
+        let reference = number_field(arguments, "variablesReference")
+        var frame_id: ptr_uint = 0
+        var function_ptr: ptr[debug_map.DebugFunction]? = null
+        match reference:
+            Option.some as found:
+                let context = ses.variable_contexts.get(found.value)
+                if context != null:
+                    unsafe:
+                        frame_id = read(context).frame_id
+                        if read(context).has_function:
+                            function_ptr = read(context).function
+            Option.none:
+                pass
+        if frame_id == 0:
+            wire.write_error(seq, req_seq, "setVariable requires a scope frame context")
+            return
+        var name = string.String.from_str(string_arg(arguments, "name"))
+        if function_ptr != null:
+            let entry = source_variable_entry(ses, function_ptr, name.as_str())
+            if entry != null:
+                name.release()
+                name = string.String.from_str(unsafe: read(entry).linkage_name.as_str())
+        var value = rewrite_expression_for_frame(ses, string_arg(arguments, "value"), frame_id)
+        var result = string.String.with_capacity(128)
+        result.append("{\"expression\":")
+        append_json_string(ref_of(result), name.as_str())
+        result.append(",\"value\":")
+        append_json_string(ref_of(result), value.as_str())
+        result.append(",\"frameId\":")
+        result.append_format(f"#{frame_id}")
+        if has_key(arguments, "format"):
+            result.append(",\"format\":")
+            let format_obj = arguments.as_object()
+            if format_obj != null:
+                unsafe:
+                    let format_ptr = read(format_obj).get("format")
+                    if format_ptr != null:
+                        append_rendered(ref_of(result), read(format_ptr))
+        result.append("}")
+        let _ = lldb.send_as(
+            backend,
+            "setExpression",
+            "setVariable",
+            result.as_str(),
+            req_seq,
+            lldb.KIND_FORWARD,
+            deadline_after(REQUEST_TIMEOUT_SECONDS),
+            0,
+        )
+        result.release()
+        name.release()
+        value.release()
+        return
+
+    wire.write_error(seq, req_seq, "setVariable is not supported by the lldb-dap backend")
+
+
+## Request-side argument rewriting for the forwarded commands (nil when the
+## command has no rewrite).
+public function rewrite_request_arguments(ses: ref[session.Session], command: str, arguments: json.Value) -> string.String:
+    if ses.debug_map == null:
+        return render_value_text(arguments)
+    if command.equal("evaluate"):
+        return rewrite_expression_arguments(ses, arguments, false)
+    if command.equal("setExpression"):
+        return rewrite_expression_arguments(ses, arguments, true)
+    if command.equal("dataBreakpointInfo"):
+        return rewrite_data_breakpoint_arguments(ses, arguments)
+    return render_value_text(arguments)
+
+
+## Collect and forward a source's breakpoints to the adapter, then emit the
+## host's `breakpoint changed` events when each answer arrives.
+function sync_breakpoints(ses: ref[session.Session], backend: ref[lldb.Backend]) -> void:
+    if backend.breakpoints_synced:
+        return
+    backend.breakpoints_synced = true
+    var iter = ses.breakpoints_by_source.entries()
+    while iter.next():
+        let entry = iter.current()
+        unsafe:
+            var args = build_sync_arguments(read(entry.key).as_str(), ref_of(read(entry.value)))
+            let _ = lldb.send(
+                backend,
+                "setBreakpoints",
+                args.as_str(),
+                0,
+                lldb.KIND_SYNC_BREAKPOINTS,
+                deadline_after(REQUEST_TIMEOUT_SECONDS),
+            )
+            args.release()
+
+
+function build_sync_arguments(source_path: str, breakpoints: ref[vec.Vec[session.Breakpoint]]) -> string.String:
+    var result = string.String.with_capacity(128)
+    result.append("{\"source\":{\"path\":")
+    append_json_string(ref_of(result), source_path)
+    result.append("},\"breakpoints\":[")
+    var first = true
+    var i: ptr_uint = 0
+    while i < breakpoints.len():
+        unsafe:
+            let breakpoint = breakpoints.get(i)
+            if breakpoint != null:
+                if not first:
+                    result.append(",")
+                first = false
+                result.append("{\"line\":")
+                result.append_format(f"#{read(breakpoint).line}")
+                result.append("}")
+        i += 1
+    result.append("]}")
+    return result
+
+
+## Emit `breakpoint changed` events for a sync answer.  The host compares the
+## stored entry's symbol-keyed fields with the adapter's string-keyed answer,
+## so every breakpoint whose adapter answer carries `verified` produces an
+## event; the self reproduces that observable behavior.
+function emit_breakpoint_changes(ses: ref[session.Session], pending: lldb.PendingRequest, msg: proto.Message) -> void:
+    var source_path = source_path_from_arguments(pending.arguments_text.as_str())
+    defer: source_path.release()
+    if source_path.len() == 0:
+        return
+
+    var key = string.String.from_str(source_path.as_str())
+    let local_ptr = ses.breakpoints_by_source.get(key)
+    key.release()
+    if local_ptr == null:
+        return
+    let local = unsafe: read(local_ptr)
+
+    let body = msg.body.as_object()
+    if body == null:
+        return
+    unsafe:
+        let backend_bps = read(body).get_array("breakpoints")
+        if backend_bps == null:
+            return
+        var i: ptr_uint = 0
+        while i < local.len() and i < read(backend_bps).len():
+            let local_bp = local.get(i)
+            let backend_bp = read(backend_bps).get(i)
+            if local_bp != null and backend_bp != null:
+                let backend_obj = read(backend_bp).as_object()
+                if backend_obj != null:
+                    let backend_line = read(backend_obj).get_number("line")
+                    let backend_verified = read(backend_obj).get("verified")
+                    var skip = false
+                    match backend_line:
+                        Option.some as line_value:
+                            if ptr_uint<-int<-line_value.value == read(local_bp).line and backend_verified == null:
+                                skip = true
+                        Option.none:
+                            pass
+                    if not skip:
+                        var event_body = string.String.with_capacity(128)
+                        event_body.append("{\"reason\":\"changed\",\"breakpoint\":{\"id\":")
+                        event_body.append_format(f"#{read(local_bp).id}")
+                        event_body.append(",\"verified\":")
+                        var verified_json = false
+                        if backend_verified != null:
+                            match read(backend_verified).as_boolean():
+                                Option.some as verified_value:
+                                    verified_json = verified_value.value
+                                Option.none:
+                                    pass
+                        if verified_json:
+                            event_body.append("true")
+                        else:
+                            event_body.append("false")
+                        event_body.append(",\"line\":")
+                        match backend_line:
+                            Option.some as line_value:
+                                event_body.append_format(f"#{ptr_uint<-int<-line_value.value}")
+                            Option.none:
+                                event_body.append("null")
+                        event_body.append(",\"source\":{\"path\":")
+                        append_json_string(ref_of(event_body), source_path.as_str())
+                        event_body.append("}}}")
+                        wire.write_event(ses.reserve_seq(), "breakpoint", event_body.as_str())
+                        event_body.release()
+            i += 1
+
+
+## Forward a command whose arguments the debug map rewrites first
+## (evaluate / setExpression / dataBreakpointInfo).
+public function forward_rewritten(
+    ses: ref[session.Session],
+    backend: ref[lldb.Backend],
+    seq: ptr_uint,
+    req_seq: ptr_uint,
+    command: str,
+    arguments: json.Value,
+) -> void:
+    if not backend.running:
+        wire.write_error(seq, req_seq, "lldb-dap backend is not running")
+        return
+    var args_text = rewrite_request_arguments(ses, command, arguments)
+    defer: args_text.release()
+    let _ = lldb.send(
+        backend,
+        command,
+        args_text.as_str(),
+        req_seq,
+        lldb.KIND_FORWARD,
+        deadline_after(REQUEST_TIMEOUT_SECONDS),
+    )
+
+
+## setBreakpoints: store the request; answer locally while the start request
+## is in flight (the host's `backend_configuration_pending?`), else forward.
+public function set_breakpoints(
+    ses: ref[session.Session],
+    backend: ref[lldb.Backend],
+    seq: ptr_uint,
+    req_seq: ptr_uint,
+    arguments: json.Value,
+) -> void:
+    var source_path = breakpoint_source_path(arguments)
+    defer: source_path.release()
+    var lines = breakpoint_lines(arguments)
+    defer: lines.release()
+    ses.set_source_breakpoints(source_path.as_str(), lines.as_span())
+
+    if backend.start_pending and not backend.config_ready:
+        var body = local_breakpoints_body(ses, source_path.as_str())
+        defer: body.release()
+        wire.write_response(seq, req_seq, body.as_str())
+        return
+
+    if not backend.running:
+        wire.write_error(seq, req_seq, "lldb-dap backend is not running")
+        return
+    var args_text = render_value_text(arguments)
+    defer: args_text.release()
+    let _ = lldb.send(
+        backend,
+        "setBreakpoints",
+        args_text.as_str(),
+        req_seq,
+        lldb.KIND_FORWARD,
+        deadline_after(REQUEST_TIMEOUT_SECONDS),
+    )
+
+
+function breakpoint_source_path(arguments: json.Value) -> string.String:
+    let obj = arguments.as_object()
+    if obj == null:
+        return string.String.create()
+    unsafe:
+        let source = read(obj).get_object("source")
+        if source != null:
+            match read(source).get_string("path"):
+                Option.some as found:
+                    return string.String.from_str(found.value)
+                Option.none:
+                    pass
+    return string.String.create()
+
+
+function breakpoint_lines(arguments: json.Value) -> vec.Vec[ptr_uint]:
+    var lines = vec.Vec[ptr_uint].create()
+    let obj = arguments.as_object()
+    if obj == null:
+        return lines
+    unsafe:
+        let bps = read(obj).get_array("breakpoints")
+        if bps != null:
+            var i: ptr_uint = 0
+            while i < read(bps).len():
+                let bp = read(bps).get(i)
+                if bp != null:
+                    let bp_obj = read(bp).as_object()
+                    if bp_obj != null:
+                        match read(bp_obj).get_number("line"):
+                            Option.some as found:
+                                lines.push(ptr_uint<-int<-found.value)
+                            Option.none:
+                                pass
+                i += 1
+            return lines
+        let raw_lines = read(obj).get_array("lines")
+        if raw_lines != null:
+            var i: ptr_uint = 0
+            while i < read(raw_lines).len():
+                let item = read(raw_lines).get(i)
+                if item != null:
+                    match read(item).as_number():
+                        Option.some as found:
+                            lines.push(ptr_uint<-int<-found.value)
+                        Option.none:
+                            pass
+                i += 1
+    return lines
+
+
+## The locally stored breakpoints as the host's pending-phase response.
+function local_breakpoints_body(ses: ref[session.Session], source_path: str) -> string.String:
+    var result = string.String.with_capacity(128)
+    result.append("{\"breakpoints\":[")
+    var key = string.String.from_str(source_path)
+    let stored = ses.breakpoints_by_source.get(key)
+    key.release()
+    if stored != null:
+        unsafe:
+            let entries = read(stored)
+            var first = true
+            var i: ptr_uint = 0
+            while i < entries.len():
+                let bp = entries.get(i)
+                if bp != null:
+                    if not first:
+                        result.append(",")
+                    first = false
+                    result.append("{\"id\":")
+                    result.append_format(f"#{read(bp).id}")
+                    result.append(",\"line\":")
+                    result.append_format(f"#{read(bp).line}")
+                    result.append(",\"verified\":true}")
+                i += 1
+    result.append("]}")
+    return result
+
+
+## Ask for a stack summary after a pause (the host's
+## `emit_pause_diagnostic_async`).
+function request_pause_diagnostics(ses: ref[session.Session], backend: ref[lldb.Backend]) -> void:
+    if not backend.has_stopped_thread:
+        return
+    var args = string.String.with_capacity(64)
+    args.append("{\"threadId\":")
+    args.append_format(f"#{backend.stopped_thread_id}")
+    args.append(",\"startFrame\":0,\"levels\":8}")
+    let _ = lldb.send_as(
+        backend,
+        "stackTrace",
+        "stackTrace",
+        args.as_str(),
+        0,
+        lldb.KIND_PAUSE_STACK,
+        deadline_after(REQUEST_TIMEOUT_SECONDS),
+        backend.stopped_thread_id,
+    )
+    args.release()
+
+
+## The pause summary text (the host's `pause_diagnostic_output`).
+function pause_diagnostic_text(thread_id: ptr_uint, msg: proto.Message) -> string.String:
+    if not msg.success:
+        var message = backend_error_message(msg)
+        var result = string.String.create()
+        result.append("[milk-tea dap] pause focus unavailable thread=")
+        result.append_format(f"#{thread_id}")
+        result.append(": ")
+        result.append(message.as_str())
+        message.release()
+        return result
+
+    let body = msg.body.as_object()
+    var frames: ptr[json.Array]? = null
+    if body != null:
+        unsafe: frames = read(body).get_array("stackFrames")
+    if frames == null or unsafe: read(frames).len() == 0:
+        var result = string.String.create()
+        result.append("[milk-tea dap] pause focus unavailable thread=")
+        result.append_format(f"#{thread_id}")
+        result.append(": no stack frames")
+        return result
+
+    unsafe:
+        let first_frame_ptr = read(frames).get(0)
+        if first_frame_ptr == null:
+            return string.String.create()
+        let raw_frame = read(first_frame_ptr)
+        var informative: ptr_uint = read(frames).len()
+        var i: ptr_uint = 0
+        while i < read(frames).len():
+            let frame_ptr = read(frames).get(i)
+            if frame_ptr != null and informative_pause_frame(read(frame_ptr)):
+                informative = i
+                break
+            i += 1
+
+        if informative >= read(frames).len():
+            var result = string.String.create()
+            result.append("[milk-tea dap] pause top frame thread=")
+            result.append_format(f"#{thread_id}")
+            result.append(": ")
+            var summary = pause_frame_summary(raw_frame, true)
+            result.append(summary.as_str())
+            summary.release()
+            return result
+
+        var result = string.String.create()
+        result.append("[milk-tea dap] pause focus thread=")
+        result.append_format(f"#{thread_id}")
+        result.append(": ")
+        var count: ptr_uint = 0
+        var index = informative
+        while index < read(frames).len() and count < 3:
+            let frame_ptr = read(frames).get(index)
+            if frame_ptr != null:
+                if count > 0:
+                    result.append(" <- ")
+                var summary = pause_frame_summary(read(frame_ptr), false)
+                result.append(summary.as_str())
+                summary.release()
+                count += 1
+            index += 1
+        if informative > 0:
+            result.append(" raw=")
+            var summary = pause_frame_summary(raw_frame, true)
+            result.append(summary.as_str())
+            summary.release()
+        return result
+
+
+function informative_pause_frame(frame: json.Value) -> bool:
+    let obj = frame.as_object()
+    if obj == null:
+        return false
+    unsafe:
+        var name = ""
+        match read(obj).get_string("name"):
+            Option.some as found:
+                name = found.value
+            Option.none:
+                pass
+        if name.len == 0:
+            return false
+        if name.starts_with("___lldb_unnamed_symbol_"):
+            return false
+        if name.equal("clock_nanosleep") or name.equal("__nanosleep") or name.equal("nanosleep"):
+            return false
+
+        var source_path = ""
+        let source = read(obj).get_object("source")
+        if source != null:
+            match read(source).get_string("path"):
+                Option.some as found:
+                    source_path = found.value
+                Option.none:
+                    pass
+        if source_path.starts_with("/usr/src/debug/"):
+            return true
+        if source_path.len > 0 and not source_path.starts_with("/usr/lib/") and not source_path.starts_with("/lib/"):
+            return true
+        return true
+
+
+function pause_frame_summary(frame: json.Value, include_ip: bool) -> string.String:
+    let obj = frame.as_object()
+    var name = string.String.from_str("(anonymous)")
+    var ip = string.String.create()
+    var path = string.String.create()
+    var source_name = string.String.create()
+    var location_source = string.String.create()
+    var location = string.String.create()
+    if obj != null:
+        unsafe:
+            match read(obj).get_string("name"):
+                Option.some as found:
+                    name.release()
+                    name = string.String.from_str(found.value)
+                Option.none:
+                    pass
+            match read(obj).get_string("instructionPointerReference"):
+                Option.some as found:
+                    ip.assign(found.value)
+                Option.none:
+                    pass
+            let source = read(obj).get_object("source")
+            if source != null:
+                match read(source).get_string("path"):
+                    Option.some as found:
+                        path.assign(found.value)
+                    Option.none:
+                        pass
+                match read(source).get_string("name"):
+                    Option.some as found:
+                        source_name.assign(found.value)
+                    Option.none:
+                        pass
+            var line: ptr_uint = 0
+            match read(obj).get_number("line"):
+                Option.some as found:
+                    if found.value > 0.0:
+                        line = ptr_uint<-int<-found.value
+                Option.none:
+                    pass
+
+            if path.len() > 0 and not path.as_str().contains_substring("`"):
+                location_source.assign(path.as_str())
+            else if source_name.len() > 0:
+                location_source.assign(source_name.as_str())
+            else if path.len() > 0:
+                location_source.assign(path.as_str())
+            else:
+                location_source.assign(ip.as_str())
+
+            if location_source.len() == 0:
+                location.assign("(unknown)")
+            else:
+                var suffix = string.String.create()
+                suffix.append(":")
+                suffix.append_format(f"#{line}")
+                if line > 0 and not location_source.as_str().contains_substring(suffix.as_str()):
+                    location.assign(location_source.as_str())
+                    location.append(suffix.as_str())
+                else:
+                    location.assign(location_source.as_str())
+                suffix.release()
+
+    var result = string.String.create()
+    result.append(name.as_str())
+    result.append(" @ ")
+    result.append(location.as_str())
+    if include_ip and ip.len() > 0 and not location.as_str().equal(ip.as_str()):
+        result.append(" ip=")
+        result.append(ip.as_str())
+    name.release()
+    ip.release()
+    path.release()
+    source_name.release()
+    location_source.release()
+    location.release()
+    return result
+
+
+## The `modules` fallback: try each reported module's sidecar.
+function load_debug_map_from_modules(ses: ref[session.Session], body: json.Value) -> void:
+    if ses.debug_map != null:
+        return
+    let obj = body.as_object()
+    if obj == null:
+        return
+    unsafe:
+        let modules = read(obj).get_array("modules")
+        if modules == null:
+            return
+        var i: ptr_uint = 0
+        while i < read(modules).len():
+            let module_ptr = read(modules).get(i)
+            if module_ptr != null:
+                let module_obj = read(module_ptr).as_object()
+                if module_obj != null:
+                    var candidate = ""
+                    match read(module_obj).get_string("path"):
+                        Option.some as found:
+                            candidate = found.value
+                        Option.none:
+                            match read(module_obj).get_string("symbolFilePath"):
+                                Option.some as found:
+                                    candidate = found.value
+                                Option.none:
+                                    pass
+                    if candidate.len > 0:
+                        var absolute = absolute_path(candidate)
+                        defer: absolute.release()
+                        match debug_map.load_for_binary(absolute.as_str()):
+                            Option.some as loaded:
+                                ses.set_debug_map(loaded.value)
+                                return
+                            Option.none:
+                                pass
+            i += 1
+
+
+# =============================================================================
+#  Response and argument rewriters
+# =============================================================================
+
+## Rewrite a forwarded response's body text for the debug map (stackTrace
+## frames, scope references, variable names).
+function rewrite_forward_response(ses: ref[session.Session], pending: lldb.PendingRequest, body: ref[string.String]) -> void:
+    if ses.debug_map == null:
+        return
+    let command = pending.command.as_str()
+    if command.equal("stackTrace"):
+        rewrite_stack_trace_body(ses, body)
+    else if command.equal("scopes"):
+        rewrite_scopes_body(ses, pending, body)
+    else if command.equal("variables"):
+        rewrite_variables_body(ses, pending, body)
+
+
+function rewrite_stack_trace_body(ses: ref[session.Session], body: ref[string.String]) -> void:
+    match json.parse(body.as_str()):
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+        Result.success as parsed:
+            defer: json.release_value(parsed.value)
+            let obj = parsed.value.as_object()
+            if obj != null:
+                unsafe:
+                    let frames = read(obj).get_array("stackFrames")
+                    if frames != null:
+                        ses.frame_functions.clear()
+                        var i: ptr_uint = 0
+                        while i < read(frames).len():
+                            let frame_ptr = read(frames).get(i)
+                            if frame_ptr != null:
+                                let frame_obj = read(frame_ptr).as_object()
+                                if frame_obj != null:
+                                    match read(frame_obj).get_string("name"):
+                                        Option.some as name:
+                                            let map_ptr = ses.debug_map
+                                            if map_ptr != null:
+                                                let entry_fn = debug_map.function_for_c_name(ref_of(read(map_ptr)), name.value)
+                                                if entry_fn != null:
+                                                    read(frame_obj).set("name", json.string_from_str(read(entry_fn).name.as_str()))
+                                                    match number_field_from_object(frame_obj, "id"):
+                                                        Option.some as frame_id:
+                                                            ses.frame_functions.set(frame_id.value, entry_fn)
+                                                        Option.none:
+                                                            pass
+                                        Option.none:
+                                            pass
+                            i += 1
+            var rendered = json.render(parsed.value)
+            match rendered:
+                Result.success as text:
+                    body.assign(text.value.as_str())
+                    text.value.release()
+                Result.failure as failure:
+                    var error = failure.error
+                    error.release()
+
+
+function rewrite_scopes_body(ses: ref[session.Session], pending: lldb.PendingRequest, body: ref[string.String]) -> void:
+    var frame_id: ptr_uint = 0
+    var has_frame = false
+    match json.parse(pending.arguments_text.as_str()):
+        Result.success as parsed:
+            defer: json.release_value(parsed.value)
+            match number_field(parsed.value, "frameId"):
+                Option.some as found:
+                    frame_id = found.value
+                    has_frame = true
+                Option.none:
+                    pass
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+    if not has_frame:
+        return
+
+    var function_ptr: ptr[debug_map.DebugFunction]? = null
+    let recorded = ses.frame_functions.get(frame_id)
+    if recorded != null:
+        function_ptr = unsafe: read(recorded)
+
+    match json.parse(body.as_str()):
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+        Result.success as parsed:
+            defer: json.release_value(parsed.value)
+            let obj = parsed.value.as_object()
+            if obj != null:
+                unsafe:
+                    let scopes = read(obj).get_array("scopes")
+                    if scopes != null:
+                        var i: ptr_uint = 0
+                        while i < read(scopes).len():
+                            let scope_ptr = read(scopes).get(i)
+                            if scope_ptr != null:
+                                let scope_obj = read(scope_ptr).as_object()
+                                if scope_obj != null:
+                                    var reference: ptr_uint = 0
+                                    var has_reference = false
+                                    match number_field_from_object(scope_obj, "variablesReference"):
+                                        Option.some as found:
+                                            reference = found.value
+                                            has_reference = true
+                                        Option.none:
+                                            pass
+                                    if has_reference:
+                                        var is_locals = false
+                                        match read(scope_obj).get_string("name"):
+                                            Option.some as name:
+                                                is_locals = name.value.equal("Locals")
+                                            Option.none:
+                                                pass
+                                        ses.variable_contexts.set(reference, session.VariableContext(
+                                            frame_id = frame_id,
+                                            function = function_ptr,
+                                            has_function = is_locals and function_ptr != null,
+                                        ))
+                            i += 1
+            var rendered = json.render(parsed.value)
+            match rendered:
+                Result.success as text:
+                    body.assign(text.value.as_str())
+                    text.value.release()
+                Result.failure as failure:
+                    var error = failure.error
+                    error.release()
+
+
+function rewrite_variables_body(ses: ref[session.Session], pending: lldb.PendingRequest, body: ref[string.String]) -> void:
+    var reference: ptr_uint = 0
+    var has_reference = false
+    match json.parse(pending.arguments_text.as_str()):
+        Result.success as parsed:
+            defer: json.release_value(parsed.value)
+            match number_field(parsed.value, "variablesReference"):
+                Option.some as found:
+                    reference = found.value
+                    has_reference = true
+                Option.none:
+                    pass
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+    if not has_reference:
+        return
+
+    let context = ses.variable_contexts.get(reference)
+    if context == null or not unsafe: read(context).has_function:
+        return
+    let function_ptr = unsafe: read(context).function
+
+    match json.parse(body.as_str()):
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+        Result.success as parsed:
+            defer: json.release_value(parsed.value)
+            let obj = parsed.value.as_object()
+            if obj == null:
+                return
+            unsafe:
+                let variables = read(obj).get_array("variables")
+                if variables == null:
+                    return
+                var result = string.String.with_capacity(256)
+                result.append("{\"variables\":[")
+                var first = true
+                var i: ptr_uint = 0
+                while i < read(variables).len():
+                    let variable_ptr = read(variables).get(i)
+                    if variable_ptr != null:
+                        let variable_obj = read(variable_ptr).as_object()
+                        if variable_obj != null:
+                            var raw_name = ""
+                            match read(variable_obj).get_string("name"):
+                                Option.some as name:
+                                    raw_name = name.value
+                                Option.none:
+                                    pass
+                            var keep = true
+                            let map_ptr = ses.debug_map
+                            if map_ptr != null and function_ptr != null:
+                                let entry = debug_map.variable_for(ref_of(read(map_ptr)), read(function_ptr).linkage_name.as_str(), raw_name)
+                                if entry != null:
+                                    read(variable_obj).set("name", json.string_from_str(read(entry).name.as_str()))
+                                else if raw_name.starts_with("__mt_"):
+                                    keep = false
+                            if keep:
+                                if not first:
+                                    result.append(",")
+                                first = false
+                                append_rendered(ref_of(result), read(variable_ptr))
+                    i += 1
+                result.append("]}")
+                body.assign(result.as_str())
+                result.release()
+
+
+## evaluate/setExpression argument rewriting (expression and optionally value).
+function rewrite_expression_arguments(ses: ref[session.Session], arguments: json.Value, include_value: bool) -> string.String:
+    var frame_id: ptr_uint = 0
+    match number_field(arguments, "frameId"):
+        Option.some as found:
+            frame_id = found.value
+        Option.none:
+            pass
+    var expression = rewrite_expression_for_frame(ses, string_arg(arguments, "expression"), frame_id)
+    var value = string.String.create()
+    if include_value:
+        value = rewrite_expression_for_frame(ses, string_arg(arguments, "value"), frame_id)
+    var result = render_replaced_two(arguments, "expression", expression.as_str(), include_value, "value", value.as_str())
+    expression.release()
+    value.release()
+    return result
+
+
+function rewrite_set_variable_arguments(ses: ref[session.Session], arguments: json.Value) -> string.String:
+    var function_ptr: ptr[debug_map.DebugFunction]? = null
+    match number_field(arguments, "variablesReference"):
+        Option.some as found:
+            let context = ses.variable_contexts.get(found.value)
+            if context != null and unsafe: read(context).has_function:
+                function_ptr = unsafe: read(context).function
+        Option.none:
+            pass
+    var name = string.String.from_str(string_arg(arguments, "name"))
+    if function_ptr != null:
+        let entry = source_variable_entry(ses, function_ptr, name.as_str())
+        if entry != null:
+            name.release()
+            name = string.String.from_str(unsafe: read(entry).linkage_name.as_str())
+    var frame_id: ptr_uint = 0
+    match number_field(arguments, "frameId"):
+        Option.some as found:
+            frame_id = found.value
+        Option.none:
+            pass
+    var value = rewrite_expression_for_frame(ses, string_arg(arguments, "value"), frame_id)
+    var result = render_replaced_two(arguments, "name", name.as_str(), true, "value", value.as_str())
+    name.release()
+    value.release()
+    return result
+
+
+function rewrite_data_breakpoint_arguments(ses: ref[session.Session], arguments: json.Value) -> string.String:
+    var name = string.String.from_str(string_arg(arguments, "name"))
+    if has_key(arguments, "variablesReference"):
+        match number_field(arguments, "variablesReference"):
+            Option.some as found:
+                let context = ses.variable_contexts.get(found.value)
+                if context != null and unsafe: read(context).has_function:
+                    let function_ptr = unsafe: read(context).function
+                    if function_ptr != null:
+                        let entry = source_variable_entry(ses, function_ptr, name.as_str())
+                        if entry != null:
+                            name.release()
+                            name = string.String.from_str(unsafe: read(entry).linkage_name.as_str())
+            Option.none:
+                pass
+    else:
+        var frame_id: ptr_uint = 0
+        match number_field(arguments, "frameId"):
+            Option.some as found:
+                frame_id = found.value
+            Option.none:
+                pass
+        var rewritten = rewrite_expression_for_frame(ses, name.as_str(), frame_id)
+        name.release()
+        name = rewritten
+    var result = render_replaced_two(arguments, "name", name.as_str(), false, "", "")
+    name.release()
+    return result
+
+
+## Rewrite identifiers through the function's variable map (the host's
+## `rewrite_expression_for_function`).
+function rewrite_expression_for_frame(ses: ref[session.Session], expression: str, frame_id: ptr_uint) -> string.String:
+    if expression.len == 0:
+        return string.String.from_str(expression)
+    let function_ptr = ses.frame_functions.get(frame_id)
+    if function_ptr == null:
+        return string.String.from_str(expression)
+    let map_ptr = ses.debug_map
+    if map_ptr == null:
+        return string.String.from_str(expression)
+
+    unsafe:
+        let function_value = read(read(function_ptr))
+        let linkage = function_value.linkage_name.as_str()
+        var result = string.String.with_capacity(expression.len + 16)
+        var index: ptr_uint = 0
+        while index < expression.len:
+            let ch = expression.byte_at(index)
+            if ch == '"' or ch == '\'':
+                index = copy_quoted_segment(expression, index, ref_of(result))
+                continue
+            if identifier_start_char(ch):
+                let start = index
+                index += 1
+                while index < expression.len and identifier_continue_char(expression.byte_at(index)):
+                    index += 1
+                let identifier = expression.slice(start, index - start)
+                if accessor_identifier(expression, start):
+                    result.append(identifier)
+                else:
+                    let entry = debug_map.source_variable_for(ref_of(read(map_ptr)), linkage, identifier)
+                    if entry != null:
+                        result.append(read(entry).linkage_name.as_str())
+                    else:
+                        result.append(identifier)
+                continue
+            result.push_byte(ch)
+            index += 1
+        return result
+
+
+function copy_quoted_segment(expression: str, index: ptr_uint, target: ref[string.String]) -> ptr_uint:
+    let quote = expression.byte_at(index)
+    target.push_byte(quote)
+    var i = index + 1
+    while i < expression.len:
+        let ch = expression.byte_at(i)
+        target.push_byte(ch)
+        i += 1
+        if ch == 92 and i < expression.len:
+            target.push_byte(expression.byte_at(i))
+            i += 1
+            continue
+        if ch == quote:
+            break
+    return i
+
+
+function accessor_identifier(expression: str, index: ptr_uint) -> bool:
+    var previous: ptr_int = ptr_int<-index - 1
+    while previous >= 0 and whitespace_char(expression.byte_at(ptr_uint<-previous)):
+        previous -= 1
+    if previous < 0:
+        return false
+    if expression.byte_at(ptr_uint<-previous) == '.':
+        return true
+    if expression.byte_at(ptr_uint<-previous) != '>':
+        return false
+    previous -= 1
+    while previous >= 0 and whitespace_char(expression.byte_at(ptr_uint<-previous)):
+        previous -= 1
+    return previous >= 0 and expression.byte_at(ptr_uint<-previous) == '-'
+
+
+function identifier_start_char(value: ubyte) -> bool:
+    return (value >= 'A' and value <= 'Z') or (value >= 'a' and value <= 'z') or value == '_'
+
+
+function identifier_continue_char(value: ubyte) -> bool:
+    return identifier_start_char(value) or (value >= '0' and value <= '9')
+
+
+function whitespace_char(value: ubyte) -> bool:
+    return value == 32 or value == 9 or value == 10 or value == 13
+
+
+## The source path recorded in a setBreakpoints request's arguments.
+function source_path_from_arguments(arguments_text: str) -> string.String:
+    match json.parse(arguments_text):
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+        Result.success as parsed:
+            defer: json.release_value(parsed.value)
+            let obj = parsed.value.as_object()
+            if obj != null:
+                unsafe:
+                    let source = read(obj).get_object("source")
+                    if source != null:
+                        match read(source).get_string("path"):
+                            Option.some as found:
+                                return string.String.from_str(found.value)
+                            Option.none:
+                                pass
+    return string.String.create()
+
+
+## The variable entry for a source name through the debug map.
+function source_variable_entry(ses: ref[session.Session], function_ptr: ptr[debug_map.DebugFunction], source_name: str) -> ptr[debug_map.DebugEntry]?:
+    let map_ptr = ses.debug_map
+    if map_ptr == null:
+        return null
+    return debug_map.source_variable_for(unsafe: ref_of(read(map_ptr)), unsafe: read(function_ptr).linkage_name.as_str(), source_name)
+
+
+## Render request arguments with up to two keys replaced by rewritten values.
+function render_replaced_two(
+    arguments: json.Value,
+    key_a: str,
+    replacement_a: str,
+    include_b: bool,
+    key_b: str,
+    replacement_b: str,
+) -> string.String:
+    let obj = arguments.as_object()
+    if obj == null:
+        return string.String.create()
+    var result = string.String.with_capacity(128)
+    result.append("{")
+    var first = true
+    unsafe:
+        let entries = read(obj).entries
+        var i: ptr_uint = 0
+        while i < entries.len():
+            let entry = entries.get(i) else:
+                break
+            let key = read(entry).key.as_str()
+            let skip = key.equal(key_a) or (include_b and key.equal(key_b))
+            if not skip:
+                if not first:
+                    result.append(",")
+                first = false
+                result.append("\"")
+                proto.append_escaped(ref_of(result), key)
+                result.append("\":")
+                append_rendered(ref_of(result), read(entry).value)
+            i += 1
+    if has_key(arguments, key_a):
+        if not first:
+            result.append(",")
+        first = false
+        result.append("\"")
+        proto.append_escaped(ref_of(result), key_a)
+        result.append("\":")
+        append_json_string(ref_of(result), replacement_a)
+    if include_b and has_key(arguments, key_b):
+        if not first:
+            result.append(",")
+        first = false
+        result.append("\"")
+        proto.append_escaped(ref_of(result), key_b)
+        result.append("\":")
+        append_json_string(ref_of(result), replacement_b)
+    result.append("}")
+    return result
+
+
+function append_json_string(target: ref[string.String], text: str) -> void:
+    target.append("\"")
+    proto.append_escaped(target, text)
+    target.append("\"")
+
+
+function has_key(value: json.Value, key: str) -> bool:
+    let obj = value.as_object()
+    if obj == null:
+        return false
+    unsafe:
+        return read(obj).get(key) != null
+
+
+## `number_field` for an object pointer (the accessors below work on Values).
+function number_field_from_object(obj: ptr[json.Object], key: str) -> Option[ptr_uint]:
+    unsafe:
+        let field_ptr = read(obj).get(key)
+        if field_ptr == null:
+            return Option[ptr_uint].none
+        match read(field_ptr).as_number():
+            Option.some as found:
+                return Option[ptr_uint].some(value = ptr_uint<-int<-found.value)
+            Option.none:
+                return Option[ptr_uint].none
+
+
+## One adapter capability from its initialize response.
+function capability_flag(backend: ref[lldb.Backend], key: str) -> bool:
+    if backend.capabilities_text.len() == 0:
+        return false
+    match json.parse(backend.capabilities_text.as_str()):
+        Result.success as parsed:
+            defer: json.release_value(parsed.value)
+            let obj = parsed.value.as_object()
+            if obj != null:
+                unsafe:
+                    match read(obj).get_boolean(key):
+                        Option.some as value:
+                            return value.value
+                        Option.none:
+                            pass
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+    return false
+
+
+## Syntactic absolute path (`File.expand_path`).
+function absolute_path(path_text: str) -> string.String:
+    if path_ops.is_absolute(path_text):
+        return path_ops.normalize_separators(path_text)
+    var cwd = string.String.create()
+    defer: cwd.release()
+    match fs_mod.current_directory():
+        Result.success as found:
+            cwd.assign(found.value.as_str())
+            found.value.release()
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+            cwd.assign(".")
+    return path_ops.join(cwd.as_str(), path_text)
 
 
 # =============================================================================
