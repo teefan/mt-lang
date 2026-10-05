@@ -218,6 +218,44 @@ class DapClient
     end
   end
 
+  ## Wait for a `stopped` event with the given reason, collecting everything
+  ## else (used with real lldb-dap, where stops arrive unsolicited).
+  def wait_for_stopped_reason(reason, timeout: 20)
+    Timeout.timeout(timeout) do
+      loop do
+        message = read_message
+        return nil if message.nil?
+        if message["type"] == "request"
+          answer_server_request(message)
+        elsif message["type"] == "event"
+          @events << [message["event"], message["body"]]
+          next unless message["event"] == "stopped"
+          return message if message.dig("body", "reason") == reason
+        end
+      end
+    end
+  rescue Timeout::Error
+    nil
+  end
+
+  ## Wait for a named event, collecting everything else.
+  def wait_for_event(event_name, timeout: 20)
+    Timeout.timeout(timeout) do
+      loop do
+        message = read_message
+        return nil if message.nil?
+        if message["type"] == "request"
+          answer_server_request(message)
+        elsif message["type"] == "event"
+          @events << [message["event"], message["body"]]
+          return message if message["event"] == event_name
+        end
+      end
+    end
+  rescue Timeout::Error
+    nil
+  end
+
   def close
     @stdin.close rescue nil
     sleep 0.2
@@ -230,6 +268,17 @@ class DapClient
   ## Answer a server->client request the way a real client does.
   def answer_server_request(message)
     @reverse_requests += 1
+    body = {}
+    if message["command"] == "runInTerminal"
+      args = message.dig("arguments", "args") || []
+      cwd = message.dig("arguments", "cwd")
+      begin
+        pid = Process.spawn(*args, chdir: (cwd && !cwd.empty? ? cwd : nil), out: File::NULL, err: File::NULL)
+        body = { "processId" => pid, "shellProcessId" => pid }
+      rescue StandardError
+        body = { "processId" => 0 }
+      end
+    end
     @seq += 1
     write({
       "seq" => @seq,
@@ -237,7 +286,7 @@ class DapClient
       "request_seq" => message["seq"],
       "command" => message["command"],
       "success" => true,
-      "body" => { "processId" => 4321 },
+      "body" => body,
     })
   end
 
@@ -406,6 +455,54 @@ def run_session(server, workdir, program_binary)
   out
 end
 
+## Real lldb-dap end-to-end: each server builds the `.mt` source itself (so
+## its own debug map is in play) and drives a breakpoint session.  Skipped with
+## a loud row when lldb-dap is not on PATH.
+def run_real_lldb_session(server, workdir, source, into)
+  adapter = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).map { |d| File.join(d, "lldb-dap") }
+               .find { |p| File.executable?(p) }
+  unless adapter
+    into["lldb-real skipped"] = "lldb-dap not found on PATH"
+    return
+  end
+
+  client = DapClient.new(server_command(server, backend: "lldb-dap"), workdir)
+  begin
+    r = client.request("initialize", { "adapterID" => "milk-tea", "clientID" => "dap_smoke" })
+    into["lldb-real initialize"] = summarize(r)
+    into["lldb-real launch(.mt)"] = summarize(client.request("launch", { "program" => source, "backend" => "lldb-dap", "stopOnEntry" => false }))
+    into["lldb-real setBreakpoints"] = summarize(client.request("setBreakpoints", { "source" => { "path" => source }, "breakpoints" => [{ "line" => 4 }] }))
+    into["lldb-real configurationDone"] = summarize(client.request("configurationDone", {}))
+    stop = client.wait_for_stopped_reason("breakpoint", timeout: 25)
+    into["lldb-real breakpoint stop"] = stop ? "breakpoint" : "none"
+    thread_id = stop&.dig("body", "threadId") || 1
+    stack = client.request("stackTrace", { "threadId" => thread_id })
+    frame = (stack.dig("body", "stackFrames") || []).first || {}
+    into["lldb-real frame0 name"] = frame["name"]
+    into["lldb-real frame0 source"] = File.basename(frame.dig("source", "path").to_s)
+    frame_id = frame["id"] || 1
+    scopes = client.request("scopes", { "frameId" => frame_id })
+    locals_ref = (scopes.dig("body", "scopes") || []).first&.dig("variablesReference")
+    variables = locals_ref ? client.request("variables", { "variablesReference" => locals_ref }) : nil
+    names = Array(variables&.dig("body", "variables")).map { |v| v["name"] }.sort.join(",")
+    into["lldb-real variable names"] = names
+    into["lldb-real evaluate"] = summarize(client.request("evaluate", { "expression" => "a", "frameId" => frame_id }))
+    into["lldb-real next"] = summarize(client.request("next", { "threadId" => thread_id }))
+    client.wait_for_stopped_reason("step", timeout: 10)
+    into["lldb-real continue"] = summarize(client.request("continue", { "threadId" => thread_id }))
+    client.wait_for_event("terminated", timeout: 15)
+    client.drain(0.5)
+    into["lldb-real terminated"] = client.events.any? { |e, _| e == "terminated" }
+    into["lldb-real exited"] = client.events.any? { |e, _| e == "exited" }
+    into["lldb-real disconnect"] = summarize(client.request("disconnect", {}))
+  rescue StandardError => e
+    into["lldb-real exception"] = "exception: #{e.message[0, 80]}"
+  ensure
+    client.close
+    into["lldb-real stderr"] = client.stderr_lines.first(3).map(&:strip).reject(&:empty?)
+  end
+end
+
 options = { server: "both", json: nil, verbose: false, self_bin: SELF_SERVER }
 OptionParser.new do |opts|
   opts.on("--server SERVER", %w[host self both]) { |v| options[:server] = v }
@@ -432,6 +529,7 @@ Dir.mktmpdir("dap-smoke") do |dir|
     results[server] = run_session(server, workdir, binary)
     run_launch_session(server, workdir, File.join("src", "main.mt"), "launch(.mt)", results[server])
     run_fake_backend_session(server, workdir, binary, fake_path, results[server])
+    run_real_lldb_session(server, workdir, File.join(workdir, "src", "main.mt"), results[server])
   end
 end
 

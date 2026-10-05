@@ -627,6 +627,9 @@ function expire_pendings(ses: ref[session.Session], backend: ref[lldb.Backend]) 
                         message.release()
                     if pending.kind == lldb.KIND_START:
                         backend.start_pending = false
+                        if backend.has_deferred_config:
+                            backend.has_deferred_config = false
+                            proceed_configuration(ses, backend, backend.deferred_config_client_seq)
                     pending.command.release()
                     pending.arguments_text.release()
                 Option.none:

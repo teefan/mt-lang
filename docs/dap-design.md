@@ -1,18 +1,17 @@
 # Self-Host DAP Architecture
 
-Status: **Phase 1 implementation — functional process backend (26 commands),
-audited against the host per request (§10).**  Phase 2 (lldb-dap bridge) is
-**feasible and unstarted** (§9): `std/libuv.mt` exposes `uv_poll_*` and
-`std/async` a libuv runtime, so one event loop can multiplex stdin and the
-adapter's stdout.  The VS Code extension's default backend is `lldb-dap`, which
-is why stepping/evaluate/attach currently answer with the process backend's
-errors.
-Last updated: 2026-09-27 (§10 audit; §9 feasibility re-assessed).
-7 modules, 1,051 lines, 26 commands dispatched (15 implemented, 9 error
-stubs, 2 no-ops)
-implementations.
-Phase 2 (lldb-dap bridge) was assessed as not feasible without multi-threaded
-I/O; that assessment is superseded by §9 (libuv poll is available).
+Status: **complete against the host.**  The process backend and the lldb-dap
+bridge (the VS Code extension's default) are implemented and audited per
+request: `tools/dap_smoke.rb` reports **zero differing rows** across the
+process sessions and the lldb sessions (the embedded fake adapter and a real
+`/usr/bin/lldb-dap`), with one documented self-better row — the debug-map frame
+name maps on the self where the host loses its map on a program-cache hit.
+The live VS Code F5 check is the remaining manual step; the extension's argv
+order is fixed (`dap` first, then `--backend`/`--adapter-path`).
+Last updated: 2026-10-04 (session 34 — the bridge, the unified loop, build-on-launch,
+the debug map and the frame/variable/expression rewriters).
+9 modules, ~4,540 lines plus the shared `mtc/debug_map.mt` (829) — 26 commands
+dispatched.
 
 ## 0. Design Principles
 
@@ -20,19 +19,22 @@ I/O; that assessment is superseded by §9 (libuv poll is available).
    separate executable.  It lives in `projects/mtc/` and bootstraps through the
    existing 3-stage pipeline.
 
-2. **Single-threaded message loop.** The compiler's analysis pipeline is
-   single-threaded.  The DAP follows the same pattern as the LSP: one
-   synchronous `read → dispatch → respond` loop.  Child process I/O is
-   polled between message dispatches (non-blocking reads with short timeouts).
+2. **One single-threaded event loop.**  A libuv loop multiplexes the client's
+   fd 0, the debuggee's stdout/stderr and the adapter's stdout (poll handles)
+   plus a 100 ms wake-up timer; poll callbacks only append bytes to framers,
+   and requests are dispatched and children drained between loop turns.  There
+   are no threads beyond the ones `std.process` starts for children.
 
-3. **Separate-module architecture.** Following the LSP's successful pattern,
-   each DAP concern lives in its own module.  No single file exceeds ~200 lines.
+3. **Separate-module architecture.** Following the LSP's pattern, each DAP
+   concern lives in its own module.  The bridge policy (`lldb_policy.mt`,
+   ~2.3k lines) is the one large module — its state machine threads a single
+   `Backend` state through the handshake, and splitting it would mean moving
+   shared context through more types.
 
-4. **Process backend only (Phase 1).** The "process" backend builds and runs
-   Milk Tea programs directly via `std.process.spawn`.  Breakpoints are
-   registered but unverified (no debugger attached).  This provides the core
-   DAP experience — run, pause, continue, view output, terminate — without
-   requiring the lldb-dap subprocess bridge.
+4. **Two backends.** The "process" backend builds and runs Milk Tea programs
+   directly via `std.process` (breakpoints registered but unverified); the
+   "lldb-dap" backend drives the adapter as a child process, forwarding the
+   command surface and rewriting frames/variables through the debug map.
 
 5. **Source-only.** All DAP code is source-only `.mt` files.  No new vendored
    libraries beyond what already ships with the compiler.
@@ -42,7 +44,7 @@ I/O; that assessment is superseded by §9 (libuv poll is available).
 ## 1. Entry Point — `mtc dap`
 
 ```
-mtc dap [--stdio]
+mtc dap [--stdio] [--backend process|lldb-dap] [--adapter-path PATH]
 ```
 
 The `dap` subcommand starts a DAP server over stdio.  It reads DAP messages
@@ -60,16 +62,18 @@ if cmd == "dap":
 
 ```
 projects/mtc/src/mtc/
-  lsp/              ← existing (37 modules)
-  dap/              ← new (7 modules, 1,051 lines)
-    protocol.mt     ← DAP Content-Length framing, read/write
-    server.mt       ← message loop, child I/O polling, exit detection
-    session.mt      ← launch state, breakpoints, config tracking
-    handlers.mt     ← 26-command dispatch: 15 implemented, 9 error stubs,
-                       2 no-ops (loadedSources/cancel); the audit adds the rest
+  lsp/                ← existing (42 modules)
+  debug_map.mt        ← the host-compatible <binary>.mtdbg.json writer/loader
+  dap/                ← 9 modules, ~4,540 lines
+    protocol.mt       ← Content-Length framer over raw fd reads + writer
+    server.mt         ← the libuv loop, poll handles, dispatch draining
+    session.mt        ← launch state, breakpoints, debug-map context, temp dirs
+    handlers.mt       ← 26-command dispatch (process branches + lldb routing)
     process_backend.mt ← child process I/O polling + output events
-    wire.mt         ← write_response, write_event, write_error
-    utilities.mt    ← path resolution, helper functions
+    wire.mt           ← write_response, write_event, write_error (+command forms)
+    utilities.mt      ← launch resolution (build-on-launch) + helpers
+    lldb_backend.mt   ← adapter transport: spawn, framing, pending tables
+    lldb_policy.mt    ← bridge policy: handshake, events, rewrites, sync
 ```
 
 ### 2.1 Module dependencies
@@ -77,11 +81,14 @@ projects/mtc/src/mtc/
 ```
   main.mt
     └── dap/server.mt
-        ├── dap/protocol.mt          (stdio + JSON)
-        ├── dap/session.mt           (state + breakpoints)
+        ├── dap/protocol.mt          (fd framer + JSON)
+        ├── dap/session.mt           (state + breakpoints + debug map)
         ├── dap/handlers.mt          (request dispatch)
-        │   └── dap/process_backend.mt (child process I/O)
-        │   └── dap/utilities.mt       (path resolution)
+        │   ├── dap/process_backend.mt (child process I/O)
+        │   ├── dap/utilities.mt       (launch resolution)
+        │   └── dap/lldb_policy.mt     (bridge policy)
+        │       └── dap/lldb_backend.mt (adapter transport)
+        │           └── dap/protocol.mt
         └── dap/wire.mt              (response/event writing)
 ```
 
@@ -131,7 +138,11 @@ Client                Server
 
 ---
 
-## 5. Handler Surface (Phase 1 — Process Backend)
+## 5. Handler Surface (Process Backend Behavior)
+
+With `lldb-dap` active every command below forwards to the adapter instead
+(§9) — the table describes what the process backend does, which is also the
+behavior the smoke compares for the `--backend=process` session.
 
 | Handler | Implementation |
 |---------|---------------|
@@ -161,7 +172,8 @@ Client                Server
 | `setVariable` | Error response |
 | `setExpression` | Error response |
 
-**15 full implementations, 8 error responses, 2 no-ops.**
+**15 full implementations, 8 error responses, 2 no-ops** (all of them equal to
+the host's process-backend answers on `dap_smoke`).
 
 ---
 
@@ -199,56 +211,39 @@ of the existing `projects/mtc` package.  No changes to `tools/bootstrap.sh`.
 
 ---
 
-## 8. Comparison: Ruby DAP vs Self-Host DAP (Phase 1)
+## 8. Comparison: Ruby DAP vs Self-Host DAP
 
-| Aspect | Ruby DAP | Self-Host DAP (Phase 1) |
-|--------|----------|--------------------------|
-| Lines | ~2,169 (12 files) | 1,051 (7 modules) |
-| Threads | Multi-threaded (reader + runtime + lldb bridge) | Single-threaded |
-| Dispatch | 7 mixin modules | if/else chain |
-| JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / raw-string rendering |
-| Transport | Stdio Content-Length | Same (`read_char()` loop) |
-| Backends | "process" + "lldb-dap" | "process" only |
-| Handlers | 29 methods | 29 dispatched |
-| Child process | Background thread `Open3.popen3` | Non-blocking `read_stdout(0)` polling |
-| Breakpoints | Verified via lldb-dap | Unverified (registered only) |
-| Variable inspection | Via lldb-dap | Empty / unsupported |
-| Signal control | `Process.kill("STOP"/"CONT")` | `child.kill(SIGSTOP/SIGCONT)` |
-| Adapter capabilities | Merged with lldb-dap's | Static list (identical set for the process backend) |
+| Aspect | Ruby DAP | Self-Host DAP |
+|--------|----------|---------------|
+| Lines | ~2,170 (12 files + tooling/debug_map) | ~5,370 (9 `dap/` modules + `mtc/debug_map.mt`) |
+| Threads | Multi-threaded (reader + runtime + adapter bridge) | One libuv loop (poll handles + 100 ms timer) |
+| Dispatch | 7 mixin modules | if/else chain (`dispatchers`, `dispatch_lldb`) |
+| JSON | `JSON.parse` / `JSON.dump` | `std.json.parse` / rendering |
+| Transport | Stdio Content-Length | Same, over raw fd reads (`std.process.read_fd`) |
+| Backends | "process" + "lldb-dap" | "process" + "lldb-dap" |
+| Child process | Background thread `Open3.popen3` | `std.process` pipes, drained between loop turns |
+| Breakpoints | Verified via lldb-dap, synced at configurationDone (+ changed events) | Same |
+| Variable inspection | debug-map renames via lldb-dap | Same (token-scanner expression rewriting) |
+| Reverse requests | `runInTerminal` etc. with a 15 s client timeout | Same, answered through the client-response table |
+| Deliberate difference | — | the binary cache carries the debug-map sidecar, so frame names still map on cached builds (the host skips the map on a program-cache hit; smoke row `lldb-real frame0 name`: self `add`, host `main_add`) |
 
 ---
 
-## 9. Phase 2 — lldb-dap Bridge (Re-assessed: feasible)
+## 9. The lldb-dap Bridge (landed)
 
-The lldb-dap backend requires three concurrent I/O operations:
-1. Reading client stdin (blocking `read_char()`)
-2. Reading lldb-dap stdout responses
-3. Reading lldb-dap stdout events (asynchronous)
-
-The Ruby DAP solves this with 3 background threads + Mutex/Queue for
-request/response matching.  In the self-host's single-threaded `read_char()`
-model, stdin is blocking — while waiting for client input, lldb-dap events
-cannot be polled.  While spin-reading lldb-dap responses, client messages
-cannot be received.
-
-Two paths would make this feasible:
-1. Add async/non-blocking `read_char()` support to `std.stdio` (a stdlib change)
-2. Refactor the server loop to use `select`/`poll` on multiple file descriptors
-   (requires OS-level syscall bindings not yet available in Milk Tea)
-
-**Update (2026-09-27): both paths now exist.**  `std/libuv.mt` exposes
-`uv_poll_init` / `uv_poll_start` / `uv_poll_stop`, and `std/async` ships a libuv
-runtime (`runtime_create` / `runtime_poll` / `with_runtime`), so a single
-event loop can watch stdin and lldb-dap's stdout at once; `std/process` also has
-`read_stdout(timeout_ms)` for timed polling of a spawned child.  The bridge is
-therefore implementable without threads: run libuv, poll stdin and the adapter's
-stdout on one loop, keep a `pending` map from adapter request seq to client
-request, forward adapter events as-is, and answer `initialize` with the merged
-capabilities (the host's `lldb_dap_backend.rb` is the 152-line reference).
-
-What the VS Code extension expects: its `backend` setting **defaults to
-`lldb-dap`** for both launch and attach, so until this lands the adapter should
-say so (it now warns instead of silently running the process backend).
+The original feasibility question (three concurrent I/O streams without
+threads) is answered by the libuv loop: `server.mt` polls fd 0 and the
+adapter's stdout (`uv_poll_init/start`, `std/libuv.mt`), with a 100 ms timer
+for deadlines and child draining.  `lldb_backend.mt` owns the transport — the
+adapter child, its stdin framing, the adapter→client pending table (5 s) and
+the client→adapter reverse table (15 s) — and `lldb_policy.mt` owns the
+policy: deferred client `initialize` with merged capabilities, suppressed
+adapter `initialized`, launch/attach forwarding, `configurationDone` gated on
+the start response (and released by its timeout, like the host), breakpoint
+sync with the host's `breakpoint changed` events, event rewriting (SIGSTOP →
+pause, continued dedup), the debug-map frame/variable/expression rewriters and
+pause diagnostics.  `--adapter-path` is honored (`.rb` under ruby), and the
+extension's default `lldb-dap` needs no configuration.
 
 ---
 
@@ -299,9 +294,12 @@ Remaining gaps, in the order they affect the VS Code experience:
 | 2 | **No lldb-dap backend** (the extension's default) — **landed** (session 34, 2026-10-04) | `lldb_backend.mt` spawns the adapter and tracks pending requests (adapter seq → client seq, 5 s deadlines; the reverse table 15 s), and `lldb_policy.mt` drives the handshake — the client initialize response is deferred until the adapter's, capabilities are merged (static set + adapter's, `supportsSetVariable` follows setExpression, `exceptionBreakpointFilters` overridden when non-empty), the adapter's `initialized` is suppressed, launch/attach forward (client-only keys stripped, `program` replaced, `stopOnEntry` forced for launch), `configurationDone` syncs the stored breakpoints first, terminate falls back to disconnect, and unknown commands forward. `tools/dap_smoke.rb` drives both servers against an embedded fake adapter (`runInTerminal` reverse request included) and every row matches |
 | 3 | **No debug map** — **landed** (session 34, 2026-10-04) | `projects/mtc/src/mtc/debug_map.mt` ports the host's writer/loader (`version / functions[] (name, cName, params, locals, sourcePath, line) / binaryPath / programSourcePath`, paths relative to the sidecar; `line: 0` is treated as synthetic and omitted like the host), `build.mt` writes `<output>.mtdbg.json` on the success branch, and `debug_map_test.mt` locks the model + round trip. The sidecar is semantically equal to the host's on the smoke fixture. The bridge loads it at launch (or via the `modules` fallback) and rewrites stackTrace frame names + the frame map, scope variables references, Locals variable names (`__mt_*` dropped) and evaluate/setVariable/setExpression/dataBreakpointInfo expressions through the host's token scanner |
 | 4 | **Pause diagnostics / `modules`-driven map loading** — **landed** (session 34, 2026-10-04) | On a pause-requested stop the bridge issues the 8-level `stackTrace` and emits the host's console `output` summary (informative-frame selection and frame formatting ported from `pause_diagnostics.rb`); the SIGSTOP-exception stop is rewritten to `reason: "pause"`. The `modules` fallback loads a sidecar from the adapter's module list when a stackTrace arrives without one |
-| 5 | **Real lldb-dap end-to-end / VS Code** | the fake-adapter parity is complete; a real `/usr/bin/lldb-dap` session (breakpoint → Milk Tea frame names → locals → stepping → evaluate) and a real VS Code F5 are the remaining verification (session 34 continues) |
+| 5 | **Real lldb-dap end-to-end / VS Code** — **landed** (session 34, 2026-10-04) | the smoke's real section builds the `.mt` source with each server (so each side's own map is exercised) and drives breakpoint → `stopped(breakpoint)` → `stackTrace` (`frame0 name` = `add`, source `main.mt`) → scopes/variables (`a,b,total`) → evaluate → next → continue → `exited`/`terminated`. Every row matches except `lldb-real frame0 name` (self `add`, host `main_add` — the host's program-cache hit skips its map; documented self-better difference). The live VS Code F5 remains a manual check |
 
-Verification for #1..#3: `ruby tools/dap_smoke.rb` must show `launch(.mt)` ok for
-both servers, and a real VS Code session (`bindings/vscode`, `backend:
-lldb-dap`) must stop on a breakpoint and show locals — the same end-to-end check
-`docs/lsp-design.md` requires for user-visible LSP changes.
+Verification: `ruby tools/dap_smoke.rb [--self-bin PATH]` must show zero
+differing rows except the documented one, and a real VS Code session
+(`bindings/vscode`, `backend: lldb-dap`) must stop on a breakpoint and show
+locals — the same end-to-end check `docs/lsp-design.md` requires for
+user-visible LSP changes.  The extension's descriptor factory now emits
+`mtc dap --backend=… [--adapter-path=…] …extraArgs` (the old `unshift` put the
+flag before the subcommand and both CLIs rejected it).

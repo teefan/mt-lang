@@ -131,43 +131,31 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 33 close (2026-10-04) — the **`milkTea/debugInfo`
-remainder** (stage 17) landed its first half: the Header, Tokens, **AST**,
-Parse Errors and Diagnostics sections are **byte-equal to the host** on the
-harness fixture, and the self-only `Workspace` section is gone.  The histogram
-tie order is **not** `ruby_qsort` (the plan's note was wrong): with every key a
-Fixnum, `sort_by` goes through MRI's *uniform* introsort
-(`rb_uniform_intro_sort_2`, `enum.c`), ported in `debug_info.mt` after
-validating the model against MRI on 5000 random count tables (qs6 and glibc's
-`qsort_r` were built and rejected — both differ).  The AST section is a port of
-the host's generic `Data`-member renderer: per-class member tables with the
-host's labels/skip rules, compact reprs, the fn/proc/tuple/dyn nodes the self
-encodes inside `TypeRef`, wildcard arms (`id:_`), statement `when` branches as
-`MatchArm`, module `when` branches as `WhenBranch`, `Data#to_s` format-part
-reprs, and `assign_node_ids`' map sizes (126/126 on the fixture; exact across
-the fixture set).  `c_backend`'s `double_to_str` moved to a shared
-`mtc/float_text.mt` (the debug AST needs Ruby's `Float#to_s`, not C's `%g`).
-**Facts and Bindings remain** (the analyzer's type/value registration order, a
-ValueBinding/binding-id model, `binding_types`).  The harness stays at its 5
-documented entries, the audit at its 4 (the fixture sweep closed 5, added 0),
-and the gates are green: bootstrap fixed point (17 files / 618 tests / 0
-failed), `test/mt` 60/0, examples 49/49, recovery OK, valgrind 0 errors, soak
-10.8 MB/cycle.  Residue: the self's expression *literals* carry no positions,
-so the host's locations for match-arm headers and `RangeExpr` columns differ
-where the pattern/bound is a literal; one node-count difference remains on
-`examples/language_baseline.mt` (6759 vs 6760).  Before it, session 32's
-accuracy pass (qualified enum/flags members, member-before-binding order,
-exact inlay ranges) and the `static:` completion leak fix; sessions 29–31 the
-LSP readiness items and close-out.  **This session also audited this document
-against the tree**: the header's test/linter/harness/formatter/corpus counts,
-the Ledger's stamps and the `lower`/lint measurements were refreshed;
-the audit surfaced **two unported host lint rules (`directional-ffi-arg`,
-`platform-api-drift`) and one unported host fix (`redundant-unsafe`)**,
-now recorded in Track 2; and `docs/lsp-design.md`'s header, harness paragraph
-and comparison rows were brought to the same counts (42 modules / ~29.3k lines,
-30 capabilities, 70+27 corpus, 712/712 formatter).  Earlier sessions' records are in §0k; the
-plan files were consolidated into this document on 2026-10-03 (session 25);
-see *Provenance*.
+Last updated: session 34 close (2026-10-04) — **DAP Track 5 completed**.  The
+self-host's `mtc dap` is at parity with the Ruby host on `tools/dap_smoke.rb`'s
+whole matrix: the process backend (now starting the program at
+`configurationDone`, `terminated`→`exited` with the real exit code) and the
+**lldb-dap bridge** (the VS Code extension's default) against both the
+embedded fake adapter and a real `/usr/bin/lldb-dap`, reverse requests
+(`runInTerminal`) and the debug-map rewriters included.  Landed across six
+commits: `0d1dacab` the debug-map sidecar from the self build
+(`projects/mtc/src/mtc/debug_map.mt` + `debug_map_test.mt`); `02c2c335`
+build-on-launch (`/proc/self/exe build … --profile debug
+--no-debug-guards` into a temp dir, with the binary cache carrying the
+sidecar — the host loses its map on a program-cache hit); `9d3b27db` the
+unified libuv loop (a `Framer` over raw fd reads, poll handle + 100 ms timer,
+callbacks fill / dispatch between turns; spawn moved to `configurationDone`;
+real terminal order); `c3e7ce99` the bridge transport + policy (deferred
+initialize with merged capabilities, launch/attach forwarding, config gating,
+terminate→disconnect fallback, `--adapter-path`); `66d0b555` the frame/
+variable/expression rewrites, breakpoint sync + the host's `breakpoint
+changed` events, pause diagnostics and the `modules` fallback; and this
+commit — the real-lldb smoke section, the extension's argv-order fix and the
+docs.  **Measured: `dap_smoke` zero differing rows except one documented
+self-better row** (`lldb-real frame0 name`: self `add`, host `main_add` —
+the host's cache-hit map loss); valgrind 0 errors on both backends; the live
+VS Code F5 is the one remaining manual check.  Gates: bootstrap fixed point
+(18 files / 618 tests / 0 failed), dap smoke.
 
 **Audited 2026-10-03 (session 25).**  Re-measured on this tree (sources
 unchanged since session 24): completion **235** differing entries (exact),
@@ -645,12 +633,16 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    and routes client responses for reverse requests.  `tools/dap_smoke.rb`
    drives an embedded fake adapter on both servers: every row matches except
    the two the remaining items cover.
-5. **Verification.**  Extend `tools/dap_smoke.rb`: per-server `--backend`,
-   build the smoke program with *each* server (so the self emits the map), and
-   add the lldb section (breakpoint → `stopped` → `stackTrace` shows Milk Tea
-   names → scopes/variables → `evaluate`/`next`/`stepIn`/`stepOut`/`continue` →
-   `modules` → pause console output).  Finish with a real xvfb VS Code session
-   on the default backend.
+5. **Verification.**  **Landed (session 34, 2026-10-04)**: `tools/dap_smoke.rb`
+   carries a fake-adapter section (an embedded port of the host's test fake,
+   `runInTerminal` reverse request included) and a real-lldb section that
+   builds the `.mt` source with *each* server so each side's own debug map is
+   in play: breakpoint → `stopped(breakpoint)` → `stackTrace` (Milk Tea frame
+   name + `.mt` source) → scopes/variables → `evaluate` → `next` → `continue`
+   → `exited`/`terminated`.  The full matrix is zero differing rows except one
+   documented self-better row.  The live VS Code F5 remains the manual check;
+   the extension's argv order was fixed (`adapterPath` now follows the `dap`
+   subcommand instead of preceding it, which both CLIs rejected).
 6. **Terminal event order (measured 2026-10-03); unified loop (session 34).**
    **Landed**: the process backend now emits `terminated` then `exited` with the
    real exit code (the host's order), and the debuggee starts at
@@ -992,7 +984,7 @@ definition of done above.
 | LSP soak | **9.7 MB/cycle** full-cycle RSS slope on the synthetic ~5k-line workspace (was 15.2; `--cycles 100`; the gate's `--cycles 200` reads ~10.8) — the residual is the per-parse leak convention, no ceiling until it is owned | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical (re-measured 2026-10-04 session 33; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
 | lint corpus | 496 agree / 117 differ (613 files; re-measured 2026-10-04 session 33 — the sweep lints the compiler's own sources, so this session's three new files moved it from 493/117 of 610; the deltas are the documented ranked rules) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
-| DAP | process-backend request parity (re-measured 2026-10-03; terminal event order and build-on-launch differ); lldb-dap unstarted | VS Code end-to-end under lldb-dap | `ruby tools/dap_smoke.rb` |
+| DAP | **zero differing rows** on the whole `dap_smoke` matrix (2026-10-04 session 34 — process backend, fake-adapter lldb and real `/usr/bin/lldb-dap` sessions), except the documented self-better `lldb-real frame0 name` (self `add`, host `main_add` — the host's cache-hit map loss); valgrind 0 errors on both backends | VS Code end-to-end under lldb-dap (manual) | `ruby tools/dap_smoke.rb` |
 | imported-bindings | 3 verified / 25 changed (re-measured 2026-10-03; cosmetic emitter gaps) | 28/28 or each justified | `mtc imported-bindings --all --check` |
 
 Baseline for reference only (Phase 0, session 5): bootstrap 14/0, `test/mt`
@@ -1004,6 +996,81 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 34 (2026-10-04) — DAP Track 5: the bridge, the loop and the map
+
+Goal: finish DAP so VS Code's default `lldb-dap` backend debugs a `.mt`
+program end to end.  Six commits, each gated (dev build + 18/0 tests +
+`tools/gates.sh --areas dap --run`; valgrind on the loop and both backends);
+at close the whole `dap_smoke` matrix is zero differing rows except the
+documented self-better frame-mapping row.
+
+1. **`0d1dacab` — the debug-map sidecar.**  `projects/mtc/src/mtc/debug_map.mt`
+   ports `lib/milk_tea/tooling/debug_map.rb` (model, `from_ir` with
+   `first_statement_*`/`collect_locals`, relative payload paths, a tolerant
+   `load_for_binary`); `build.mt`'s success branch writes
+   `<output>.mtdbg.json` (write failures warn only).  The map is semantically
+   equal to the host's on the smoke fixture; `line: 0` is synthetic and
+   omitted like the host; `debug_map_test.mt` locks the model and the
+   write→load round trip.
+2. **`02c2c335` — build-on-launch and the cache-carried sidecar.**
+   `resolve_launch_program` spawns the running compiler
+   (`/proc/self/exe build <abs.mt> -o <tmp>/<stem> --profile debug
+   --no-debug-guards`), remembers the temp dir on the Session for
+   terminate/disconnect cleanup, and turns a failed build into the launch
+   error.  `build_cache.store`/`materialize` carry `debug-map.json` so a
+   `[cached]` build still maps frames — the host skips its map on a
+   program-cache hit, which is why its real-lldb row shows the unmapped
+   `main_add`.  Also fixed the `process` event's empty `name`.
+3. **`9d3b27db` — one libuv loop, start on configurationDone.**
+   `protocol.mt`'s stdio reader became a `Framer` over `std.process.read_fd`
+   (new public wrapper); `server.mt` runs `uv_run(UV_RUN_ONCE)` over a stdin
+   poll handle and a 100 ms wake-up timer, with non-capturing callbacks that
+   only fill framers, dispatching between turns.  The process backend now
+   matches the host: start at `configurationDone`
+   (`maybe_start_or_stop_on_entry`), `continue` starts after an entry stop,
+   `pause`/`continue` SIGSTOP/SIGCONT, `terminate`/`disconnect` SIGTERM and the
+   exit produces `terminated` → `exited` with the real code.  Valgrind found a
+   framer use-after-free (`framer_next` parsed the sliced body after `compact`
+   freed the buffer) — parse first, then compact.
+4. **`c3e7ce99` — the bridge.**  `lldb_backend.mt` (adapter spawn, stdin
+   framing, adapter→client pending with 5 s deadlines, the 15 s reverse table)
+   and `lldb_policy.mt` (deferred client initialize with merged capabilities,
+   suppressed adapter `initialized`, launch/attach `backend_start_arguments`,
+   `configurationDone` gated on the start response, terminate→disconnect
+   fallback, generic forwarding, SIGSTOP→pause rewriting, continued dedup,
+   `--adapter-path` with `.rb`→ruby).  The server registers the adapter's
+   stdout poll handle when it starts.  `dap_smoke` gained the embedded fake
+   adapter and a reverse `runInTerminal` round trip.
+5. **`66d0b555` — rewrites, sync, pause diagnostics.**  The map loads at launch
+   or from the adapter's `modules`; stackTrace frames rename and feed the frame
+   map; scopes record variablesReferences; Locals variables rename with
+   `__mt_*` dropped; evaluate/setVariable/setExpression/dataBreakpointInfo
+   rewrite through the ported token scanner; setVariable falls back to
+   setExpression via the scope frame; breakpoints are stored and re-synced at
+   `configurationDone` with the host's `breakpoint changed` events (including
+   its string-key/symbol-key comparison quirk); a pause-requested stop emits
+   the host's console `output` summary.  Valgrind found and fixed a second
+   use-after-free (`stop` freeing the framer mid-`pump` — the loop re-reads it
+   each turn), and a timed-out `launch` now releases a deferred
+   `configurationDone` (the host's timeout does the same).
+6. **This commit — real lldb + VS Code.**  `dap_smoke`'s real section builds
+   the `.mt` source with each server and drives the breakpoint session on real
+   `/usr/bin/lldb-dap`: every row matches except `frame0 name` (self `add`,
+   host `main_add`).  The extension's descriptor factory now emits
+   `mtc dap --backend=… [--adapter-path=…] …extraArgs` (the old `unshift` put
+   the flag before the subcommand and both CLIs rejected it); the local
+   extension bundle was rebuilt.  The live VS Code F5 check is the remaining
+   manual step.
+
+Residue/notes: the `launch` response with real lldb-dap exceeds the 5 s
+backend timeout because lldb-dap answers after `configurationDone` — the host
+behaves identically (both write the timeout error and continue), and VS Code
+does not block on the launch response, so this is the host's shape rather than
+a defect; `stepIn`/`stepOut`/`attach`/`restart` are forwarded but not
+exercised by the smoke's real section; the bridge's leaks (~13 KB definitely
+lost per session) are the JSON-lookup/convention class already accepted by the
+LSP gate (0 errors is the criterion).
 
 Goal: do what phase 3 above says — actually exercise `build/stage2/mtc lsp`
 against the Ruby server and close what differs.
