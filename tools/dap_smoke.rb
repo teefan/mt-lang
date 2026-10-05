@@ -5,6 +5,10 @@
 # what each answers, so the gap between them is measured rather than asserted.
 #
 #   ruby tools/dap_smoke.rb [--server host|self|both] [--json OUT] [--verbose]
+#                           [--self-bin PATH]
+#
+# `--self-bin` points the `self` server at an iteration build (e.g.
+# `tmp/mtc-dev`); the default is the gated `build/stage2/mtc`.
 #
 # The self-host adapter has one backend (`process`); the host also has the
 # `lldb-dap` bridge, which is where stepping, evaluate, setVariable, attach,
@@ -25,6 +29,7 @@ require "optparse"
 
 ROOT = File.expand_path("..", __dir__)
 SELF_SERVER = File.join(ROOT, "build", "stage2", "mtc")
+$self_bin = SELF_SERVER
 
 PROGRAM = <<~MT
   import std.stdio as io
@@ -150,7 +155,7 @@ end
 
 def server_command(server)
   if server == "self"
-    [SELF_SERVER, "dap", "--backend=process"]
+    [$self_bin, "dap", "--backend=process"]
   else
     ["ruby", "-I#{File.join(ROOT, 'lib')}", File.join(ROOT, "bin", "mtc"), "dap", "--backend=process"]
   end
@@ -229,12 +234,14 @@ def run_session(server, workdir, program_binary)
   out
 end
 
-options = { server: "both", json: nil, verbose: false }
+options = { server: "both", json: nil, verbose: false, self_bin: SELF_SERVER }
 OptionParser.new do |opts|
   opts.on("--server SERVER", %w[host self both]) { |v| options[:server] = v }
   opts.on("--json PATH") { |v| options[:json] = v }
   opts.on("--verbose") { options[:verbose] = true }
+  opts.on("--self-bin PATH", "Self server binary (default build/stage2/mtc)") { |v| options[:self_bin] = v }
 end.parse!
+$self_bin = options[:self_bin]
 
 results = {}
 Dir.mktmpdir("dap-smoke") do |dir|

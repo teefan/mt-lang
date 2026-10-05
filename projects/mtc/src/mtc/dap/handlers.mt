@@ -114,6 +114,9 @@ function handle_launch(ses: ref[ses_mod.Session], child: ref[process.ChildProces
         util.release_launch_resolved(ref_of(resolved))
         return
 
+    if resolved.tmp_dir.len() > 0:
+        ses.remember_tmp_dir(resolved.tmp_dir.as_str())
+
     let stop = bool_arg(msg.arguments, "stopOnEntry", true)
 
     ses.program_path.release()
@@ -145,6 +148,7 @@ function handle_launch(ses: ref[ses_mod.Session], child: ref[process.ChildProces
     var process_body = string.String.create()
     process_body.append("{\"name\":\"")
     let base = path_basename(ses.program_path.as_str())
+    proto.append_escaped(ref_of(process_body), base)
     process_body.append("\",\"startMethod\":\"launch\",\"isLocalProcess\":true}")
     wire.write_event(pseq, "process", process_body.as_str())
     process_body.release()
@@ -314,6 +318,7 @@ function terminate_process(
         wire.write_event(tseq, "terminated", "{}")
         let eseq = ses.reserve_seq()
         wire.write_event(eseq, "exited", "{\"exitCode\":0}")
+    ses.cleanup_tmp_dirs()
 
 
 ## Extract a string argument from a JSON value.  Returns "" when absent.

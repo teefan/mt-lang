@@ -18,6 +18,7 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
+import mtc.debug_map as debug_map
 import mtc.loader.module_loader as loader
 
 
@@ -236,14 +237,38 @@ public function store(key: str, binary_path: str) -> void:
     defer: cached_binary.release()
     let _copied = copy_binary(binary_path, cached_binary.as_str())
 
+    # Carry the debug-map sidecar with the binary so a cache hit still maps
+    # frames (the host skips the map on program-cache hits).
+    var sidecar = debug_map.sidecar_path_for(binary_path)
+    defer: sidecar.release()
+    if fs.is_file(sidecar.as_str()):
+        var cached_map = path_ops.join(entry_dir.as_str(), "debug-map.json")
+        defer: cached_map.release()
+        let _copied_map = copy_file_with_mode(sidecar.as_str(), cached_map.as_str(), 420)
+
 
 ## Copy a cached binary to the requested output path with mode 0755.  Returns
-## false when the copy failed (callers then fall back to a full build).
+## false when the copy failed (callers then fall back to a full build).  A
+## cached debug-map sidecar is restored next to the output when present.
 public function materialize(cached_path: str, output_path: str) -> bool:
-    return copy_binary(cached_path, output_path)
+    if not copy_binary(cached_path, output_path):
+        return false
+
+    var cached_dir = path_ops.dirname(cached_path)
+    var cached_map = path_ops.join(cached_dir, "debug-map.json")
+    defer: cached_map.release()
+    if fs.is_file(cached_map.as_str()):
+        var sidecar = debug_map.sidecar_path_for(output_path)
+        defer: sidecar.release()
+        let _copied_map = copy_file_with_mode(cached_map.as_str(), sidecar.as_str(), 420)
+    return true
 
 
 function copy_binary(source_path: str, destination_path: str) -> bool:
+    return copy_file_with_mode(source_path, destination_path, 493)
+
+
+function copy_file_with_mode(source_path: str, destination_path: str, mode: int) -> bool:
     match fs.read_bytes(source_path):
         Result.failure as read_failure:
             var read_error = read_failure.error
@@ -259,7 +284,7 @@ function copy_binary(source_path: str, destination_path: str) -> bool:
                     return false
                 Result.success:
                     pass
-            match fs.set_permissions(destination_path, 493):
+            match fs.set_permissions(destination_path, mode):
                 Result.failure as perm_failure:
                     var perm_error = perm_failure.error
                     perm_error.release()

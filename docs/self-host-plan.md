@@ -613,13 +613,17 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    the write→load round trip.  The self's map is semantically equal to the
    host's on the smoke fixture.  The DAP-side frame/variable/expression
    rewriters (host `dap/server/debug_map.rb:45–225`) land with item 4.
-2. **Build-on-launch.**  Rewrite `dap/utilities.mt`'s `resolve_launch_program`
-   (`:17-41` — today it only accepts a pre-built binary and errors `Milk Tea
-   binary not found: <path> (build with mtc build first)` on a `.mt` source):
-   for a `.mt` source, spawn the running compiler (`/proc/self/exe`) as
-   `mtc build <program> -o <tmp>/<name> --profile debug`, track temp dirs for
-   cleanup, return the runnable path and load its debug map (host
-   `dap/server/launch.rb:120-153`).
+2. **Build-on-launch.**  **Landed (session 34, 2026-10-04)**: `dap/utilities.mt`'s
+   `resolve_launch_program` compiles a `.mt` source with the running compiler
+   (`/proc/self/exe build <abs.mt> -o <tmp>/<stem> --profile debug
+   --no-debug-guards`, the host's `debug: true, debug_guards: false`) into a
+   fresh `milk-tea-dap-*` temp directory; `Session.tmp_dirs` remembers it and
+   `cleanup_tmp_dirs` removes it on terminate/disconnect (host
+   `dap/server/launch.rb:125-137`, `utilities.rb:149-155`).  A failed build
+   becomes the launch error response and removes the temp dir.  The binary
+   cache carries the sidecar (`build_cache.store`/`materialize`), so cached
+   builds keep their map where the host skips it.  The `process` event's
+   `name` is now appended (it was emitted empty).
 3. **Pause diagnostics + `modules`.**  Dispatch `modules` in
    `handlers.mt:27-93` and load the map from the backend's response (host
    `debug_map.rb:13-36`); make `handle_pause` emit the host's console `output`

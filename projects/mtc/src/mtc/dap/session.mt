@@ -1,6 +1,7 @@
 ## DAP session state with extending methods for sequence generation
 ## and state management.
 
+import std.fs as fs_mod
 import std.map as map_mod
 import std.str
 import std.string as string
@@ -38,6 +39,7 @@ public struct Session:
     runtime_paused: bool
     breakpoints_by_source: map_mod.Map[string.String, vec.Vec[Breakpoint]]
     function_breakpoints: vec.Vec[FunctionBreakpoint]
+    tmp_dirs: vec.Vec[string.String]
 
 
 extending Session:
@@ -51,6 +53,30 @@ extending Session:
         let id = this.next_breakpoint_id
         this.next_breakpoint_id = id + 1
         return id
+
+
+    ## Remember a temporary directory for cleanup on terminate/disconnect.
+    public editable function remember_tmp_dir(dir: str) -> void:
+        this.tmp_dirs.push(string.String.from_str(dir))
+
+
+    ## Remove every remembered temporary directory (the host's
+    ## `cleanup_tmp_dirs`).
+    public editable function cleanup_tmp_dirs() -> void:
+        var i: ptr_uint = 0
+        while i < this.tmp_dirs.len():
+            let dir_ptr = this.tmp_dirs.get(i)
+            if dir_ptr != null:
+                unsafe:
+                    match fs_mod.remove_tree(read(dir_ptr).as_str()):
+                        Result.success:
+                            pass
+                        Result.failure as failure:
+                            var error = failure.error
+                            error.release()
+                    read(dir_ptr).release()
+            i += 1
+        this.tmp_dirs.clear()
 
 
 public function create() -> Session:
@@ -72,6 +98,7 @@ public function create() -> Session:
         runtime_paused = false,
         breakpoints_by_source = map_mod.Map[string.String, vec.Vec[Breakpoint]].create(),
         function_breakpoints = vec.Vec[FunctionBreakpoint].create(),
+        tmp_dirs = vec.Vec[string.String].create(),
     )
 
 
@@ -104,3 +131,11 @@ public function release(ses: ref[Session]) -> void:
             unsafe: read(fp).name.release()
         fi += 1
     ses.function_breakpoints.release()
+
+    var ti: ptr_uint = 0
+    while ti < ses.tmp_dirs.len():
+        let dir_ptr = ses.tmp_dirs.get(ti)
+        if dir_ptr != null:
+            unsafe: read(dir_ptr).release()
+        ti += 1
+    ses.tmp_dirs.release()
