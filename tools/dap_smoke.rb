@@ -44,8 +44,121 @@ PROGRAM = <<~MT
       return 0
 MT
 
+FAKE_LLDB_ADAPTER = <<~'RUBY'
+  # frozen_string_literal: true
+  require "json"
+
+  seq = 1
+  read_message = lambda do
+    headers = {}
+    loop do
+      line = STDIN.gets
+      break nil if line.nil?
+
+      stripped = line.chomp.sub(/\r\z/, "")
+      break :headers_done if stripped.empty?
+
+      key, value = stripped.split(":", 2)
+      headers[key.strip] = value.strip
+    end
+    next nil if headers.empty?
+
+    length = headers["Content-Length"]&.to_i
+    next nil if length.nil? || length <= 0
+
+    JSON.parse(STDIN.read(length))
+  end
+  write_message = lambda do |message|
+    json = JSON.dump(message)
+    STDOUT.write("Content-Length: #{json.bytesize}\r\n\r\n#{json}")
+    STDOUT.flush
+  end
+  write_response = lambda do |request, body = {}, success = true, error_message = nil|
+    response = { seq: seq, type: "response", request_seq: request["seq"], command: request["command"], success: success }
+    response[:body] = body if success
+    response[:message] = error_message if !success && error_message
+    write_message.call(response)
+    seq += 1
+  end
+  write_event = lambda do |event, body = nil|
+    payload = { seq: seq, type: "event", event: event }
+    payload[:body] = body if body
+    write_message.call(payload)
+    seq += 1
+  end
+
+  loop do
+    request = read_message.call
+    break if request.nil?
+    next unless request["type"] == "request"
+
+    args = request["arguments"] || {}
+    case request["command"]
+    when "initialize"
+      write_response.call(request, { supportsConfigurationDoneRequest: true })
+    when "launch", "attach"
+      write_response.call(request, {})
+    when "setBreakpoints"
+      requested = args["breakpoints"] || []
+      breakpoints = requested.map.with_index { |bp, idx| { id: 100 + idx, verified: true, line: bp["line"].to_i } }
+      write_response.call(request, { breakpoints: breakpoints })
+    when "configurationDone"
+      # Exercise the reverse direction: ask the client for a terminal, wait for
+      # its response, then finish configuration (the host's fake test pattern).
+      reverse = {
+        seq: seq, type: "request", command: "runInTerminal",
+        arguments: { kind: "integrated", title: "Milk Tea Debuggee", cwd: "/tmp", args: ["/usr/bin/true"] }
+      }
+      write_message.call(reverse)
+      seq += 1
+      loop do
+        message = read_message.call
+        break if message.nil?
+        break if message["type"] == "response" && message["request_seq"] == reverse[:seq]
+      end
+      write_response.call(request, {})
+      write_event.call("stopped", { reason: "entry", threadId: 99, allThreadsStopped: true })
+    when "threads"
+      write_response.call(request, { threads: [{ id: 99, name: "lldb-main" }] })
+    when "stackTrace"
+      write_response.call(request, {
+        stackFrames: [{ id: 1, name: "lldb_main", line: 1, column: 1, source: { name: "demo", path: "/tmp/demo.mt" } }],
+        totalFrames: 1
+      })
+    when "scopes"
+      write_response.call(request, { scopes: [{ name: "Locals", variablesReference: 11, expensive: false }] })
+    when "variables"
+      write_response.call(request, { variables: [{ name: "a", value: "1", type: "int", variablesReference: 0 }] })
+    when "setExceptionBreakpoints"
+      write_response.call(request, {})
+    when "evaluate"
+      write_response.call(request, { result: "not_impl", variablesReference: 0 })
+    when "source"
+      write_response.call(request, { content: "# not available" })
+    when "loadedSources"
+      write_response.call(request, { sources: [] })
+    when "continue"
+      write_response.call(request, { allThreadsContinued: true })
+      write_event.call("continued", { threadId: 99, allThreadsContinued: true })
+    when "next", "stepIn", "stepOut"
+      write_response.call(request, {})
+      write_event.call("stopped", { reason: "step", threadId: 99, allThreadsStopped: true })
+    when "pause"
+      write_response.call(request, {})
+      write_event.call("stopped", { reason: "pause", threadId: 99, allThreadsStopped: true })
+    when "disconnect"
+      write_response.call(request, {})
+      write_event.call("terminated")
+      write_event.call("exited", { exitCode: 0 })
+      break
+    else
+      write_response.call(request, {}, false, "unsupported command")
+    end
+  end
+RUBY
+
 class DapClient
-  attr_reader :events, :stderr_lines
+  attr_reader :events, :stderr_lines, :reverse_requests
 
   def initialize(cmd, cwd)
     @stdin, @stdout, @stderr, @wait = Open3.popen3(*cmd, chdir: cwd)
@@ -53,6 +166,7 @@ class DapClient
     @seq = 0
     @events = []
     @stderr_lines = []
+    @reverse_requests = 0
   end
 
   def request(command, arguments = {}, timeout: 20)
@@ -76,6 +190,8 @@ class DapClient
         case message["type"]
         when "event"
           @events << [message["event"], message["body"]]
+        when "request"
+          answer_server_request(message)
         when "response"
           return message if message["request_seq"] == seq
         end
@@ -94,7 +210,11 @@ class DapClient
       break if remaining <= 0
       message = read_message(remaining)
       break if message.nil?
-      @events << [message["event"], message["body"]] if message["type"] == "event"
+      if message["type"] == "request"
+        answer_server_request(message)
+      elsif message["type"] == "event"
+        @events << [message["event"], message["body"]]
+      end
     end
   end
 
@@ -106,6 +226,20 @@ class DapClient
   end
 
   private
+
+  ## Answer a server->client request the way a real client does.
+  def answer_server_request(message)
+    @reverse_requests += 1
+    @seq += 1
+    write({
+      "seq" => @seq,
+      "type" => "response",
+      "request_seq" => message["seq"],
+      "command" => message["command"],
+      "success" => true,
+      "body" => { "processId" => 4321 },
+    })
+  end
 
   def write(message)
     payload = JSON.dump(message)
@@ -153,11 +287,49 @@ def summarize(response)
   end
 end
 
-def server_command(server)
+def server_command(server, backend: "process", adapter_path: nil)
+  args = ["dap", "--backend=#{backend}"]
+  args << "--adapter-path=#{adapter_path}" if adapter_path
   if server == "self"
-    [$self_bin, "dap", "--backend=process"]
+    [$self_bin, *args]
   else
-    ["ruby", "-I#{File.join(ROOT, 'lib')}", File.join(ROOT, "bin", "mtc"), "dap", "--backend=process"]
+    ["ruby", "-I#{File.join(ROOT, 'lib')}", File.join(ROOT, "bin", "mtc"), *args]
+  end
+end
+
+## One lldb-dap session against the fake adapter: the whole bridge surface the
+## real adapter will exercise, without a debuggee.
+def run_fake_backend_session(server, workdir, program_binary, adapter_path, into)
+  client = DapClient.new(server_command(server, backend: "lldb-dap", adapter_path: adapter_path), workdir)
+  begin
+    r = client.request("initialize", { "adapterID" => "milk-tea", "clientID" => "dap_smoke" })
+    into["lldb initialize"] = summarize(r)
+    into["lldb capabilities"] = (r.dig("body") || {}).keys.sort.join(",")
+    into["lldb launch"] = summarize(client.request("launch", { "program" => program_binary, "backend" => "lldb-dap", "stopOnEntry" => false }))
+    into["lldb setBreakpoints"] = summarize(client.request("setBreakpoints", { "source" => { "path" => "src/main.mt" }, "breakpoints" => [{ "line" => 4 }] }))
+    into["lldb configurationDone"] = summarize(client.request("configurationDone", {}))
+    client.drain(0.4)
+    into["lldb stopped events"] = client.events.count { |e, _| e == "stopped" }
+    into["lldb capabilities events"] = client.events.count { |e, _| e == "capabilities" }
+    into["lldb threads"] = summarize(client.request("threads", {}))
+    into["lldb stackTrace"] = summarize(client.request("stackTrace", { "threadId" => 99 }))
+    into["lldb scopes"] = summarize(client.request("scopes", { "frameId" => 1 }))
+    into["lldb variables"] = summarize(client.request("variables", { "variablesReference" => 11 }))
+    into["lldb evaluate"] = summarize(client.request("evaluate", { "expression" => "a", "frameId" => 1 }))
+    into["lldb next"] = summarize(client.request("next", { "threadId" => 99 }))
+    into["lldb stepIn"] = summarize(client.request("stepIn", { "threadId" => 99 }))
+    into["lldb stepOut"] = summarize(client.request("stepOut", { "threadId" => 99 }))
+    into["lldb pause"] = summarize(client.request("pause", { "threadId" => 99 }))
+    into["lldb continue"] = summarize(client.request("continue", { "threadId" => 99 }))
+    client.drain(0.3)
+    into["lldb events"] = client.events.map { |e, _| e }.tally.map { |k, v| "#{k}x#{v}" }.join(" ")
+    into["lldb reverse requests"] = client.reverse_requests
+    into["lldb disconnect"] = summarize(client.request("disconnect", {}))
+  rescue StandardError => e
+    into["lldb exception"] = "exception: #{e.message[0, 80]}"
+  ensure
+    client.close
+    into["lldb stderr"] = client.stderr_lines.first(3).map(&:strip)
   end
 end
 
@@ -254,9 +426,12 @@ Dir.mktmpdir("dap-smoke") do |dir|
   abort "could not build the smoke program" unless build
 
   servers = options[:server] == "both" ? %w[host self] : [options[:server]]
+  fake_path = File.join(dir, "fake_lldb_dap.rb")
+  File.write(fake_path, FAKE_LLDB_ADAPTER)
   servers.each do |server|
     results[server] = run_session(server, workdir, binary)
     run_launch_session(server, workdir, File.join("src", "main.mt"), "launch(.mt)", results[server])
+    run_fake_backend_session(server, workdir, binary, fake_path, results[server])
   end
 end
 

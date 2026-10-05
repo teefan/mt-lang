@@ -7,7 +7,58 @@ import std.string as string
 import mtc.dap.protocol as proto
 
 
-## Write a DAP response message with a body.
+## Write a DAP response message with its command and a body.
+public function write_response_command(session_seq: ptr_uint, request_seq: ptr_uint, command: str, body_json: str) -> void:
+    var r = string.String.create()
+    defer: r.release()
+    r.append("{\"seq\":")
+    r.append_format(f"#{session_seq}")
+    r.append(",\"type\":\"response\",\"request_seq\":")
+    r.append_format(f"#{request_seq}")
+    r.append(",\"success\":true,\"command\":\"")
+    proto.append_escaped(ref_of(r), command)
+    r.append("\"")
+    if body_json.len > 0:
+        r.append(",\"body\":")
+        r.append(body_json)
+    r.append("}")
+    proto.write_framed_json(r.as_str())
+
+
+## Write a DAP error response carrying the request's command.
+public function write_error_command(session_seq: ptr_uint, request_seq: ptr_uint, command: str, error_message: str) -> void:
+    var r = string.String.create()
+    defer: r.release()
+    r.append("{\"seq\":")
+    r.append_format(f"#{session_seq}")
+    r.append(",\"type\":\"response\",\"request_seq\":")
+    r.append_format(f"#{request_seq}")
+    r.append(",\"success\":false,\"command\":\"")
+    proto.append_escaped(ref_of(r), command)
+    r.append("\",\"message\":\"")
+    proto.append_escaped(ref_of(r), error_message)
+    r.append("\"}")
+    proto.write_framed_json(r.as_str())
+
+
+## Write a server->client request (a reverse-request forward).
+public function write_request(session_seq: ptr_uint, command: str, arguments_json: str) -> void:
+    var r = string.String.create()
+    defer: r.release()
+    r.append("{\"seq\":")
+    r.append_format(f"#{session_seq}")
+    r.append(",\"type\":\"request\",\"command\":\"")
+    proto.append_escaped(ref_of(r), command)
+    r.append("\",\"arguments\":")
+    if arguments_json.len > 0:
+        r.append(arguments_json)
+    else:
+        r.append("{}")
+    r.append("}")
+    proto.write_framed_json(r.as_str())
+
+
+## Write a DAP response with a body.
 public function write_response(session_seq: ptr_uint, request_seq: ptr_uint, body_json: str) -> void:
     var r = string.String.create()
     defer: r.release()

@@ -12,6 +12,8 @@ import std.string as string
 import std.vec as vec
 
 import mtc.dap.handlers as handlers
+import mtc.dap.lldb_backend as lldb_backend
+import mtc.dap.lldb_policy as lldb_policy
 import mtc.dap.process_backend as backend
 import mtc.dap.protocol as proto
 import mtc.dap.session as session
@@ -33,7 +35,7 @@ struct PollContext:
 ## State shared with the poll callbacks.
 struct LoopState:
     stdin_framer: ptr[proto.Framer]
-    adapter_framer: ptr[proto.Framer]
+    backend: ptr[lldb_backend.Backend]
 
 
 ## Entry point.  Parses the CLI flags, then runs the event loop until the
@@ -44,12 +46,15 @@ public function run(args: span[str]) -> int:
     configure_backend(ref_of(ses), args)
 
     let state = unsafe: ptr[LoopState]<-heap.must_alloc[LoopState](1)
+    let backend_ptr = heap.must_alloc[lldb_backend.Backend](1)
     unsafe:
+        read(backend_ptr) = lldb_backend.create()
         read(state) = LoopState(
             stdin_framer = alloc_framer(0),
-            adapter_framer = alloc_framer(-1),
+            backend = backend_ptr,
         )
     defer: release_loop_state(state)
+    defer: release_backend(backend_ptr)
 
     let loop = create_loop()
     let stdin_watch = watch_fd(loop, 0, POLL_STDIN, state)
@@ -57,16 +62,22 @@ public function run(args: span[str]) -> int:
 
     var child = zero[process.ChildProcess]
     var has_child = false
+    var adapter_watch: ptr[libuv.uv_poll_t]? = null
 
     var running = true
     while running:
         let _ = libuv.run(loop, libuv.uv_run_mode.UV_RUN_ONCE)
-        drain_client_messages(ref_of(ses), state, ref_of(child), ref_of(has_child))
+        let backend_ref = unsafe: ref_of(read(backend_ptr))
+        if adapter_watch == null and backend_ref.running:
+            if backend_ref.framer != null:
+                adapter_watch = watch_fd(loop, backend_ref.child.stdout_fd, POLL_ADAPTER, state)
+        drain_client_messages(ref_of(ses), state, backend_ref, ref_of(child), ref_of(has_child))
+        lldb_policy.pump(ref_of(ses), backend_ref)
         drain_child(ref_of(ses), ref_of(child), ref_of(has_child))
         if ses.should_exit:
             running = false
 
-    shutdown(ref_of(ses), ref_of(child), ref_of(has_child), stdin_watch, timer)
+    shutdown(ref_of(ses), backend_ptr, ref_of(child), ref_of(has_child), stdin_watch, timer, adapter_watch)
     return 0
 
 
@@ -97,13 +108,7 @@ function configure_backend(ses: ref[session.Session], args: span[str]) -> void:
             i += 1
         i += 1
 
-    if ses.backend_kind.as_str().equal("process"):
-        return
-    if ses.backend_kind.as_str().equal("lldb-dap"):
-        var note = string.String.create()
-        note.append("dap: the lldb-dap backend is not implemented yet; running the process backend")
-        log.warn(note.as_str())
-        note.release()
+    if ses.backend_kind.as_str().equal("process") or ses.backend_kind.as_str().equal("lldb-dap"):
         return
     var unknown = string.String.create()
     unknown.append("dap: unsupported backend '")
@@ -125,10 +130,13 @@ function alloc_framer(fd: int) -> ptr[proto.Framer]:
 function release_loop_state(state: ptr[LoopState]) -> void:
     unsafe:
         proto.framer_release(ref_of(read(read(state).stdin_framer)))
-        proto.framer_release(ref_of(read(read(state).adapter_framer)))
         heap.release(read(state).stdin_framer)
-        heap.release(read(state).adapter_framer)
     heap.release(state)
+
+
+function release_backend(backend_ptr: ptr[lldb_backend.Backend]) -> void:
+    lldb_backend.release(unsafe: ref_of(read(backend_ptr)))
+    heap.release(backend_ptr)
 
 
 function create_loop() -> ptr[libuv.uv_loop_t]:
@@ -169,8 +177,10 @@ function poll_callback(handle: ptr[libuv.uv_poll_t], status: int, events: int) -
             let framer = read(read(ctx).state).stdin_framer
             proto.framer_fill(ref_of(read(framer)))
         else if kind == POLL_ADAPTER:
-            let framer = read(read(ctx).state).adapter_framer
-            proto.framer_fill(ref_of(read(framer)))
+            let backend_ptr = read(read(ctx).state).backend
+            let framer = read(backend_ptr).framer
+            if framer != null:
+                proto.framer_fill(ref_of(read(framer)))
 
 
 ## A repeating wake-up timer: the loop drains child output and deadlines on
@@ -193,6 +203,7 @@ function timer_callback(handle: ptr[libuv.uv_timer_t]) -> void:
 function drain_client_messages(
     ses: ref[session.Session],
     state: ptr[LoopState],
+    lldb_backend_ref: ref[lldb_backend.Backend],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
 ) -> void:
@@ -201,8 +212,10 @@ function drain_client_messages(
         let next = proto.framer_next(unsafe: ref_of(read(framer)))
         match next:
             Option.some as payload:
-                if payload.value.command.len() > 0:
-                    handlers.dispatch(ses, child, has_child, payload.value.command.as_str(), payload.value)
+                if payload.value.msg_type.as_str().equal("response"):
+                    lldb_policy.handle_client_response(ses, lldb_backend_ref, payload.value)
+                else if payload.value.command.len() > 0:
+                    handlers.dispatch(ses, lldb_backend_ref, child, has_child, payload.value.command.as_str(), payload.value)
                 proto.release_message(ref_of(payload.value))
             Option.none:
                 break
@@ -266,14 +279,19 @@ function drain_child(
             pass
 
 
-## Stop the debuggee (if any), remove temp build dirs, and stop the handles.
+## Stop the debuggee and adapter (if any), remove temp build dirs, and stop the
+## handles.
 function shutdown(
     ses: ref[session.Session],
+    backend_ptr: ptr[lldb_backend.Backend],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
     stdin_watch: ptr[libuv.uv_poll_t],
     timer: ptr[libuv.uv_timer_t],
+    adapter_watch: ptr[libuv.uv_poll_t]?,
 ) -> void:
+    let backend_ref = unsafe: ref_of(read(backend_ptr))
+    lldb_policy.stop(ses, backend_ref)
     unsafe:
         if read(has_child):
             let _ = read(child).kill(handlers.SIGNAL_TERM)
@@ -282,3 +300,5 @@ function shutdown(
     ses.cleanup_tmp_dirs()
     let _ = libuv.poll_stop(stdin_watch)
     let _ = libuv.timer_stop(timer)
+    if adapter_watch != null:
+        let _ = libuv.poll_stop(adapter_watch)

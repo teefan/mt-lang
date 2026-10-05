@@ -61,20 +61,16 @@ recipes complete for all **11** vendored families (raylib, glfw, tracy, cjson,
 box2d, box3d, sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
-**DAP: 7 modules plus the shared `mtc/debug_map.mt`; the dispatcher answers 26
-DAP commands (15 with dedicated handlers; `attach`, `evaluate`,
-`next`/`stepIn`/`stepOut`, `restart`, `setVariable`, `setExpression` and
-`dataBreakpointInfo` return the process backend's explicit "not supported"
-errors until the lldb-dap bridge).  `tools/dap_smoke.rb` audits it against the
-host per request (2026-10-04 session 34: the process backend is **row-for-row
-equal** — capabilities, launch, threads, stackTrace, scopes, variables,
-breakpoints, the whole error surface and the `terminated`→`exited` event order,
-with the debuggee started at `configurationDone` and `pause`/`continue`
-signaling the child; valgrind on the loop, 0 errors).  `launch` on a `.mt`
-source now builds it with the running compiler into a temp dir (the debug-map
-sidecar rides the binary cache).  The remaining gaps — the lldb-dap bridge, the
-debug-map frame/variable rewrites, pause diagnostics and `modules` — are §10 of
-`docs/dap-design.md`.**
+**DAP: 7 modules plus `mtc/debug_map.mt`, `dap/lldb_backend.mt` and
+`dap/lldb_policy.mt`; the dispatcher answers 26 DAP commands.**  The process
+backend is **row-for-row equal** to the host on `tools/dap_smoke.rb`
+(2026-10-04 session 34: request surface, error text, `terminated`→`exited`
+order, `launch` on a `.mt` source building it into a temp dir), and the
+**lldb-dap bridge** (the VS Code extension's default) is in: the adapter
+handshake, capability merge, event forwarding, reverse requests and command
+forwarding all match the host against the harness's fake adapter, with the
+debug-map frame/variable rewrites and pause diagnostics landing next.  The
+remaining gaps are §10's #3/#4 of `docs/dap-design.md`.**
 **LSP: 42 modules, ~29.3k lines (2026-10-04 session 33 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `debugInfo` Facts/Bindings remainder as of session 33, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **70 requests + 27 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **LSP project audit (live counter, 2026-10-03 session 27): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 7075 entries, **4 stable differing entries + the host's first-file `documentSymbol` race**: `completion` **2** (the session-26 close read 4; the two byte-vs-character position entries are closed by the request-boundary conversion — the residue is the host's synthesized `ref` lifetime `mst@224:18` and the host giving up on a `map_error` arm binding `lb@818:17`, both documented), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward); the race entry (`docs/data_structures.mt documentSymbol`) appears only when the host's first-file facts lag (measured in the gates run).  **Every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work), `definition`/`declaration`/`typeDefinition`/`implementation`/`references` (915 each, 0), `documentSymbol` and the file-level endpoints.**
 **LSP project audit (previous live counter, 2026-10-03 session 26): 7075 entries, **6 differ = `completion` 4 + the 2 documented entries**: completion **4** (235 at the session-24 close; the residue is classified in §0k's part-3 record — the host's synthesized `ref` lifetime, the host giving up on a `map_error` arm binding, and two byte-vs-character positions inside comment lines), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward).**  Earlier live counters: session 18 read 2 differ on the then-6456-entry corpus (the entry count grew with the completion pass), session 13 read 22.
@@ -632,16 +628,19 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    `handlers.mt:27-93` and load the map from the backend's response (host
    `debug_map.rb:13-36`); make `handle_pause` emit the host's console `output`
    event built from a `stackTrace` (`pause_diagnostics.rb:7-53`).
-4. **lldb-dap bridge (largest/riskiest).**  New `dap/lldb_backend.mt` + an
-   fd-parameterized `protocol.mt` (readers/writers are stdio-only today,
-   `:32-223`) + a `server.mt` loop that runs a libuv poll loop when
-   `--backend=lldb-dap` (`std/libuv.mt poll_init/start :354-357`, `std/async`,
-   the pattern in `std/tls.mt:242-299`).  Single-threaded state machine: pending
-   table for client→adapter responses, reverse adapter→client requests with
-   their own pending table + timeout and capability merging, adapter
-   `initialized` suppressed, stderr drained, `--adapter-path` parsed (the
-   extension sends it), shutdown ordering.  Reference:
-   `dap/lldb_dap_backend.rb` (153 lines) + `dap/server/lldb_backend.rb:7-213,349-361`.
+4. **lldb-dap bridge (largest/riskiest).**  **Landed (session 34, 2026-10-04;
+   frame/variable rewrites and pause diagnostics land with item 3's commit)**:
+   `dap/lldb_backend.mt` (transport: spawn, Content-Length framing to the
+   adapter's stdin, pending request table with 5 s deadlines, the 15 s reverse
+   table) + `dap/lldb_policy.mt` (policy: deferred client initialize with the
+   merged capabilities, suppressed adapter `initialized`, launch/attach
+   forwarding with `backend_start_arguments`, `configurationDone` gating on the
+   start response, terminate→disconnect fallback, generic forwarding, event
+   rewriting, `--adapter-path` parsing with `.rb`→ruby).  `server.mt` registers
+   a poll handle for the adapter's stdout when it starts, drains it in `pump`,
+   and routes client responses for reverse requests.  `tools/dap_smoke.rb`
+   drives an embedded fake adapter on both servers: every row matches except
+   the two the remaining items cover.
 5. **Verification.**  Extend `tools/dap_smoke.rb`: per-server `--backend`,
    build the smoke program with *each* server (so the self emits the map), and
    add the lldb section (breakpoint → `stopped` → `stackTrace` shows Milk Tea

@@ -10,6 +10,8 @@ import std.string as string
 import std.vec as vec
 
 import std.process as process
+import mtc.dap.lldb_backend as lldb
+import mtc.dap.lldb_policy as lldb_policy
 import mtc.dap.process_backend as backend
 import mtc.dap.protocol as proto
 import mtc.dap.session as ses_mod
@@ -21,12 +23,11 @@ public const SIGNAL_STOP:   int = 19
 public const SIGNAL_CONT:   int = 18
 public const SIGNAL_TERM:   int = 15
 
-const CAPABILITIES: str = "{\"supportsConfigurationDoneRequest\":true,\"supportsFunctionBreakpoints\":true,\"supportsConditionalBreakpoints\":false,\"supportsHitConditionalBreakpoints\":false,\"supportsEvaluateForHovers\":false,\"supportsSetVariable\":false,\"supportTerminateDebuggee\":true,\"supportsTerminateRequest\":true,\"supportsLoadedSourcesRequest\":true,\"exceptionBreakpointFilters\":[],\"supportsPauseRequest\":true}"
-
 
 ## Dispatch a DAP request to the appropriate handler based on the command.
 public function dispatch(
     ses: ref[ses_mod.Session],
+    lldb_backend_ref: ref[lldb.Backend],
     child: ref[process.ChildProcess],
     has_child: ref[bool],
     command: str,
@@ -35,12 +36,16 @@ public function dispatch(
     let seq = ses.reserve_seq()
 
     if command == "initialize":
-        handle_initialize(ses, seq, msg)
+        if lldb_policy.active(ses):
+            lldb_policy.initialize_backend(ses, lldb_backend_ref, seq, msg.seq, msg.arguments)
+        else:
+            handle_initialize(ses, seq, msg)
     else if command == "launch":
-        handle_launch(ses, child, has_child, seq, msg)
+        handle_launch(ses, lldb_backend_ref, child, has_child, seq, msg)
     else if command == "attach":
-        wire.write_error(seq, msg.seq, "attach requires the lldb-dap backend")
-
+        handle_attach(ses, lldb_backend_ref, seq, msg)
+    else if lldb_policy.active(ses):
+        dispatch_lldb(ses, lldb_backend_ref, seq, command, msg)
     else if command == "setBreakpoints":
         handle_set_breakpoints(ses, seq, msg)
     else if command == "setFunctionBreakpoints":
@@ -94,16 +99,48 @@ public function dispatch(
         wire.write_error(seq, msg.seq, "unsupported command")
 
 
+## Dispatch a command while the lldb-dap backend is active: configuration,
+## termination and pause have their own paths, everything else forwards
+## (the host's `process_message` fallback).
+function dispatch_lldb(
+    ses: ref[ses_mod.Session],
+    lldb_backend_ref: ref[lldb.Backend],
+    seq: ptr_uint,
+    command: str,
+    msg: proto.Message,
+) -> void:
+    if command == "configurationDone":
+        lldb_policy.configuration_done(ses, lldb_backend_ref, seq, msg.seq)
+    else if command == "terminate":
+        lldb_policy.terminate(ses, lldb_backend_ref, seq, msg.seq, msg.arguments)
+    else if command == "disconnect":
+        lldb_policy.disconnect(ses, lldb_backend_ref, seq, msg.seq, msg.arguments)
+    else if command == "pause":
+        lldb_backend_ref.pause_requested = true
+        lldb_policy.forward_command(ses, lldb_backend_ref, seq, msg.seq, command, msg.arguments)
+    else:
+        lldb_policy.forward_command(ses, lldb_backend_ref, seq, msg.seq, command, msg.arguments)
+
+
 ## Initialize — returns capabilities + initialized event.
 function handle_initialize(ses: ref[ses_mod.Session], seq: ptr_uint, msg: proto.Message) -> void:
-    wire.write_response(seq, msg.seq, CAPABILITIES)
+    wire.write_response(seq, msg.seq, ses_mod.ADAPTER_CAPABILITIES)
 
     let init_seq = ses.reserve_seq()
     wire.write_event(init_seq, "initialized", "{}")
 
 
-## Launch — builds .mt and stores runnable path.
-function handle_launch(ses: ref[ses_mod.Session], child: ref[process.ChildProcess], has_child: ref[bool], seq: ptr_uint, msg: proto.Message) -> void:
+## Launch — resolves/builds the program, selects the effective backend
+## (`noDebug` or the launch's `backend` argument over the CLI default) and
+## either starts the process backend or forwards to lldb-dap.
+function handle_launch(
+    ses: ref[ses_mod.Session],
+    lldb_backend_ref: ref[lldb.Backend],
+    child: ref[process.ChildProcess],
+    has_child: ref[bool],
+    seq: ptr_uint,
+    msg: proto.Message,
+) -> void:
     let program = extract_string_arg(msg.arguments, "program")
     if program.len == 0:
         wire.write_error(seq, msg.seq, "launch requires a non-empty 'program' argument")
@@ -118,12 +155,54 @@ function handle_launch(ses: ref[ses_mod.Session], child: ref[process.ChildProces
     if resolved.tmp_dir.len() > 0:
         ses.remember_tmp_dir(resolved.tmp_dir.as_str())
 
+    let no_debug = bool_arg(msg.arguments, "noDebug", false)
+    var requested = extract_string_arg(msg.arguments, "backend")
+    if requested.len == 0:
+        requested = ses.backend_kind.as_str()
+    var use_lldb = false
+    if no_debug:
+        use_lldb = false
+    else if requested.equal("lldb-dap"):
+        use_lldb = true
+    else if requested.equal("process"):
+        use_lldb = false
+    else:
+        var message = string.String.from_str("unsupported backend: ")
+        message.append(requested)
+        wire.write_error(seq, msg.seq, message.as_str())
+        message.release()
+        util.release_launch_resolved(ref_of(resolved))
+        return
+
+    var stop_on_entry = bool_arg(msg.arguments, "stopOnEntry", true)
+    if no_debug:
+        stop_on_entry = false
+
     ses.program_path.release()
     ses.runnable_path.release()
     ses.program_path = string.String.from_str(program)
     ses.runnable_path = string.String.from_str(resolved.runnable_path.as_str())
-    ses.stop_on_entry = bool_arg(msg.arguments, "stopOnEntry", true)
+    ses.stop_on_entry = stop_on_entry
     ses.launched = true
+
+    if use_lldb:
+        ses.backend_kind.release()
+        ses.backend_kind = string.String.from_str("lldb-dap")
+        lldb_policy.start_debugging(
+            ses,
+            lldb_backend_ref,
+            seq,
+            msg.seq,
+            "launch",
+            msg.arguments,
+            resolved.runnable_path.as_str(),
+            stop_on_entry,
+        )
+        util.release_launch_resolved(ref_of(resolved))
+        return
+
+    ses.backend_kind.release()
+    ses.backend_kind = string.String.from_str("process")
     ses.runtime_started = false
     ses.entry_stop_emitted = false
     load_program_args(ses, msg.arguments)
@@ -142,6 +221,47 @@ function handle_launch(ses: ref[ses_mod.Session], child: ref[process.ChildProces
     process_body.append("\",\"startMethod\":\"launch\",\"isLocalProcess\":true}")
     wire.write_event(pseq, "process", process_body.as_str())
     process_body.release()
+
+
+## Attach — requires the lldb-dap backend (the host's rule); an optional
+## program is resolved like a launch (a `.mt` source is built for symbols).
+function handle_attach(
+    ses: ref[ses_mod.Session],
+    lldb_backend_ref: ref[lldb.Backend],
+    seq: ptr_uint,
+    msg: proto.Message,
+) -> void:
+    if not extract_string_arg(msg.arguments, "backend").equal("lldb-dap"):
+        wire.write_error(seq, msg.seq, "attach requires the lldb-dap backend")
+        return
+
+    let program = extract_string_arg(msg.arguments, "program")
+    var runnable = string.String.create()
+    defer: runnable.release()
+    if program.len > 0:
+        var resolved = util.resolve_launch_program(program)
+        if not resolved.ok:
+            wire.write_error(seq, msg.seq, resolved.error.as_str())
+            util.release_launch_resolved(ref_of(resolved))
+            return
+        if resolved.tmp_dir.len() > 0:
+            ses.remember_tmp_dir(resolved.tmp_dir.as_str())
+        runnable.assign(resolved.runnable_path.as_str())
+        util.release_launch_resolved(ref_of(resolved))
+
+    ses.backend_kind.release()
+    ses.backend_kind = string.String.from_str("lldb-dap")
+    let stop_on_entry = bool_arg(msg.arguments, "stopOnEntry", true)
+    lldb_policy.start_debugging(
+        ses,
+        lldb_backend_ref,
+        seq,
+        msg.seq,
+        "attach",
+        msg.arguments,
+        runnable.as_str(),
+        stop_on_entry,
+    )
 
 
 ## The last path segment (`/tmp/x/main` -> `main`).

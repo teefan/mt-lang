@@ -8,6 +8,11 @@ import std.string as string
 import std.vec as vec
 
 
+## The adapter's static capabilities (advertised for the process backend and
+## merged with lldb-dap's own response by the bridge).
+public const ADAPTER_CAPABILITIES: str = "{\"supportsConfigurationDoneRequest\":true,\"supportsFunctionBreakpoints\":true,\"supportsConditionalBreakpoints\":false,\"supportsHitConditionalBreakpoints\":false,\"supportsEvaluateForHovers\":false,\"supportsSetVariable\":false,\"supportTerminateDebuggee\":true,\"supportsTerminateRequest\":true,\"supportsLoadedSourcesRequest\":true,\"exceptionBreakpointFilters\":[],\"supportsPauseRequest\":true}"
+
+
 public struct Breakpoint:
     id: ptr_uint
     line: ptr_uint
