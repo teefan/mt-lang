@@ -263,10 +263,20 @@ set), `launch(binary)`, `threads`, `stackTrace` (1 frame), `scopes` (1),
 `variables` (0), `setBreakpoints`, `loadedSources`, `cancel`, `disconnect`, and
 the same error text for `next` / `stepIn` / `stepOut` / `evaluate` /
 `setVariable` / `attach` / `restart` / `dataBreakpointInfo` / `setExpression`.
-The event stream matches except that the self emits `exited` before
-`terminated` as well (`initialized, process, output, exited, terminated` vs the
-host's `initialized, process, output, terminated`) — the extra event is what the
-DAP specification expects, so it is kept.
+
+**Landed (session 34, 2026-10-04): the unified event loop + start on
+`configurationDone`.**  The blocking stdio reader became a byte-buffered
+`Framer` over raw-fd reads (`std.process.read_fd`; `protocol.mt`) driven by a
+libuv poll handle on fd 0 with a 100 ms wake-up timer; client messages are
+dispatched and the child drained between loop turns (`server.mt`).  The
+debuggee now starts at `configurationDone` (the host's
+`maybe_start_or_stop_on_entry`): `continue` starts it after an entry stop,
+`pause`/`continue` SIGSTOP/SIGCONT a running program, and `terminate`/`disconnect`
+SIGTERM it and let the exit produce the events.  The terminal events are now
+`terminated` then `exited` with the real exit code (the host's order; the old
+self order was `exited` then `terminated`).  `dap_smoke` is row-for-row equal
+on the process backend — including the `events` row — and a stopOnEntry →
+continue probe matches the host's stream; valgrind on the loop reads 0 errors.
 
 Fixed on 2026-09-27 (found by this audit):
 

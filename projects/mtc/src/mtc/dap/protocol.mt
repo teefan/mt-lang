@@ -1,10 +1,11 @@
 ## DAP protocol transport — Content-Length framed JSON-RPC-like messages over
-## stdio.  Reads DAP messages from stdin one character at a time, parses JSON
-## bodies with std.json, and writes framed responses.  Uses the same framing
-## and parsing patterns as mtc.lsp.protocol.
+## raw file descriptors.  A `Framer` buffers bytes read from one descriptor and
+## extracts complete messages; `mtc dap`'s libuv loop fills it from poll
+## callbacks and drains it between loop turns.  The writer targets stdout.
 
 import std.fmt
 import std.json as json
+import std.process as process
 import std.stdio as stdio
 import std.str
 import std.string as string
@@ -28,25 +29,134 @@ public struct Message:
     evt: string.String
 
 
-## Read one header line (terminated by \r\n) from stdin.
-function read_header_line(line: ref[string.String]) -> bool:
-    line.clear()
-    var got_any = false
-    while true:
-        let raw = stdio.read_char()
-        if raw < 0:
-            return got_any
-        got_any = true
-        let ch = ubyte<-raw
-        if ch == CR:
-            let next_raw = stdio.read_char()
-            if next_raw == LF or next_raw < 0:
+## A byte-buffered framer over one file descriptor.  `framer_fill` reads what
+## the descriptor has now (never blocks); `framer_next` extracts the next
+## complete message.  `eof` marks a closed descriptor, `malformed` a frame
+## without a usable Content-Length or body.
+public struct Framer:
+    fd: int
+    buffer: string.String
+    start: ptr_uint
+    eof: bool
+    malformed: bool
+
+
+public function framer_create(fd: int) -> Framer:
+    return Framer(
+        fd = fd,
+        buffer = string.String.create(),
+        start = 0,
+        eof = false,
+        malformed = false,
+    )
+
+
+public function framer_release(framer: ref[Framer]) -> void:
+    framer.buffer.release()
+
+
+## Read once from the descriptor into the buffer.  Returns true when bytes were
+## appended; EOF or a read failure marks the framer (already-buffered frames
+## are still parsed).
+public function framer_fill(framer: ref[Framer]) -> bool:
+    match process.read_fd(framer.fd, 0):
+        Result.success as payload:
+            var data = payload.value
+            if data.has_data():
+                framer.buffer.append(data.data.as_str())
+                data.release()
                 return true
-            line.push_byte(ch)
-            if next_raw >= 0:
-                line.push_byte(ubyte<-next_raw)
-        else:
-            line.push_byte(ch)
+            let closed = data.closed
+            data.release()
+            if closed:
+                framer.eof = true
+            return false
+        Result.failure as failure:
+            var error = failure.error
+            error.release()
+            framer.eof = true
+            framer.malformed = true
+            return false
+
+
+## Extract the next complete message, or none when more bytes are needed.
+public function framer_next(framer: ref[Framer]) -> Option[Message]:
+    let buffered = framer.buffer.as_str()
+    if framer.start >= buffered.len:
+        return Option[Message].none
+
+    let header_end = find_header_end(buffered, framer.start) else:
+        return Option[Message].none
+
+    let header_text = buffered.slice(framer.start, header_end - framer.start)
+    let headers = parse_headers(header_text)
+    if not headers.found or headers.length == 0:
+        framer.malformed = true
+        return Option[Message].none
+
+    let body_start = header_end + 4
+    if buffered.len < body_start + headers.length:
+        return Option[Message].none
+
+    let body_text = buffered.slice(body_start, headers.length)
+    # Parse before compacting: `body_text` is a view into the buffer, and
+    # `compact` releases the old storage.
+    let message = message_from_body(body_text)
+    framer.start = body_start + headers.length
+    compact(framer)
+    return message
+
+
+## Parse Content-Length out of a header block.
+struct HeaderParse:
+    length: ptr_uint
+    found: bool
+
+
+function parse_headers(header_text: str) -> HeaderParse:
+    var length: ptr_uint = 0
+    var found = false
+    var line_start: ptr_uint = 0
+    while line_start < header_text.len:
+        var line_end = line_start
+        while line_end < header_text.len and header_text.byte_at(line_end) != CR:
+            line_end += 1
+        let line = header_text.slice(line_start, line_end - line_start)
+        match parse_content_length(line):
+            Option.some as value:
+                length = value.value
+                found = true
+            Option.none:
+                pass
+        line_start = line_end
+        if line_start < header_text.len and header_text.byte_at(line_start) == CR:
+            line_start += 1
+        if line_start < header_text.len and header_text.byte_at(line_start) == LF:
+            line_start += 1
+    return HeaderParse(length = length, found = found)
+
+
+## Index of the `\r\n\r\n` that ends the header block, searched from `start`.
+function find_header_end(text: str, start: ptr_uint) -> Option[ptr_uint]:
+    var i = start
+    while i + 3 < text.len:
+        if text.byte_at(i) == CR and text.byte_at(i + 1) == LF and text.byte_at(i + 2) == CR and text.byte_at(i + 3) == LF:
+            return Option[ptr_uint].some(value = i)
+        i += 1
+    return Option[ptr_uint].none
+
+
+## Drop the consumed prefix once it dominates the buffer.
+function compact(framer: ref[Framer]) -> void:
+    if framer.start == 0:
+        return
+    if framer.start < framer.buffer.len() and framer.start < 4096:
+        return
+    let remaining = framer.buffer.as_str().slice(framer.start, framer.buffer.len() - framer.start)
+    var copy = string.String.from_str(remaining)
+    framer.buffer.release()
+    framer.buffer = copy
+    framer.start = 0
 
 
 ## Parse Content-Length from a header line.  Returns none on no match.
@@ -66,47 +176,9 @@ function parse_content_length(line: str) -> Option[ptr_uint]:
     return Option[ptr_uint].some(value = value)
 
 
-## Read exactly `count` bytes from stdin into `body`.
-function read_body_bytes(body: ref[string.String], count: ptr_uint) -> bool:
-    body.clear()
-    var remaining = count
-    while remaining > 0:
-        let raw = stdio.read_char()
-        if raw < 0:
-            return false
-        body.push_byte(ubyte<-raw)
-        remaining -= 1
-    return true
-
-
-## Read one DAP message from stdin.  Returns none on EOF / protocol error.
-public function read_message() -> Option[Message]:
-    var header_line = string.String.create()
-    defer: header_line.release()
-    var body = string.String.create()
-    defer: body.release()
-
-    var content_length: ptr_uint = 0
-    var found_length = false
-    while true:
-        if not read_header_line(ref_of(header_line)):
-            return Option[Message].none
-        let length = parse_content_length(header_line.as_str())
-        match length:
-            Option.some as len_payload:
-                content_length = len_payload.value
-                found_length = true
-            Option.none:
-                pass
-        if header_line.len() == 0:
-            break
-
-    if not found_length or content_length == 0:
-        return Option[Message].none
-    if not read_body_bytes(ref_of(body), content_length):
-        return Option[Message].none
-
-    let body_text = body.as_str()
+## Parse one JSON body into a Message (ownership: `build_message` takes the
+## parsed tree and the raw body).
+function message_from_body(body_text: str) -> Option[Message]:
     if body_text.len == 0:
         return Option[Message].none
 
@@ -251,4 +323,3 @@ public function release_message(msg: ref[Message]) -> void:
     msg.command.release()
     msg.message.release()
     msg.evt.release()
-

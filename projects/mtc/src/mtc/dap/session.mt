@@ -37,6 +37,9 @@ public struct Session:
     runtime_started: bool
     runtime_pid: int
     runtime_paused: bool
+    entry_stop_emitted: bool
+    backend_kind: string.String
+    adapter_path: string.String
     breakpoints_by_source: map_mod.Map[string.String, vec.Vec[Breakpoint]]
     function_breakpoints: vec.Vec[FunctionBreakpoint]
     tmp_dirs: vec.Vec[string.String]
@@ -96,6 +99,9 @@ public function create() -> Session:
         runtime_started = false,
         runtime_pid = 0,
         runtime_paused = false,
+        entry_stop_emitted = false,
+        backend_kind = string.String.from_str("process"),
+        adapter_path = string.String.create(),
         breakpoints_by_source = map_mod.Map[string.String, vec.Vec[Breakpoint]].create(),
         function_breakpoints = vec.Vec[FunctionBreakpoint].create(),
         tmp_dirs = vec.Vec[string.String].create(),
@@ -105,6 +111,8 @@ public function create() -> Session:
 public function release(ses: ref[Session]) -> void:
     ses.program_path.release()
     ses.runnable_path.release()
+    ses.backend_kind.release()
+    ses.adapter_path.release()
     var ai: ptr_uint = 0
     while ai < ses.program_args.len():
         let p = ses.program_args.get(ai)

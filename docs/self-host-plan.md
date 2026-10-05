@@ -61,16 +61,20 @@ recipes complete for all **11** vendored families (raylib, glfw, tracy, cjson,
 box2d, box3d, sdl3, flecs, pcre2, steamworks, libuv).  Bindgen self-hosted (687 lines CL
 → MT type mapper + clang JSON AST parser).
 
-**DAP: 7 modules, ~1,050 lines; the dispatcher answers 26 DAP commands (15 with
-dedicated handlers; `attach`, `evaluate`, `next`/`stepIn`/`stepOut`, `restart`,
-`setVariable`, `setExpression` and `dataBreakpointInfo` return the process
-backend's explicit "not supported" errors until the lldb-dap bridge).  `tools/dap_smoke.rb`
-audits it against the host per request (2026-09-27: capabilities, launch, threads,
-stackTrace, scopes, variables, breakpoints and the whole error surface are identical
-for the process backend; re-measured 2026-10-03 — request parity holds, while the
-terminal *event order* differs (`terminated`→`exited` vs `exited`→`terminated`)
-and build-on-launch is missing; the remaining gaps — build-on-launch, the
-lldb-dap bridge, the debug map — are §10 of `docs/dap-design.md`).**
+**DAP: 7 modules plus the shared `mtc/debug_map.mt`; the dispatcher answers 26
+DAP commands (15 with dedicated handlers; `attach`, `evaluate`,
+`next`/`stepIn`/`stepOut`, `restart`, `setVariable`, `setExpression` and
+`dataBreakpointInfo` return the process backend's explicit "not supported"
+errors until the lldb-dap bridge).  `tools/dap_smoke.rb` audits it against the
+host per request (2026-10-04 session 34: the process backend is **row-for-row
+equal** — capabilities, launch, threads, stackTrace, scopes, variables,
+breakpoints, the whole error surface and the `terminated`→`exited` event order,
+with the debuggee started at `configurationDone` and `pause`/`continue`
+signaling the child; valgrind on the loop, 0 errors).  `launch` on a `.mt`
+source now builds it with the running compiler into a temp dir (the debug-map
+sidecar rides the binary cache).  The remaining gaps — the lldb-dap bridge, the
+debug-map frame/variable rewrites, pause diagnostics and `modules` — are §10 of
+`docs/dap-design.md`.**
 **LSP: 42 modules, ~29.3k lines (2026-10-04 session 33 count); capability-parity with Ruby; feature parity measured at **5 differing entries** (§0k), all deliberate and documented (the `debugInfo` Facts/Bindings remainder as of session 33, host parser recovery, the host hanging on a malformed frame, the host's facts lag, and the host's directory-form module `typeDefinition` path, where the self resolves the imported declaration — session 28).  The harness corpus is **70 requests + 27 probes**.  All 30 capability keys match, both semantic-token comparisons are byte-equal, and a real VS Code session runs clean (the 2026-09-26 `codeLens/resolve` double free is fixed, and the harness now drives the resolve endpoints a real client sends).**
 **LSP project audit (live counter, 2026-10-03 session 27): `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame` — 7075 entries, **4 stable differing entries + the host's first-file `documentSymbol` race**: `completion` **2** (the session-26 close read 4; the two byte-vs-character position entries are closed by the request-boundary conversion — the residue is the host's synthesized `ref` lifetime `mst@224:18` and the host giving up on a `map_error` arm binding `lb@818:17`, both documented), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward); the race entry (`docs/data_structures.mt documentSymbol`) appears only when the host's first-file facts lag (measured in the gates run).  **Every other class 0**, including `diagnostic` (all seven files' diagnostic arrays are byte-identical after the session-18 linter work), `definition`/`declaration`/`typeDefinition`/`implementation`/`references` (915 each, 0), `documentSymbol` and the file-level endpoints.**
 **LSP project audit (previous live counter, 2026-10-03 session 26): 7075 entries, **6 differ = `completion` 4 + the 2 documented entries**: completion **4** (235 at the session-24 close; the residue is classified in §0k's part-3 record — the host's synthesized `ref` lifetime, the host giving up on a `map_error` arm binding, and two byte-vs-character positions inside comment lines), `hover` 1 (the documented `type quat` `lb@1653:24`) and `documentHighlight` 1 (`lb@704:67`, the host's warm-facts snapshot carry-forward).**  Earlier live counters: session 18 read 2 differ on the then-6456-entry corpus (the entry count grew with the completion pass), session 13 read 22.
@@ -644,9 +648,18 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    names → scopes/variables → `evaluate`/`next`/`stepIn`/`stepOut`/`continue` →
    `modules` → pause console output).  Finish with a real xvfb VS Code session
    on the default backend.
-6. **Terminal event order (measured 2026-10-03).**  The process backend's final
-   events differ: the host emits `terminated` then `exited`, the self `exited`
-   then `terminated` (`tmp/dap-s25.json`, the `events` row).  Align the order.
+6. **Terminal event order (measured 2026-10-03); unified loop (session 34).**
+   **Landed**: the process backend now emits `terminated` then `exited` with the
+   real exit code (the host's order), and the debuggee starts at
+   `configurationDone` (the host's `maybe_start_or_stop_on_entry`; `continue`
+   starts it after an entry stop, `pause`/`continue` SIGSTOP/SIGCONT,
+   `terminate`/`disconnect` SIGTERM and let the exit produce the events).  The
+   blocking stdio reader became a `Framer` over raw fd reads
+   (`std.process.read_fd`) driven by a libuv loop: a poll handle on fd 0 plus a
+   100 ms wake-up timer, with frames dispatched and the child drained between
+   loop turns.  `dap_smoke` is row-for-row equal on the process backend
+   (including `events`); a stopOnEntry → continue probe matches the host;
+   valgrind on the loop reads 0 errors.
 
 ### Track 6 — Imported bindings and bindgen
 
