@@ -701,6 +701,41 @@ function test_tuple_constant_lowers_to_array_literal() -> void:
     expect(dumped.contains_substring(":name \"BINT\" :linkage_name \"main_BINT\" :type (Types::Tuple :element_types ((Types::Primitive :name \"bool\") (Types::Primitive :name \"int\")) :field_names (\"_0\" \"_1\")) :value (IR::ArrayLiteral :type (Types::Tuple :element_types ((Types::Primitive :name \"bool\") (Types::Primitive :name \"int\")) :field_names (\"_0\" \"_1\")) :elements ((IR::BooleanLiteral :value true :type (Types::Primitive :name \"int\")) (IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\"))))"))
 
 
+@[test]
+function test_event_fields_use_hidden_name_and_event_type() -> void:
+    ## A struct-declared event is stored under its hidden C name
+    ## (`__event_<name>`) with the event type (`Types::Event`), and every
+    ## member access is routed through the hidden name — the host's
+    ## `lower_struct_decl` and `member_c_name` shapes.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_event_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct Window:
+            title: str
+            event closed[4]
+
+        function ping(w: ref[Window]) -> void:
+            w.closed.emit()
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring("(IR::Field :name \"__event_closed\" :type (Types::Event :name \"closed\" :capacity 4 :payload_type nil))"))
+    expect(dumped.contains_substring(":member \"__event_closed\" :type (Types::Event :name \"closed\" :capacity 4 :payload_type nil)"))
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================

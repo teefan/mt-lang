@@ -178,7 +178,13 @@ refined-operand difference); its files' first difference is now the
 `IR::ReinterpretExpr` (rendered through a `memcpy` helper with a
 `_Static_assert`), the self a `Cast` except for float bit-reinterprets (a
 union compound literal), and the source type needs the host's unwrapped
-pointer resolution.  Session
+pointer resolution.  **Item 4 landed in the same session**: struct-declared
+events become `__event_<name>` fields typed `Types::Event`, member accesses
+route through the hidden name, and the backend gained the `ty_event` topo
+dependency — `examples/event_stress_test.mt` +737, its (and the `ev.mt`
+fixture's) next first difference being **4b**: the owner-qualified event
+runtime naming (`mt_event_<module>_<owner>_<name>[_<payload>]_<capacity>`),
+where the self still keys its event runtimes by bare name.  Session
 39 had landed **`lower` Track 3 item 1: opaque
 declarations** (the first difference for all 34 sdl3 files): declared names,
 the host's `forward_declarable` rule, forward-declaration emission and the
@@ -661,20 +667,45 @@ quote the set).
    `std/hash.mt:113,143`, plus `projects/mtc/src/mtc/**`'s pointer↔pointer
    reinterprets.  Scope: the source-type rule, the C helper emission (or a
    verified-equivalent rendering), then the sweep.
-4. **Event fields** (item 4; `event_stress_test`, first difference at 21212).
-   The host emits `IR::Field(name = "__event_<name>", ty = <Types::Event>)`
-   (hidden name `types.rb:775`, `declarations.rb:239`) and routes every event
-   member access through that name (`expressions.rb:1743-1745`); the self
-   currently rewrites the field's *type* to the event C struct but keeps the
-   declared field name (`lower_struct_decl`, `lowering.mt:14127-14131`) and
-   emits the declared name in member accesses (`lower_member_access`'s final
-   `expr_member`, `:13932-13936`).  Fix: detect the event field as
-   `lower_struct_decl` already does, emit `name = j2("__event_", nt.name)`
-   with the `ty_event` built from the runtime info (mirroring the `decl_event`
-   arm), and rename the member in `lower_member_access` when
-   `is_event_type(ctx, member_ty)`; check
-   `extract_generic_struct_fields` (`:8028`) for the generic-instance path and
-   the event IR tests for the old names.
+4. **Event fields** — **DONE (session 40, 2026-10-06)**.  `lower_struct_decl`
+   emits `IR::Field(name = "__event_<name>", ty = Types::Event …)` built from
+   the runtime info (name/capacity/payload/linkage), and `lower_member_access`
+   routes an event-typed member through the hidden name *and* the event type
+   (`is_event_type` + `event_name_from_type` + the local `events` map),
+   mirroring the host's `lower_struct_decl` (`declarations.rb:236-240`) and
+   `member_c_name` (`expressions.rb:1743-1745`); the C backend's
+   `by_value_dep_key` gained a `ty_event` arm returning the event's linkage
+   name so the embedding struct is ordered behind the runtime definition (the
+   fixture failed with "field has incomplete type" without it).  Measured:
+   sweep set unchanged with `examples/event_stress_test.mt` **+737** (its
+   first difference moves to 4b); locked by
+   `test_event_fields_use_hidden_name_and_event_type` (fails with the change
+   reverted); the `ev.mt` fixture (struct event + `emit`) builds and runs on
+   both compilers, and `projects/stress` still builds and exits 242.
+   Residual: a cross-module event field (`is_event_type` consults only the
+   local module's `events` map) is not routed through the hidden name — no
+   corpus file exercises it (only `event_stress_test` moved, and no std file
+   even declares an event), but a cross-module event member access would emit
+   `.closed` against the renamed C struct; fold this into 4b.
+4b. **Owner-qualified event runtime naming** (newly exposed by item 4; the
+   `ev.mt` fixture's first difference at byte 655, `event_stress_test`'s after
+   its +737).  The host's `Types::Event#linkage_name` (`types.rb:748-756`) is
+   `mt_event[_<sanitized module>][_<sanitized owner>][_<sanitized name>]` +
+   `[_<sanitized payload to_s>]_<capacity>`, where `owner_type_name` is the
+   declaring struct's qualified name (`type_declaration.rb:564,870`; nested
+   `Container.Inner`); the self's `ensure_event_runtime` keys
+   `ctx.event_runtimes` by the bare event *name* and builds
+   `mt_event_<module>_<name>_<capacity>` — no owner and no payload segment, so
+   **two same-named events in different structs share one runtime today** (a
+   correctness bug the host does not have).  Scope: key the runtimes by
+   (owner, name) — keeping the module level the nil-owner case — thread the
+   owner from `lower_struct_decl` (the struct's qualified name), the member
+   access (the receiver type's owner) and `decl_event`; extend the linkage
+   construction with the owner/payload segments; update every `event_c_name`
+   consumer (runtime struct names and suffixes, field/member types, the
+   cross-module rename residual from item 4); then re-sweep
+   `event_stress_test`, `nested_struct_stress_test`, `language_baseline` and
+   `projects/stress`.
 5. **Function-type names** (item 6) — **DONE (session 16, F5, `6ad423ce`)**:
    `ty_function` carries the callee's name, `type_to_string` renders `fn <name>`
    and `sexpr.mt` emits it.  Keep as a regression watch only.
@@ -1201,7 +1232,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d, 2e(a) and 2e(b) — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names and the tuple constant's `ArrayLiteral` shape — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed — its files now first-differ on 3b (`reinterpret`), recorded.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b) and 4 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape and the event fields — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed — its files now first-differ on 3b (`reinterpret`), recorded.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1344,17 +1375,40 @@ module's struct constant.  Baseline at this commit: **43 match / 623 differ /
   compound literal), with the source type needing the host's unwrapped
   pointer resolution.  Recorded in Track 3 with the corpus sites and the
   nullable-source pitfall.
+- **Item 4 (landed in the same session) — event fields.**  A struct-declared
+  event is now emitted as `IR::Field(name = "__event_<name>", ty =
+  Types::Event …)` (runtime info: capacity/payload/linkage) and every
+  event-typed member access is routed through the hidden name and the event
+  type (`lower_member_access`'s `is_event_type`/`event_name_from_type`
+  branch), mirroring the host's `lower_struct_decl`/`member_c_name`; the C
+  backend's `by_value_dep_key` gained the `ty_event` arm so the embedding
+  struct is topo-ordered after the runtime definition (the `ev.mt` fixture
+  otherwise failed with GCC's "field has incomplete type").  Measured: sweep
+  set unchanged, `examples/event_stress_test.mt` **+737** (21212 → 21949,
+  where the next difference is the nested-struct C name `Container_Inner` vs
+  `Inner` — the track-9 residue family), 0 newly differing, 0 shallower.
+  Locked by `test_event_fields_use_hidden_name_and_event_type` (fails with
+  the change reverted).  Smoke: the `ev.mt` fixture builds and runs on both
+  compilers; `projects/stress` builds and exits 242; dev self-test 19/0.
+  Newly exposed: **4b** — the host's event linkage embeds the owner struct
+  and payload (`mt_event_<module>_<owner>_<name>_<payload>_<capacity>`,
+  `types.rb:748-756`), while the self keys its runtimes by bare name and omits
+  both segments, so two same-named events in different structs share one
+  runtime today (the `ev.mt` fixture first-differs at byte 655 on
+  `mt_event_ev_Window_closed_4__slot` vs `mt_event_ev_closed_4__slot`).
+  Residual: cross-module event member accesses are not hidden-name-routed
+  (`is_event_type` consults only the local `events` map; no corpus case).
 - **Verification**: `test_global_initialized_from_imported_const` locks the
   fold — a main-module global ← generated module const ← raw-module struct
-  const chain, asserting the aggregate entry in the dump; all seven new tests
+  const chain, asserting the aggregate entry in the dump; all eight new tests
   fail with their change reverted (checked).  Tier-2 gates on the frozen tree
-  (`tools/gates.sh` areas codegen+other+tests, all six items): dev build +
-  dev self-test (19 files / 0 failed), bootstrap fixed point (`stage2.c ==
+  (`tools/gates.sh` areas codegen+tests, all seven items): dev build + dev
+  self-test (19 files / 0 failed), bootstrap fixed point (`stage2.c ==
   stage3.c`, 19 files / 0 failed), `test/mt` 60/0, the `lower` sweep
   **44/622/51/0** with the set comparisons above, examples 49/49 same; the
   `box_stack.mt` (dyn vtable + tuple) and `event_stress_test.mt` builds, the
-  `p.mt`/`store.mt`/`ord.mt`/`use.mt`/`mixuse.mt` fixtures (byte-identical)
-  and the emitted C for a tuple are the smoke checks.
+  `p.mt`/`store.mt`/`ord.mt`/`use.mt`/`mixuse.mt`/`ev.mt` fixtures and the
+  emitted C for a tuple are the smoke checks.
 
 ### Session 39 (2026-10-05) — `lower` Track 3 item 1: opaque declarations
 

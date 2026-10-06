@@ -3484,6 +3484,11 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
             return Option[str].none
         types.Type.ty_tuple:
             return Option[str].some(value = naming.tuple_type_c_name(ty))
+        # An event field embeds the event's runtime struct by value, so the
+        # struct must be ordered behind the runtime definition (`c_type` renders
+        # the same linkage name).
+        types.Type.ty_event as ev:
+            return Option[str].some(value = ev.linkage_name)
         # A match-arm payload binding (`Result[T, E].success as p`) is typed as
         # the arm-payload struct (`<variant>_success`) and embeds it by value —
         # e.g. an async frame field spilling the binding across an await.  The

@@ -13929,10 +13929,28 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                                         member_ty = tuple_element_type(recv_ty, index)
                                             _:
                                                 pass
+    # An event field is stored under its hidden C name (`__event_<name>`) and
+    # typed as the event, as the host's member-name resolution routes it.
+    var member_name = member
+    var member_type = member_ty
+    if is_event_type(ctx, member_ty):
+        member_name = j2("__event_", member)
+        let ev_name = event_name_from_type(member_ty)
+        if ctx.analysis.events.contains(ev_name):
+            var ev_info = ensure_event_runtime(ctx, ev_name)
+            var ev_payload: ptr[types.Type]? = null
+            if ev_info.has_payload:
+                ev_payload = types.alloc_type(ev_info.payload_type)
+            member_type = types.Type.ty_event(
+                name = ev_name,
+                capacity = ev_info.capacity,
+                payload_type = ev_payload,
+                linkage_name = ev_info.event_c_name,
+            )
     var result = alloc_expr(ir.Expr.expr_member(
         receiver = recv,
-        member = member,
-        ty = qualify_type(ctx, member_ty),
+        member = member_name,
+        ty = qualify_type(ctx, member_type),
     ))
     # Auto-dereference recursive variant fields (e.g. bin.left where left
     # is stored as Expr* in C to avoid infinite struct size).
@@ -14122,13 +14140,24 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignmen
         unsafe:
             entry = read(entries.data + i)
         var fty = entry.ty
-        # Event fields need their C-linkage struct name (e.g.
-        # `mt_event_mod_closed_4`), not the declared name (`closed`).
+        var fname = entry.name
+        # An event field is stored under its hidden C name
+        # (`__event_<name>`) with the event type, as the host's
+        # `lower_struct_decl` emits it (`Types::Event#hidden_field_name`).
         match fty:
             types.Type.ty_named as nt:
                 if ctx.analysis.events.contains(nt.name):
                     var info = ensure_event_runtime(ctx, nt.name)
-                    fty = types.Type.ty_named(module_name = "", name = info.event_c_name)
+                    var ev_payload: ptr[types.Type]? = null
+                    if info.has_payload:
+                        ev_payload = types.alloc_type(info.payload_type)
+                    fty = types.Type.ty_event(
+                        name = nt.name,
+                        capacity = info.capacity,
+                        payload_type = ev_payload,
+                        linkage_name = info.event_c_name,
+                    )
+                    fname = j2("__event_", nt.name)
             _:
                 pass
         # A `str_buffer[N]` used only as a struct field still needs its backing
@@ -14139,7 +14168,7 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignmen
                     ensure_str_buffer_struct(ctx, fty)
             _:
                 pass
-        ir_fields.push(ir.Field(name = entry.name, ty = qualify_type(ctx, opaqueify_type(ctx, fty))))
+        ir_fields.push(ir.Field(name = fname, ty = qualify_type(ctx, opaqueify_type(ctx, fty))))
         i += 1
     return Option[ir.StructDecl].some(value = ir.StructDecl(
         name = name,
