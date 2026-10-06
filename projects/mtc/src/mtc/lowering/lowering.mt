@@ -18755,11 +18755,9 @@ function try_const_tuple_ir(ctx: ref[LowerCtx], elements: span[ast.Expr], env: r
     var fields = vec.Vec[ir.AggregateField].create()
     var fi: ptr_uint = 0
     while fi < values.len():
-        var name = string.String.create()
-        name.append(int_to_str(int<-fi))
         let vp = values.get(fi) else:
             return Option[ptr[ir.Expr]].none
-        fields.push(ir.AggregateField(name = name.as_str(), value = vp))
+        fields.push(ir.AggregateField(name = tuple_field_name(fi), value = vp))
         fi += 1
     let tup_ty = types.Type.ty_tuple(elements = tys.as_span(), field_names = Option[span[str]].none)
     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = tup_ty, fields = fields.as_span())))

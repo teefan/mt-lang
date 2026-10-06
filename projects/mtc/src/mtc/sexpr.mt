@@ -560,16 +560,25 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
         types.Type.ty_tuple as tup:
             var tf = vec.Vec[SexprField].create()
             tf.push(field_value("element_types", types_list_value(ctx, tup.elements)))
+            var nv = vec.Vec[SexprValue].create()
             match tup.field_names:
                 Option.some as names:
-                    var nv = vec.Vec[SexprValue].create()
                     var ni: ptr_uint = 0
                     while ni < names.value.len:
                         nv.push(SexprValue.sv_str(value = unsafe: read(names.value.data + ni)))
                         ni += 1
-                    tf.push(field_value("field_names", list_value(nv.as_span())))
                 Option.none:
-                    tf.push(field_nil("field_names"))
+                    # The host's `Types::Tuple#field_names` always carries the
+                    # default positional names (`_0`, `_1`, …); the self's
+                    # internal model omits them for an anonymous tuple.
+                    var di: ptr_uint = 0
+                    while di < tup.elements.len:
+                        var dname = string.String.create()
+                        dname.append("_")
+                        fmt.append_ptr_uint(ref_of(dname), di)
+                        nv.push(SexprValue.sv_str(value = dname.as_str()))
+                        di += 1
+            tf.push(field_value("field_names", list_value(nv.as_span())))
             return node("Types::Tuple", tf.as_span())
         types.Type.ty_literal_int as lit:
             return node("Types::LiteralTypeArg", fields1(field_int("value", lit.value)))

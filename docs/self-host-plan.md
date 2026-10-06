@@ -163,8 +163,12 @@ module declarations, the host's single `@artifacts.synthetic_structs` shape;
 the sweep set is unchanged with **42 files' first difference deeper** (the
 whole box2d/box3d families at +13,164, the `std/net/**` async family,
 `async_stress_test`/`async_network_lobby`, stress/tetris, the DAP protocol
-modules).  **2e** records the remaining tuple-type `field_names` defaults and
-the folded-tuple literal shape.  Session
+modules).  **Item 2e(a) landed in the same session**: an anonymous tuple's
+type renders the host's default `_0..` field names, and the folded-tuple
+aggregate names its fields the same way — `std/color.mt` flips to
+byte-identical (**43 → 44 match / 622 differ**) and `test/mt/color_test.mt`
+moves +46,643; **2e(b)** (the folded-const `IR::ArrayLiteral` shape) stays
+recorded.  Session
 39 had landed **`lower` Track 3 item 1: opaque
 declarations** (the first difference for all 34 sdl3 files): declared names,
 the host's `forward_declarable` rule, forward-declaration emission and the
@@ -600,15 +604,21 @@ quote the set).
    (the host's IR carries none — `examples/raylib/core/compute_hash.mt`: host
    0, self 3); they now ride the same list, and removing them from the IR
    needs backend-side synthesis — a separate item if pursued.
-2e. **Tuple type rendering and the folded-tuple literal shape (newly exposed
-   by 2c; pre-existing)**.  (a) The host's `Types::Tuple#field_names` always
-   carries the defaults: its dump renders `:field_names ("_0" "_1")` where the
-   self renders `nil` for anonymous tuples
-   (`lower_tuple_literal_with_names` sets `None`); the box3d fixtures match
-   only because the tuple literal sits in a function body below the first
-   difference.  (b) A global initialized from an imported tuple *const* is
-   `IR::ArrayLiteral` on the host and `IR::AggregateLiteral` on the self
-   (fixture: `var g_pair: (int, int) = libx.ZERO`; first difference byte 362).
+2e. **Tuple type rendering and the folded-tuple literal shape**.
+   (a) **DONE (session 40, 2026-10-06)**: the sexpr dumper now renders an
+   anonymous tuple's `Types::Tuple#field_names` with the host's default
+   positional names (`("_0" "_1")`) instead of `nil`, and `try_const_tuple_ir`
+   names a folded tuple's aggregate fields `_0..` (they were `0`/`1`) — the
+   sweep went **43 → 44 match / 623 → 622 differ** (`std/color.mt` is
+   byte-identical) with `test/mt/color_test.mt` moving +46,643 and 0 newly
+   differing; locked by `test_anonymous_tuple_renders_default_field_names`.
+   The self's internal model keeps `None` for an anonymous tuple (the dumper
+   and the C name/field paths handle both forms), so only the dump changes.
+   (b) A global initialized from an imported tuple *const* is
+   `IR::ArrayLiteral` on the host (the const's folded value is an Array fed
+   through `lower_const_value_literal`) and `IR::AggregateLiteral` on the self
+   (fixture: `var g_pair: (int, int) = libx.ZERO`; first difference byte 388
+   after 2e(a)) — open.
 3. **Refined (non-null) operand types after a null check** (item 14;
    `data_structures` + `reflection_advanced`'s first difference).  **Verify
    first** — F2's continuation refinement (session 15) may already have closed
@@ -1146,7 +1156,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c and 2d — global-from-imported-const folding, named function-reference types, tuple value structs and the synthetic-struct ordering — leave the counts and the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** and 0 shallower/newly differing; item 1's flips stand.  Session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d and 2e(a) — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering and the anonymous-tuple default field names — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; item 1's flips stand.  Session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1253,17 +1263,29 @@ module's struct constant.  Baseline at this commit: **43 match / 623 differ /
   state).  Residual: the `mt_str_buffer_*` decls have no host counterpart (the
   host's IR carries none) — they ride the same list now; removing them from
   the IR needs backend-side synthesis.
+- **Item 2e(a) (landed in the same session) — the anonymous tuple's default
+  field names.**  The host's `Types::Tuple#field_names` always carries the
+  defaults; the self's model omits them, so the dumper now fills `("_0"
+  "_1" …)` when `field_names` is `None`, and `try_const_tuple_ir` names a
+  folded tuple's aggregate fields `_0..` (they were `0`/`1`).  Measured: the
+  sweep went **43 → 44 match / 623 → 622 differ** with **`std/color.mt`
+  byte-identical** (its first difference was exactly this rendering) and
+  `test/mt/color_test.mt` +46,643; 0 newly differing, 0 shallower.  Locked by
+  `test_anonymous_tuple_renders_default_field_names` (fails with the change
+  reverted).  The tuple fixtures `p.mt`, `store.mt` and `ord.mt` are now
+  byte-identical end-to-end; `use.mt` keeps 2e(b) (the host lowers a folded
+  tuple const through `lower_const_value_literal` into an `IR::ArrayLiteral`).
 - **Verification**: `test_global_initialized_from_imported_const` locks the
   fold — a main-module global ← generated module const ← raw-module struct
-  const chain, asserting the aggregate entry in the dump; all six new tests
+  const chain, asserting the aggregate entry in the dump; all seven new tests
   fail with their change reverted (checked).  Tier-2 gates on the frozen tree
-  (`tools/gates.sh` areas codegen+tests, all four items): dev build + dev
-  self-test (19 files / 0 failed), bootstrap fixed point (`stage2.c ==
+  (`tools/gates.sh` areas codegen+other+tests, all five items): dev build +
+  dev self-test (19 files / 0 failed), bootstrap fixed point (`stage2.c ==
   stage3.c`, 19 files / 0 failed), `test/mt` 60/0, the `lower` sweep
-  43/623/51/0 with the set comparisons above, examples 49/49 same; the
+  **44/622/51/0** with the set comparisons above, examples 49/49 same; the
   `box_stack.mt` (dyn vtable + tuple) and `event_stress_test.mt` builds, the
-  `p.mt`/`store.mt` tuple builds+runs and the emitted C for a tuple
-  (byte-identical to the host's) are the smoke checks.
+  `p.mt`/`store.mt`/`ord.mt` fixtures (byte-identical) and the emitted C for
+  a tuple are the smoke checks.
 
 ### Session 39 (2026-10-05) — `lower` Track 3 item 1: opaque declarations
 

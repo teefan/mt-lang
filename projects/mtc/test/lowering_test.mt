@@ -633,6 +633,38 @@ function test_synthetic_structs_follow_creation_order() -> void:
     expect(tuple_pos < vtable_pos)
 
 
+@[test]
+function test_anonymous_tuple_renders_default_field_names() -> void:
+    ## The host's `Types::Tuple#field_names` always carries the default
+    ## positional names, so an anonymous tuple literal's type renders
+    ## `:field_names ("_0" "_1")` rather than `nil`.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_tupnames_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct P:
+            x: int
+
+        function f() -> (P, int):
+            return (P(x = 1), 2)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring("(Types::Tuple :element_types ((Types::Struct :name \"P\" :module_name \"main\") (Types::Primitive :name \"int\")) :field_names (\"_0\" \"_1\"))"))
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================
