@@ -480,6 +480,16 @@ Also open from the analyzer track (they gate audit entries and lint rows):
   module-level functions/consts/vars/events have no sema check at all
   (`ensure_non_reserved_value_type_name!`/`ensure_non_reserved_name!`,
   `type_declaration.rb:322-862`, `function_binding.rb:217-227`).
+- **Sema message type rendering and the return-mismatch position** (found in
+  session 40 while probing tuple rendering): the host's `return type mismatch:
+  expected X, got Y` renders types with its `to_s` — module-qualified,
+  `expected std.vec.Vec[int], got int` — and reports the return site's position
+  (`…/bad.mt:4:5`); the self renders the display form (`expected Vec[int],
+  got int`) and reports `0:0`.  Repro: `return 1` from a function declared
+  `-> vec.Vec[int]`.  `cannot assign to immutable x` is byte-equal (`:10:7`),
+  so the gap is this site's rendering/position, not the diagnostic pipeline.
+  The host-flavored qualified renderer is the same machinery item 2c's tuple
+  decl name needs.
 
 Records: §0k sessions 19–23; session 28.
 
