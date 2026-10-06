@@ -531,11 +531,31 @@ Records: §0k sessions 19–23; session 28.
 
 ### Track 3 — Compiler `lower` dump parity
 
-Work in §0j's ranked order; after **each** item re-run
+Work in the ranked order below; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16` and re-rank.  Current set:
-**39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files**
-(session 33; the count drifts with the tree's own sources and the tmp fixtures —
-quote the set).
+**44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files**
+(session 40 close; the count drifts with the tree's own sources and the tmp
+fixtures — quote the set).
+
+**First-difference census (session 40) — the track's re-ranking.**  Bucketing
+the 622 differing files by their first difference (a throwaway classifier over
+the sweep's own `host:`/`self:` context lines; treat the sizes as ±a few)
+shows three categories covering ~78% of them:
+
+| Files | First difference | Where |
+| --- | --- | --- |
+| ~222 | **foreign-call body shape**: the host hoists `__mt_foreign_arg_<n>` / `__mt_foreign_result_<n>` locals into the statement stream; the self wraps the call in a `StmtExpr` with `__mt_foreign_cstr_<n>` / `__mt_foreign_ret_<n>` names | `examples/raylib/**` (~190) |
+| ~172 | **3b `reinterpret`**: host `IR::ReinterpretExpr` (plus its memcpy-helper C), self `IR::Cast` except for floats | `projects/mtc/src/**` (39), `examples/sdl3/**`, … |
+| ~92 | **include set/order**: the `:includes` list — the Program's first field | `projects/mtc/src/**` (42), `projects/mtc/test`, box2d/box3d/raylib examples |
+
+The foreign-call shape and the format-string shape (the sdl3 family's first
+difference) share a root cause: the self has no statement-hoisting channel for
+multi-step expressions and wraps them in `StmtExpr` where the host hoists
+locals into the block (`prepare_expression_for_inline_lowering`).  Recommended
+order: **3b → the include set (item 6) → the hoisting/foreign item (new)** —
+the first two are bounded (known mechanisms, no C-shape change), the third is
+the largest but the most architectural; the tail (event runtime 4b, the
+nested-struct C names, then items 7–9) follows file by file.
 
 1. **Opaque declarations** — **DONE (session 39, 2026-10-05)**.  `collect_opaque_decls`
    keeps the declared name, resolves the backing per `opaque_c_type_name`, sets
