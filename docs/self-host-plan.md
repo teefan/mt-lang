@@ -173,12 +173,16 @@ constant with an expression-list value lowers to the host's `IR::ArrayLiteral`
 `Types::Tuple` has no `arguments`) — corpus-neutral (the sweep set is
 unchanged; the `use.mt`/`mixuse.mt` fixtures are byte-identical).  **Item 3 is
 verified closed** (F2's continuation refinement had already fixed the
-refined-operand difference); its files' first difference is now the
-**`reinterpret` lowering**, ranked 3b: the host always emits
-`IR::ReinterpretExpr` (rendered through a `memcpy` helper with a
-`_Static_assert`), the self a `Cast` except for float bit-reinterprets (a
-union compound literal), and the source type needs the host's unwrapped
-pointer resolution.  **Item 4 landed in the same session**: struct-declared
+refined-operand difference); its files first-differed on the **`reinterpret`
+lowering** — **item 3b landed in the same session**: `reinterpret[T](x)`
+always lowers to `IR::ReinterpretExpr` with the flow-refined source type
+(the nullability pre-pass now runs for method bodies, and `flow_type_at`
+moved to the analyzer and scans the cursor's body span so the two-pass check
+order can't corrupt it) — **169 files' first difference deeper** with the
+set unchanged at 44/622; those files' next difference is **3c** (a
+pointer-like guard binding's read carries the storage type where the host's
+carries the narrowed success type), recorded in Track 3.  **Item 4 landed in
+the same session**: struct-declared
 events become `__event_<name>` fields typed `Types::Event`, member accesses
 route through the hidden name, and the backend gained the `ty_event` topo
 dependency — `examples/event_stress_test.mt` +737, its (and the `ev.mt`
@@ -301,7 +305,11 @@ cli/lex/parse/lint; add `FULL=1` for lower/format/LSP/DAP).
 harmlessly); quote *sets* where a counter drifts (sexpr's file count with the
 tmp fixtures, the audit's ±10 between runs); run generated binaries as
 `timeout 10 bash -c 'ulimit -v 20000000; …'`; no hacks — fix root causes; sync
-this file's records + ledger in the same commit as the code change.
+this file's records + ledger in the same commit as the code change; never run
+`mtc test` while a gate runs — the suite synthesizes `__mt_test_runner_*.mt`
+into `projects/mtc/test/`, so two concurrent runs discover each other's
+runners (`duplicate value main`), and a stray runner left by a killed run
+poisons the next bootstrap.
 
 ### Phase order and current position
 
@@ -667,26 +675,47 @@ nested-struct C names, then items 7–9) follows file by file.
    **VERIFIED CLOSED (session 40, 2026-10-06)**: F2's continuation refinement
    (session 15) already fixed the dump difference; both files' first
    difference is now 3b.
-3b. **`reinterpret` lowering** (newly exposed by item 3's verification; the
-   next first difference for `examples/data_structures.mt`,
-   `examples/reflection_advanced.mt` and every program lowering
-   `std/mem/heap.mt`).  The host always emits `IR::ReinterpretExpr` for the
-   builtin (`lowering/calls.rb:231-239`; the foreign-inline mapping path at
-   `:1146`) and renders it through a per-(target, source) `memcpy` helper with
-   a `_Static_assert` (`c_backend/reinterpret.rb:98-113`); the self emits a
-   `Cast` except when a float is involved
-   (`lowering.mt:7737-7749`) and renders those as a union compound literal
-   (`c_backend.mt:4347-4359`).  The source type needs the host's resolution:
-   for `reinterpret[ptr_uint](address)` in `std/mem/heap.mt` the host's
-   `source_type` is the **unwrapped `ptr[void]`** while the lowered `IR::Name`
-   carries `ptr[void]?` (`infer_expression_type` vs the recorded type) — so a
-   naive switch to `ReinterpretExpr` with `ir_expr_type(lowered)` mismatches
-   the dump *and* breaks the union rendering (16-byte nullable struct vs
-   8-byte integer).  Corpus sites: `std/mem/heap.mt:90,97`,
-   `std/net/session.mt:281,611`, `std/binary.mt:88,93,235,240`,
-   `std/hash.mt:113,143`, plus `projects/mtc/src/mtc/**`'s pointer↔pointer
-   reinterprets.  Scope: the source-type rule, the C helper emission (or a
-   verified-equivalent rendering), then the sweep.
+3b. **`reinterpret` lowering** — **DONE (session 40, 2026-10-06)**.  The
+   builtin now always lowers to `IR::ReinterpretExpr` (`lowering.mt:7737-7758`),
+   with the source type read from the host's refined env for an identifier
+   argument: `analyzer.flow_type_at` (moved from `lsp/navigation.mt` so the
+   lowering can share it) supplies the narrowed local type — `ptr[void]` after
+   `if p == null: return`, the declared `ptr[void]?` without a guard.  Two
+   supporting fixes: **the nullability pre-pass now runs for method bodies**
+   (`check_method_body` mirrors `check_function_body`'s CFG build + solve +
+   barrier — `std/mem/heap.mt`'s `contains` is a method, so without it the
+   heap sites never refined), and **`flow_type_at` scans the cursor's body
+   span** (the greatest start-barrier position at or before the cursor, then
+   entries up to the next barrier) because the check passes run functions
+   then methods — out of positional order — and the old flat scan let a later
+   body's barrier wipe an earlier body's records (repro: a method + a guarded
+   free function in one file; the two-pass order itself is host-locked by
+   `test_binding_ids_follow_the_hosts_allocation_order`, so the merge into one
+   positional pass was tried and reverted).  The C keeps the union
+   compound-literal rendering (valid once the source type matches; the host's
+   memcpy helper is a C-text difference, not a behavioural one — the builds
+   and runs are green).  Measured: sweep set unchanged (44/622/51/0) with
+   **169 files' first difference deeper, +1527 each** (the shared heap
+   module's reinterpret sites), 0 shallower/new; locked by
+   `test_reinterpret_always_reinterprets_with_refined_source` (fails with the
+   change reverted); the `re.mt`/`re4.mt`/`reintfix` fixtures are
+   byte-identical.  Gates: bootstrap fixed point + 19/0, `test/mt` 60/0,
+   cli_parity 24/37/0 unchanged, recovery OK, examples 49/49, the LSP harness
+   at its 4 documented entries and the project audit at its documented 5
+   (re-run after the `flow_type_at` change).
+3c. **A pointer-like guard binding's read type** (newly exposed by 3b: the
+   169 files' next first difference; `std/mem/heap.mt:93`'s `blocks`).  For
+   `let b = <ptr[T]?> else: …` the host types the *read* of `b` with the
+   narrowed success type (`ptr[T]`), while the self's read carries the storage
+   type (`Nullable(ptr[T])`): `guard_success_projection`
+   (`lowering.mt:3511-3515`) returns `storage_ref` — a name typed with the
+   storage type — for the pointer-like arm; the value-type arm already uses
+   the member's `success_ty`.  Repro: `tmp/g5/b.mt` (a guard + an
+   `unsafe: read(b + i)` use; the member-access path `b.x` matched because it
+   resolves the receiver through the binding, not `lower_binding_read`).  Fix:
+   rebuild the name with `ty = success_ty` (same C name/pointer) in that arm
+   — the host's `IR::Name` carries the narrowed type — then re-sweep (expect
+   the 169 files to move past the heap sites).
 4. **Event fields** — **DONE (session 40, 2026-10-06)**.  `lower_struct_decl`
    emits `IR::Field(name = "__event_<name>", ty = Types::Event …)` built from
    the runtime info (name/capacity/payload/linkage), and `lower_member_access`
@@ -1252,7 +1281,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b) and 4 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape and the event fields — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed — its files now first-differ on 3b (`reinterpret`), recorded.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b and 4 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering and the event fields — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed; the 169 files' next difference is 3c (the pointer-like guard read's type).  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1261,7 +1290,7 @@ definition of done above.
 | LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 38); the definitely-lost residue is down to ~64 KB per 10-cycle soak (was ~7.8 MB), dominated by the one-time index walk's arena-leaked ASTs | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
 | LSP soak | **68.1 KB/cycle raw / 19.9 KB/cycle least-squares** at `--cycles 200` on the synthetic ~5k-line workspace (session 38 close; was 3.96/3.98 MB/cycle — the per-edit AST/analysis leak is now owned by per-entry regions and drained per request; level 656 → 33 MB peak; the new `steady` mode reads 12.6 raw / 0.0 LS, `diag` 12.0 LS).  Residue: the one-time index walk's arena-leaked ASTs (~600 KB per workspace build, a level not a slope, documented) | slope → flat | `ruby tools/lsp_soak.rb --cycles 100` |
 | formatter | 712/712 all three modes byte-identical (re-measured 2026-10-04 session 33; file counts drift) | stay green | `ruby tools/format_parity.rb all -j 16` |
-| lint corpus | 496 agree / 120 differ (616 files; re-measured 2026-10-05 session 35 — the +3 files/+3 differs over session 33's 613/117 are session 34's new compiler sources, two of which differ, plus session 34's edits to existing sources; the session-35 edits flip no file — `analyzer.mt` was already a differing file at HEAD) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
+| lint corpus | 495 agree / 121 differ (616 files; re-measured 2026-10-06 session 40 — the shift over session 35's 496/120 is the session-40 corpus edits: re-running at HEAD reads the same 495/121, and the three files 3b edits read 3/3 differ at HEAD too; per-rule deltas unchanged in kind: redundant-cast 76/27, prefer-try 69/39, prefer-let 65/141, borrow-and-mutate 29/0, shadow 20/0, prefer-own-ptr 16/45 …) | 0 differ | `ruby tools/lint_parity.rb -q` (`--host-cache`) |
 | DAP | **zero differing rows** on the whole `dap_smoke` matrix (2026-10-04 session 34 — process backend, fake-adapter lldb and real `/usr/bin/lldb-dap` sessions), except the documented self-better `lldb-real frame0 name` (self `add`, host `main_add` — the host's cache-hit map loss); valgrind 0 errors on both backends | VS Code end-to-end under lldb-dap (manual) | `ruby tools/dap_smoke.rb` |
 | imported-bindings | 3 verified / 25 changed (re-measured 2026-10-03; cosmetic emitter gaps) | 28/28 or each justified | `mtc imported-bindings --all --check` |
 
@@ -1395,6 +1424,32 @@ module's struct constant.  Baseline at this commit: **43 match / 623 differ /
   compound literal), with the source type needing the host's unwrapped
   pointer resolution.  Recorded in Track 3 with the corpus sites and the
   nullable-source pitfall.
+- **Item 3b (landed in the same session) — the `reinterpret` lowering.**  The
+  builtin always emits `IR::ReinterpretExpr` now, with the source type from
+  `analyzer.flow_type_at` for an identifier argument (the function moved out
+  of `lsp/navigation.mt` so the lowering shares it).  Two supporting fixes
+  were needed to make the heap sites refine: **the nullability pre-pass for
+  method bodies** (`check_method_body` now mirrors `check_function_body`'s
+  CFG build + solve + barrier — `std/mem/heap.mt`'s `contains` is a method)
+  and **a body-scoped `flow_type_at`** (the greatest start-barrier position
+  at or before the cursor, then entries up to the next barrier) because the
+  two-pass check order (functions, then methods — host-locked by
+  `test_binding_ids_follow_the_hosts_allocation_order`, which caught an
+  attempted positional-pass merge and forced the body-scoped scan) made the
+  old flat scan let a later body's barrier wipe an earlier body's records.
+  Measured: sweep set unchanged (44/622/51/0), **169 files' first difference
+  deeper, +1527 each** (the shared heap module), 0 shallower/new; the
+  `re.mt`/`re4.mt`/`reintfix` fixtures are byte-identical, locked by
+  `test_reinterpret_always_reinterprets_with_refined_source`.  Gates
+  (clean tree, nothing else touching `projects/mtc/test`): bootstrap fixed
+  point + 19/0, `test/mt` 60/0, cli_parity 24/37/0, lint_parity 495/121
+  (unchanged from HEAD — the shift from the ledger's 496/120 is the
+  session-40 corpus edits, verified by re-running at HEAD), recovery OK,
+  examples 49/49; the LSP harness reads its 4 documented entries and the
+  audit its documented 5 after the change.  **Gate-rule lesson**: the
+  bootstrap's self-test suite and a concurrent `mtc test` run both synthesize
+  `__mt_test_runner_*.mt` in `projects/mtc/test/` and discover each other's
+  runners (`duplicate value main`) — never run the suite while a gate runs.
 - **Item 4 (landed in the same session) — event fields.**  A struct-declared
   event is now emitted as `IR::Field(name = "__event_<name>", ty =
   Types::Event …)` (runtime info: capacity/payload/linkage) and every
@@ -1420,15 +1475,18 @@ module's struct constant.  Baseline at this commit: **43 match / 623 differ /
   (`is_event_type` consults only the local `events` map; no corpus case).
 - **Verification**: `test_global_initialized_from_imported_const` locks the
   fold — a main-module global ← generated module const ← raw-module struct
-  const chain, asserting the aggregate entry in the dump; all eight new tests
+  const chain, asserting the aggregate entry in the dump; all nine new tests
   fail with their change reverted (checked).  Tier-2 gates on the frozen tree
-  (`tools/gates.sh` areas codegen+tests, all seven items): dev build + dev
-  self-test (19 files / 0 failed), bootstrap fixed point (`stage2.c ==
-  stage3.c`, 19 files / 0 failed), `test/mt` 60/0, the `lower` sweep
-  **44/622/51/0** with the set comparisons above, examples 49/49 same; the
-  `box_stack.mt` (dyn vtable + tuple) and `event_stress_test.mt` builds, the
-  `p.mt`/`store.mt`/`ord.mt`/`use.mt`/`mixuse.mt`/`ev.mt` fixtures and the
-  emitted C for a tuple are the smoke checks.
+  (the trimmed `tools/gates.sh --only bootstrap,test_mt,cli_parity,lint_parity,
+  recovery,examples --run` for 3b; the full codegen+tests set for items 2–4):
+  dev build + dev self-test (19 files / 0 failed), bootstrap fixed point
+  (`stage2.c == stage3.c`, 19 files / 0 failed), `test/mt` 60/0, the `lower`
+  sweep **44/622/51/0** with the set comparisons above, examples 49/49 same;
+  the LSP harness (4 documented) and the project audit (the documented 5) were
+  re-run after the `flow_type_at` change; the `box_stack.mt` (dyn vtable +
+  tuple) and `event_stress_test.mt` builds, the `p.mt`/`store.mt`/`ord.mt`/
+  `use.mt`/`mixuse.mt`/`ev.mt`/`re*.mt` fixtures and the emitted C for a tuple
+  are the smoke checks.
 
 ### Session 39 (2026-10-05) — `lower` Track 3 item 1: opaque declarations
 

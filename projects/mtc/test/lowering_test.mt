@@ -736,6 +736,57 @@ function test_event_fields_use_hidden_name_and_event_type() -> void:
     expect(dumped.contains_substring(":member \"__event_closed\" :type (Types::Event :name \"closed\" :capacity 4 :payload_type nil)"))
 
 
+@[test]
+function test_reinterpret_always_reinterprets_with_refined_source() -> void:
+    ## `reinterpret[T](x)` always lowers to `IR::ReinterpretExpr` (the host's
+    ## shape; the C backend copies the bits), and an identifier argument
+    ## carries the flow-refined local type — `ptr[void]` after
+    ## `if p == null: return`, the declared `ptr[void]?` without a guard —
+    ## including inside a method body (the nullability pre-pass now runs
+    ## there too).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_reint_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct R:
+            x: int
+
+        extending R:
+            function method_guard(address: ptr[void]?) -> bool:
+                if address == null:
+                    return false
+                unsafe:
+                    let t = reinterpret[ptr_uint](address)
+                    return t != 0
+
+        function checked(p: ptr[void]?) -> ptr_uint:
+            if p == null:
+                return 0
+            return unsafe: reinterpret[ptr_uint](p)
+
+        function unchecked(p: ptr[void]?) -> ptr_uint:
+            return unsafe: reinterpret[ptr_uint](p)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(not dumped.contains_substring("IR::Cast :target_type (Types::Primitive :name \"ptr_uint\")"))
+    expect(dumped.contains_substring("(IR::ReinterpretExpr :target_type (Types::Primitive :name \"ptr_uint\") :source_type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :expression (IR::Name :name \"p\" :type (Types::Nullable"))
+    expect(dumped.contains_substring("(IR::ReinterpretExpr :target_type (Types::Primitive :name \"ptr_uint\") :source_type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\")))) :expression (IR::Name :name \"p\" :type (Types::Nullable"))
+    expect(dumped.contains_substring("(IR::ReinterpretExpr :target_type (Types::Primitive :name \"ptr_uint\") :source_type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :expression (IR::Name :name \"address\" :type (Types::Nullable"))
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================

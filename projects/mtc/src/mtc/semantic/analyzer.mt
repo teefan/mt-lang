@@ -3017,7 +3017,20 @@ function check_method_body(ctx: ref[Context], this_type: types.Type, m: ast.Meth
     if rt != null:
         ret = resolve_type(ctx, rt)
     ctx.inside_async = m.is_async
+    # The host's `run_nullability_pre_pass` runs for method bodies too: build the
+    # body's control-flow graph and solve the non-null dataflow before checking,
+    # so a guarded local narrows exactly as it does in a function body (and the
+    # refinement record the LSP and the lowering read is populated for methods).
+    flow_builder.cfg_clear(ref_of(ctx.flow_cfg))
+    flow_builder.build_graph_into(ref_of(ctx.flow_cfg), ref_of(ctx.flow_graph), m.method_params, m.body)
+    flow_graph_mod.flow_init_into(ref_of(ctx.flow), ctx.flow_cfg.next_id, ctx.flow_graph.next_id)
+    flow_graph_mod.solve_nullability(ref_of(ctx.flow_graph), ref_of(ctx.flow))
+    ctx.flow_active = true
+    ctx.flow_recorded.clear()
+    ctx.flow_scratch.clear()
+    record_flow_barrier(ctx, m.line)
     check_stmt(ctx, ref_of(scope), check_flags(ret, false, false, false), m.body, null)
+    ctx.flow_active = false
     ctx.inside_async = false
     check_definite_assignment(ctx, m.method_params, m.body)
     ctx.suppress_binding_records = false
@@ -3672,6 +3685,55 @@ function record_flow_barrier(ctx: ref[Context], line: ptr_uint) -> void:
     if line == 0:
         return
     ctx.flow_types.push(FlowTypeEntry(at = (line - 1) * 1000000 + 999999, name = "", ty = types.Type.ty_error, cleared = true))
+
+
+## The analyzer's refinement record for a local at a position: the type the
+## host resolves there (`infer_expression_type`'s binding) — used by the LSP's
+## hover/documentHighlight cursor lookups and by the lowering wherever the host
+## reads a refined local (`reinterpret`'s source type after a null guard).
+## Bodies are checked in two passes (functions, then `extending` methods), so a
+## body's records are not positionally contiguous with the check order: the
+## cursor's body is the one whose start barrier (`record_flow_barrier`) has the
+## greatest position at or before the cursor (bodies' line ranges are disjoint),
+## and only that body's record span — from just after its barrier up to the next
+## barrier — is scanned.  Within it, entries are read in recording order and the
+## last one at or before the position wins, so a post-statement snapshot
+## recorded at an earlier line still answers a later position (the same
+## carry-forward a documentHighlight entry shows).  None when the name has no
+## entry there, so the declaration's own type stands.
+public function flow_type_at(analysis: ref[Analysis], name: str, line: ptr_uint, character: ptr_uint) -> Option[types.Type]:
+    let at = line * 1000000 + character
+    var body_start: ptr_uint = 0
+    var start_index: ptr_uint = 0
+    var i: ptr_uint = 0
+    while i < unsafe: read(analysis).flow_types.len():
+        let entry = unsafe: read(analysis).flow_types.get(i) else:
+            break
+        unsafe:
+            let item = read(entry)
+            if item.name.len == 0 and item.at <= at and item.at >= body_start:
+                body_start = item.at
+                start_index = i + 1
+        i += 1
+    var best = types.Type.ty_error
+    var found = false
+    var has_type = false
+    i = start_index
+    while i < unsafe: read(analysis).flow_types.len():
+        let entry = unsafe: read(analysis).flow_types.get(i) else:
+            break
+        unsafe:
+            let item = read(entry)
+            if item.name.len == 0:
+                break
+            if item.at <= at and item.name.equal(name):
+                best = item.ty
+                has_type = not item.cleared
+                found = true
+        i += 1
+    if not found or not has_type:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = best)
 
 
 ## The snapshot key of a statement: its position packed into one comparable

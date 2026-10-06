@@ -4167,7 +4167,7 @@ function resolve_local_hover(
     # The analyzer's refinement record at the cursor: a local narrowed by a
     # guard or a loop condition answers its refined type, exactly as the host's
     # completion snapshot does.
-    var flow_override = flow_type_at(ref_of(analysis), name.as_str(), target_line, character)
+    var flow_override = analyzer.flow_type_at(ref_of(analysis), name.as_str(), target_line, character)
 
     # The implicit receiver of an instance method: the analyzer binds `this` in
     # the method's scope, so a hover on it renders the host's `parameter this:
@@ -5014,38 +5014,6 @@ function append_nominal_qualifier(text: ref[string.String], name: str, analysis:
             return
         text.append(module_name)
         text.append(".")
-
-
-## The analyzer's refinement record for a local at the cursor: the type the
-## host's `latest_completion_snapshot` resolves.  The host scans its snapshots
-## in *recording* order and takes the last one at or before the cursor, so a
-## post-statement snapshot recorded at an earlier line still answers a later
-## cursor (the same carry-forward a documentHighlight entry shows).  A barrier
-## (an entry with no name) forgets everything recorded before it, which keeps an
-## earlier function body's refinements out.  None when the name has no entry
-## there, so the declaration's own type stands.
-function flow_type_at(analysis: ref[analyzer.Analysis], name: str, line: ptr_uint, character: ptr_uint) -> Option[types.Type]:
-    let at = line * 1000000 + character
-    var best = types.Type.ty_error
-    var found = false
-    var has_type = false
-    var i: ptr_uint = 0
-    while i < unsafe: read(analysis).flow_types.len():
-        let entry = unsafe: read(analysis).flow_types.get(i) else:
-            break
-        unsafe:
-            let item = read(entry)
-            if item.at <= at:
-                if item.name.len == 0:
-                    found = false
-                else if item.name.equal(name):
-                    best = item.ty
-                    has_type = not item.cleared
-                    found = true
-        i += 1
-    if not found or not has_type:
-        return Option[types.Type].none
-    return Option[types.Type].some(value = best)
 
 
 ## The hover result for one local declaration.

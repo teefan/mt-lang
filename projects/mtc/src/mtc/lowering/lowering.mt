@@ -7734,19 +7734,28 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                                 pass
                     let fn_name = j2("mt_", j2(id.name, "_func"))
                     return alloc_expr(ir.Expr.expr_call(callee = fn_name, arguments = ir_args.as_span(), ty = ret_ty))
-                # Builtin `reinterpret[T](value)` → C cast.
+                # Builtin `reinterpret[T](value)` → `IR::ReinterpretExpr` (the
+                # host always emits the bit reinterpret; the C backend copies
+                # the bits instead of a numeric cast, so `reinterpret[uint](f)`
+                # yields the IEEE bits rather than `(uint)f`).
                 if id.name == "reinterpret" and type_args.len == 1:
                     let target_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
-                    let lowered = lower_expr(ctx, unsafe: read(call_args.data + 0).arg_value)
-                    let source_ty = ir_expr_type(lowered)
-                    # A C cast preserves the numeric VALUE, not the bit pattern —
-                    # correct for pointer/integer reinterprets (same representation)
-                    # but wrong for float<->int, where `reinterpret` must keep the
-                    # raw bits (`reinterpret[uint](3.14f)` is the IEEE bits, not 3).
-                    # Emit a real bit reinterpret in that case.
-                    if types.is_float_type(source_ty) or types.is_float_type(target_ty):
-                        return alloc_expr(ir.Expr.expr_reinterpret(target_type = target_ty, source_type = source_ty, expression = lowered, ty = target_ty))
-                    return alloc_expr(ir.Expr.expr_cast(target_type = target_ty, expression = lowered, ty = target_ty))
+                    let arg = unsafe: read(call_args.data + 0)
+                    let lowered = lower_expr(ctx, arg.arg_value)
+                    var source_ty = ir_expr_type(lowered)
+                    # The host resolves the argument through its refined env, so
+                    # a guarded local carries its narrowed type (`p` after
+                    # `if p == null: return` is `ptr[void]`, not `ptr[void]?`).
+                    match unsafe: read(arg.arg_value):
+                        ast.Expr.expr_identifier as aid:
+                            match analyzer.flow_type_at(ref_of(ctx.analysis), aid.name, aid.line, aid.column):
+                                Option.some as refined:
+                                    source_ty = refined.value
+                                Option.none:
+                                    pass
+                        _:
+                            pass
+                    return alloc_expr(ir.Expr.expr_reinterpret(target_type = target_ty, source_type = source_ty, expression = lowered, ty = target_ty))
                 # Builtin `zero[T]` → zero-initialized value of type T.
                 if id.name == "zero" and type_args.len == 1:
                     let z_ty = qualify_type(ctx, resolve_type_ref(ctx, read(type_args.data + 0).value))
