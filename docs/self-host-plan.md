@@ -482,6 +482,12 @@ quote the set).
    first difference is now the format-string lowering shape (host-hoisted `__mt_fmt_part_N`
    locals vs the self's `StmtExpr` wrapper) or the null-literal type (`Types::Nullable` vs
    `void`) — both ranked below.
+1b. **Null-literal context typing** — **DONE (session 39)**.  Bare `null` initializers and
+   field values take the context type (`null_literal_to_context_type` at globals, locals,
+   struct/generic-struct fields, array elements and const-folded fields; the locals/field
+   nullable wraps' `NullLiteral → ZeroInit` special cases are gone, and the backend renders
+   a nullable-typed `NullLiteral` as `(mt_opt_X){0}`).  Counts unchanged (43/623) but 296
+   files' first difference moved deeper; locked by `test_null_literal_takes_context_type`.
 2. **A global initialized from an imported constant** (item 13; `box3d/ragdoll` +
    `box_stack`'s first difference).  In the `decl_var` arm
    (`lowering.mt:1247-1276`) try `try_const_typed_value_ir` (`:18553`) /
@@ -1026,7 +1032,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-05 session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43, with no newly differing file) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-05 session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43, with no newly differing file; item 1b — null-literal context typing — left the set unchanged but moved 296 files' first difference deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1086,6 +1092,23 @@ Baseline at this commit: **39 match / 627 differ / 51 host-rejected / 0 self-rej
   with the dev compiler (`examples/sdl3/renderer/clear.mt`, `examples/box3d/box_stack.mt`,
   `examples/raylib/others/raylib_opengl_interop.mt`, each matching the host), and the
   emitted C's opaque lines match the host's (modulo the pre-existing helper ordering).
+
+**Item 1b (newly exposed, landed in the same session) — null-literal context typing.**  The
+opaque fix exposed the next first difference for most sdl3/box3d files: a bare `null`
+initializer was typed `void` where the host types it from the context
+(`infer_null_literal_type`: `expected_type || null_type`).  The existing
+`null_literal_to_context_type` helper (already used for returns and comparisons) is now
+applied at the other contextual sites the sibling literal coercions cover — globals,
+locals, struct-construction fields, generic-struct fields, array elements and
+const-folded fields — and the locals/field nullable wraps no longer need their
+`NullLiteral → ZeroInit` special case (the backend already renders a nullable-typed
+`NullLiteral` as `(mt_opt_X){0}`), so a value-nullable local keeps the host's typed
+`NullLiteral`.  `sexpr lower` stays at **43/623/51/0** — no file flips — but **296 files'
+first difference moved deeper** (327 unchanged, 0 shallower, 0 newly differing): a pure
+forward move.  Locked by `test_null_literal_takes_context_type` (global, pointer local
+and value-nullable local all `Types::Nullable`-typed).  Next categories to rank: the
+format-string setup shape, the include set/order, global-init-from-imported-const
+(item 2) and the nullable/reinterpret cluster.
 
 ### Session 38 (2026-10-05) — C4 part 1: the parser/lexer scratch release
 

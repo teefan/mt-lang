@@ -1273,6 +1273,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     g_val = int_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                     g_val = float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                     g_val = string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                    g_val = null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                 globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
             ast.Decl.decl_const as c:
                 var c_ty = resolve_type_ref(ctx, c.const_type)
@@ -2603,9 +2604,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             ty = ir_expr_type(value_expr)
                     else:
                         ty = qualify_type(ctx, ir_expr_type(value_expr))
-                # A float, integer or bare string literal in a declared `float`/
-                # `double`, integer (`ptr_uint`, `ubyte`, …) or `cstr` position
-                # takes that type (the host's contextual literal inference).
+                # A float, integer, bare string or `null` literal in a declared
+                # `float`/`double`, integer (`ptr_uint`, `ubyte`, …), `cstr` or
+                # nullable position takes that type (the host's contextual
+                # literal inference).
                 if init != null:
                     unsafe:
                         match read(ptr[ast.Expr]<-init):
@@ -2615,6 +2617,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 value_expr = int_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
                             ast.Expr.expr_string_literal:
                                 value_expr = string_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
+                            ast.Expr.expr_null_literal:
+                                value_expr = null_literal_to_context_type(ptr[ast.Expr]<-init, ty, value_expr)
                             _:
                                 pass
                 # Wrap a non-nullable value into a value-type nullable's opt struct.
@@ -7530,6 +7534,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         var element_value = lower_expr(ctx, arg.arg_value)
                         element_value = int_literal_to_context_type(arg.arg_value, element_ty, element_value)
                         element_value = float_literal_to_context_type(arg.arg_value, element_ty, element_value)
+                        element_value = null_literal_to_context_type(arg.arg_value, element_ty, element_value)
                         elements.push(read(element_value))
                         ai += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
@@ -7805,6 +7810,7 @@ function lower_generic_aggregate_literal(ctx: ref[LowerCtx], struct_name: str, t
         match generic_struct_field_type(ctx, struct_name, qualified_args, field_name):
             Option.some as field_ty:
                 field_value = int_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
+                field_value = null_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
             Option.none:
                 pass
         fields.push(ir.AggregateField(name = field_name, value = field_value))
@@ -8885,6 +8891,7 @@ function lower_aggregate_literal_impl(ctx: ref[LowerCtx], struct_name: str, args
                 let fty = field_ty.value
                 value = int_literal_to_context_type(arg.arg_value, fty, value)
                 value = float_literal_to_context_type(arg.arg_value, fty, value)
+                value = null_literal_to_context_type(arg.arg_value, fty, value)
                 # Wrap non-nullable values into value-type nullable fields.
                 if types.is_nullable_type(fty) and not is_nullable_pointer_like(fty):
                     let value_ty = ir_expr_type(value)
@@ -19354,6 +19361,7 @@ function try_const_struct_literal_ir(ctx: ref[LowerCtx], target: types.Type, arg
                 match find_struct_field_type(ctx, struct_name, field_module, field_name):
                     Option.some as field_ty:
                         field_value = int_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
+                        field_value = null_literal_to_context_type(arg.arg_value, field_ty.value, field_value)
                         field_value = const_value_to_field_type(field_value, field_ty.value)
                     Option.none:
                         pass

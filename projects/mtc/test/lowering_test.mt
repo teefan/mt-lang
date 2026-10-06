@@ -377,6 +377,43 @@ function test_opaque_decls_keep_declared_name_and_backing() -> void:
     expect(dumped.contains_substring("(IR::OpaqueDecl :name \"Widget\" :linkage_name \"main_Widget\" :forward_declarable true"))
 
 
+@[test]
+function test_null_literal_takes_context_type() -> void:
+    ## A bare `null` initializer takes the context type (the host's
+    ## `infer_null_literal_type`: `expected_type || null_type`): a local or
+    ## global declared `ptr[T]?`/`S?` types the literal `Types::Nullable …`,
+    ## not `void`.
+    var source = <<-SRC
+        struct S:
+            x: int
+
+        var g: ptr[int]? = null
+
+        function f() -> int:
+            var p: ptr[int]? = null
+            var q: S? = null
+            return 0
+    SRC
+    var root = fs.create_temporary_directory_in_system_temp("mtc_null_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+    if not write_main_file(root.as_str(), source):
+        return
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring(":name \"g\" :linkage_name \"main_g\" :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\")))) :value (IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
+    expect(dumped.contains_substring(":name \"p\" :linkage_name \"p\" :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"int\")))) :value (IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\""))
+    expect(dumped.contains_substring(":name \"q\" :linkage_name \"q\" :type (Types::Nullable :base (Types::Struct :name \"S\" :module_name \"main\")) :value (IR::NullLiteral :type (Types::Nullable :base (Types::Struct :name \"S\" :module_name \"main\"))"))
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================
