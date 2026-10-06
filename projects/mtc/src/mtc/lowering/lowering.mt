@@ -12793,17 +12793,25 @@ function cstr_temp_name(names: ref[vec.Vec[str]], index: ptr_uint) -> str:
 ## statement itself, without the statement's line/path.
 function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]], result: ptr[ir.Expr], ret_ty: types.Type, cstr_temps: ref[vec.Vec[str]], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     if ctx.hoist_mode != HoistMode.hm_off:
-        let had_setup = setup.len > 0
         var hs: ptr_uint = 0
         while hs < setup.len:
             let s = setup.get(hs) else:
                 fatal(c"lowering: missing foreign setup statement")
             ctx.hoist_stmts.push(unsafe: read(s))
             hs += 1
+        # A statement-position (discarded) foreign call is emitted by the
+        # lowering itself, without the statement's line/path — the host's
+        # `lower_foreign_call_statement(discard_result: true)` shape — whatever
+        # its arguments needed; the frees follow it as cleanups.
+        if ctx.hoist_mode == HoistMode.hm_discard and ctx.hoist_root_ep == call_ep:
+            var hd: ptr_uint = 0
+            while hd < cstr_temps.len():
+                ctx.hoist_cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hd)))
+                hd += 1
+            ctx.hoist_stmts.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
+            ctx.hoist_stmt_emitted = true
+            return result
         if cstr_temps.len() == 0:
-            if ctx.hoist_mode == HoistMode.hm_discard and ctx.hoist_root_ep == call_ep and had_setup:
-                ctx.hoist_stmts.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
-                ctx.hoist_stmt_emitted = true
             return result
         if ctx.hoist_mode == HoistMode.hm_return and not types.is_void(ret_ty):
             let rt = fresh_c_temp_name(ctx, "foreign_result")
@@ -12817,9 +12825,6 @@ function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]
         while hj < cstr_temps.len():
             ctx.hoist_cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hj)))
             hj += 1
-        if ctx.hoist_mode == HoistMode.hm_discard and ctx.hoist_root_ep == call_ep:
-            ctx.hoist_stmts.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
-            ctx.hoist_stmt_emitted = true
         return result
 
     if cstr_temps.len() == 0:
@@ -13002,12 +13007,19 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
             if param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout:
                 # out/inout: pass the address, typed as ptr[param type] (not the
                 # generic void* that lower_foreign_arg would produce) so the C
-                # call receives a correctly-typed pointer.
+                # call receives a correctly-typed pointer.  A lowered argument
+                # that already is a pointer (an editable `this` receiver, a
+                # `*p` dereference) is cast to that pointer type instead of
+                # being addressed again — the host's `lower_addr_expression`.
                 let operand = lower_expr(ctx, arg.arg_value)
                 var pt_copy = param.param_type
                 let pty = qualify_type(ctx, resolve_type_ref(ctx, ptr_of(pt_copy)))
                 let ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(pty))
-                projected = alloc_expr(ir.Expr.expr_address_of(expression = operand, ty = ptr_ty))
+                match addr_operand_expression(operand):
+                    Option.some as op:
+                        projected = alloc_expr(ir.Expr.expr_cast(target_type = ptr_ty, expression = op.value, ty = ptr_ty))
+                    Option.none:
+                        projected = alloc_expr(ir.Expr.expr_address_of(expression = operand, ty = ptr_ty))
                 temp_ty = ptr_ty
             else:
                 projected = lower_foreign_arg(ctx, param, arg.arg_value)
@@ -13252,12 +13264,14 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
             return lower_expr(ctx, arg)
         Option.none:
             let lowered = lower_expr(ctx, arg)
-            # `out`/`inout` pass the address of the argument's storage slot.  The
-            # exception is when the slot's declared type is a value type but the
-            # lowered argument is already a pointer to it (an editable method's
-            # `this` receiver, `Image*`) — then it is passed through unchanged.
-            # A pointer-typed slot (`out glyph_recs: ptr[Rectangle]`) still takes
-            # its address, so the C function receives `Rectangle**`.
+            # `out`/`inout` pass the address of the argument's storage slot, with
+            # the host's `lower_addr_expression` exception: a lowered argument
+            # that already *is* a pointer — an editable method's `this` receiver
+            # (`IR::Name` with `pointer: true`) or a `*p` dereference — is cast
+            # to the boundary's pointer type instead of being addressed again.
+            # A pointer-typed slot (`out glyph_recs: ptr[Rectangle]`) with a
+            # plain value still takes its address, so the C function receives
+            # `Rectangle**`.
             let mode_needs_address = param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout
             if mode_needs_address:
                 if is_null_ir_expr(lowered):
@@ -13266,6 +13280,12 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                 var pt_copy0 = param.param_type
                 let slot_ty = resolve_type_ref(ctx, ptr_of(pt_copy0))
                 let slot_is_pointer = types.is_raw_pointer(slot_ty) or types.is_ref_type(slot_ty) or types.is_own_type(slot_ty)
+                match addr_operand_expression(lowered):
+                    Option.some as op:
+                        let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, slot_ty)))
+                        return alloc_expr(ir.Expr.expr_cast(target_type = slot_ptr_ty, expression = op.value, ty = slot_ptr_ty))
+                    Option.none:
+                        pass
                 if types.is_raw_pointer(arg_ty) and not slot_is_pointer:
                     return lowered
                 return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
@@ -13296,6 +13316,26 @@ function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
         return false
     unsafe:
         return read(boundary.name.parts.data + 0) == "cstr"
+
+
+## The operand an address-taking foreign boundary should cast rather than
+## address again — the host's `lower_addr_expression`: an `IR::Name` with
+## `pointer: true` (a C pointer variable, e.g. an editable method's `this`
+## receiver) is itself the pointer, and `*p` unwraps to `p`.  None for
+## everything else (which takes `IR::AddressOf`).
+function addr_operand_expression(ep: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name as n:
+                if n.pointer:
+                    return Option[ptr[ir.Expr]].some(value = ep)
+                return Option[ptr[ir.Expr]].none
+            ir.Expr.expr_unary as u:
+                if u.operator == "*":
+                    return Option[ptr[ir.Expr]].some(value = u.operand)
+                return Option[ptr[ir.Expr]].none
+            _:
+                return Option[ptr[ir.Expr]].none
 
 
 ## True when a declared foreign parameter type is spelled `span[T]`, i.e. the

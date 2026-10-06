@@ -149,12 +149,21 @@ strings) suspend the window and keep the inline StmtExpr; the temp prefixes now
 match the host (`foreign_arg`, `foreign_result`).  The sweep counts and *set*
 are unchanged — **44 match / 622 differ / 51 host-rejected / 0 self-rejected of
 717** — with **253 files' first difference deeper, 0 shallower, 0 newly
-differing** (+595 … +4063: the raylib family 205, box2d 29, box3d 14,
-`std/raylib.mt` and 4 more std files); the raylib first difference moved from
-`Image.text` to `Image.format`'s pointer argument (the host casts `ptr[T]`
-foreign arguments where the self emits `AddressOf … ptr[void]` — the next
-ranked item), and the four-shape fixture is byte-identical to the host, locked
-by `test_foreign_call_setup_hoists_at_statement_position`.  Session 40 had
+differing** (+595 … +4063 after the hoisting; the raylib family 205, box2d 29,
+box3d 14, `std/raylib.mt` and 4 more std files); the raylib first difference
+moved from `Image.text` to `Image.format`'s pointer argument.  **Item 3d landed
+in the same session**: an already-pointer `inout`/`out` argument (an editable
+method's `this` receiver, a `*p` dereference) is cast to the boundary's pointer
+type — the host's `lower_addr_expression` — instead of being addressed again (a
+wrong pointer level before; and every statement-position foreign call is now
+emitted by the lowering with nil line/path, the corrected `hm_discard` rule),
+which moved the raylib first difference on to `Image.kernel_convolution`'s
+mapping temp (**max delta +12014**; the next ranked item, 3e: the host temps a
+referenced mapping parameter only when it is non-duplicable/non-inlineable and
+substitutes the value otherwise).  Both items are locked by
+`test_foreign_call_setup_hoists_at_statement_position` and
+`test_pointer_receiver_foreign_argument_is_cast_not_addressed`, with the
+fixtures byte-identical to the host.  Session 40 had
 landed **`lower` Track 3 item 2, a global initialized from an imported
 constant** (the box2d/box3d families' first difference): the `decl_var` arm now
 folds a compile-time-known initializer
@@ -579,12 +588,13 @@ the 622 differing files by their first difference (a throwaway classifier over
 the sweep's own `host:`/`self:` context lines; treat the sizes as ±a few): the
 session-40 census's three leading categories are landed — **the foreign-call
 body shape (session 41: 253 files' first difference moved deeper)**, the
-`reinterpret` lowering (item 3b) and the include set/order (item 6).  The
-current leaders:
+`reinterpret` lowering (item 3b) and the include set/order (item 6) — and so is
+the pointer-like foreign argument (item 3d, the leader after the hoisting).
+The current leaders:
 
 | Files | First difference | Where |
 | --- | --- | --- |
-| ~252 | **a pointer-like foreign argument**: the host passes a `ptr[T]`/`ref[T]` argument at a pointer boundary as an `IR::Cast` (`(IR::Cast :target_type (Types::Generic :name "ptr" …) :expression (IR::Name "this" …))`); the self emits `(IR::AddressOf … :type ptr[void])` | `examples/raylib/**` (205), `examples/box2d/**`, `examples/box3d/**`, `std/raylib.mt` |
+| ~252 | **the mapping-argument temp** (item 3e): the host inlines inlineable argument values (`(IR::Member (IR::Name "kernel") "data")`, the `this` cast) and substitutes them into the mapping; the self materializes `__mt_foreign_arg_N` temps for every referenced mapping parameter | `examples/raylib/**` (205), `examples/box2d/**`, `examples/box3d/**`, `std/raylib.mt` |
 | ~181 | **3c, the pointer-like guard binding's read type**: the host's read carries the narrowed non-null type where the self carries the storage `Nullable` (ranked below; first surfaced by 3b) | `examples/*.mt` (`data_structures.mt`), `projects/mtc/src/**` |
 | ~57 | an array/const literal element shape (host `IR::IntegerLiteral` where the self emits `IR::Name`; `projects/mtc/src/mtc/build.mt`'s first difference) | `projects/mtc/src/**` |
 | ~21 | a struct field's member order (`IR::Field :name "key"` vs `:name "current"`; `projects/mtc/src/mtc/bindgen.mt`) | `projects/mtc/src/**` |
@@ -596,10 +606,11 @@ has no statement-hoisting channel for multi-step expressions and wraps them in
 (`prepare_expression_with_cleanups`).  Session 41 landed the channel and the
 foreign-call family; the format-string hoist (with the host's cleanup
 placement) is a follow-up on the same machinery.  The next ranked item is **the
-pointer-like foreign argument** (the raylib family's first difference), then the
-tail: **3c** (181 files), the format-string hoist, the `let _` decl shape, the
-nested `foreign_expr` materialization, 4b, the nested-struct C names, then items
-7–9 — file by file.
+mapping-argument temp rule** (item 3e, the raylib family's first difference),
+then the tail: **3c** (181 files), the format-string hoist, the `let _` decl
+shape, the nested `foreign_expr` materialization, the array/const literal and
+struct-field-order shapes, 4b, the nested-struct C names, then items 7–9 — file
+by file.
 
 1. **Opaque declarations** — **DONE (session 39, 2026-10-05)**.  `collect_opaque_decls`
    keeps the declared name, resolves the backing per `opaque_c_type_name`, sets
@@ -757,23 +768,46 @@ nested `foreign_expr` materialization, 4b, the nested-struct C names, then items
     type from the let onward, so first probe what the host's dataflow records
     around the guard (the loop header appears to be what narrows) and
     reproduce that gate rather than assuming the binding.
-3d. **A pointer-like foreign argument** (the census's leading bucket after
-    session 41's hoisting: the raylib family's first difference, the
-    `Image.format`/`ImageToPOT` shape; ~252 files incl. box2d/box3d).  The host
-    lowers a pointer-typed argument at a pointer boundary as
-    `foreign_identity_projection_expression` (`resolve.rb:1077`): a cast to the
-    boundary type when `foreign_identity_projection_cast_compatible?` — its dump
-    is `(IR::Cast :target_type (Types::Generic :name "ptr" :arguments
-    ((Types::Struct :name "Image" …))) :expression (IR::Name :name "this" … :
-    :pointer true))` — where the self emits `(IR::AddressOf :expression (…
-    "this" …) :type (Types::Primitive :name "ptr[void]"))` from
-    `lower_foreign_arg`'s pointer branch.  Repro:
-    `examples/raylib/core/3d_camera_fps.mt` (the `Image.format` body) at the
-    session-41 sweep; scope: the pointer-argument arm of
-    `lower_foreign_arg`/`materialize_foreign_address_arg`, mirroring the host's
-    `lower_foreign_argument_value` plain/`out`/`inout` split (`in`/`out`/`inout`
-    take `lower_foreign_pointer_argument_value`; a plain pointer parameter takes
-    the identity projection).
+3d. **A pointer-like foreign argument** — **DONE (session 41, 2026-10-06,
+    landed with the hoisting)**.  The host lowers a pointer-typed argument at a
+    pointer boundary as `foreign_identity_projection_expression`
+    (`resolve.rb:1077`), whose address-taking passes through
+    `lower_addr_expression` (`calls.rb:356-365`): a lowered value that already is
+    a C pointer — an `IR::Name` with `pointer: true` (an editable method's `this`
+    receiver) or a `*p` dereference — is cast to the boundary's pointer type
+    (`(IR::Cast :target_type (Types::Generic :name "ptr" :arguments
+    ((Types::Struct :name "Image" …))) :expression (IR::Name "this" … :pointer
+    true))`), where the self addressed it again
+    (`(IR::AddressOf … :type ptr[void])` — a wrong pointer level, `Image**` for a
+    `Image*` parameter).  `addr_operand_expression` ports the rule and is wired
+    into `lower_foreign_arg`'s and `lower_inline_foreign_mapping`'s
+    `out`/`inout` branches; the probe also corrected session 41's `hm_discard`
+    rule (every statement-position foreign call is emitted by the lowering with
+    nil line/path, plain calls included).  Repro:
+    `examples/raylib/core/3d_camera_fps.mt`'s `Image.format` before the fix;
+    locked by `test_pointer_receiver_foreign_argument_is_cast_not_addressed`.
+    The `in`/plain pointer paths keep their existing semantics (a follow-up if a
+    corpus shape needs them).
+3e. **The mapping-argument temp rule** (the census's new leading bucket, ~252
+    files after 3d: `Image.kernel_convolution`'s first difference).  The host
+    temps a referenced mapping parameter only when
+    `reference_count > 1 && !duplicable_foreign_argument_expression?` or
+    `!inlineable_foreign_argument_expression?`
+    (`foreign_argument_needs_temporary_binding?`, `calls.rb:1491`; plus
+    `inlineable_single_direct_call_names`' single-`IR::Call` exception,
+    `calls.rb:702`) and otherwise substitutes the lowered *value* into the
+    mapping (`replacements`, `bind_foreign_mapping_arguments`' else branch).
+    The self materializes `__mt_foreign_arg_N` for every referenced parameter, so
+    `ImageKernelConvolution`'s body carries `__mt_foreign_arg_1 = <this cast>` +
+    `__mt_foreign_arg_2 = kernel` where the host inlines the cast and
+    `(IR::Member (IR::Name "kernel") "data")`.  Scope: the predicates above plus
+    an IR-expression substitution in the mapping walk (`walk_mapping_expr`'s
+    identifier case), or the narrower first step — when the lowered argument is
+    an inlineable `IR::Name`, bind the parameter to that name instead of a temp
+    (covers the corpus's `this`/span/array wrappers whose arguments are the
+    wrapper's own parameters).  Repro:
+    `examples/raylib/core/3d_camera_fps.mt`'s `Image.kernel_convolution` at the
+    session-41 sweep.
 4. **Event fields** — **DONE (session 40, 2026-10-06)**.  `lower_struct_decl`
    emits `IR::Field(name = "__event_<name>", ty = Types::Event …)` built from
    the runtime info (name/capacity/payload/linkage), and `lower_member_access`
@@ -1351,7 +1385,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — leaves the differing set unchanged, with **253 files' first difference deeper (min +595, max +4063: raylib 205, box2d 29, box3d 14, 5 std files), 0 shallower, 0 newly differing, 0 lost**; the raylib family's first difference is now the pointer-like foreign argument (item 3d).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — and **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected) leave the differing set unchanged, with **253 files' first difference deeper (min +595, max +12014: raylib 205, box2d 29, box3d 14, 5 std files), 0 shallower, 0 newly differing, 0 lost**; the raylib family's first difference is now the mapping-argument temp rule (item 3e).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1381,8 +1415,10 @@ raylib family alone): a statement-lowered foreign call (a `str as cstr` argument
 needs a `mt_foreign_str_to_cstr_temp`) was wrapped in an `IR::StmtExpr`, where the
 host hoists the setup statements into the enclosing block (its
 `prepare_expression_with_cleanups` split: `prepared_setup` before the statement,
-`prepared_cleanups` after it).  Baseline at this commit: **44 match / 622 differ /
-51 host-rejected / 0 self-rejected of 717** (session 40's close).
+`prepared_cleanups` after it).  Item 3d (the pointer-like foreign argument the
+hoisting exposed) landed in the same session.  Baseline at this commit:
+**44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717** (session
+40's close).
 
 - **The hoisting window** (`LowerCtx.hoist_mode`/`hoist_stmts`/`hoist_cleanups`/
   `hoist_stmt_emitted`/`hoist_root_ep`, the `HoistSaved` carrier, and
@@ -1397,10 +1433,13 @@ host hoists the setup statements into the enclosing block (its
   - **`hm_value`** (`let v = f(x)` / `t = f(x)`): the call is the statement's value
     and the frees are cleanups emitted after the statement (the host's
     `lower_foreign_call_components` shapes).
-  - **`hm_discard`** (expression statements, `let _ =`): a statement-lowered root call
-    is emitted by the foreign lowering itself with `line 0`/`path ""` (dumping as
+  - **`hm_discard`** (expression statements, `let _ =`): a root foreign call is
+    emitted by the foreign lowering itself with `line 0`/`path ""` (dumping as
     `nil`/`nil`, the host's `discard_result` shape) and the arm skips its own
-    ExpressionStmt; a plain call (no temps) keeps the statement's line/path.
+    ExpressionStmt — whatever the arguments needed (the host emits *every*
+    statement-position foreign call this way, plain calls included; corrected
+    with item 3d below, which probed bare and member callees, with and without
+    cstr temps).
   Root-ness is pointer identity between the window's root AST expression and the
   foreign call's `call_ep`, so a nested call in a discard window keeps the arm's
   statement.
@@ -1415,26 +1454,51 @@ host hoists the setup statements into the enclosing block (its
   matching the host's prefixes (`bind_foreign_mapping_arguments`,
   `lower_foreign_call_statement`); the shared per-function counter numbering was
   already right.
-- **Measured**: the sweep counts and *set* are unchanged — **44 match / 622 differ /
-  51 host-rejected / 0 self-rejected of 717** — with **253 files' first difference
-  deeper, 0 shallower, 0 newly differing, 0 lost** (+595 … +4063 each): the raylib
-  family (205), box2d (29), box3d (14) and `std/raylib.mt`, `std/raygui.mt`,
-  `std/raylib/runtime.mt`, `std/raylib/debug_console.mt`, `std/parse.mt`.  The
-  raylib first difference moved from the `Image.text` StmtExpr to `Image.format`'s
-  pointer argument — the newly ranked next item: the host casts a `ptr[T]` foreign
-  argument (`(IR::Cast :target_type (Types::Generic :name "ptr" …) :expression
-  (IR::Name "this" …))`) where the self emits `(IR::AddressOf … :type ptr[void])`.
-- **Locked by** `test_foreign_call_setup_hoists_at_statement_position`: a
-  self-contained raw-module fixture with all four shapes (return / void expression
-  statement / local / assignment); the fixture's dump is byte-identical to the
-  host's (checked manually — the four function bodies match exactly).
-- Newly exposed, ranked: (a) the pointer-like foreign argument cast (the
-  `ImageFormat`/`ImageToPOT` family); (b) a nested statement-lowered call in a
-  *value* position: the host materializes `__mt_foreign_expr_N`, the self inlines
-  it; (c) `let _ = expr` is a host `LocalDecl` named `_` with linkage `__mt___N`
-  (the self discards it as an ExpressionStmt — pre-existing, general, visible in
-  the fixture's `drop` function); (d) format strings still take the StmtExpr shape
-  (the sdl3 family's first difference).
+- **Measured** (both items of the session): the sweep counts and *set* are
+  unchanged — **44 match / 622 differ / 51 host-rejected / 0 self-rejected of
+  717** — with **253 files' first difference deeper, 0 shallower, 0 newly
+  differing, 0 lost** (min +595; max +4063 after the hoisting, **+12014 after
+  item 3d**): the raylib family (205), box2d (29), box3d (14) and
+  `std/raylib.mt`, `std/raygui.mt`, `std/raylib/runtime.mt`,
+  `std/raylib/debug_console.mt`, `std/parse.mt`.  The raylib first difference
+  moved from the `Image.text` StmtExpr through `Image.format`'s pointer cast to
+  `Image.kernel_convolution`'s mapping temp (the newly ranked next item).
+- **Item 3d (landed in the same session) — the pointer-like foreign argument.**
+  An `inout`/`out` foreign argument whose lowered value already is a C pointer —
+  an editable method's `this` receiver — was addressed again
+  (`(IR::AddressOf :expression (IR::Name "this" :pointer true) :type ptr[void])`,
+  a wrong pointer level: `Image**` where the C call wants `Image*`), where the
+  host casts it to the boundary's pointer type.  `addr_operand_expression` ports
+  the host's `lower_addr_expression` (`calls.rb:356-365`): an `IR::Name` with
+  `pointer: true` is the pointer itself and `*p` unwraps to `p`; both are cast to
+  `ptr[<param type>]` instead of taking `IR::AddressOf`.  Wired into
+  `lower_foreign_arg`'s and `lower_inline_foreign_mapping`'s `out`/`inout`
+  branches (the host's `lower_foreign_pointer_argument_value` at both call
+  sites); the `in`/plain paths keep their existing semantics (a following item if
+  a corpus shape needs the same rule).  Locked by
+  `test_pointer_receiver_foreign_argument_is_cast_not_addressed`; the session-41
+  fixture and the member/bare/discard probes stay byte-identical (the discard
+  probe also pinned the corrected `hm_discard` rule above).
+- **Locked by** `test_foreign_call_setup_hoists_at_statement_position` (the four
+  hoisted shapes) and
+  `test_pointer_receiver_foreign_argument_is_cast_not_addressed` (the cast, no
+  `AddressOf` of `this`, the nil line/path plain statement); the session-41
+  fixture's dump is byte-identical to the host's (checked manually — the four
+  function bodies match exactly).
+- Newly exposed, ranked: (a) the mapping temp (~252 files —
+  `Image.kernel_convolution`: the host inlines inlineable argument values
+  (`(IR::Member (IR::Name "kernel") "data")`, the `this` cast) and substitutes
+  them into the mapping, while the self materializes `__mt_foreign_arg_N` temps
+  for every referenced mapping parameter; the host's rule is
+  `reference_count > 1 && !duplicable || !inlineable`
+  (`foreign_argument_needs_temporary_binding?`, `calls.rb:1491`) plus the
+  `inlineable_single_direct_call_names` call exception); (b) a nested
+  statement-lowered call in a *value* position: the host materializes
+  `__mt_foreign_expr_N`, the self inlines it; (c) `let _ = expr` is a host
+  `LocalDecl` named `_` with linkage `__mt___N` (the self discards it as an
+  ExpressionStmt — pre-existing, general, visible in the fixture's `drop`
+  function); (d) format strings still take the StmtExpr shape (the sdl3 family's
+  first difference).
 - **Gates** (frozen tree, `tools/gates.sh --run`): dev build + 19/0; bootstrap
   fixed point (`stage2.c == stage3.c`) + 19/0; `test/mt` 60/0; the lower sweep
   44/622/51/0 with the set comparison; examples 49/49.

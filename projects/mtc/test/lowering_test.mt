@@ -1164,3 +1164,64 @@ function test_foreign_call_setup_hoists_at_statement_position() -> void:
     expect(dumped.contains_substring(":value 2 :type (Types::Primitive :name \"int\"))) :type (Types::Struct :name \"Image\" :module_name \"raw\")) :line nil :path nil) (IR::ExpressionStmt :expression (IR::Call :callee \"mt_free_foreign_cstr_temp\""))
     ## A local initializer takes the call as the declaration's value.
     expect(dumped.contains_substring("(IR::LocalDecl :name \"img\" :linkage_name \"img\" :type (Types::Struct :name \"Image\" :module_name \"raw\") :value (IR::Call :callee \"ImageText\""))
+
+
+# =============================================================================
+#  Pointer-like foreign arguments — an `inout`/`out` argument that already is a
+#  C pointer (an editable method's `this` receiver) is cast to the boundary's
+#  pointer type instead of being addressed again, and a statement-position
+#  foreign call is emitted by the lowering itself (nil line/path).
+# =============================================================================
+
+@[test]
+function test_pointer_receiver_foreign_argument_is_cast_not_addressed() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_ptrarg_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_source = <<-SRC
+        external
+
+        struct Image:
+            width: int
+
+        external function ImageFormat(image: ptr[Image], newFormat: int) -> void
+        external function RawPlain(x: int) -> void
+    SRC
+    if not write_source_file(root.as_str(), "raw.mt", raw_source):
+        return
+
+    var source = <<-SRC
+        import raw
+
+        public foreign function image_format(inout image: raw.Image, new_format: int) -> void = raw.ImageFormat
+        public foreign function raw_plain(x: int) -> void = raw.RawPlain
+
+        extending raw.Image:
+            public editable function format(new_format: int) -> void:
+                image_format(this, new_format)
+
+        function poke(n: int) -> void:
+            raw_plain(n)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+
+    ## `this` (already `Image*`) is cast to the boundary pointer, not `&this`.
+    expect(dumped.contains_substring("(IR::Cast :target_type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"Image\" :module_name \"raw\"))) :expression (IR::Name :name \"this\" :type (Types::Struct :name \"Image\""))
+    expect(not dumped.contains_substring("(IR::AddressOf :expression (IR::Name :name \"this\""))
+    ## A plain statement-position foreign call is emitted by the lowering with
+    ## nil line/path, like every discarded foreign call (the host's
+    ## `discard_result`).
+    expect(dumped.contains_substring("(IR::Call :callee \"RawPlain\" :arguments ((IR::Name :name \"n\" :type (Types::Primitive :name \"int\") :pointer false)) :type (Types::Primitive :name \"void\")) :line nil :path nil)"))
