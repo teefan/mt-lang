@@ -383,8 +383,9 @@ function test_stateful_event_listener_receives_state_pointer() -> void:
 
 @[test]
 function test_opaque_value_renders_as_pointer() -> void:
-    # A re-exported opaque names a C struct that is never defined, so a value of
-    # the type is represented as a pointer (host parity) and zeroes to NULL.
+    # A re-exported opaque's C type is its backing name, forward-declared as a
+    # struct, and a value of the type is a pointer to it (host parity) that
+    # zeroes to NULL.
     var source = <<-SRC
         opaque Handle = c"HANDLE"
 
@@ -395,8 +396,8 @@ function test_opaque_value_renders_as_pointer() -> void:
     var c = compile_to_c(source)
     defer: c.release()
     let text = c.as_str()
-    expect_contains(text, "typedef HANDLE ")
-    expect_contains(text, "Handle* h = NULL;")
+    expect_contains(text, "typedef struct HANDLE HANDLE;")
+    expect_contains(text, "HANDLE* h = NULL;")
     return
 
 

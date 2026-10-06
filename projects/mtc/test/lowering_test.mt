@@ -346,6 +346,37 @@ function test_const_aggregate_through_imported_type_alias() -> void:
     expect(dumped.contains_substring("(IR::AggregateField :name \"r\" :value (IR::IntegerLiteral :value 18 :type (Types::Primitive :name \"ubyte\")))"))
 
 
+@[test]
+function test_opaque_decls_keep_declared_name_and_backing() -> void:
+    ## Every non-raw module's `opaque` declaration keeps its declared name and
+    ## its C backing is the explicit `= c"..."` name when present, else the
+    ## module-qualified name.  Only a backing that is a plain C identifier is
+    ## forward-declarable (host `opaque_forward_declarable?`).
+    var source = <<-SRC
+        public opaque Handle = c"HANDLE"
+        public opaque Sync = c"struct __GLsync"
+        public opaque Widget
+    SRC
+    var root = fs.create_temporary_directory_in_system_temp("mtc_op_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+    if not write_main_file(root.as_str(), source):
+        return
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring("(IR::OpaqueDecl :name \"Handle\" :linkage_name \"HANDLE\" :forward_declarable true"))
+    expect(dumped.contains_substring("(IR::OpaqueDecl :name \"Sync\" :linkage_name \"struct __GLsync\" :forward_declarable false"))
+    expect(dumped.contains_substring("(IR::OpaqueDecl :name \"Widget\" :linkage_name \"main_Widget\" :forward_declarable true"))
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================

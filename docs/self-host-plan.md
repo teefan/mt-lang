@@ -131,17 +131,17 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 38 (2026-10-05) — **C4 landed: the LSP's per-parse
-ownership**.  Parts 1–2 released the parser/lexer scratch (3.96 → 3.17 MB/cycle)
-and landed the `heap.Region` allocator with the scoped heap routing; parts 3–4
-wired the loader's module-cache entries and the LSP parse cache to per-entry
-parse/analysis regions, quarantined superseded regions to the request boundary,
-and released the residue the valgrind stacks exposed (the linter's per-body
-`Cfg`, `didChange`'s source copy, the diagnostic-cache strings, the publish/diag
-JSON trees, per-run Program containers).  The soak is now **68 KB/cycle raw
-(19.9 least-squares) at `--cycles 200`**, level ~33 MB (was 656 MB); the new
-`steady` mode reads ~0.  Harness and audit hold at their documented sets,
-valgrind 0 errors.  Session 37 had routed the per-request parse
+Last updated: session 39 (2026-10-05) — **`lower` Track 3 item 1: opaque
+declarations** (the first difference for all 34 sdl3 files): declared names,
+the host's `forward_declarable` rule, forward-declaration emission and the
+backing-name `c_type`.  The sweep went **39 → 43 match / 627 → 623 differ**
+with no newly differing file — `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and
+`std/sdl3.mt` are byte-identical.  Session 38 had landed **C4: the LSP's
+per-parse ownership** — the parser/lexer scratch release, the `heap.Region`
+allocator, per-entry parse/analysis regions, the request-boundary quarantine
+and the residue the valgrind stacks exposed; the soak is now **68 KB/cycle raw
+(19.9 least-squares) at `--cycles 200`**, level ~33 MB (was 656 MB), `steady`
+~0, valgrind 0 errors.  Session 37 had routed the per-request parse
 sites through the shared caches, cutting the full-cycle slope
 **11.4 → 3.96 MB/cycle** (the gate read 3.98 at `--cycles 200`); the residual is
 the per-edit loader parse+analysis leak (per-parse ownership is the remaining
@@ -473,17 +473,15 @@ Work in §0j's ranked order; after **each** item re-run
 (session 33; the count drifts with the tree's own sources and the tmp fixtures —
 quote the set).
 
-1. **Opaque declarations** (`IR::OpaqueDecl` item 1; the first difference for all
-   34 sdl3 files; dump-only, builds fixed).  `lowering.mt:1473
-   collect_opaque_decls` (wired `:590`) must keep the *declared* name, compute
-   `linkage_name` from the resolved backing type and `forward_declarable` per the
-   host rule (`core/lowering/utils.rb:1059-1069`, `declarations.rb:182-194`);
-   `c_backend.mt:7367 emit_opaque_typedefs` (`:253`) becomes the host's
-   `emit_forward_declarations` (`c_backend/type_declaration.rb:19`): `typedef
-   struct <linkage> <linkage>;` for forward-declarable entries, deduped by
-   linkage; the `c_type` opaque arm (`c_backend.mt:2080-2088`) keeps using the
-   backing name.  Re-verify opaque-as-pointer
-   (`projects/mtc/test/c_backend_test.mt:385`) and the sdl3 sweep.
+1. **Opaque declarations** — **DONE (session 39, 2026-10-05)**.  `collect_opaque_decls`
+   keeps the declared name, resolves the backing per `opaque_c_type_name`, sets
+   `forward_declarable` by the host rule and skips raw modules by kind;
+   `emit_opaque_forward_decls` emits `typedef struct <linkage> <linkage>;` deduped by
+   linkage; `c_type` renders the backing name through `opaque_backing_names`.  The sweep
+   went 39 → 43 match / 627 → 623 differ with no newly differing file; the sdl3 family's
+   first difference is now the format-string lowering shape (host-hoisted `__mt_fmt_part_N`
+   locals vs the self's `StmtExpr` wrapper) or the null-literal type (`Types::Nullable` vs
+   `void`) — both ranked below.
 2. **A global initialized from an imported constant** (item 13; `box3d/ragdoll` +
    `box_stack`'s first difference).  In the `decl_var` arm
    (`lowering.mt:1247-1276`) try `try_const_typed_value_ir` (`:18553`) /
@@ -1028,7 +1026,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 39 match / 622 differ / 51 host-rejected / 0 self-rejected of 712 files (re-measured 2026-10-04 session 33; the +7 files/differs over session 17's 615 are this session's own new compiler sources — match count unchanged) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-05 session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43, with no newly differing file) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1050,6 +1048,44 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 39 (2026-10-05) — `lower` Track 3 item 1: opaque declarations
+
+Goal: the ranked `lower` item 1 — the first dump difference for all 34 sdl3 files.
+Baseline at this commit: **39 match / 627 differ / 51 host-rejected / 0 self-rejected of
+717** (session 33's 39/622/51/0 of 712 plus the tree's own new sources).
+
+- **`collect_opaque_decls`** (lowering) now mirrors the host's `lower_opaques`: every
+  non-raw module's `opaque` declarations are collected with the **declared** name (the self
+  used the module-qualified alias), the C backing resolved the host's way
+  (`opaque_c_type_name`: the explicit `= c"..."` name when present, else the
+  module-qualified name), and `forward_declarable` = the backing is a plain C identifier
+  (host `opaque_forward_declarable?` — every non-raw module is non-external, so that half
+  of the rule is moot).  Raw (`external`) modules are skipped by module kind, not by the
+  `std.c.` prefix.  `naming.is_c_identifier` ports the host's regex.
+- **`emit_opaque_typedefs` → `emit_opaque_forward_decls`**: the host's
+  `emit_forward_declarations` opaque half — `typedef struct <linkage> <linkage>;` per
+  forward-declarable opaque, deduped by linkage.  `c_type`'s opaque arm renders the
+  resolved backing name (`SDL_Window*`) through a new `opaque_backing_names` map
+  (`collect_opaque_backings`, the `std_c_backing_names` pattern); the qualified-name
+  fallback stays for synthesized opaques.  The backend's opaque-name set also records the
+  qualified key, so `collect_opt_type`'s nullable-opaque check is unchanged.
+- **Measured**: `sexpr lower` **39 → 43 match / 627 → 623 differ / 51 host-rejected / 0
+  self-rejected of 717**.  The newly matching files are exactly the opaque-bearing modules
+  `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt` (their dumps are now
+  byte-identical), and the pre/post per-file sets show **no newly differing file**.  The
+  sdl3 family's first difference moved past the opaques to the format-string lowering shape
+  (the host hoists `__mt_fmt_part_N` locals into the branch body; the self wraps them in a
+  `StmtExpr`) and, in some files, to the null-literal type (`Types::Nullable :base …` on the
+  host vs `Types::Primitive :name "void"` on the self, e.g. for `std/mem/heap.mt`'s new
+  `active_region: ptr[Region]? = null` global) — both newly exposed and ranked next.
+- **Verification**: tests updated/added (`test_opaque_value_renders_as_pointer` now expects
+  the host's `typedef struct HANDLE HANDLE;` + `HANDLE* h = NULL;`;
+  `test_opaque_decls_keep_declared_name_and_backing` locks name/linkage/forward-declarable
+  for a re-export, a non-identifier backing and a bare opaque); full example builds pass
+  with the dev compiler (`examples/sdl3/renderer/clear.mt`, `examples/box3d/box_stack.mt`,
+  `examples/raylib/others/raylib_opengl_interop.mt`, each matching the host), and the
+  emitted C's opaque lines match the host's (modulo the pre-existing helper ordering).
 
 ### Session 38 (2026-10-05) — C4 part 1: the parser/lexer scratch release
 

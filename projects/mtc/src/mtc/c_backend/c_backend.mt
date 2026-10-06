@@ -91,6 +91,12 @@ struct GenericVariantInfo:
 var std_c_backing_names: ptr[map_mod.Map[str, str]]? = null
 
 
+## Declared opaques' C backing names (`std_sdl3_Window` -> `SDL_Window`),
+## populated by `generate_c` from the program's opaque decls so `c_type` renders
+## opaque values as their backing type (mirrors Ruby's `opaque_c_type_name`).
+var opaque_backing_names: ptr[map_mod.Map[str, str]]? = null
+
+
 ## Opt types that need synthetic StructDecl entries for topological ordering.
 ## `decl` is the StructDecl; `field_store` keeps the field spans alive.
 public struct OptionStructEntry:
@@ -144,6 +150,11 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     unsafe:
         read(backing_map_ptr) = backing_map
     std_c_backing_names = backing_map_ptr
+    var opaque_backing_map = collect_opaque_backings(program)
+    let opaque_backing_map_ptr = heap.must_alloc[map_mod.Map[str, str]](1)
+    unsafe:
+        read(opaque_backing_map_ptr) = opaque_backing_map
+    opaque_backing_names = opaque_backing_map_ptr
     e.current_fn_return_type = types.primitive("void")
     e.emit_line_directives = emit_line_directives
     e.debug_guards = debug_guards
@@ -158,6 +169,12 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         unsafe:
             let od = read(program.opaques.data + oi)
             opaques.set(od.name, true)
+            opaques.set(od.linkage_name, true)
+            match od.source_module:
+                Option.some as src:
+                    opaques.set(naming.qualified_c_name(src.value, od.name), true)
+                Option.none:
+                    pass
             let bare = extract_bare_name(od.name)
             if bare.len > 0:
                 opaques.set(bare, true)
@@ -247,11 +264,10 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         emit_line(ref_of(e), "#include \"uv.h\"")
     emit_line(ref_of(e), "")
 
-    # Typedefs for non-std.c opaque re-exports (`std.glfw.Window ->
-    # typedef GLFWwindow std_glfw_Window;`), so their module-qualified C name is
-    # a declared type.  Emitted right after the includes that declare the
-    # backing C types.
-    emit_opaque_typedefs(ref_of(e), program)
+    # Forward declarations for the program's opaques (`typedef struct SDL_Window
+    # SDL_Window;`) — the host's `emit_forward_declarations` opaque half.  An
+    # opaque's C type is its backing name, so a value renders `SDL_Window*`.
+    emit_opaque_forward_decls(ref_of(e), program)
 
     if use_string_view:
         emit_string_type(ref_of(e))
@@ -2035,12 +2051,18 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_opaque as op:
             if op.module_name.starts_with("std.c."):
                 return op.name
-            # A re-exported opaque (`public opaque Window = c"SDL_Window"`) names
-            # a C struct that is never defined, so a *value* of the type is
-            # represented as a pointer to it (host parity: `Types::Opaque`
-            # renders `base*` for values).  The module-qualified typedef emitted
-            # by `emit_opaque_typedefs` gives that pointer a name.
-            return j2(naming.qualified_c_name(op.module_name, op.name), "*")
+            # An opaque value is represented as a pointer to its C backing type
+            # (host `Types::Opaque` renders `base*` for values): the resolved
+            # backing name when the declaring module has one recorded
+            # (`SDL_Window`), else the module-qualified name its forward
+            # declaration defines.
+            let type_key = naming.qualified_c_name(op.module_name, op.name)
+            if opaque_backing_names != null:
+                let backing_map = unsafe: read(ptr[map_mod.Map[str, str]]<-opaque_backing_names)
+                let backing_ptr = backing_map.get(type_key)
+                if backing_ptr != null:
+                    return j2(unsafe: read(backing_ptr), "*")
+            return j2(type_key, "*")
         types.Type.ty_function:
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_event as ev:
@@ -7346,20 +7368,26 @@ function collect_builtin_types(needed: ref[map_mod.Map[str, bool]], t: types.Typ
 
 
 
-## Emit `typedef <backing> <alias>;` for each non-std.c opaque re-export so its
-## module-qualified C name (`std_glfw_Window`) resolves to the backing C type
-## (`GLFWwindow`).
-function emit_opaque_typedefs(e: ref[Emitter], program: ir.Program) -> void:
+## Emit `typedef struct <linkage> <linkage>;` for each forward-declarable
+## opaque, deduped by linkage (the host's `emit_forward_declarations` opaque
+## half).  A re-export's linkage is its backing C name, whose own header may
+## already typedef it — C11 allows the identical redefinition.
+function emit_opaque_forward_decls(e: ref[Emitter], program: ir.Program) -> void:
     var seen = map_mod.Map[str, bool].create()
+    var emitted = false
     var i: ptr_uint = 0
     while i < program.opaques.len:
         var od: ir.OpaqueDecl
         unsafe:
             od = read(program.opaques.data + i)
-        if od.name != od.linkage_name and not seen.contains(od.name):
-            seen.set(od.name, true)
-            emit_line(e, j5("typedef ", od.linkage_name, " ", od.name, ";"))
+        if od.forward_declarable and not seen.contains(od.linkage_name) and naming.is_c_identifier(od.linkage_name):
+            seen.set(od.linkage_name, true)
+            emit_line(e, j5("typedef struct ", od.linkage_name, " ", od.linkage_name, ";"))
+            emitted = true
         i += 1
+    if emitted:
+        emit_line(e, "")
+    seen.release()
 
 
 function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
@@ -7387,6 +7415,25 @@ function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
     if program.type_aliases.len > 0:
         emit_line(e, "")
 
+
+
+## The C backing name of every declared opaque, keyed by the type's qualified C
+## key (`std_sdl3_Window` -> `SDL_Window`), so `c_type` renders opaque values as
+## the backing type (host `opaque_c_type_name`).
+function collect_opaque_backings(program: ir.Program) -> map_mod.Map[str, str]:
+    var m = map_mod.Map[str, str].create()
+    var i: ptr_uint = 0
+    while i < program.opaques.len:
+        var od: ir.OpaqueDecl
+        unsafe:
+            od = read(program.opaques.data + i)
+        match od.source_module:
+            Option.some as src:
+                m.set(naming.qualified_c_name(src.value, od.name), od.linkage_name)
+            Option.none:
+                pass
+        i += 1
+    return m
 
 
 function collect_std_c_backing(program: ir.Program) -> map_mod.Map[str, str]:

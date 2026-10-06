@@ -1460,16 +1460,13 @@ function lowerable_function(type_params: span[ast.TypeParam], body: ptr[ast.Stmt
     return true
 
 
-## Collect the full include set: the base C runtime headers plus every `include`
-## directive from raw (`external`) module analyses (e.g. `std.c.fs` →
-## `fs_support.h`).  Mirrors Ruby's `collect_includes` so external ABI struct
-## types declared in those headers are in scope.  Deduplicated, base headers first.
-## Collect the non-`std.c` `opaque` re-exports (e.g. `std.glfw.Window =
-## c"GLFWwindow"`) that need a C typedef, because they render as their
-## module-qualified name (`std_glfw_Window`) which is not otherwise declared.
-## `name` is that qualified alias name; `linkage_name` is the C backing type
-## (`GLFWwindow`).  `std.c.*` opaques render as their raw C name directly and
-## need no typedef, so they are skipped.
+## Collect every non-raw module's `opaque` declarations (host `lower_opaques`):
+## each keeps its *declared* name, and its C type is the resolved backing —
+## the explicit `= c"..."` C name when present, else the module-qualified name
+## the backend's forward declaration defines (`opaque_c_type_name`).  A backing
+## that is a plain C identifier is forward-declarable (`typedef struct X X;`);
+## raw (`external`) modules' opaques are the headers' own types and their
+## fragments are skipped entirely, exactly as the host skips them.
 function collect_opaque_decls(program: loader.Program) -> span[ir.OpaqueDecl]:
     var opaques = vec.Vec[ir.OpaqueDecl].create()
     var mi: ptr_uint = 0
@@ -1478,7 +1475,7 @@ function collect_opaque_decls(program: loader.Program) -> span[ir.OpaqueDecl]:
             mi += 1
             continue
         var analysis = unsafe: read(a_ptr)
-        if analysis.module_name.starts_with("std.c."):
+        if is_raw_module(analysis.module_kind):
             mi += 1
             continue
         var di: ptr_uint = 0
@@ -1488,20 +1485,18 @@ function collect_opaque_decls(program: loader.Program) -> span[ir.OpaqueDecl]:
                 d = read(analysis.source_file.declarations.data + di)
             match d:
                 ast.Decl.decl_opaque as op:
-                    # Only opaque re-exports with an explicit C backing name
-                    # (`= c"GLFWwindow"`) need a typedef aliasing that backing
-                    # type.  A bare `opaque X` has no C backing and is emitted as
-                    # its own forward-declared struct elsewhere.
+                    var linkage = ""
                     match op.c_name:
                         Option.some as cn:
-                            opaques.push(ir.OpaqueDecl(
-                                name = naming.qualified_c_name(analysis.module_name, op.name),
-                                linkage_name = cn.value,
-                                forward_declarable = false,
-                                source_module = Option[str].some(value = analysis.module_name),
-                            ))
+                            linkage = cn.value
                         Option.none:
-                            pass
+                            linkage = naming.qualified_c_name(analysis.module_name, op.name)
+                    opaques.push(ir.OpaqueDecl(
+                        name = op.name,
+                        linkage_name = linkage,
+                        forward_declarable = naming.is_c_identifier(linkage),
+                        source_module = Option[str].some(value = analysis.module_name),
+                    ))
                 _:
                     pass
             di += 1
@@ -1702,6 +1697,10 @@ function program_uses_scan(program: loader.Program, mode: int) -> bool:
     return false
 
 
+## Collect the full include set: the base C runtime headers plus every `include`
+## directive from raw (`external`) module analyses (e.g. `std.c.fs` →
+## `fs_support.h`).  Mirrors Ruby's `collect_includes` so external ABI struct
+## types declared in those headers are in scope.  Deduplicated, base headers first.
 function collect_includes(program: loader.Program) -> span[ir.Include]:
     var includes = vec.Vec[ir.Include].create()
     var seen = map_mod.Map[str, bool].create()

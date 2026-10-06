@@ -40,6 +40,24 @@ public function module_c_prefix(module_name: str) -> str:
     return sanitize_identifier(module_name)
 
 
+## Whether `text` is a plain C identifier (`[A-Za-z_][A-Za-z0-9_]*`) — the
+## host's `opaque_forward_declarable?` name check, so a backing name like
+## `struct b2TreeNode` cannot be forward-declared under its own spelling.
+public function is_c_identifier(text: str) -> bool:
+    if text.len == 0:
+        return false
+
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        let is_letter = (b >= 'A' and b <= 'Z') or (b >= 'a' and b <= 'z')
+        let is_digit = i > 0 and b >= '0' and b <= '9'
+        if not (is_letter or is_digit or b == '_'):
+            return false
+        i += 1
+    return true
+
+
 ## The declared name of the interface a `dyn[I]` / `adapt[I]` use refers to: the
 ## text after the last `.`, so that an import-alias prefix (`ifaces.Identifiable`)
 ## and the bare spelling (`Identifiable`) yield one `mt_dyn_*` / `mt_vtable_*`
