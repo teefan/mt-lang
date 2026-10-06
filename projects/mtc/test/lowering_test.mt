@@ -472,6 +472,39 @@ function test_global_initialized_from_imported_const() -> void:
     expect(dumped.contains_substring("(IR::AggregateField :name \"x\" :value (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\")))"))
 
 
+@[test]
+function test_function_reference_carries_declared_name() -> void:
+    ## A bare function name in a value position is typed with the function
+    ## binding's own type — the declared name carried in `Types::Function#name`
+    ## and the variadic flag — as the host's `infer_expression_type` returns it
+    ## (`function_type_for_name` -> `binding.type`); the fallback used to
+    ## rebuild the type from the `FnSig` with an empty name.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_fref_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        function noop_scene_draw() -> void:
+            pass
+
+        var s_scene_draw: fn() -> void = noop_scene_draw
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring(":value (IR::Name :name \"main_noop_scene_draw\" :type (Types::Function :name \"noop_scene_draw\" :params () :return_type (Types::Primitive :name \"void\")"))
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================

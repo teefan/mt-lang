@@ -16470,7 +16470,12 @@ function fallback_type_raw(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                         let mvt = module_var_type(ctx, id.name)
                         if not types.is_error(mvt):
                             return mvt
-                        # Function reference: return its function type.
+                        # Function reference: its function type, named after the
+                        # function and carrying its variadic flag, the way the
+                        # host's `infer_expression_type` returns the function
+                        # binding's own type (`Types::Function#name`; the
+                        # analyzer's `argument_inference_type` refinement does
+                        # the same for call arguments).
                         match lookup_fn_sig(ctx, id.name):
                             Option.some as s:
                                 var ret = s.value.return_type
@@ -16484,7 +16489,7 @@ function fallback_type_raw(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> types.Type:
                                         param_types.push(read(s.value.params.data + pi).ty)
                                         param_names.push(read(s.value.params.data + pi).name)
                                     pi += 1
-                                return types.Type.ty_function(name = "", params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = param_names.as_span())
+                                return types.Type.ty_function(name = id.name, params = param_types.as_span(), return_type = types.alloc_type(ret), variadic = s.value.is_variadic, is_proc = false, param_names = param_names.as_span())
                             Option.none:
                                 pass
                         return types.Type.ty_error
