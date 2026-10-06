@@ -787,6 +787,70 @@ function test_reinterpret_always_reinterprets_with_refined_source() -> void:
     expect(dumped.contains_substring("(IR::ReinterpretExpr :target_type (Types::Primitive :name \"ptr_uint\") :source_type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :expression (IR::Name :name \"address\" :type (Types::Nullable"))
 
 
+@[test]
+function test_includes_follow_the_hosts_dfs_post_order() -> void:
+    ## Raw-binding include directives are appended in the host's analysis-cache
+    ## insertion order — a DFS post-order from the root with each module's
+    ## imports visited in declaration order — not the canonical module order:
+    ## with `main` importing `mid` (which imports `zz_raw`) before `aa_raw`,
+    ## `zz.h` precedes `aa.h` even though `aa_raw` sorts first.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_inc_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var zz_source = <<-SRC
+        external
+
+        include "zz.h"
+
+        external function zz_fn() -> void
+    SRC
+    if not write_source_file(root.as_str(), "zz_raw.mt", zz_source):
+        return
+
+    var aa_source = <<-SRC
+        external
+
+        include "aa.h"
+
+        external function aa_fn() -> void
+    SRC
+    if not write_source_file(root.as_str(), "aa_raw.mt", aa_source):
+        return
+
+    var mid_source = <<-SRC
+        import zz_raw as z
+    SRC
+    if not write_source_file(root.as_str(), "mid.mt", mid_source):
+        return
+
+    var main_source = <<-SRC
+        import mid as m
+        import aa_raw as a
+
+        function main() -> int:
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), main_source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    let zz_pos = dumped.find_substring("zz.h") else:
+        expect(false, "missing zz.h include")
+    let aa_pos = dumped.find_substring("aa.h") else:
+        expect(false, "missing aa.h include")
+    expect(zz_pos < aa_pos)
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================

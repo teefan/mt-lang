@@ -181,8 +181,13 @@ moved to the analyzer and scans the cursor's body span so the two-pass check
 order can't corrupt it) — **169 files' first difference deeper** with the
 set unchanged at 44/622; those files' next difference is **3c** (a
 pointer-like guard binding's read carries the storage type where the host's
-carries the narrowed success type), recorded in Track 3.  **Item 4 landed in
-the same session**: struct-declared
+carries the narrowed success type), recorded in Track 3.  **Item 6 landed in
+the same session**: raw-binding include directives follow the host's
+analysis-cache insertion order — a DFS post-order from the root with each
+module's imports visited in declaration order — instead of the canonical
+module order; **91 files' first difference deeper** (up to +136,782), set
+unchanged at 44/622.  The next ranked item is the **hoisting/foreign-call
+shape** (~222 files).  **Item 4 landed in the same session**: struct-declared
 events become `__event_<name>` fields typed `Types::Event`, member accesses
 route through the hidden name, and the backend gained the `ty_event` topo
 dependency — `examples/event_stress_test.mt` +737, its (and the `ev.mt`
@@ -553,17 +558,17 @@ shows three categories covering ~78% of them:
 | Files | First difference | Where |
 | --- | --- | --- |
 | ~222 | **foreign-call body shape**: the host hoists `__mt_foreign_arg_<n>` / `__mt_foreign_result_<n>` locals into the statement stream; the self wraps the call in a `StmtExpr` with `__mt_foreign_cstr_<n>` / `__mt_foreign_ret_<n>` names | `examples/raylib/**` (~190) |
-| ~172 | **3b `reinterpret`**: host `IR::ReinterpretExpr` (plus its memcpy-helper C), self `IR::Cast` except for floats | `projects/mtc/src/**` (39), `examples/sdl3/**`, … |
-| ~92 | **include set/order**: the `:includes` list — the Program's first field | `projects/mtc/src/**` (42), `projects/mtc/test`, box2d/box3d/raylib examples |
+| ~172 | **3b `reinterpret`** — **DONE (session 40)**: 169 files moved deeper | `projects/mtc/src/**` (39), `examples/sdl3/**`, … |
+| ~92 | **include set/order** — **DONE (session 40, item 6)**: 91 files moved deeper | `projects/mtc/src/**` (42), `projects/mtc/test`, box2d/box3d/raylib examples |
 
 The foreign-call shape and the format-string shape (the sdl3 family's first
 difference) share a root cause: the self has no statement-hoisting channel for
 multi-step expressions and wraps them in `StmtExpr` where the host hoists
-locals into the block (`prepare_expression_for_inline_lowering`).  Recommended
-order: **3b → the include set (item 6) → the hoisting/foreign item (new)** —
-the first two are bounded (known mechanisms, no C-shape change), the third is
-the largest but the most architectural; the tail (event runtime 4b, the
-nested-struct C names, then items 7–9) follows file by file.
+locals into the block (`prepare_expression_for_inline_lowering`).  The census
+has been worked: **3b and the include set are landed**; the next ranked item
+is **the hoisting/foreign item** (the largest bucket, the most
+architectural), then the tail (3c, 4b, the nested-struct C names, then items
+7–9) file by file.
 
 1. **Opaque declarations** — **DONE (session 39, 2026-10-05)**.  `collect_opaque_decls`
    keeps the declared name, resolves the backing per `opaque_c_type_name`, sets
@@ -758,15 +763,27 @@ nested-struct C names, then items 7–9) follows file by file.
 5. **Function-type names** (item 6) — **DONE (session 16, F5, `6ad423ce`)**:
    `ty_function` carries the callee's name, `type_to_string` renders `fn <name>`
    and `sexpr.mt` emits it.  Keep as a regression watch only.
-6. **Include set** (item 7; `box2d/drop`).  `collect_includes`
-   (`lowering.mt:1705`) iterates canonical post-order; the host iterates its
-   analysis cache and its directives come from the raw-bindings registry
-   (`lowering/scans.rb:45`, `module_loader.rb:233`,
-   `bindings/raw_bindings/defaults.rb` — raymath `:742`, math `:871`).  Add each
-   library's include directives to `imported_bindings/registry.mt` (or a
-   parallel raw-bindings table), drive `collect_includes` and
-   `build.mt:253 collect_binding_flags` from it, and pin the emitted order to
-   the host's.
+6. **Include set/order** (item 7; `box2d/drop` and 91 more) — **DONE (session
+   40, 2026-10-06)**.  The set was already right; the order was not.
+   `collect_includes` now appends the raw modules' directives in the host's
+   analysis-cache insertion order — a **DFS post-order from the root** with
+   each module's imports visited in declaration order (the host's
+   `check_path` resolves imports on demand and inserts an analysis after its
+   imports; `lowering.mt`'s `emit_raw_module_includes` mirrors it over the
+   analyses' `source_file.imports`), replacing the canonical module order.
+   The first attempt (the host's `topo_sort_levels` shape) was wrong: the
+   levels are only a scheduling frame around the on-demand DFS, and the
+   `raylib_opengl_interop` include order exposed the difference (its 166-file
+   shallower set).  Measured: sweep set unchanged (44/622/51/0) with **91
+   files' first difference deeper** (min +8456, max +136,782: the `raylib`/
+   `box2d`/`box3d`/`sdl3` examples and 42+ `projects/mtc/src` sources), 0
+   shallower/newly differing; locked by
+   `test_includes_follow_the_hosts_dfs_post_order` (a fixture whose post-order
+   contradicts the module sort; fails with the change reverted).  Gates:
+   bootstrap fixed point + 19/0, dev self-test 19/0, `test/mt` 60/0, examples
+   49/49.  Not in scope: the *linker* binding flags (`build.mt`'s
+   `collect_binding_flags`) — no gate compares their order and the example
+   builds already link.
 7. **Item 8 sub-items.**  (a) *Declaration ordering* (`ClockSync` vs
    `std_net_recv_impl_frame`): diff the host's seed list
    (`c_backend.rb:191-196`) against `topo_sort_types`' node construction
@@ -1281,7 +1298,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b and 4 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering and the event fields — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed; the 169 files' next difference is 3c (the pointer-like guard read's type).  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed; the 169 files' next difference is 3c (the pointer-like guard read's type); the census's next ranked item is the hoisting/foreign-call shape (~222 files).  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1450,6 +1467,22 @@ module's struct constant.  Baseline at this commit: **43 match / 623 differ /
   bootstrap's self-test suite and a concurrent `mtc test` run both synthesize
   `__mt_test_runner_*.mt` in `projects/mtc/test/` and discover each other's
   runners (`duplicate value main`) — never run the suite while a gate runs.
+- **Item 6 (landed in the same session) — the include set/order.**  The
+  include *set* already matched; the **order** did not.  The host appends the
+  raw modules' directives in its analysis-cache insertion order, which is a
+  **DFS post-order from the root** (its `check_path` resolves each module's
+  imports on demand in declaration order and inserts the analysis after its
+  imports) — not the canonical module order the self used, and not a
+  `topo_sort_levels` shape either (an attempted level-based version was
+  rejected when `raylib_opengl_interop`'s include order regressed 166 files
+  *shallower*).  `collect_includes` now mirrors the post-order via
+  `emit_raw_module_includes`, walking the analyses' `source_file.imports`.
+  Measured: set unchanged (44/622/51/0), **91 files' first difference
+  deeper** (min +8456, max +136,782 — the raylib/box2d/box3d/sdl3 examples
+  and the compiler's own sources), 0 shallower/new; locked by
+  `test_includes_follow_the_hosts_dfs_post_order` (a fixture whose post-order
+  contradicts the module sort).  Gates: bootstrap fixed point + 19/0, dev
+  self-test 19/0, `test/mt` 60/0, examples 49/49.
 - **Item 4 (landed in the same session) — event fields.**  A struct-declared
   event is now emitted as `IR::Field(name = "__event_<name>", ty =
   Types::Event …)` (runtime info: capacity/payload/linkage) and every
@@ -1475,18 +1508,18 @@ module's struct constant.  Baseline at this commit: **43 match / 623 differ /
   (`is_event_type` consults only the local `events` map; no corpus case).
 - **Verification**: `test_global_initialized_from_imported_const` locks the
   fold — a main-module global ← generated module const ← raw-module struct
-  const chain, asserting the aggregate entry in the dump; all nine new tests
+  const chain, asserting the aggregate entry in the dump; all ten new tests
   fail with their change reverted (checked).  Tier-2 gates on the frozen tree
-  (the trimmed `tools/gates.sh --only bootstrap,test_mt,cli_parity,lint_parity,
-  recovery,examples --run` for 3b; the full codegen+tests set for items 2–4):
-  dev build + dev self-test (19 files / 0 failed), bootstrap fixed point
-  (`stage2.c == stage3.c`, 19 files / 0 failed), `test/mt` 60/0, the `lower`
-  sweep **44/622/51/0** with the set comparisons above, examples 49/49 same;
-  the LSP harness (4 documented) and the project audit (the documented 5) were
-  re-run after the `flow_type_at` change; the `box_stack.mt` (dyn vtable +
-  tuple) and `event_stress_test.mt` builds, the `p.mt`/`store.mt`/`ord.mt`/
-  `use.mt`/`mixuse.mt`/`ev.mt`/`re*.mt` fixtures and the emitted C for a tuple
-  are the smoke checks.
+  (the trimmed `tools/gates.sh --only` sets for 3b and item 6; the full
+  codegen+tests set for items 2–4): dev build + dev self-test (19 files / 0
+  failed), bootstrap fixed point (`stage2.c == stage3.c`, 19 files / 0
+  failed), `test/mt` 60/0, the `lower` sweep **44/622/51/0** with the set
+  comparisons above, examples 49/49 same; the LSP harness (4 documented) and
+  the project audit (the documented 5) were re-run after the `flow_type_at`
+  change; the `box_stack.mt` (dyn vtable + tuple) and `event_stress_test.mt`
+  builds, the `p.mt`/`store.mt`/`ord.mt`/`use.mt`/`mixuse.mt`/`ev.mt`/
+  `re*.mt`/include fixtures and the emitted C for a tuple are the smoke
+  checks.
 
 ### Session 39 (2026-10-05) — `lower` Track 3 item 1: opaque declarations
 

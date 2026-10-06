@@ -1768,17 +1768,53 @@ function collect_includes(program: loader.Program) -> span[ir.Include]:
         includes.push(ir.Include(header = "<stdio.h>"))
         seen.set("<stdio.h>", true)
 
-    # External-binding headers follow in module (dependency) order; the host
-    # does not sort them (imports already order base headers before extensions).
-    var mi: ptr_uint = 0
-    while mi < program.analyses.len():
-        let a_ptr = program.analyses.get(mi) else:
-            mi += 1
-            continue
-        var analysis = unsafe: read(a_ptr)
-        if not is_raw_module(analysis.module_kind):
-            mi += 1
-            continue
+    # External-binding headers follow the host's analysis-cache insertion
+    # order: its loader checks each module's imports on demand (in declaration
+    # order) and inserts a module's analysis only after its imports are cached
+    # — a DFS post-order from the root.  Raw modules are leaves, so their
+    # directives are appended when they are popped.  `program.analyses` is the
+    # canonical dependency-first order and cannot supply this.
+    var by_name = map_mod.Map[str, analyzer.Analysis].create()
+    var ai: ptr_uint = 0
+    while ai < program.analyses.len():
+        let a_ptr = program.analyses.get(ai) else:
+            break
+        var a = unsafe: read(a_ptr)
+        if not by_name.contains(a.module_name):
+            by_name.set(a.module_name, a)
+        ai += 1
+
+    var include_visited = map_mod.Map[str, bool].create()
+    if program.analyses.len() > 0:
+        let a_ptr = program.analyses.get(program.root_index) else:
+            fatal(c"collect_includes: root analysis missing")
+        emit_raw_module_includes(ref_of(by_name), ref_of(include_visited), ref_of(includes), ref_of(seen), unsafe: read(a_ptr).module_name)
+
+    return includes.as_span()
+
+
+## Append raw-binding include directives in the host's cache order: recurse
+## into a module's imports in declaration order first, then emit the module's
+## own directives when it is a raw module (DFS post-order).
+function emit_raw_module_includes(by_name: ref[map_mod.Map[str, analyzer.Analysis]], visited: ref[map_mod.Map[str, bool]], includes: ref[vec.Vec[ir.Include]], seen: ref[map_mod.Map[str, bool]], name: str) -> void:
+    if visited.contains(name):
+        return
+    visited.set(name, true)
+    let ap = by_name.get(name) else:
+        return
+    let analysis = unsafe: read(ap)
+    var i: ptr_uint = 0
+    while i < analysis.source_file.imports.len:
+        var import_decl: ast.Decl
+        unsafe:
+            import_decl = read(analysis.source_file.imports.data + i)
+        match import_decl:
+            ast.Decl.decl_import as imported:
+                emit_raw_module_includes(by_name, visited, includes, seen, analyzer.qname_to_str(imported.path))
+            _:
+                pass
+        i += 1
+    if is_raw_module(analysis.module_kind):
         var di: ptr_uint = 0
         while di < analysis.directives.len:
             var directive: ast.Decl
@@ -1793,9 +1829,6 @@ function collect_includes(program: loader.Program) -> span[ir.Include]:
                 _:
                     pass
             di += 1
-        mi += 1
-
-    return includes.as_span()
 
 
 ## In-place ascending insertion sort of a `str` vector by byte order.
