@@ -117,6 +117,36 @@ struct PendingSpecialization:
     ast_function_decl: ptr[ast.Decl]
 
 
+## Statement-position hoisting mode (see `begin_stmt_setup`).
+enum HoistMode:
+    # No window: a multi-step expression setup falls back to the inline StmtExpr.
+    hm_off
+    # A `return` value: the value must survive the cleanups, so the foreign
+    # lowering materializes it into a `__mt_foreign_result_N` temp that the
+    # cleanups (the cstr frees) follow, all before the return (the host's
+    # `lower_foreign_call_statement`).
+    hm_return
+    # A local initializer or assignment value: the call is the statement's value
+    # and the cstr frees run after the statement (the host's
+    # `lower_foreign_call_components` shape).
+    hm_value
+    # A discarded expression (an expression statement or `let _ =`): a foreign
+    # call at the root is emitted by the foreign lowering itself, without the
+    # statement's line/path, and the frees follow it (the host's
+    # `discard_result` shape).
+    hm_discard
+
+
+## The state saved when a hoisting window opens, plus the statements a closed
+## window collected: `stmts` are emitted before the statement, `cleanups` after.
+struct HoistSaved:
+    mode: HoistMode
+    stmts: vec.Vec[ir.Stmt]
+    cleanups: vec.Vec[ir.Stmt]
+    stmt_emitted: bool
+    root_ep: ptr[ast.Expr]?
+
+
 struct LowerCtx:
     module_name: str
     analysis: analyzer.Analysis
@@ -235,6 +265,23 @@ struct LowerCtx:
     # group; block exit and `return` flush the groups (innermost-first, each in
     # reverse encounter order).  Mirrors Ruby's active_defers/local_defers.
     defer_stack: vec.Vec[DeferGroup]
+    # Statement-position hoisting window (the host's `prepare_expression_with_cleanups`
+    # split): while a statement lowers its root expression, multi-step setups
+    # that used to become a `StmtExpr` (a statement-lowered foreign call's cstr/
+    # address temps, call and frees) are collected here instead — `hoist_stmts`
+    # is emitted before the statement, `hoist_cleanups` after it, and the mode
+    # selects the host's per-statement shape.  Lazily-evaluated sub-expressions
+    # suspend the window (`suspend_stmt_setup`), keeping the inline StmtExpr.
+    hoist_mode: HoistMode
+    hoist_stmts: vec.Vec[ir.Stmt]
+    hoist_cleanups: vec.Vec[ir.Stmt]
+    # Set by the foreign lowering when it emitted the statement-position call
+    # itself (an `hm_discard` root): the statement arm then skips its own
+    # ExpressionStmt, matching the host's `discard_result` shape (no line/path).
+    hoist_stmt_emitted: bool
+    # The statement-root AST expression of the current window, so the foreign
+    # lowering can tell the root call from a nested one (pointer identity).
+    hoist_root_ep: ptr[ast.Expr]?
     # Return type of the function currently being lowered, for use by `?`
     # propagation when the propagated type differs from the enclosing function's
     # return type (e.g. `Result[bool, E]?` inside a function returning
@@ -902,6 +949,11 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         event_error_emitted = false,
         inline_for_element = Option[ComptimeElement].none,
         defer_stack = vec.Vec[DeferGroup].create(),
+        hoist_mode = HoistMode.hm_off,
+        hoist_stmts = vec.Vec[ir.Stmt].create(),
+        hoist_cleanups = vec.Vec[ir.Stmt].create(),
+        hoist_stmt_emitted = false,
+        hoist_root_ep = null,
         inside_async = false,
         async_resume_return_label = "",
         current_fn_return_type = types.primitive("void"),
@@ -2392,6 +2444,84 @@ function cleanup_safe_return_expr(ep: ptr[ast.Expr]) -> bool:
                 return false
 
 
+## Open a statement-position hoisting window so multi-step expression setups
+## (a statement-lowered foreign call's cstr/address temps, call and frees) are
+## collected instead of wrapped in an inline `StmtExpr`, mirroring the host's
+## `prepare_expression_with_cleanups`.  Returns the enclosing state; close the
+## window with `collect_stmt_setup`.
+function begin_stmt_setup(ctx: ref[LowerCtx], mode: HoistMode) -> HoistSaved:
+    let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep)
+    ctx.hoist_mode = mode
+    ctx.hoist_stmts = vec.Vec[ir.Stmt].create()
+    ctx.hoist_cleanups = vec.Vec[ir.Stmt].create()
+    ctx.hoist_stmt_emitted = false
+    ctx.hoist_root_ep = null
+    return saved
+
+
+## Close a hoisting window: restore the enclosing state and return what the
+## window collected (`stmts` before the statement, `cleanups` after it).
+function collect_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> HoistSaved:
+    let collected = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep)
+    ctx.hoist_mode = saved.mode
+    ctx.hoist_stmts = saved.stmts
+    ctx.hoist_cleanups = saved.cleanups
+    ctx.hoist_stmt_emitted = saved.stmt_emitted
+    ctx.hoist_root_ep = saved.root_ep
+    return collected
+
+
+## Insert a window's `stmts` into `output` at `base`, so they precede every
+## statement the statement lowering contributed.
+function emit_hoist_setup(output: ref[vec.Vec[ir.Stmt]], base: ptr_uint, collected: HoistSaved) -> void:
+    var i: ptr_uint = 0
+    while i < collected.stmts.len:
+        let stmt = collected.stmts.get(i) else:
+            fatal(c"lowering: missing hoisted setup statement")
+        let _ = output.insert(base + i, unsafe: read(stmt))
+        i += 1
+
+
+## Append a window's `cleanups` after the statement that used its value.
+function append_hoist_cleanups(output: ref[vec.Vec[ir.Stmt]], collected: HoistSaved) -> void:
+    var i: ptr_uint = 0
+    while i < collected.cleanups.len:
+        let stmt = collected.cleanups.get(i) else:
+            fatal(c"lowering: missing hoisted cleanup statement")
+        output.push(unsafe: read(stmt))
+        i += 1
+
+
+## Lower a statement-root value expression with a `hm_return` window open: the
+## hoisted setup (argument temps, a `__mt_foreign_result_N` temp and the cstr
+## frees) is inserted before the statement and the lowered value returned.
+function lower_expr_hoisting(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    let base = output.len()
+    let saved = begin_stmt_setup(ctx, HoistMode.hm_return)
+    let lowered = lower_expr(ctx, ep)
+    let collected = collect_stmt_setup(ctx, saved)
+    emit_hoist_setup(output, base, collected)
+    return lowered
+
+
+## Suspend the window around a lazily-evaluated sub-expression (an if/match
+## branch, a short-circuit right operand, a proc body): a region that may not
+## run must not hoist its setup out, so it keeps the inline `StmtExpr` form.
+function suspend_stmt_setup(ctx: ref[LowerCtx]) -> HoistSaved:
+    let saved = HoistSaved(mode = ctx.hoist_mode, stmts = ctx.hoist_stmts, cleanups = ctx.hoist_cleanups, stmt_emitted = ctx.hoist_stmt_emitted, root_ep = ctx.hoist_root_ep)
+    ctx.hoist_mode = HoistMode.hm_off
+    return saved
+
+
+## Restore the state saved by `suspend_stmt_setup`.
+function resume_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> void:
+    ctx.hoist_mode = saved.mode
+    ctx.hoist_stmts = saved.stmts
+    ctx.hoist_cleanups = saved.cleanups
+    ctx.hoist_stmt_emitted = saved.stmt_emitted
+    ctx.hoist_root_ep = saved.root_ep
+
+
 function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     var stmts = vec.Vec[ir.Stmt].create()
     push_defer_scope(ctx)
@@ -2537,7 +2667,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # is not a trivial literal, hoist it into a temp so running the
                 # defers cannot invalidate it (mirrors Ruby's return-value hoist +
                 # cleanup preamble).
-                let lowered = coerce_return_literal_to_cstr(ctx, value, lower_expr(ctx, value))
+                let lowered = coerce_return_literal_to_cstr(ctx, value, lower_expr_hoisting(ctx, output, value))
                 # Re-type an integer literal return value against the function's
                 # return type (e.g. `return 0` in a `ptr_uint` function), matching
                 # the host's contextual numeric literal inference.
@@ -2601,8 +2731,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                     _:
                                         pass
                             return
+                        let discard_base = output.len()
+                        let discard_saved = begin_stmt_setup(ctx, HoistMode.hm_discard)
+                        ctx.hoist_root_ep = init_val
                         let discard_ir = lower_expr(ctx, init_val)
-                        output.push(ir.Stmt.stmt_expression(expression = discard_ir, line = 0, source_path = ""))
+                        let discard_collected = collect_stmt_setup(ctx, discard_saved)
+                        emit_hoist_setup(output, discard_base, discard_collected)
+                        if not discard_collected.stmt_emitted:
+                            output.push(ir.Stmt.stmt_expression(expression = discard_ir, line = 0, source_path = ""))
+                        append_hoist_cleanups(output, discard_collected)
                     return
                 let init_val = loc.value
                 if init_val != null:
@@ -2645,6 +2782,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 var ty: types.Type
                 var value_expr: ptr[ir.Expr]
                 let init = loc.value
+                let hoist_base = output.len()
+                let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                 if init == null:
                     let declared = loc.stmt_type else:
                         fatal(c"lowering: local without initializer requires a type")
@@ -2720,6 +2859,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     line = loc.line,
                     source_path = ctx.analysis.source_path,
                 ))
+                let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
+                emit_hoist_setup(output, hoist_base, hoist_collected)
+                append_hoist_cleanups(output, hoist_collected)
                 ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
             ast.Stmt.stmt_assignment as asg:
                 # Async CPS: an assignment whose value contains an await.  For a
@@ -2768,13 +2910,22 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     Option.some as inner:
                         let deref_target = lower_expr(ctx, inner.value)
                         let target = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = deref_target, ty = expr_type(ctx, target_expr)))
+                        let hoist_base = output.len()
+                        let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                         let value = lower_expr(ctx, asg.value)
+                        let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
+                        emit_hoist_setup(output, hoist_base, hoist_collected)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
+                        append_hoist_cleanups(output, hoist_collected)
                         return
                     Option.none:
                         pass
                 let target = lower_expr(ctx, asg.target)
+                let hoist_base = output.len()
+                let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
                 var value = lower_expr(ctx, asg.value)
+                let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
+                emit_hoist_setup(output, hoist_base, hoist_collected)
                 let target_ty = expr_type(ctx, asg.target)
                 # Native math compound assignment (`a += b`, `a *= 2.0`): the C
                 # aggregate structs have no operators, so expand component-wise
@@ -2786,6 +2937,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     if is_vec_math_name(math_name):
                         let expanded = lower_vec_binary_op(ctx, compound_base_operator(asg.operator), target, value, target_ty, math_name)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = expanded))
+                        append_hoist_cleanups(output, hoist_collected)
                         return
                 if types.is_nullable_type(target_ty) and not is_nullable_pointer_like(target_ty):
                     let value_ty = ir_expr_type(value)
@@ -2796,6 +2948,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             _:
                                 value = nullable_some_literal(target_ty, value)
                 output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
+                append_hoist_cleanups(output, hoist_collected)
             ast.Stmt.stmt_while as w:
                 if w.is_inline:
                     lower_inline_while(ctx, output, w.condition, w.body)
@@ -2890,8 +3043,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                     pass
                         _:
                             pass
+                let stmt_base = output.len()
+                let stmt_saved = begin_stmt_setup(ctx, HoistMode.hm_discard)
+                ctx.hoist_root_ep = ex.expression
                 let lowered = lower_expr(ctx, ex.expression)
-                output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ctx.analysis.source_path))
+                let stmt_collected = collect_stmt_setup(ctx, stmt_saved)
+                emit_hoist_setup(output, stmt_base, stmt_collected)
+                if not stmt_collected.stmt_emitted:
+                    output.push(ir.Stmt.stmt_expression(expression = lowered, line = ex.line, source_path = ctx.analysis.source_path))
+                append_hoist_cleanups(output, stmt_collected)
             ast.Stmt.stmt_when as wn:
                 lower_when_stmt(ctx, output, wn.discriminant, wn.branches, wn.else_body)
             ast.Stmt.stmt_parallel_block as pb:
@@ -5701,6 +5861,9 @@ function lower_gather_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], ha
 ## Lower `detach <call>` expression.  Wraps the call in a worker function
 ## and dispatches via mt_detach_run, returning a void* handle.
 function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    # The call runs in a worker, so its setup must not hoist into the enclosing
+    # statement's window.
+    let hoist_saved = suspend_stmt_setup(ctx)
     let void_ty = ctx.void_ty
     let lowered_call = lower_expr(ctx, expression)
     var wb = vec.Vec[ir.Stmt].create()
@@ -5711,6 +5874,7 @@ function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: pt
     unsafe:
         da.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
         da.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
+    resume_stmt_setup(ctx, hoist_saved)
     return alloc_expr(ir.Expr.expr_call(callee = "mt_detach_run", arguments = da.as_span(), ty = void_ptr_ty()))
 
 
@@ -5742,8 +5906,10 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 return alloc_expr(ir.Expr.expr_boolean_literal(value = b.value, ty = ctx.bool_ty))
             ast.Expr.expr_if as ie:
                 let cond = lower_expr(ctx, ie.condition)
+                let hoist_saved = suspend_stmt_setup(ctx)
                 let then_e = lower_expr(ctx, ie.then_expr)
                 let else_e = lower_expr(ctx, ie.else_expr)
+                resume_stmt_setup(ctx, hoist_saved)
                 return alloc_expr(ir.Expr.expr_conditional(condition = cond, then_expression = then_e, else_expression = else_e, ty = ir_expr_type(then_e)))
             ast.Expr.expr_unsafe as u:
                 return lower_expr(ctx, u.expression)
@@ -5780,7 +5946,13 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                         return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = false))
             ast.Expr.expr_binary_op as bin:
                 var left = lower_expr(ctx, bin.left)
-                var right = lower_expr(ctx, bin.right)
+                var right: ptr[ir.Expr]
+                if bin.operator == "and" or bin.operator == "or":
+                    let hoist_saved = suspend_stmt_setup(ctx)
+                    right = lower_expr(ctx, bin.right)
+                    resume_stmt_setup(ctx, hoist_saved)
+                else:
+                    right = lower_expr(ctx, bin.right)
                 # A bare `null` compared against a nullable value takes the other
                 # operand's type — the host propagates the left operand's type as
                 # the right operand's expected type — so `source == null` types
@@ -5918,7 +6090,9 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 if format_string_all_static(fs.parts):
                     return format_string_static_literal(fs.parts)
                 var fmt_setup = vec.Vec[ir.Stmt].create()
+                let fmt_saved = suspend_stmt_setup(ctx)
                 let fmt_result = build_format_string_dynamic(ctx, fs.parts, ref_of(fmt_setup))
+                resume_stmt_setup(ctx, fmt_saved)
                 return alloc_expr(ir.Expr.expr_stmt_expr(setup = fmt_setup.as_span(), result = fmt_result, ty = types.Type.ty_str))
             ast.Expr.expr_detach as dt:
                 return lower_detach_expr(ctx, dt.expression, ep)
@@ -6030,6 +6204,10 @@ function lower_proc_expression(ctx: ref[LowerCtx], method_params: span[ast.Param
 ## invoke's C return type (the declared return type, or the proc type's own return
 ## type for synthesized procs) and `proc_ty` the proc's function type.
 function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast.Param], ret_ty: types.Type, body_ptr: ptr[ast.Stmt], proc_ty: types.Type) -> ptr[ir.Expr]:
+    # A proc body runs later, so its window is its own: suspend the enclosing
+    # statement's hoisting while the synthetic invoke/release/retain functions
+    # (and their bodies) are built.
+    let hoist_saved = suspend_stmt_setup(ctx)
     ctx.proc_counter += 1
     let proc_id = ctx.proc_counter
     var id_buf = string.String.create()
@@ -6121,6 +6299,7 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
         fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(proc_ty), pointer = false))))
         fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
         fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
+        resume_stmt_setup(ctx, hoist_saved)
         return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
 
     # No-capture path.
@@ -6135,6 +6314,7 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
     fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
     fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
 
+    resume_stmt_setup(ctx, hoist_saved)
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
 
 
@@ -12566,7 +12746,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             lowered = lower_expr(ctx, arg.arg_value)
         if is_foreign_cstr_temp_call(lowered):
             let cstr_ty = types.primitive("cstr")
-            let tc = fresh_c_temp_name(ctx, "foreign_cstr")
+            let tc = fresh_c_temp_name(ctx, "foreign_arg")
             setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = cstr_ty, value = lowered, line = 0, source_path = ""))
             cstr_temps.push(tc)
             lowered = alloc_expr(ir.Expr.expr_name(name = tc, ty = cstr_ty, pointer = false))
@@ -12575,7 +12755,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
         i += 1
     let ret_ty = info.return_ty
     let call = alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = ret_ty))
-    return wrap_foreign_cstr_frees(ctx, ref_of(setup), call, ret_ty, ref_of(cstr_temps))
+    return wrap_foreign_cstr_frees(ctx, ref_of(setup), call, ret_ty, ref_of(cstr_temps), call_ep)
 
 
 ## True when a lowered IR expression is a call to the malloc-backed
@@ -12603,7 +12783,45 @@ function cstr_temp_name(names: ref[vec.Vec[str]], index: ptr_uint) -> str:
 ## statement-expression when `setup` already holds address-argument temps.  For a
 ## non-void return the call is bound to a temp yielded as the result; for a void
 ## return the trailing free call is the (void) result.
-function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]], result: ptr[ir.Expr], ret_ty: types.Type, cstr_temps: ref[vec.Vec[str]]) -> ptr[ir.Expr]:
+##
+## Inside a hoisting window the host's per-statement shapes are emitted instead:
+## `hm_return` materializes the result into a `__mt_foreign_result_N` temp with
+## the frees after it (the value must survive the cleanups), while `hm_value` and
+## `hm_discard` return the call itself and collect the frees as cleanups the
+## statement emits after itself (the host's `lower_foreign_call_components` and
+## `discard_result` shapes); `hm_discard` additionally emits a root call as the
+## statement itself, without the statement's line/path.
+function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]], result: ptr[ir.Expr], ret_ty: types.Type, cstr_temps: ref[vec.Vec[str]], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
+    if ctx.hoist_mode != HoistMode.hm_off:
+        let had_setup = setup.len > 0
+        var hs: ptr_uint = 0
+        while hs < setup.len:
+            let s = setup.get(hs) else:
+                fatal(c"lowering: missing foreign setup statement")
+            ctx.hoist_stmts.push(unsafe: read(s))
+            hs += 1
+        if cstr_temps.len() == 0:
+            if ctx.hoist_mode == HoistMode.hm_discard and ctx.hoist_root_ep == call_ep and had_setup:
+                ctx.hoist_stmts.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
+                ctx.hoist_stmt_emitted = true
+            return result
+        if ctx.hoist_mode == HoistMode.hm_return and not types.is_void(ret_ty):
+            let rt = fresh_c_temp_name(ctx, "foreign_result")
+            ctx.hoist_stmts.push(ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = result, line = 0, source_path = ""))
+            var hi: ptr_uint = 0
+            while hi < cstr_temps.len():
+                ctx.hoist_stmts.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hi)))
+                hi += 1
+            return alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = false))
+        var hj: ptr_uint = 0
+        while hj < cstr_temps.len():
+            ctx.hoist_cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hj)))
+            hj += 1
+        if ctx.hoist_mode == HoistMode.hm_discard and ctx.hoist_root_ep == call_ep:
+            ctx.hoist_stmts.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
+            ctx.hoist_stmt_emitted = true
+        return result
+
     if cstr_temps.len() == 0:
         if setup.len() == 0:
             return result
@@ -12618,7 +12836,7 @@ function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]
         let last_result = free_cstr_temp_call(cstr_temp_name(cstr_temps, cstr_temps.len() - 1))
         return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = last_result, ty = ret_ty))
 
-    let rt = fresh_c_temp_name(ctx, "foreign_ret")
+    let rt = fresh_c_temp_name(ctx, "foreign_result")
     setup.push(ir.Stmt.stmt_local(name = rt, linkage_name = rt, ty = ret_ty, value = result, line = 0, source_path = ""))
     var fj: ptr_uint = 0
     while fj < cstr_temps.len():
@@ -12828,7 +13046,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
         if ctx.locals.pop().is_none():
             break
 
-    return wrap_foreign_cstr_frees(ctx, ref_of(setup), result, info.return_ty, ref_of(cstr_temps))
+    return wrap_foreign_cstr_frees(ctx, ref_of(setup), result, info.return_ty, ref_of(cstr_temps), call_ep)
 
 
 ## Re-lower a foreign mapping expression with the call's projected parameter

@@ -1095,3 +1095,72 @@ function test_format_string_local_is_interpolated_as_str() -> void:
     ## The `str` local interpolates through the str append, not the int one.
     expect(text.contains_substring("mt_format_append_str"))
     expect(not text.contains_substring("mt_format_append_int"))
+
+
+# =============================================================================
+#  Statement-position foreign-call hoisting — a statement-lowered foreign call
+#  (a `str as cstr` argument needs a temporary) hoists its setup into the
+#  statement stream instead of wrapping it in a StmtExpr, with the host's
+#  per-statement shapes: a result temp before a return, the call itself for a
+#  local/assignment, and a nil-line/path statement for a discarded call.
+# =============================================================================
+
+@[test]
+function test_foreign_call_setup_hoists_at_statement_position() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_fhoist_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_source = <<-SRC
+        external
+
+        struct Image:
+            width: int
+
+        external function ImageText(text: cstr, size: int) -> Image
+    SRC
+    if not write_source_file(root.as_str(), "raw.mt", raw_source):
+        return
+
+    var source = <<-SRC
+        import raw
+
+        public foreign function image_text(text: str as cstr, size: int) -> raw.Image = raw.ImageText
+
+        function wrap_text(text: str) -> raw.Image:
+            return image_text(text, 1)
+
+        function feed(text: str) -> void:
+            image_text(text, 2)
+
+        function keep(text: str) -> void:
+            var img = image_text(text, 3)
+            img.width = 1
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+
+    ## No statement-expression wrapper remains.
+    expect(not dumped.contains_substring("IR::StmtExpr"))
+    ## `return image_text(text, 1)`: the argument temp is declared, the call is
+    ## materialized into `__mt_foreign_result_2`, the temp is freed, and the
+    ## return uses the result temp.
+    expect(dumped.contains_substring("(IR::LocalDecl :name \"__mt_foreign_arg_1\" :linkage_name \"__mt_foreign_arg_1\" :type (Types::Primitive :name \"cstr\") :value (IR::Call :callee \"mt_foreign_str_to_cstr_temp\""))
+    expect(dumped.contains_substring("(IR::LocalDecl :name \"__mt_foreign_result_2\" :linkage_name \"__mt_foreign_result_2\" :type (Types::Struct :name \"Image\" :module_name \"raw\") :value (IR::Call :callee \"ImageText\" :arguments ((IR::Name :name \"__mt_foreign_arg_1\""))
+    expect(dumped.contains_substring("(IR::ReturnStmt :value (IR::Name :name \"__mt_foreign_result_2\" :type (Types::Struct :name \"Image\" :module_name \"raw\") :pointer false)"))
+    ## A discarded call is emitted by the foreign lowering itself, without the
+    ## statement's line/path, and the free follows it.
+    expect(dumped.contains_substring(":value 2 :type (Types::Primitive :name \"int\"))) :type (Types::Struct :name \"Image\" :module_name \"raw\")) :line nil :path nil) (IR::ExpressionStmt :expression (IR::Call :callee \"mt_free_foreign_cstr_temp\""))
+    ## A local initializer takes the call as the declaration's value.
+    expect(dumped.contains_substring("(IR::LocalDecl :name \"img\" :linkage_name \"img\" :type (Types::Struct :name \"Image\" :module_name \"raw\") :value (IR::Call :callee \"ImageText\""))
