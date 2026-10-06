@@ -1308,6 +1308,21 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 var c_seen = map_mod.Map[str, bool].create()
                 ensure_storage_type_tuples(ctx, c_ty, ref_of(c_seen))
                 let val_ptr = c.value
+                # The host's `lower_constants` routes an expression-list or
+                # call/specialization constant value through
+                # `lower_const_value_literal` rather than the storage-initializer
+                # path.
+                var const_value_literal_path = false
+                if val_ptr != null:
+                    match unsafe: read(ptr[ast.Expr]<-val_ptr):
+                        ast.Expr.expr_expression_list:
+                            const_value_literal_path = true
+                        ast.Expr.expr_call:
+                            const_value_literal_path = true
+                        ast.Expr.expr_specialization:
+                            const_value_literal_path = true
+                        _:
+                            pass
                 # Type constants (->type) are compile-time only; they don't
                 # have a C representation (mirrors Ruby).
                 var is_type_meta = false
@@ -1346,7 +1361,17 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                             var const_env = map_mod.Map[str, ptr[ir.Expr]].create()
                             match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-val_ptr, ref_of(const_env), c_ty):
                                 Option.some as cv2:
-                                    let coerced = alloc_expr(coerce_const_value(ctx, unsafe: read(cv2.value), c_ty))
+                                    var c_val = unsafe: read(cv2.value)
+                                    # The host's `lower_const_value_literal` path
+                                    # (an expression-list or call constant) emits a
+                                    # tuple constant as an `IR::ArrayLiteral`.
+                                    if const_value_literal_path:
+                                        match const_tuple_array_literal(c_val, c_ty):
+                                            Option.some as al:
+                                                c_val = al.value
+                                            Option.none:
+                                                pass
+                                    let coerced = alloc_expr(coerce_const_value(ctx, c_val, c_ty))
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = coerced, line = c.line, path = ctx.analysis.source_path))
                                 Option.none:
                                     constants.push(ir.Constant(name = c.name, linkage_name = naming.qualified_c_name(ctx.module_name, c.name), ty = c_ty, value = lower_expr(ctx, unsafe: ptr[ast.Expr]<-val_ptr), line = c.line, path = ctx.analysis.source_path))
@@ -18390,6 +18415,54 @@ function coerce_const_value(ctx: ref[LowerCtx], v: ir.Expr, target_ty: types.Typ
         _:
             pass
     return v
+
+
+## The host's `lower_const_value_literal` path for a constant whose value is an
+## expression list or a call/specialization: when the declared type is a tuple
+## the folded aggregate is emitted as an `IR::ArrayLiteral` whose element
+## literals are all typed `int` — the host's fallback element type, since its
+## `Types::Tuple` has no `arguments` to pick an element type from.
+function const_tuple_array_literal(value: ir.Expr, ty: types.Type) -> Option[ir.Expr]:
+    match ty:
+        types.Type.ty_tuple:
+            pass
+        _:
+            return Option[ir.Expr].none
+    match value:
+        ir.Expr.expr_aggregate_literal as ag:
+            var elements = vec.Vec[ir.Expr].create()
+            var i: ptr_uint = 0
+            while i < ag.fields.len:
+                let field = unsafe: read(ag.fields.data + i)
+                match retype_int_element_literal(unsafe: read(field.value)):
+                    Option.some as lit:
+                        elements.push(lit.value)
+                    Option.none:
+                        return Option[ir.Expr].none
+                i += 1
+            return Option[ir.Expr].some(value = ir.Expr.expr_array_literal(ty = ty, elements = elements.as_span()))
+        _:
+            return Option[ir.Expr].none
+
+
+## Re-type a folded element literal to `int` (the host's
+## `lower_const_value_literal` fallback element type): integers are masked to
+## the 32-bit width, other literal kinds keep their value under the `int` type.
+function retype_int_element_literal(v: ir.Expr) -> Option[ir.Expr]:
+    let int_ty = types.primitive("int")
+    match v:
+        ir.Expr.expr_integer_literal as lit:
+            return Option[ir.Expr].some(value = ir.Expr.expr_integer_literal(value = wrap_int_value(lit.value, 32, true), ty = int_ty))
+        ir.Expr.expr_unsigned_integer_literal as lit:
+            return Option[ir.Expr].some(value = ir.Expr.expr_integer_literal(value = wrap_int_value(long<-lit.value, 32, true), ty = int_ty))
+        ir.Expr.expr_float_literal as fl:
+            return Option[ir.Expr].some(value = ir.Expr.expr_float_literal(value = fl.value, ty = int_ty))
+        ir.Expr.expr_boolean_literal as b:
+            return Option[ir.Expr].some(value = ir.Expr.expr_boolean_literal(value = b.value, ty = int_ty))
+        ir.Expr.expr_string_literal as sl:
+            return Option[ir.Expr].some(value = ir.Expr.expr_string_literal(value = sl.value, ty = int_ty, cstring = false))
+        _:
+            return Option[ir.Expr].none
 
 
 ## Compile-time layout of a type, mirroring Ruby's `Types::Layout` for the

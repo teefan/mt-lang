@@ -167,8 +167,18 @@ modules).  **Item 2e(a) landed in the same session**: an anonymous tuple's
 type renders the host's default `_0..` field names, and the folded-tuple
 aggregate names its fields the same way — `std/color.mt` flips to
 byte-identical (**43 → 44 match / 622 differ**) and `test/mt/color_test.mt`
-moves +46,643; **2e(b)** (the folded-const `IR::ArrayLiteral` shape) stays
-recorded.  Session
+moves +46,643.  **Item 2e(b) landed in the same session**: a tuple-typed
+constant with an expression-list value lowers to the host's `IR::ArrayLiteral`
+(every element literal typed `int` — the host's fallback element type, since
+`Types::Tuple` has no `arguments`) — corpus-neutral (the sweep set is
+unchanged; the `use.mt`/`mixuse.mt` fixtures are byte-identical).  **Item 3 is
+verified closed** (F2's continuation refinement had already fixed the
+refined-operand difference); its files' first difference is now the
+**`reinterpret` lowering**, ranked 3b: the host always emits
+`IR::ReinterpretExpr` (rendered through a `memcpy` helper with a
+`_Static_assert`), the self a `Cast` except for float bit-reinterprets (a
+union compound literal), and the source type needs the host's unwrapped
+pointer resolution.  Session
 39 had landed **`lower` Track 3 item 1: opaque
 declarations** (the first difference for all 34 sdl3 files): declared names,
 the host's `forward_declarable` rule, forward-declaration emission and the
@@ -614,22 +624,57 @@ quote the set).
    differing; locked by `test_anonymous_tuple_renders_default_field_names`.
    The self's internal model keeps `None` for an anonymous tuple (the dumper
    and the C name/field paths handle both forms), so only the dump changes.
-   (b) A global initialized from an imported tuple *const* is
-   `IR::ArrayLiteral` on the host (the const's folded value is an Array fed
-   through `lower_const_value_literal`) and `IR::AggregateLiteral` on the self
-   (fixture: `var g_pair: (int, int) = libx.ZERO`; first difference byte 388
-   after 2e(a)) — open.
+   (b) **DONE (session 40, 2026-10-06)**: a tuple-typed constant with an
+   expression-list (or call/specialization) value takes the host's
+   `lower_const_value_literal` path — `const_tuple_array_literal` + the
+   `const_value_literal_path` guard in `decl_const` emit an
+   `IR::ArrayLiteral` whose element literals are re-typed to `int` (the host's
+   fallback element type, since `Types::Tuple` has no `arguments`; integers
+   are masked to 32 bits), with a non-scalar element falling back to the
+   aggregate.  Corpus-neutral: no corpus file carries the shape, so the sweep
+   set/counts are unchanged; the `use.mt` and `mixuse.mt` fixtures
+   (`(int, bool)`/`(bool, int)` element typing) are byte-identical, locked by
+   `test_tuple_constant_lowers_to_array_literal` (fails with the change
+   reverted).
 3. **Refined (non-null) operand types after a null check** (item 14;
-   `data_structures` + `reflection_advanced`'s first difference).  **Verify
-   first** — F2's continuation refinement (session 15) may already have closed
-   this dump difference; if not, port the refined-type recording into
-   `expr_type` for guarded uses (`analyzer.mt`'s `flow_types` record is the base).
-4. **Event fields** (item 4; `event_stress_test`).  `lower_struct_decl`
-   (`lowering.mt:13974`, rewrite `:13987-13991`, push `:14002`) must emit
-   `IR::Field(name = "__event_<name>", ty = <ty_event>)` (host
-   `declarations.rb:239`, `Types::Event#hidden_field_name` `types.rb:775`);
-   adjust the analyzer's `FieldEntry` (`analyzer.mt:1062`) if the field name is
-   sourced there.
+   `data_structures` + `reflection_advanced`'s first difference) —
+   **VERIFIED CLOSED (session 40, 2026-10-06)**: F2's continuation refinement
+   (session 15) already fixed the dump difference; both files' first
+   difference is now 3b.
+3b. **`reinterpret` lowering** (newly exposed by item 3's verification; the
+   next first difference for `examples/data_structures.mt`,
+   `examples/reflection_advanced.mt` and every program lowering
+   `std/mem/heap.mt`).  The host always emits `IR::ReinterpretExpr` for the
+   builtin (`lowering/calls.rb:231-239`; the foreign-inline mapping path at
+   `:1146`) and renders it through a per-(target, source) `memcpy` helper with
+   a `_Static_assert` (`c_backend/reinterpret.rb:98-113`); the self emits a
+   `Cast` except when a float is involved
+   (`lowering.mt:7737-7749`) and renders those as a union compound literal
+   (`c_backend.mt:4347-4359`).  The source type needs the host's resolution:
+   for `reinterpret[ptr_uint](address)` in `std/mem/heap.mt` the host's
+   `source_type` is the **unwrapped `ptr[void]`** while the lowered `IR::Name`
+   carries `ptr[void]?` (`infer_expression_type` vs the recorded type) — so a
+   naive switch to `ReinterpretExpr` with `ir_expr_type(lowered)` mismatches
+   the dump *and* breaks the union rendering (16-byte nullable struct vs
+   8-byte integer).  Corpus sites: `std/mem/heap.mt:90,97`,
+   `std/net/session.mt:281,611`, `std/binary.mt:88,93,235,240`,
+   `std/hash.mt:113,143`, plus `projects/mtc/src/mtc/**`'s pointer↔pointer
+   reinterprets.  Scope: the source-type rule, the C helper emission (or a
+   verified-equivalent rendering), then the sweep.
+4. **Event fields** (item 4; `event_stress_test`, first difference at 21212).
+   The host emits `IR::Field(name = "__event_<name>", ty = <Types::Event>)`
+   (hidden name `types.rb:775`, `declarations.rb:239`) and routes every event
+   member access through that name (`expressions.rb:1743-1745`); the self
+   currently rewrites the field's *type* to the event C struct but keeps the
+   declared field name (`lower_struct_decl`, `lowering.mt:14127-14131`) and
+   emits the declared name in member accesses (`lower_member_access`'s final
+   `expr_member`, `:13932-13936`).  Fix: detect the event field as
+   `lower_struct_decl` already does, emit `name = j2("__event_", nt.name)`
+   with the `ty_event` built from the runtime info (mirroring the `decl_event`
+   arm), and rename the member in `lower_member_access` when
+   `is_event_type(ctx, member_ty)`; check
+   `extract_generic_struct_fields` (`:8028`) for the generic-instance path and
+   the event IR tests for the old names.
 5. **Function-type names** (item 6) — **DONE (session 16, F5, `6ad423ce`)**:
    `ty_function` carries the callee's name, `type_to_string` renders `fn <name>`
    and `sexpr.mt` emits it.  Keep as a regression watch only.
@@ -1156,7 +1201,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d and 2e(a) — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering and the anonymous-tuple default field names — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; item 1's flips stand.  Session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c, 2d, 2e(a) and 2e(b) — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names and the tuple constant's `ArrayLiteral` shape — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed — its files now first-differ on 3b (`reinterpret`), recorded.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1275,17 +1320,41 @@ module's struct constant.  Baseline at this commit: **43 match / 623 differ /
   reverted).  The tuple fixtures `p.mt`, `store.mt` and `ord.mt` are now
   byte-identical end-to-end; `use.mt` keeps 2e(b) (the host lowers a folded
   tuple const through `lower_const_value_literal` into an `IR::ArrayLiteral`).
+- **Item 2e(b) (landed in the same session) — the tuple constant's
+  `IR::ArrayLiteral` shape.**  A tuple-typed constant with an expression-list
+  (or call/specialization) value now takes the host's
+  `lower_const_value_literal` path: `const_tuple_array_literal` converts the
+  folded aggregate into an `IR::ArrayLiteral` whose element literals are
+  re-typed to `int` (the host's fallback element type; integers masked to 32
+  bits, bools/floats/strings keep their values), applied under the new
+  `const_value_literal_path` guard in `decl_const`; a non-scalar element
+  falls back to the aggregate.  Measured: corpus-neutral — the sweep
+  set/counts are unchanged (no corpus file carries the shape) — and the
+  `use.mt`/`mixuse.mt` fixtures are byte-identical (probed: `(int, bool)` and
+  `(bool, int)` element typing matches the host's `int` fallback).  Locked by
+  `test_tuple_constant_lowers_to_array_literal` (fails with the change
+  reverted).
+- **Item 3 (verified in the same session) — CLOSED.**  F2's continuation
+  refinement (session 15) had already fixed the refined-operand dump
+  difference: `examples/data_structures.mt` and
+  `examples/reflection_advanced.mt` no longer first-differ there — both now
+  first-differ on **3b**, the `reinterpret` lowering (host
+  `IR::ReinterpretExpr` always, rendered through a `memcpy` helper with a
+  `_Static_assert`; self `IR::Cast` except for floats, rendered as a union
+  compound literal), with the source type needing the host's unwrapped
+  pointer resolution.  Recorded in Track 3 with the corpus sites and the
+  nullable-source pitfall.
 - **Verification**: `test_global_initialized_from_imported_const` locks the
   fold — a main-module global ← generated module const ← raw-module struct
   const chain, asserting the aggregate entry in the dump; all seven new tests
   fail with their change reverted (checked).  Tier-2 gates on the frozen tree
-  (`tools/gates.sh` areas codegen+other+tests, all five items): dev build +
+  (`tools/gates.sh` areas codegen+other+tests, all six items): dev build +
   dev self-test (19 files / 0 failed), bootstrap fixed point (`stage2.c ==
   stage3.c`, 19 files / 0 failed), `test/mt` 60/0, the `lower` sweep
   **44/622/51/0** with the set comparisons above, examples 49/49 same; the
   `box_stack.mt` (dyn vtable + tuple) and `event_stress_test.mt` builds, the
-  `p.mt`/`store.mt`/`ord.mt` fixtures (byte-identical) and the emitted C for
-  a tuple are the smoke checks.
+  `p.mt`/`store.mt`/`ord.mt`/`use.mt`/`mixuse.mt` fixtures (byte-identical)
+  and the emitted C for a tuple are the smoke checks.
 
 ### Session 39 (2026-10-05) — `lower` Track 3 item 1: opaque declarations
 

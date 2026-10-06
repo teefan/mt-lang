@@ -665,6 +665,42 @@ function test_anonymous_tuple_renders_default_field_names() -> void:
     expect(dumped.contains_substring("(Types::Tuple :element_types ((Types::Struct :name \"P\" :module_name \"main\") (Types::Primitive :name \"int\")) :field_names (\"_0\" \"_1\"))"))
 
 
+@[test]
+function test_tuple_constant_lowers_to_array_literal() -> void:
+    ## A constant whose declared type is a tuple and whose value is an
+    ## expression list takes the host's `lower_const_value_literal` shape: an
+    ## `IR::ArrayLiteral` whose element literals are all typed `int` — the
+    ## host's fallback element type, since `Types::Tuple` has no `arguments`.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_tupconst_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        const PAIR: (int, int) = (1, 2)
+        const MIX: (int, bool) = (1, true)
+        const BINT: (bool, int) = (true, 1)
+
+        function main() -> int:
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring(":name \"PAIR\" :linkage_name \"main_PAIR\" :type (Types::Tuple :element_types ((Types::Primitive :name \"int\") (Types::Primitive :name \"int\")) :field_names (\"_0\" \"_1\")) :value (IR::ArrayLiteral :type (Types::Tuple :element_types ((Types::Primitive :name \"int\") (Types::Primitive :name \"int\")) :field_names (\"_0\" \"_1\")) :elements ((IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")) (IR::IntegerLiteral :value 2 :type (Types::Primitive :name \"int\"))))"))
+    expect(dumped.contains_substring(":name \"MIX\" :linkage_name \"main_MIX\" :type (Types::Tuple :element_types ((Types::Primitive :name \"int\") (Types::Primitive :name \"bool\")) :field_names (\"_0\" \"_1\")) :value (IR::ArrayLiteral :type (Types::Tuple :element_types ((Types::Primitive :name \"int\") (Types::Primitive :name \"bool\")) :field_names (\"_0\" \"_1\")) :elements ((IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")) (IR::BooleanLiteral :value true :type (Types::Primitive :name \"int\"))))"))
+    expect(dumped.contains_substring(":name \"BINT\" :linkage_name \"main_BINT\" :type (Types::Tuple :element_types ((Types::Primitive :name \"bool\") (Types::Primitive :name \"int\")) :field_names (\"_0\" \"_1\")) :value (IR::ArrayLiteral :type (Types::Tuple :element_types ((Types::Primitive :name \"bool\") (Types::Primitive :name \"int\")) :field_names (\"_0\" \"_1\")) :elements ((IR::BooleanLiteral :value true :type (Types::Primitive :name \"int\")) (IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\"))))"))
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================
