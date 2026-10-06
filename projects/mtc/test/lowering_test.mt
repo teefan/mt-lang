@@ -506,6 +506,82 @@ function test_function_reference_carries_declared_name() -> void:
 
 
 # =============================================================================
+#  Tuple value structs — the host's `ensure_tuple_struct` registers an
+#  `mt_tuple_*` struct for a tuple literal and for a tuple in a const/global
+#  storage type.
+# =============================================================================
+
+@[test]
+function test_tuple_literal_registers_value_struct() -> void:
+    ## A tuple literal registers its value struct: the declared name is the
+    ## host's qualified `Tuple#to_s` (`(main.P, int)`) and the linkage name is
+    ## the sanitized `mt_tuple_<elements>`.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_tup_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct P:
+            x: int
+
+        function f() -> (P, int):
+            return (P(x = 1), 2)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring("(IR::StructDecl :name \"(main.P, int)\" :linkage_name \"mt_tuple_main_P_int\" :fields ((IR::Field :name \"_0\" :type (Types::Struct :name \"P\" :module_name \"main\")) (IR::Field :name \"_1\" :type (Types::Primitive :name \"int\")))"))
+
+
+@[test]
+function test_storage_tuple_registers_value_struct() -> void:
+    ## A tuple that appears only in a const/global *declared* type — the
+    ## initializer is another module's constant, so no tuple literal is
+    ## lowered — still registers its value struct (the host's
+    ## `ensure_registered_storage_type_types`).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_tups_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var lib_source = <<-SRC
+        public const ZERO: (int, int) = (0, 0)
+    SRC
+    if not write_source_file(root.as_str(), "libx.mt", lib_source):
+        return
+
+    var main_source = <<-SRC
+        import libx as libx
+
+        var g_pair: (int, int) = libx.ZERO
+    SRC
+    if not write_main_file(root.as_str(), main_source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring(":name \"g_pair\" :linkage_name \"main_g_pair\""))
+    expect(dumped.contains_substring("(IR::StructDecl :name \"(int, int)\" :linkage_name \"mt_tuple_int_int\" :fields ((IR::Field :name \"_0\" :type (Types::Primitive :name \"int\")) (IR::Field :name \"_1\" :type (Types::Primitive :name \"int\")))"))
+
+
+# =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================
 

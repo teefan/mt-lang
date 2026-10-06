@@ -209,7 +209,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     var checked_index_types = collect_checked_index_types(funcs)
     var checked_span_index_types = collect_checked_span_index_types(funcs)
     var gen_variants = collect_generic_variants(program)
-    var tuple_types = collect_tuple_types(funcs, program, ref_of(gen_variants))
+    var tuple_types = filter_declared_tuple_types(collect_tuple_types(funcs, program, ref_of(gen_variants)), program)
     var opt_structs = collect_opt_struct_decls(program, ref_of(opaques))
     # Bounds-checked accessors call mt_fatal, so their presence pulls in the
     # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
@@ -2108,7 +2108,7 @@ function c_type(t: types.Type) -> str:
         types.Type.ty_generic as g:
             return generic_c_type(g.name, g.args)
         types.Type.ty_tuple:
-            return tuple_type_name(t)
+            return naming.tuple_type_c_name(t)
         types.Type.ty_type_meta:
             return "void"
         types.Type.ty_error:
@@ -2132,34 +2132,6 @@ function c_type(t: types.Type) -> str:
                 return j2("mt_opt_", naming.type_c_key(base))
         _:
             fatal(j2("c_backend: unsupported C type: ", types.type_to_string(t)))
-
-
-## The C type name of a tuple (`(int, int)` -> `mt_tuple_int_int`,
-## named `(x: int, y: int)` -> `mt_tuple_int_int_x_y`).
-function tuple_type_name(t: types.Type) -> str:
-    var buf = string.String.create()
-    buf.append("mt_tuple")
-    match t:
-        types.Type.ty_tuple as tup:
-            var i: ptr_uint = 0
-            while i < tup.elements.len:
-                buf.append("_")
-                unsafe:
-                    buf.append(naming.type_c_key(read(tup.elements.data + i)))
-                i += 1
-            match tup.field_names:
-                Option.some as names:
-                    var ni: ptr_uint = 0
-                    while ni < names.value.len:
-                        buf.append("_")
-                        unsafe:
-                            buf.append(read(names.value.data + ni))
-                        ni += 1
-                Option.none:
-                    pass
-        _:
-            pass
-    return buf.as_str()
 
 
 ## C type for a generic instance: span -> mt_span_ELEM, ptr/const_ptr/ref ->
@@ -2676,6 +2648,28 @@ function collect_tuple_types(functions: span[ir.Function], program: ir.Program, 
     return collected
 
 
+## Drop tuples whose value struct the lowering already registered as a
+## `Program.structs` declaration, so it is emitted once (from the IR, like the
+## host) instead of through the backend's own collection.
+function filter_declared_tuple_types(tuple_types: vec.Vec[types.Type], program: ir.Program) -> vec.Vec[types.Type]:
+    var declared = map_mod.Map[str, bool].create()
+    var i: ptr_uint = 0
+    while i < program.structs.len:
+        unsafe:
+            declared.set(read(program.structs.data + i).linkage_name, true)
+        i += 1
+    var kept = vec.Vec[types.Type].create()
+    i = 0
+    while i < tuple_types.len():
+        let ty_ptr = tuple_types.get(i) else:
+            break
+        let ty = unsafe: read(ty_ptr)
+        if not declared.contains(naming.tuple_type_c_name(ty)):
+            kept.push(ty)
+        i += 1
+    return kept
+
+
 function tuple_from_fields(fields: span[ir.Field], seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
     var i: ptr_uint = 0
     while i < fields.len:
@@ -2687,7 +2681,7 @@ function tuple_from_fields(fields: span[ir.Field], seen: ref[map_mod.Map[str, bo
 function maybe_add_tuple(t: types.Type, seen: ref[map_mod.Map[str, bool]], collected: ref[vec.Vec[types.Type]]) -> void:
     if not is_tuple_type(t):
         return
-    let name = tuple_type_name(t)
+    let name = naming.tuple_type_c_name(t)
     if not seen.contains(name):
         seen.set(name, true)
         collected.push(t)
@@ -2787,12 +2781,12 @@ function tuple_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], co
 
 
 function emit_tuple_type_forward(e: ref[Emitter], t: types.Type) -> void:
-    let name = tuple_type_name(t)
+    let name = naming.tuple_type_c_name(t)
     emit_line(e, j3("typedef struct ", name, j2(" ", j2(name, ";"))))
 
 
 function emit_tuple_type_def(e: ref[Emitter], t: types.Type) -> void:
-    let name = tuple_type_name(t)
+    let name = naming.tuple_type_c_name(t)
     emit_line(e, j3("struct ", name, " {"))
     match t:
         types.Type.ty_tuple as tup:
@@ -3489,7 +3483,7 @@ function by_value_dep_key(ty: types.Type) -> Option[str]:
                 return Option[str].some(value = generic_c_type(g.name, g.args))
             return Option[str].none
         types.Type.ty_tuple:
-            return Option[str].some(value = tuple_type_name(ty))
+            return Option[str].some(value = naming.tuple_type_c_name(ty))
         # A match-arm payload binding (`Result[T, E].success as p`) is typed as
         # the arm-payload struct (`<variant>_success`) and embeds it by value —
         # e.g. an async frame field spilling the binding across an await.  The
@@ -3626,7 +3620,7 @@ function topo_sort_types(structs: span[ir.StructDecl], gen_variants: ref[vec.Vec
     while i < tuple_types.len():
         let t_ptr = tuple_types.get(i) else:
             break
-        let key = tuple_type_name(unsafe: read(t_ptr))
+        let key = naming.tuple_type_c_name(unsafe: read(t_ptr))
         by_key.set(key, nodes.len())
         nodes.push(TypeNode(key = key, kind = 5, index = i))
         i += 1

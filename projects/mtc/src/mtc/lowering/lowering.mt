@@ -220,6 +220,13 @@ struct LowerCtx:
     # these from the proc types in use rather than carrying them in the IR, so
     # they are routed to `Program.monomorphized_structs`.
     pending_proc_structs: vec.Vec[ir.StructDecl]
+    # Tuple value structs (`mt_tuple_*`), registered by `ensure_tuple_struct_ir`
+    # when a tuple literal or a const/global storage type uses a tuple type.
+    # Mirrors the host's `ensure_tuple_struct`, which appends them to
+    # `Program.structs` after the module declarations; drained there in the same
+    # registration order.
+    pending_tuple_structs: vec.Vec[ir.StructDecl]
+    pending_tuple_linkages: map_mod.Map[str, bool]
     # Emitted-once guards for shared runtime types.
     subscription_emitted: bool
     event_error_emitted: bool
@@ -466,6 +473,7 @@ public function lower(program: loader.Program) -> ir.Program:
     var seen_functions = map_mod.Map[str, bool].create()
     var monomorphized_structs = vec.Vec[ir.StructDecl].create()
     var monomorphized_variants = vec.Vec[ir.VariantDecl].create()
+    var pending_tuple_structs = vec.Vec[ir.StructDecl].create()
     var spec_infos = map_mod.Map[str, SpecInfo].create()
     var module_fragments = vec.Vec[ir.Program].create()
     var module_analyses = vec.Vec[analyzer.Analysis].create()
@@ -478,7 +486,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(spec_infos))
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_tuple_structs), ref_of(spec_infos))
         module_fragments.push(fragment)
         module_analyses.push(analysis)
         globals.append_span(fragment.globals)
@@ -491,6 +499,10 @@ public function lower(program: loader.Program) -> ir.Program:
         constants.append_span(fragment.constants)
         # Functions are appended after the loop, reordered per module.
         i += 1
+
+    # Tuple value structs registered while lowering (the host's
+    # `ensure_tuple_struct` synthetics) follow the module declarations.
+    dedup_append_structs(ref_of(structs), pending_tuple_structs.as_span(), ref_of(seen_structs))
 
     # Place each module's functions in the host's order (`lower_functions`):
     # declaration order, with a generic function's or method's instances grouped
@@ -889,6 +901,8 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         pending_event_functions = vec.Vec[ir.Function].create(),
         pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
         pending_proc_structs = vec.Vec[ir.StructDecl].create(),
+        pending_tuple_structs = vec.Vec[ir.StructDecl].create(),
+        pending_tuple_linkages = map_mod.Map[str, bool].create(),
         subscription_emitted = false,
         event_error_emitted = false,
         inline_for_element = Option[ComptimeElement].none,
@@ -1160,7 +1174,7 @@ function append_selected_when_decls(ctx: ref[LowerCtx], discriminant: ptr[ast.Ex
             pass
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_tuples: ref[vec.Vec[ir.StructDecl]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
     var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -1254,6 +1268,11 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     # `std_map_Map_str_str m` rather than the unspecialized
                     # `std_map_Map` (which is never defined).
                     g_ty = qualify_type(ctx, resolve_type_ref(ctx, vt))
+                # A tuple in the global's declared type registers its value
+                # struct even when no literal mentions it (the host's
+                # `ensure_registered_storage_type_types`).
+                var g_seen = map_mod.Map[str, bool].create()
+                ensure_storage_type_tuples(ctx, g_ty, ref_of(g_seen))
                 # A top-level `var` initializer must be static-storage-safe (the
                 # analyzer enforces this), so it lowers to a C static initializer.
                 # A no-capture `proc` initializer, for example, becomes a static
@@ -1288,6 +1307,11 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
             ast.Decl.decl_const as c:
                 var c_ty = resolve_type_ref(ctx, c.const_type)
+                # A tuple in the constant's declared type registers its value
+                # struct, as the host's `ensure_registered_storage_type_types`
+                # does before the value is lowered.
+                var c_seen = map_mod.Map[str, bool].create()
+                ensure_storage_type_tuples(ctx, c_ty, ref_of(c_seen))
                 let val_ptr = c.value
                 # Type constants (->type) are compile-time only; they don't
                 # have a C representation (mirrors Ruby).
@@ -1368,6 +1392,15 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         let ps_ptr = ps_iter.next() else:
             break
         monomorphized.push(unsafe: read(ps_ptr))
+
+    # Tuple value structs join `Program.structs` after every module's
+    # declarations (the host's `assemble_modules` appends its synthetic structs
+    # last), so they bypass the per-module fragment.
+    var ts_iter = ctx.pending_tuple_structs.iter()
+    while true:
+        let ts_ptr = ts_iter.next() else:
+            break
+        pending_tuples.push(unsafe: read(ts_ptr))
 
     # Append any monomorphized generic functions from the specialization cache.
     var spec_iter = ctx.specialization_cache.values()
@@ -6416,10 +6449,96 @@ function lower_tuple_literal_with_names(ctx: ref[LowerCtx], elements: span[ast.E
     var tuple_field_names = Option[span[str]].none
     if all_named:
         tuple_field_names = Option[span[str]].some(value = fnames.as_span())
+    let tuple_ty = types.Type.ty_tuple(elements = elem_types.as_span(), field_names = tuple_field_names)
+    ensure_tuple_struct_ir(ctx, tuple_ty)
     return alloc_expr(ir.Expr.expr_aggregate_literal(
-        ty = types.Type.ty_tuple(elements = elem_types.as_span(), field_names = tuple_field_names),
+        ty = tuple_ty,
         fields = fields.as_span(),
     ))
+
+
+## Register the value struct for a tuple type, mirroring the host's
+## `ensure_tuple_struct`: one `IR::StructDecl` per tuple type (deduped by
+## linkage name), fields named `_0..` or the tuple's own field names, appended
+## to `Program.structs` after the module declarations.
+function ensure_tuple_struct_ir(ctx: ref[LowerCtx], ty: types.Type) -> void:
+    match ty:
+        types.Type.ty_tuple as tup:
+            let linkage = naming.tuple_type_c_name(ty)
+            if ctx.pending_tuple_linkages.contains(linkage):
+                return
+            ctx.pending_tuple_linkages.set(linkage, true)
+            var fields = vec.Vec[ir.Field].create()
+            var i: ptr_uint = 0
+            while i < tup.elements.len:
+                var fname = tuple_field_name(i)
+                match tup.field_names:
+                    Option.some as names:
+                        if i < names.value.len:
+                            unsafe:
+                                fname = read(names.value.data + i)
+                    Option.none:
+                        pass
+                unsafe:
+                    fields.push(ir.Field(name = fname, ty = read(tup.elements.data + i)))
+                i += 1
+            ctx.pending_tuple_structs.push(ir.StructDecl(
+                name = naming.type_to_s_qualified(ty),
+                linkage_name = linkage,
+                fields = fields.as_span(),
+                packed = false,
+                alignment = 0,
+                source_module = Option[str].none,
+            ))
+        _:
+            pass
+
+
+## Ensure an `mt_tuple_*` decl for every tuple type reachable from a
+## const/global storage type, mirroring the host's
+## `ensure_registered_storage_type_types`: tuple elements, nullable bases,
+## generic and instance arguments, and named struct fields.
+function ensure_storage_type_tuples(ctx: ref[LowerCtx], ty: types.Type, seen: ref[map_mod.Map[str, bool]]) -> void:
+    let key = naming.type_c_key(ty)
+    if seen.contains(key):
+        return
+    seen.set(key, true)
+    match ty:
+        types.Type.ty_tuple as tup:
+            ensure_tuple_struct_ir(ctx, ty)
+            var i: ptr_uint = 0
+            while i < tup.elements.len:
+                ensure_storage_type_tuples(ctx, unsafe: read(tup.elements.data + i), seen)
+                i += 1
+        types.Type.ty_nullable as nl:
+            ensure_storage_type_tuples(ctx, unsafe: read(nl.base), seen)
+        types.Type.ty_generic as g:
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                ensure_storage_type_tuples(ctx, unsafe: read(g.args.data + i), seen)
+                i += 1
+        types.Type.ty_imported as im:
+            var i: ptr_uint = 0
+            while i < im.args.len:
+                ensure_storage_type_tuples(ctx, unsafe: read(im.args.data + i), seen)
+                i += 1
+            if im.args.len == 0:
+                ensure_struct_field_tuples(ctx, ty, seen)
+        types.Type.ty_named:
+            ensure_struct_field_tuples(ctx, ty, seen)
+        _:
+            pass
+
+
+function ensure_struct_field_tuples(ctx: ref[LowerCtx], ty: types.Type, seen: ref[map_mod.Map[str, bool]]) -> void:
+    match struct_fields_of(ctx, ty):
+        Option.some as fields:
+            var i: ptr_uint = 0
+            while i < fields.value.len:
+                ensure_storage_type_tuples(ctx, unsafe: read(fields.value.data + i).ty, seen)
+                i += 1
+        Option.none:
+            pass
 
 
 function tuple_field_name(index: ptr_uint) -> str:

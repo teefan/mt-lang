@@ -175,8 +175,149 @@ public function type_c_key(t: types.Type) -> str:
             return sanitize_identifier(types.type_to_string(t))
 
 
+## The host's Ruby `to_s` for a type — the rendering its tuple struct
+## declarations carry (`Types::Tuple#to_s`, e.g. `(main.P, int)`,
+## `(std.vec.Vec[main.P], main.P)`), where named and imported types are
+## module-qualified.  This is distinct from `types.type_to_string`, whose
+## unqualified rendering the diagnostics and hovers use.
+public function type_to_s_qualified(t: types.Type) -> str:
+    match t:
+        types.Type.ty_named as n:
+            if n.module_name.len > 0:
+                return j3(n.module_name, ".", n.name)
+            return n.name
+        types.Type.ty_imported as im:
+            if im.args.len == 0:
+                return j3(im.module_name, ".", im.name)
+            var buf = string.String.create()
+            buf.append(im.module_name)
+            buf.append(".")
+            buf.append(im.name)
+            buf.append("[")
+            var i: ptr_uint = 0
+            while i < im.args.len:
+                if i > 0:
+                    buf.append(", ")
+                unsafe:
+                    buf.append(type_to_s_qualified(read(im.args.data + i)))
+                i += 1
+            buf.append("]")
+            return buf.as_str()
+        types.Type.ty_generic as g:
+            var buf = string.String.create()
+            buf.append(g.name)
+            buf.append("[")
+            var i: ptr_uint = 0
+            while i < g.args.len:
+                if i > 0:
+                    buf.append(", ")
+                unsafe:
+                    buf.append(type_to_s_qualified(read(g.args.data + i)))
+                i += 1
+            buf.append("]")
+            return buf.as_str()
+        types.Type.ty_nullable as nl:
+            var buf = string.String.create()
+            unsafe:
+                buf.append(type_to_s_qualified(read(nl.base)))
+            buf.append("?")
+            return buf.as_str()
+        types.Type.ty_tuple as tup:
+            var buf = string.String.create()
+            buf.append("(")
+            var i: ptr_uint = 0
+            while i < tup.elements.len:
+                if i > 0:
+                    buf.append(", ")
+                unsafe:
+                    buf.append(type_to_s_qualified(read(tup.elements.data + i)))
+                i += 1
+            buf.append(")")
+            return buf.as_str()
+        _:
+            return types.type_to_string(t)
+
+
+## The host's `sanitize_type_name_for_tuple`: every non-alphanumeric byte to
+## `_`, runs of `_` collapsed, one leading/trailing `_` stripped.
+public function sanitize_tuple_type_name(text: str) -> str:
+    var buf = string.String.create()
+    var previous_underscore = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if is_alnum_byte(b):
+            buf.push_byte(b)
+            previous_underscore = false
+        else:
+            if not previous_underscore:
+                buf.push_byte('_')
+            previous_underscore = true
+        i += 1
+    var result = buf.as_str()
+    if result.len > 0 and result.byte_at(result.len - 1) == '_':
+        result = result.slice(0, result.len - 1)
+    if result.len > 0 and result.byte_at(0) == '_':
+        result = result.slice(1, result.len - 1)
+    return result
+
+
+## The C name of a tuple type (`(int, int)` -> `mt_tuple_int_int`, a named
+## `(x: int, y: int)` -> `mt_tuple_int_int_x_y`), mirroring the host's
+## `tuple_type_name`: elements sanitized and joined, plus a suffix of the
+## sanitized field names when they are not the default `_0..`.
+public function tuple_type_c_name(t: types.Type) -> str:
+    var buf = string.String.create()
+    buf.append("mt_tuple")
+    match t:
+        types.Type.ty_tuple as tup:
+            var i: ptr_uint = 0
+            while i < tup.elements.len:
+                buf.append("_")
+                unsafe:
+                    buf.append(sanitize_tuple_type_name(type_to_s_qualified(read(tup.elements.data + i))))
+                i += 1
+            match tup.field_names:
+                Option.some as names:
+                    if not tuple_names_are_default(names.value):
+                        var ni: ptr_uint = 0
+                        while ni < names.value.len:
+                            buf.append("_")
+                            unsafe:
+                                buf.append(sanitize_tuple_type_name(read(names.value.data + ni)))
+                            ni += 1
+                Option.none:
+                    pass
+        _:
+            pass
+    return buf.as_str()
+
+
+## True when a tuple's field names are the default positional names (`_0`,
+## `_1`, …), for which the host omits the name suffix in the C name.
+function tuple_names_are_default(names: span[str]) -> bool:
+    var i: ptr_uint = 0
+    while i < names.len:
+        var expected = string.String.create()
+        expected.append("_")
+        fmt.append_ptr_uint(ref_of(expected), i)
+        unsafe:
+            if not read(names.data + i).equal(expected.as_str()):
+                return false
+        i += 1
+    return true
+
+
 function j2(a: str, b: str) -> str:
     var buf = string.String.create()
     buf.append(a)
     buf.append(b)
+    return buf.as_str()
+
+
+function j3(a: str, b: str, c: str) -> str:
+    var buf = string.String.create()
+    buf.append(a)
+    buf.append(b)
+    buf.append(c)
     return buf.as_str()
