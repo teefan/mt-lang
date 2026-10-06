@@ -709,18 +709,23 @@ architectural), then the tail (3c, 4b, the nested-struct C names, then items
    at its 4 documented entries and the project audit at its documented 5
    (re-run after the `flow_type_at` change).
 3c. **A pointer-like guard binding's read type** (newly exposed by 3b: the
-   169 files' next first difference; `std/mem/heap.mt:93`'s `blocks`).  For
-   `let b = <ptr[T]?> else: …` the host types the *read* of `b` with the
-   narrowed success type (`ptr[T]`), while the self's read carries the storage
-   type (`Nullable(ptr[T])`): `guard_success_projection`
-   (`lowering.mt:3511-3515`) returns `storage_ref` — a name typed with the
-   storage type — for the pointer-like arm; the value-type arm already uses
-   the member's `success_ty`.  Repro: `tmp/g5/b.mt` (a guard + an
-   `unsafe: read(b + i)` use; the member-access path `b.x` matched because it
-   resolves the receiver through the binding, not `lower_binding_read`).  Fix:
-   rebuild the name with `ty = success_ty` (same C name/pointer) in that arm
-   — the host's `IR::Name` carries the narrowed type — then re-sweep (expect
-   the 169 files to move past the heap sites).
+   169 files' next first difference; `std/mem/heap.mt:93`'s `blocks`).  The
+   host's read of a `let b = <ptr[T]?> else: …` binding is narrowed to
+   `ptr[T]` **only where its statement-level nullability continuation proves
+   non-null**: the use inside `tmp/g5/main.mt`'s `while` body is `ptr[B]`,
+   while the straight-line use in `tmp/g5/b.mt` (right after the guard) is
+   the *storage* `Nullable(ptr[B])`.  The self's `guard_success_projection`
+   (`lowering.mt:3544-3548`) always returns the storage-typed name — matching
+   the straight-line case and differing in the loop case.  A blanket
+   "carry the success type" change was tried and reverted: it fixed the loop
+   case but regressed `tmp/g5/b.mt` and moved the 169 files *shallower* by
+   237 bytes (the host's `IR::Name` really is `Nullable` there).  Fix
+   direction: mirror the host's continuation — consult the refinement at the
+   use position (the `flow_type_at` record 3b landed) and narrow only where
+   it applies; the analyzer's let-else binding already carries the success
+   type from the let onward, so first probe what the host's dataflow records
+   around the guard (the loop header appears to be what narrows) and
+   reproduce that gate rather than assuming the binding.
 4. **Event fields** — **DONE (session 40, 2026-10-06)**.  `lower_struct_decl`
    emits `IR::Field(name = "__event_<name>", ty = Types::Event …)` built from
    the runtime info (name/capacity/payload/linkage), and `lower_member_access`
