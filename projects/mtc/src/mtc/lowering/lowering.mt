@@ -1266,14 +1266,25 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     # function so a no-capture `proc` initializer is not treated
                     # as capturing stale bindings.
                     ctx.locals.clear()
-                    g_val = lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
-                    # A literal initializer takes the global's declared type, as
-                    # the host's contextual literal inference gives it one
-                    # (`var shorts: short = 0` is a `short` literal, not `int`).
-                    g_val = int_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                    g_val = float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                    g_val = string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
-                    g_val = null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                    # A compile-time-known initializer folds to its constant value
+                    # — a literal, a constant reference (an imported module's
+                    # constant included) or a `const` function/method call — as the
+                    # host's `lower_static_storage_initializer` folds
+                    # `compile_time_const_value` through `lower_compile_time_literal`.
+                    # Anything else lowers as an ordinary expression.
+                    var init_env = map_mod.Map[str, ptr[ir.Expr]].create()
+                    match try_const_typed_value_ir(ctx, unsafe: ptr[ast.Expr]<-v.value, ref_of(init_env), g_ty):
+                        Option.some as g_cv:
+                            g_val = alloc_expr(coerce_const_value(ctx, unsafe: read(g_cv.value), g_ty))
+                        Option.none:
+                            g_val = lower_expr(ctx, unsafe: ptr[ast.Expr]<-v.value)
+                            # A literal initializer takes the global's declared type, as
+                            # the host's contextual literal inference gives it one
+                            # (`var shorts: short = 0` is a `short` literal, not `int`).
+                            g_val = int_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                            g_val = float_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                            g_val = string_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
+                            g_val = null_literal_to_context_type(unsafe: ptr[ast.Expr]<-v.value, g_ty, g_val)
                 globals.push(ir.Global(name = v.name, linkage_name = naming.qualified_c_name(ctx.module_name, v.name), ty = g_ty, value = g_val))
             ast.Decl.decl_const as c:
                 var c_ty = resolve_type_ref(ctx, c.const_type)

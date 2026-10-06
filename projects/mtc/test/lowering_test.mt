@@ -415,6 +415,64 @@ function test_null_literal_takes_context_type() -> void:
 
 
 # =============================================================================
+#  A global initialized from an imported constant — the initializer folds to
+#  the constant's aggregate value, not a name reference to it.
+# =============================================================================
+
+@[test]
+function test_global_initialized_from_imported_const() -> void:
+    ## `var g_origin: lib.Vec2 = lib.ORIGIN` with `lib.ORIGIN` re-exporting a
+    ## raw module's struct constant must fold to the aggregate literal of the
+    ## *declaring* module's struct, as the host's
+    ## `lower_static_storage_initializer` does (before the fix the global held
+    ## an `IR::Name` typed `Types::Error` referencing the constant's linkage
+    ## name, so the emitted C was not a constant initializer).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_gconst_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var main_source = <<-SRC
+        import lib as lib
+
+        var g_origin: lib.Vec2 = lib.ORIGIN
+    SRC
+    if not write_main_file(root.as_str(), main_source):
+        return
+
+    var raw_source = <<-SRC
+        public struct Vec2:
+            x: int
+            y: int
+
+        public const ZERO: Vec2 = Vec2(x = 0, y = 0)
+    SRC
+    if not write_source_file(root.as_str(), "raw.mt", raw_source):
+        return
+
+    var lib_source = <<-SRC
+        import raw as raw
+
+        public type Vec2 = raw.Vec2
+        public const ORIGIN: Vec2 = raw.ZERO
+    SRC
+    if not write_source_file(root.as_str(), "lib.mt", lib_source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring(":name \"g_origin\" :linkage_name \"main_g_origin\" :type (Types::Struct :name \"Vec2\" :module_name \"raw\") :value (IR::AggregateLiteral :type (Types::Struct :name \"Vec2\" :module_name \"raw\")"))
+    expect(dumped.contains_substring("(IR::AggregateField :name \"x\" :value (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\")))"))
+
+
+# =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================
 

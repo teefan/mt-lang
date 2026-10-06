@@ -131,7 +131,21 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 39 (2026-10-05) — **`lower` Track 3 item 1: opaque
+Last updated: session 40 (2026-10-06) — **`lower` Track 3 item 2: a global
+initialized from an imported constant** (the box2d/box3d families' first
+difference): the `decl_var` arm now folds a compile-time-known initializer
+through `try_const_typed_value_ir` + `coerce_const_value` before falling back to
+`lower_expr`, mirroring the host's `lower_static_storage_initializer`
+(`compile_time_const_value` → `lower_compile_time_literal`).  The sweep stayed at
+**43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717** with **no
+newly differing file** and **23 files' first difference moved deeper** (0
+shallower; the box2d/box3d families, two raylib/sdl3 examples and
+`test/mt/signal_test.mt`), locked by
+`test_global_initialized_from_imported_const`.  The box3d family's next first
+difference is the **bare function-reference type name** (`s_scene_draw: fn() ->
+void = noop_scene_draw` — the self types the reference `Types::Function :name
+""`, the host carries the callee's name), ranked as item 2b.  Session 39 had
+landed **`lower` Track 3 item 1: opaque
 declarations** (the first difference for all 34 sdl3 files): declared names,
 the host's `forward_declarable` rule, forward-declaration emission and the
 backing-name `c_type`.  The sweep went **39 → 43 match / 627 → 623 differ**
@@ -489,12 +503,25 @@ quote the set).
    a nullable-typed `NullLiteral` as `(mt_opt_X){0}`).  Counts unchanged (43/623) but 296
    files' first difference moved deeper; locked by `test_null_literal_takes_context_type`.
 2. **A global initialized from an imported constant** (item 13; `box3d/ragdoll` +
-   `box_stack`'s first difference).  In the `decl_var` arm
-   (`lowering.mt:1247-1276`) try `try_const_typed_value_ir` (`:18553`) /
-   `try_const_value_ir` (`:18024`) before `lower_expr`, mirroring the host's
-   `lower_static_storage_initializer` + `rewrite_static_storage_initializer`
-   (`lowering/utils.rb:335-419`, `declarations.rb:166-174`).  Add a lowering test
-   for a global initialized from an imported const.
+   `box_stack`'s first difference) — **DONE (session 40, 2026-10-06)**.  The
+   `decl_var` arm folds the initializer through `try_const_typed_value_ir`
+   (`lowering.mt:18567`, which falls back to `try_const_value_ir`, `:18038`) +
+   `coerce_const_value` (`:18246`) before `lower_expr`, mirroring the host's
+   `lower_static_storage_initializer` (`compile_time_const_value` →
+   `lower_compile_time_literal`; `lowering/utils.rb:335-419`,
+   `declarations.rb:166-174`).  The sweep set is unchanged (43/623/51/0) with 23
+   files' first difference deeper and none newly differing; locked by
+   `test_global_initialized_from_imported_const` (a global ← module const ← raw
+   module const chain folds to the raw struct's aggregate).
+2b. **Bare function-reference value types** (newly exposed by item 2: the
+   box3d/box2d families' next first difference; `s_scene_draw: fn() -> void =
+   noop_scene_draw`).  The host's `infer_expression_type` returns the function
+   binding's type for a bare function name (`lowering/resolve.rb:750` →
+   `function_type_for_name` → `binding.type`), which carries the declared name
+   and the real `variadic` flag; the self's `fallback_type_raw`
+   (`lowering.mt:16454`) reconstructs it from the `FnSig` with `name = ""`.
+   Fix there — the name, and `variadic = sig.is_variadic` as
+   `argument_inference_type` already does (`analyzer.mt:6479`) — then re-sweep.
 3. **Refined (non-null) operand types after a null check** (item 14;
    `data_structures` + `reflection_advanced`'s first difference).  **Verify
    first** — F2's continuation refinement (session 15) may already have closed
@@ -1032,7 +1059,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-05 session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43, with no newly differing file; item 1b — null-literal context typing — left the set unchanged but moved 296 files' first difference deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: item 2 — global-from-imported-const folding — leaves the set unchanged with **23 files' first difference deeper, 0 shallower, 0 newly differing**; item 1's flips stand.  Session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1054,6 +1081,50 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 40 (2026-10-06) — `lower` Track 3 item 2: globals from imported constants
+
+Goal: the ranked `lower` item 2 — the first difference for the box2d/box3d
+example families: `var s_world_id: b3.WorldId = b3.b3_nullWorldId`, a global
+initialized from an imported (generated) constant that re-exports a raw
+module's struct constant.  Baseline at this commit: **43 match / 623 differ /
+51 host-rejected / 0 self-rejected of 717** (session 39's close).
+
+- **The `decl_var` arm** (`lowering.mt:1262-1288`) now mirrors the host's
+  `lower_static_storage_initializer`: it first folds the initializer with
+  `try_const_typed_value_ir` (the typed literal/array/null forms plus the
+  `try_const_value_ir` fallback — const references, imported consts, const
+  function/method calls and their aggregates) and takes the folded IR through
+  `coerce_const_value`; only when the fold fails does the initializer lower
+  with `lower_expr` and the contextual literal conversions, as before.  Before
+  the fix the global held `(IR::Name :name "std_box3d_b3_nullWorldId" :type
+  (Types::Error) :pointer false)` where the host inlines the aggregate
+  (`IR::AggregateLiteral :type (Types::Struct :name "b3WorldId" :module_name
+  "std.c.box3d")` with `index1`/`generation` fields).
+- **Measured**: the sweep counts and set are unchanged — **43/623/51/0** — with
+  **23 files' first difference moved deeper** (0 shallower, 0 newly differing):
+  the box3d family (9 files incl. `common.mt`), the box2d family (10),
+  `examples/raylib/core/3d_camera_fps.mt`,
+  `examples/sdl3/pen/drawing_lines.mt`,
+  `examples/raylib/shapes/penrose_tile.mt` and `test/mt/signal_test.mt`
+  (+361 B to +11,937 B deeper).
+- **The newly exposed next difference** (ranked as item 2b):
+  `s_scene_draw: fn() -> void = noop_scene_draw` — the reference's value is
+  `(IR::Name :name "examples_box3d_common_noop_scene_draw" :type
+  (Types::Function :name "" …))` where the host's type carries the callee's
+  name (`noop_scene_draw`): the host's `infer_expression_type` returns the
+  function binding's type for a bare function name
+  (`lowering/resolve.rb:750` → `function_type_for_name` → `binding.type`),
+  while the self's `fallback_type_raw` (`lowering.mt:16454`) reconstructs the
+  type from the `FnSig` with an empty name.
+- **Verification**: `test_global_initialized_from_imported_const` locks the
+  fold — a main-module global ← generated module const ← raw-module struct
+  const chain, asserting the aggregate entry in the dump; the test fails with
+  the lowering change reverted (checked).  Tier-2 gates on the frozen tree
+  (`tools/gates.sh` areas codegen+tests): dev build + dev self-test (19 files /
+  0 failed), bootstrap fixed point (`stage2.c == stage3.c`, 19 files / 0
+  failed), `test/mt` 60/0, the `lower` sweep 43/623/51/0 with the set
+  comparison above, examples 49/49 same.
 
 ### Session 39 (2026-10-05) — `lower` Track 3 item 1: opaque declarations
 
