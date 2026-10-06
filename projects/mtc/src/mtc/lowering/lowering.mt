@@ -192,8 +192,6 @@ struct LowerCtx:
     # Pending synthetic functions (invoke/release/retain) emitted during
     # proc lowering, to be appended after the main module iteration.
     pending_synthetic_functions: vec.Vec[ir.Function]
-    # Pending capture-env structs for capturing procs.
-    pending_env_structs: vec.Vec[ir.StructDecl]
     # External-struct equality helpers already synthesized (`mt_struct_eq_<T>`
     # names), so a type's helper is emitted once per module.
     struct_equality_helpers: map_mod.Map[str, bool]
@@ -212,7 +210,6 @@ struct LowerCtx:
     event_runtimes: map_mod.Map[str, EventRuntimeInfo]
     # Pending synthetic declarations emitted during event lowering, appended after
     # the main module iteration.
-    pending_event_structs: vec.Vec[ir.StructDecl]
     pending_event_functions: vec.Vec[ir.Function]
     # Pending generic variant declarations emitted during type qualification.
     pending_generic_variants: vec.Vec[ir.VariantDecl]
@@ -220,12 +217,12 @@ struct LowerCtx:
     # these from the proc types in use rather than carrying them in the IR, so
     # they are routed to `Program.monomorphized_structs`.
     pending_proc_structs: vec.Vec[ir.StructDecl]
-    # Tuple value structs (`mt_tuple_*`), registered by `ensure_tuple_struct_ir`
-    # when a tuple literal or a const/global storage type uses a tuple type.
-    # Mirrors the host's `ensure_tuple_struct`, which appends them to
-    # `Program.structs` after the module declarations; drained there in the same
-    # registration order.
-    pending_tuple_structs: vec.Vec[ir.StructDecl]
+    # Every synthetic value struct created while lowering (tuple `mt_tuple_*`,
+    # proc envs and capture caps, async frames, dyn vtables, event runtime
+    # structs and str buffers), in creation order.  Mirrors the host's single
+    # `@artifacts.synthetic_structs` list, which `assemble_modules` appends
+    # after all module declarations; drained there in the same order.
+    pending_synthetic_structs: vec.Vec[ir.StructDecl]
     pending_tuple_linkages: map_mod.Map[str, bool]
     # Emitted-once guards for shared runtime types.
     subscription_emitted: bool
@@ -341,7 +338,7 @@ function ensure_str_buffer_struct(ctx: ref[LowerCtx], sb_ty: types.Type) -> void
     fields.push(ir.Field(name = "data", ty = data_ty))
     fields.push(ir.Field(name = "len", ty = ptr_uint_ty))
     fields.push(ir.Field(name = "dirty", ty = bool_ty))
-    ctx.pending_env_structs.push(ir.StructDecl(
+    ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = c_name, linkage_name = c_name,
         fields = fields.as_span(), packed = false, alignment = 0,
         source_module = Option[str].none,
@@ -473,7 +470,7 @@ public function lower(program: loader.Program) -> ir.Program:
     var seen_functions = map_mod.Map[str, bool].create()
     var monomorphized_structs = vec.Vec[ir.StructDecl].create()
     var monomorphized_variants = vec.Vec[ir.VariantDecl].create()
-    var pending_tuple_structs = vec.Vec[ir.StructDecl].create()
+    var pending_synthetic_structs = vec.Vec[ir.StructDecl].create()
     var spec_infos = map_mod.Map[str, SpecInfo].create()
     var module_fragments = vec.Vec[ir.Program].create()
     var module_analyses = vec.Vec[analyzer.Analysis].create()
@@ -486,7 +483,7 @@ public function lower(program: loader.Program) -> ir.Program:
             i += 1
             continue
         let is_root = i == program.root_index
-        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_tuple_structs), ref_of(spec_infos))
+        var fragment = lower_module(analysis, ref_of(program_returns), ref_of(prelude_arm_field_types), is_root, program.analyses.as_span(), program.modules.as_span(), ref_of(generic_instances), ref_of(monomorphized_structs), ref_of(monomorphized_variants), ref_of(pending_synthetic_structs), ref_of(spec_infos))
         module_fragments.push(fragment)
         module_analyses.push(analysis)
         globals.append_span(fragment.globals)
@@ -500,9 +497,9 @@ public function lower(program: loader.Program) -> ir.Program:
         # Functions are appended after the loop, reordered per module.
         i += 1
 
-    # Tuple value structs registered while lowering (the host's
-    # `ensure_tuple_struct` synthetics) follow the module declarations.
-    dedup_append_structs(ref_of(structs), pending_tuple_structs.as_span(), ref_of(seen_structs))
+    # Synthetic value structs registered while lowering (the host's
+    # `synthetic_structs` synthetics) follow the module declarations.
+    dedup_append_structs(ref_of(structs), pending_synthetic_structs.as_span(), ref_of(seen_structs))
 
     # Place each module's functions in the host's order (`lower_functions`):
     # declaration order, with a generic function's or method's instances grouped
@@ -888,7 +885,6 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         type_substitution = map_mod.Map[str, types.Type].create(),
         proc_counter = 0,
         pending_synthetic_functions = vec.Vec[ir.Function].create(),
-        pending_env_structs = vec.Vec[ir.StructDecl].create(),
         struct_equality_helpers = map_mod.Map[str, bool].create(),
         pending_dyn_structs = vec.Vec[ir.StructDecl].create(),
         pending_dyn_vtable_structs = vec.Vec[ir.StructDecl].create(),
@@ -897,11 +893,10 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         dyn_generated_vtables = map_mod.Map[str, bool].create(),
         str_buffer_structs = map_mod.Map[str, str].create(),
         event_runtimes = map_mod.Map[str, EventRuntimeInfo].create(),
-        pending_event_structs = vec.Vec[ir.StructDecl].create(),
         pending_event_functions = vec.Vec[ir.Function].create(),
         pending_generic_variants = vec.Vec[ir.VariantDecl].create(),
         pending_proc_structs = vec.Vec[ir.StructDecl].create(),
-        pending_tuple_structs = vec.Vec[ir.StructDecl].create(),
+        pending_synthetic_structs = vec.Vec[ir.StructDecl].create(),
         pending_tuple_linkages = map_mod.Map[str, bool].create(),
         subscription_emitted = false,
         event_error_emitted = false,
@@ -1174,7 +1169,7 @@ function append_selected_when_decls(ctx: ref[LowerCtx], discriminant: ptr[ast.Ex
             pass
 
 
-function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_tuples: ref[vec.Vec[ir.StructDecl]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
+function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.Map[str, types.Type]], prelude_arm_field_types: ref[map_mod.Map[str, types.Type]], is_root: bool, program_analyses: span[analyzer.Analysis], loaded_modules: span[loader.LoadedModule], gen_instances: ref[map_mod.Map[str, GenericReceiver]], monomorphized: ref[vec.Vec[ir.StructDecl]], monomorphized_variants: ref[vec.Vec[ir.VariantDecl]], pending_synthetic_structs: ref[vec.Vec[ir.StructDecl]], spec_infos: ref[map_mod.Map[str, SpecInfo]]) -> ir.Program:
     var ctx = new_lowering_context(analysis, ptr_of(read(program_returns)), ptr_of(read(prelude_arm_field_types)), program_analyses, loaded_modules, ptr_of(read(gen_instances)), ptr_of(read(spec_infos)))
     collect_foreign_functions(ref_of(ctx), analysis.source_file.declarations)
     collect_function_returns(ref_of(ctx), analysis.source_file.declarations)
@@ -1217,7 +1212,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                     # All async functions use full CPS lowering (frame struct,
                     # resume state machine, vtable, constructor).  A 0-await
                     # function is the single-state case.
-                    lower_async_fn(ref_of(ctx), fun.name, naming.qualified_c_name(ctx.module_name, fun.name), Option[types.Type].none, fun.method_params, fun.return_type, fun.body, ref_of(structs), ref_of(functions))
+                    lower_async_fn(ref_of(ctx), fun.name, naming.qualified_c_name(ctx.module_name, fun.name), Option[types.Type].none, fun.method_params, fun.return_type, fun.body, ref_of(functions))
                     if is_root and fun.name == "main":
                         match build_async_main_entrypoint(ref_of(ctx), fun.name):
                             Option.some as entry:
@@ -1257,7 +1252,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 if vr.type_params.len == 0:
                     variants.push(lower_variant_decl(ref_of(ctx), vr.name, vr.variant_arms))
             ast.Decl.decl_extending_block as ex:
-                lower_extending_block(ctx, ref_of(functions), ref_of(structs), ex.type_name, ex.methods)
+                lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
             ast.Decl.decl_var as v:
                 var g_ty = types.primitive("void")
                 if v.var_type != null:
@@ -1393,14 +1388,15 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
             break
         monomorphized.push(unsafe: read(ps_ptr))
 
-    # Tuple value structs join `Program.structs` after every module's
-    # declarations (the host's `assemble_modules` appends its synthetic structs
-    # last), so they bypass the per-module fragment.
-    var ts_iter = ctx.pending_tuple_structs.iter()
+    # Synthetic value structs join `Program.structs` after every module's
+    # declarations, in creation order (the host's `assemble_modules` appends its
+    # single `synthetic_structs` list last), so they bypass the per-module
+    # fragment.
+    var ss_iter = ctx.pending_synthetic_structs.iter()
     while true:
-        let ts_ptr = ts_iter.next() else:
+        let ss_ptr = ss_iter.next() else:
             break
-        pending_tuples.push(unsafe: read(ts_ptr))
+        pending_synthetic_structs.push(unsafe: read(ss_ptr))
 
     # Append any monomorphized generic functions from the specialization cache.
     var spec_iter = ctx.specialization_cache.values()
@@ -1415,22 +1411,12 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         let sf_ptr = sf_iter.next() else:
             break
         functions.push(unsafe: read(sf_ptr))
-    var es_iter = ctx.pending_env_structs.iter()
-    while true:
-        let es_ptr = es_iter.next() else:
-            break
-        structs.push(unsafe: read(es_ptr))
 
     var ds_iter = ctx.pending_dyn_structs.iter()
     while true:
         let ds_ptr = ds_iter.next() else:
             break
         monomorphized.push(unsafe: read(ds_ptr))
-    var dvs_iter = ctx.pending_dyn_vtable_structs.iter()
-    while true:
-        let dvs_ptr = dvs_iter.next() else:
-            break
-        structs.push(unsafe: read(dvs_ptr))
     var dw_index: ptr_uint = 0
     while dw_index < ctx.pending_dyn_wrappers.len():
         let dw_ptr = ctx.pending_dyn_wrappers.get(dw_index) else:
@@ -1456,12 +1442,6 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         constants.push(unsafe: read(c_ptr))
         di += 1
 
-    var ev_struct_index: ptr_uint = 0
-    while ev_struct_index < ctx.pending_event_structs.len():
-        let es_ptr = ctx.pending_event_structs.get(ev_struct_index) else:
-            break
-        structs.push(unsafe: read(es_ptr))
-        ev_struct_index += 1
     var ev_func_index: ptr_uint = 0
     while ev_func_index < ctx.pending_event_functions.len():
         let ef_ptr = ctx.pending_event_functions.get(ev_func_index) else:
@@ -1888,7 +1868,7 @@ function extending_receiver_target(analyses: span[analyzer.Analysis], analysis: 
 ## Lower all methods in an extending block to IR functions.  Each method becomes
 ## a C function with the receiver as the first parameter (pointer for editable,
 ## by value for plain, omitted for static).
-function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Function]], structs: ref[vec.Vec[ir.StructDecl]], type_ref_ptr: ptr[ast.TypeRef], methods: span[ast.Method]) -> void:
+function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Function]], type_ref_ptr: ptr[ast.TypeRef], methods: span[ast.Method]) -> void:
     var type_name: str
     var bare_name: str
     unsafe:
@@ -1943,7 +1923,7 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
             if m.method_kind != ast.MethodKind.mk_static:
                 let recv_ty = if m.method_kind == ast.MethodKind.mk_editable: types.Type.ty_generic(name = "ptr", args = sp_type(receiver_ty)) else: receiver_ty
                 recv_opt = Option[types.Type].some(value = recv_ty)
-            lower_async_fn(ctx, m.name, c_name, recv_opt, m.method_params, m.return_type, m.body, structs, functions)
+            lower_async_fn(ctx, m.name, c_name, recv_opt, m.method_params, m.return_type, m.body, functions)
             mi += 1
             continue
         functions.push(lower_method(ctx, c_name, receiver_ty, m))
@@ -5395,7 +5375,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
                 fatal(c"lower_parallel_for: missing capture")
             let lb_val = unsafe: read(lb_ptr)
             pf_fields.push(ir.Field(name = unsafe: read(pe.key), ty = lb_val.ty))
-        ctx.pending_env_structs.push(ir.StructDecl(name = pfor_cap_name, linkage_name = pfor_cap_name, fields = pf_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+        ctx.pending_synthetic_structs.push(ir.StructDecl(name = pfor_cap_name, linkage_name = pfor_cap_name, fields = pf_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
         # Prepend capture-unpacking preamble.
         var pf_pre = vec.Vec[ir.Stmt].create()
         let pf_cap_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = pfor_cap_name)))
@@ -5527,7 +5507,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                 fatal(c"lower_parallel_block: missing capture binding")
             let lb_val = unsafe: read(lb_ptr)
             cap_fields.push(ir.Field(name = unsafe: read(entry.key), ty = lb_val.ty))
-        ctx.pending_env_structs.push(ir.StructDecl(name = cap_struct_name, linkage_name = cap_struct_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+        ctx.pending_synthetic_structs.push(ir.StructDecl(name = cap_struct_name, linkage_name = cap_struct_name, fields = cap_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
         # Rewrite each body: prepend capture-unpacking preamble.
         var body_ir_iter = body_irs.iter()
         while true:
@@ -6049,7 +6029,7 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
             let cap = unsafe: read(captures.data + ci)
             env_fields.push(ir.Field(name = cap.name, ty = cap.ty))
             ci += 1
-        ctx.pending_env_structs.push(ir.StructDecl(name = env_type_name, linkage_name = env_type_name, fields = env_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+        ctx.pending_synthetic_structs.push(ir.StructDecl(name = env_type_name, linkage_name = env_type_name, fields = env_fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
         # Build a synthetic init function that allocates + populates the env.
         var setup_c = string.String.create()
@@ -6482,7 +6462,7 @@ function ensure_tuple_struct_ir(ctx: ref[LowerCtx], ty: types.Type) -> void:
                 unsafe:
                     fields.push(ir.Field(name = fname, ty = read(tup.elements.data + i)))
                 i += 1
-            ctx.pending_tuple_structs.push(ir.StructDecl(
+            ctx.pending_synthetic_structs.push(ir.StructDecl(
                 name = naming.type_to_s_qualified(ty),
                 linkage_name = linkage,
                 fields = fields.as_span(),
@@ -9324,7 +9304,9 @@ function ensure_dyn_vtable_struct(ctx: ref[LowerCtx], iface_name: str, methods: 
         let fn_ty = types.Type.ty_function(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
         fields.push(ir.Field(name = m.name, ty = fn_ty))
         mi += 1
-    ctx.pending_dyn_vtable_structs.push(ir.StructDecl(name = j2("vtable_", iface_name), linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+    let vtable_decl = ir.StructDecl(name = j2("vtable_", iface_name), linkage_name = vtable_type_c_name, fields = fields.as_span(), packed = false, alignment = 0, source_module = Option[str].none)
+    ctx.pending_dyn_vtable_structs.push(vtable_decl)
+    ctx.pending_synthetic_structs.push(vtable_decl)
 
 
 ## Generate wrapper functions for each interface method, calling through to the
@@ -11168,7 +11150,7 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
     let snapshot_cn = j2(linkage, "__snapshot")
     let event_cn = linkage
     # Slot struct: { active, once, generation, state, listener, wait_frame }
-    ctx.pending_event_structs.push(ir.StructDecl(
+    ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = slot_cn, linkage_name = slot_cn,
         fields = sp_field6(
             ir.Field(name = "active", ty = bool_ty),
@@ -11181,7 +11163,7 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
         packed = false, alignment = 0, source_module = Option[str].none,
     ))
     # Snapshot struct: { slot, generation, once, wait_slot, stateful, state, listener }
-    ctx.pending_event_structs.push(ir.StructDecl(
+    ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = snapshot_cn, linkage_name = snapshot_cn,
         fields = sp_field7(
             ir.Field(name = "slot", ty = ptr_uint_ty),
@@ -11198,14 +11180,14 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
     let capacity_val: long = long<-(ev.capacity)
     let slot_ty = types.Type.ty_named(module_name = "", name = slot_cn)
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(capacity_val)))
-    ctx.pending_event_structs.push(ir.StructDecl(
+    ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = event_cn, linkage_name = event_cn,
         fields = sp_field1(ir.Field(name = "slots", ty = slot_arr_ty)),
         packed = false, alignment = 0, source_module = Option[str].none,
     ))
     # Subscript struct: { slot, generation }
     if not ctx.subscription_emitted:
-        ctx.pending_event_structs.push(ir.StructDecl(
+        ctx.pending_synthetic_structs.push(ir.StructDecl(
             name = "mt_subscription", linkage_name = "mt_subscription",
             fields = sp_field2(
                 ir.Field(name = "slot", ty = ptr_uint_ty),
@@ -11231,7 +11213,7 @@ function ensure_event_runtime(ctx: ref[LowerCtx], event_name: str) -> EventRunti
     let wait_result_ty = ensure_generic_variant(ctx, "Result", wait_result_args.as_span())
     let wake_fn_ty = types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     let wait_frame_cn = j2(linkage, "__wait_frame")
-    ctx.pending_event_structs.push(ir.StructDecl(
+    ctx.pending_synthetic_structs.push(ir.StructDecl(
         name = wait_frame_cn, linkage_name = wait_frame_cn,
         fields = sp_field6(
             ir.Field(name = "ready", ty = bool_ty),
@@ -21142,7 +21124,7 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 ## Lower an async function: generate frame struct, resume fn, constructor fn,
 ## and vtable helpers.  Push into the output structs/functions collections.
 ## Supports both no-await (single-state) and full CPS (state-machine) paths.
-function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, structs: ref[vec.Vec[ir.StructDecl]], functions: ref[vec.Vec[ir.Function]]) -> void:
+function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_ty_opt: Option[types.Type], params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, functions: ref[vec.Vec[ir.Function]]) -> void:
     # Reset async CPS state so a no-await function (or the next function) never
     # inherits a previous has-await function's frame-result target / labels.
     ctx.async_cps_active = false
@@ -21338,7 +21320,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
                 break
             ff.push(unsafe: read(afp))
             afi += 1
-    structs.push(ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+    ctx.pending_synthetic_structs.push(ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
     # Shared bool exprs for vtable/constructor
     let bool_true = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))

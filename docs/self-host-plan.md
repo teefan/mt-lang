@@ -155,11 +155,16 @@ first difference deeper** (`box3d/common.mt`, the two `box2d` files,
 `raw_scanner.mt`, `std/color.mt`, `test/mt/color_test.mt`), locked by
 `test_tuple_literal_registers_value_struct` and
 `test_storage_tuple_registers_value_struct`; the emitted C for a tuple now
-matches the host's byte-for-byte.  The box families' remaining first difference
-is the **synthetic-struct ordering** — the host appends one creation-ordered
-`synthetic_structs` list after all module structs, the self places env/vtable/
-event structs per module fragment (ranked as item 2d) — and **2e** records the
-tuple type's `field_names` defaults and the folded-tuple literal shape.  Session
+matches the host's byte-for-byte.  **Item 2d landed in the same session**:
+every synthetic value struct — tuple `mt_tuple_*`, proc envs and capture caps,
+async frames, dyn vtables, the event runtime structs and str buffers — now
+joins one creation-ordered `pending_synthetic_structs` list drained after the
+module declarations, the host's single `@artifacts.synthetic_structs` shape;
+the sweep set is unchanged with **42 files' first difference deeper** (the
+whole box2d/box3d families at +13,164, the `std/net/**` async family,
+`async_stress_test`/`async_network_lobby`, stress/tetris, the DAP protocol
+modules).  **2e** records the remaining tuple-type `field_names` defaults and
+the folded-tuple literal shape.  Session
 39 had landed **`lower` Track 3 item 1: opaque
 declarations** (the first difference for all 34 sdl3 files): declared names,
 the host's `forward_declarable` rule, forward-declaration emission and the
@@ -570,25 +575,31 @@ quote the set).
    `test/mt/color_test.mt`; +12,335 to +27,907).  Locked by
    `test_tuple_literal_registers_value_struct` and
    `test_storage_tuple_registers_value_struct`.
-2d. **Synthetic-struct ordering (the box families' next first difference;
-   newly exposed by 2c)**.  The host keeps ONE creation-ordered
-   `@artifacts.synthetic_structs` populated by 11 producers — proc envs
-   (`block.rb:112`), async frames (`functions.rb:210`), pfor/spawn caps
-   (`loops.rb:497,648`), dyn vtables (`dyn.rb:86-95`), five event structs
-   (`events.rb:102,175,189,204,218`) and tuples (`expressions.rb:1075`) — and
-   `assemble_modules` appends the deduped list after all module structs
-   (`lowering.rb:283`).  The self's per-kind ctx lists instead land in the
-   module *fragments* (env/str_buffer at `lowering.mt:344,5398,5530,6052`, dyn
-   vtables `:9327`, events `:11171-11234`), while tuples were drained
-   program-level — so when synthetics come from different modules the order
-   diverges.  Evidence: `examples/box3d/{ragdoll,box_stack,sensor,…}` at
-   58454/58750/58703 — the host emits the tuple before `vtable_Sample`, the
-   self emits `vtable_Sample` first.  Fix direction: one
-   `pending_synthetic_structs` list pushed at *creation* time by every
-   producer, drained program-level after all fragments; the str_buffer structs
-   are a separate divergence — the host has **no `mt_str_buffer_*` decl in its
-   IR at all** (`examples/raylib/core/compute_hash.mt`: host 0, self 3), so
-   they must not join the host-parity list without deciding their place.
+2d. **Synthetic-struct ordering** — **DONE (session 40, 2026-10-06)**.  The
+   host keeps ONE creation-ordered `@artifacts.synthetic_structs` populated by
+   11 producers — proc envs (`block.rb:112`), async frames (`functions.rb:210`),
+   pfor/spawn caps (`loops.rb:497,648`), dyn vtables (`dyn.rb:86-95`), five
+   event structs (`events.rb:102,175,189,204,218`) and tuples
+   (`expressions.rb:1075`) — and `assemble_modules` appends the deduped list
+   after all module structs (`lowering.rb:283`).  The self now mirrors it:
+   `LowerCtx.pending_synthetic_structs` is pushed *at creation time* by every
+   producer — tuples (`ensure_tuple_struct_ir`), proc envs and capture caps,
+   async frames (`lower_async_fn`, whose `structs` parameter and
+   `lower_extending_block`'s are gone), dyn vtables (dual-pushed; the kind list
+   still backs the two vtable lookups), the five event runtime structs and the
+   str-buffer structs — and `lower_module` drains it into the program-level
+   list that `lower()` appends after the module fragments
+   (`pending_env_structs`/`pending_event_structs` and the per-kind fragment
+   pushes are gone).  Measured: sweep set unchanged (43/623/51/0) with **42
+   files' first difference deeper, 0 shallower, 0 newly differing** — the
+   box2d/box3d families (+13,164), the `std/net/**` async family (up to
+   +14,294), `async_stress_test` (+16,069), `async_network_lobby` (+16,622),
+   tetris/stress, the DAP protocol modules and `imported_bindings/main`.
+   Locked by `test_synthetic_structs_follow_creation_order` (fails at the 2c
+   state).  Residual: the `mt_str_buffer_*` decls have **no host counterpart**
+   (the host's IR carries none — `examples/raylib/core/compute_hash.mt`: host
+   0, self 3); they now ride the same list, and removing them from the IR
+   needs backend-side synthesis — a separate item if pursued.
 2e. **Tuple type rendering and the folded-tuple literal shape (newly exposed
    by 2c; pre-existing)**.  (a) The host's `Types::Tuple#field_names` always
    carries the defaults: its dump renders `:field_names ("_0" "_1")` where the
@@ -1135,7 +1146,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b and 2c — global-from-imported-const folding, named function-reference types and tuple value structs — leave the counts and the differing set unchanged, with **23 + 29 + 6 files' first difference deeper** and 0 shallower/newly differing; item 1's flips stand.  Session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 43 match / 623 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 40: items 2, 2b, 2c and 2d — global-from-imported-const folding, named function-reference types, tuple value structs and the synthetic-struct ordering — leave the counts and the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** and 0 shallower/newly differing; item 1's flips stand.  Session 39: item 1 — opaque declarations — flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt` and `std/sdl3.mt` to match, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1221,16 +1232,38 @@ module's struct constant.  Baseline at this commit: **43 match / 623 differ /
   type's default `field_names` rendering and the folded-tuple
   `IR::ArrayLiteral` shape); the str_buffer discovery (the host has no
   `mt_str_buffer_*` decl in its IR at all) is recorded in 2d.
+- **Item 2d (landed in the same session) — synthetic-struct ordering.**  The
+  host keeps one creation-ordered `@artifacts.synthetic_structs` list (proc
+  envs, async frames, pfor/spawn caps, dyn vtables, five event structs, tuples)
+  appended after all module structs.  The self now mirrors it: a
+  `pending_synthetic_structs` list on `LowerCtx`, pushed *at creation time* by
+  every producer — tuples (`ensure_tuple_struct_ir`), proc envs and capture
+  caps, async frames (`lower_async_fn`, whose `structs` parameter and
+  `lower_extending_block`'s are gone), dyn vtables (dual-pushed; the kind list
+  still backs the two vtable lookups), the five event runtime structs and the
+  str-buffer structs — drained program-level after the module fragments
+  (`lower()`), with `pending_env_structs`/`pending_event_structs` and the
+  per-kind fragment pushes retired.  Measured: set unchanged, **42 files'
+  first difference deeper, 0 shallower, 0 newly differing** — the box2d/box3d
+  families (+13,164), the `std/net/**` async family (up to +14,294:
+  `mux`, `rpc`, `sync`, `session`, `manager`, `lobby`, `channel`), 
+  `async_stress_test` (+16,069), `async_network_lobby` (+16,622), tetris,
+  `projects/stress`, the DAP protocol modules and `imported_bindings/main`.
+  Locked by `test_synthetic_structs_follow_creation_order` (fails at the 2c
+  state).  Residual: the `mt_str_buffer_*` decls have no host counterpart (the
+  host's IR carries none) — they ride the same list now; removing them from
+  the IR needs backend-side synthesis.
 - **Verification**: `test_global_initialized_from_imported_const` locks the
   fold — a main-module global ← generated module const ← raw-module struct
-  const chain, asserting the aggregate entry in the dump; all five new tests
+  const chain, asserting the aggregate entry in the dump; all six new tests
   fail with their change reverted (checked).  Tier-2 gates on the frozen tree
-  (`tools/gates.sh` areas codegen+tests, all three items): dev build + dev
+  (`tools/gates.sh` areas codegen+tests, all four items): dev build + dev
   self-test (19 files / 0 failed), bootstrap fixed point (`stage2.c ==
   stage3.c`, 19 files / 0 failed), `test/mt` 60/0, the `lower` sweep
   43/623/51/0 with the set comparisons above, examples 49/49 same; the
-  `box_stack.mt` (dyn vtable + tuple) full build+run and the `p.mt` tuple
-  build+run smoke both pass, and their emitted C matches the host's.
+  `box_stack.mt` (dyn vtable + tuple) and `event_stress_test.mt` builds, the
+  `p.mt`/`store.mt` tuple builds+runs and the emitted C for a tuple
+  (byte-identical to the host's) are the smoke checks.
 
 ### Session 39 (2026-10-05) — `lower` Track 3 item 1: opaque declarations
 

@@ -581,6 +581,58 @@ function test_storage_tuple_registers_value_struct() -> void:
     expect(dumped.contains_substring("(IR::StructDecl :name \"(int, int)\" :linkage_name \"mt_tuple_int_int\" :fields ((IR::Field :name \"_0\" :type (Types::Primitive :name \"int\")) (IR::Field :name \"_1\" :type (Types::Primitive :name \"int\")))"))
 
 
+@[test]
+function test_synthetic_structs_follow_creation_order() -> void:
+    ## Synthetic value structs land after the module declarations in creation
+    ## order, as the host's single `synthetic_structs` list does: a tuple
+    ## literal lowered before a dyn use puts the tuple struct before the
+    ## vtable struct.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_synth_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        interface Shape:
+            function area() -> float
+
+        struct Circle implements Shape:
+            r: float
+
+        extending Circle:
+            function area() -> float:
+                return 3.14
+
+        function pair() -> (int, int):
+            return (1, 2)
+
+        function use_dyn() -> float:
+            var c = Circle(r = 5.0)
+            var s: dyn[Shape] = adapt[Shape](ref_of(c))
+            return s.area()
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    let circle_pos = dumped.find_substring("(IR::StructDecl :name \"Circle\"") else:
+        expect(false, "missing Circle struct decl")
+    let tuple_pos = dumped.find_substring("(IR::StructDecl :name \"(int, int)\"") else:
+        expect(false, "missing tuple struct decl")
+    let vtable_pos = dumped.find_substring("(IR::StructDecl :name \"vtable_Shape\"") else:
+        expect(false, "missing vtable struct decl")
+    expect(circle_pos < tuple_pos)
+    expect(tuple_pos < vtable_pos)
+
+
 # =============================================================================
 #  Overall pipeline stability — lowering must not crash on common constructs.
 # =============================================================================
