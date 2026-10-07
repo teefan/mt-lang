@@ -131,8 +131,17 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 43 (2026-10-07) — **`lower` Track 3 items 3k, 3j, 3l, 3m,
-3o, 3i-b, 3g and 3q**.
+Last updated: session 44 (2026-10-07) — **`lower` Track 3 item 3r** (the struct
+equality desugaring; the box2d family's first difference).  The lowering keeps
+the host's `IR::Binary` on struct values and registers the external (raw-module
+ABI) struct's field layout in the new `Program.external_structs`; the C backend
+synthesizes the `mt_struct_eq_<T>` helper from it exactly where the host does
+(the IR carries no helper function) — **30 files' first difference deeper
+(+21,667 to +21,677), 0 flips, 0 shallower, 0 newly differing, 0 lost** on the
+identical subset, and the full corpus reads 131/535/51/0 unchanged.  The newly
+exposed leader is the array-length literal from an imported constant (**3s**).
+Session 43 had landed **`lower` Track 3 items 3k, 3j, 3l, 3m, 3o, 3i-b, 3g and
+3q**.
 3k, the refinement record's post-statement positions: a guard inside a compound
 statement — the `std/mem/heap.mt` `contains` shape — answered `reinterpret`'s
 source type with the storage `Nullable` where the host carries the refined
@@ -161,8 +170,8 @@ advances to the `const_ptr[T]` boundary type's element loss (3q); 3q, the
 foreign address-of's boundary type: `in` addresses are `const_ptr[T]` and
 `out`/`inout` `ptr[slot]` (the boundary pointer, not a `ptr[void]` placeholder),
 with the element deepened through the wrapper's std.c alias — **5 flips** (the
-raylib shapes family), **126/540 → 131/535**; 3r (the struct equality
-desugaring) is next.  The LSP reads its documented entries.
+raylib shapes family), **126/540 → 131/535**.  The LSP reads its documented
+entries.
 Session 42 had landed **the `sexpr_parity` host-output
 cache** (a tools change: `--host-cache` reuses the host's outputs per file /
 resolved import-closure digest, the self always runs live; the 717-file lower
@@ -637,8 +646,8 @@ Records: §0k sessions 19–23; session 28.
 Work in the ranked order below; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank — session 42's host cache makes the repeat measurement cheap.  Current set:
-**55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files**
-(session 43 re-read — unchanged by 3k's fix, which moves first differences
+**131 match / 535 differ / 51 host-rejected / 0 self-rejected of 717 files**
+(session 44 re-read — unchanged by 3r, which moves 30 files' first differences
 deeper; the count drifts with the tree's own sources and the tmp
 fixtures — quote the set).
 
@@ -654,13 +663,17 @@ first difference deeper by +30,767 in the `std examples test` subset), **3j**
 (100 files deeper), **3l** (183 files deeper and **26 flips** — the
 heap-importing `std/**` family) and **3m** (82 files deeper and **2 flips**;
 its mono-path seam also forced the bare-float-literal operand retyping),
-taking the sweep **55/611 → 83/583**; each
+taking the sweep **55/611 → 83/583**; 3o, 3i-b, 3g and 3q continued
+**83 → 131 match / 583 → 535 differ** in the same session; each
 measured as a subset comparison with the identical corpus, 0 shallower, 0 newly
-differing, 0 lost).  The current leaders:
+differing, 0 lost).  Session 44 landed **3r** (30 files' first difference deeper
+by +21,667 to +21,677, 0 flips, 0 shallower/newly differing/lost on the same
+subset) and exposed **3s** — the array-length literal from an imported constant,
+now the leaders' first row.  The current leaders:
 
 | Files | First difference | Where |
 | --- | --- | --- |
-| ~30+ | **3r, the struct equality desugaring**: the host keeps `IR::Binary :operator "!="` on struct values where the self emits `!(mt_struct_eq_…)` (`common.mt`'s `mouse_joint != some_id`) | `examples/box2d/**`, `examples/box3d/**` |
+| 30 | **3s, the array-length literal from an imported constant**: `var points: array[b2.Vec2, b2.B2_MAX_POLYGON_VERTICES]` carries `(Types::LiteralTypeArg :value 8)` on the host and `:value 0` on the self (`common.mt`'s `random_polygon`) | `examples/box2d/**` |
 | ~57 | an array/const literal element shape (host `IR::IntegerLiteral` where the self emits `IR::Name`; `projects/mtc/src/mtc/build.mt`'s first difference) | `projects/mtc/src/**` |
 | ~21 | a struct field's member order (`IR::Field :name "key"` vs `:name "current"`; `projects/mtc/src/mtc/bindgen.mt`) | `projects/mtc/src/**` |
 | ~9 | **the format-string hoist** (the sdl3 family's shape: host-hoisted `__mt_fmt_part_N` locals vs the self's `StmtExpr`) | `examples/sdl3/**` |
@@ -681,8 +694,12 @@ native `break`, 3g flipped 35 (the raylib core family) by classifying raw-module
 and flags nominals in the dumper and 3q flipped 5 more (the raylib shapes
 family) by typing the foreign address-of with its boundary pointer and deepening
 the wrapper alias; the sweep reads 55/611 → 131/535 with the diffs' *content*
-advancing at each step).  The next ranked item is **3r** (the struct equality
-desugaring — the box2d/box3d families), then the tail: the
+advancing at each step).  **3r landed in session 44**: the lowering keeps the
+host's `IR::Binary` on struct values and the C backend synthesizes the
+`mt_struct_eq_<T>` helper from the layout the lowering registers in
+`Program.external_structs` (the IR carries no helper function, as on the host) —
+30 files deeper, 0 flips.  The next ranked item is **3s** (the array-length
+literal from an imported constant; the box2d family), then the tail: the
 array/const literal shape (57), the field-order shape (~21), the format-string
 hoist (9), 3n (the async frame name), 3p (the unnamed variant-arm
 construction's missing sema check — a pre-existing abort), the branch-position
@@ -1024,11 +1041,46 @@ file by file.
     moved to **3r** below.  Locked by
     `test_foreign_in_argument_addresses_the_resolved_boundary_type`.
 3r. **The struct equality desugaring** (newly exposed by 3q; the box2d family —
-    `common.mt`'s `mouse_joint != some_id`): the host emits
-    `(IR::Binary :operator "!=" …)` on the struct values where the self
-    desugars to `(IR::Unary :operator "!" (IR::Call :callee
-    "mt_struct_eq_std_c_box2d_b2JointId" …))`.  Repro:
-    `examples/box2d/body_move.mt` at byte 579,507.
+    `common.mt`'s `mouse_joint != some_id`) — **DONE (session 44, 2026-10-07)**.
+    The host emits `(IR::Binary :operator "!=" …)` on the struct values and
+    synthesizes the `mt_struct_eq_<T>` helper in its C backend from the *type
+    object's* fields (its IR carries no helper); the self desugared in the
+    lowering to `(IR::Unary "!" (IR::Call "mt_struct_eq_std_c_box2d_b2JointId"
+    …))` *and* carried the helper as an IR function — raw (`external`) modules
+    emit only includes, so their structs have no IR declaration and the backend
+    had no field layout to synthesize from.  Landed: the lowering keeps the
+    host's `IR::Binary` and registers the layout (transitively, for nested
+    external structs) in the new `Program.external_structs`
+    (`ExternalStructLayout`, keyed by `naming.type_c_key`; a non-declaration
+    section the dumper ignores, like `monomorphized_structs`); the C backend's
+    `register_equality_type`/`emit_struct_equality_helpers`/
+    `equality_helpers_need_str` consult it through `external_eq_fields`/
+    `equality_fields_for` and synthesize the helper exactly where the host does
+    (the emitted helper is byte-identical to the host's:
+    `static bool mt_struct_eq_b2JointId(struct b2JointId left, …)` with the same
+    field guards).  Measured: the subset comparison (identical corpus,
+    `std examples test`) reads **122/399/47/0 on both binaries** with **30 files'
+    first difference deeper by +21,667 to +21,677** (`examples/box2d/**`), 0
+    flips, 0 shallower, 0 newly differing, 0 lost; the full corpus stays
+    **131/535/51/0 of 717**.  Locked by
+    `test_external_struct_equality_keeps_the_binary_and_registers_the_layout`
+    (the dump keeps the `IR::Binary`, has no `mt_struct_eq`, and registers both
+    the compared and the nested layout) and
+    `test_external_struct_equality_helper_is_synthesized` (the emitted C:
+    forward decl + field guards + negated call site).
+3s. **The array-length literal from an imported constant** (newly exposed by 3r;
+    the 30 box2d files).  `var points: array[b2.Vec2, b2.B2_MAX_POLYGON_VERTICES]`
+    (`common.mt`'s `random_polygon`) renders `(Types::LiteralTypeArg :value 8)`
+    on the host and `:value 0` on the self — both for the wrapper re-export
+    (`std/box2d.mt:111` ← `std/c/box2d.mt:1253`) **and** the direct raw form
+    (`import std.c.box2d as c` + `array[c.b2Vec2, c.B2_MAX_POLYGON_VERTICES]` —
+    probed), so the wrapper hop is not the trigger; a local const and a literal
+    digit resolve on both.  Suspect: the module-qualified literal-argument fold
+    (`resolve_named`'s dotted-const branch, `analyzer.mt:2609-2629`, the host's
+    `resolve_named_literal_type_argument`/`resolve_imported_module_const_value`)
+    or the `.len`-capped path — probe fixtures under `tmp/probe-arrlen/`.
+    Also found while probing: the self accepts `points.len` on a fixed array
+    where the host reports `cannot access member len of array[…]`.
 3i-b. **The `break` half of the loop-flow model** — **DONE (session 43,
     2026-10-07)** (newly exposed by 3o; the box2d/raylib/sdl3 families' first
     difference, `std/str.mt`'s nested `while`).  The host emits a native
@@ -1726,7 +1778,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 131 match / 535 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 43 — **3k's refinement-record positions**, **3j's simple-path call type**, **3l's `read(x) =` target literal**, **3m's call-argument/variant-field literals + the bare-float-literal operand retyping**, **3o's prelude generic variant arm field type**, **3i-b's native `break`**, **3g's raw-module/flags type classification** and **3q's foreign address-of boundary type**: `std examples test` subset comparisons with the identical corpus read 48/473/47/0 on the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries — 3k moves **209 files' first difference deeper (+30,767 each)**, 3j **100 files deeper**, 3l **183 files deeper with 26 flips** (the heap-importing `std/**` family), 3m **82 files deeper with 2 flips**, 3o **80 files deeper**, 3i-b **74 files deeper with 6 flips** (`std/str.mt` byte-identical), 3g **83 files deeper with 35 flips** (the raylib core family) and 3q **55 files deeper with 5 flips** (the raylib shapes family), 0 shallower, 0 newly differing, 0 lost throughout; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 131 match / 535 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 44 — **3r's struct equality desugaring**: the identical-corpus `std examples test` subset comparison read **122/399/47/0 on both the pre-fix (`tmp/mtc-head`) and post-fix (`tmp/mtc-dev`) binaries** with **30 files' first difference deeper by +21,667 to +21,677** (the box2d family), 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus set is unchanged.  Session 43 — **3k's refinement-record positions**, **3j's simple-path call type**, **3l's `read(x) =` target literal**, **3m's call-argument/variant-field literals + the bare-float-literal operand retyping**, **3o's prelude generic variant arm field type**, **3i-b's native `break`**, **3g's raw-module/flags type classification** and **3q's foreign address-of boundary type**: `std examples test` subset comparisons with the identical corpus read 48/473/47/0 on the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries — 3k moves **209 files' first difference deeper (+30,767 each)**, 3j **100 files deeper**, 3l **183 files deeper with 26 flips** (the heap-importing `std/**` family), 3m **82 files deeper with 2 flips**, 3o **80 files deeper**, 3i-b **74 files deeper with 6 flips** (`std/str.mt` byte-identical), 3g **83 files deeper with 35 flips** (the raylib core family) and 3q **55 files deeper with 5 flips** (the raylib shapes family), 0 shallower, 0 newly differing, 0 lost throughout; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (re-read 2026-10-07 session 43: 6 → 6, the same keys, after 3k's record-position change — a greatest-position scan had briefly surfaced the refined-parameter hover `docs/memory_stress_test.mt@39:24`; the final order-based lookup mirrors the host and closes it.  2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1748,6 +1800,70 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 44 (2026-10-07) — `lower` Track 3 item 3r: the struct equality desugaring
+
+Goal: the ranked item — `s_mouse_joint != b2.b2_nullJointId`
+(`examples/box2d/common.mt`, the census's ~30-file leader; `body_move.mt`'s
+first difference at byte 579,507).  Baseline at this commit: **131 match / 535
+differ / 51 host-rejected / 0 self-rejected of 717** (session 43's close).
+
+- **Root cause** (measured on both dumps): the self desugared external-struct
+  equality in the lowering
+  (`(IR::Unary "!" (IR::Call "mt_struct_eq_std_c_box2d_b2JointId" …))`) *and*
+  carried the field-wise helper as an IR function, because raw (`external`)
+  modules emit only includes: their structs never enter `Program.structs`, so
+  the C backend's `register_equality_type` had no field layout to synthesize a
+  helper from.  The host keeps `(IR::Binary :operator "!=" … :type bool)` and
+  synthesizes `mt_struct_eq_<T>` in its C backend from the *type object's*
+  fields (`c_backend/runtime_helpers.rb:135-172`, `feature_detection.rb`'s
+  `aggregate_equality_types`); its IR carries no helper at all (the host's
+  `body_move.mt` dump has zero `mt_struct_eq` occurrences, the self's had the
+  calls plus two helper functions).
+- **Landed**: `Program.external_structs` (a new `ir.ExternalStructLayout(key,
+  fields)` section — a non-declaration section the dumper ignores, like
+  `monomorphized_structs`) carries the layout of every external struct that
+  participates in equality; the lowering registers it at the comparison
+  (`register_external_struct_layout`, transitively for nested external structs,
+  keyed by `naming.type_c_key`) and returns the host's `IR::Binary`; the C
+  backend registers such types into `struct_eq_set` from the layout
+  (`external_eq_fields`, keyed by `c_type`'s C name) and emits the helper
+  through the existing `emit_struct_eq_helper`/`emit_eq_field_guard` path —
+  `equality_fields_for` serves the forward declarations, the helper emission
+  and the `mt_str_equal` gating.  Deleted: `ensure_equality_helper_for_struct`,
+  `struct_field_differs_condition` and the `LowerCtx.struct_equality_helpers`
+  memo.
+- **Emitted C**: byte-identical to the host's —
+  `static bool mt_struct_eq_b2JointId(struct b2JointId left, struct b2JointId
+  right) { … }` with the same three field guards (checked against
+  `ruby -Ilib bin/mtc emit-c examples/box2d/body_move.mt`); the helper *name*
+  now matches the host's (`mt_struct_eq_b2JointId`, not the lowering's
+  `mt_struct_eq_std_c_box2d_b2JointId`).
+- **Measured**: the identical-corpus subset comparison (`std examples test`,
+  568 files) reads **122 match / 399 differ / 47 host-rejected / 0
+  self-rejected on both binaries**; the per-file set shows **30 files' first
+  difference deeper (+21,667 to +21,677)** — the whole `examples/box2d/**`
+  family — with 0 flips, 0 shallower, 0 newly differing, 0 lost.  Full corpus:
+  131/535/51/0 (set unchanged; the same 30 deeper).  The newly exposed first
+  difference is **3s** (the array-length literal from an imported constant:
+  `common.mt`'s `random_polygon` renders `array[b2Vec2, 8]` on the host and
+  `array[b2Vec2, 0]` on the self).
+- **Locked by**
+  `test_external_struct_equality_keeps_the_binary_and_registers_the_layout`
+  (a raw `std.c.raw.lib` fixture: the dump keeps the `IR::Binary`, contains no
+  `mt_struct_eq`, and `Program.external_structs` carries both the compared and
+  the nested struct's layout with 2 fields each) and
+  `test_external_struct_equality_helper_is_synthesized` (the emitted C carries
+  the forward declaration, both field guards and `!mt_struct_eq_Part(a, b)`).
+- **Gates** (frozen tree, `tools/gates.sh --run`): dev build + 19/0; bootstrap
+  fixed point (`stage2.c == stage3.c`) + 19/0; `test/mt` 60/0; `sexpr_lower`
+  131/535/51/0; examples 49/49.  Smoke: `body_move.mt` builds with the dev
+  compiler and its headless run (rc 134, `array index out of bounds`) is
+  identical pre/post fix.
+- Newly exposed, ranked: **3s** (the 30 box2d files — Track 3's first row; the
+  *direct* raw form fails too, so the wrapper hop is not the trigger), plus the
+  analyzer's acceptance of `points.len` on a fixed array where the host reports
+  `cannot access member len of array[…]` — noted, not changed.
 
 ### Session 43 (2026-10-07) — `lower` Track 3 item 3k: the refinement record's post-statement positions
 

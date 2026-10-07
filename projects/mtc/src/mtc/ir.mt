@@ -224,6 +224,20 @@ public struct Program:
     # Concrete Option/Result instances, likewise resolved by lowering but kept
     # outside the IR's `:variants` section (host parity).
     monomorphized_variants: span[VariantDecl]
+    # Field layouts of external (raw-module ABI) structs that participate in
+    # aggregate equality (`joint != b2.b2_nullJointId`).  Raw modules emit only
+    # includes, so their structs have no IR declarations; the host reads the
+    # fields from its type objects, and this compiler carries them here for the
+    # C backend's `mt_struct_eq_*` helper synthesis.  Not a declaration
+    # section: the dumper ignores it and no C declaration is emitted for it.
+    external_structs: span[ExternalStructLayout]
+
+
+## One external struct's field layout, keyed by `naming.type_c_key` so the C
+## backend can find it from the type in an equality comparison.
+public struct ExternalStructLayout:
+    key: str
+    fields: span[Field]
 
 
 public struct TypeAlias:
@@ -248,6 +262,7 @@ public function empty_program(module_name: str, source_path: str) -> Program:
         source_path = source_path,
         monomorphized_structs = span[StructDecl](),
         monomorphized_variants = span[VariantDecl](),
+        external_structs = span[ExternalStructLayout](),
     )
 
 

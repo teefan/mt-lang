@@ -262,9 +262,12 @@ struct LowerCtx:
     # Pending synthetic functions (invoke/release/retain) emitted during
     # proc lowering, to be appended after the main module iteration.
     pending_synthetic_functions: vec.Vec[ir.Function]
-    # External-struct equality helpers already synthesized (`mt_struct_eq_<T>`
-    # names), so a type's helper is emitted once per module.
-    struct_equality_helpers: map_mod.Map[str, bool]
+    # External (raw-module ABI) struct layouts registered for equality, keyed
+    # by `naming.type_c_key`.  Raw modules emit no IR declarations, so the C
+    # backend cannot find their fields; this carries them to
+    # `Program.external_structs` (the host reads them from the type object).
+    pending_external_structs: vec.Vec[ir.ExternalStructLayout]
+    external_struct_keys: map_mod.Map[str, bool]
     # Pending dyn struct types (`mt_dyn_<Iface>`) and vtable artifacts.  The host's
     # C backend derives the `Types::Dyn` value structs from the dyn types in use
     # rather than carrying them in the IR, so they are routed to
@@ -576,6 +579,8 @@ public function lower(program: loader.Program) -> ir.Program:
     var monomorphized_structs = vec.Vec[ir.StructDecl].create()
     var monomorphized_variants = vec.Vec[ir.VariantDecl].create()
     var pending_synthetic_structs = vec.Vec[ir.StructDecl].create()
+    var external_structs = vec.Vec[ir.ExternalStructLayout].create()
+    var seen_external_structs = map_mod.Map[str, bool].create()
     var spec_infos = map_mod.Map[str, SpecInfo].create()
     var module_fragments = vec.Vec[ir.Program].create()
     var module_analyses = vec.Vec[analyzer.Analysis].create()
@@ -599,6 +604,15 @@ public function lower(program: loader.Program) -> ir.Program:
         dedup_append_variants(ref_of(variants), fragment.variants, ref_of(seen_variants))
         static_asserts.append_span(fragment.static_asserts)
         constants.append_span(fragment.constants)
+        # External-struct layouts for the C backend's equality helpers, deduped
+        # across modules (several modules can compare the same raw struct type).
+        var efx: ptr_uint = 0
+        while efx < fragment.external_structs.len:
+            let layout = unsafe: read(fragment.external_structs.data + efx)
+            if not seen_external_structs.contains(layout.key):
+                seen_external_structs.set(layout.key, true)
+                external_structs.push(layout)
+            efx += 1
         # Functions are appended after the loop, reordered per module.
         i += 1
 
@@ -712,6 +726,7 @@ public function lower(program: loader.Program) -> ir.Program:
         source_path = root.source_path,
         monomorphized_structs = monomorphized_structs.as_span(),
         monomorphized_variants = monomorphized_variants.as_span(),
+        external_structs = external_structs.as_span(),
     )
 
 
@@ -990,7 +1005,8 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         type_substitution = map_mod.Map[str, types.Type].create(),
         proc_counter = 0,
         pending_synthetic_functions = vec.Vec[ir.Function].create(),
-        struct_equality_helpers = map_mod.Map[str, bool].create(),
+        pending_external_structs = vec.Vec[ir.ExternalStructLayout].create(),
+        external_struct_keys = map_mod.Map[str, bool].create(),
         pending_dyn_structs = vec.Vec[ir.StructDecl].create(),
         pending_dyn_vtable_structs = vec.Vec[ir.StructDecl].create(),
         pending_dyn_wrappers = vec.Vec[ir.Function].create(),
@@ -1609,6 +1625,7 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
         functions = functions.as_span(),
         type_aliases = span[ir.TypeAlias](),
         source_path = "",
+        external_structs = ctx.pending_external_structs.as_span(),
     )
 
 
@@ -3935,91 +3952,34 @@ function is_equality_struct_type(ctx: ref[LowerCtx], ty: types.Type) -> bool:
             return false
 
 
-## Emit (once) the field-wise equality helper for an external struct type and
-## return its C name.  Mirrors the backend's `mt_struct_eq_<T>` shape: every
-## differing field returns false.  Returns none — leaving the comparison
-## untouched — when a field type has no supported comparison (arrays, value
-## nullables), so no invalid C is emitted.
-function ensure_equality_helper_for_struct(ctx: ref[LowerCtx], ty: types.Type) -> Option[str]:
-    var key_buf = string.String.create()
-    key_buf.append("mt_struct_eq_")
-    key_buf.append(naming.type_c_key(ty))
-    let fn_name = key_buf.as_str()
-    if ctx.struct_equality_helpers.contains(fn_name):
-        return Option[str].some(value = fn_name)
+## Register an external (raw-module ABI) struct type's field layout for the C
+## backend's `mt_struct_eq_<T>` helper synthesis.  Raw modules emit no IR
+## declarations, so `Program.external_structs` carries the fields the host reads
+## from its type objects.  Returns false — leaving the comparison untouched —
+## when the type's fields are unknown.  Nested external structs a field needs
+## are registered too (C structs nest by value, so the recursion terminates).
+function register_external_struct_layout(ctx: ref[LowerCtx], ty: types.Type) -> bool:
+    let key = naming.type_c_key(ty)
+    if ctx.external_struct_keys.contains(key):
+        return true
     let fields = struct_fields_of(ctx, ty) else:
-        return Option[str].none
-
-    let bool_ty = ctx.bool_ty
-    let left_name = alloc_expr(ir.Expr.expr_name(name = "left", ty = ty, pointer = false))
-    let right_name = alloc_expr(ir.Expr.expr_name(name = "right", ty = ty, pointer = false))
-    var guards = vec.Vec[ir.Expr].create()
+        return false
     var fi: ptr_uint = 0
     while fi < fields.len:
-        let fe = unsafe: read(fields.data + fi)
-        let lf = alloc_expr(ir.Expr.expr_member(receiver = left_name, member = fe.name, ty = fe.ty))
-        let rf = alloc_expr(ir.Expr.expr_member(receiver = right_name, member = fe.name, ty = fe.ty))
-        let diff = struct_field_differs_condition(ctx, lf, rf, fe.ty) else:
-            return Option[str].none
-        guards.push(unsafe: read(diff))
+        let field_ty = unsafe: read(fields.data + fi).ty
+        if is_equality_struct_type(ctx, field_ty):
+            if not register_external_struct_layout(ctx, field_ty):
+                return false
         fi += 1
-
-    # Register before the final push so a self-referential struct terminates.
-    ctx.struct_equality_helpers.set(fn_name, true)
-    var params = vec.Vec[ir.Param].create()
-    params.push(ir.Param(name = "left", linkage_name = "left", ty = ty, pointer = false))
-    params.push(ir.Param(name = "right", linkage_name = "right", ty = ty, pointer = false))
-    var body = vec.Vec[ir.Stmt].create()
-    var gi: ptr_uint = 0
-    while gi < guards.len():
-        let cond = guards.get(gi) else:
-            break
-        var then_body = vec.Vec[ir.Stmt].create()
-        then_body.push(ir.Stmt.stmt_return(
-            value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)),
-            line = 0, source_path = "",
-        ))
-        body.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
-        gi += 1
-    body.push(ir.Stmt.stmt_return(
-        value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty)),
-        line = 0, source_path = "",
-    ))
-    ctx.pending_synthetic_functions.push(ir.Function(
-        name = fn_name, linkage_name = fn_name, params = params.as_span(),
-        return_type = bool_ty, body = body.as_span(), entry_point = false, method_receiver_param = false,
-    ))
-    return Option[str].some(value = fn_name)
-
-
-## The "these two field values differ" condition for a struct-equality helper.
-## Mirrors the backend's `emit_field_equality_guards`: `str` compares with
-## `mt_str_equal`, nested raw-binding structs recurse into their own helper, and
-## scalar/enum fields compare directly.  Returns none for field types the helper
-## cannot express (arrays, value nullables).
-function struct_field_differs_condition(ctx: ref[LowerCtx], lf: ptr[ir.Expr], rf: ptr[ir.Expr], field_ty: types.Type) -> Option[ptr[ir.Expr]]:
-    let bool_ty = ctx.bool_ty
-    if is_str_typed(field_ty):
-        let call = alloc_expr(ir.Expr.expr_call(callee = "mt_str_equal", arguments = sp_expr2(lf, rf), ty = bool_ty))
-        return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_unary(operator = "!", operand = call, ty = bool_ty)))
-    match field_ty:
-        types.Type.ty_primitive:
-            return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = lf, right = rf, ty = bool_ty)))
-        types.Type.ty_named as n:
-            # Local enums/flags and named scalar structs compare field-wise or
-            # through their backing value; an unsupported named type bails out.
-            if n.name.len > 0 and ctx.analysis.static_member_types.contains(n.name):
-                return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = lf, right = rf, ty = bool_ty)))
-            return Option[ptr[ir.Expr]].none
-        types.Type.ty_imported:
-            match ensure_equality_helper_for_struct(ctx, field_ty):
-                Option.some as nested:
-                    let call = alloc_expr(ir.Expr.expr_call(callee = nested.value, arguments = sp_expr2(lf, rf), ty = bool_ty))
-                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_unary(operator = "!", operand = call, ty = bool_ty)))
-                Option.none:
-                    return Option[ptr[ir.Expr]].none
-        _:
-            return Option[ptr[ir.Expr]].none
+    var ir_fields = vec.Vec[ir.Field].create()
+    var gj: ptr_uint = 0
+    while gj < fields.len:
+        let fe = unsafe: read(fields.data + gj)
+        ir_fields.push(ir.Field(name = fe.name, ty = fe.ty))
+        gj += 1
+    ctx.external_struct_keys.set(key, true)
+    ctx.pending_external_structs.push(ir.ExternalStructLayout(key = key, fields = ir_fields.as_span()))
+    return true
 
 
 ## The struct fields of the type a destructuring initializer evaluates to.  The
@@ -6055,25 +6015,14 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     right = null_literal_to_context_type(bin.right, ir_expr_type(left), right)
                     left = null_literal_to_context_type(bin.left, ir_expr_type(right), left)
                 # Struct equality on a raw-binding struct (`s_drag_body !=
-                # b3.b3_nullBodyId`): the C backend builds `mt_struct_eq_<T>`
-                # helpers from `Program.structs`, which raw modules never lower
-                # into, so synthesize the field-wise helper from the analyzer's
-                # field list here.
+                # b3.b3_nullBodyId`): the host keeps the `IR::Binary` and its C
+                # backend synthesizes the `mt_struct_eq_<T>` helper from the
+                # type's fields.  Raw modules lower no declarations, so register
+                # the type's layout for the backend's helper synthesis.
                 if bin.operator == "==" or bin.operator == "!=":
                     let eq_ty = ir_expr_type(left)
-                    if is_equality_struct_type(ctx, eq_ty) and types.type_equals(eq_ty, ir_expr_type(right)):
-                        match ensure_equality_helper_for_struct(ctx, eq_ty):
-                            Option.some as helper:
-                                let call = alloc_expr(ir.Expr.expr_call(
-                                    callee = helper.value,
-                                    arguments = sp_expr2(left, right),
-                                    ty = ctx.bool_ty,
-                                ))
-                                if bin.operator == "!=":
-                                    return alloc_expr(ir.Expr.expr_unary(operator = "!", operand = call, ty = ctx.bool_ty))
-                                return call
-                            Option.none:
-                                pass
+                    if is_equality_struct_type(ctx, eq_ty) and types.type_equals(eq_ty, ir_expr_type(right)) and register_external_struct_layout(ctx, eq_ty):
+                        return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = left, right = right, ty = ctx.bool_ty))
                 # `str + str` concatenates into a thread-local scratch buffer.
                 if bin.operator == "+" and is_str_typed(ir_expr_type(left)) and is_str_typed(ir_expr_type(right)):
                     var concat_args = vec.Vec[ir.Expr].create()

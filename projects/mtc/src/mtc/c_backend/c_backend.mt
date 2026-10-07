@@ -47,6 +47,11 @@ struct Emitter:
     variant_eq_set: map_mod.Map[str, bool]
     # Struct C struct names whose equality helpers must be emitted.
     struct_eq_set: map_mod.Map[str, bool]
+    # Field layouts of external (raw-module ABI) structs registered for equality
+    # helpers, keyed by the C name `c_type` gives the type.  Filled from
+    # `Program.external_structs` at registration (the host reads the fields from
+    # the type object).
+    external_eq_fields: map_mod.Map[str, span[ir.Field]]
     # Nullable value type C trivially emitted as mt_opt_* typedefs.
     opt_type_set: map_mod.Map[str, types.Type]
     # std.c.* backing C names for type aliases, keyed by the internal name
@@ -135,6 +140,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
             source_path = program.source_path,
             monomorphized_structs = program.monomorphized_structs,
             monomorphized_variants = program.monomorphized_variants,
+            external_structs = program.external_structs,
         )
     var e = Emitter(
         buffer = string.String.create(),
@@ -142,6 +148,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         used_labels = map_mod.Map[str, bool].create(),
         variant_eq_set = map_mod.Map[str, bool].create(),
         struct_eq_set = map_mod.Map[str, bool].create(),
+        external_eq_fields = map_mod.Map[str, span[ir.Field]].create(),
         opt_type_set = map_mod.Map[str, types.Type].create(),
         std_c_backing = map_mod.Map[str, str].create(),
     )
@@ -5446,6 +5453,51 @@ function register_equality_type(e: ref[Emitter], ty: types.Type, program: ir.Pro
             return
         Option.none:
             pass
+    # An external (raw-module ABI) struct has no IR declaration; its layout
+    # rides `Program.external_structs` (the host reads the fields from the type
+    # object).
+    match external_struct_layout_for_type(program, base):
+        Option.some as layout:
+            if not e.struct_eq_set.contains(cname):
+                e.struct_eq_set.set(cname, true)
+                e.external_eq_fields.set(cname, layout.value.fields)
+                var efi: ptr_uint = 0
+                while efi < layout.value.fields.len:
+                    register_equality_type(e, unsafe: read(layout.value.fields.data + efi).ty, program)
+                    efi += 1
+            return
+        Option.none:
+            pass
+
+
+## The field layout `type` maps to, recorded by the lowering in
+## `Program.external_structs` and keyed by `naming.type_c_key` (the same key the
+## lowering used to register it).
+function external_struct_layout_for_type(program: ir.Program, ty: types.Type) -> Option[ir.ExternalStructLayout]:
+    let key = naming.type_c_key(ty)
+    var i: ptr_uint = 0
+    while i < program.external_structs.len:
+        unsafe:
+            let layout = read(program.external_structs.data + i)
+            if layout.key == key:
+                return Option[ir.ExternalStructLayout].some(value = layout)
+        i += 1
+    return Option[ir.ExternalStructLayout].none
+
+
+## The field layout an equality helper needs for the C struct `name`: the IR
+## declaration when the struct lowered one, else the external layout recorded in
+## `external_eq_fields` (raw-module ABI structs have no IR declaration).
+function equality_fields_for(e: ref[Emitter], program: ir.Program, name: str) -> Option[span[ir.Field]]:
+    match find_struct_decl_by_c_name(program, name):
+        Option.some as sd:
+            return Option[span[ir.Field]].some(value = sd.value.fields)
+        Option.none:
+            pass
+    let external_fields = e.external_eq_fields.get(name)
+    if external_fields != null:
+        return Option[span[ir.Field]].some(value = unsafe: read(external_fields))
+    return Option[span[ir.Field]].none
 
 
 function find_variant_decl_by_c_name(program: ir.Program, cname: str) -> Option[ir.VariantDecl]:
@@ -5511,11 +5563,11 @@ function equality_helpers_need_str(e: ref[Emitter], program: ir.Program) -> bool
         let kp = keys.next() else:
             break
         let name = unsafe: read(kp)
-        match find_struct_decl_by_c_name(program, name):
-            Option.some as sd:
+        match equality_fields_for(e, program, name):
+            Option.some as fields:
                 var sfi: ptr_uint = 0
-                while sfi < sd.value.fields.len:
-                    if equality_type_needs_str(unsafe: read(sd.value.fields.data + sfi).ty):
+                while sfi < fields.value.len:
+                    if equality_type_needs_str(unsafe: read(fields.value.data + sfi).ty):
                         return true
                     sfi += 1
             Option.none:
@@ -5564,16 +5616,15 @@ function emit_struct_equality_helpers(e: ref[Emitter], program: ir.Program) -> v
         let kp = keys.next() else:
             break
         let name = unsafe: read(kp)
-        match find_struct_decl_by_c_name(program, name):
-            Option.some as sd:
-                emit_struct_eq_helper(e, sd.value)
+        match equality_fields_for(e, program, name):
+            Option.some as fields:
+                emit_struct_eq_helper(e, name, fields.value)
                 emit_line(e, "")
             Option.none:
                 pass
 
 
-function emit_struct_eq_helper(e: ref[Emitter], sd: ir.StructDecl) -> void:
-    let outer_c = sd.linkage_name
+function emit_struct_eq_helper(e: ref[Emitter], outer_c: str, fields: span[ir.Field]) -> void:
     let fn_name = struct_equality_helper_name(outer_c)
     let struct_ty = j3("struct ", outer_c, "")
     e.buffer.append(j5("static bool ", fn_name, "(", struct_ty, " left, "))
@@ -5581,10 +5632,10 @@ function emit_struct_eq_helper(e: ref[Emitter], sd: ir.StructDecl) -> void:
     e.buffer.append(" right) {")
     e.buffer.push_byte(10)
     var fi: ptr_uint = 0
-    while fi < sd.fields.len:
+    while fi < fields.len:
         var field: ir.Field
         unsafe:
-            field = read(sd.fields.data + fi)
+            field = read(fields.data + fi)
         if not is_void_type(field.ty):
             emit_eq_field_guard(e, j3("left.", field.name, ""), j3("right.", field.name, ""), field.ty, 1)
         fi += 1

@@ -476,3 +476,70 @@ function test_generic_extending_block_type_parameters() -> void:
     let text = Box[str](value = "milk")
     expect_eq(text.round_trip(), "milk")
 
+
+# =============================================================================
+#  External-struct equality helpers
+# =============================================================================
+
+@[test]
+function test_external_struct_equality_helper_is_synthesized() -> void:
+    # A raw-module struct comparison reaches the backend as an `IR::Binary`; the
+    # `mt_struct_eq_<T>` helper is synthesized from the layout the lowering
+    # registered in `Program.external_structs` — the forward declaration, the
+    # field guards and the (negated) call site (session 43, item 3r).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_cbeq_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_path = path_ops.join(raw_dir.as_str(), "lib.mt")
+    defer: raw_path.release()
+    var raw_source = <<-SRC
+        external
+
+        struct Part:
+            index: int
+            generation: uint
+    SRC
+    match fs.write_text(raw_path.as_str(), raw_source):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var source = <<-SRC
+        import std.c.raw.lib as raw
+
+        function differs(a: raw.Part, b: raw.Part) -> bool:
+            return a != b
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var c = c_backend.generate_c(ir_program, false, false)
+    defer: c.release()
+    let text = c.as_str()
+    expect_contains(text, "static bool mt_struct_eq_Part(struct Part left, struct Part right);")
+    expect_contains(text, "static bool mt_struct_eq_Part(struct Part left, struct Part right) {")
+    expect_contains(text, "if (left.index != right.index) return false;")
+    expect_contains(text, "if (left.generation != right.generation) return false;")
+    expect_contains(text, "!mt_struct_eq_Part(a, b)")
+

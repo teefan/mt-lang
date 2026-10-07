@@ -1840,3 +1840,79 @@ function test_foreign_in_argument_addresses_the_resolved_boundary_type() -> void
     let text = dump.as_str()
     expect(text.contains_substring("(IR::AddressOf :expression (IR::Name :name \"d\" :type (Types::Struct :name \"Def\" :module_name \"std.c.raw.lib\") :pointer false) :type (Types::Generic :name \"const_ptr\" :arguments ((Types::Struct :name \"Def\" :module_name \"std.c.raw.lib\")))"))
     expect(not text.contains_substring("const_ptr\" :arguments ((Types::Struct :name \"MyDef\""))
+
+
+@[test]
+function test_external_struct_equality_keeps_the_binary_and_registers_the_layout() -> void:
+    ## `a == b` on a raw-module struct stays an `IR::Binary` — the host's IR
+    ## shape — and the type's field layout is registered in
+    ## `Program.external_structs` for the C backend's `mt_struct_eq_<T>`
+    ## synthesis (session 43, item 3r).  The registration covers nested
+    ## external structs, and no helper function appears in the IR.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_exteq_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        struct Part:
+            index: int
+            generation: uint
+
+        struct Assembly:
+            part: Part
+            tag: int
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var source = <<-SRC
+        import std.c.raw.lib as raw
+
+        function same_part(a: raw.Part, b: raw.Part) -> bool:
+            return a == b
+
+        function differs(asm: raw.Assembly, other: raw.Assembly) -> bool:
+            return asm != other
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Binary :operator \"==\" :left (IR::Name :name \"a\" :type (Types::Struct :name \"Part\" :module_name \"std.c.raw.lib\") :pointer false) :right (IR::Name :name \"b\" :type (Types::Struct :name \"Part\" :module_name \"std.c.raw.lib\") :pointer false) :type (Types::Primitive :name \"bool\"))"))
+    expect(text.contains_substring("(IR::Binary :operator \"!=\" :left (IR::Name :name \"asm\" :type (Types::Struct :name \"Assembly\" :module_name \"std.c.raw.lib\") :pointer false)"))
+    expect(not text.contains_substring("mt_struct_eq"))
+    var has_part = false
+    var has_assembly = false
+    var li: ptr_uint = 0
+    while li < ir_program.external_structs.len:
+        let layout = unsafe: read(ir_program.external_structs.data + li)
+        if layout.key == "std_c_raw_lib_Part":
+            has_part = true
+            expect(layout.fields.len == 2)
+        if layout.key == "std_c_raw_lib_Assembly":
+            has_assembly = true
+            expect(layout.fields.len == 2)
+        li += 1
+    expect(has_part)
+    expect(has_assembly)
