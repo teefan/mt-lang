@@ -131,10 +131,18 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 42 (2026-10-07) — **the `sexpr_parity` host-output cache**
-(a tools change: `--host-cache` reuses the host's outputs per file / resolved
-import-closure digest, the self always runs live; every counter unchanged — the
-717-file lower sweep reads 55/611/51/0 cold and warm, warm in 58 s vs 4m04s).
+Last updated: session 43 (2026-10-07) — **`lower` Track 3 item 3k: the
+refinement record's post-statement positions** (a guard inside a compound
+statement — the `std/mem/heap.mt` `contains` shape — answered `reinterpret`'s
+source type with the storage `Nullable` where the host carries the refined
+pointer; the record's post-statement snapshot now sits at the statement's end
+with the host's start replay, skipping cleared transitions, and the lookup
+keeps the host's last-record rule — **209 files' first difference deeper
+(+30,767), 0 shallower/new/lost**; the set stays 55/611/51/0; the LSP reads its
+documented entries).  Session 42 had landed **the `sexpr_parity` host-output
+cache** (a tools change: `--host-cache` reuses the host's outputs per file /
+resolved import-closure digest, the self always runs live; the 717-file lower
+sweep reads 55/611/51/0 cold and warm, warm in 58 s vs 4m04s).
 Session 41 had landed **`lower` Track 3: the
 statement-position hoisting channel** (the census's largest bucket, the
 foreign-call shape): a statement-lowered foreign call (a `str as cstr` argument
@@ -606,21 +614,24 @@ Work in the ranked order below; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank — session 42's host cache makes the repeat measurement cheap.  Current set:
 **55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files**
-(session 41 close; the count drifts with the tree's own sources and the tmp
+(session 43 re-read — unchanged by 3k's fix, which moves first differences
+deeper; the count drifts with the tree's own sources and the tmp
 fixtures — quote the set).
 
-**First-difference census (session 41) — the track's re-ranking.**  Bucketing
+**First-difference census (session 43) — the track's re-ranking.**  Bucketing
 the 611 differing files by their first difference (a throwaway classifier over
 the sweep's own `host:`/`self:` context lines; treat the sizes as ±a few): the
 session-40 census's categories are all landed — the foreign-call body shape, the
 `reinterpret` lowering (3b), the include set/order (item 6) and the guard
 binding's read type (3c, the last leader) — along with the four shapes session
 41's hoisting exposed (3d, 3e, 3f and the `hm_discard` correction), which took
-the sweep 44 → 55 match.  The current leaders:
+the sweep 44 → 55 match, and **3k** (session 43: the refinement record's
+post-statement positions), which moved 209 files' first difference deeper by
++30,767 (a `std examples test` subset comparison with the identical corpus; the
+full set stayed 55/611/51/0).  The current leaders:
 
 | Files | First difference | Where |
 | --- | --- | --- |
-| ~255 | **3k, the guard-bound `reinterpret` source type**: `let start = reinterpret[ptr_uint](data)` (`data` a guard-bound `ptr[ubyte]?`) carries the refined `ptr[ubyte]` on the host and the storage `Nullable` on the self (the `flow_type_at` lookup does not refine inside the loop body after the guard's `continue`), in `std/mem/heap.mt`'s `contains` | `examples/box2d/**`, `examples/raylib/**`, `projects/mtc/src/**` |
 | ~100 | **3j, the simple-path call's raw return type**: `= c.getenv(name)` typed `ptr[char]` on the host vs `Nullable(cstr)` on the self (the 3f sibling for the simple path) | `examples/raylib/audio/**` |
 | ~57 | an array/const literal element shape (host `IR::IntegerLiteral` where the self emits `IR::Name`; `projects/mtc/src/mtc/build.mt`'s first difference) | `projects/mtc/src/**` |
 | ~24 | **the flags/enum member type** (item 3g): host `Types::Flags :name "CameraProjection"` vs self `Types::Struct` | `examples/raylib/**` (`3d_camera_fps.mt`) |
@@ -633,14 +644,17 @@ has no statement-hoisting channel for multi-step expressions and wraps them in
 (`prepare_expression_with_cleanups`).  Session 41 landed the channel, the
 foreign-call family, the pointer/mapping-substitution/call-typing rules and the
 guard-region fix; the format-string hoist (with the host's cleanup placement) is
-a follow-up on the same machinery.  The next ranked item is **3k** (the 255
-heap-region files — the guard-bound `reinterpret` source type), then the tail:
-**3j** (~100), the
-array/const literal shape (57), the flags/enum rendering (3g, 24), the
-format-string hoist (9), the `let _` decl shape, the nested `foreign_expr`
-materialization, the struct-field-order shape, 4b, the nested-struct C names,
-then items 7–9 — file by file.  3i's `break` half (the host's
-`switch_loop_target` invalidation) rides the same loop-flow work.
+a follow-up on the same machinery.  3k landed in session 43; the heap node's
+next first difference (byte 47,201 of `std/mem/heap.mt`) is an **assignment
+literal through a deref-member target** (`*block_ptr … = 0` typed `int` on the
+self, `ptr_uint` on the host — the assignment arm's contextual typing resolves
+the member target through the `*` deref incorrectly; a 3h sibling).  The next
+ranked item is **3j** (~100 — the simple-path call's raw return type), then the
+tail: the array/const literal shape (57), the flags/enum rendering (3g, 24), the
+format-string hoist (9), the deref-assignment literal, the `let _` decl shape,
+the nested `foreign_expr` materialization, the struct-field-order shape, 4b, the
+nested-struct C names, then items 7–9 — file by file.  3i's `break` half (the
+host's `switch_loop_target` invalidation) rides the same loop-flow work.
 
 1. **Opaque declarations** — **DONE (session 39, 2026-10-05)**.  `collect_opaque_decls`
    keeps the declared name, resolves the backing per `opaque_c_type_name`, sets
@@ -836,11 +850,38 @@ then items 7–9 — file by file.  3i's `break` half (the host's
     **255 files' first difference deeper by +222** (the shared `std/mem/heap.mt`
     node), 0 shallower/newly differing; locked by
     `test_continue_in_a_plain_while_is_native`.  The same heap node's next
-    difference (3k) is the `reinterpret` below it: `let start =
-    reinterpret[ptr_uint](data)` where `data` is a guard-bound `ptr[ubyte]?` —
-    the host's `source_type` is the refined `ptr[ubyte]`, the self's the
-    storage `Nullable` (the `flow_type_at` lookup does not refine inside the
-    loop body after the guard's `continue`).
+    difference was 3k (the `reinterpret` below it), **fixed in session 43**.
+3k. **The guard-bound `reinterpret` source type** — **DONE (session 43,
+    2026-10-07)**.  `let start = reinterpret[ptr_uint](data)` (`data` a
+    guard-bound `ptr[ubyte]?`, `std/mem/heap.mt`'s `contains`) carried the
+    storage `Nullable` where the host carries the refined `ptr[ubyte]`.  The
+    trigger was **any guard inside a compound statement**, not the `continue`
+    (both a `while` body's guard and an `if …: return` arm's refinement
+    reproduced); the refinement record's post-statement snapshot carried the
+    statement's *start* position, so the enclosing statement's post-record
+    shadowed the body's entry for cursors inside the body.  Landed: the record's
+    post-statement snapshot now sits at the statement's *end*
+    (`statement_end_line`, sentinel column, plus the host's start-position
+    replay for multi-line statements — with the replay skipping *cleared*
+    transitions, which the self's delta record would otherwise emit at the
+    statement's start, shadowing the body's own entries under the order-based
+    lookup).  Measured (subset `std examples test`, the
+    identical corpus for both binaries): **209 files' first difference deeper
+    (+30,767 each), 0 shallower, 0 newly differing, 0 lost**; the full corpus
+    stays 55/611/51/0 and `std/mem/heap.mt`'s reinterpret sites are
+    byte-identical (its first difference moved 13,466 → 47,201).  Locked by
+    `test_guards_inside_statements_keep_their_refinement`.  The LSP is
+    unchanged: the harness reads its 4 documented entries, the pre/post-fix
+    self recordings are byte-identical and the canonical audit reads its
+    documented set (`docs/memory_stress_test.mt@39:24`'s refined-parameter
+    hover drove the final design: the host's replay carries the outer state).
+3l. **The assignment literal through a deref-member target** (newly exposed by
+    3k; `std/mem/heap.mt` at byte 47,201 — the heap node's next first
+    difference).  `*block_ptr … = 0` types the value literal `int` on the self
+    where the host types it `ptr_uint`: the assignment arm's contextual typing
+    (`int_literal_to_context_type` against `expr_type(target)`) resolves the
+    member target through the `*` deref incorrectly.  A 3h sibling; scope: the
+    target's type for `expr_member_access`/`unary *` targets.
 3j. **The simple-path call's raw return type** (newly exposed by 3c; the raylib
     audio family ~100 files: `getenv`).  For `= c.getenv(name)` (a *simple*
     mapping) the host types the emitted call with the raw declaration's return
@@ -1494,10 +1535,10 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 43 — **3k's refinement-record positions**: a `std examples test` subset comparison with the identical corpus reads 48/473/47/0 on both the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries with **209 files' first difference deeper (+30,767 each), 0 shallower, 0 newly differing, 0 lost**, and the full corpus set is unchanged; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
-| LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
+| LSP project audit | **canonical (warm) set: 6 differ** (re-read 2026-10-07 session 43: 6 → 6, the same keys, after 3k's record-position change — a greatest-position scan had briefly surfaced the refined-parameter hover `docs/memory_stress_test.mt@39:24`; the final order-based lookup mirrors the host and closes it.  2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
 | LSP recovery | 6/6 cases byte-equal (re-measured 2026-10-05 session 37) | stay green | `tools/lsp_recovery_probe.rb --check` |
 | LSP edit latency | **4.9 ms median per `didChange`** on `SimpleGame/src/main.mt` (was 54.3; 8 edits, `tmp/lsp_edit_perf.rb`); `didOpen` ~52 ms cold; diagnostic pull 0.2 ms | ≤ ~10 ms | `ruby tmp/lsp_edit_perf.rb --bin <bin>` |
 | LSP valgrind | 0 errors over the harness drive (re-measured 2026-10-05 session 38); the definitely-lost residue is down to ~64 KB per 10-cycle soak (was ~7.8 MB), dominated by the one-time index walk's arena-leaked ASTs | 0 errors | `tools/gates.sh --only valgrind_lsp --run` |
@@ -1516,6 +1557,68 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 43 (2026-10-07) — `lower` Track 3 item 3k: the refinement record's post-statement positions
+
+Goal: the ranked item — `let start = reinterpret[ptr_uint](data)` (`data` a
+guard-bound `ptr[ubyte]?` inside a `while` body; `std/mem/heap.mt`'s `contains`)
+carried the storage `Nullable` where the host carries the refined `ptr[ubyte]`
+(the census's ~255-file leader: the box2d/raylib/compiler families).
+
+- **Root cause** (found by instrumenting `flow_type_at` and dumping the entry
+  span): the record is appended in *check order*, and a compound statement's
+  post-record — recorded after its body was checked — carried the statement's
+  *start* position, while the scan took the **last-recorded** entry at or
+  before the cursor.  The `while`'s post-record (`data` cleared, at the loop
+  line) therefore shadowed the body's own `data → ptr[ubyte]` entry.  Session
+  41's note named the wrong trigger ("after the guard's `continue`"): a minimal
+  probe shows *any* guard inside a compound statement misses — both
+  `loop_continue` and `loop_return` fail, `plain` (straight line) refines.
+- **The host's model** (`semantic_analyzer/statements.rb:11-35`,
+  `flow_refinement.rb`): a snapshot at `(line, column)` *before* each statement
+  and at `(end_line, 1_000_000)` *after* it — `statement_end_line` is the last
+  line of the statement's span — plus a replay at the statement's own start for
+  a multi-line statement; the lookup (`latest_completion_snapshot`) walks the
+  snapshots **in reverse** and takes the first whose position is at or before
+  the cursor (the position is a filter, the record order decides).
+- **Landed**: (a) `statement_end_line` + `stmt_own_line`/`body_last_line`/
+  `statements_last_line`/`expr_last_line` ported from the host; (b)
+  `check_stmt`'s post-record sits at the statement's end, and a multi-line
+  statement replays it at its own start — but **the replay skips cleared
+  transitions**: the host's replay is a full scope snapshot, while the self's
+  delta record would otherwise emit the scope-exit clear at the *statement's
+  start* and — recorded after the body's entries — shadow them under the
+  (order-based) lookup; (c) the lookup keeps the *last record* rule.  Two wrong
+  turns are worth recording: a greatest-position scan plus an end-position
+  forcing fixed 3k but made the hover at a refined *parameter* answer the
+  refined type (`docs/memory_stress_test.mt@39:24`: the host's replay carries
+  the *outer* state and wins by record order — the self must mirror the quirk),
+  and the unguarded replay shadowed the loop body's own entries.
+- **Measured**: subset `std examples test` (the identical corpus for both
+  binaries — `projects/mtc/src` is both compiler and corpus, so the full-corpus
+  set can also move with the source edit), pre-fix `build/stage2/mtc` vs
+  post-fix `tmp/mtc-dev`: **48/473/47/0** both sides; **209 files' first
+  difference deeper (+30,767 each), 0 shallower, 0 newly differing, 0 lost**.
+  Full corpus: 55/611/51/0 of 717 (unchanged).  `std/mem/heap.mt`'s `contains`
+  is byte-identical through the reinterpret sites; its first difference moved
+  **13,466 → 47,201** (the next item, **3l**: the assignment literal through a
+  deref-member target, `ptr_uint` on the host vs `int` on the self).
+- **LSP**: recovery 6/6 byte-equal; the harness reads its 4 documented entries
+  (70 requests / 27 probes) and the pre-fix vs post-fix *self recordings* are
+  byte-identical apart from the `stderr` announcement; the project audit reads
+  its canonical set (below).
+- **Locked by** `test_guards_inside_statements_keep_their_refinement` (the loop
+  guard and the terminating-`if` shapes; asserts the refined source types and
+  the absence of any `Types::Null` source type).
+- **Gates** (frozen tree): bootstrap fixed point (`stage2.c == stage3.c`) +
+  19/0; `test/mt` 60/0; examples 49/49 (emit-c sweeps); `cli:parity` 24/37/0;
+  lint corpus 495/121 of 616 (unchanged); `sexpr lower` 55/611/51/0 (a warm
+  re-read: 42 s with session 42's host cache); recovery 6/6; the harness's 4
+  documented entries; the canonical audit's 6.
+- Discovery worth keeping: `bin/mtc build` (the *host*) with a semantic error in
+  a big module **spins for minutes** instead of failing fast — two 6-minute
+  builds during this session (`bin/mtc check <file>` reports the same error in
+  ~4 s, so check before building when editing the analyzer).
 
 ### Session 42 (2026-10-07) — the `sexpr_parity` host-output cache (tools)
 

@@ -788,6 +788,57 @@ function test_reinterpret_always_reinterprets_with_refined_source() -> void:
 
 
 @[test]
+function test_guards_inside_statements_keep_their_refinement() -> void:
+    ## A guard *inside* a compound statement still answers `reinterpret`'s
+    ## source type with its refined pointer: the refinement record's
+    ## post-statement snapshot sits at the statement's end (the host's
+    ## `check_block` tail), so neither a `while` body's guard nor a terminating
+    ## `if p == null: return` arm's `null` is shadowed by the enclosing
+    ## statement's post-record.  Session 43 fixed the record's positions
+    ## (`std/mem/heap.mt`'s `contains`, item 3k).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_guardstmt_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct Block:
+            data: ptr[ubyte]?
+
+        public function after_if(address: ptr[void]?) -> ptr_uint:
+            if address == null:
+                return 0
+            return unsafe: reinterpret[ptr_uint](address)
+
+        public function in_loop(b: Block?) -> ptr_uint:
+            let block = b else:
+                return 0
+            var i: ptr_uint = 0
+            while i < 1:
+                let data = block.data else:
+                    i += 1
+                    continue
+                return unsafe: reinterpret[ptr_uint](data)
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+    expect(dumped.contains_substring(":source_type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :expression (IR::Name :name \"address\" :type (Types::Nullable"))
+    expect(dumped.contains_substring(":source_type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"ubyte\"))) :expression (IR::Name :name \"data\" :type (Types::Nullable"))
+    expect(not dumped.contains_substring(":source_type (Types::Null"))
+
+
+@[test]
 function test_includes_follow_the_hosts_dfs_post_order() -> void:
     ## Raw-binding include directives are appended in the host's analysis-cache
     ## insertion order — a DFS post-order from the root with each module's

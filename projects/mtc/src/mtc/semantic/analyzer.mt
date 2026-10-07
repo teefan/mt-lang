@@ -3312,7 +3312,8 @@ function apply_narrow_by_name(ctx: ref[Context], scope: ref[sscope.Scope], narro
 ## after it the state the statement leaves — recorded so the LSP resolves a
 ## local's type the way the host's completion snapshots do.
 function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt], next_stmt: ptr[ast.Stmt]?) -> void:
-    record_flow_snapshot(ctx, scope, sp)
+    let start_pos = statement_position(sp)
+    record_flow_snapshot_at(ctx, scope, start_pos, false)
     check_stmt_inner(ctx, scope, chk, sp)
     # The host applies the dataflow's non-null set for the *next* statement
     # right after this one, so the state it records at this statement's
@@ -3320,7 +3321,17 @@ function check_stmt(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags
     # answers a guard line with it).
     if next_stmt != null:
         apply_flow_continuation(ctx, scope, next_stmt)
-    record_flow_snapshot(ctx, scope, sp)
+    # The host's `check_block` tail: the post-statement snapshot sits at the
+    # statement's *end*, so a compound statement's post-record cannot shadow
+    # its own body's entries; a multi-line statement additionally replays it at
+    # its own start so a lookup on the declaration line finds the new binding.
+    let end_line = statement_end_line(sp)
+    if end_line == 0:
+        record_flow_snapshot_at(ctx, scope, start_pos, false)
+    else:
+        if end_line > start_pos / 1000000:
+            record_flow_snapshot_at(ctx, scope, start_pos, true)
+        record_flow_snapshot_at(ctx, scope, end_line * 1000000 + 999999, false)
 
 
 function check_stmt_inner(ctx: ref[Context], scope: ref[sscope.Scope], chk: CheckFlags, sp: ptr[ast.Stmt]) -> void:
@@ -3625,13 +3636,25 @@ function apply_flow_continuation(ctx: ref[Context], scope: ref[sscope.Scope], sp
 
 
 ## Record the refinement state at a statement boundary: only the entries that
-## changed since the previous recording, positioned at the statement.  The LSP
-## resolves a local's type through the latest entry at or before the cursor,
-## which is how the host's completion snapshots answer.
+## changed since the previous recording.  The LSP and the lowering resolve a
+## local's type through the *last record* at or before the cursor (the host's
+## `latest_completion_snapshot` walks its snapshots in reverse), so the
+## position is a filter and the recording order decides.
 function record_flow_snapshot(ctx: ref[Context], scope: ref[sscope.Scope], sp: ptr[ast.Stmt]) -> void:
+    record_flow_snapshot_at(ctx, scope, statement_position(sp), false)
+
+
+## The body of `record_flow_snapshot` with an explicit packed position, so the
+## post-statement snapshot can be recorded at the statement's *end* (the host's
+## `check_block` tail records at `(end_line, 1_000_000)`), and so the
+## multi-line replay at the statement's start can skip cleared transitions:
+## the replay exists so a lookup on the declaration line finds the new binding,
+## and its cleared entries would shadow the very body entries a cursor inside
+## the statement still sits under (they are recorded after them, and the
+## cursor's lookup takes the last record).
+function record_flow_snapshot_at(ctx: ref[Context], scope: ref[sscope.Scope], position: ptr_uint, skip_clears: bool) -> void:
     if not ctx.flow_active:
         return
-    let position = statement_position(sp)
     if position == 0:
         return
     ctx.flow_scratch.clear()
@@ -3668,8 +3691,9 @@ function record_flow_snapshot(ctx: ref[Context], scope: ref[sscope.Scope], sp: p
         unsafe:
             let name = read(entry.key)
             if not flow_scratch_contains(ref_of(ctx.flow_scratch), name):
-                to_clear.push(name)
-                ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = types.Type.ty_error, cleared = true))
+                if not skip_clears:
+                    to_clear.push(name)
+                    ctx.flow_types.push(FlowTypeEntry(at = position, name = name, ty = types.Type.ty_error, cleared = true))
     var ci: ptr_uint = 0
     while ci < to_clear.len():
         let name_ptr = to_clear.get(ci) else:
@@ -3677,6 +3701,183 @@ function record_flow_snapshot(ctx: ref[Context], scope: ref[sscope.Scope], sp: p
         unsafe:
             let _removed = ctx.flow_recorded.remove(read(name_ptr))
         ci += 1
+
+
+## The host's `statement_end_line`: the last source line a statement occupies —
+## its own line plus every nested body's and expression's last line.  The
+## refinement record's post-statement snapshot is positioned here, so a compound
+## statement's post-record (its body's scope left, refinements settled) sorts
+## after every record its body made instead of clobbering them.
+function statement_end_line(sp: ptr[ast.Stmt]) -> ptr_uint:
+    var line = stmt_own_line(sp)
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_block as blk:
+                line = statements_last_line(blk.statements)
+            ast.Stmt.stmt_local as l:
+                line = max_u(line, expr_last_line(l.value))
+                line = max_u(line, body_last_line(l.else_body))
+            ast.Stmt.stmt_if as i:
+                var bi: ptr_uint = 0
+                while bi < i.branches.len:
+                    let br = read(i.branches.data + bi)
+                    line = max_u(line, br.line)
+                    line = max_u(line, expr_last_line(br.condition))
+                    line = max_u(line, body_last_line(br.body))
+                    bi += 1
+                line = max_u(line, body_last_line(i.else_body))
+            ast.Stmt.stmt_while as w:
+                line = max_u(line, expr_last_line(w.condition))
+                line = max_u(line, body_last_line(w.body))
+            ast.Stmt.stmt_for as fr:
+                line = max_u(line, body_last_line(fr.body))
+            ast.Stmt.stmt_match as m:
+                var ai: ptr_uint = 0
+                while ai < m.arms.len:
+                    let arm = read(m.arms.data + ai)
+                    line = max_u(line, expr_last_line(arm.pattern))
+                    line = max_u(line, body_last_line(arm.body))
+                    ai += 1
+            ast.Stmt.stmt_defer as d:
+                line = max_u(line, expr_last_line(d.expression))
+                line = max_u(line, body_last_line(d.body))
+            ast.Stmt.stmt_unsafe as u:
+                line = max_u(line, body_last_line(u.body))
+            ast.Stmt.stmt_error_block as eb:
+                line = max_u(line, body_last_line(eb.body))
+            ast.Stmt.stmt_assignment as a:
+                line = max_u(line, expr_last_line(a.value))
+            ast.Stmt.stmt_ret as r:
+                line = max_u(line, expr_last_line(r.value))
+            ast.Stmt.stmt_expression as e:
+                line = max_u(line, expr_last_line(e.expression))
+            ast.Stmt.stmt_static_assert as sa:
+                line = max_u(line, expr_last_line(sa.condition))
+            _:
+                pass
+    return line
+
+
+## The statement's own source line (0 for a block, which carries none).
+function stmt_own_line(sp: ptr[ast.Stmt]) -> ptr_uint:
+    unsafe:
+        match read(sp):
+            ast.Stmt.stmt_local as l:
+                return l.line
+            ast.Stmt.stmt_assignment as a:
+                return a.line
+            ast.Stmt.stmt_if as i:
+                return i.line
+            ast.Stmt.stmt_while as w:
+                return w.line
+            ast.Stmt.stmt_for as fr:
+                return fr.line
+            ast.Stmt.stmt_match as m:
+                return m.line
+            ast.Stmt.stmt_ret as r:
+                return r.line
+            ast.Stmt.stmt_break as b:
+                return b.line
+            ast.Stmt.stmt_continue as c:
+                return c.line
+            ast.Stmt.stmt_pass as p:
+                return p.line
+            ast.Stmt.stmt_defer as d:
+                return d.line
+            ast.Stmt.stmt_unsafe as u:
+                return u.line
+            ast.Stmt.stmt_expression as e:
+                return e.line
+            ast.Stmt.stmt_static_assert as sa:
+                return sa.line
+            ast.Stmt.stmt_emit as em:
+                return em.line
+            ast.Stmt.stmt_when as w:
+                return w.line
+            ast.Stmt.stmt_parallel_block as pb:
+                return pb.line
+            ast.Stmt.stmt_gather as g:
+                return g.line
+            ast.Stmt.stmt_error as er:
+                return er.line
+            ast.Stmt.stmt_error_block as eb:
+                return eb.line
+            ast.Stmt.stmt_block:
+                return 0
+    return 0
+
+
+## The last line of a statement body (a block or one statement), 0 when absent.
+function body_last_line(body: ptr[ast.Stmt]?) -> ptr_uint:
+    let b = body else:
+        return 0
+    return statement_end_line(b)
+
+
+function statements_last_line(stmts: span[ast.Stmt]) -> ptr_uint:
+    var last: ptr_uint = 0
+    var si: ptr_uint = 0
+    while si < stmts.len:
+        unsafe:
+            last = max_u(last, statement_end_line(stmts.data + si))
+        si += 1
+    return last
+
+
+## The host's `expression_last_line`: the last line an expression occupies.
+function expr_last_line(e: ptr[ast.Expr]?) -> ptr_uint:
+    let ep = e else:
+        return 0
+    var line: ptr_uint = 0
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_member_access as ma:
+                line = expr_last_line(ma.receiver)
+            ast.Expr.expr_index_access as ix:
+                line = max_u(expr_last_line(ix.receiver), expr_last_line(ix.index))
+            ast.Expr.expr_specialization as sp:
+                line = expr_last_line(sp.callee)
+            ast.Expr.expr_call as cl:
+                line = expr_last_line(cl.callee)
+                var ai: ptr_uint = 0
+                while ai < cl.args.len:
+                    line = max_u(line, expr_last_line(read(cl.args.data + ai).arg_value))
+                    ai += 1
+            ast.Expr.expr_unary_op as u:
+                line = expr_last_line(u.operand)
+            ast.Expr.expr_binary_op as b:
+                line = max_u(expr_last_line(b.left), expr_last_line(b.right))
+            ast.Expr.expr_if as ife:
+                line = max_u(expr_last_line(ife.condition), expr_last_line(ife.then_expr))
+                line = max_u(line, expr_last_line(ife.else_expr))
+            ast.Expr.expr_match as me:
+                line = expr_last_line(me.scrutinee)
+                var mi: ptr_uint = 0
+                while mi < me.arms.len:
+                    let arm = read(me.arms.data + mi)
+                    line = max_u(line, expr_last_line(arm.pattern))
+                    line = max_u(line, expr_last_line(arm.value))
+                    mi += 1
+            ast.Expr.expr_await as aw:
+                line = expr_last_line(aw.expression)
+            ast.Expr.expr_format_string as fs:
+                var pi: ptr_uint = 0
+                while pi < fs.parts.len:
+                    match read(fs.parts.data + pi):
+                        ast.FormatStringPart.fmt_expr as fe:
+                            line = max_u(line, expr_last_line(fe.expression))
+                        _:
+                            pass
+                    pi += 1
+            ast.Expr.expr_prefix_cast as pc:
+                line = expr_last_line(pc.expression)
+            _:
+                pass
+    return line
+
+
+function max_u(a: ptr_uint, b: ptr_uint) -> ptr_uint:
+    return if b > a: b else: a
 
 
 ## Mark the start of a function body's refinement record: entries recorded
@@ -3697,10 +3898,12 @@ function record_flow_barrier(ctx: ref[Context], line: ptr_uint) -> void:
 ## greatest position at or before the cursor (bodies' line ranges are disjoint),
 ## and only that body's record span — from just after its barrier up to the next
 ## barrier — is scanned.  Within it, entries are read in recording order and the
-## last one at or before the position wins, so a post-statement snapshot
-## recorded at an earlier line still answers a later position (the same
-## carry-forward a documentHighlight entry shows).  None when the name has no
-## entry there, so the declaration's own type stands.
+## last one at or before the position wins (the host's
+## `latest_completion_snapshot` walks its snapshots in reverse with the position
+## as a filter), so a post-statement snapshot recorded at an earlier line still
+## answers a later position (the same carry-forward a documentHighlight entry
+## shows).  None when the name has no entry there, so the declaration's own
+## type stands.
 public function flow_type_at(analysis: ref[Analysis], name: str, line: ptr_uint, character: ptr_uint) -> Option[types.Type]:
     let at = line * 1000000 + character
     var body_start: ptr_uint = 0
@@ -3727,6 +3930,11 @@ public function flow_type_at(analysis: ref[Analysis], name: str, line: ptr_uint,
             if item.name.len == 0:
                 break
             if item.at <= at and item.name.equal(name):
+                # The *last record* at or before the cursor wins (the host's
+                # `latest_completion_snapshot` walks its snapshots in reverse),
+                # with the position only a filter: a statement's post-record is
+                # appended after its body's entries, so the recorded order — not
+                # the greatest position — decides which one answers.
                 best = item.ty
                 has_type = not item.cleared
                 found = true
