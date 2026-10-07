@@ -1528,6 +1528,41 @@ function test_assignment_literals_take_the_target_type() -> void:
     expect(not text.contains_substring("IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")"))
 
 
+@[test]
+function test_read_target_literals_take_the_pointee_type() -> void:
+    ## `read(p) = 0` is the deref lvalue: the value literal takes the
+    ## *pointee's* type (the host's `lower_contextual_expression` with the
+    ## target's type), so a `ptr_uint` element gets a `ptr_uint` literal —
+    ## `std/mem/heap.mt`'s `read(header - 1) = 0` (session 43, item 3l).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_readlit_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        function f(header: ptr[ptr_uint]) -> void:
+            unsafe:
+                read(header - 1) = 0
+                read(header - 2) = 7
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Unary :operator \"*\" :operand (IR::Binary :operator \"-\" :left (IR::Name :name \"header\""))
+    expect(text.contains_substring("IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(text.contains_substring("IR::IntegerLiteral :value 7 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(not text.contains_substring("IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\")"))
+
+
 # =============================================================================
 #  A `continue` in a plain `while` body lowers to a native `continue` (the
 #  host's `loop_exit_continue` kind) — no goto label, since the loop's

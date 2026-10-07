@@ -2963,13 +2963,15 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             pass
                 match is_read_call(target_expr):
                     Option.some as inner:
+                        let deref_ty = expr_type(ctx, target_expr)
                         let deref_target = lower_expr(ctx, inner.value)
-                        let target = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = deref_target, ty = expr_type(ctx, target_expr)))
+                        let target = alloc_expr(ir.Expr.expr_unary(operator = "*", operand = deref_target, ty = deref_ty))
                         let hoist_base = output.len()
                         let hoist_saved = begin_stmt_setup(ctx, HoistMode.hm_value)
-                        let value = lower_expr(ctx, asg.value)
+                        var value = lower_expr(ctx, asg.value)
                         let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                         emit_hoist_setup(output, hoist_base, hoist_collected)
+                        value = assignment_value_to_target_type(asg.value, deref_ty, value)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
                         append_hoist_cleanups(output, hoist_collected)
                         return
@@ -2987,18 +2989,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # type): `i = 1` / `i += 1` on a `ptr_uint` target emits a
                 # `ptr_uint` literal, not an `int` one.  Mirrors the local
                 # declaration arm's literal set.
-                unsafe:
-                    match read(asg.value):
-                        ast.Expr.expr_integer_literal:
-                            value = int_literal_to_context_type(asg.value, target_ty, value)
-                        ast.Expr.expr_float_literal:
-                            value = float_literal_to_context_type(asg.value, target_ty, value)
-                        ast.Expr.expr_string_literal:
-                            value = string_literal_to_context_type(asg.value, target_ty, value)
-                        ast.Expr.expr_null_literal:
-                            value = null_literal_to_context_type(asg.value, target_ty, value)
-                        _:
-                            pass
+                value = assignment_value_to_target_type(asg.value, target_ty, value)
                 # Native math compound assignment (`a += b`, `a *= 2.0`): the C
                 # aggregate structs have no operators, so expand component-wise
                 # and emit a plain assignment.
@@ -12569,6 +12560,27 @@ function null_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.
     if not is_nullable_pointer_like(context_ty) and not types.is_nullable_type(context_ty):
         return value
     return alloc_expr(ir.Expr.expr_null_literal(ty = context_ty))
+
+
+## Re-type a bare literal assignment value against its target's type — the
+## host's `lower_contextual_expression` with the target as the expected type.
+## Shared by the plain-target and `read(x) =` paths, so both emit e.g.
+## `ptr_uint` literals for a `ptr_uint` target (`read(header - 1) = 0`).
+function assignment_value_to_target_type(value_ast: ptr[ast.Expr], target_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    var result = value
+    unsafe:
+        match read(value_ast):
+            ast.Expr.expr_integer_literal:
+                result = int_literal_to_context_type(value_ast, target_ty, result)
+            ast.Expr.expr_float_literal:
+                result = float_literal_to_context_type(value_ast, target_ty, result)
+            ast.Expr.expr_string_literal:
+                result = string_literal_to_context_type(value_ast, target_ty, result)
+            ast.Expr.expr_null_literal:
+                result = null_literal_to_context_type(value_ast, target_ty, result)
+            _:
+                pass
+    return result
 
 
 ## Re-type an integer literal whose value fits `context_ty` (a numeric primitive)
