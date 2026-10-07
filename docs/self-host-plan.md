@@ -818,9 +818,21 @@ then items 7–9 — file by file.
     when a goto targets it.  Port the kind model (the self's
     `loop_break_label`/`loop_continue_label` need a native/label distinction,
     honoured by the `stmt_continue`/`stmt_break` arms and set by the
-    while/for/async-rewrite lowering).  Repro: `std/mem/heap.mt`'s `contains`
+    while/for/async-rewrite lowering).  **Do not flip the arms without the
+    switch-interposition half**: the host's native break/continue is sound only
+    because `switch_loop_target` (`utils.rb:734-744`) re-kinds the target as a
+    *label* whenever a `switch` is interposed — C's `break` inside a `switch`
+    would break the switch, not the loop, and the self's variant-match lowering
+    emits real `stmt_switch`es with no such tracking today (it always gotos,
+    which is why it is semantically correct but dump-different).  So the port
+    needs: the per-loop kind on the ctx, a "switch entered since the loop"
+    invalidation pushed by the match/switch lowering (the self's equivalent of
+    `switch_loop_flow`), and only then the native `ContinueStmt`/`BreakStmt`
+    emission for plain while/for loops.  Repro: `std/mem/heap.mt`'s `contains`
     (`let data = block.data else: i += 1; continue`), the dump pair at byte
-    ~16,212.
+    ~16,212 — the `continue` there is switch-free, so the first slice (kind +
+    while/for arms + invalidation) should move the 255 files' difference past
+    it; `continue`/`break` inside a match arm must stay a goto.
 3j. **The simple-path call's raw return type** (newly exposed by 3c; the raylib
     audio family ~100 files: `getenv`).  For `= c.getenv(name)` (a *simple*
     mapping) the host types the emitted call with the raw declaration's return
