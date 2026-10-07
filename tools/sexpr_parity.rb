@@ -22,6 +22,9 @@
 #   -I, --include D  extra module root for `lower` (repeatable)
 #   --timeout SEC    per self-host invocation timeout (default: 120)
 #   --mem-mb MB      virtual-memory cap for the self-host binary (0 = off)
+#   --host-cache DIR reuse the host's outputs cached under DIR (see the
+#                    "host-output cache" section below); the self side always
+#                    runs live
 #   --max-diffs N    differing files to detail  (default: 20)
 #   --keep           keep generated outputs and print their directory
 #   -q, --quiet      print only the summary
@@ -29,8 +32,10 @@
 #
 # Exit status: 0 when every comparable file matches, 1 otherwise.
 
+require "digest"
 require "etc"
 require "fileutils"
+require "json"
 require "open3"
 require "shellwords"
 require "stringio"
@@ -55,6 +60,7 @@ jobs = Etc.nprocessors
 includes = []
 timeout_s = 120
 mem_mb = 0
+host_cache_dir = nil
 max_diffs = 20
 keep = false
 quiet = false
@@ -68,6 +74,7 @@ until argv.empty?
   when "-I", "--include" then includes << argv.shift
   when "--timeout"  then timeout_s = argv.shift.to_i
   when "--mem-mb"   then mem_mb = argv.shift.to_i
+  when "--host-cache" then host_cache_dir = argv.shift
   when "--max-diffs" then max_diffs = argv.shift.to_i
   when "--keep"     then keep = true
   when "-q", "--quiet" then quiet = true
@@ -130,6 +137,268 @@ end
 
 require "milk_tea"
 
+# ── host-output cache ────────────────────────────────────────────────────────
+#
+# The host is deterministic but expensive (a Ruby process per lex/parse file, a
+# whole compile per lower), so --host-cache DIR reuses its outputs:
+#
+#   lex/parse  the key is the file's digest plus its inferred module name; the
+#              dump is a pure per-file read.
+#   lower      the key also folds in the digests of every module the host's own
+#              resolution reads for this file — the explicit imports
+#              transitively, plus the modules the loader's installers add
+#              (std.option/std.result, std.async for an `async fn main`).  The
+#              recorded import *names* are re-resolved through the host's own
+#              ModulePathResolver on every run (resolution only stats files),
+#              so a module appearing at an earlier root still wins and a moved
+#              resolution misses.
+#
+# The self side always runs live — it is the thing under test.  A file whose
+# closure does not resolve/read, and any nonzero host exit, is never cached:
+# a stale entry must not answer where the host would do something else.  A
+# change to the host's own sources (lib/**, bin/mtc) wipes the cache.  The
+# full-corpus cache is large (~1.5 GB — the lower dumps dominate) but lives
+# under a disposable tmp/ path.
+class HostOutputCache
+  # Bump when the key scheme changes, so entries from an older scheme cannot
+  # be read under a coincidentally equal key.
+  CACHE_FORMAT = "1"
+
+  def initialize(dir)
+    @dir = File.expand_path(dir)
+    @entries = File.join(@dir, "entries")
+    FileUtils.mkdir_p(@entries)
+    revision = "#{CACHE_FORMAT}:#{self.class.host_revision}"
+    stamp = File.join(@dir, "host-rev")
+    if File.exist?(stamp) && File.read(stamp).strip == revision
+      @graph = load_graph
+    else
+      FileUtils.rm_rf(@entries)
+      FileUtils.mkdir_p(@entries)
+      File.write(stamp, revision)
+      @graph = {}
+    end
+    @digests = {}
+    @hits = 0
+    @misses = 0
+    @uncacheable = 0
+    @stored = 0
+    @graph_dirty = false
+  end
+
+  def self.host_revision
+    Dir.glob([File.join(ROOT, "lib/**/*.rb"), File.join(ROOT, "bin/mtc")])
+       .map { |f| File.mtime(f).to_i }.max.to_s
+  end
+
+  def load_graph
+    raw = JSON.parse(File.read(File.join(@dir, "graph.json")))
+    raw.is_a?(Hash) ? raw : {}
+  rescue StandardError
+    {}
+  end
+
+  def save
+    return unless @graph_dirty
+
+    path = File.join(@dir, "graph.json")
+    tmp = "#{path}.tmp"
+    File.write(tmp, JSON.generate(@graph))
+    File.rename(tmp, path)
+  end
+
+  def report
+    "host-cache #{@dir}: #{@hits} hits / #{@misses} misses / " \
+      "#{@uncacheable} uncacheable / #{@stored} stored"
+  end
+
+  # The cache key for one (mode, file): nil when the file cannot be cached
+  # (unreadable, or a lower closure that does not resolve).
+  def key_for(mode, file, includes)
+    effective = effective_source_path(file) or return nil
+    digest = digest_of(effective) or return nil
+    roots = host_roots(file, includes) or return nil
+    module_name = inferred_module_name(effective, roots) or return nil
+    if mode == "lower"
+      closure = closure_entries(effective, roots) or return nil
+      material = ["lower", relative_path(File.expand_path(file)), digest, module_name,
+                  roots.join("\0"), includes.join("\0"),
+                  closure.map { |path, hash| "#{path}\0#{hash}" }.join("\0")]
+    else
+      material = [mode, relative_path(File.expand_path(file)), digest, module_name]
+    end
+    Digest::SHA256.hexdigest(material.join("\0"))
+  rescue StandardError
+    nil
+  end
+
+  # Copy a cached host result into the run's host dir; false on a miss.
+  def prefill(key, host_dir, idx)
+    return false unless key
+
+    base = File.join(@entries, key)
+    return false unless File.exist?("#{base}.out")
+
+    File.binwrite(File.join(host_dir, "#{idx}.out"), File.binread("#{base}.out"))
+    File.binwrite(File.join(host_dir, "#{idx}.err"), File.binread("#{base}.err"))
+    File.write(File.join(host_dir, "#{idx}.rc"), File.read("#{base}.rc"))
+    @hits += 1
+    true
+  end
+
+  def miss(key)
+    if key
+      @misses += 1
+    else
+      @uncacheable += 1
+    end
+  end
+
+  # Cache one successful host run (rc == 0) from the run's host dir.
+  def store(key, host_dir, idx)
+    base = File.join(@entries, key)
+    FileUtils.cp(File.join(host_dir, "#{idx}.out"), "#{base}.out")
+    FileUtils.cp(File.join(host_dir, "#{idx}.err"), "#{base}.err")
+    FileUtils.cp(File.join(host_dir, "#{idx}.rc"), "#{base}.rc")
+    @stored += 1
+  end
+
+  private
+
+  def digest_of(path)
+    expanded = File.expand_path(path)
+    @digests[expanded] ||= Digest::SHA256.file(expanded).hexdigest
+  rescue StandardError
+    nil
+  end
+
+  # The file the host actually reads: a platform variant wins over the base
+  # name (`foo.mt` → `foo.linux.mt` when it exists), exactly as the CLI's
+  # `resolve_source_path` does for the requested path.
+  def effective_source_path(file)
+    MilkTea::ModuleLoader.resolve_source_path(
+      File.expand_path(file), platform: MilkTea::ModuleLoader.default_host_platform
+    )
+  rescue StandardError
+    nil
+  end
+
+  def relative_path(path)
+    prefix = "#{ROOT}/"
+    path.start_with?(prefix) ? path.delete_prefix(prefix) : path
+  end
+
+  def inferred_module_name(path, roots)
+    MilkTea::ModuleLoader.new(module_roots: roots).inferred_module_name_for_path(path)
+  rescue StandardError
+    nil
+  end
+
+  # The host CLI's `module_roots_for`: -I roots first, then the path's own.
+  def host_roots(file, includes)
+    roots = includes.dup
+    MilkTea::ModuleRoots.roots_for_path(file).each do |root|
+      roots << root unless roots.include?(root)
+    end
+    roots.map { |root| File.expand_path(root.to_s) }.uniq
+  rescue StandardError
+    nil
+  end
+
+  # Every module the host's resolution reads for `file` under `roots`, as
+  # [relative path, digest] pairs (the file itself included), or nil when one
+  # of them cannot be read or resolved.
+  def closure_entries(file, roots)
+    resolver = MilkTea::ModulePathResolver.new(
+      module_roots: roots, platform: MilkTea::ModuleLoader.default_host_platform,
+      package_graph: nil, source_overrides: nil, package_manifest_cache: {}
+    )
+    seen = {}
+    out = []
+    stack = [File.expand_path(file)]
+    until stack.empty?
+      path = stack.pop
+      next if seen[path]
+
+      seen[path] = true
+      digest = digest_of(path) or return nil
+      out << [relative_path(path), digest]
+      deps = deps_for(path, resolver) or return nil
+      deps.each { |dep| stack << dep }
+    end
+    out.sort
+  end
+
+  # The host's resolved inputs for one module: its explicit imports plus the
+  # loader installers' implicit modules.  The parse facts are kept in the graph
+  # keyed by digest; the resolution itself re-runs every time, so a module that
+  # appeared at an earlier root since the last run still wins.
+  def deps_for(path, resolver)
+    digest = digest_of(path) or return nil
+    entry = @graph[path]
+    if entry.nil? || entry["digest"] != digest
+      entry = parse_entry(path, digest) or return nil
+      @graph[path] = entry
+      @graph_dirty = true
+    end
+    deps = []
+    entry["imports"].each do |name|
+      dep = resolve_path(resolver, name, importer_path: path, importer_module_name: entry["module_name"])
+      return nil unless dep
+
+      deps << dep
+    end
+    entry["implicit"].each do |name|
+      dep = resolve_path(resolver, name, importer_path: path)
+      return nil unless dep
+
+      deps << dep
+    end
+    deps
+  end
+
+  def parse_entry(path, digest)
+    ast = MilkTea::ModuleLoader.load_file(path)
+    {
+      "digest" => digest,
+      "imports" => ast.imports.map { |import| import.path.to_s },
+      "implicit" => implicit_module_names(ast),
+      "module_name" => ast.module_name.to_s,
+    }
+  rescue StandardError
+    nil
+  end
+
+  def resolve_path(resolver, name, importer_path:, importer_module_name: nil)
+    resolved = resolver.resolve_module_path(name, importer_path: importer_path,
+                                                  importer_module_name: importer_module_name)
+    File.expand_path(resolved)
+  rescue StandardError
+    nil
+  end
+
+  # What the loader's installers add on top of the explicit imports, asked of
+  # the host's own objects so the rule cannot drift.
+  def implicit_module_names(ast)
+    names = []
+    module_name = ast.module_name.to_s
+    unless MilkTea::PreludeInstaller::PRELUDE_MODULE_PATHS.include?(module_name)
+      names.concat(MilkTea::PreludeInstaller::PRELUDE_MODULE_PATHS)
+    end
+    recorder = MilkTea::AsyncRuntimeInstaller.new(
+      resolve_module_path: lambda { |name, importer_path: nil|
+        names << name
+        nil
+      },
+      check_block: ->(*) {}, bind_block: ->(*) {}
+    )
+    recorder.install_async_runtime_dependency!(ast, {})
+    names
+  end
+end
+
+cache = host_cache_dir ? HostOutputCache.new(host_cache_dir) : nil
+
 unless quiet
   puts "host: ruby #{RUBY_VERSION} (milk_tea #{MilkTea::VERSION})"
   puts "self: #{self_bin} (built #{File.mtime(self_bin).strftime('%Y-%m-%d %H:%M')})"
@@ -168,7 +437,7 @@ end
 
 # ── worker ───────────────────────────────────────────────────────────────────
 
-def run_workers(mode, jobs, files, host_dir, self_dir, self_bin, includes, timeout_s, mem_mb)
+def run_workers(mode, jobs, files, host_dir, self_dir, self_bin, includes, timeout_s, mem_mb, prefilled)
   jobs = files.length if jobs > files.length
   pids = (0...jobs).map do |worker|
     fork do
@@ -176,10 +445,12 @@ def run_workers(mode, jobs, files, host_dir, self_dir, self_bin, includes, timeo
       while idx < files.length
         file = files[idx]
         begin
-          out, herr, rc = run_host(mode, file, includes)
-          File.binwrite(File.join(host_dir, "#{idx}.out"), out)
-          File.write(File.join(host_dir, "#{idx}.err"), herr)
-          File.write(File.join(host_dir, "#{idx}.rc"), rc.to_s)
+          unless prefilled[idx]
+            out, herr, rc = run_host(mode, file, includes)
+            File.binwrite(File.join(host_dir, "#{idx}.out"), out)
+            File.write(File.join(host_dir, "#{idx}.err"), herr)
+            File.write(File.join(host_dir, "#{idx}.rc"), rc.to_s)
+          end
 
           sout, serr, src = run_self(self_bin, mode, file, includes, timeout_s, mem_mb)
           File.binwrite(File.join(self_dir, "#{idx}.out"), sout)
@@ -227,9 +498,29 @@ modes.each do |mode|
   FileUtils.mkdir_p(host_dir)
   FileUtils.mkdir_p(self_dir)
 
+  keys = Array.new(files.length)
+  prefilled = Array.new(files.length, false)
+  if cache
+    files.each_with_index do |file, idx|
+      keys[idx] = cache.key_for(mode, file, includes)
+      prefilled[idx] = cache.prefill(keys[idx], host_dir, idx)
+      cache.miss(keys[idx]) unless prefilled[idx]
+    end
+  end
+
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  run_workers(mode, jobs, files, host_dir, self_dir, self_bin, includes, timeout_s, mem_mb)
+  run_workers(mode, jobs, files, host_dir, self_dir, self_bin, includes, timeout_s, mem_mb, prefilled)
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+  if cache
+    files.each_with_index do |_file, idx|
+      key = keys[idx]
+      next if key.nil? || prefilled[idx]
+      next unless read_int(File.join(host_dir, "#{idx}.rc")) == 0
+
+      cache.store(key, host_dir, idx)
+    end
+  end
 
   match = 0
   differ = []
@@ -292,5 +583,9 @@ modes.each do |mode|
   FileUtils.rm_rf(File.dirname(host_dir)) unless keep
 end
 
+if cache
+  cache.save
+  puts cache.report
+end
 puts "kept outputs under tmp/sexpr-parity/" if keep
 exit(overall_ok ? 0 : 1)

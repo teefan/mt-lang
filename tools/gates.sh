@@ -124,7 +124,7 @@ gate_label() {
         test_mt)        echo "test/mt under stage2 (60 files / 0 failed)" ;;
         sexpr_lex)      echo "sexpr lex parity (705/705)" ;;
         sexpr_parse)    echo "sexpr parse parity (701 comparable / 0 differ)" ;;
-        sexpr_lower)    echo "sexpr lower parity (meter, ~3 min)" ;;
+        sexpr_lower)    echo "sexpr lower parity (meter, ~1 min warm / ~4 min cold host cache)" ;;
         cli_parity)     echo "CLI parity (meter, expected 24/37/0)" ;;
         scoreboard)     echo "parity scoreboard (meter)" ;;
         format)         echo "formatter parity all modes (702/702)" ;;
@@ -150,9 +150,9 @@ gate_cmd() {
         dev_tests)     echo "tmp/mtc-dev test projects/mtc -I . --timeout 120" ;;
         bootstrap)     echo "tools/bootstrap.sh -j 16" ;;
         test_mt)       echo "build/stage2/mtc test test/mt -I ." ;;
-        sexpr_lex)     echo "ruby tools/sexpr_parity.rb lex -q" ;;
-        sexpr_parse)   echo "ruby tools/sexpr_parity.rb parse -q" ;;
-        sexpr_lower)   echo "ruby tools/sexpr_parity.rb lower -q -j 16" ;;
+        sexpr_lex)     echo "ruby tools/sexpr_parity.rb lex -q --host-cache tmp/sexpr-host-cache" ;;
+        sexpr_parse)   echo "ruby tools/sexpr_parity.rb parse -q --host-cache tmp/sexpr-host-cache" ;;
+        sexpr_lower)   echo "ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache" ;;
         cli_parity)    echo "ruby tools/cli_parity.rb -q" ;;
         scoreboard)    echo "rake parity:scoreboard" ;;
         format)        echo "ruby tools/format_parity.rb all -j 16" ;;

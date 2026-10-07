@@ -94,7 +94,9 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     (`ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev`, ~50 s), run
     `tmp/mtc-dev test projects/mtc -I . --timeout 120`, and measure **only the class you
     touched** — a focused `ruby tools/lint_parity.rb -q <paths>`, one file's host-vs-self
-    lint diff, `tmp/diag_probe.rb`, `ruby tools/sexpr_parity.rb lex|parse -q`.
+    lint diff, `tmp/diag_probe.rb`, `ruby tools/sexpr_parity.rb lex|parse -q
+    --host-cache tmp/sexpr-host-cache` (the cache reuses the host's outputs per
+    file / resolved import-closure digest; the self always runs live).
     Do not run the corpus-wide sweep or the audit as the iteration loop.
   - **Tier 2 — once per commit, on frozen sources, backgrounded**:
     `tools/bootstrap.sh -j 16` (fixed point + 14/14 self-tests) and
@@ -106,7 +108,9 @@ self-hosted compiler, and matching the host everywhere is the program's goal.
     record|compare` (30/30 + the 4 documented entries),
     `tools/lsp_recovery_probe.rb --check`, `tools/lsp_project_audit.rb --workspace DIR`
     (drift ±10 — compare differing *sets*), valgrind on an LSP drive + the Neovim smoke;
-    lowering/C backend: `ruby tools/sexpr_parity.rb lower -q -j 16` plus the example
+    lowering/C backend: `ruby tools/sexpr_parity.rb lower -q -j 16
+    --host-cache tmp/sexpr-host-cache` (~1 min warm vs ~4 min cold; the self
+    side is measured live) plus the example
     sweeps (`examples/*.mt` 15/15, `examples/sdl3` 34/34, a raylib sample).
   - **Do not replay a baseline a previous session verified at the same commit.**  The
     ledger records the last verified numbers per commit; a new session re-measures only

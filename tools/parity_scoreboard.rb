@@ -65,7 +65,8 @@ end
 
 %w[lex parse].each do |mode|
   section(mode) do
-    out, = run("ruby", "tools/sexpr_parity.rb", mode, "-q", "-j", "16")
+    out, = run("ruby", "tools/sexpr_parity.rb", mode, "-q", "-j", "16",
+               "--host-cache", "tmp/sexpr-host-cache")
     m = out.match(/mode=\S+\s+files=(\d+)\s+match=(\d+)\s+differ=(\d+)\s+hostfail=(\d+)\s+selffail=(\d+)/)
     raise "no #{mode} summary" unless m
 
@@ -104,7 +105,8 @@ end
 
 if options[:full]
   section("lower") do
-    out, = run("ruby", "tools/sexpr_parity.rb", "lower", "-q", "-j", "16")
+    out, = run("ruby", "tools/sexpr_parity.rb", "lower", "-q", "-j", "16",
+               "--host-cache", "tmp/sexpr-host-cache")
     m = out.match(/files=(\d+)\s+match=(\d+)\s+differ=(\d+)\s+hostfail=(\d+)\s+selffail=(\d+)/)
     raise "no lower summary" unless m
 

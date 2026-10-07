@@ -267,7 +267,7 @@ namespace :tools do
 end
 
 namespace :sexpr do
-  desc 'Compare self-host vs Ruby host --sexpr output (args: mode, target; env: SELF, JOBS, QUIET)'
+  desc 'Compare self-host vs Ruby host --sexpr output (args: mode, target; env: SELF, JOBS, QUIET, HOST_CACHE)'
   task :parity, [:mode, :target] do |_t, args|
     mode = args[:mode] || ENV['MODE'] || 'all'
     cmd = ['ruby', 'tools/sexpr_parity.rb', mode]
@@ -276,6 +276,7 @@ namespace :sexpr do
     cmd.concat(['--self', ENV['SELF']]) if ENV['SELF']
     cmd.concat(['--jobs', ENV['JOBS']]) if ENV['JOBS']
     cmd << '--quiet' if ENV['QUIET']
+    cmd.concat(['--host-cache', ENV['HOST_CACHE']]) if ENV['HOST_CACHE']
     sh(*cmd)
   end
 end

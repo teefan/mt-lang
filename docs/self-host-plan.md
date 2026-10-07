@@ -131,7 +131,11 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 41 (2026-10-06) — **`lower` Track 3: the
+Last updated: session 42 (2026-10-07) — **the `sexpr_parity` host-output cache**
+(a tools change: `--host-cache` reuses the host's outputs per file / resolved
+import-closure digest, the self always runs live; every counter unchanged — the
+717-file lower sweep reads 55/611/51/0 cold and warm, warm in 58 s vs 4m04s).
+Session 41 had landed **`lower` Track 3: the
 statement-position hoisting channel** (the census's largest bucket, the
 foreign-call shape): a statement-lowered foreign call (a `str as cstr` argument
 needs a `mt_foreign_str_to_cstr_temp`) hoists its setup into the statement
@@ -319,7 +323,7 @@ for the area you are touching:
 | LSP completion parity (**closed in session 27** — 2 documented entries) | the program's Track 1 + §0k's part-1/2/3 and "The request boundary" records | `tools/lsp_project_audit.rb --workspace DIR` (its member-completion pass); `tmp/hl_probe.rb --method textDocument/completion` (`--warm` first for the host) |
 | LSP feature parity / audit residue | the program's LSP track + §0k; `docs/lsp-design.md` (esp. §8 differences), `docs/lsp-performance.md` | `tools/lsp_parity.rb` (`record --server host\|self`, `compare`, `--stress`), `tools/lsp_project_audit.rb --workspace DIR` (per-file, every position, both servers live; add `--canonical` to pin the warm-up history when verifying), `tools/lsp_soak.rb` (RSS slope), plus valgrind and the headless-Neovim smoke for behavior changes |
 | Linter corpus residue | the program's linter track + §0k's sessions 19–23 | `ruby tools/lint_parity.rb -q` (609 files; `--host-cache FILE` makes re-runs ~20 s), `rake "parity:scoreboard"` |
-| `lower` dump parity | the program's `lower` track, §0j's records, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16` (~3 min; quote the set) |
+| `lower` dump parity | the program's `lower` track, §0j's records, `docs/language-design.md` for semantics | `ruby tools/sexpr_parity.rb lower -j 16 --host-cache tmp/sexpr-host-cache` (~1 min warm / ~4 min cold; quote the set) |
 | Example / vendored-family builds (no known failures since 2026-09-27) | §0j's 2026-09-27 section | the 15 top-level examples, `find examples/sdl3 -name '*.mt'`, a raylib sample |
 | CLI behavior parity | the program's CLI track, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
 | Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (all modes must stay byte-identical — 712/712, file counts drift) |
@@ -335,7 +339,10 @@ number looks surprising).  Iterate on the dev compiler
 `tmp/mtc-dev test projects/mtc -I .`) with a *focused* meter — a single file's
 host-vs-self lint/check diff, `tmp/diag_probe.rb`, `ruby tools/lint_parity.rb -q
 <paths>`, `ruby tools/sexpr_parity.rb lex|parse -q` — and save the wide sweeps
-for the commit.
+for the commit.  The sexpr sweeps take `--host-cache tmp/sexpr-host-cache`
+(session 42): the host's outputs are reused per (file, resolved import closure)
+digest and only the self re-runs live — the repo-wide `lower` sweep drops from
+~4 min to ~1 min warm.
 
 **Once per commit, on frozen sources**, run the tier-2 proofs: `tools/bootstrap.sh
 -j 16` (fixed point + compiler self-test — several changes that looked correct at
@@ -596,7 +603,8 @@ Records: §0k sessions 19–23; session 28.
 ### Track 3 — Compiler `lower` dump parity
 
 Work in the ranked order below; after **each** item re-run
-`ruby tools/sexpr_parity.rb lower -q -j 16` and re-rank.  Current set:
+`ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
+and re-rank — session 42's host cache makes the repeat measurement cheap.  Current set:
 **55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files**
 (session 41 close; the count drifts with the tree's own sources and the tmp
 fixtures — quote the set).
@@ -1485,8 +1493,8 @@ definition of done above.
 | bootstrap fixed point | holds (2026-10-05 session 38 part 2 — `stage2.c == stage3.c`); self-test suite 19 files / 0 failed (session 34's `debug_map_test.mt` and session 38's `heap_region_test.mt` included) | stay green | `tools/bootstrap.sh -j 16` |
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
-| `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1508,6 +1516,50 @@ fixtures, the audit's ±10 between runs, the lint corpus with tmp files).
 ---
 
 ## 0k. 2026-09-25/26 session — LSP parity harness + gap closure
+
+### Session 42 (2026-10-07) — the `sexpr_parity` host-output cache (tools)
+
+Goal: stop re-running the host across the whole corpus on every sweep.  The host
+is deterministic but expensive — one Ruby process per lex/parse file, a whole
+compile per `lower` (measured: `std/color.mt` 1.10 s, `examples/raylib/core/
+3d_camera_fps.mt` 1.93 s, `mtc/lowering/lowering.mt` 17.9 s on the host vs
+0.007 / 0.068 / 2.5 s on the self) — so `tools/sexpr_parity.rb` gained
+**`--host-cache DIR`** (the gates pass `tmp/sexpr-host-cache`); the self always
+runs live, because it is the thing under test.
+
+- **The key.**  `lex`/`parse`: the effective source's digest + inferred module
+  name (their dumps are pure per-file reads).  `lower`: those plus the digests
+  of every module the host's own resolution reads — the explicit imports
+  transitively, plus the loader installers' implicit modules (`std.option`/
+  `std.result`, and `std.async` for a module declaring an `async fn main`, both
+  asked of the host's own `PreludeInstaller`/`AsyncRuntimeInstaller` objects so
+  the rule cannot drift).  The recorded import *names* are re-resolved through
+  the host's `ModulePathResolver` on every run — resolution only stats files —
+  so a module appearing at an earlier root still wins and a moved resolution
+  misses; the effective path applies the CLI's platform substitution
+  (`foo.mt` → `foo.linux.mt`, `projects/tetris/src/platform_info.mt`).
+- **Safety.**  Only `rc == 0` runs are stored; a file whose closure does not
+  resolve/read is never cached; `lib/**`/`bin/mtc` changes wipe the cache via a
+  revision stamp, and `CACHE_FORMAT` guards the key scheme.  A stale entry is
+  therefore only possible if the host's resolution reads something the walk
+  does not — and any resolution failure bypasses the cache entirely.
+- **Measured** (717-file corpus, `-j 16`, `--self tmp/mtc-dev`): cold 4m04s →
+  warm **58 s** (lex 3.6 → 0.9 s, parse 7.2 → 0.8 s, lower 210.8 → 48.9 s;
+  2092 hits / 47 misses / 12 uncacheable / re-storing 0), with **every counter
+  unchanged**: lex 717/717, parse 713 match / 4 host-rejected / 0 differ, lower
+  55 match / 611 differ / 51 host-rejected / 0 self-rejected — the ledger's set,
+  re-read cold and warm.  Through the gates themselves (`build/stage2/mtc`,
+  `tools/gates.sh --areas codegen --only sexpr_lower --run`): the same
+  55/611/51/0 at **217.9 s cold / 44.3 s warm**; lex 3.4 s / parse 7.3 s cold.
+- **Locked by** fixture checks: cold→warm→edit-an-import→re-run (the edit
+  misses and re-runs; the two stored dumps differ), a module appearing at an
+  earlier `-I` root (misses by re-resolution), an `-I` change (misses), and an
+  unresolved import (stays uncacheable, no entry, across runs).
+- Tools-only change: no parity counter moved.  `tools/gates.sh`'s
+  `sexpr_lex`/`sexpr_parse`/`sexpr_lower` pass the cache, as do the
+  scoreboard's lex/parse/lower sections and `rake sexpr:parity` (via
+  `HOST_CACHE`).  The full-corpus cache is **~1.5 GB** under `tmp/` — the
+  `lower` dumps dominate; it is disposable (`rm -rf tmp/sexpr-host-cache`).
 
 ### Session 41 (2026-10-06) — `lower` Track 3: the statement-position hoisting channel (foreign-call shapes)
 
@@ -8838,9 +8890,12 @@ newest self-host source):
 ```sh
 ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o build/stage2/mtc
 
-ruby tools/sexpr_parity.rb lex   -q            # repo-wide, ~4s
-ruby tools/sexpr_parity.rb parse -q            # repo-wide, ~7s
-ruby tools/sexpr_parity.rb lower -q            # repo-wide, ~3min (nproc jobs)
+# --host-cache reuses the host's outputs (session 42): lex/parse per file
+# digest, lower per (file, resolved import closure) digest; the self always
+# runs live, so every counter still measures it.  Warm ~1 min, cold ~4 min.
+ruby tools/sexpr_parity.rb lex   -q --host-cache tmp/sexpr-host-cache   # repo-wide, ~1s warm
+ruby tools/sexpr_parity.rb parse -q --host-cache tmp/sexpr-host-cache   # repo-wide, ~1s warm
+ruby tools/sexpr_parity.rb lower -q --host-cache tmp/sexpr-host-cache   # ~1min warm / ~3min cold
 ruby tools/sexpr_parity.rb all examples/*.mt   # lex+parse+lower on a subset
 rake "sexpr:parity[lex]"                       # same via Rake
 ```
