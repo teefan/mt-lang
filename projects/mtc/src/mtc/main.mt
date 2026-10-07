@@ -1270,7 +1270,7 @@ function lower_command(args: span[str]) -> int:
 
     let ir_program = lowering.lower(program)
     if sexpr:
-        var dumped = sexpr_mod.dump_ir(ir_program)
+        var dumped = sexpr_mod.dump_ir_with_analyses(ir_program, program.analyses.as_span())
         defer: dumped.release()
         stdio.print_format(c"%.*s\n", int<-(dumped.as_str().len), dumped.as_str().data)
         entry_path_owner.release()

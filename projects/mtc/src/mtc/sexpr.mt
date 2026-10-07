@@ -14,6 +14,7 @@ import mtc.lexer.token_kinds as tk
 import mtc.parser.ast as ast
 import mtc.parser.literal_parsing as lparse
 import mtc.ir as ir
+import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.c_naming as naming
 
@@ -314,14 +315,19 @@ public function dump_tokens(tokens: span[token_mod.Token], source: str) -> strin
 # =============================================================================
 
 ## Serialization context: the root module name (for generic-type fallback) and
-## the declared type names (so named types classify as Struct/Union/Enum/Variant
-## like the host's type classes).
+## the declared type names (so named types classify as Struct/Union/Enum/Flags/
+## Variant like the host's type classes).  `type_kinds` additionally maps a
+## *module-qualified* declared name (`raw.Color`) to its class, which the
+## per-module analyses supply — an imported type whose declaration is not in the
+## IR (a raw module's enum/flags/union/variant/opaque) still classifies right.
 public struct SexprCtx:
     module_name: str
     struct_names: map_mod.Map[str, bool]
     union_names: map_mod.Map[str, bool]
     enum_names: map_mod.Map[str, bool]
+    flags_names: map_mod.Map[str, bool]
     variant_names: map_mod.Map[str, bool]
+    type_kinds: map_mod.Map[str, str]
 
 
 public function new_sexpr_ctx(module_name: str) -> SexprCtx:
@@ -330,7 +336,9 @@ public function new_sexpr_ctx(module_name: str) -> SexprCtx:
         struct_names = map_mod.Map[str, bool].create(),
         union_names = map_mod.Map[str, bool].create(),
         enum_names = map_mod.Map[str, bool].create(),
+        flags_names = map_mod.Map[str, bool].create(),
         variant_names = map_mod.Map[str, bool].create(),
+        type_kinds = map_mod.Map[str, str].create(),
     )
 
 
@@ -415,11 +423,25 @@ function field_path(path: str) -> SexprField:
 function named_type_class(ctx: ref[SexprCtx], name: str) -> str:
     if ctx.variant_names.contains(name):
         return "Variant"
+    if ctx.flags_names.contains(name):
+        return "Flags"
     if ctx.enum_names.contains(name):
         return "Enum"
     if ctx.union_names.contains(name):
         return "Union"
     return "Struct"
+
+
+## The host's class for an imported nominal type: the module-qualified kind the
+## loaded modules' analyses registered (`raw.Color` → `Enum`), else the bare
+## declared-name sets, else `Struct`.  The qualified lookup is what makes a raw
+## (`external`) module's enum/flags/opaque render their own class — the IR holds
+## no declaration for them (session 43, item 3g).
+function imported_type_class(ctx: ref[SexprCtx], module_name: str, name: str) -> str:
+    let kind = ctx.type_kinds.get(j2(module_name, j2(".", name)))
+    if kind != null:
+        return unsafe: read(kind)
+    return named_type_class(ctx, name)
 
 
 ## Render a function/proc parameter list as the host's `Types::Parameter` nodes
@@ -489,6 +511,11 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             var nf = vec.Vec[SexprField].create()
             nf.push(field_str("name", n.name))
             nf.push(field_str("module_name", n.module_name))
+            # A module-qualified named type classifies through the qualified
+            # kind map like an imported one (`std.c.box2d.b2HexColor` is the raw
+            # module's enum, and no IR declaration carries it).
+            if n.module_name.len > 0:
+                return node(j2("Types::", imported_type_class(ctx, n.module_name, n.name)), nf.as_span())
             return node(j2("Types::", named_type_class(ctx, n.name)), nf.as_span())
         types.Type.ty_variant_arm_payload as ap:
             # The host tags the payload distinctly but renders its fields through
@@ -506,7 +533,7 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             if im.args.len > 0:
                 let cls = if im.name == "Option" or im.name == "Result": "VariantInstance" else: "StructInstance"
                 return node(j2("Types::", cls), imf.as_span())
-            return node(j2("Types::", named_type_class(ctx, im.name)), imf.as_span())
+            return node(j2("Types::", imported_type_class(ctx, im.module_name, im.name)), imf.as_span())
         types.Type.ty_generic as g:
             if g.name == "Option" or g.name == "Result":
                 var vf = vec.Vec[SexprField].create()
@@ -958,7 +985,54 @@ function ir_params_value(ctx: ref[SexprCtx], params: span[ir.Param]) -> SexprVal
     return list_value(items_out.as_span())
 
 
+## Register one module's declared types into the context's qualified kind map:
+## `<module>.<name>` → the host's class.  A raw (`external`) module carries no
+## IR declarations, so this is the only source that can classify its enums,
+## flags, unions, variants and opaques (session 43, item 3g).
+function register_decl_kinds(ctx: ref[SexprCtx], a: analyzer.Analysis) -> void:
+    var di: ptr_uint = 0
+    while di < a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(a.source_file.declarations.data + di)
+        var name = ""
+        var kind = ""
+        match d:
+            ast.Decl.decl_struct as s:
+                name = s.name
+                kind = "Struct"
+            ast.Decl.decl_union as u:
+                name = u.name
+                kind = "Union"
+            ast.Decl.decl_enum as e:
+                name = e.name
+                kind = "Enum"
+            ast.Decl.decl_flags as fl:
+                name = fl.name
+                kind = "Flags"
+            ast.Decl.decl_variant as vr:
+                name = vr.name
+                kind = "Variant"
+            ast.Decl.decl_opaque as op:
+                name = op.name
+                kind = "Opaque"
+            _:
+                pass
+        if name.len > 0:
+            let _prev = ctx.type_kinds.set(j2(j2(a.module_name, "."), name), kind)
+        di += 1
+
+
 public function dump_ir(program: ir.Program) -> string.String:
+    return dump_ir_with_analyses(program, span[analyzer.Analysis]())
+
+
+## Dump the IR, consulting the loaded modules' analyses for the *declaration
+## kinds* of imported types.  The IR carries no declaration for a raw
+## (`external`) module's enum/flags/union/variant/opaque, so without the
+## analyses a raw enum renders `Types::Struct` where the host renders
+## `Types::Enum`/`Types::Flags`/`Types::Opaque` (session 43, item 3g).
+public function dump_ir_with_analyses(program: ir.Program, analyses: span[analyzer.Analysis]) -> string.String:
     var ctx = new_sexpr_ctx(program.module_name)
     var si: ptr_uint = 0
     while si < program.structs.len:
@@ -970,12 +1044,25 @@ public function dump_ir(program: ir.Program) -> string.String:
         ui += 1
     var ei: ptr_uint = 0
     while ei < program.enums.len:
-        ctx.enum_names.set(unsafe: read(program.enums.data + ei).name, true)
+        # A flags declaration is an IR enum decl with `is_flags`: classify it
+        # `Types::Flags` (the host's class), not `Types::Enum`.
+        let en = unsafe: read(program.enums.data + ei)
+        if en.is_flags:
+            ctx.flags_names.set(en.name, true)
+        else:
+            ctx.enum_names.set(en.name, true)
         ei += 1
     var vi: ptr_uint = 0
     while vi < program.variants.len:
         ctx.variant_names.set(unsafe: read(program.variants.data + vi).name, true)
         vi += 1
+    var ai: ptr_uint = 0
+    while ai < analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(analyses.data + ai)
+        register_decl_kinds(ref_of(ctx), a)
+        ai += 1
 
     var fields = vec.Vec[SexprField].create()
     fields.push(field_str("module_name", program.module_name))

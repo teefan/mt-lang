@@ -1720,3 +1720,59 @@ function test_break_in_a_plain_while_is_native() -> void:
     ## The switch arm's break keeps the labeled goto — the invalidation.
     expect(switch_text.contains_substring("goto __mt_loop_break"))
     expect(switch_text.contains_substring("label __mt_loop_break"))
+
+
+@[test]
+function test_raw_module_declaration_kinds_render_in_the_dump() -> void:
+    ## A raw (`external`) module's enum/flags/opaque declarations are not in the
+    ## IR (the module emits only includes), so the dumper classifies an imported
+    ## nominal through the loaded modules' analyses: `c.Color` renders
+    ## `Types::Enum`, `c.CameraProjection` `Types::Flags` and `c.Handle`
+    ## `Types::Opaque` — where a bare fallback would say `Types::Struct`
+    ## (session 43, item 3g).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_kinds_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_source = <<-SRC
+        external
+
+        flags CameraProjection: int
+            CAMERA_PERSPECTIVE = 0
+
+        enum Color: int
+            red = 1
+
+        opaque Handle
+
+        external function draw(color: Color) -> void
+    SRC
+    if not write_source_file(root.as_str(), "raw.mt", raw_source):
+        return
+
+    var source = <<-SRC
+        import raw as c
+
+        public type MyColor = c.Color
+
+        function f(x: MyColor, h: c.Handle) -> int:
+            let cam = c.CameraProjection.CAMERA_PERSPECTIVE
+            return int<-x + int<-cam
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir_with_analyses(ir_program, program.analyses.as_span())
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(Types::Enum :name \"Color\" :module_name \"raw\")"))
+    expect(text.contains_substring("(Types::Flags :name \"CameraProjection\" :module_name \"raw\")"))
+    expect(text.contains_substring("(Types::Opaque :name \"Handle\" :module_name \"raw\")"))
+    expect(not text.contains_substring("(Types::Struct :name \"Color\" :module_name \"raw\")"))
