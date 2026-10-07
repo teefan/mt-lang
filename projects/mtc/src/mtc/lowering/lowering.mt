@@ -89,6 +89,17 @@ struct ForeignInfo:
     simple: bool
 
 
+## One referenced parameter of an inline foreign mapping while the call is
+## lowered: its projected argument value plus the reference count that decides
+## temp vs substitution (the host's `bind_foreign_mapping_arguments`).
+struct MappingParamBinding:
+    name: str
+    ref_count: ptr_uint
+    value: ptr[ir.Expr]
+    ty: types.Type
+    is_cstr: bool
+
+
 ## One arm of a variant, as needed by lowering: its name, payload field names and
 ## resolved types (empty for a no-payload arm).  The discriminant index is the
 ## arm's position in the owning `VariantInfo.arms`.
@@ -282,6 +293,12 @@ struct LowerCtx:
     # The statement-root AST expression of the current window, so the foreign
     # lowering can tell the root call from a nested one (pointer identity).
     hoist_root_ep: ptr[ast.Expr]?
+    # Inline foreign-mapping substitutions: an argument value the host does not
+    # temporary-bind is bound here (parameter name → the lowered value
+    # expression) and `lower_expr`'s identifier arm resolves it ahead of the
+    # locals.  Populated and restored per mapping walk
+    # (`lower_inline_foreign_mapping`), so nested mapping calls compose.
+    mapping_replacements: map_mod.Map[str, ptr[ir.Expr]]
     # Return type of the function currently being lowered, for use by `?`
     # propagation when the propagated type differs from the enclosing function's
     # return type (e.g. `Result[bool, E]?` inside a function returning
@@ -954,6 +971,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         hoist_cleanups = vec.Vec[ir.Stmt].create(),
         hoist_stmt_emitted = false,
         hoist_root_ep = null,
+        mapping_replacements = map_mod.Map[str, ptr[ir.Expr]].create(),
         inside_async = false,
         async_resume_return_label = "",
         current_fn_return_type = types.primitive("void"),
@@ -5917,6 +5935,11 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 let ty = if lit.is_cstring: types.primitive("cstr") else: types.Type.ty_str
                 return alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = ty, cstring = lit.is_cstring))
             ast.Expr.expr_identifier as id:
+                # An inline foreign-mapping parameter bound to the argument's
+                # value (the host's `replacements`) wins over the locals.
+                let replacement = ctx.mapping_replacements.get(id.name)
+                if replacement != null:
+                    return unsafe: read(replacement)
                 match lookup_local(ctx, id.name):
                     Option.some as lb:
                         return lower_binding_read(ctx, lb.value)
@@ -12956,6 +12979,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
 
     var setup = vec.Vec[ir.Stmt].create()
     var cstr_temps = vec.Vec[str].create()
+    var binds = vec.Vec[MappingParamBinding].create()
     let saved_locals_len = ctx.locals.len()
 
     var i: ptr_uint = 0
@@ -13035,11 +13059,13 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
                     let span_ty = types.Type.ty_generic(name = "span", args = sp_type(generic_first_arg(projected_ty)))
                     projected = array_value_to_span(projected, projected_ty, span_ty)
                 temp_ty = ir_expr_type(projected)
-            let tc = fresh_c_temp_name(ctx, "foreign_arg")
-            setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = temp_ty, value = projected, line = 0, source_path = ""))
-            ctx.locals.push(LocalBinding(name = param.name, c_name = tc, ty = temp_ty, pointer = false))
-            if is_foreign_cstr_temp_call(projected):
-                cstr_temps.push(tc)
+            binds.push(MappingParamBinding(
+                name = param.name,
+                ref_count = mapping_reference_count(mapping, param.name),
+                value = projected,
+                ty = temp_ty,
+                is_cstr = is_foreign_cstr_temp_call(projected),
+            ))
 
         if param.boundary_type.is_some():
             let pub_name = j2(param.name, "_public")
@@ -13052,7 +13078,55 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
 
         i += 1
 
+    # The host's `inlineable_single_direct_call_names` exception: when exactly
+    # one referenced parameter needs a temporary and it is a single-reference
+    # plain call, that call is embedded directly after all.
+    var blocked_count: ptr_uint = 0
+    var blocked_index: ptr_uint = 0
+    var bi: ptr_uint = 0
+    while bi < binds.len:
+        let bptr = binds.get(bi) else:
+            fatal(c"lowering: missing mapping binding")
+        let b = unsafe: read(bptr)
+        if b.ref_count > 1 or not inlineable_foreign_value(b.value):
+            blocked_count += 1
+            blocked_index = bi
+        bi += 1
+    var inline_direct_name = ""
+    if blocked_count == 1:
+        let bptr = binds.get(blocked_index) else:
+            fatal(c"lowering: missing mapping binding")
+        let b = unsafe: read(bptr)
+        if b.ref_count == 1 and is_plain_foreign_call_value(b.value) and not b.is_cstr:
+            inline_direct_name = b.name
+
+    # Temporary-bind a parameter only where the host does
+    # (`foreign_argument_needs_temporary_binding?`); every other referenced
+    # parameter's value is substituted into the mapping instead.
+    let saved_replacements = ctx.mapping_replacements
+    ctx.mapping_replacements = map_mod.Map[str, ptr[ir.Expr]].create()
+    var ti: ptr_uint = 0
+    while ti < binds.len:
+        let bptr = binds.get(ti) else:
+            fatal(c"lowering: missing mapping binding")
+        let b = unsafe: read(bptr)
+        var needs_temp = b.ref_count > 1 and not duplicable_foreign_value(b.value)
+        if not inlineable_foreign_value(b.value):
+            needs_temp = true
+        if b.name == inline_direct_name:
+            needs_temp = false
+        if needs_temp:
+            let tc = fresh_c_temp_name(ctx, "foreign_arg")
+            setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = b.ty, value = b.value, line = 0, source_path = ""))
+            ctx.locals.push(LocalBinding(name = b.name, c_name = tc, ty = b.ty, pointer = false))
+            if b.is_cstr:
+                cstr_temps.push(tc)
+        else:
+            ctx.mapping_replacements.set(b.name, b.value)
+        ti += 1
+
     let result = walk_mapping_expr(ctx, mapping, info.return_ty)
+    ctx.mapping_replacements = saved_replacements
 
     while ctx.locals.len() > saved_locals_len:
         if ctx.locals.pop().is_none():
@@ -13179,7 +13253,9 @@ function member_receiver_is_local(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier as id:
-                return lookup_local(ctx, id.name).is_some()
+                if lookup_local(ctx, id.name).is_some():
+                    return true
+                return ctx.mapping_replacements.get(id.name) != null
             _:
                 return false
 
@@ -13216,6 +13292,166 @@ function mapping_references_name(ep: ptr[ast.Expr], name: str) -> bool:
                 return mapping_references_name(nm.value, name)
             ast.Expr.expr_specialization as spec:
                 return mapping_references_name(spec.callee, name)
+            _:
+                return false
+
+
+## Count the references to `name` in a mapping expression (the host's
+## `foreign_mapping_reference_counts`, single-name form).
+function mapping_reference_count(ep: ptr[ast.Expr], name: str) -> ptr_uint:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_identifier as id:
+                if id.name == name:
+                    return 1
+                return 0
+            ast.Expr.expr_member_access as ma:
+                return mapping_reference_count(ma.receiver, name)
+            ast.Expr.expr_call as call:
+                var total = mapping_reference_count(call.callee, name)
+                var k: ptr_uint = 0
+                while k < call.args.len:
+                    var a: ast.Argument
+                    a = read(call.args.data + k)
+                    total += mapping_reference_count(a.arg_value, name)
+                    k += 1
+                return total
+            ast.Expr.expr_prefix_cast as pc:
+                return mapping_reference_count(pc.expression, name)
+            ast.Expr.expr_binary_op as bin:
+                return mapping_reference_count(bin.left, name) + mapping_reference_count(bin.right, name)
+            ast.Expr.expr_unary_op as un:
+                return mapping_reference_count(un.operand, name)
+            ast.Expr.expr_index_access as ix:
+                return mapping_reference_count(ix.receiver, name) + mapping_reference_count(ix.index, name)
+            ast.Expr.expr_named as nm:
+                return mapping_reference_count(nm.value, name)
+            ast.Expr.expr_specialization as spec:
+                return mapping_reference_count(spec.callee, name)
+            _:
+                return 0
+
+
+## The host's `duplicable_foreign_argument_expression?` for a lowered value: an
+## expression that may be substituted into a mapping more than once without
+## changing behavior (a name or literal, or a member/unary/binary over those).
+function duplicable_foreign_value(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name:
+                return true
+            ir.Expr.expr_integer_literal:
+                return true
+            ir.Expr.expr_unsigned_integer_literal:
+                return true
+            ir.Expr.expr_float_literal:
+                return true
+            ir.Expr.expr_string_literal:
+                return true
+            ir.Expr.expr_boolean_literal:
+                return true
+            ir.Expr.expr_null_literal:
+                return true
+            ir.Expr.expr_member as m:
+                return duplicable_foreign_value(m.receiver)
+            ir.Expr.expr_unary as u:
+                return duplicable_foreign_value(u.operand)
+            ir.Expr.expr_binary as b:
+                return duplicable_foreign_value(b.left) and duplicable_foreign_value(b.right)
+            _:
+                return false
+
+
+## The host's `inlineable_foreign_argument_expression?` for a lowered value: an
+## expression a mapping can embed directly (no hidden temporaries inside).
+function inlineable_foreign_value(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name:
+                return true
+            ir.Expr.expr_integer_literal:
+                return true
+            ir.Expr.expr_unsigned_integer_literal:
+                return true
+            ir.Expr.expr_float_literal:
+                return true
+            ir.Expr.expr_string_literal:
+                return true
+            ir.Expr.expr_boolean_literal:
+                return true
+            ir.Expr.expr_null_literal:
+                return true
+            ir.Expr.expr_zero_init:
+                return true
+            ir.Expr.expr_sizeof:
+                return true
+            ir.Expr.expr_alignof:
+                return true
+            ir.Expr.expr_offsetof:
+                return true
+            ir.Expr.expr_call as call:
+                if is_foreign_cstr_temp_call(ep):
+                    return false
+                var k: ptr_uint = 0
+                while k < call.arguments.len:
+                    if not inlineable_foreign_value(call.arguments.data + k):
+                        return false
+                    k += 1
+                return true
+            ir.Expr.expr_call_indirect as call:
+                if not inlineable_foreign_value(call.callee):
+                    return false
+                var k2: ptr_uint = 0
+                while k2 < call.arguments.len:
+                    if not inlineable_foreign_value(call.arguments.data + k2):
+                        return false
+                    k2 += 1
+                return true
+            ir.Expr.expr_member as m:
+                return inlineable_foreign_value(m.receiver)
+            ir.Expr.expr_index as x:
+                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
+            ir.Expr.expr_checked_index as x:
+                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
+            ir.Expr.expr_checked_span_index as x:
+                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
+            ir.Expr.expr_nullable_index as x:
+                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
+            ir.Expr.expr_nullable_span_index as x:
+                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
+            ir.Expr.expr_unary as u:
+                return inlineable_foreign_value(u.operand)
+            ir.Expr.expr_binary as b:
+                return inlineable_foreign_value(b.left) and inlineable_foreign_value(b.right)
+            ir.Expr.expr_conditional as c:
+                return inlineable_foreign_value(c.condition) and inlineable_foreign_value(c.then_expression) and inlineable_foreign_value(c.else_expression)
+            ir.Expr.expr_reinterpret as r:
+                return inlineable_foreign_value(r.expression)
+            ir.Expr.expr_cast as c:
+                return inlineable_foreign_value(c.expression)
+            ir.Expr.expr_address_of as a:
+                return inlineable_foreign_value(a.expression)
+            ir.Expr.expr_aggregate_literal as g:
+                var fi: ptr_uint = 0
+                while fi < g.fields.len:
+                    let f = unsafe: read(g.fields.data + fi)
+                    if not inlineable_foreign_value(f.value):
+                        return false
+                    fi += 1
+                return true
+            _:
+                return false
+
+
+## True when a lowered value is a plain call (the host's single-direct-call
+## inline exception inspects `IR::Call` values).
+function is_plain_foreign_call_value(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call:
+                return true
+            ir.Expr.expr_call_indirect:
+                return true
             _:
                 return false
 

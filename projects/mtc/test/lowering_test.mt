@@ -1225,3 +1225,59 @@ function test_pointer_receiver_foreign_argument_is_cast_not_addressed() -> void:
     ## nil line/path, like every discarded foreign call (the host's
     ## `discard_result`).
     expect(dumped.contains_substring("(IR::Call :callee \"RawPlain\" :arguments ((IR::Name :name \"n\" :type (Types::Primitive :name \"int\") :pointer false)) :type (Types::Primitive :name \"void\")) :line nil :path nil)"))
+
+
+# =============================================================================
+#  Inline foreign mappings — a referenced parameter is temporary-bound only
+#  where the host binds one (`reference_count > 1 && !duplicable || !inlineable`);
+#  every other argument value is substituted into the mapping instead.
+# =============================================================================
+
+@[test]
+function test_mapping_arguments_are_substituted_not_tempped() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_maparg_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_source = <<-SRC
+        external
+
+        struct Image:
+            width: int
+
+        external function ImageKernelConvolution(image: ptr[Image], kernel: ptr[float], kernelSize: int) -> void
+    SRC
+    if not write_source_file(root.as_str(), "raw.mt", raw_source):
+        return
+
+    var source = <<-SRC
+        import raw
+
+        public foreign function image_kernel_convolution(inout image: raw.Image, kernel: span[float]) -> void = raw.ImageKernelConvolution(image, kernel.data, int<-kernel.len)
+
+        extending raw.Image:
+            public editable function kernel_convolution(kernel: span[float]) -> void:
+                image_kernel_convolution(this, kernel)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+
+    ## No mapping argument needed a temporary here: `this`'s cast and the
+    ## `kernel` span are both inlineable (the host's substitution).
+    expect(not dumped.contains_substring("__mt_foreign_arg"))
+    ## The call's first argument is the receiver's cast, inlined.
+    expect(dumped.contains_substring("(IR::Call :callee \"ImageKernelConvolution\" :arguments ((IR::Cast"))
+    ## The mapping's `kernel.data` / `kernel.len` lower on the substituted name.
+    expect(dumped.contains_substring("(IR::Member :receiver (IR::Name :name \"kernel\" :type (Types::Span :element_type (Types::Primitive :name \"float\")) :pointer false) :member \"data\""))
+    expect(dumped.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"int\") :expression (IR::Member :receiver (IR::Name :name \"kernel\""))
