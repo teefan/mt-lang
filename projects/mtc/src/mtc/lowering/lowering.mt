@@ -367,10 +367,14 @@ struct LowerCtx:
     # `continue` reach the same point as the label (the loop's condition).
     # A `continue` then lowers to `IR::ContinueStmt` (the host's
     # `loop_exit_continue` kind) instead of a goto; desugared loops (for-range
-    # post statements, while-true rewrites) keep the label/goto form, and a
-    # `break` always keeps it (a native break inside a desugared match's switch
-    # would exit the switch, not the loop).
+    # post statements, while-true rewrites) keep the label/goto form.
     loop_continue_native: bool
+    # True while lowering a plain `while` body where a native `break` exits
+    # exactly the enclosing loop (the host's `loop_exit_statement` `:break`
+    # kind).  Cleared around the switch-backed match arms' bodies: a native
+    # `break` inside a C `switch` would exit the switch, not the loop, so those
+    # arms keep the label/goto form (the host's `switch_loop_flow`).
+    loop_break_native: bool
     # Cached commonly-used types to avoid repeated ty_primitive/ty_generic calls.
     bool_ty: types.Type
     void_ty: types.Type
@@ -1028,6 +1032,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         loop_break_label = "",
         loop_continue_label = "",
         loop_continue_native = false,
+        loop_break_native = false,
         bool_ty = types.primitive("bool"),
         void_ty = types.primitive("void"),
         ptr_void_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
@@ -3055,13 +3060,18 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let saved_break = ctx.loop_break_label
                 let saved_continue = ctx.loop_continue_label
                 let saved_continue_native = ctx.loop_continue_native
+                let saved_break_native = ctx.loop_break_native
                 let cl = fresh_c_temp_name(ctx, "loop_continue")
                 let bl = fresh_c_temp_name(ctx, "loop_break")
                 ctx.loop_break_label = bl
                 ctx.loop_continue_label = cl
                 # A plain C `while`'s continue point is the loop's condition, so
-                # a native `continue` here reaches exactly the label's position.
+                # a native `continue` here reaches exactly the label's position;
+                # a native `break` likewise exits exactly this loop (unless a
+                # match's `switch` intervenes, which clears the flag around its
+                # arms).
                 ctx.loop_continue_native = true
+                ctx.loop_break_native = true
                 let body_span = lower_block(ctx, w.body)
                 var body = vec.Vec[ir.Stmt].create()
                 append_span_stmts(ref_of(body), body_span)
@@ -3075,6 +3085,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 ctx.loop_break_label = saved_break
                 ctx.loop_continue_label = saved_continue
                 ctx.loop_continue_native = saved_continue_native
+                ctx.loop_break_native = saved_break_native
             ast.Stmt.stmt_for as f:
                 if f.is_inline:
                     lower_inline_for_stmt(ctx, output, f.bindings, f.iterables, f.body)
@@ -3165,7 +3176,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     match_scrutinee = async_hoist_awaits(ctx, output, m.scrutinee)
                 lower_match(ctx, output, match_scrutinee, m.arms)
             ast.Stmt.stmt_break:
-                if ctx.loop_break_label != "":
+                if ctx.loop_break_native:
+                    output.push(ir.Stmt.stmt_break())
+                else if ctx.loop_break_label != "":
                     output.push(ir.Stmt.stmt_goto(label = ctx.loop_break_label))
                 else:
                     output.push(ir.Stmt.stmt_break())
@@ -15702,6 +15715,20 @@ function module_is_raw(ctx: ref[LowerCtx], module_name: str) -> bool:
             return false
 
 
+## Lower a match arm's body for a *switch-backed* match.  A native `break`
+## inside a C `switch` exits the switch, not the enclosing loop, so the
+## loop-flow's native-break mode is cleared for the body's lowering — the
+## host's `switch_loop_flow`/`switch_loop_target` conversion, after which a
+## `break` emits the label/goto form again.  `continue` needs no invalidation:
+## C's `continue` reaches the loop through a `switch`.
+function lower_switch_arm_body(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?) -> span[ir.Stmt]:
+    let saved_break_native = ctx.loop_break_native
+    ctx.loop_break_native = false
+    let result = lower_block(ctx, body)
+    ctx.loop_break_native = saved_break_native
+    return result
+
+
 function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutinee: ptr[ast.Expr], arms: span[ast.MatchArm]) -> void:
     # Save/restore locals so match-arm bindings (as name) and arm-body
     # locals don't leak into subsequent code or proc captures.
@@ -15773,7 +15800,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
         var arm: ast.MatchArm
         unsafe:
             arm = read(arms.data + i)
-        let body = lower_block(ctx, arm.body)
+        let body = lower_switch_arm_body(ctx, arm.body)
         let pattern = arm.pattern
         if pattern == null:
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body))
@@ -15858,7 +15885,7 @@ function lower_scalar_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
         var arm: ast.MatchArm
         unsafe:
             arm = read(arms.data + i)
-        let body = lower_block(ctx, arm.body)
+        let body = lower_switch_arm_body(ctx, arm.body)
         let pattern = arm.pattern
         if pattern == null:
             cases.push(ir.SwitchCase(is_default = true, value = null, body = body))
@@ -16421,7 +16448,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             arm = read(arms.data + i)
         let pattern = arm.pattern
         if pattern == null:
-            cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_block(ctx, arm.body)))
+            cases.push(ir.SwitchCase(is_default = true, value = null, body = lower_switch_arm_body(ctx, arm.body)))
         else:
             let arm_name = match_member_name(pattern) else:
                 fatal(c"lowering: unsupported variant match pattern")
@@ -16449,7 +16476,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                         ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
                 Option.none:
                     pass
-            let body = lower_block(ctx, arm.body)
+            let body = lower_switch_arm_body(ctx, arm.body)
             var bi: ptr_uint = 0
             while bi < body.len:
                 unsafe:

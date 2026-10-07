@@ -1678,3 +1678,45 @@ function test_continue_in_a_plain_while_is_native() -> void:
     expect(text.contains_substring("continue"))
     expect(not text.contains_substring("goto"))
     expect(not text.contains_substring("__mt_loop_continue"))
+
+
+@[test]
+function test_break_in_a_plain_while_is_native() -> void:
+    ## A `break` in a plain `while` lowers to a native `IR::BreakStmt` (the
+    ## host's `loop_exit_statement` `:break` kind) — but a `break` inside a
+    ## match's `switch` keeps the label/goto form, since C's `break` would exit
+    ## the switch, not the loop (the host's `switch_loop_flow`; session 43,
+    ## item 3i-b).
+    var plain_source = <<-SRC
+        function plain(x: int) -> int:
+            var i: int = 0
+            while i < 10:
+                if i == x:
+                    break
+                i += 1
+            return i
+    SRC
+    var plain_ir = lower_source(plain_source)
+    defer: plain_ir.release()
+    let plain_text = plain_ir.as_str()
+    expect(plain_text.contains_substring("break"))
+    expect(not plain_text.contains_substring("goto __mt_loop_break"))
+
+    var switch_source = <<-SRC
+        function switched(x: int) -> int:
+            var i: int = 0
+            while i < 10:
+                match x:
+                    1:
+                        break
+                    _:
+                        i += 1
+                i += 1
+            return i
+    SRC
+    var switch_ir = lower_source(switch_source)
+    defer: switch_ir.release()
+    let switch_text = switch_ir.as_str()
+    ## The switch arm's break keeps the labeled goto — the invalidation.
+    expect(switch_text.contains_substring("goto __mt_loop_break"))
+    expect(switch_text.contains_substring("label __mt_loop_break"))
