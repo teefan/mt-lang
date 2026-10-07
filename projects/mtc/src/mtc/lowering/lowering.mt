@@ -337,6 +337,14 @@ struct LowerCtx:
     # when the `break`/`continue` appears inside a match lowered to a C `switch`.
     loop_break_label: str
     loop_continue_label: str
+    # True while lowering a plain `while` body whose C shape makes a native
+    # `continue` reach the same point as the label (the loop's condition).
+    # A `continue` then lowers to `IR::ContinueStmt` (the host's
+    # `loop_exit_continue` kind) instead of a goto; desugared loops (for-range
+    # post statements, while-true rewrites) keep the label/goto form, and a
+    # `break` always keeps it (a native break inside a desugared match's switch
+    # would exit the switch, not the loop).
+    loop_continue_native: bool
     # Cached commonly-used types to avoid repeated ty_primitive/ty_generic calls.
     bool_ty: types.Type
     void_ty: types.Type
@@ -993,6 +1001,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_local_fields_ptr = null,
         loop_break_label = "",
         loop_continue_label = "",
+        loop_continue_native = false,
         bool_ty = types.primitive("bool"),
         void_ty = types.primitive("void"),
         ptr_void_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))),
@@ -3028,10 +3037,14 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let cond = lower_expr(ctx, w.condition)
                 let saved_break = ctx.loop_break_label
                 let saved_continue = ctx.loop_continue_label
+                let saved_continue_native = ctx.loop_continue_native
                 let cl = fresh_c_temp_name(ctx, "loop_continue")
                 let bl = fresh_c_temp_name(ctx, "loop_break")
                 ctx.loop_break_label = bl
                 ctx.loop_continue_label = cl
+                # A plain C `while`'s continue point is the loop's condition, so
+                # a native `continue` here reaches exactly the label's position.
+                ctx.loop_continue_native = true
                 let body_span = lower_block(ctx, w.body)
                 var body = vec.Vec[ir.Stmt].create()
                 append_span_stmts(ref_of(body), body_span)
@@ -3044,6 +3057,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 output.push(ir.Stmt.stmt_block(body = wrap.as_span()))
                 ctx.loop_break_label = saved_break
                 ctx.loop_continue_label = saved_continue
+                ctx.loop_continue_native = saved_continue_native
             ast.Stmt.stmt_for as f:
                 if f.is_inline:
                     lower_inline_for_stmt(ctx, output, f.bindings, f.iterables, f.body)
@@ -3051,7 +3065,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 if f.threaded:
                     lower_parallel_for(ctx, output, f.bindings, f.iterables, f.body)
                     return
+                # A for-loop's desugared post statement sits after its continue
+                # point, so its body keeps the label/goto form.
+                let saved_continue_native = ctx.loop_continue_native
+                ctx.loop_continue_native = false
                 lower_for_range(ctx, output, f.bindings, f.iterables, f.body)
+                ctx.loop_continue_native = saved_continue_native
             ast.Stmt.stmt_expression as ex:
                 # Async CPS: bare `await Y` splits into suspend/resume, discarding
                 # the awaited result.
@@ -3134,7 +3153,9 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 else:
                     output.push(ir.Stmt.stmt_break())
             ast.Stmt.stmt_continue:
-                if ctx.loop_continue_label != "":
+                if ctx.loop_continue_native:
+                    output.push(ir.Stmt.stmt_continue())
+                else if ctx.loop_continue_label != "":
                     output.push(ir.Stmt.stmt_goto(label = ctx.loop_continue_label))
                 else:
                     output.push(ir.Stmt.stmt_continue())

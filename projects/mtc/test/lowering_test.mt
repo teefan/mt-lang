@@ -1429,3 +1429,28 @@ function test_assignment_literals_take_the_target_type() -> void:
     expect(text.contains_substring("IR::IntegerLiteral :value 2 :type (Types::Primitive :name \"ptr_uint\")"))
     expect(text.contains_substring("IR::IntegerLiteral :value 3 :type (Types::Primitive :name \"ptr_uint\")"))
     expect(not text.contains_substring("IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")"))
+
+
+# =============================================================================
+#  A `continue` in a plain `while` body lowers to a native `continue` (the
+#  host's `loop_exit_continue` kind) — no goto label, since the loop's
+#  condition is the continue point.
+# =============================================================================
+
+@[test]
+function test_continue_in_a_plain_while_is_native() -> void:
+    var source = <<-SRC
+        function f() -> ptr_uint:
+            var i: ptr_uint = 0
+            while i < 10:
+                i += 1
+                if i == 3:
+                    continue
+            return i
+    SRC
+    var ir = lower_source(source)
+    defer: ir.release()
+    let text = ir.as_str()
+    expect(text.contains_substring("continue"))
+    expect(not text.contains_substring("goto"))
+    expect(not text.contains_substring("__mt_loop_continue"))
