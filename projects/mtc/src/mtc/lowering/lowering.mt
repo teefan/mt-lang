@@ -16,6 +16,7 @@ import std.vec as vec
 import std.map as map_mod
 import std.str
 import std.string as string
+import std.stdio as stdio
 import std.fmt as fmt
 import std.mem.heap as heap_mod
 
@@ -2971,7 +2972,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         var value = lower_expr(ctx, asg.value)
                         let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                         emit_hoist_setup(output, hoist_base, hoist_collected)
-                        value = assignment_value_to_target_type(asg.value, deref_ty, value)
+                        value = literal_value_to_context_type(asg.value, deref_ty, value)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
                         append_hoist_cleanups(output, hoist_collected)
                         return
@@ -2989,7 +2990,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # type): `i = 1` / `i += 1` on a `ptr_uint` target emits a
                 # `ptr_uint` literal, not an `int` one.  Mirrors the local
                 # declaration arm's literal set.
-                value = assignment_value_to_target_type(asg.value, target_ty, value)
+                value = literal_value_to_context_type(asg.value, target_ty, value)
                 # Native math compound assignment (`a += b`, `a *= 2.0`): the C
                 # aggregate structs have no operators, so expand component-wise
                 # and emit a plain assignment.
@@ -6126,6 +6127,19 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     let hr = int_literal_to_context_type(bin.right, harm_lt, right)
                     if hr != right:
                         right = hr
+                # Re-type a *bare* float literal operand against a float peer
+                # (`payload.value == 2.718…` with a `double` peer stays a double
+                # literal — the host's contextual literal inference).  An explicit
+                # `f`/`d` suffix keeps its own type and is cast by the promotion
+                # below instead; without this the literal keeps its default
+                # `float` type and the cast truncates it.
+                let flt = ir_expr_type(left)
+                let frt = ir_expr_type(right)
+                if types.is_float_type(frt) and types.is_float_type(flt):
+                    if is_bare_float_literal(bin.left):
+                        left = float_literal_to_context_type(bin.left, frt, left)
+                    if is_bare_float_literal(bin.right):
+                        right = float_literal_to_context_type(bin.right, flt, right)
                 # Balance mixed-width integer and int/float operands: cast the
                 # narrower operand up to the common type, matching Ruby's
                 # usual-arithmetic-conversion casts (redundant casts are elided
@@ -9192,6 +9206,10 @@ function collect_variant_literal_fields(ctx: ref[LowerCtx], args: span[ast.Argum
         match field_ty:
             Option.some as fty:
                 let fty_val = fty.value
+                # A bare literal takes the field's type (`Option[ptr_uint].some(
+                # value = 0)` emits a `ptr_uint` literal; the host lowers the
+                # field value with the field's type as the expected type).
+                value = literal_value_to_context_type(arg.arg_value, fty_val, value)
                 # Wrap non-nullable values into value-type nullable fields
                 # (e.g. `NullableFields.with_values(port = raw)` where
                 # `port: int?`).
@@ -10327,6 +10345,7 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
         unsafe:
             arg = read(args.data + i)
         var lowered = lower_expr(ctx, arg.arg_value)
+        lowered = coerce_literal_to_param_type(mi.params, i, arg.arg_value, lowered)
         # Coerce a bare function-identifier argument to proc when the lowered
         # IR is a name expression with a fn-pointer type: wrap it in a proc
         # struct so method calls with proc parameters receive the expected type.
@@ -10946,10 +10965,27 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
         var lowered = lower_expr(ctx, arg.arg_value)
         lowered = coerce_arg_to_param(cached, param_offset + i, lowered)
         lowered = coerce_monomorphized_arg_to_proc(ctx, cached, param_offset + i, lowered, arg.arg_value)
+        lowered = coerce_literal_to_mono_param(cached, param_offset + i, arg.arg_value, lowered)
         unsafe:
             ir_args.push(read(lowered))
         i += 1
     return alloc_expr(ir.Expr.expr_call(callee = method_c, arguments = ir_args.as_span(), ty = ret_ty))
+
+
+## Re-type a bare literal argument against the specialized function's parameter
+## type — the monomorphized path's `coerce_literal_to_param_type` (the params
+## live on the IR function, not an `FnSig`), so `a.m(2, 3)` against
+## `ptr_uint` parameters emits `ptr_uint` literals.
+function coerce_literal_to_mono_param(cached: ptr[ir.Function]?, param_index: ptr_uint, arg_ast: ptr[ast.Expr], arg: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    let fn_ptr = cached else:
+        return arg
+    let spec_fn = unsafe: read(fn_ptr)
+    if param_index >= spec_fn.params.len:
+        return arg
+    var param: ir.Param
+    unsafe:
+        param = read(spec_fn.params.data + param_index)
+    return literal_value_to_context_type(arg_ast, param.ty, arg)
 
 
 ## Coerce a lowered call argument to the specialized function's parameter type:
@@ -12522,6 +12558,11 @@ function lower_call_with_callee(ctx: ref[LowerCtx], c_name: str, callee_expr: Op
                 lowered = coerce_arg_to_ref_param(sig, i, lowered)
                 lowered = coerce_arg_to_span_param(sig, i, lowered)
                 lowered = coerce_fn_arg_to_proc(ctx, sig, i, lowered, arg.arg_value)
+                match sig:
+                    Option.some as s:
+                        lowered = coerce_literal_to_param_type(s.value.params, i, arg.arg_value, lowered)
+                    Option.none:
+                        pass
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -12562,25 +12603,39 @@ function null_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.
     return alloc_expr(ir.Expr.expr_null_literal(ty = context_ty))
 
 
-## Re-type a bare literal assignment value against its target's type — the
-## host's `lower_contextual_expression` with the target as the expected type.
-## Shared by the plain-target and `read(x) =` paths, so both emit e.g.
-## `ptr_uint` literals for a `ptr_uint` target (`read(header - 1) = 0`).
-function assignment_value_to_target_type(value_ast: ptr[ast.Expr], target_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+## Re-type a bare literal value against its context type — the host's
+## `lower_contextual_expression` with the expected type (`lower_contextual_
+## expression` is used for assignment values and for every call argument).
+## Shared by the assignment arms and the call-argument coercion, so `i = 1` /
+## `read(header - 1) = 0` / `create_aligned(x, 1)` emit `ptr_uint` literals for
+## a `ptr_uint` context.
+function literal_value_to_context_type(value_ast: ptr[ast.Expr], context_ty: types.Type, value: ptr[ir.Expr]) -> ptr[ir.Expr]:
     var result = value
     unsafe:
         match read(value_ast):
             ast.Expr.expr_integer_literal:
-                result = int_literal_to_context_type(value_ast, target_ty, result)
+                result = int_literal_to_context_type(value_ast, context_ty, result)
             ast.Expr.expr_float_literal:
-                result = float_literal_to_context_type(value_ast, target_ty, result)
+                result = float_literal_to_context_type(value_ast, context_ty, result)
             ast.Expr.expr_string_literal:
-                result = string_literal_to_context_type(value_ast, target_ty, result)
+                result = string_literal_to_context_type(value_ast, context_ty, result)
             ast.Expr.expr_null_literal:
-                result = null_literal_to_context_type(value_ast, target_ty, result)
+                result = null_literal_to_context_type(value_ast, context_ty, result)
             _:
                 pass
     return result
+
+
+## Re-type a call argument's bare literal against the parameter's type — the
+## host lowers every call argument with the parameter as the expected type
+## (`prepare_expression_with_cleanups`), so `create_aligned(x, 1)` with a
+## `ptr_uint` parameter emits a `ptr_uint` literal, not an `int` one.  A
+## variadic argument beyond the fixed parameters has no expected type.
+function coerce_literal_to_param_type(params: span[analyzer.ParamEntry], index: ptr_uint, arg_ast: ptr[ast.Expr], value: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    if index < params.len:
+        unsafe:
+            return literal_value_to_context_type(arg_ast, read(params.data + index).ty, value)
+    return value
 
 
 ## Re-type an integer literal whose value fits `context_ty` (a numeric primitive)
@@ -12602,6 +12657,19 @@ function int_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.T
     if not int_value_fits_type(literal_value, context_ty):
         return value
     return alloc_expr(integer_literal_expr(literal_lexeme, literal_value, context_ty))
+
+
+## A float literal with no explicit `f`/`d` suffix: its type is contextual (a
+## `float` peer keeps it a float, otherwise the default `float` stands); an
+## explicit suffix keeps its own type, mirroring the host's
+## `infer_expression_type` FloatLiteral arm.
+function is_bare_float_literal(ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_float_literal as lit:
+                return not (lit.lexeme.ends_with("f") or lit.lexeme.ends_with("d"))
+            _:
+                return false
 
 
 ## Re-type a float literal against a `float`/`double` context, mirroring the

@@ -1563,6 +1563,62 @@ function test_read_target_literals_take_the_pointee_type() -> void:
     expect(not text.contains_substring("IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\")"))
 
 
+@[test]
+function test_call_argument_literals_take_the_parameter_type() -> void:
+    ## The host lowers every call argument with the parameter as the expected
+    ## type, so bare literals take the parameter's type: a plain call
+    ## (`take(3)`), a method call (`a.add(1, 2)` — the monomorphized path) and
+    ## a variant arm's field value (`V.a(x = 4)`) all emit `ptr_uint` literals
+    ## for `ptr_uint` parameters (session 43, item 3m).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_arglit_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct A:
+            x: ptr_uint
+
+        extending A:
+            public function add(a: ptr_uint, b: ptr_uint) -> ptr_uint:
+                return a + b
+
+        variant V:
+            a(x: ptr_uint)
+            b
+
+        function take(n: ptr_uint) -> ptr_uint:
+            return n
+
+        function use(a: A) -> ptr_uint:
+            let m = a.add(1, 2)
+            if m > 0:
+                return take(3)
+            return m
+
+        function mk() -> V:
+            return V.a(x = 4)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(text.contains_substring("IR::IntegerLiteral :value 2 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(text.contains_substring("IR::IntegerLiteral :value 3 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(text.contains_substring("IR::IntegerLiteral :value 4 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(not text.contains_substring("IR::IntegerLiteral :value 3 :type (Types::Primitive :name \"int\")"))
+    expect(not text.contains_substring("IR::IntegerLiteral :value 4 :type (Types::Primitive :name \"int\")"))
+
+
 # =============================================================================
 #  A `continue` in a plain `while` body lowers to a native `continue` (the
 #  host's `loop_exit_continue` kind) — no goto label, since the loop's
