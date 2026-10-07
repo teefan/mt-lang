@@ -92,6 +92,31 @@ struct ForeignInfo:
     owner_module: str
 
 
+## A simple mapping's callee as its receiver expression and member name
+## (`c.getenv`), the pair `mapping_call_return_type` resolves through the
+## owner module's imports.
+struct SimpleCallee:
+    receiver: ptr[ast.Expr]
+    name: str
+
+
+## The callee of a simple mapping, unwrapping the shapes `resolve_foreign_c_name`
+## recurses through: a member access is itself, a call or prefix cast unwraps
+## to its callee.  None for a bare identifier (a same-module target has no
+## receiver to resolve).
+function simple_mapping_callee(mapping: ptr[ast.Expr]) -> Option[SimpleCallee]:
+    unsafe:
+        match read(mapping):
+            ast.Expr.expr_member_access as ma:
+                return Option[SimpleCallee].some(value = SimpleCallee(receiver = ma.receiver, name = ma.member_name))
+            ast.Expr.expr_prefix_cast as pc:
+                return simple_mapping_callee(pc.expression)
+            ast.Expr.expr_call as call:
+                return simple_mapping_callee(call.callee)
+            _:
+                return Option[SimpleCallee].none
+
+
 ## One referenced parameter of an inline foreign mapping while the call is
 ## lowered: its projected argument value plus the reference count that decides
 ## temp vs substitution (the host's `bind_foreign_mapping_arguments`).
@@ -12824,7 +12849,23 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             ir_args.push(read(lowered))
         i += 1
     let ret_ty = info.return_ty
-    let call = alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = ret_ty))
+    # The host types the emitted C call with the *raw declaration's* return
+    # type — the owner analysis's view — not the wrapper's: `= c.getenv` with
+    # a `ptr[char]` declaration and a `cstr?` wrapper types the call
+    # `ptr[char]` (the 3f rule, on the simple path).
+    var call_ty = ret_ty
+    let mapping = info.mapping
+    if mapping != null:
+        match simple_mapping_callee(mapping):
+            Option.some as callee:
+                match mapping_call_return_type(ctx, info.owner_module, callee.value.receiver, callee.value.name):
+                    Option.some as raw_ret:
+                        call_ty = raw_ret.value
+                    Option.none:
+                        pass
+            Option.none:
+                pass
+    let call = alloc_expr(ir.Expr.expr_call(callee = info.c_name, arguments = ir_args.as_span(), ty = call_ty))
     return wrap_foreign_cstr_frees(ctx, ref_of(setup), call, ret_ty, ref_of(cstr_temps), call_ep)
 
 

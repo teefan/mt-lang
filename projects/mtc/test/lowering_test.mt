@@ -1385,6 +1385,52 @@ function test_mapping_external_call_takes_the_declared_return_type() -> void:
     expect(dumped.contains_substring(":member \"values\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 2)))"))
 
 
+@[test]
+function test_simple_mapping_call_takes_the_declared_return_type() -> void:
+    ## A *simple* mapping's emitted C call carries the raw declaration's return
+    ## type too (the 3f rule, on the simple path): `= c.getenv` with a
+    ## `ptr[char]` declaration and a `cstr?` wrapper types the call
+    ## `ptr[char]`, while the surrounding temp keeps the wrapper's `cstr?`.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_simplety_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_source = <<-SRC
+        external
+
+        external function getenv(name: cstr) -> ptr[char]
+    SRC
+    if not write_source_file(root.as_str(), "raw.mt", raw_source):
+        return
+
+    var source = <<-SRC
+        import raw as c
+
+        public foreign function env(name: str as cstr) -> cstr? = c.getenv
+
+        public function probe(name: str) -> cstr?:
+            return env(name)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+
+    ## The `getenv` call carries the raw `ptr[char]` declaration's return type.
+    expect(dumped.contains_substring("(IR::Call :callee \"getenv\" :arguments ((IR::Name :name \"__mt_foreign_arg_1\" :type (Types::Primitive :name \"cstr\") :pointer false)) :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"char\"))))"))
+    ## The result temp keeps the wrapper's `cstr?`.
+    expect(dumped.contains_substring("LocalDecl :name \"__mt_foreign_result_2\" :linkage_name \"__mt_foreign_result_2\" :type (Types::Nullable :base (Types::Primitive :name \"cstr\"))"))
+
+
 # =============================================================================
 #  Guard-bound nullable pointer arithmetic — the binary's type is the unwrapped
 #  pointer (the host's flow-refined operand type), not the storage `Nullable`.
