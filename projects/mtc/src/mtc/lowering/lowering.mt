@@ -6032,10 +6032,16 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 # Pointer arithmetic (`p + i` / `p - i`) yields the pointer
                 # operand's concrete type; the analyzer's generically-recorded
                 # type may have dropped its arguments inside a monomorphized body.
+                # A nullable operand contributes its *unwrapped* pointer: the
+                # host's flow-refined operand type makes `blocks + i` on a
+                # guard-bound `ptr[T]?` a `ptr[T]` (its `pointer_arithmetic_result`
+                # returns the refined left type), and the C arithmetic runs on the
+                # pointer either way — carrying the `Nullable` here overrode the
+                # analyzer's refined result.
                 if bin.operator == "+" or bin.operator == "-":
                     let left_ty = ir_expr_type(left)
                     if types.is_raw_pointer(left_ty) and not types.is_raw_pointer(ir_expr_type(right)):
-                        result_ty = left_ty
+                        result_ty = if types.is_nullable_type(left_ty): types.unwrap_nullable(left_ty) else: left_ty
                 # Integer arithmetic where the analyzer's recorded type is not an
                 # integer (e.g. `text.len - n`, where `.len` is typed `ptr_uint`
                 # by lowering but the analyzer recorded a wrong type): trust the

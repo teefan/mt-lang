@@ -1332,3 +1332,61 @@ function test_mapping_external_call_takes_the_declared_return_type() -> void:
     expect(dumped.contains_substring("(IR::Call :callee \"Fetch\" :arguments () :type (Types::Struct :name \"Holder\" :module_name \"raw\"))"))
     ## The `.values` member carries the mapping's own return type.
     expect(dumped.contains_substring(":member \"values\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 2)))"))
+
+
+# =============================================================================
+#  Guard-bound nullable pointer arithmetic — the binary's type is the unwrapped
+#  pointer (the host's flow-refined operand type), not the storage `Nullable`.
+# =============================================================================
+
+@[test]
+function test_guard_bound_nullable_pointer_arithmetic_is_unwrapped() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_ptradd_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        struct Block:
+            data: ptr[ubyte]
+
+        struct Region:
+            blocks: ptr[Block]?
+            count: ptr_uint
+
+        extending Region:
+            public function scan() -> bool:
+                let blocks = this.blocks else:
+                    return false
+                unsafe:
+                    var i: ptr_uint = 0
+                    while i < this.count:
+                        let b = read(blocks + i)
+                        i += 1
+                return false
+
+            public function first() -> bool:
+                let blocks = this.blocks else:
+                    return false
+                unsafe:
+                    let b = read(blocks + 1)
+                    return true
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+
+    ## The subtraction/additive result carries the pointer, not the `Nullable`
+    ## storage — in the loop body and straight-line after the guard.
+    expect(dumped.contains_substring(":right (IR::Name :name \"i\" :type (Types::Primitive :name \"ptr_uint\") :pointer false) :type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"Block\" :module_name \"main\")))"))
+    expect(dumped.contains_substring(":right (IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")) :type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"Block\" :module_name \"main\")))"))
+    expect(not dumped.contains_substring(":right (IR::Name :name \"i\" :type (Types::Primitive :name \"ptr_uint\") :pointer false) :type (Types::Nullable"))
