@@ -87,6 +87,9 @@ struct ForeignInfo:
     params: span[ast.ForeignParam]
     mapping: ptr[ast.Expr]?
     simple: bool
+    ## The module that declares the foreign function — an inline mapping's
+    ## aliases resolve against this module's imports, not the caller's.
+    owner_module: str
 
 
 ## One referenced parameter of an inline foreign mapping while the call is
@@ -13125,7 +13128,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
             ctx.mapping_replacements.set(b.name, b.value)
         ti += 1
 
-    let result = walk_mapping_expr(ctx, mapping, info.return_ty)
+    let result = walk_mapping_expr(ctx, mapping, info.return_ty, info.owner_module)
     ctx.mapping_replacements = saved_replacements
 
     while ctx.locals.len() > saved_locals_len:
@@ -13142,8 +13145,12 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
 ## and method calls such as `text_public.capacity()`).  Only the external call,
 ## cast, binary, and span/aggregate-construction nodes that wrap such a call are
 ## rebuilt here, because `c` (the external module alias) is not in scope in the
-## caller and its members map 1:1 to their C function names.
-function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: types.Type) -> ptr[ir.Expr]:
+## caller and its members map 1:1 to their C function names.  An external call's
+## type is the callee's *declared* return type (resolved in `owner_module`),
+## not the mapping's own return type — the host's `owner_analysis` typed it that
+## way (`c.Vector3ToFloatV(x).v` has a `Float3Array` call and an `array[float, 3]`
+## member).
+function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: types.Type, owner_module: str) -> ptr[ir.Expr]:
     if not mapping_contains_external_call(ctx, ep):
         return lower_expr(ctx, ep)
     unsafe:
@@ -13157,31 +13164,37 @@ function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: ty
                             while k < call.args.len:
                                 var a: ast.Argument
                                 a = read(call.args.data + k)
-                                cargs.push(read(walk_mapping_expr(ctx, a.arg_value, top_ret_ty)))
+                                cargs.push(read(walk_mapping_expr(ctx, a.arg_value, top_ret_ty, owner_module)))
                                 k += 1
-                            return alloc_expr(ir.Expr.expr_call(callee = ma.member_name, arguments = cargs.as_span(), ty = top_ret_ty))
+                            var call_ty = top_ret_ty
+                            match mapping_call_return_type(ctx, owner_module, ma.receiver, ma.member_name):
+                                Option.some as rt:
+                                    call_ty = rt.value
+                                Option.none:
+                                    pass
+                            return alloc_expr(ir.Expr.expr_call(callee = ma.member_name, arguments = cargs.as_span(), ty = call_ty))
                         return lower_expr(ctx, ep)
                     ast.Expr.expr_specialization:
-                        return walk_mapping_construction(ctx, call.args, top_ret_ty)
+                        return walk_mapping_construction(ctx, call.args, top_ret_ty, owner_module)
                     _:
                         return lower_expr(ctx, ep)
             ast.Expr.expr_prefix_cast as pc:
                 let target = qualify_type(ctx, resolve_type_ref(ctx, pc.target_type))
-                let inner = walk_mapping_expr(ctx, pc.expression, top_ret_ty)
+                let inner = walk_mapping_expr(ctx, pc.expression, top_ret_ty, owner_module)
                 return alloc_expr(ir.Expr.expr_cast(target_type = target, expression = inner, ty = target))
             ast.Expr.expr_member_access as ma:
                 # Field access on an external call result (`c.MatrixToFloatV(mat).v`):
                 # walk the receiver so the external call is rebuilt, then take the
                 # member.  The member's type is the mapping's own return type here
                 # (the field IS the projected result).
-                let recv = walk_mapping_expr(ctx, ma.receiver, top_ret_ty)
+                let recv = walk_mapping_expr(ctx, ma.receiver, top_ret_ty, owner_module)
                 return alloc_expr(ir.Expr.expr_member(receiver = recv, member = ma.member_name, ty = top_ret_ty))
             ast.Expr.expr_binary_op as bin:
-                let l = walk_mapping_expr(ctx, bin.left, top_ret_ty)
-                let r = walk_mapping_expr(ctx, bin.right, top_ret_ty)
+                let l = walk_mapping_expr(ctx, bin.left, top_ret_ty, owner_module)
+                let r = walk_mapping_expr(ctx, bin.right, top_ret_ty, owner_module)
                 return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = l, right = r, ty = ir_expr_type(l)))
             ast.Expr.expr_unary_op as un:
-                let operand = walk_mapping_expr(ctx, un.operand, top_ret_ty)
+                let operand = walk_mapping_expr(ctx, un.operand, top_ret_ty, owner_module)
                 return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = ir_expr_type(operand)))
             _:
                 return lower_expr(ctx, ep)
@@ -13191,7 +13204,7 @@ function walk_mapping_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr], top_ret_ty: ty
 ## `span[uint](data = c.GuiGetIcons(), len = 2048)`, walking each named field
 ## value so any embedded external call is expanded.  The aggregate type is the
 ## foreign function's declared return type.
-function walk_mapping_construction(ctx: ref[LowerCtx], args: span[ast.Argument], result_ty: types.Type) -> ptr[ir.Expr]:
+function walk_mapping_construction(ctx: ref[LowerCtx], args: span[ast.Argument], result_ty: types.Type, owner_module: str) -> ptr[ir.Expr]:
     var fields = vec.Vec[ir.AggregateField].create()
     var i: ptr_uint = 0
     while i < args.len:
@@ -13200,7 +13213,7 @@ function walk_mapping_construction(ctx: ref[LowerCtx], args: span[ast.Argument],
             a = read(args.data + i)
         let fname = a.arg_name else:
             fatal(c"lowering: inline foreign construction requires named fields")
-        fields.push(ir.AggregateField(name = fname, value = walk_mapping_expr(ctx, a.arg_value, result_ty)))
+        fields.push(ir.AggregateField(name = fname, value = walk_mapping_expr(ctx, a.arg_value, result_ty, owner_module)))
         i += 1
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
 
@@ -13443,6 +13456,37 @@ function inlineable_foreign_value(ep: ptr[ir.Expr]) -> bool:
                 return false
 
 
+## The declared return type of an external-module call inside an inline mapping
+## (`c.Vector3ToFloatV(...)`, `math.vector3_to_float_v(...)`): resolve the
+## receiver alias against the *owner* module's imports, then the member against
+## the target module's `external function` / `foreign function` declarations —
+## the host's `lower_inline_foreign_mapping_expression` typed the call through
+## its `owner_analysis`.  None when the alias or the declaration is unknown (the
+## caller falls back to the mapping's own return type).
+function mapping_call_return_type(ctx: ref[LowerCtx], owner_module: str, receiver: ptr[ast.Expr], name: str) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                let owner_a = find_imported_analysis(ctx, owner_module) else:
+                    return Option[types.Type].none
+                let mod_ptr = owner_a.imports.get(id.name)
+                if mod_ptr == null:
+                    return Option[types.Type].none
+                let target_module = read(mod_ptr)
+                match imported_foreign_call(ctx, target_module, name):
+                    Option.some as fi:
+                        return Option[types.Type].some(value = fi.value.return_ty)
+                    Option.none:
+                        pass
+                match imported_extern_call(ctx, target_module, name):
+                    Option.some as ei:
+                        return Option[types.Type].some(value = ei.value.return_ty)
+                    Option.none:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
 ## True when a lowered value is a plain call (the host's single-direct-call
 ## inline exception inspects `IR::Call` values).
 function is_plain_foreign_call_value(ep: ptr[ir.Expr]) -> bool:
@@ -13624,6 +13668,7 @@ function collect_foreign_functions(ctx: ref[LowerCtx], decls: span[ast.Decl]) ->
                     params = ff.foreign_params,
                     mapping = ff.mapping,
                     simple = ff_simple,
+                    owner_module = ctx.module_name,
                 ))
             _:
                 pass
@@ -13660,6 +13705,7 @@ function imported_foreign_call(ctx: ref[LowerCtx], target_module: str, name: str
                         params = ff.foreign_params,
                         mapping = ff.mapping,
                         simple = ff_simple,
+                        owner_module = target_module,
                     ))
             _:
                 pass
@@ -13699,6 +13745,7 @@ function imported_extern_call(ctx: ref[LowerCtx], target_module: str, name: str)
                         params = ef.extern_params,
                         mapping = null,
                         simple = true,
+                        owner_module = target_module,
                     ))
             _:
                 pass

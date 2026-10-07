@@ -148,29 +148,27 @@ regions (if branches, `and`/`or` right operands, proc bodies, `detach`, format
 strings) suspend the window and keep the inline StmtExpr; the temp prefixes now
 match the host (`foreign_arg`, `foreign_result`).  The sweep counts and *set*
 are unchanged — **44 match / 622 differ / 51 host-rejected / 0 self-rejected of
-717** — with **253 files' first difference deeper, 0 shallower, 0 newly
-differing** (+595 … +4063 after the hoisting; the raylib family 205, box2d 29,
-box3d 14, `std/raylib.mt` and 4 more std files); the raylib first difference
-moved from `Image.text` to `Image.format`'s pointer argument.  **Item 3d landed
-in the same session**: an already-pointer `inout`/`out` argument (an editable
-method's `this` receiver, a `*p` dereference) is cast to the boundary's pointer
-type — the host's `lower_addr_expression` — instead of being addressed again (a
-wrong pointer level before; and every statement-position foreign call is now
-emitted by the lowering with nil line/path, the corrected `hm_discard` rule).
-**Item 3e landed in the same session**: a referenced mapping parameter is
-temporary-bound only where the host binds one (`reference_count > 1 &&
-!duplicable || !inlineable`, plus the single-`IR::Call` exception) and every
-other argument value is substituted into the mapping through
-`mapping_replacements`, so `ImageKernelConvolution`'s body drops its
-`__mt_foreign_arg_N` temps and matches the host's call body byte-for-byte
-(locked by `test_mapping_arguments_are_substituted_not_tempped`).  Together the
-two moved the raylib first difference on to `Vector3.float_v`'s mapping call
-return type (**max delta +118,892**; the next ranked item, 3f: type an embedded
-external call with the raw C function's declared return type, not the mapping's
-own).  All three items are locked by
-`test_foreign_call_setup_hoists_at_statement_position`,
-`test_pointer_receiver_foreign_argument_is_cast_not_addressed` and
-`test_mapping_arguments_are_substituted_not_tempped`, with the fixtures
+717** as of the hoisting and items 3d/3e (max delta +118,892: the raylib family
+205, box2d 29, box3d 14, `std/raylib.mt` and 4 more std files), and **item 3f
+flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9
+raylib examples — taking the sweep to 55 match / 611 differ**, with the raylib
+family first-differing at ~92% of its dump on `CAMERA_PERSPECTIVE`'s
+flags/struct type (the next ranked item, 3g).  The first items of the session:
+a statement-lowered foreign call hoists its setup into the statement stream
+instead of an `IR::StmtExpr` (the host's `hm_return`/`hm_value`/`hm_discard`
+shapes, `foreign_arg`/`foreign_result` temp names); an already-pointer
+`inout`/`out` argument (a `this` receiver, `*p`) is cast to the boundary's
+pointer type, not addressed again (the host's `lower_addr_expression`), and
+every statement-position foreign call is emitted by the lowering with nil
+line/path (the corrected `hm_discard` rule); and a referenced mapping parameter
+is temporary-bound only where the host binds one — every other argument value
+is substituted into the mapping through `mapping_replacements` — and an
+embedded mapping call is typed with the raw C function's declared return type
+resolved in the mapping's owner module (`ForeignInfo.owner_module`).  All four
+items are locked by `test_foreign_call_setup_hoists_at_statement_position`,
+`test_pointer_receiver_foreign_argument_is_cast_not_addressed`,
+`test_mapping_arguments_are_substituted_not_tempped` and
+`test_mapping_external_call_takes_the_declared_return_type`, with the fixtures
 byte-identical to the host.  Session 40 had
 landed **`lower` Track 3 item 2, a global initialized from an imported
 constant** (the box2d/box3d families' first difference): the `decl_var` arm now
@@ -587,25 +585,24 @@ Records: §0k sessions 19–23; session 28.
 
 Work in the ranked order below; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16` and re-rank.  Current set:
-**44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files**
+**55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files**
 (session 41 close; the count drifts with the tree's own sources and the tmp
 fixtures — quote the set).
 
 **First-difference census (session 41) — the track's re-ranking.**  Bucketing
-the 622 differing files by their first difference (a throwaway classifier over
+the 611 differing files by their first difference (a throwaway classifier over
 the sweep's own `host:`/`self:` context lines; treat the sizes as ±a few): the
 session-40 census's three leading categories are landed — **the foreign-call
-body shape (session 41: 253 files' first difference moved deeper)**, the
-`reinterpret` lowering (item 3b) and the include set/order (item 6) — and so are
-the three shapes the hoisting exposed: the pointer-like foreign argument (3d),
-the mapping-argument temp rule (3e) and, from the session's own items, the
-`hm_discard` line/path correction.  The current leaders:
+body shape (session 41)**, the `reinterpret` lowering (item 3b) and the include
+set/order (item 6) — and so are the four shapes session 41's hoisting exposed
+(3d, 3e, 3f and the `hm_discard` correction), which took the sweep 44 → 55
+match.  The current leaders:
 
 | Files | First difference | Where |
 | --- | --- | --- |
-| ~252 | **the mapping call's return type** (item 3f): `walk_mapping_expr` types an embedded external call with the mapping's return type where the host uses the raw C function's declared type (`Vector3ToFloatV` → host `Float3Array`, self `array[float, 3]`) | `examples/raylib/**` (205), `examples/box2d/**`, `examples/box3d/**`, `std/raylib.mt` |
-| ~181 | **3c, the pointer-like guard binding's read type**: the host's read carries the narrowed non-null type where the self carries the storage `Nullable` (ranked below; first surfaced by 3b) | `examples/*.mt` (`data_structures.mt`), `projects/mtc/src/**` |
+| ~355 | **3c, the pointer-like guard binding's read type**: the host's read carries the narrowed non-null type where the self carries the storage `Nullable` (`ptr[RegionBlock]` vs `Nullable(ptr[RegionBlock])`; the raylib audio family shows the `str`/`cstr` variant); first surfaced by 3b, now the leader | `examples/box2d/**` (`body_move.mt`), `examples/raylib/**`, `projects/mtc/src/**` |
 | ~57 | an array/const literal element shape (host `IR::IntegerLiteral` where the self emits `IR::Name`; `projects/mtc/src/mtc/build.mt`'s first difference) | `projects/mtc/src/**` |
+| ~24 | **the flags/enum member type** (item 3g): host `Types::Flags :name "CameraProjection"` vs self `Types::Struct` | `examples/raylib/**` (`3d_camera_fps.mt`, at ~92% of its dump) |
 | ~21 | a struct field's member order (`IR::Field :name "key"` vs `:name "current"`; `projects/mtc/src/mtc/bindgen.mt`) | `projects/mtc/src/**` |
 | ~9 | **the format-string hoist** (the sdl3 family's shape: host-hoisted `__mt_fmt_part_N` locals vs the self's `StmtExpr`) | `examples/sdl3/**` |
 
@@ -613,13 +610,13 @@ The foreign-call shape and the format-string shape share a root cause: the self
 has no statement-hoisting channel for multi-step expressions and wraps them in
 `StmtExpr` where the host hoists locals into the block
 (`prepare_expression_with_cleanups`).  Session 41 landed the channel, the
-foreign-call family and the pointer/mapping-substitution rules; the
+foreign-call family and the pointer/mapping-substitution/call-typing rules; the
 format-string hoist (with the host's cleanup placement) is a follow-up on the
-same machinery.  The next ranked item is **the mapping call's return type**
-(item 3f, the raylib family's first difference), then the tail: **3c** (181
-files), the format-string hoist, the `let _` decl shape, the nested
-`foreign_expr` materialization, the array/const literal and struct-field-order
-shapes, 4b, the nested-struct C names, then items 7–9 — file by file.
+same machinery.  The next ranked item is **3c** (~355 files), then the tail: the
+array/const literal shape (57), the flags/enum rendering (3g, 24), the
+format-string hoist (9), the `let _` decl shape, the nested `foreign_expr`
+materialization, the struct-field-order shape, 4b, the nested-struct C names,
+then items 7–9 — file by file.
 
 1. **Opaque declarations** — **DONE (session 39, 2026-10-05)**.  `collect_opaque_decls`
    keeps the declared name, resolves the backing per `opaque_c_type_name`, sets
@@ -818,21 +815,30 @@ shapes, 4b, the nested-struct C names, then items 7–9 — file by file.
     `test_mapping_arguments_are_substituted_not_tempped`.  Repro:
     `examples/raylib/core/3d_camera_fps.mt`'s `Image.kernel_convolution` before
     the fix.
-3f. **The mapping call's return type** (the census's new leading bucket, ~252
-    files after 3e: `Vector3.float_v`'s first difference).  `walk_mapping_expr`
-    types an embedded external call with `top_ret_ty` — the *mapping's* return
-    type — where the host types it with the raw C function's declared return
-    type: for `Vector3ToFloatV` the host has `(Types::Struct :name
-    "Float3Array" :module_name "std.c.raymath")` and the self `(Types::Generic
-    :name "array" :arguments ((Types::Primitive :name "float")
-    (Types::LiteralTypeArg :value 3)))` (the wrapper's declared return type).
-    Repro: `examples/raylib/core/3d_camera_fps.mt` (via `std/raylib.mt`'s
-    `Vector3.float_v`) at the session-41 sweep.  Scope: resolve the mapping
-    alias's owner module and look the raw function's return type up the way the
-    host's `lower_inline_foreign_mapping_expression` uses `owner_analysis`
-    (the self's `imported_foreign_call`/`resolve_foreign_c_name` machinery
-    already resolves the alias; the walk needs the extern declaration's return
-    type).
+3f. **The mapping call's return type** — **DONE (session 41, 2026-10-06,
+    landed with the hoisting batch)**.  `walk_mapping_expr` typed an embedded
+    external call with the mapping's return type; the host types it with the raw
+    C function's declared return type (via its `owner_analysis`).  Landed:
+    `ForeignInfo.owner_module` (set at all three construction sites),
+    `mapping_call_return_type` (the owner's alias → the target module's
+    `foreign function`/`external function` declaration),
+    `walk_mapping_expr`/`walk_mapping_construction` threading the owner module
+    and typing the call with the declared return type (the member keeps the
+    mapping's).  Measured: **11 files flipped to byte-identical** —
+    `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples — 44 → 55 match;
+    locked by `test_mapping_external_call_takes_the_declared_return_type`.
+3g. **The flags/enum type rendering** (the census's new leading bucket, ~205
+    files: the raylib examples' first difference at ~92% of their dumps).
+    `CAMERA_PERSPECTIVE` (a flags member) renders `Types::Flags :name
+    "CameraProjection"` on the host where the self has `Types::Struct :name
+    "CameraProjection"` — the analyzer's recorded type for a *flags member*
+    reference (`CameraProjection.CAMERA_PERSPECTIVE`-style value; the lowering
+    reads the analyzer type through `expr_type`).  Repro:
+    `examples/raylib/core/3d_camera_fps.mt` (the `camera` aggregate literal's
+    `projection` field, byte 276,470 after 3f) at the session-41 sweep.  Scope:
+    the analyzer's member-access typing for flags/enum members (the host's
+    `Types::Flags`, not the struct) and whatever the lowering's
+    `types.is_enum/flags` consumers expect.
 4. **Event fields** — **DONE (session 40, 2026-10-06)**.  `lower_struct_decl`
    emits `IR::Field(name = "__event_<name>", ty = Types::Event …)` built from
    the runtime info (name/capacity/payload/linkage), and `lower_member_access`
@@ -1410,7 +1416,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q` |
-| `sexpr lower` | 44 match / 622 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected) and **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is `__mt_foreign_arg_N`-bound only where the host binds one — `reference_count > 1 && !duplicable || !inlineable`, plus the single-`IR::Call` exception — and the other values are substituted into the mapping via `mapping_replacements`) leave the differing set unchanged, with **253 files' first difference deeper (min +595, max +118,892: raylib 205, box2d 29, box3d 14, 5 std files), 0 shallower, 0 newly differing, 0 lost**; the raylib family's first difference is now the mapping call's return type (item 3f).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
+| `sexpr lower` | 55 match / 611 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-06 session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`) and **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module): the first three leave the set unchanged (max delta +118,892) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the raylib family's first difference is now `CAMERA_PERSPECTIVE`'s flags/struct type (item 3g).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1479,16 +1485,18 @@ at this commit: **44 match / 622 differ / 51 host-rejected / 0 self-rejected of
   matching the host's prefixes (`bind_foreign_mapping_arguments`,
   `lower_foreign_call_statement`); the shared per-function counter numbering was
   already right.
-- **Measured** (all three items of the session): the sweep counts and *set* are
-  unchanged — **44 match / 622 differ / 51 host-rejected / 0 self-rejected of
-  717** — with **253 files' first difference deeper, 0 shallower, 0 newly
-  differing, 0 lost** (min +595; max +4063 after the hoisting, +12014 after
-  item 3d, **+118,892 after item 3e**): the raylib family (205), box2d (29),
-  box3d (14) and `std/raylib.mt`, `std/raygui.mt`, `std/raylib/runtime.mt`,
-  `std/raylib/debug_console.mt`, `std/parse.mt`.  The raylib first difference
-  moved from the `Image.text` StmtExpr through `Image.format`'s pointer cast and
-  `Image.kernel_convolution`'s mapping temp to `Vector3.float_v`'s mapping call
-  return type (the newly ranked next item, 3f, at ~165 KB).
+- **Measured** (all four items of the session): the sweep went **44 → 55 match /
+  622 → 611 differ / 51 host-rejected / 0 self-rejected of 717** — the hoisting
+  and items 3d/3e left the set unchanged (max delta +4063 → +12014 → +118,892)
+  and **item 3f flipped 11 files to byte-identical: `std/raylib.mt`,
+  `std/raygui.mt` and 9 raylib examples**, with **242 files' first difference
+  deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost** overall (the
+  raylib family 205, box2d 29, box3d 14, `std/raylib/runtime.mt`,
+  `std/raylib/debug_console.mt`, `std/parse.mt` among them).  The raylib first
+  difference moved from the `Image.text` StmtExpr through `Image.format`'s
+  pointer cast, `Image.kernel_convolution`'s mapping temp and `Vector3.float_v`'s
+  call type to `CAMERA_PERSPECTIVE`'s flags/struct type at ~92% of the dump (the
+  next item, 3g).
 - **Item 3d (landed in the same session) — the pointer-like foreign argument.**
   An `inout`/`out` foreign argument whose lowered value already is a C pointer —
   an editable method's `this` receiver — was addressed again
@@ -1532,19 +1540,43 @@ at this commit: **44 match / 622 differ / 51 host-rejected / 0 self-rejected of
   byte-identically to the host's call body — `(IR::Cast(this),
   (IR::Member (IR::Name "kernel") "data"), (IR::Cast int (IR::Member … "len")))`
   with no temps.
+- **Item 3f (landed in the same session) — the mapping call's return type.**
+  `walk_mapping_expr` typed an embedded external call with `top_ret_ty` (the
+  *mapping's* return type) where the host types it with the callee's declared
+  return type, resolved through its `owner_analysis`
+  (`= c.Vector3ToFloatV(x).v`: host `(IR::Call :callee "Vector3ToFloatV" …
+  :type (Types::Struct :name "Float3Array" :module_name "std.c.raymath"))` with
+  an `array[float, 3]` member; the self had `array[float, 3]` on both).
+  `ForeignInfo` gained `owner_module` (the declaring module, set at all three
+  construction sites); `mapping_call_return_type` resolves the mapping's
+  receiver alias against the *owner's* imports and then the member against the
+  target module's `foreign function`/`external function` declarations (via
+  `imported_foreign_call`/`imported_extern_call`); `walk_mapping_expr`/
+  `walk_mapping_construction` thread the owner module and use that return type
+  for the call node (the member keeps the mapping's type).  **Measured**: the
+  sweep went **44 → 55 match / 622 → 611 differ / 51 host-rejected / 0
+  self-rejected** — **`std/raylib.mt` and `std/raygui.mt` are byte-identical**,
+  plus 9 raylib examples (`basic_window`, `render_texture`, `window_web`,
+  `basic_shapes`, `following_eyes`, `logo_raylib`, `mouse_trail`,
+  `rectangle_advanced`, `format_text`) — with **242 files' first difference
+  deeper (max +314,637)**, 0 shallower, 0 newly differing, 0 lost.  The raylib
+  files now first-differ at ~92% of their dump (`3d_camera_fps.mt` at byte
+  276,470 of 301,044) on `CAMERA_PERSPECTIVE`'s type: the host renders
+  `Types::Flags` where the self has `Types::Struct` (the next item, 3g).  Locked
+  by `test_mapping_external_call_takes_the_declared_return_type` (the raw
+  `Holder` call type + the mapping's `array[int, 2]` member; the fixture dump is
+  byte-identical to the host's).
 - **Locked by** `test_foreign_call_setup_hoists_at_statement_position` (the four
   hoisted shapes), `test_pointer_receiver_foreign_argument_is_cast_not_addressed`
-  (the cast, no `AddressOf` of `this`, the nil line/path plain statement) and
-  `test_mapping_arguments_are_substituted_not_tempped`; the session-41 fixture's
-  dump is byte-identical to the host's (checked manually — the four function
-  bodies match exactly).
-- Newly exposed, ranked: (a) the mapping **call's return type** (~252 files —
-  `walk_mapping_expr` types an embedded external call with `top_ret_ty`, the
-  mapping's return type, where the host uses the raw C function's declared
-  return type: host `(Types::Struct :name "Float3Array")` vs self
-  `(Types::Generic :name "array" :arguments ((Types::Primitive :name "float")
-  (Types::LiteralTypeArg :value 3))` for `Vector3ToFloatV`; resolving it needs
-  the raw module's extern signature the way the host's `owner_analysis` does);
+  (the cast, no `AddressOf` of `this`, the nil line/path plain statement),
+  `test_mapping_arguments_are_substituted_not_tempped` and
+  `test_mapping_external_call_takes_the_declared_return_type`; the session-41
+  fixture's dump is byte-identical to the host's (checked manually — the four
+  function bodies match exactly).
+- Newly exposed, ranked: (a) **the flags/enum type rendering** (~205 files —
+  `CAMERA_PERSPECTIVE` inside an example's own aggregate literal: the host's
+  `Types::Flags :name "CameraProjection"` vs the self's `Types::Struct :name
+  "CameraProjection"` — the analyzer's recorded type for a flags member);
   (b) a nested statement-lowered call in a *value* position: the host
   materializes `__mt_foreign_expr_N`, the self inlines it; (c) `let _ = expr` is
   a host `LocalDecl` named `_` with linkage `__mt___N` (the self discards it as

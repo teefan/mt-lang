@@ -1281,3 +1281,54 @@ function test_mapping_arguments_are_substituted_not_tempped() -> void:
     ## The mapping's `kernel.data` / `kernel.len` lower on the substituted name.
     expect(dumped.contains_substring("(IR::Member :receiver (IR::Name :name \"kernel\" :type (Types::Span :element_type (Types::Primitive :name \"float\")) :pointer false) :member \"data\""))
     expect(dumped.contains_substring("(IR::Cast :target_type (Types::Primitive :name \"int\") :expression (IR::Member :receiver (IR::Name :name \"kernel\""))
+
+
+# =============================================================================
+#  Inline mapping external calls — the embedded call is typed with the raw C
+#  function's declared return type (the host's `owner_analysis` shape), not the
+#  mapping's own return type; the member carries the mapping's type.
+# =============================================================================
+
+@[test]
+function test_mapping_external_call_takes_the_declared_return_type() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_callty_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_source = <<-SRC
+        external
+
+        struct Holder:
+            values: array[int, 2]
+
+        external function Fetch() -> Holder
+    SRC
+    if not write_source_file(root.as_str(), "raw.mt", raw_source):
+        return
+
+    var source = <<-SRC
+        import raw
+
+        public foreign function fetch_values() -> array[int, 2] = raw.Fetch().values
+
+        function use() -> array[int, 2]:
+            return fetch_values()
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let dumped = dump.as_str()
+
+    ## The `Fetch()` call carries the raw declaration's return type.
+    expect(dumped.contains_substring("(IR::Call :callee \"Fetch\" :arguments () :type (Types::Struct :name \"Holder\" :module_name \"raw\"))"))
+    ## The `.values` member carries the mapping's own return type.
+    expect(dumped.contains_substring(":member \"values\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 2)))"))
