@@ -1776,3 +1776,67 @@ function test_raw_module_declaration_kinds_render_in_the_dump() -> void:
     expect(text.contains_substring("(Types::Flags :name \"CameraProjection\" :module_name \"raw\")"))
     expect(text.contains_substring("(Types::Opaque :name \"Handle\" :module_name \"raw\")"))
     expect(not text.contains_substring("(Types::Struct :name \"Color\" :module_name \"raw\")"))
+
+
+@[test]
+function test_foreign_in_argument_addresses_the_resolved_boundary_type() -> void:
+    ## An `in` foreign argument's address-of is typed with the host's
+    ## `const_pointer_to(parameter.type)` — the *resolved* declared type (the
+    ## wrapper alias `MyDef = c.Def` deepens to the raw `Def`), not a
+    ## `ptr[void]` placeholder nor the alias name (session 43, item 3q).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_cptr_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        struct Def:
+            x: int
+
+        external function create(def: const_ptr[Def]) -> int
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public type MyDef = c.Def
+
+        public foreign function create_it(in def: MyDef) -> int = c.create
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function use(d: wrap.MyDef) -> int:
+            return wrap.create_it(d)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::AddressOf :expression (IR::Name :name \"d\" :type (Types::Struct :name \"Def\" :module_name \"std.c.raw.lib\") :pointer false) :type (Types::Generic :name \"const_ptr\" :arguments ((Types::Struct :name \"Def\" :module_name \"std.c.raw.lib\")))"))
+    expect(not text.contains_substring("const_ptr\" :arguments ((Types::Struct :name \"MyDef\""))

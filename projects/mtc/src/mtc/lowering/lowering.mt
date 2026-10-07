@@ -13736,28 +13736,39 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                     return lowered
                 let arg_ty = ir_expr_type(lowered)
                 var pt_copy0 = param.param_type
-                let slot_ty = resolve_type_ref(ctx, ptr_of(pt_copy0))
+                var slot_ty = deep_alias_target(ctx, resolve_type_ref(ctx, ptr_of(pt_copy0)))
+                # The host's `foreign_slot_boundary_value_type`: a nullable
+                # pointer-like slot's boundary value is its base.
+                if types.is_nullable_type(slot_ty) and is_nullable_pointer_like(slot_ty):
+                    slot_ty = types.unwrap_nullable(slot_ty)
                 let slot_is_pointer = types.is_raw_pointer(slot_ty) or types.is_ref_type(slot_ty) or types.is_own_type(slot_ty)
+                let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, slot_ty)))
                 match addr_operand_expression(lowered):
                     Option.some as op:
-                        let slot_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(qualify_type(ctx, slot_ty)))
                         return alloc_expr(ir.Expr.expr_cast(target_type = slot_ptr_ty, expression = op.value, ty = slot_ptr_ty))
                     Option.none:
                         pass
                 if types.is_raw_pointer(arg_ty) and not slot_is_pointer:
                     return lowered
-                return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+                # The host's `lower_foreign_pointer_argument_value` types the
+                # address-of with `pointer_to(slot_type)` — `ptr[T]`, not a
+                # `ptr[void]` placeholder.
+                return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = slot_ptr_ty))
             # A plain `in` parameter is passed as a C const pointer: hand the
             # callee the argument's address, unless it is already a pointer.
             # (`foreign function f(in value: T) = c.f` — the C signature takes
-            # `const T*`.)
+            # `const T*`, and the address is typed `const_ptr[T]` — the host's
+            # `lower_foreign_in_argument_value` with
+            # `const_pointer_to(parameter.type)`.)
             if param.param_mode == ast.ForeignParamMode.fmode_in:
                 if is_null_ir_expr(lowered):
                     return lowered
                 let in_arg_ty = ir_expr_type(lowered)
                 if types.is_raw_pointer(in_arg_ty) or types.is_ref_type(in_arg_ty) or types.is_own_type(in_arg_ty):
                     return lowered
-                return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+                var pt_in_copy = param.param_type
+                let in_val_ty = deep_alias_target(ctx, qualify_type(ctx, resolve_type_ref(ctx, ptr_of(pt_in_copy))))
+                return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.Type.ty_generic(name = "const_ptr", args = sp_type(in_val_ty))))
             # A plain pointer/ref param passed a non-pointer value borrows it.
             var pt_copy = param.param_type
             let param_ty = resolve_type_ref(ctx, ptr_of(pt_copy))
@@ -13774,6 +13785,83 @@ function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
         return false
     unsafe:
         return read(boundary.name.parts.data + 0) == "cstr"
+
+
+## Follow a module-local type alias chain to its target type.  A foreign
+## boundary's pointer element is the host's `parameter.type` — the *resolved*
+## declared type — so `WorldDef` (a wrapper alias of `c.b2WorldDef`) must deepen
+## to the raw `b2WorldDef`; `qualify_type` deliberately keeps std.c-targeting
+## aliases by name for C-signature purposes, which is why this exists
+## (session 43, item 3q).
+function deep_alias_target(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
+    var current = t
+    var guard: ptr_uint = 0
+    while guard < 8:
+        guard += 1
+        var module_name = ""
+        var type_name = ""
+        match current:
+            types.Type.ty_imported as im:
+                if im.args.len > 0 or is_prelude_variant_name(im.name):
+                    return current
+                module_name = im.module_name
+                type_name = im.name
+            types.Type.ty_named as nm:
+                if nm.module_name.len == 0:
+                    return current
+                module_name = nm.module_name
+                type_name = nm.name
+            _:
+                return current
+        match resolve_imported_alias_type(ctx.program_analyses, module_name, type_name):
+            Option.some as target:
+                let next = target.value
+                if types.type_equals(next, current):
+                    return current
+                current = next
+            Option.none:
+                # `qualify_type` keeps a std.c-targeting alias by name but pairs
+                # it with the *target* module (`ty_imported("std.c.raw.lib",
+                # "MyDef")` for `type MyDef = c.Def`).  Look the alias up in the
+                # module that actually declares it, and accept the result only
+                # when it targets the module already on the type — any other
+                # same-named alias elsewhere would be the wrong rewrite.
+                match resolve_alias_targeting_module(ctx.program_analyses, module_name, type_name):
+                    Option.some as target:
+                        let next = target.value
+                        if types.type_equals(next, current):
+                            return current
+                        current = next
+                    Option.none:
+                        return current
+    return current
+
+
+## The target of an alias named `type_name` declared in *some* module, accepted
+## only when it is an imported type of the given `module_name` (the pairing
+## `qualify_type` leaves for a std.c-targeting alias).
+function resolve_alias_targeting_module(analyses: span[analyzer.Analysis], module_name: str, type_name: str) -> Option[types.Type]:
+    var ai: ptr_uint = 0
+    while ai < analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(analyses.data + ai)
+        let alias_target = a.type_alias_types.get(type_name)
+        if alias_target != null:
+            unsafe:
+                let at = read(alias_target)
+                var base = at
+                if types.is_nullable_type(base):
+                    base = types.unwrap_nullable(base)
+                match base:
+                    types.Type.ty_imported as aim:
+                        if aim.module_name == module_name:
+                            return Option[types.Type].some(value = types.Type.ty_imported(module_name = aim.module_name, name = aim.name, args = aim.args))
+                        return Option[types.Type].none
+                    _:
+                        return Option[types.Type].none
+        ai += 1
+    return Option[types.Type].none
 
 
 ## The operand an address-taking foreign boundary should cast rather than
