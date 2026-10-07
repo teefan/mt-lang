@@ -2948,6 +2948,23 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                 emit_hoist_setup(output, hoist_base, hoist_collected)
                 let target_ty = expr_type(ctx, asg.target)
+                # A bare literal takes the target's type (the host's
+                # `lower_contextual_expression` with the target as the expected
+                # type): `i = 1` / `i += 1` on a `ptr_uint` target emits a
+                # `ptr_uint` literal, not an `int` one.  Mirrors the local
+                # declaration arm's literal set.
+                unsafe:
+                    match read(asg.value):
+                        ast.Expr.expr_integer_literal:
+                            value = int_literal_to_context_type(asg.value, target_ty, value)
+                        ast.Expr.expr_float_literal:
+                            value = float_literal_to_context_type(asg.value, target_ty, value)
+                        ast.Expr.expr_string_literal:
+                            value = string_literal_to_context_type(asg.value, target_ty, value)
+                        ast.Expr.expr_null_literal:
+                            value = null_literal_to_context_type(asg.value, target_ty, value)
+                        _:
+                            pass
                 # Native math compound assignment (`a += b`, `a *= 2.0`): the C
                 # aggregate structs have no operators, so expand component-wise
                 # and emit a plain assignment.

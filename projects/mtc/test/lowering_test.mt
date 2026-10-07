@@ -1390,3 +1390,42 @@ function test_guard_bound_nullable_pointer_arithmetic_is_unwrapped() -> void:
     expect(dumped.contains_substring(":right (IR::Name :name \"i\" :type (Types::Primitive :name \"ptr_uint\") :pointer false) :type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"Block\" :module_name \"main\")))"))
     expect(dumped.contains_substring(":right (IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")) :type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"Block\" :module_name \"main\")))"))
     expect(not dumped.contains_substring(":right (IR::Name :name \"i\" :type (Types::Primitive :name \"ptr_uint\") :pointer false) :type (Types::Nullable"))
+
+
+# =============================================================================
+#  Assignment literals take the target's type — `i = 1` / `i += 2` on a
+#  `ptr_uint` target emit `ptr_uint` literals (the host's contextual conversion
+#  at the assignment), not `int` ones.
+# =============================================================================
+
+@[test]
+function test_assignment_literals_take_the_target_type() -> void:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_asglit_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        function f() -> ptr_uint:
+            var i: ptr_uint = 0
+            i = 1
+            i += 2
+            i -= 3
+            return i
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(text.contains_substring("IR::IntegerLiteral :value 2 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(text.contains_substring("IR::IntegerLiteral :value 3 :type (Types::Primitive :name \"ptr_uint\")"))
+    expect(not text.contains_substring("IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\")"))
