@@ -1619,6 +1619,42 @@ function test_call_argument_literals_take_the_parameter_type() -> void:
     expect(not text.contains_substring("IR::IntegerLiteral :value 4 :type (Types::Primitive :name \"int\")"))
 
 
+@[test]
+function test_generic_variant_arm_field_takes_the_instance_type() -> void:
+    ## A *prelude* generic variant's arm field type is specialized on demand at
+    ## a construction site: `Option[ptr_uint].some(value = 0)` (std/str.mt:220)
+    ## must resolve `value` to the instance's `ptr_uint`, not leave the literal
+    ## at its `int` default (session 43, item 3o).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_gvarlit_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var source = <<-SRC
+        function f() -> Option[ptr_uint]:
+            return Option[ptr_uint].some(value = 0)
+
+        function g(x: ptr_uint) -> Option[ptr_uint]:
+            if x == 0:
+                return Option[ptr_uint].none
+            return Option[ptr_uint].some(value = x)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":arm_name \"some\" :fields ((IR::AggregateField :name \"value\" :value (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"ptr_uint\")))"))
+    expect(not text.contains_substring(":arm_name \"some\" :fields ((IR::AggregateField :name \"value\" :value (IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\")))"))
+
+
 # =============================================================================
 #  A `continue` in a plain `while` body lowers to a native `continue` (the
 #  host's `loop_exit_continue` kind) — no goto label, since the loop's

@@ -17031,9 +17031,21 @@ function variant_field_type_from_arm(ctx: ref[LowerCtx], variant_ty: types.Type,
     arm_key.append(variant_c)
     arm_key.append("_")
     arm_key.append(arm_name)
-    let arm_ptr = ctx.arm_payload_fields.get(arm_key.as_str()) else:
+    var arm_ptr = ctx.arm_payload_fields.get(arm_key.as_str())
+    if arm_ptr == null:
+        # A *prelude* variant instance constructed before any match registered
+        # its arm fields (`Option[ptr_uint].some(value = 0)` in std/str.mt):
+        # register them on demand, the same specialization the `?`-propagation
+        # path and the match path do (session 43, item 3o).
+        match variant_info_for_c_name(ctx, variant_c):
+            Option.some as vi:
+                register_arm_payload_fields(ctx, arm_key.as_str(), vi.value, arm_name, variant_ty)
+                arm_ptr = ctx.arm_payload_fields.get(arm_key.as_str())
+            Option.none:
+                pass
+    let arm_entry = arm_ptr else:
         return Option[types.Type].none
-    let arm_info = unsafe: read(arm_ptr)
+    let arm_info = unsafe: read(arm_entry)
     var fi: ptr_uint = 0
     while fi < arm_info.field_names.len:
         unsafe:
@@ -17041,6 +17053,24 @@ function variant_field_type_from_arm(ctx: ref[LowerCtx], variant_ty: types.Type,
                 return Option[types.Type].some(value = read(arm_info.field_types.data + fi))
         fi += 1
     return Option[types.Type].none
+
+
+## The installed `VariantInfo` a concrete variant C name specializes from: a
+## prelude instance (`std_option_Option_ptr_uint`) maps back to its generic
+## declaration (`Option`/`Result`); any other name has no registry entry.
+function variant_info_for_c_name(ctx: ref[LowerCtx], variant_c: str) -> Option[VariantInfo]:
+    if not is_prelude_variant_name(variant_c):
+        return Option[VariantInfo].none
+    var base_name = ""
+    if variant_c.starts_with("std_result_"):
+        base_name = "Result"
+    else if variant_c.starts_with("std_option_"):
+        base_name = "Option"
+    if base_name.len == 0:
+        return Option[VariantInfo].none
+    let vi_ptr = ctx.variants.get(base_name) else:
+        return Option[VariantInfo].none
+    return Option[VariantInfo].some(value = unsafe: read(vi_ptr))
 
 
 ## Return the arm payload type from a struct name and source module.
