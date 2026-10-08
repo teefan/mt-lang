@@ -132,7 +132,7 @@ names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
 Last updated: session 44 (2026-10-07) — **`lower` Track 3 items 3r, 3s, 3t,
-3u and 3v** (the struct equality desugaring; the box2d family's first
+3u, 3v and 3w** (the struct equality desugaring; the box2d family's first
 difference).  The lowering keeps the host's `IR::Binary` on struct values and
 registers the external (raw-module ABI) struct's field layout in the new
 `Program.external_structs`; the C backend synthesizes the `mt_struct_eq_<T>`
@@ -163,8 +163,17 @@ sync method with an array-storing receiver type the host's borrow convention
 call sites, the dyn wrappers included) — **3 flips** (`examples/box2d/contact.mt`,
 `examples/box2d/sensor_funnel.mt`, `std/noise.mt`) with 15 files deeper
 (+64 … +76,462), 0 shallower/newly differing/lost; the full corpus reads
-**143 match / 523 differ**.  The next leader is the **format-string hoist**
-(the box2d family's `draw_text_line` sites joined the sdl3 family's).
+**143 match / 523 differ**.  **3w** then ported the host's dynamic
+format-string protocol — the build hoists into the statement stream with the
+destination-named result temp (`__fmt_<name>`, `_cap`/`_off`, `_2` repeats),
+the parts' temps first and the capacity accumulations after, casts only where
+the types differ, and the `mt_format_str_release` cleanup after the statement
+(dropped when the target owns the buffer) — **15 flips** (the whole box2d
+family) with 30 files deeper (15 raylib, 11 sdl3, 3 box2d, 1 std), 0
+shallower/newly differing/lost; the full corpus reads **158 match / 508
+differ**.  The next leaders are the nested foreign-call argument (the raylib
+`DrawTextEx(GetFontDefault(), …)` family, 14 files), the array/const literal
+shape (`projects/mtc/src`, ~57) and the explicit format sink (~41 files).
 Session 43 had landed **`lower` Track 3 items 3k, 3j, 3l, 3m, 3o, 3i-b, 3g and
 3q**.
 3k, the refinement record's post-statement positions: a guard inside a compound
@@ -671,13 +680,14 @@ Records: §0k sessions 19–23; session 28.
 Work in the ranked order below; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank — session 42's host cache makes the repeat measurement cheap.  Current set:
-**143 match / 523 differ / 51 host-rejected / 0 self-rejected of 717 files**
-(session 44 re-read after 3v — 3r and 3s each move 30 files' first differences
+**158 match / 508 differ / 51 host-rejected / 0 self-rejected of 717 files**
+(session 44 re-read after 3w — 3r and 3s each move 30 files' first differences
 deeper, 3t flips `projects/stress/src/engine/interfaces.mt`, 3u flips 8 more
 (`examples/box2d/**` + `examples/raylib/core/3d_camera_free.mt`) and moves 42
 deeper, 3v flips 3 more (`examples/box2d/contact.mt`, `sensor_funnel.mt`,
-`std/noise.mt`) and moves 15 deeper; the count drifts with the tree's own
-sources and the tmp fixtures — quote the set).
+`std/noise.mt`) and moves 15 deeper, 3w flips 15 (the box2d family) and moves 30
+deeper; the count drifts with the tree's own sources and the tmp
+fixtures — quote the set).
 
 **First-difference census (session 43) — the track's re-ranking.**  Bucketing
 the 585 differing files by their first difference (a throwaway classifier over
@@ -712,16 +722,23 @@ and **3v** (the array-storing receiver's borrow convention: `this` as `ptr[T]`,
 auto-borrow at the call sites, the dyn wrappers included): **3 flips**
 (`examples/box2d/contact.mt`, `sensor_funnel.mt`, `std/noise.mt`), 15 files
 deeper again (+64 … +76,462), 0 shallower/newly differing/lost — **the full
-corpus 143 match / 523 differ** — exposing the **format-string hoist** (the
-box2d family's `draw_text_line` sites joined the sdl3 family's) as the top
-row outside `projects/mtc/src`.
+corpus 143 match / 523 differ** — and **3w** (the dynamic format-string
+protocol: the build hoists with the destination-named result temp, the parts'
+temps first, casts only where the types differ, and the release cleanup after
+the statement): **15 flips** (the box2d family — `body_move`, `body_type`,
+`bridge`, `circle_stack`, `drop`, `explosion`, `falling_hinges`, `prismatic`,
+`ragdoll`, `ray_cast`, `revolute`, `shape_cast`, `skinny_box`,
+`vertical_stack`, `wheel`), 30 files deeper again (15 raylib, 11 sdl3, 3 box2d,
+1 std), 0 shallower/newly differing/lost — **the full corpus 158 match / 508
+differ** — exposing the nested foreign-call argument (the raylib
+`DrawTextEx(GetFontDefault(), …)` family) as the box2d-adjacent leader.
 The current leaders:
 
 | Files | First difference | Where |
 | --- | --- | --- |
 | ~57 | an array/const literal element shape (host `IR::IntegerLiteral` where the self emits `IR::Name`; `projects/mtc/src/mtc/build.mt`'s first difference) | `projects/mtc/src/**` |
-| ~23 | **the format-string hoist** (host-hoisted `__mt_fmt_part_N` locals vs the self's `StmtExpr`; the sdl3 family's shape and, after 3v, the box2d family's `draw_text_line` calls) | `examples/sdl3/**`, `examples/box2d/**` |
 | ~21 | a struct field's member order (`IR::Field :name "key"` vs `:name "current"`; `projects/mtc/src/mtc/bindgen.mt`) | `projects/mtc/src/**` |
+| ~14 | **3x, the nested foreign-call argument**: `DrawTextEx(GetFontDefault(), …)` inlines the single direct call on the host where the self materializes a `__mt_foreign_arg_N` temp (the `inlineable_single_direct_call_names` rule's single-call exception) | `examples/raylib/**`, `std/raylib/**` |
 | 2 | **3n, the async frame struct's name** (`std_net_recv_impl__frame` vs `std_net_recv_impl_frame`) | the two `examples/async_*` |
 
 The foreign-call shape and the format-string shape share a root cause: the self
@@ -747,12 +764,14 @@ host's `IR::Binary` on struct values and the C backend synthesizes the
 fold — 30 deeper again) and **3t** (the dyn vtable member typed from the
 interface declaration — the corpus's 131 → 132 flip, 30 deeper again) and **3u**
 (the `out`/`inout` foreign boundary's alias deepening — 8 flips, 42 deeper
-again, the corpus 140/526) and **3v** (the array-storing receiver's borrow
-convention — 3 flips, 15 deeper again, the corpus 143/523).  The next ranked
-item is the **format-string hoist** (the sdl3 and box2d families), then the
-tail: the
-array/const literal shape (57), the field-order shape (~21), 3n (the async
-frame name), 3p (the unnamed variant-arm
+again, the corpus 140/526), **3v** (the array-storing receiver's borrow
+convention — 3 flips, 15 deeper again, the corpus 143/523) and **3w** (the
+dynamic format-string protocol — 15 flips, 30 deeper again, the corpus
+158/508).  The next ranked items are **3x**
+(the nested foreign-call argument — the raylib `DrawTextEx(GetFontDefault(), …)`
+family), the array/const literal shape (57), the field-order shape (~21) and
+**3y** (the explicit format sink, ~41 files), then the
+tail: 3n (the async frame name), 3p (the unnamed variant-arm
 construction's missing sema check — a pre-existing abort), the branch-position
 foreign-call setup (the audio family's second difference: the host hoists a
 setup into a branch's statement stream where the self wraps it in a `StmtExpr` —
@@ -1219,27 +1238,55 @@ file by file.
     the subset 130 → **133 match**, the full corpus **140 → 143 match / 526 →
     523 differ**.  Locked by `test_array_storing_receiver_is_borrowed`.
 3w. **The format-string hoist** (the census's top row after 3v; the sdl3 family
-    and now the box2d family's `draw_text_line` sites): the host hoists
-    `__mt_fmt_part_N` locals into the enclosing block where the self wraps the
-    setup in an `IR::StmtExpr`.  This is the follow-up session 41's note named
-    on the hoisting channel ("the format-string hoist (with the host's cleanup
-    placement) is a follow-up on the same machinery").  Repro:
-    `examples/box2d/body_move.mt` at byte 675,577 after 3v.
-    - **Sites** (probed 2026-10-07, session 44): the `lower_expr` arm
-      `ast.Expr.expr_format_string` (`lowering.mt:6176-6186`) suspends the
-      hoisting window (`suspend_stmt_setup`), runs
-      `build_format_string_dynamic` into a local vec and wraps it in
-      `ir.Expr.expr_stmt_expr`; the host's shapes are
-      `lowering/expressions.rb:230-360` (the two-pass `fmt_part` temps) with
-      the split done by `prepare_expression_with_cleanups`.  The pattern to
-      follow is session 41's foreign-call hoist: inside an active window push
-      the setup through `collect_stmt_setup`/`emit_hoist_setup` instead of the
-      StmtExpr (statement roots only — a nested expression keeps the
-      StmtExpr), and place the hook path's post-statement releases
-      (`len_kind == 3`'s `fmt_hook_str` `string.String.release` calls, the
-      `append_hoist_cleanups` half) after the statement like the `hm_value`
-      frees.  `test/mt` and the examples gates then verify the C still
-      compiles (the stmt-expr removal changes every format-string site's C).
+    and the box2d family's `draw_text_line` sites) — **DONE (session 44,
+    2026-10-07)**.  The host's dynamic format string is a *statement-level*
+    protocol: `prepare_format_string_expression_for_inline_lowering` builds it
+    into the statement's setup and registers a `mt_format_str_release(temp)`
+    cleanup, `build_dynamic_format_string_temp_setup` names the result after the
+    most recent local declaration (`__fmt_<name>`, `_cap`/`_off`, `_2` for a
+    destination's repeats), orders the parts' temps first, then the capacity,
+    the accumulations (`cap = cap + len(…)`), the result (`mt_format_str_make`)
+    and the offset, and only casts a part whose type differs from its append
+    argument.  The self wrapped the whole build in an `IR::StmtExpr` and used
+    its own `__mt_fmt_cap/off/result_N` names.  Landed: the arm now builds into
+    the statement's hoisting window (`hoist_stmts`) with the release pushed to
+    `hoist_cleanups` (skipped for `return`, whose str case transfers ownership),
+    `build_format_string_dynamic` mirrors the host's naming/order/cast shapes,
+    `fmt_dest_name` (set by the local-decl arm, block-scoped like the host's
+    per-block env) and the per-function `fmt_counter` drive the names, and the
+    local/assignment arms drop the release for `str`/`cstr`/string-holding
+    targets (`drop_format_release_cleanups` — the host's
+    `reject_format_releases_for_assignment`).  The dedicated
+    `lower_format_string_local` path is gone (the general window path produces
+    the host's `__fmt_<name>` temp + `name = temp` decl).  Measured: the fixture
+    (a repeated destination) is byte-identical end-to-end; **15 flips** (the
+    whole box2d family) with 30 files deeper (15 raylib, 11 sdl3, 3 box2d, 1
+    std), 0 shallower, 0 newly differing, 0 lost; the subset 133 → **148
+    match**, the full corpus **143 → 158 match / 523 → 508 differ**.  Locked by
+    `test_dynamic_format_string_hoists_with_the_destination_name`.
+    Residue: a format string in a lazily-evaluated region (the window is
+    suspended) keeps the inline `StmtExpr` and no release (the host has no such
+    shape); the custom `format_len`/`append_format` hook path keeps the self's
+    shapes (its `fmt_part_len` temp / span-output append is a separate port —
+    not corpus-visible: only `test/mt/fmt_test.mt` exercises it and that file's
+    first difference is the `mt_str_buffer_*` decls).
+3x. **The nested foreign-call argument** (newly exposed by 3w; ~14 files — the
+    raylib `DrawTextEx(GetFontDefault(), …)` family): the host inlines a single
+    direct call argument where the self materializes a `__mt_foreign_arg_N`
+    temp (the `inlineable_single_direct_call_names` single-call exception,
+    `calls.rb:702`).  Repro: `examples/raylib/core/2d_camera_mouse_zoom.mt` at
+    byte 247,532 after 3w.
+3y. **The explicit format sink** (the host's `std.fmt`-sink lowering; ~41
+    corpus files use the shape — `std/cli.mt`, `std/terminal.mt`, the
+    `projects/mtc/src` DAP/LSP modules): `std.fmt`-module calls whose second
+    argument is a format string lower to a *streaming* build on the host
+    (`explicit_format_sink_call_info` → `lower_explicit_format_sink_expression_statement`,
+    `expressions.rb:484-560`; `append`/`write`/`assign` targets and
+    `copy_explicit_format_sink_str_parts`), with no `str` result and no release.
+    The self has no sink form at all (it builds a `str` and passes it) — the
+    port is a subsystem.  Not yet a first-difference leader (those files'
+    first differences are the array/const and field-order shapes); rank it once
+    the `projects/mtc/src` leaders are closed.
 3i-b. **The `break` half of the loop-flow model** — **DONE (session 43,
     2026-10-07)** (newly exposed by 3o; the box2d/raylib/sdl3 families' first
     difference, `std/str.mt`'s nested `while`).  The host emits a native
@@ -1937,7 +1984,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 143 match / 523 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 44 — **3r's struct equality desugaring**: the identical-corpus `std examples test` subset comparison read **122/399/47/0 on both the pre-fix (`tmp/mtc-head`) and post-fix (`tmp/mtc-dev`) binaries** with **30 files' first difference deeper by +21,667 to +21,677** (the box2d family), 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus set is unchanged.  **3s's array-length fold** (same session): the same subset protocol read **122/399/47/0 on both binaries** with **the same 30 files' first difference deeper again (+19,298 to +19,308)**, 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus stays 131/535/51/0.  **3t's dyn vtable member type** (same session): **the full corpus 131 → 132 match / 535 → 534 differ** (`projects/stress/src/engine/interfaces.mt` flips), the same 30 files deeper (+1,925 each), 0 shallower/newly differing/lost — and the slot type was a real miscompile (the pre-fix binary aborted rc 134 running `body_move.mt`, the host runs the render loop).  **3u's out/inout boundary deepening** (same session): **8 files flip** (`examples/box2d/common.mt`, `compound_shapes`, `confined`, `human`, `kinematic`, `rounded`, `tiny_pyramid`, `examples/raylib/core/3d_camera_free.mt`), the subset 122 → **130 match**, with **42 files' first difference deeper** (23 box2d, 14 box3d, 5 raylib; +181 … +252,788), 0 shallower/newly differing/lost — **the full corpus 132 → 140 match / 534 → 526 differ**.  **3v's array-storing receiver borrow** (same session): **3 files flip** (`examples/box2d/contact.mt`, `examples/box2d/sensor_funnel.mt`, `std/noise.mt`), the subset 130 → **133 match**, 15 files' first difference deeper (14 box2d + 1 test; +64 … +76,462), 0 shallower/newly differing/lost — **the full corpus 140 → 143 match / 526 → 523 differ**.  Session 43 — **3k's refinement-record positions**, **3j's simple-path call type**, **3l's `read(x) =` target literal**, **3m's call-argument/variant-field literals + the bare-float-literal operand retyping**, **3o's prelude generic variant arm field type**, **3i-b's native `break`**, **3g's raw-module/flags type classification** and **3q's foreign address-of boundary type**: `std examples test` subset comparisons with the identical corpus read 48/473/47/0 on the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries — 3k moves **209 files' first difference deeper (+30,767 each)**, 3j **100 files deeper**, 3l **183 files deeper with 26 flips** (the heap-importing `std/**` family), 3m **82 files deeper with 2 flips**, 3o **80 files deeper**, 3i-b **74 files deeper with 6 flips** (`std/str.mt` byte-identical), 3g **83 files deeper with 35 flips** (the raylib core family) and 3q **55 files deeper with 5 flips** (the raylib shapes family), 0 shallower, 0 newly differing, 0 lost throughout; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 158 match / 508 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 44 — **3r's struct equality desugaring**: the identical-corpus `std examples test` subset comparison read **122/399/47/0 on both the pre-fix (`tmp/mtc-head`) and post-fix (`tmp/mtc-dev`) binaries** with **30 files' first difference deeper by +21,667 to +21,677** (the box2d family), 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus set is unchanged.  **3s's array-length fold** (same session): the same subset protocol read **122/399/47/0 on both binaries** with **the same 30 files' first difference deeper again (+19,298 to +19,308)**, 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus stays 131/535/51/0.  **3t's dyn vtable member type** (same session): **the full corpus 131 → 132 match / 535 → 534 differ** (`projects/stress/src/engine/interfaces.mt` flips), the same 30 files deeper (+1,925 each), 0 shallower/newly differing/lost — and the slot type was a real miscompile (the pre-fix binary aborted rc 134 running `body_move.mt`, the host runs the render loop).  **3u's out/inout boundary deepening** (same session): **8 files flip** (`examples/box2d/common.mt`, `compound_shapes`, `confined`, `human`, `kinematic`, `rounded`, `tiny_pyramid`, `examples/raylib/core/3d_camera_free.mt`), the subset 122 → **130 match**, with **42 files' first difference deeper** (23 box2d, 14 box3d, 5 raylib; +181 … +252,788), 0 shallower/newly differing/lost — **the full corpus 132 → 140 match / 534 → 526 differ**.  **3v's array-storing receiver borrow** (same session): **3 files flip** (`examples/box2d/contact.mt`, `examples/box2d/sensor_funnel.mt`, `std/noise.mt`), the subset 130 → **133 match**, 15 files' first difference deeper (14 box2d + 1 test; +64 … +76,462), 0 shallower/newly differing/lost — **the full corpus 140 → 143 match / 526 → 523 differ**.  **3w's dynamic format-string protocol** (same session): the build hoists with the destination-named result temp (`__fmt_<name>`, `_cap`/`_off`, `_2` repeats), the parts' temps first, casts only where the types differ, and the `mt_format_str_release` cleanup after the statement — **15 files flip** (the whole box2d family: `body_move`, `body_type`, `bridge`, `circle_stack`, `drop`, `explosion`, `falling_hinges`, `prismatic`, `ragdoll`, `ray_cast`, `revolute`, `shape_cast`, `skinny_box`, `vertical_stack`, `wheel`), the subset 133 → **148 match**, 30 files' first difference deeper (15 raylib, 11 sdl3, 3 box2d, 1 std; +31 … +32,056), 0 shallower/newly differing/lost — **the full corpus 143 → 158 match / 523 → 508 differ**.  Session 43 — **3k's refinement-record positions**, **3j's simple-path call type**, **3l's `read(x) =` target literal**, **3m's call-argument/variant-field literals + the bare-float-literal operand retyping**, **3o's prelude generic variant arm field type**, **3i-b's native `break`**, **3g's raw-module/flags type classification** and **3q's foreign address-of boundary type**: `std examples test` subset comparisons with the identical corpus read 48/473/47/0 on the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries — 3k moves **209 files' first difference deeper (+30,767 each)**, 3j **100 files deeper**, 3l **183 files deeper with 26 flips** (the heap-importing `std/**` family), 3m **82 files deeper with 2 flips**, 3o **80 files deeper**, 3i-b **74 files deeper with 6 flips** (`std/str.mt` byte-identical), 3g **83 files deeper with 35 flips** (the raylib core family) and 3q **55 files deeper with 5 flips** (the raylib shapes family), 0 shallower, 0 newly differing, 0 lost throughout; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (re-read 2026-10-07 session 43: 6 → 6, the same keys, after 3k's record-position change — a greatest-position scan had briefly surfaced the refined-parameter hover `docs/memory_stress_test.mt@39:24`; the final order-based lookup mirrors the host and closes it.  2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -2110,9 +2157,48 @@ differ / 51 host-rejected / 0 self-rejected of 717** (session 43's close).
   differing, 0 lost; the full corpus **140 → 143 match / 526 → 523 differ**.
   Locked by `test_array_storing_receiver_is_borrowed` (the pointer param, the
   `this` pass-through and the `&b` borrow at a value call site).
-- Newly exposed, ranked: the **format-string hoist** (the box2d family's
-  `draw_text_line` sites joined the sdl3 family's — `body_move.mt` byte
-  675,577 after 3v; Track 3's 3w entry).
+- **Item 3w (landed in the same session) — the dynamic format-string
+  protocol.**  A dynamic format string wrapped its whole build in an
+  `IR::StmtExpr` with self-invented `__mt_fmt_cap/off/result_N` names and
+  `+=` accumulations; the host builds it as a *statement-level* protocol
+  (`prepare_format_string_expression_for_inline_lowering` +
+  `build_dynamic_format_string_temp_setup`): the setup hoists into the
+  statement stream, the result temp is named after the most recent local
+  declaration (`__fmt_<dest>`, `_cap`/`_off`, `_2` for repeats — the host's
+  `env[:current_local_name]`/`fmt_counter`), the parts' temps come first and
+  the `cap = cap + len(…)` accumulations after, a part is cast only when its
+  type differs from its append argument, and a
+  `mt_format_str_release(temp)` cleanup runs *after* the statement (dropped
+  when the target owns the buffer — `reject_format_releases_for_assignment`).
+  Landed: the `expr_format_string` arm builds into the statement's hoisting
+  window and pushes the release to `hoist_cleanups` (skipped in `hm_return`,
+  whose str case transfers ownership); `build_format_string_dynamic` mirrors
+  the host's naming/order/cast shapes; `fmt_dest_name` (set by the local-decl
+  arm; block-scoped, restored by `lower_block`) and the per-function
+  `fmt_counter` (cleared at every function body) drive the names;
+  `drop_format_release_cleanups` + `format_owning_target_type` mirror the
+  ownership rule for locals and assignments; the dedicated
+  `lower_format_string_local` fast path is gone (the general path now produces
+  the host's `__fmt_<name>` temp + the local decl).  Measured (same subset
+  protocol, the 3v `build/stage2/mtc` vs `tmp/mtc-dev`): the fixture (two
+  format strings after one local — the `_2` suffix, the release, the no-cast
+  part) is byte-identical end-to-end; **15 flips** — the whole box2d family
+  (`body_move`, `body_type`, `bridge`, `circle_stack`, `drop`, `explosion`,
+  `falling_hinges`, `prismatic`, `ragdoll`, `ray_cast`, `revolute`,
+  `shape_cast`, `skinny_box`, `vertical_stack`, `wheel`) — the subset 133 →
+  **148 match**, with 30 files' first difference deeper (15 raylib, 11 sdl3, 3
+  box2d, 1 std; +31 … +32,056), 0 shallower, 0 newly differing, 0 lost; the
+  full corpus **143 → 158 match / 523 → 508 differ**.  Locked by
+  `test_dynamic_format_string_hoists_with_the_destination_name`.  Residue: the
+  suspended-window (lazy region) case keeps the StmtExpr and no release; the
+  custom `format_len`/`append_format` hook keeps the self's shapes (not
+  corpus-visible).
+- Newly exposed, ranked: **3x** (the nested foreign-call argument — the raylib
+  `DrawTextEx(GetFontDefault(), …)` family: the host inlines a single direct
+  call where the self temps it; `2d_camera_mouse_zoom.mt` byte 247,532 after
+  3w) and **3y** (the explicit format sink — the host's `std.fmt`-sink
+  streaming lowering, used by ~41 corpus files; not yet a first-difference
+  leader).
 
 ### Session 43 (2026-10-07) — `lower` Track 3 item 3k: the refinement record's post-statement positions
 

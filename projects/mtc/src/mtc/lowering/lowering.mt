@@ -325,6 +325,14 @@ struct LowerCtx:
     # The statement-root AST expression of the current window, so the foreign
     # lowering can tell the root call from a nested one (pointer identity).
     hoist_root_ep: ptr[ast.Expr]?
+    # Dynamic format-string result naming (the host's `env[:fmt_counter]` and
+    # `env[:current_local_name]`): `fmt_dest_name` is the most recent local
+    # declaration's C name in the current block (and its ancestors), which names
+    # a format string's result temp `__fmt_<name>`; `fmt_counter` counts the
+    # results per destination per function (`_2`, `_3` … suffixes).  Both reset
+    # at every function body.
+    fmt_dest_name: str
+    fmt_counter: map_mod.Map[str, ptr_uint]
     # Inline foreign-mapping substitutions: an argument value the host does not
     # temporary-bind is bound here (parameter name → the lowered value
     # expression) and `lower_expr`'s identifier arm resolves it ahead of the
@@ -859,6 +867,8 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
     # Reset function-level state
     ctx.locals.clear()
     ctx.temp_counter = 0
+    ctx.fmt_dest_name = ""
+    ctx.fmt_counter.clear()
     ctx.function_returns.clear()
     var saved_type_subst = ctx.type_substitution
     ctx.type_substitution = read(sub)
@@ -986,6 +996,8 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         analysis = analysis,
         locals = vec.Vec[LocalBinding].create(),
         temp_counter = 0,
+        fmt_dest_name = "",
+        fmt_counter = map_mod.Map[str, ptr_uint].create(),
         foreign_map = map_mod.Map[str, ForeignInfo].create(),
         extern_map = map_mod.Map[str, str].create(),
         function_returns = map_mod.Map[str, types.Type].create(),
@@ -2123,6 +2135,8 @@ function lower_extending_block(ctx: ref[LowerCtx], functions: ref[vec.Vec[ir.Fun
 function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, m: ast.Method) -> ir.Function:
     ctx.locals.clear()
     ctx.temp_counter = 0
+    ctx.fmt_dest_name = ""
+    ctx.fmt_counter.clear()
     let sig = lookup_fn_sig(ctx, m.name)
 
     var ir_params = vec.Vec[ir.Param].create()
@@ -2278,6 +2292,8 @@ function coerce_return_literal_to_cstr(ctx: ref[LowerCtx], value: ptr[ast.Expr],
 function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], return_type: ptr[ast.TypeRef]?, body: ptr[ast.Stmt]?, is_async: bool) -> ir.Function:
     ctx.locals.clear()
     ctx.temp_counter = 0
+    ctx.fmt_dest_name = ""
+    ctx.fmt_counter.clear()
     let sig = lookup_fn_sig(ctx, name)
 
     var ir_params = vec.Vec[ir.Param].create()
@@ -2603,6 +2619,11 @@ function resume_stmt_setup(ctx: ref[LowerCtx], saved: HoistSaved) -> void:
 function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.Stmt]:
     var stmts = vec.Vec[ir.Stmt].create()
     push_defer_scope(ctx)
+    # `fmt_dest_name` is block-scoped (the host's per-block `env` copy): a local
+    # declared inside this block names this block's format results, and the
+    # name is restored on exit so sibling blocks are unaffected.
+    let fmt_dest_saved = ctx.fmt_dest_name
+    defer: ctx.fmt_dest_name = fmt_dest_saved
     let bp = body_ptr else:
         pop_defer_scope(ctx)
         return stmts.as_span()
@@ -2821,6 +2842,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     return
                 let init_val = loc.value
                 if init_val != null:
+                    # The host's `env[:current_local_name]`: a dynamic format
+                    # string later in this block names its result temp after the
+                    # most recent local declaration (`__fmt_<name>`).
+                    ctx.fmt_dest_name = utils.c_local_name(loc.name)
                     unsafe:
                         match read(init_val):
                             ast.Expr.expr_unary_op as un:
@@ -2850,9 +2875,6 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         match read(init_val):
                             ast.Expr.expr_match as me:
                                 lower_match_expression_local(ctx, output, loc.name, loc.stmt_type, me.scrutinee, me.arms)
-                                return
-                            ast.Expr.expr_format_string as fs:
-                                lower_format_string_local(ctx, output, loc.name, fs.parts)
                                 return
                             _:
                                 pass
@@ -2939,7 +2961,13 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 ))
                 let hoist_collected = collect_stmt_setup(ctx, hoist_saved)
                 emit_hoist_setup(output, hoist_base, hoist_collected)
-                append_hoist_cleanups(output, hoist_collected)
+                # A `str`/`cstr` local (or one holding such a field) owns a
+                # dynamic format string's buffer: its release is dropped
+                # (the host's `reject_format_releases_for_assignment`).
+                if format_owning_target_type(ctx, ty, 0):
+                    append_hoist_cleanups(output, drop_format_release_cleanups(hoist_collected))
+                else:
+                    append_hoist_cleanups(output, hoist_collected)
                 ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
             ast.Stmt.stmt_assignment as asg:
                 # Async CPS: an assignment whose value contains an await.  For a
@@ -2996,7 +3024,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         emit_hoist_setup(output, hoist_base, hoist_collected)
                         value = literal_value_to_context_type(asg.value, deref_ty, value)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
-                        append_hoist_cleanups(output, hoist_collected)
+                        if format_owning_target_type(ctx, deref_ty, 0):
+                            append_hoist_cleanups(output, drop_format_release_cleanups(hoist_collected))
+                        else:
+                            append_hoist_cleanups(output, hoist_collected)
                         return
                     Option.none:
                         pass
@@ -3023,7 +3054,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     if is_vec_math_name(math_name):
                         let expanded = lower_vec_binary_op(ctx, compound_base_operator(asg.operator), target, value, target_ty, math_name)
                         output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = expanded))
-                        append_hoist_cleanups(output, hoist_collected)
+                        if format_owning_target_type(ctx, target_ty, 0):
+                            append_hoist_cleanups(output, drop_format_release_cleanups(hoist_collected))
+                        else:
+                            append_hoist_cleanups(output, hoist_collected)
                         return
                 if types.is_nullable_type(target_ty) and not is_nullable_pointer_like(target_ty):
                     let value_ty = ir_expr_type(value)
@@ -3034,7 +3068,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                             _:
                                 value = nullable_some_literal(target_ty, value)
                 output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
-                append_hoist_cleanups(output, hoist_collected)
+                if format_owning_target_type(ctx, target_ty, 0):
+                    append_hoist_cleanups(output, drop_format_release_cleanups(hoist_collected))
+                else:
+                    append_hoist_cleanups(output, hoist_collected)
             ast.Stmt.stmt_while as w:
                 if w.is_inline:
                     lower_inline_while(ctx, output, w.condition, w.body)
@@ -6174,16 +6211,25 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 let inner = lower_expr(ctx, aw.expression)
                 return unwrap_task_value(inner)
             ast.Expr.expr_format_string as fs:
-                # All-static format strings collapse to a plain literal.  Dynamic
-                # ones build the string in a GCC/Clang statement-expression so
-                # they work in any expression position without a hoist pass.
+                # All-static format strings collapse to a plain literal.  A
+                # dynamic one builds through the host's make/release protocol:
+                # inside a statement's hoisting window the whole build hoists
+                # into the statement stream and the result is released after the
+                # statement (the host's `prepare_expression_with_cleanups`);
+                # a lazily-evaluated region keeps the inline statement-expression
+                # form, which cannot carry the post-statement release.
                 if format_string_all_static(fs.parts):
                     return format_string_static_literal(fs.parts)
-                var fmt_setup = vec.Vec[ir.Stmt].create()
-                let fmt_saved = suspend_stmt_setup(ctx)
-                let fmt_result = build_format_string_dynamic(ctx, fs.parts, ref_of(fmt_setup))
-                resume_stmt_setup(ctx, fmt_saved)
-                return alloc_expr(ir.Expr.expr_stmt_expr(setup = fmt_setup.as_span(), result = fmt_result, ty = types.Type.ty_str))
+                if ctx.hoist_mode == HoistMode.hm_off:
+                    var fmt_setup = vec.Vec[ir.Stmt].create()
+                    let fmt_result = build_format_string_dynamic(ctx, fs.parts, ref_of(fmt_setup))
+                    return alloc_expr(ir.Expr.expr_stmt_expr(setup = fmt_setup.as_span(), result = fmt_result, ty = types.Type.ty_str))
+                let fmt_result = build_format_string_dynamic(ctx, fs.parts, ref_of(ctx.hoist_stmts))
+                # A `return f"..."` transfers the buffer to the caller — the
+                # host drops the release for a str-typed return.
+                if ctx.hoist_mode != HoistMode.hm_return:
+                    ctx.hoist_cleanups.push(format_str_release_stmt(fmt_result))
+                return fmt_result
             ast.Expr.expr_detach as dt:
                 return lower_detach_expr(ctx, dt.expression, ep)
             ast.Expr.expr_specialization as spec:
@@ -6533,6 +6579,8 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
+    ctx.fmt_dest_name = ""
+    ctx.fmt_counter.clear()
 
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = env_type_name)))
@@ -6660,6 +6708,8 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
+    ctx.fmt_dest_name = ""
+    ctx.fmt_counter.clear()
 
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     var params = vec.Vec[ir.Param].create()
@@ -9075,6 +9125,8 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
 
             ctx.locals = vec.Vec[LocalBinding].create()
             ctx.temp_counter = 0
+            ctx.fmt_dest_name = ""
+            ctx.fmt_counter.clear()
             ctx.function_returns = map_mod.Map[str, types.Type].create()
             ctx.type_substitution = map_mod.Map[str, types.Type].create()
             ctx.inside_async = false
@@ -11184,6 +11236,8 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.variants = map_mod.Map[str, VariantInfo].create()
     ctx.locals = vec.Vec[LocalBinding].create()
     ctx.temp_counter = 0
+    ctx.fmt_dest_name = ""
+    ctx.fmt_counter.clear()
     ctx.function_returns = map_mod.Map[str, types.Type].create()
     ctx.type_substitution = sub
     ctx.inside_async = false
@@ -11260,6 +11314,8 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     let m = gm.method
     ctx.locals.clear()
     ctx.temp_counter = 0
+    ctx.fmt_dest_name = ""
+    ctx.fmt_counter.clear()
 
     # Build the receiver struct type using only the struct-level type args
     # (the first N concrete args where N = struct_param_names.len).  Method-level
@@ -18179,25 +18235,6 @@ function is_builtin_type_name(name: str) -> bool:
 #  Format string lowering (f"...")
 # =============================================================================
 
-## Lower `let result = f"text #{expr} more"` into a two-pass sequence:
-##   var __fmt_cap = <static text len>
-##   __fmt_cap = __fmt_cap + mt_format_int_len(expr)
-##   var result = mt_format_str_make(__fmt_cap)
-##   var __fmt_off: uintptr = 0
-##   __fmt_off = mt_format_append_str(result, __fmt_off, "...")
-##   __fmt_off = mt_format_append_int(result, __fmt_off, expr)
-function lower_format_string_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, parts: span[ast.FormatStringPart]) -> void:
-    let c_name = utils.c_local_name(name)
-    let str_ty = types.Type.ty_str
-    var value_expr: ptr[ir.Expr]
-    if format_string_all_static(parts):
-        value_expr = format_string_static_literal(parts)
-    else:
-        value_expr = build_format_string_dynamic(ctx, parts, output)
-    output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = str_ty, value = value_expr, line = 0, source_path = ""))
-    ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = str_ty, pointer = false))
-
-
 ## True when a format string has no interpolations (only literal text parts),
 ## so it can collapse to a plain string literal with no runtime building.
 function format_string_all_static(parts: span[ast.FormatStringPart]) -> bool:
@@ -18310,35 +18347,122 @@ function fmt_plan(ctx: ref[LowerCtx], val_ty: types.Type, spec_ptr: ptr[ast.Form
     return FormatPlan(append_helper = "mt_format_append_int", len_helper = "mt_format_int_len", arg_ty = types.primitive("int"), len_kind = 0, precision = 0)
 
 
-## Build a dynamic format string: push the two-pass setup (length accumulation,
-## allocation, per-part append) into `output` and return the result-string name
-## expression.  Each interpolation is lowered once into a typed temp reused by
-## both the length and append passes.
+## The result temp the next dynamic format string in this function gets, and
+## its `_cap`/`_off` companions: the host's
+## `build_dynamic_format_string_temp_setup` — `__fmt_<dest>` (with a `_2`/`_3`
+## suffix for a destination's repeats, via the per-function counter) when the
+## most recent local declaration in scope names one, else
+## `fresh_c_temp_name(ctx, "fmt_str")` (`__mt_fmt_str_N`).
+function format_string_result_base(ctx: ref[LowerCtx]) -> str:
+    if ctx.fmt_dest_name.len > 0:
+        var n: ptr_uint = 1
+        let n_ptr = ctx.fmt_counter.get(ctx.fmt_dest_name)
+        if n_ptr != null:
+            n = unsafe: read(n_ptr) + 1
+        ctx.fmt_counter.set(ctx.fmt_dest_name, n)
+        var buf = string.String.create()
+        buf.append("__fmt_")
+        buf.append(ctx.fmt_dest_name)
+        if n > 1:
+            buf.append("_")
+            fmt.append_ptr_uint(ref_of(buf), n)
+        return buf.as_str()
+    return fresh_c_temp_name(ctx, "fmt_str")
+
+
+## The post-statement release of a dynamic format string's result (the host's
+## `mt_format_str_release` cleanup; emitted with nil line/path like the other
+## hoisted statements).
+function format_str_release_stmt(temp: ptr[ir.Expr]) -> ir.Stmt:
+    return ir.Stmt.stmt_expression(
+        expression = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_release", arguments = single_expr_span(temp), ty = types.primitive("void"))),
+        line = 0, source_path = "",
+    )
+
+
+## True when `stmt` is an `mt_format_str_release(...)` statement.
+function is_format_release_stmt(stmt: ir.Stmt) -> bool:
+    match stmt:
+        ir.Stmt.stmt_expression as es:
+            match unsafe: read(es.expression):
+                ir.Expr.expr_call as c:
+                    return c.callee == "mt_format_str_release"
+                _:
+                    pass
+        _:
+            pass
+    return false
+
+
+## Drop a window's format-string releases — the host's
+## `reject_format_releases_for_assignment`: a dynamic format string stored into
+## a `str`/`cstr` binding (or a struct containing one) transfers ownership of
+## its buffer, so its temp must not be released after the statement.
+function drop_format_release_cleanups(collected: HoistSaved) -> HoistSaved:
+    var kept = vec.Vec[ir.Stmt].create()
+    var i: ptr_uint = 0
+    while i < collected.cleanups.len:
+        let st = collected.cleanups.get(i) else:
+            break
+        if not is_format_release_stmt(unsafe: read(st)):
+            kept.push(unsafe: read(st))
+        i += 1
+    var result = collected
+    result.cleanups = kept
+    return result
+
+
+## True for a type that owns a dynamic format string's buffer when assigned to —
+## the host's `cstr_trackable_type?`/`struct_contains_string_field?`: `str`,
+## `cstr`, or a struct whose fields (recursively) contain one.
+function format_owning_target_type(ctx: ref[LowerCtx], ty: types.Type, depth: ptr_uint) -> bool:
+    if depth > 8:
+        return false
+    match ty:
+        types.Type.ty_str:
+            return true
+        types.Type.ty_primitive as p:
+            return p.name == "cstr"
+        types.Type.ty_named:
+            pass
+        types.Type.ty_imported:
+            pass
+        _:
+            return false
+    let fields = struct_fields_of(ctx, ty) else:
+        return false
+    var fi: ptr_uint = 0
+    while fi < fields.len:
+        if format_owning_target_type(ctx, unsafe: read(fields.data + fi).ty, depth + 1):
+            return true
+        fi += 1
+    return false
+
+
+## Build a dynamic format string: the host's
+## `build_dynamic_format_string_temp_setup` — the interpolation temps first (in
+## part order, their nested setups included), then the capacity local (seeded
+## with the static text length), the per-interpolation length accumulations
+## (`cap = cap + len(...)`), the result local (`mt_format_str_make`) and the
+## write offset, then the append statements.  Returns the result temp's
+## identifier; the caller hoists `output` and owns the release.
 function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatStringPart], output: ref[vec.Vec[ir.Stmt]]) -> ptr[ir.Expr]:
     let str_ty = types.Type.ty_str
     let ptr_uint_ty = types.primitive("ptr_uint")
-    let cap_c = fresh_c_temp_name(ctx, "fmt_cap")
-    let off_c = fresh_c_temp_name(ctx, "fmt_off")
-    let result_c = fresh_c_temp_name(ctx, "fmt_result")
+    let base = format_string_result_base(ctx)
+    let cap_name = j2(base, "_cap")
+    let off_name = j2(base, "_off")
+    let result_c = base
 
-    # Static text length seeds the capacity.
+    # Pass 1: lower each interpolation into a typed temp.
     var static_len: ptr_uint = 0
+    var temps = vec.Vec[str].create()
+    var plans = vec.Vec[FormatPlan].create()
     var pi: ptr_uint = 0
     while pi < parts.len:
         match unsafe: read(parts.data + pi):
             ast.FormatStringPart.fmt_text as t:
                 static_len += t.value.len
-            _:
-                pass
-        pi += 1
-    output.push(ir.Stmt.stmt_local(name = cap_c, linkage_name = cap_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-static_len, ty = ptr_uint_ty)), line = 0, source_path = ""))
-
-    # Pass 1: lower each interpolation into a typed temp; accumulate length.
-    var temps = vec.Vec[str].create()
-    var plans = vec.Vec[FormatPlan].create()
-    pi = 0
-    while pi < parts.len:
-        match unsafe: read(parts.data + pi):
             ast.FormatStringPart.fmt_expr as ex:
                 let lowered = lower_expr(ctx, ex.expression)
                 let val_ty = ir_expr_type(lowered)
@@ -18350,24 +18474,46 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                     temp_ty = str_ty
                 else if plan.len_kind == 3:
                     pass
-                else:
+                else if not types.type_equals(ir_expr_type(lowered), plan.arg_ty):
+                    # The host's `cast_expression`: a cast is emitted only when
+                    # the lowered value's type differs from the append
+                    # argument's.
                     temp_val = alloc_expr(ir.Expr.expr_cast(target_type = plan.arg_ty, expression = lowered, ty = plan.arg_ty))
                 output.push(ir.Stmt.stmt_local(name = temp_c, linkage_name = temp_c, ty = temp_ty, value = temp_val, line = 0, source_path = ""))
                 temps.push(temp_c)
                 plans.push(plan)
-                let temp_ref = alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = false))
-                let len_expr = fmt_len_expr(plan, temp_ref, ptr_uint_ty)
-                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = cap_c, ty = ptr_uint_ty, pointer = false)), operator = "+=", value = len_expr))
             _:
                 pass
         pi += 1
 
+    # The capacity local (the static text's length), then one accumulation per
+    # interpolation (the host writes `cap = cap + len(...)`).
+    output.push(ir.Stmt.stmt_local(name = cap_name, linkage_name = cap_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = long<-static_len, ty = ptr_uint_ty)), line = 0, source_path = ""))
+    var ai: ptr_uint = 0
+    while ai < temps.len():
+        let temp_c = temps.get(ai) else:
+            fatal(c"format string: missing interpolation temp")
+        let plan = plans.get(ai) else:
+            fatal(c"format string: missing interpolation plan")
+        var temp_ty: types.Type = unsafe: read(plan).arg_ty
+        if unsafe: read(plan).len_kind == 1:
+            temp_ty = str_ty
+        let temp_ref = alloc_expr(ir.Expr.expr_name(name = unsafe: read(temp_c), ty = temp_ty, pointer = false))
+        let len_expr = fmt_len_expr(unsafe: read(plan), temp_ref, ptr_uint_ty)
+        let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = false))
+        output.push(ir.Stmt.stmt_assignment(
+            target = alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = false)),
+            operator = "=",
+            value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = cap_ref, right = len_expr, ty = ptr_uint_ty)),
+        ))
+        ai += 1
+
     # Allocate the result buffer and reset the write offset.
     var make_args = vec.Vec[ir.Expr].create()
     unsafe:
-        make_args.push(read(alloc_expr(ir.Expr.expr_name(name = cap_c, ty = ptr_uint_ty, pointer = false))))
+        make_args.push(read(alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = false))))
     output.push(ir.Stmt.stmt_local(name = result_c, linkage_name = result_c, ty = str_ty, value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = make_args.as_span(), ty = str_ty)), line = 0, source_path = ""))
-    output.push(ir.Stmt.stmt_local(name = off_c, linkage_name = off_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
+    output.push(ir.Stmt.stmt_local(name = off_name, linkage_name = off_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
 
     # Pass 2: append each part in order.
     var expr_index: ptr_uint = 0
@@ -18378,9 +18524,9 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                 var append_args = vec.Vec[ir.Expr].create()
                 unsafe:
                     append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false))))
+                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false))))
                     append_args.push(read(alloc_expr(ir.Expr.expr_string_literal(value = t.value, ty = str_ty, cstring = false))))
-                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = append_args.as_span(), ty = ptr_uint_ty))))
+                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = append_args.as_span(), ty = ptr_uint_ty))))
             ast.FormatStringPart.fmt_expr:
                 let temp_ptr = temps.get(expr_index) else:
                     fatal(c"format string: missing interpolation temp")
@@ -18420,12 +18566,12 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                                 as_args.push(read(hs_ref))
                             unsafe:
                                 str_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
-                                str_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false))))
+                                str_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false))))
                                 str_args.push(read(alloc_expr(ir.Expr.expr_call(callee = smi.value.c_name, arguments = as_args.as_span(), ty = str_ty))))
                         Option.none:
                             pass
                     if str_args.len == 3:
-                        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = str_args.as_span(), ty = ptr_uint_ty))))
+                        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = str_args.as_span(), ty = ptr_uint_ty))))
                     match resolve_method_info(ctx, string_ty, "release"):
                         Option.some as rmi:
                             var rel_args = vec.Vec[ir.Expr].create()
@@ -18439,11 +18585,11 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                 var append_args = vec.Vec[ir.Expr].create()
                 unsafe:
                     append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false))))
+                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false))))
                     append_args.push(read(alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = false))))
                     if plan.len_kind == 2:
                         append_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(plan.precision), ty = types.primitive("int")))))
-                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_c, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = plan.append_helper, arguments = append_args.as_span(), ty = ptr_uint_ty))))
+                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = plan.append_helper, arguments = append_args.as_span(), ty = ptr_uint_ty))))
         pi += 1
 
     return alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))

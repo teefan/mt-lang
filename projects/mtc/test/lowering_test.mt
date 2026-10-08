@@ -2165,3 +2165,33 @@ function test_array_storing_receiver_is_borrowed() -> void:
     expect(text.contains_substring("(IR::Function :name \"read\" :linkage_name \"main_Big_read\" :params ((IR::Param :name \"this\" :linkage_name \"this\" :type (Types::Struct :name \"Big\" :module_name \"main\") :pointer true))"))
     expect(text.contains_substring("(IR::Call :callee \"main_Big_read\" :arguments ((IR::Name :name \"this\" :type (Types::Struct :name \"Big\" :module_name \"main\") :pointer true)"))
     expect(text.contains_substring("(IR::Call :callee \"main_Big_read\" :arguments ((IR::AddressOf :expression (IR::Name :name \"b\" :type (Types::Struct :name \"Big\" :module_name \"main\") :pointer false) :type (Types::Struct :name \"Big\" :module_name \"main\")))"))
+
+
+@[test]
+function test_dynamic_format_string_hoists_with_the_destination_name() -> void:
+    ## A dynamic format string's build hoists into the statement stream (the
+    ## host's `prepare_expression_with_cleanups`; the parts' temps first, then
+    ## the capacity, the result and the write offset), its result is named after
+    ## the most recent local declaration (`__fmt_<name>`, `_cap`/`_off`
+    ## companions, a `_2` suffix for a destination's repeats), a part whose type
+    ## already matches its append argument carries no cast, and the result is
+    ## released after the statement (session 44, item 3w).  The fixture's whole
+    ## dump is byte-identical to the host's.
+    var source = <<-SRC
+        function consume(text: str) -> void:
+            return
+
+        function main() -> int:
+            var index = 0
+            consume(f"n = #{index}")
+            consume(f"m = #{index}")
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_fmt_part_1\" :linkage_name \"__mt_fmt_part_1\" :type (Types::Primitive :name \"int\") :value (IR::Name :name \"index\" :type (Types::Primitive :name \"int\") :pointer false)"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__fmt_index_cap\" :linkage_name \"__fmt_index_cap\" :type (Types::Primitive :name \"ptr_uint\") :value (IR::IntegerLiteral :value 4 :type (Types::Primitive :name \"ptr_uint\"))"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__fmt_index_2_cap\""))
+    expect(text.contains_substring("(IR::ExpressionStmt :expression (IR::Call :callee \"mt_format_str_release\" :arguments ((IR::Name :name \"__fmt_index\" :type (Types::StringView) :pointer false)) :type (Types::Primitive :name \"void\")) :line nil :path nil)"))
+    expect(not text.contains_substring(":value (IR::Cast :target_type (Types::Primitive :name \"int\") :expression (IR::Name :name \"index\""))
