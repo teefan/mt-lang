@@ -2260,3 +2260,62 @@ function test_cstr_backed_strings_pass_data_directly() -> void:
     expect(text.contains_substring("(IR::Call :callee \"takes_cstr\" :arguments ((IR::Cast :target_type (Types::Primitive :name \"cstr\") :expression (IR::Member :receiver (IR::Name :name \"lit\" :type (Types::StringView) :pointer false) :member \"data\""))
     expect(text.contains_substring("(IR::Call :callee \"takes_cstr\" :arguments ((IR::Cast :target_type (Types::Primitive :name \"cstr\") :expression (IR::Member :receiver (IR::Name :name \"fmt\" :type (Types::StringView) :pointer false) :member \"data\""))
     expect(text.contains_substring(":value (IR::Call :callee \"mt_foreign_str_to_cstr_temp\" :arguments ((IR::Name :name \"dynamic\""))
+
+
+@[test]
+function test_if_condition_foreign_setup_hoists_before_the_statement() -> void:
+    ## A statement-lowered foreign call in an `if` condition is a *prepared*
+    ## position: the host materializes it into `__mt_foreign_result_N` with its
+    ## cleanups before the `IfStmt` (the `hm_return` shape), and an `else if`
+    ## chain's setup precedes the nested `IfStmt` in the else body (session 44,
+    ## item 3y).  The fixture's dump is byte-identical to the host's.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_ifc_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", "external\n\nexternal function takes_cstr(s: cstr) -> bool\n"):
+        return
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function check(text: str as cstr) -> bool = c.takes_cstr
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function run(name: str) -> bool:
+            if wrap.check(name):
+                return true
+            return false
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_foreign_arg_1\" :linkage_name \"__mt_foreign_arg_1\" :type (Types::Primitive :name \"cstr\") :value (IR::Call :callee \"mt_foreign_str_to_cstr_temp\" :arguments ((IR::Name :name \"name\""))
+    expect(text.contains_substring("(IR::LocalDecl :name \"__mt_foreign_result_2\" :linkage_name \"__mt_foreign_result_2\" :type (Types::Primitive :name \"bool\") :value (IR::Call :callee \"takes_cstr\" :arguments ((IR::Name :name \"__mt_foreign_arg_1\""))
+    expect(text.contains_substring("(IR::ExpressionStmt :expression (IR::Call :callee \"mt_free_foreign_cstr_temp\" :arguments ((IR::Name :name \"__mt_foreign_arg_1\""))
+    expect(text.contains_substring("(IR::IfStmt :condition (IR::Name :name \"__mt_foreign_result_2\" :type (Types::Primitive :name \"bool\") :pointer false)"))
+    expect(not text.contains_substring("(IR::StmtExpr"))

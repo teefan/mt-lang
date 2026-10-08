@@ -3227,10 +3227,12 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         let cond_hoisted = async_hoist_awaits(ctx, output, br0.condition)
                         var new_branches = vec.Vec[ast.IfBranch].create()
                         new_branches.push(ast.IfBranch(condition = cond_hoisted, body = br0.body, line = br0.line, column = br0.column))
-                        output.push(lower_if_chain(ctx, new_branches.as_span(), 0, iff.else_body))
+                        var async_if_stmts = vec.Vec[ir.Stmt].create()
+                        lower_if_chain(ctx, ref_of(async_if_stmts), new_branches.as_span(), 0, iff.else_body)
+                        output.append_span(async_if_stmts.as_span())
                         return
                 if iff.branches.len > 0:
-                    output.push(lower_if_chain(ctx, iff.branches, 0, iff.else_body))
+                    lower_if_chain(ctx, output, iff.branches, 0, iff.else_body)
             ast.Stmt.stmt_match as m:
                 if m.is_inline:
                     lower_inline_match_statement(ctx, output, m.scrutinee, m.arms)
@@ -4976,27 +4978,41 @@ function parse_decimal(text: str) -> long:
     return value
 
 
-## Lower an `if`/`else if`/`else` chain (mtc's multi-branch AST) into nested
-## single-branch IR `stmt_if` nodes; the C backend re-flattens single-`if` else
-## bodies back into `else if`.
-function lower_if_chain(ctx: ref[LowerCtx], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?) -> ir.Stmt:
+## Lower an `if`/`else if`/`else` chain into nested `IR::IfStmt`s.  A branch
+## condition's hoisted setup (a statement-lowered foreign call's argument temps)
+## is emitted *before* its `IfStmt` — for an `else if` that is the enclosing
+## branch's else body — and the condition's cleanups head *both* branches, the
+## host's `lower_if_chain` shape.
+function lower_if_chain(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], branches: span[ast.IfBranch], index: ptr_uint, else_body: ptr[ast.Stmt]?) -> void:
     var branch: ast.IfBranch
     unsafe:
         branch = read(branches.data + index)
+    let cond_base = output.len()
+    # A condition is a *prepared* position: a statement-lowered foreign call
+    # materializes into `__mt_foreign_result_N` with its cleanups before the
+    # `IfStmt` (the host's `prepare_statement_lowered_foreign_call` +
+    # `materialize_prepared_expression`), the shape `hm_return` produces.
+    let cond_saved = begin_stmt_setup(ctx, HoistMode.hm_return)
     let cond = lower_expr(ctx, branch.condition)
-    let then_body = lower_block(ctx, branch.body)
+    let cond_collected = collect_stmt_setup(ctx, cond_saved)
+    emit_hoist_setup(output, cond_base, cond_collected)
+
+    var then_body = vec.Vec[ir.Stmt].create()
+    append_hoist_cleanups(ref_of(then_body), cond_collected)
+    then_body.append_span(lower_block(ctx, branch.body))
 
     # A source-level `if` always carries an else body in the host's IR — an
     # empty one when the source has no else clause.
-    var else_span: Option[span[ir.Stmt]]
+    var else_inner = vec.Vec[ir.Stmt].create()
     if index + 1 < branches.len:
-        var nested = vec.Vec[ir.Stmt].create()
-        nested.push(lower_if_chain(ctx, branches, index + 1, else_body))
-        else_span = Option[span[ir.Stmt]].some(value = nested.as_span())
+        lower_if_chain(ctx, ref_of(else_inner), branches, index + 1, else_body)
     else:
-        else_span = Option[span[ir.Stmt]].some(value = lower_block(ctx, else_body))
+        else_inner.append_span(lower_block(ctx, else_body))
+    var else_stmts = vec.Vec[ir.Stmt].create()
+    append_hoist_cleanups(ref_of(else_stmts), cond_collected)
+    else_stmts.append_span(else_inner.as_span())
 
-    return ir.Stmt.stmt_if(condition = cond, then_body = then_body, else_body = else_span)
+    output.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].some(value = else_stmts.as_span())))
 
 
 ## Lower `for i in start..stop:` into a scope block holding an optional hoisted
