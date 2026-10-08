@@ -132,11 +132,12 @@ names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
 Last updated: session 44 (2026-10-07) — **`lower` Track 3 items 3r, 3s, 3t,
-3u, 3v, 3w, 3x and 3y** (the struct equality desugaring; the box2d family's
-first difference).  The lowering keeps the host's `IR::Binary` on struct values
-and registers the external (raw-module ABI) struct's field layout in the new
-`Program.external_structs`; the C backend synthesizes the `mt_struct_eq_<T>`
-helper from it exactly where the host does (the IR carries no helper function) —
+3u, 3v, 3w, 3x, 3y and 3aa** (the struct equality desugaring; the box2d
+family's first difference).  The lowering keeps the host's `IR::Binary` on
+struct values and registers the external (raw-module ABI) struct's field layout
+in the new `Program.external_structs`; the C backend synthesizes the
+`mt_struct_eq_<T>` helper from it exactly where the host does (the IR carries
+no helper function) —
 **30 files' first difference deeper (+21,667 to +21,677), 0 flips, 0 shallower,
 0 newly differing, 0 lost**.  **3s** then folded a module-qualified constant in
 an array-length position through the alias's module (the const's value
@@ -183,12 +184,17 @@ statement-lowered foreign call in a condition materializes into
 shape), and an `else if` chain's setup precedes the nested `IfStmt` inside the
 else body — **34 flips** (the raylib audio/models/textures families) with 66
 files deeper, 0 shallower/newly differing/lost; the full corpus reads **210
-match / 456 differ**.  The next leaders are `return null` into an
-`own[T]?`/nullable return (~134 — the host types the literal
-`Nullable(own[T])`, the self `void`), the match scrutinee temp (~43 — the host
-switches on the member where the self materializes `__mt_match_scrut_N`), an
-`4294967295` literal typed `long` vs `int` (~16) and the `mt_str_buffer_*`
-decls (~15).
+match / 456 differ**.  **3aa** then set the monomorphized body's
+`current_fn_return_type` to the *substituted* return type, so `return null` in
+`alloc[T](…) -> own[T]?` types the literal `Nullable(own[int])` like the host
+(not `void`) — **3 flips** (`std/bitset.mt`, `std/bytes.mt`, `std/mem/pool.mt`)
+with **97 files' first difference deeper** (39 `test`, 30 `std`, 17 sdl3, 7
+raylib, +6,370 … +237,261), 0 shallower/newly differing/lost; the full corpus
+reads **213 match / 453 differ**.  The next leaders are the monomorphized
+function order (~91 — the host emits `Vec.create_static[String]` where the self
+has `Vec.reserve[String]` first), a foreign call argument's `null` literal (~19
+— the host types `Nullable(cstr)`, the self `void`), the `4294967295` literal
+(~16) and the `mt_str_buffer_*` decls (~15).
 Session 43 had landed **`lower` Track 3 items 3k, 3j, 3l, 3m, 3o, 3i-b, 3g and
 3q**.
 3k, the refinement record's post-statement positions: a guard inside a compound
@@ -699,15 +705,16 @@ Records: §0k sessions 19–23; session 28.
 Work in the ranked order below; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank — session 42's host cache makes the repeat measurement cheap.  Current set:
-**210 match / 456 differ / 51 host-rejected / 0 self-rejected of 717 files**
-(session 44 re-read after 3y — 3r and 3s each move 30 files' first differences
+**213 match / 453 differ / 51 host-rejected / 0 self-rejected of 717 files**
+(session 44 re-read after 3aa — 3r and 3s each move 30 files' first differences
 deeper, 3t flips `projects/stress/src/engine/interfaces.mt`, 3u flips 8 more
 (`examples/box2d/**` + `examples/raylib/core/3d_camera_free.mt`) and moves 42
 deeper, 3v flips 3 more (`examples/box2d/contact.mt`, `sensor_funnel.mt`,
 `std/noise.mt`) and moves 15 deeper, 3w flips 15 (the box2d family) and moves 30
 deeper, 3x flips 18 (the raylib family + `std/raylib/debug_console.mt`), 3y
-flips 34 (the raylib audio/models/textures families) and moves 66 deeper; the
-count drifts with the tree's own sources and the tmp
+flips 34 (the raylib audio/models/textures families) and moves 66 deeper, 3aa
+flips 3 (`std/bitset.mt`, `std/bytes.mt`, `std/mem/pool.mt`) and moves 97
+deeper; the count drifts with the tree's own sources and the tmp
 fixtures — quote the set).
 
 **First-difference census (session 43) — the track's re-ranking.**  Bucketing
@@ -761,15 +768,19 @@ statement-lowered foreign call materializes into `__mt_foreign_result_N` with
 its cleanups before the `IfStmt`; an `else if`'s setup precedes the nested
 `IfStmt` in the else body): **34 flips** (the raylib audio/models/textures
 families), 66 files deeper again, 0 shallower/newly differing/lost — **the full
-corpus 210 match / 456 differ**.  The current leaders (the post-3y re-census):
+corpus 210 match / 456 differ** — and **3aa** (the monomorphized body's
+substituted `current_fn_return_type`, so `return null` takes
+`Nullable(own[T])`): **3 flips**, 97 files deeper again, 0
+shallower/newly differing/lost — **the full corpus 213 match / 453 differ**.
+The current leaders (the post-3aa re-census):
 
 | Files | First difference | Where |
 | --- | --- | --- |
-| ~134 | **`return null` into an `own`/nullable return**: the host types the literal `(Types::Nullable :base (Types::Generic :name "own" :arguments ((Types::Primitive :name "int"))))`, the self `(Types::Primitive :name "void")` (`std/mem/heap.mt`'s path and its importers) | `examples/**`, `test/**`, `std/**` |
-| ~43 | **the match scrutinee temp**: the host switches on the scrutinee expression directly where the self materializes `__mt_match_scrut_N` (an enum/struct scrutinee shape) | `examples/box2d/**`, `examples/sdl3/**` |
+| ~91 | **the monomorphized function order**: the host emits `Vec.create_static[String]` before `Vec.reserve[String]`, the self the reverse (the `ordered_module_functions` instance order) | `examples/**`, `test/**`, `std/**` |
+| ~19 | **a foreign call argument's `null` literal**: the host types it `(Types::Nullable :base (Types::Primitive :name "cstr"))`, the self `void` (`LoadShader(null, …)`) | `examples/raylib/**` |
 | ~16 | an unsigned-boundary literal typed `long` where the self types `int` (`4294967295` in a `ulong` bit op) | `examples/box3d/**`, `examples/box2d/**` |
 | ~15 | **the `mt_str_buffer_*` decls** (no host counterpart — the 2d residual) | `examples/raylib/**`, `std/raylib/**` |
-| ~6 | a const array's enum-member element: the host folds the member to its literal (`256`) where the self emits `(IR::Cast int (IR::Name "KEY_ESCAPE" …))` | `examples/raylib/**` |
+| ~7 | a const array's enum-member element: the host folds the member to its literal (`256`) where the self emits `(IR::Cast int (IR::Name "KEY_ESCAPE" …))` | `examples/raylib/**` |
 | ~57 | an array/const literal element shape (host `IR::IntegerLiteral` where the self emits `IR::Name`; `projects/mtc/src/mtc/build.mt`'s first difference) | `projects/mtc/src/**` |
 | ~21 | a struct field's member order (`IR::Field :name "key"` vs `:name "current"`; `projects/mtc/src/mtc/bindgen.mt`) | `projects/mtc/src/**` |
 | 2 | **3n, the async frame struct's name** (`std_net_recv_impl__frame` vs `std_net_recv_impl_frame`) | the two `examples/async_*` |
@@ -802,11 +813,13 @@ convention — 3 flips, 15 deeper again, the corpus 143/523) and **3w** (the
 dynamic format-string protocol — 15 flips, 30 deeper again, the corpus 158/508)
 and **3x** (the cstr-backed `str as cstr` argument — 18 flips, the corpus
 176/490) and **3y** (the `if` condition's prepared shape — 34 flips, 66 deeper
-again, the corpus 210/456).  The next ranked items are **3aa** (`return null`
-into an `own[T]?`/nullable return — the re-census's ~134-file leader), **3ab**
-(the match scrutinee temp, ~43), **3ac** (the unsigned literal's type, ~16),
-the array/const literal shape (57, `projects/mtc/src`), the field-order shape
-(~21) and the const array's enum-member element (~6), then **3z** (the explicit
+again, the corpus 210/456) and **3aa** (the monomorphized null return — 3
+flips, 97 deeper again, the corpus 213/453).  The next ranked items are **3ad**
+(the monomorphized function order — the re-census's ~91-file leader), **3ae**
+(a foreign argument's `null` literal, ~19), 3ab (the match scrutinee temp),
+3ac (the unsigned literal's type, ~16), the array/const literal shape (57,
+`projects/mtc/src`), the field-order shape (~21) and the const array's
+enum-member element (~7), then **3z** (the explicit
 format sink, ~41 files) and the `mt_str_buffer_*` decls (~15), then the
 tail: 3n (the async frame name), 3p (the unnamed variant-arm
 construction's missing sema check — a pre-existing abort), the `let _` decl
@@ -1355,12 +1368,36 @@ names, then items 7–9 — file by file.
     body }`, `loops.rb:45-68`) is not ported — no current leader.
 3aa. **`return null` into an `own`/nullable return** (the post-3y re-census's
     leader, ~134 files — `std/mem/heap.mt`'s null-returning helpers and their
-    importers): the host types the literal
+    importers) — **DONE (session 44, 2026-10-07)**.  The host types the literal
     `(Types::Nullable :base (Types::Generic :name "own" :arguments ((Types::Primitive :name "int"))))`
-    where the self emits `(Types::Primitive :name "void")` — the contextual
-    null typing (item 1b) does not cover the `own[T]`/`ref[T]` nullable-return
-    position.  Repro: `examples/data_structures.mt` at its first difference
-    (`std/mem/heap.mt`'s `return null` node).
+    where the self emitted `(Types::Primitive :name "void")`.  Root cause:
+    `lower_specialized_function` (the *monomorphized* body path) never set
+    `ctx.current_fn_return_type`, so the return arm's contextual null typing
+    (`null_literal_to_context_type` against `ctx.current_fn_return_type`) saw
+    the default `void` — the non-generic `lower_function`/`lower_method` paths
+    set it (and `lower_specialized_method` already did).  Landed: the
+    substituted `ret_ty` (computed for the IR function anyway) is installed
+    around the body lowering, saved/restored like the other paths.  Measured
+    (same subset protocol, the 3y `build/stage2/mtc` vs `tmp/mtc-dev`): the
+    fixture (`maybe[T](flag) -> own[T]?` returning `null`, called as
+    `maybe[Box]`) is byte-identical; **3 flips** (`std/bitset.mt`,
+    `std/bytes.mt`, `std/mem/pool.mt`) with **97 files' first difference
+    deeper** (39 `test`, 30 `std`, 17 sdl3, 7 raylib; +6,370 … +237,261), 0
+    shallower, 0 newly differing, 0 lost; the subset 200 → **203 match**, the
+    full corpus **210 → 213 match / 456 → 453 differ**.  Locked by
+    `test_monomorphized_null_return_takes_the_substituted_type`.
+3ad. **The monomorphized function order** (the post-3aa re-census's leader, ~91
+    files): the host emits `std_vec_Vec_create_static__std_string_String` where
+    the self has `std_vec_Vec_reserve__std_string_String` first — the
+    `ordered_module_functions` instance order differs from the host's
+    `lower_functions` grouping.  Repro: `examples/nullable_and_variant_test.mt`
+    at its first difference.
+3ae. **A foreign call argument's `null` literal** (the post-3aa re-census, ~19
+    files — the raylib `LoadShader(null, …)` family): the host types the
+    literal `(Types::Nullable :base (Types::Primitive :name "cstr"))`, the self
+    `void` — the foreign-argument path does not apply the contextual null
+    typing.  Repro: `examples/raylib/shaders/ascii_rendering.mt` at its first
+    difference.
 3ab. **The match scrutinee temp** (the post-3y re-census, ~43 files): for an
     enum/struct scrutinee the host switches on the scrutinee expression
     directly where the self materializes `__mt_match_scrut_N` first.  Repro:
@@ -2076,7 +2113,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 210 match / 456 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 44 — **3r's struct equality desugaring**: the identical-corpus `std examples test` subset comparison read **122/399/47/0 on both the pre-fix (`tmp/mtc-head`) and post-fix (`tmp/mtc-dev`) binaries** with **30 files' first difference deeper by +21,667 to +21,677** (the box2d family), 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus set is unchanged.  **3s's array-length fold** (same session): the same subset protocol read **122/399/47/0 on both binaries** with **the same 30 files' first difference deeper again (+19,298 to +19,308)**, 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus stays 131/535/51/0.  **3t's dyn vtable member type** (same session): **the full corpus 131 → 132 match / 535 → 534 differ** (`projects/stress/src/engine/interfaces.mt` flips), the same 30 files deeper (+1,925 each), 0 shallower/newly differing/lost — and the slot type was a real miscompile (the pre-fix binary aborted rc 134 running `body_move.mt`, the host runs the render loop).  **3u's out/inout boundary deepening** (same session): **8 files flip** (`examples/box2d/common.mt`, `compound_shapes`, `confined`, `human`, `kinematic`, `rounded`, `tiny_pyramid`, `examples/raylib/core/3d_camera_free.mt`), the subset 122 → **130 match**, with **42 files' first difference deeper** (23 box2d, 14 box3d, 5 raylib; +181 … +252,788), 0 shallower/newly differing/lost — **the full corpus 132 → 140 match / 534 → 526 differ**.  **3v's array-storing receiver borrow** (same session): **3 files flip** (`examples/box2d/contact.mt`, `examples/box2d/sensor_funnel.mt`, `std/noise.mt`), the subset 130 → **133 match**, 15 files' first difference deeper (14 box2d + 1 test; +64 … +76,462), 0 shallower/newly differing/lost — **the full corpus 140 → 143 match / 526 → 523 differ**.  **3w's dynamic format-string protocol** (same session): the build hoists with the destination-named result temp (`__fmt_<name>`, `_cap`/`_off`, `_2` repeats), the parts' temps first, casts only where the types differ, and the `mt_format_str_release` cleanup after the statement — **15 files flip** (the whole box2d family: `body_move`, `body_type`, `bridge`, `circle_stack`, `drop`, `explosion`, `falling_hinges`, `prismatic`, `ragdoll`, `ray_cast`, `revolute`, `shape_cast`, `skinny_box`, `vertical_stack`, `wheel`), the subset 133 → **148 match**, 30 files' first difference deeper (15 raylib, 11 sdl3, 3 box2d, 1 std; +31 … +32,056), 0 shallower/newly differing/lost — **the full corpus 143 → 158 match / 523 → 508 differ**.  **3x's cstr-backed `str as cstr` argument** (same session): a string-literal local, a cstr-backed local or a dynamic format string's temp passes `data` directly instead of the `mt_foreign_str_to_cstr_temp` copy — **18 files flip** (the raylib core family and `std/raylib/debug_console.mt`), the subset 148 → **166 match**, 1 file deeper, 0 shallower/newly differing/lost — **the full corpus 158 → 176 match / 508 → 490 differ**.  **3y's if-condition prepared shape** (same session): a statement-lowered foreign call in an `if` condition materializes into `__mt_foreign_result_N` with its cleanups before the `IfStmt` (an `else if`'s setup at the head of the enclosing else body) — **34 files flip** (the raylib audio/models/textures families), the subset 166 → **200 match**, 66 files' first difference deeper, 0 shallower/newly differing/lost — **the full corpus 176 → 210 match / 490 → 456 differ**.  Session 43 — **3k's refinement-record positions**, **3j's simple-path call type**, **3l's `read(x) =` target literal**, **3m's call-argument/variant-field literals + the bare-float-literal operand retyping**, **3o's prelude generic variant arm field type**, **3i-b's native `break`**, **3g's raw-module/flags type classification** and **3q's foreign address-of boundary type**: `std examples test` subset comparisons with the identical corpus read 48/473/47/0 on the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries — 3k moves **209 files' first difference deeper (+30,767 each)**, 3j **100 files deeper**, 3l **183 files deeper with 26 flips** (the heap-importing `std/**` family), 3m **82 files deeper with 2 flips**, 3o **80 files deeper**, 3i-b **74 files deeper with 6 flips** (`std/str.mt` byte-identical), 3g **83 files deeper with 35 flips** (the raylib core family) and 3q **55 files deeper with 5 flips** (the raylib shapes family), 0 shallower, 0 newly differing, 0 lost throughout; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 213 match / 453 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 44 — **3r's struct equality desugaring**: the identical-corpus `std examples test` subset comparison read **122/399/47/0 on both the pre-fix (`tmp/mtc-head`) and post-fix (`tmp/mtc-dev`) binaries** with **30 files' first difference deeper by +21,667 to +21,677** (the box2d family), 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus set is unchanged.  **3s's array-length fold** (same session): the same subset protocol read **122/399/47/0 on both binaries** with **the same 30 files' first difference deeper again (+19,298 to +19,308)**, 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus stays 131/535/51/0.  **3t's dyn vtable member type** (same session): **the full corpus 131 → 132 match / 535 → 534 differ** (`projects/stress/src/engine/interfaces.mt` flips), the same 30 files deeper (+1,925 each), 0 shallower/newly differing/lost — and the slot type was a real miscompile (the pre-fix binary aborted rc 134 running `body_move.mt`, the host runs the render loop).  **3u's out/inout boundary deepening** (same session): **8 files flip** (`examples/box2d/common.mt`, `compound_shapes`, `confined`, `human`, `kinematic`, `rounded`, `tiny_pyramid`, `examples/raylib/core/3d_camera_free.mt`), the subset 122 → **130 match**, with **42 files' first difference deeper** (23 box2d, 14 box3d, 5 raylib; +181 … +252,788), 0 shallower/newly differing/lost — **the full corpus 132 → 140 match / 534 → 526 differ**.  **3v's array-storing receiver borrow** (same session): **3 files flip** (`examples/box2d/contact.mt`, `examples/box2d/sensor_funnel.mt`, `std/noise.mt`), the subset 130 → **133 match**, 15 files' first difference deeper (14 box2d + 1 test; +64 … +76,462), 0 shallower/newly differing/lost — **the full corpus 140 → 143 match / 526 → 523 differ**.  **3w's dynamic format-string protocol** (same session): the build hoists with the destination-named result temp (`__fmt_<name>`, `_cap`/`_off`, `_2` repeats), the parts' temps first, casts only where the types differ, and the `mt_format_str_release` cleanup after the statement — **15 files flip** (the whole box2d family: `body_move`, `body_type`, `bridge`, `circle_stack`, `drop`, `explosion`, `falling_hinges`, `prismatic`, `ragdoll`, `ray_cast`, `revolute`, `shape_cast`, `skinny_box`, `vertical_stack`, `wheel`), the subset 133 → **148 match**, 30 files' first difference deeper (15 raylib, 11 sdl3, 3 box2d, 1 std; +31 … +32,056), 0 shallower/newly differing/lost — **the full corpus 143 → 158 match / 523 → 508 differ**.  **3x's cstr-backed `str as cstr` argument** (same session): a string-literal local, a cstr-backed local or a dynamic format string's temp passes `data` directly instead of the `mt_foreign_str_to_cstr_temp` copy — **18 files flip** (the raylib core family and `std/raylib/debug_console.mt`), the subset 148 → **166 match**, 1 file deeper, 0 shallower/newly differing/lost — **the full corpus 158 → 176 match / 508 → 490 differ**.  **3y's if-condition prepared shape** (same session): a statement-lowered foreign call in an `if` condition materializes into `__mt_foreign_result_N` with its cleanups before the `IfStmt` (an `else if`'s setup at the head of the enclosing else body) — **34 files flip** (the raylib audio/models/textures families), the subset 166 → **200 match**, 66 files' first difference deeper, 0 shallower/newly differing/lost — **the full corpus 176 → 210 match / 490 → 456 differ**.  **3aa's monomorphized null return** (same session): `lower_specialized_function` now installs the substituted `current_fn_return_type`, so `return null` in `alloc[T](…) -> own[T]?` takes `Nullable(own[int])` — **3 files flip** (`std/bitset.mt`, `std/bytes.mt`, `std/mem/pool.mt`), the subset 200 → **203 match**, 97 files' first difference deeper, 0 shallower/newly differing/lost — **the full corpus 210 → 213 match / 456 → 453 differ**.  Session 43 — **3k's refinement-record positions**, **3j's simple-path call type**, **3l's `read(x) =` target literal**, **3m's call-argument/variant-field literals + the bare-float-literal operand retyping**, **3o's prelude generic variant arm field type**, **3i-b's native `break`**, **3g's raw-module/flags type classification** and **3q's foreign address-of boundary type**: `std examples test` subset comparisons with the identical corpus read 48/473/47/0 on the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries — 3k moves **209 files' first difference deeper (+30,767 each)**, 3j **100 files deeper**, 3l **183 files deeper with 26 flips** (the heap-importing `std/**` family), 3m **82 files deeper with 2 flips**, 3o **80 files deeper**, 3i-b **74 files deeper with 6 flips** (`std/str.mt` byte-identical), 3g **83 files deeper with 35 flips** (the raylib core family) and 3q **55 files deeper with 5 flips** (the raylib shapes family), 0 shallower, 0 newly differing, 0 lost throughout; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (re-read 2026-10-07 session 43: 6 → 6, the same keys, after 3k's record-position change — a greatest-position scan had briefly surfaced the refined-parameter hover `docs/memory_stress_test.mt@39:24`; the final order-based lookup mirrors the host and closes it.  2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -2340,11 +2377,28 @@ differ / 51 host-rejected / 0 self-rejected of 717** (session 43's close).
   `while` condition's prepared rewrite (`while true { setup; if !cond {
   cleanups; break } else { cleanups }; body }`, `loops.rb:45-68`) is not
   ported — no current leader.
-- The post-3y re-census (the biggest buckets): `return null` into an
-  `own[T]?`/nullable return (~134), the match scrutinee temp (~43), an
-  unsigned-boundary literal typed `long` vs `int` (~16), the
-  `mt_str_buffer_*` decls (~15) and a const array's enum-member element (~6).
-  Carried into Track 3's ranked items 3aa/3ab/3ac.
+- **Item 3aa (landed in the same session) — the monomorphized null return.**
+  The post-3y re-census's ~134-file leader: `return null` in
+  `alloc[T](count) -> own[T]?` (`std/mem/heap.mt`) typed the literal
+  `(Types::Primitive :name "void")` where the host types
+  `(Types::Nullable :base (own[int]))`.  Root cause: `lower_specialized_function`
+  (the monomorphized *function* body path) never set
+  `ctx.current_fn_return_type`, so the return arm's contextual null typing
+  (`null_literal_to_context_type` against it, item 1b) saw the `void` default —
+  `lower_function`, `lower_method` and `lower_specialized_method` all set it.
+  Landed: the already-computed substituted `ret_ty` is installed around the
+  body lowering (saved/restored).  Measured (same subset protocol, the 3y
+  `build/stage2/mtc` vs `tmp/mtc-dev`): the fixture (`maybe[T](flag) ->
+  own[T]?` ×2 `return null`, called as `maybe[Box]`) is byte-identical;
+  **3 flips** (`std/bitset.mt`, `std/bytes.mt`, `std/mem/pool.mt`) with **97
+  files' first difference deeper** (39 `test`, 30 `std`, 17 sdl3, 7 raylib;
+  +6,370 … +237,261), 0 shallower, 0 newly differing, 0 lost; the subset 200 →
+  **203 match**, the full corpus **210 → 213 match / 456 → 453 differ**.
+  Locked by `test_monomorphized_null_return_takes_the_substituted_type`.
+- The post-3aa re-census (the biggest buckets): the monomorphized function
+  order (~91), a foreign argument's `null` literal (~19), the unsigned-boundary
+  literal (~16), the `mt_str_buffer_*` decls (~15) and a const array's
+  enum-member element (~7).  Carried into Track 3's ranked items 3ad/3ae/3ac.
 
 ### Session 43 (2026-10-07) — `lower` Track 3 item 3k: the refinement record's post-statement positions
 

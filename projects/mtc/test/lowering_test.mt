@@ -2319,3 +2319,32 @@ function test_if_condition_foreign_setup_hoists_before_the_statement() -> void:
     expect(text.contains_substring("(IR::ExpressionStmt :expression (IR::Call :callee \"mt_free_foreign_cstr_temp\" :arguments ((IR::Name :name \"__mt_foreign_arg_1\""))
     expect(text.contains_substring("(IR::IfStmt :condition (IR::Name :name \"__mt_foreign_result_2\" :type (Types::Primitive :name \"bool\") :pointer false)"))
     expect(not text.contains_substring("(IR::StmtExpr"))
+
+
+@[test]
+function test_monomorphized_null_return_takes_the_substituted_type() -> void:
+    ## `return null` inside a *monomorphized* generic function takes the
+    ## substituted return type: `maybe[Box]`'s null is
+    ## `Nullable(own[Box])`, not `void` (session 44, item 3aa).  The
+    ## monomorphized body's `current_fn_return_type` was not set, so the
+    ## contextual null typing saw `void`.  The fixture's dump is byte-identical
+    ## to the host's.
+    var source = <<-SRC
+        struct Box:
+            value: int
+
+        function maybe[T](flag: bool) -> own[T]?:
+            if flag:
+                return null
+            return null
+
+        function main() -> int:
+            let b = maybe[Box](true)
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::ReturnStmt :value (IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"own\" :arguments ((Types::Struct :name \"Box\" :module_name \"main\"))))) :line 6"))
+    expect(not text.contains_substring("(IR::ReturnStmt :value (IR::NullLiteral :type (Types::Primitive :name \"void\"))"))
+

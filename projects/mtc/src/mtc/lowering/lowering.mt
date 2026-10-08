@@ -920,7 +920,13 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
     ctx.function_returns.set(spec_key, ret_ty)
     var saved_sub = ctx.type_substitution
     ctx.type_substitution = read(sub)
+    # The substituted return type is the body's contextual type: `return null`
+    # in `alloc[T](…) -> own[T]?` types the literal `Nullable(own[int])`, not
+    # `void` (the host's `lower_return_stmt` contextual lowering).
+    var saved_fn_ret = ctx.current_fn_return_type
+    ctx.current_fn_return_type = ret_ty
     let body_ir = prepend_param_setup(ref_of(param_setup), lower_function_body(ctx, body))
+    ctx.current_fn_return_type = saved_fn_ret
     ctx.type_substitution = saved_sub
     ctx.type_substitution = saved_type_subst
     return ir.Function(
