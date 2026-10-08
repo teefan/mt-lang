@@ -2043,3 +2043,71 @@ function test_dyn_vtable_member_takes_the_interface_method_type() -> void:
     expect(text.contains_substring(":member \"area\" :type (Types::Function :name \"\" :params ((Types::Parameter :name \"data\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :mutable false :passing_mode :plain :boundary_type nil)) :return_type (Types::Primitive :name \"float\")"))
     expect(text.contains_substring(":member \"scaled\" :type (Types::Function :name \"\" :params ((Types::Parameter :name \"data\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :mutable false :passing_mode :plain :boundary_type nil) (Types::Parameter :name \"factor\" :type (Types::Primitive :name \"float\")"))
     expect(not text.contains_substring(":member \"area\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\")))"))
+
+
+@[test]
+function test_inout_argument_addresses_the_deepened_boundary_type() -> void:
+    ## An `inout` foreign argument's address-of takes the alias-deepened
+    ## boundary type — `wrap.take_it(d)` for `inout d: MyDef`
+    ## (`type MyDef = c.Def`) is `ptr[Def]`, not `ptr[MyDef]` (session 44,
+    ## item 3u; 3q did the same for the plain `in` path).  The `in` branch
+    ## qualifies before deepening; the `out`/`inout` branch deepened first, so
+    ## the std.c pairing `deep_alias_target` resolves never existed yet.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_inout_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        struct Def:
+            x: int
+
+        external function take_ptr(d: ptr[Def]) -> void
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public type MyDef = c.Def
+
+        public foreign function take_it(inout d: MyDef) -> void = c.take_ptr
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function use() -> int:
+            var d = wrap.MyDef(x = 1)
+            wrap.take_it(d)
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::AddressOf :expression (IR::Name :name \"d\" :type (Types::Struct :name \"Def\" :module_name \"std.c.raw.lib\") :pointer false) :type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"Def\" :module_name \"std.c.raw.lib\")))"))
+    expect(not text.contains_substring(":type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"MyDef\""))

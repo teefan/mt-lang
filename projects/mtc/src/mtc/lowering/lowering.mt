@@ -13742,7 +13742,12 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                     return lowered
                 let arg_ty = ir_expr_type(lowered)
                 var pt_copy0 = param.param_type
-                var slot_ty = deep_alias_target(ctx, resolve_type_ref(ctx, ptr_of(pt_copy0)))
+                # `qualify_type` first, then deepen: the qualifier is what pairs
+                # a std.c-targeting alias with its target module
+                # (`ty_imported("std.c.raw.lib", "MyDef")`), the shape
+                # `deep_alias_target` resolves to the raw declaration — the
+                # order the `in` branch uses (session 44, item 3u).
+                var slot_ty = deep_alias_target(ctx, qualify_type(ctx, resolve_type_ref(ctx, ptr_of(pt_copy0))))
                 # The host's `foreign_slot_boundary_value_type`: a nullable
                 # pointer-like slot's boundary value is its base.
                 if types.is_nullable_type(slot_ty) and is_nullable_pointer_like(slot_ty):
