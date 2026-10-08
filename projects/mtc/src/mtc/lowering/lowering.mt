@@ -4879,6 +4879,34 @@ function resolve_array_length_type(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> 
         if const_ptr != null:
             return types.literal_int(const_eval_int(ctx, unsafe: read(const_ptr)))
         return types.Type.ty_named(module_name = "", name = text)
+    # A module-qualified constant (`array[b3.BodyId, human.BONE_COUNT]`): fold it
+    # through the alias's module, evaluating the constant's value expression in
+    # the module that declares it (the host's
+    # `resolve_imported_module_const_value`).
+    if t.name.parts.len == 2:
+        let alias = unsafe: read(t.name.parts.data + 0)
+        let member = unsafe: read(t.name.parts.data + 1)
+        let target_ptr = ctx.analysis.imports.get(alias)
+        if target_ptr != null:
+            match find_imported_analysis(ctx, unsafe: read(target_ptr)):
+                Option.some as owner:
+                    var saved_module = ctx.module_name
+                    var saved_analysis = ctx.analysis
+                    ctx.module_name = owner.value.module_name
+                    ctx.analysis = owner.value
+                    var folded = Option[long].none
+                    let chain = ctx.analysis.const_values.get(member)
+                    if chain != null:
+                        folded = try_const_eval_int(ctx, unsafe: read(chain))
+                    ctx.module_name = saved_module
+                    ctx.analysis = saved_analysis
+                    match folded:
+                        Option.some as value:
+                            return types.literal_int(value.value)
+                        Option.none:
+                            pass
+                Option.none:
+                    pass
     return types.literal_int(resolve_array_length(tp))
 
 
@@ -15593,6 +15621,33 @@ function try_const_eval_int(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[lon
                 if bin.operator == "^":
                     return Option[long].some(value = l ^ r)
                 return Option[long].none
+            ast.Expr.expr_member_access as ma:
+                # `alias.MEMBER` in a constant expression: the value lives in
+                # the alias's module, so evaluate it there (the host's
+                # `resolve_imported_module_const_value`, whose const values are
+                # precomputed in dependency order).
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        let target_ptr = ctx.analysis.imports.get(rid.name)
+                        if target_ptr == null:
+                            return Option[long].none
+                        match find_imported_analysis(ctx, unsafe: read(target_ptr)):
+                            Option.some as owner:
+                                var saved_module = ctx.module_name
+                                var saved_analysis = ctx.analysis
+                                ctx.module_name = owner.value.module_name
+                                ctx.analysis = owner.value
+                                var result = Option[long].none
+                                let chain = ctx.analysis.const_values.get(ma.member_name)
+                                if chain != null:
+                                    result = try_const_eval_int(ctx, unsafe: read(chain))
+                                ctx.module_name = saved_module
+                                ctx.analysis = saved_analysis
+                                return result
+                            Option.none:
+                                return Option[long].none
+                    _:
+                        return Option[long].none
             ast.Expr.expr_sizeof as sz:
                 let target = resolve_type_ref(ctx, sz.target_type)
                 return layout_size(ctx, target)

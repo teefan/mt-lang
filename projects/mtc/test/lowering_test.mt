@@ -1916,3 +1916,71 @@ function test_external_struct_equality_keeps_the_binary_and_registers_the_layout
         li += 1
     expect(has_part)
     expect(has_assembly)
+
+
+@[test]
+function test_array_length_folds_through_an_imported_const() -> void:
+    ## A module-qualified constant in an array-length position folds through the
+    ## alias's module — a direct raw const, and a wrapper const whose value
+    ## chains into the raw module (`c.MAX_PARTS + 1`), mirroring the host's
+    ## `resolve_named_literal_type_argument`/`resolve_imported_module_const_value`
+    ## (session 44, item 3s).  Before the fix both rendered `:value 0`.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_arrlen_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        const MAX_PARTS: int = 8
+
+        struct Part:
+            index: int
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public const BONE_COUNT: int = c.MAX_PARTS + 1
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import std.c.raw.lib as c
+        import wrap
+
+        function f() -> int:
+            var direct: array[int, c.MAX_PARTS]
+            var hopped: array[int, wrap.BONE_COUNT]
+            direct[0] = 1
+            hopped[0] = 2
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"direct\" :linkage_name \"direct\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 8)))"))
+    expect(text.contains_substring("(IR::LocalDecl :name \"hopped\" :linkage_name \"hopped\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 9)))"))
