@@ -11322,7 +11322,12 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     m_decl_key.append(gm.method.name)
     unsafe:
         read(ctx.spec_infos).set(method_c, SpecInfo(
-            owner_module = info.owner_module,
+            # The host groups a method's instances under its declaration in the
+            # module that *declares* the extending block, so the ordering key
+            # must carry that module — `info.owner_module` is the receiver
+            # type's module, which a cross-module call site may have registered
+            # as its own (`Vec.create[String]` written in std.string).
+            owner_module = gm.owner_module,
             decl_key = m_decl_key.as_str(),
             args_key = m_args_key.as_str(),
         ))

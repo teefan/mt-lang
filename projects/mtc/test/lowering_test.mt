@@ -2348,3 +2348,70 @@ function test_monomorphized_null_return_takes_the_substituted_type() -> void:
     expect(text.contains_substring("(IR::ReturnStmt :value (IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"own\" :arguments ((Types::Struct :name \"Box\" :module_name \"main\"))))) :line 6"))
     expect(not text.contains_substring("(IR::ReturnStmt :value (IR::NullLiteral :type (Types::Primitive :name \"void\"))"))
 
+
+@[test]
+function test_method_specializations_group_under_the_declaring_module() -> void:
+    ## A generic method's instances are ordered under the module that
+    ## *declares* the extending block: `a.Holder[Thing].make(...)` called from
+    ## `b` must not land in `b`'s leftovers (where the specs were grouped by
+    ## the receiver type's module, captured as the caller's).  The declaration
+    ## order (`make` before `clear`) wins; the fixture is byte-identical to the
+    ## host (session 44, item 3ad).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_spec_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var a_source = <<-SRC
+        public struct Holder[T]:
+            value: T
+
+        extending Holder[T]:
+            public static function make(value: T) -> Holder[T]:
+                return Holder[T](value = value)
+
+            public editable function clear() -> void:
+                return
+    SRC
+    if not write_source_file(root.as_str(), "a.mt", a_source):
+        return
+
+    var b_source = <<-SRC
+        import a
+
+        public struct Thing:
+            n: int
+
+        public function build() -> a.Holder[Thing]:
+            var h = a.Holder[Thing].make(Thing(n = 1))
+            h.clear()
+            return h
+    SRC
+    if not write_source_file(root.as_str(), "b.mt", b_source):
+        return
+
+    var source = <<-SRC
+        import b
+
+        function main() -> int:
+            let h = b.build()
+            return h.value.n
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    let make_pos = text.find_substring(":linkage_name \"a_Holder_make_static__b_Thing\"")
+    let clear_pos = text.find_substring(":linkage_name \"a_Holder_clear__b_Thing\"")
+    expect(make_pos.is_some())
+    expect(clear_pos.is_some())
+    expect(make_pos.unwrap() < clear_pos.unwrap())
+
