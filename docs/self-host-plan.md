@@ -1225,6 +1225,21 @@ file by file.
     on the hoisting channel ("the format-string hoist (with the host's cleanup
     placement) is a follow-up on the same machinery").  Repro:
     `examples/box2d/body_move.mt` at byte 675,577 after 3v.
+    - **Sites** (probed 2026-10-07, session 44): the `lower_expr` arm
+      `ast.Expr.expr_format_string` (`lowering.mt:6176-6186`) suspends the
+      hoisting window (`suspend_stmt_setup`), runs
+      `build_format_string_dynamic` into a local vec and wraps it in
+      `ir.Expr.expr_stmt_expr`; the host's shapes are
+      `lowering/expressions.rb:230-360` (the two-pass `fmt_part` temps) with
+      the split done by `prepare_expression_with_cleanups`.  The pattern to
+      follow is session 41's foreign-call hoist: inside an active window push
+      the setup through `collect_stmt_setup`/`emit_hoist_setup` instead of the
+      StmtExpr (statement roots only — a nested expression keeps the
+      StmtExpr), and place the hook path's post-statement releases
+      (`len_kind == 3`'s `fmt_hook_str` `string.String.release` calls, the
+      `append_hoist_cleanups` half) after the statement like the `hm_value`
+      frees.  `test/mt` and the examples gates then verify the C still
+      compiles (the stmt-expr removal changes every format-string site's C).
 3i-b. **The `break` half of the loop-flow model** — **DONE (session 43,
     2026-10-07)** (newly exposed by 3o; the box2d/raylib/sdl3 families' first
     difference, `std/str.mt`'s nested `while`).  The host emits a native
