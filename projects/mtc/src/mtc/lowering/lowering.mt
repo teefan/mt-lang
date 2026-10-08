@@ -333,6 +333,14 @@ struct LowerCtx:
     # at every function body.
     fmt_dest_name: str
     fmt_counter: map_mod.Map[str, ptr_uint]
+    # Locals whose `str`/`cstr` value is backed by a C-string buffer that
+    # outlives the enclosing statement — the host's `cstr_backed` bindings: a
+    # string-literal initializer, a `cstr`-typed local, another cstr-backed
+    # local, or a dynamic format string's result temp.  A `str as cstr` foreign
+    # argument that names one of these passes its `data` pointer directly
+    # instead of allocating an `mt_foreign_str_to_cstr_temp` copy
+    # (`cstr_backed_expression?`); per-function, cleared at every body.
+    cstr_backed_names: map_mod.Map[str, bool]
     # Inline foreign-mapping substitutions: an argument value the host does not
     # temporary-bind is bound here (parameter name → the lowered value
     # expression) and `lower_expr`'s identifier arm resolves it ahead of the
@@ -869,6 +877,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.cstr_backed_names.clear()
     ctx.function_returns.clear()
     var saved_type_subst = ctx.type_substitution
     ctx.type_substitution = read(sub)
@@ -998,6 +1007,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         temp_counter = 0,
         fmt_dest_name = "",
         fmt_counter = map_mod.Map[str, ptr_uint].create(),
+        cstr_backed_names = map_mod.Map[str, bool].create(),
         foreign_map = map_mod.Map[str, ForeignInfo].create(),
         extern_map = map_mod.Map[str, str].create(),
         function_returns = map_mod.Map[str, types.Type].create(),
@@ -2137,6 +2147,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.cstr_backed_names.clear()
     let sig = lookup_fn_sig(ctx, m.name)
 
     var ir_params = vec.Vec[ir.Param].create()
@@ -2294,6 +2305,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.cstr_backed_names.clear()
     let sig = lookup_fn_sig(ctx, name)
 
     var ir_params = vec.Vec[ir.Param].create()
@@ -2969,6 +2981,8 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 else:
                     append_hoist_cleanups(output, hoist_collected)
                 ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
+                if cstr_backed_binding(ctx, ty, init, value_expr):
+                    ctx.cstr_backed_names.set(c_name, true)
             ast.Stmt.stmt_assignment as asg:
                 # Async CPS: an assignment whose value contains an await.  For a
                 # plain `x = await Y` (operator `=`), assign the awaited result
@@ -6225,6 +6239,15 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                     let fmt_result = build_format_string_dynamic(ctx, fs.parts, ref_of(fmt_setup))
                     return alloc_expr(ir.Expr.expr_stmt_expr(setup = fmt_setup.as_span(), result = fmt_result, ty = types.Type.ty_str))
                 let fmt_result = build_format_string_dynamic(ctx, fs.parts, ref_of(ctx.hoist_stmts))
+                # The result temp owns its buffer and outlives the statement
+                # (the host's `register_prepared_temp!(…, cstr_backed: true)`),
+                # so a `str as cstr` boundary may pass its `data` directly.
+                unsafe:
+                    match read(fmt_result):
+                        ir.Expr.expr_name as nm:
+                            ctx.cstr_backed_names.set(nm.name, true)
+                        _:
+                            pass
                 # A `return f"..."` transfers the buffer to the caller — the
                 # host drops the release for a str-typed return.
                 if ctx.hoist_mode != HoistMode.hm_return:
@@ -6581,6 +6604,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.cstr_backed_names.clear()
 
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     let env_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = env_type_name)))
@@ -6710,6 +6734,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.cstr_backed_names.clear()
 
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
     var params = vec.Vec[ir.Param].create()
@@ -9127,6 +9152,7 @@ function lower_and_cache_specialization_with_sub(ctx: ref[LowerCtx], gm: Generic
             ctx.temp_counter = 0
             ctx.fmt_dest_name = ""
             ctx.fmt_counter.clear()
+            ctx.cstr_backed_names.clear()
             ctx.function_returns = map_mod.Map[str, types.Type].create()
             ctx.type_substitution = map_mod.Map[str, types.Type].create()
             ctx.inside_async = false
@@ -11238,6 +11264,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.cstr_backed_names.clear()
     ctx.function_returns = map_mod.Map[str, types.Type].create()
     ctx.type_substitution = sub
     ctx.inside_async = false
@@ -11316,6 +11343,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.cstr_backed_names.clear()
 
     # Build the receiver struct type using only the struct-level type args
     # (the first N concrete args where N = struct_param_names.len).  Method-level
@@ -13823,6 +13851,14 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                                     pass
                             if arg_is_cstr:
                                 return lowered_str
+                            # A cstr-backed `str` (a string-literal or cstr-backed
+                            # local, or a dynamic format string's temp) owns a
+                            # buffer that outlives the call, so its `data`
+                            # pointer passes directly — the host's
+                            # `cstr_backed_expression?` branch.
+                            if is_cstr_backed_lowered(ctx, lowered_str):
+                                let data_member = alloc_expr(ir.Expr.expr_member(receiver = lowered_str, member = "data", ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))))
+                                return alloc_expr(ir.Expr.expr_cast(target_type = types.primitive("cstr"), expression = data_member, ty = types.primitive("cstr")))
                             return alloc_expr(ir.Expr.expr_call(
                                 callee = "mt_foreign_str_to_cstr_temp",
                                 arguments = single_expr_span(lowered_str),
@@ -18437,6 +18473,53 @@ function format_owning_target_type(ctx: ref[LowerCtx], ty: types.Type, depth: pt
             return true
         fi += 1
     return false
+
+
+## True when a local's value is backed by a C-string buffer that outlives the
+## enclosing statement — the host's `cstr_backed_storage_value?`: a `cstr`
+## local, or a `str` local whose value is a cstr-typed expression, a string
+## literal, a dynamic format string, or another cstr-backed local.
+function cstr_backed_binding(ctx: ref[LowerCtx], ty: types.Type, init: ptr[ast.Expr]?, value_expr: ptr[ir.Expr]) -> bool:
+    match ty:
+        types.Type.ty_primitive as p:
+            if p.name == "cstr":
+                return true
+        types.Type.ty_str:
+            # The lowered value is a `cstr`-typed expression, another
+            # cstr-backed local's read, or a dynamic format string's result temp
+            # (registered when the format was built) — the host's
+            # prepared-identifier check.
+            match ir_expr_type(value_expr):
+                types.Type.ty_primitive as vp:
+                    if vp.name == "cstr":
+                        return true
+                _:
+                    pass
+            if is_cstr_backed_lowered(ctx, value_expr):
+                return true
+            let ip = init else:
+                return false
+            unsafe:
+                match read(ip):
+                    ast.Expr.expr_string_literal:
+                        return true
+                    _:
+                        return false
+        _:
+            return false
+    return false
+
+
+## True when a lowered value is a cstr-backed local's read (or a format-string
+## temp), so a `str as cstr` foreign boundary can pass its `data` pointer
+## directly — the host's `cstr_backed_expression?` on the prepared identifier.
+function is_cstr_backed_lowered(ctx: ref[LowerCtx], ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name as n:
+                return ctx.cstr_backed_names.contains(n.name)
+            _:
+                return false
 
 
 ## Build a dynamic format string: the host's

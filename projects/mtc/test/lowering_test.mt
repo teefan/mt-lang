@@ -2195,3 +2195,68 @@ function test_dynamic_format_string_hoists_with_the_destination_name() -> void:
     expect(text.contains_substring("(IR::LocalDecl :name \"__fmt_index_2_cap\""))
     expect(text.contains_substring("(IR::ExpressionStmt :expression (IR::Call :callee \"mt_format_str_release\" :arguments ((IR::Name :name \"__fmt_index\" :type (Types::StringView) :pointer false)) :type (Types::Primitive :name \"void\")) :line nil :path nil)"))
     expect(not text.contains_substring(":value (IR::Cast :target_type (Types::Primitive :name \"int\") :expression (IR::Name :name \"index\""))
+
+
+@[test]
+function test_cstr_backed_strings_pass_data_directly() -> void:
+    ## A `str as cstr` foreign argument whose value is cstr-backed — a
+    ## string-literal local or a dynamic format string's temp (the host's
+    ## `cstr_backed_expression?`) — passes its `data` pointer directly; a value
+    ## from a call (no owning buffer) takes the
+    ## `mt_foreign_str_to_cstr_temp` copy (session 44, item 3x).  The
+    ## fixture's dump is byte-identical to the host's.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_cstrb_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", "external\n\nexternal function takes_cstr(s: cstr) -> void\n"):
+        return
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function show(text: str as cstr) -> void = c.takes_cstr
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function make() -> str:
+            return "plain"
+
+        function main() -> int:
+            let lit = "hello"
+            let fmt = f"n#{1}"
+            let dynamic = make()
+            wrap.show(lit)
+            wrap.show(fmt)
+            wrap.show(dynamic)
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Call :callee \"takes_cstr\" :arguments ((IR::Cast :target_type (Types::Primitive :name \"cstr\") :expression (IR::Member :receiver (IR::Name :name \"lit\" :type (Types::StringView) :pointer false) :member \"data\""))
+    expect(text.contains_substring("(IR::Call :callee \"takes_cstr\" :arguments ((IR::Cast :target_type (Types::Primitive :name \"cstr\") :expression (IR::Member :receiver (IR::Name :name \"fmt\" :type (Types::StringView) :pointer false) :member \"data\""))
+    expect(text.contains_substring(":value (IR::Call :callee \"mt_foreign_str_to_cstr_temp\" :arguments ((IR::Name :name \"dynamic\""))
