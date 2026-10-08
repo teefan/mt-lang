@@ -74,6 +74,28 @@ function lower_source(source: str) -> string.String:
     return irfmt.format_program(ir_program)
 
 
+## Create a temp directory, write `source` as `main.mt`, check and lower it, and
+## return the *sexpr* dump of the lowered program.  The temp tree is removed
+## before returning.
+function lower_dump_for_source(source: str) -> string.String:
+    var root = fs.create_temporary_directory_in_system_temp("mtc_ld_") else:
+        return string.String.from_str("FAIL: temp dir")
+    defer: cleanup_dir(ref_of(root))
+
+    if not write_main_file(root.as_str(), source):
+        return string.String.from_str("FAIL: write main")
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    var ir_program = lowering.lower(program)
+    return sexpr.dump_ir(ir_program)
+
+
 ## Write `content` to `dir/name` (the directory must exist).
 function write_source_file(dir: str, name: str, content: str) -> bool:
     var file_path = path_ops.join(dir, name)
@@ -2111,3 +2133,35 @@ function test_inout_argument_addresses_the_deepened_boundary_type() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::AddressOf :expression (IR::Name :name \"d\" :type (Types::Struct :name \"Def\" :module_name \"std.c.raw.lib\") :pointer false) :type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"Def\" :module_name \"std.c.raw.lib\")))"))
     expect(not text.contains_substring(":type (Types::Generic :name \"ptr\" :arguments ((Types::Struct :name \"MyDef\""))
+
+
+@[test]
+function test_array_storing_receiver_is_borrowed() -> void:
+    ## A plain (non-editable) *sync* method whose receiver type contains array
+    ## storage takes `this` as a pointer (`pointer_lowered_method_receiver?`):
+    ## the param is `:pointer true`, `this.read()` passes the pointer through,
+    ## and a call on a value borrows it (`&b`).  A small struct keeps the value
+    ## convention (session 44, item 3v).
+    var source = <<-SRC
+        struct Big:
+            values: array[int, 4]
+            count: int
+
+        extending Big:
+            function read() -> int:
+                return this.count
+
+            editable function bump() -> int:
+                this.count += 1
+                return this.read()
+
+        function main() -> int:
+            var b = Big(count = 3)
+            return b.read() + b.bump()
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Function :name \"read\" :linkage_name \"main_Big_read\" :params ((IR::Param :name \"this\" :linkage_name \"this\" :type (Types::Struct :name \"Big\" :module_name \"main\") :pointer true))"))
+    expect(text.contains_substring("(IR::Call :callee \"main_Big_read\" :arguments ((IR::Name :name \"this\" :type (Types::Struct :name \"Big\" :module_name \"main\") :pointer true)"))
+    expect(text.contains_substring("(IR::Call :callee \"main_Big_read\" :arguments ((IR::AddressOf :expression (IR::Name :name \"b\" :type (Types::Struct :name \"Big\" :module_name \"main\") :pointer false) :type (Types::Struct :name \"Big\" :module_name \"main\")))"))

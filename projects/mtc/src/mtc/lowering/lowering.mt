@@ -2128,11 +2128,11 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     var ir_params = vec.Vec[ir.Param].create()
     var param_setup = vec.Vec[ir.Stmt].create()
     if m.method_kind != ast.MethodKind.mk_static:
-        # A pointer-lowered receiver (editable method) carries its base type
-        # with `pointer = true`; the C `*` is added by the backend.  Ordinary
-        # and static methods take `this` by value.  Mirrors the host's
-        # `pointer_lowered_sync_method_receiver?`.
-        let recv_is_ptr = m.method_kind == ast.MethodKind.mk_editable
+        # A pointer-lowered receiver carries its base type with `pointer = true`;
+        # the C `*` is added by the backend.  Editable methods borrow, and so do
+        # sync methods whose receiver type contains array storage.  Mirrors the
+        # host's `pointer_lowered_sync_method_receiver?`.
+        let recv_is_ptr = receiver_by_pointer(ctx, receiver_ty, m.method_kind, m.is_async)
         ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = receiver_ty, pointer = recv_is_ptr))
         ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = receiver_ty, pointer = recv_is_ptr))
     var pi: ptr_uint = 0
@@ -9710,9 +9710,12 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
                 var body_stmts = vec.Vec[ir.Stmt].create()
                 var call_args = vec.Vec[ir.Expr].create()
                 if dm.value.method_kind != ast.MethodKind.mk_static:
-                    let is_editable = dm.value.method_kind == ast.MethodKind.mk_editable
+                    # The concrete method's own convention decides: editable and
+                    # array-storing receivers are borrowed (`pointer_lowered_-
+                    # method_receiver?`), everything else is passed by value.
+                    let pointer_recv = receiver_by_pointer(ctx, c_ty, dm.value.method_kind, false)
                     let inner_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(c_ty))
-                    if is_editable:
+                    if pointer_recv:
                         unsafe:
                             call_args.push(read(alloc_expr(ir.Expr.expr_cast(target_type = inner_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr, pointer = false)), ty = inner_ptr_ty))))
                     else:
@@ -9956,6 +9959,9 @@ struct MethodInfo:
     method_kind: ast.MethodKind
     return_type: types.Type
     params: span[analyzer.ParamEntry]
+    ## The callee's `async` flag: async methods keep the value receiver
+    ## convention (the host's `pointer_lowered_sync_method_receiver?`).
+    is_async: bool
 
 
 ## True when `name` names a primitive type or `str` — the receiver types whose
@@ -10147,6 +10153,7 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
             method_kind = sig.method_kind,
             return_type = qualify_type(ctx, ret),
             params = sig.params,
+            is_async = sig.is_async,
         ))
     var ai: ptr_uint = 0
     while ai < ctx.program_analyses.len:
@@ -10169,6 +10176,7 @@ function resolve_primitive_method_info(ctx: ref[LowerCtx], type_name: str, metho
                 method_kind = sig.method_kind,
                 return_type = qualify_type(ctx, ret),
                 params = sig.params,
+                is_async = sig.is_async,
             ))
         ai += 1
     return Option[MethodInfo].none
@@ -10201,7 +10209,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                     var ret = sig.return_type
                     if not sig.has_return_type:
                         ret = ctx.void_ty
-                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind, return_type = ret, params = sig.params))
+                    return Option[MethodInfo].some(value = MethodInfo(c_name = naming.qualified_member_c_name(ctx.module_name, gv.value, method_name), method_kind = sig.method_kind, return_type = ret, params = sig.params, is_async = sig.is_async))
             Option.none:
                 pass
         return Option[MethodInfo].none
@@ -10222,7 +10230,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
         var ret = sig.return_type
         if not sig.has_return_type:
             ret = ctx.void_ty
-        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name_for_receiver(effective_ty, ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret), params = sig.params))
+        return Option[MethodInfo].some(value = MethodInfo(c_name = method_c_name_for_receiver(effective_ty, ctx.module_name, type_name, method_name, sig.method_kind), method_kind = sig.method_kind, return_type = qualify_type(ctx, ret), params = sig.params, is_async = sig.is_async))
     # Search imported modules' method_sigs when the method is not found locally.
     # When the receiver type carries a specific originating module (ty_imported),
     # restrict the search to that module first so that structs with the same name
@@ -10273,6 +10281,7 @@ function resolve_method_info(ctx: ref[LowerCtx], receiver_ty: types.Type, method
                 method_kind = sig.method_kind,
                 return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
                 params = sig.params,
+                is_async = sig.is_async,
             ))
         ai += 1
     return Option[MethodInfo].none
@@ -10317,6 +10326,7 @@ function resolve_method_info_imported(ctx: ref[LowerCtx], receiver_ty: types.Typ
                     method_kind = sig.method_kind,
                     return_type = resolve_method_return_from_import(ctx, a.module_name, sig, effective_ty),
                     params = sig.params,
+                    is_async = sig.is_async,
                 ))
             return Option[MethodInfo].none
         ai += 1
@@ -10352,7 +10362,7 @@ function lower_static_call_args(ctx: ref[LowerCtx], mi: MethodInfo, args: span[a
 function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr[ast.Expr], args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     let recv = lower_expr(ctx, receiver)
     var ir_args = vec.Vec[ir.Expr].create()
-    match build_receiver_arg(recv, mi.method_kind):
+    match build_receiver_arg(ctx, recv, mi.method_kind, mi.is_async):
         Option.some as recv_arg:
             unsafe:
                 ir_args.push(read(recv_arg.value))
@@ -10386,17 +10396,65 @@ function lower_method_resolved(ctx: ref[LowerCtx], mi: MethodInfo, receiver: ptr
     return alloc_expr(ir.Expr.expr_call(callee = mi.c_name, arguments = ir_args.as_span(), ty = mi.return_type))
 
 
+## True when a method's receiver parameter is passed as a pointer, mirroring the
+## host's `pointer_lowered_sync_method_receiver?`: an editable method borrows its
+## receiver; a plain *sync* method borrows it when the receiver type contains
+## array storage (`type_contains_array_storage?` — a struct holding an
+## `array[T, N]` directly or through nested structs/nullables).  Async methods
+## keep the value convention.
+function receiver_by_pointer(ctx: ref[LowerCtx], receiver_ty: types.Type, method_kind: ast.MethodKind, is_async: bool) -> bool:
+    if is_async:
+        return false
+    if method_kind == ast.MethodKind.mk_editable:
+        return true
+    return type_contains_array_storage(ctx, receiver_ty)
+
+
+## The host's `ContainsArrayStorageVisitor`: nullable bases and struct fields are
+## walked; only an `array` instance sets the flag.  Generic types other than
+## `array` are not descended into (a `ptr[array[T, N]]` does not count), and the
+## struct field lookup uses the *declared* fields (which is the same answer for
+## the instantiated forms this rule sees).
+function type_contains_array_storage(ctx: ref[LowerCtx], ty: types.Type) -> bool:
+    return type_contains_array_storage_at(ctx, ty, 0)
+
+
+function type_contains_array_storage_at(ctx: ref[LowerCtx], ty: types.Type, depth: ptr_uint) -> bool:
+    if depth > 8:
+        return false
+    match ty:
+        types.Type.ty_nullable as nl:
+            return type_contains_array_storage_at(ctx, unsafe: read(nl.base), depth + 1)
+        types.Type.ty_generic as g:
+            return g.name == "array"
+        types.Type.ty_named:
+            pass
+        types.Type.ty_imported:
+            pass
+        _:
+            return false
+    let fields = struct_fields_of(ctx, ty) else:
+        return false
+    var fi: ptr_uint = 0
+    while fi < fields.len:
+        if type_contains_array_storage_at(ctx, unsafe: read(fields.data + fi).ty, depth + 1):
+            return true
+        fi += 1
+    return false
+
+
 ## Build the receiver argument for a method call, applying auto-ref / auto-deref
 ## so the passed value matches the C receiver parameter:
 ##   - static:   no receiver argument (returns none)
-##   - editable: parameter is `ptr[T]`; pass a pointer receiver through, else take
-##               its address (`&value`)
-##   - plain:    parameter is `T` by value; dereference a pointer receiver (`*p`),
-##               else pass the value through
+##   - pointer receiver (an editable method, or a sync method whose receiver
+##               type contains array storage): pass a pointer receiver through,
+##               else take its address (`&value`)
+##   - value receiver: dereference a pointer receiver (`*p`), else pass the
+##               value through
 ## This mirrors the Ruby lowerer's implicit receiver borrow/deref and, in
 ## particular, makes `this.method()` calls inside editable methods (where `this`
 ## is already a pointer) pass `this` directly instead of `&this`.
-function build_receiver_arg(recv: ptr[ir.Expr], method_kind: ast.MethodKind) -> Option[ptr[ir.Expr]]:
+function build_receiver_arg(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_kind: ast.MethodKind, is_async: bool) -> Option[ptr[ir.Expr]]:
     if method_kind == ast.MethodKind.mk_static:
         return Option[ptr[ir.Expr]].none
     let recv_ty = ir_expr_type(recv)
@@ -10415,7 +10473,7 @@ function build_receiver_arg(recv: ptr[ir.Expr], method_kind: ast.MethodKind) -> 
                     recv_deref = Option[ptr[ir.Expr]].some(value = u.operand)
             _:
                 pass
-    if method_kind == ast.MethodKind.mk_editable:
+    if receiver_by_pointer(ctx, recv_ty, method_kind, is_async):
         if recv_is_pointer or recv_is_ptr_expr:
             return Option[ptr[ir.Expr]].some(value = recv)
         match recv_deref:
@@ -10969,7 +11027,7 @@ function lower_monomorphized_method(ctx: ref[LowerCtx], info: GenericReceiver, g
             ir_args.push(read(ptr_recv))
         param_offset = 1
     else:
-        match build_receiver_arg(recv, gm.method.method_kind):
+        match build_receiver_arg(ctx, recv, gm.method.method_kind, gm.method.is_async):
             Option.some as recv_arg:
                 unsafe:
                     ir_args.push(read(recv_arg.value))
@@ -11228,7 +11286,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
 
     var ir_params = vec.Vec[ir.Param].create()
     if m.method_kind != ast.MethodKind.mk_static:
-        let recv_is_ptr = m.method_kind == ast.MethodKind.mk_editable
+        let recv_is_ptr = receiver_by_pointer(ctx, recv_struct_ty, m.method_kind, m.is_async)
         ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = recv_struct_ty, pointer = recv_is_ptr))
         ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = recv_struct_ty, pointer = recv_is_ptr))
 
