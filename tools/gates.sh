@@ -32,10 +32,16 @@
 # Session rules this script encodes:
 #   * Rebuild before measuring (tier 1 starts with the dev build; tier 2 with
 #     the bootstrap, which produces the stage2 every later gate uses).
+#   * Iterate on tier 1, prove once per batch: the per-fix loop is the dev
+#     build + the focused sweeps (seconds warm); the tier-2 proofs (bootstrap
+#     fixed point, test/mt, examples) run on the frozen sources once per
+#     landed batch, not once per fix.
 #   * Never edit sources while a gate runs — bootstrap compiles the working
 #     tree, so a mid-run edit silently corrupts the result.
 #   * Do not re-measure a baseline the previous session verified at this same
 #     commit; measure only the classes your change can move.
+#   * Touch unrelated gates (linter, LSP, CLI, formatter, bindings) only when
+#     the diff reaches those subsystems — area inference already does this.
 
 set -uo pipefail
 
@@ -119,8 +125,8 @@ gate_tier() {
 gate_label() {
     case "$1" in
         dev_build)      echo "dev build to tmp/mtc-dev (~50 s)" ;;
-        dev_tests)      echo "self-host test suite on the dev build (~2 min)" ;;
-        bootstrap)      echo "bootstrap: fixed point + self-tests (~18 min)" ;;
+        dev_tests)      echo "self-host suite, one process per file (~1 min)" ;;
+        bootstrap)      echo "bootstrap --fast: fixed point only (~12 min)" ;;
         test_mt)        echo "test/mt under stage2 (60 files / 0 failed)" ;;
         sexpr_lex)      echo "sexpr lex parity (705/705)" ;;
         sexpr_parse)    echo "sexpr parse parity (701 comparable / 0 differ)" ;;
@@ -147,8 +153,8 @@ gate_label() {
 gate_cmd() {
     case "$1" in
         dev_build)     echo "ruby -Ilib bin/mtc build projects/mtc -I . --no-cache -o tmp/mtc-dev" ;;
-        dev_tests)     echo "tmp/mtc-dev test projects/mtc -I . --timeout 120" ;;
-        bootstrap)     echo "tools/bootstrap.sh -j 16" ;;
+        dev_tests)     echo "gates_dev_tests" ;;
+        bootstrap)     echo "tools/bootstrap.sh -j 16 --fast" ;;
         test_mt)       echo "build/stage2/mtc test test/mt -I ." ;;
         sexpr_lex)     echo "ruby tools/sexpr_parity.rb lex -q --host-cache tmp/sexpr-host-cache" ;;
         sexpr_parse)   echo "ruby tools/sexpr_parity.rb parse -q --host-cache tmp/sexpr-host-cache" ;;
@@ -193,6 +199,37 @@ gate_summary() {
         soak)           echo "^label=" ;;
         *)              echo "." ;;
     esac
+}
+
+# Self-host suite, one process per test file.  The self's `test` accepts only a
+# directory (file arguments and --jobs are host features it has not ported yet),
+# so each file gets a one-file temp dir with an explicit `-I projects/mtc/src`.
+# The test path does not touch the build cache, so the workers are independent.
+gates_dev_tests() {
+    local root="$PWD" d="tmp/gate-dev-tests" f name rc=0 failed=0 n=0
+    local files=(projects/mtc/test/*.mt)
+    rm -rf "$d"; mkdir -p "$d"
+    for f in "${files[@]}"; do
+        name="$(basename "$f")"
+        mkdir -p "$d/$name"
+        ln -s "$root/$f" "$d/$name/$name"
+    done
+    printf '%s\n' "${files[@]}" \
+        | xargs -P "$(nproc)" -I{} bash -c '
+            f="$1"; d="$2"; name="$(basename "$f")"
+            tmp/mtc-dev test "$d/$name" -I . -I projects/mtc/src --timeout 120 \
+                > "$d/$name.log" 2>&1
+            echo $? > "$d/$name.rc"
+        ' _ {} "$d"
+    for f in "${files[@]}"; do
+        name="$(basename "$f")"
+        cat "$d/$name.log"
+        n=$((n + 1))
+        [ "$(cat "$d/$name.rc")" = 0 ] || { rc=1; failed=$((failed + 1)); }
+    done
+    echo "$n test file(s), $failed failed"
+    rm -rf "$d"
+    return $rc
 }
 
 # Inline example sweep: emit-c exit status + first diagnostic line, host vs self.

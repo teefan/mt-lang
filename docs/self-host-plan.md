@@ -431,7 +431,7 @@ for the area you are touching:
 | CLI behavior parity | the program's CLI track, `tools/cli_parity.rb` (`--help`) | `rake "cli:parity"` |
 | Formatter modes (`:tidy`, `:preserve`) | §7, `docs/lsp-design.md` | `ruby tools/format_parity.rb all -j 16` (all modes must stay byte-identical — 712/712, file counts drift) |
 | DAP | the program's DAP track, `docs/dap-design.md` (gaps in §10) | `ruby tools/dap_smoke.rb [--server host\|self\|both] [--json OUT]` — runs a session on both adapters and prints a per-request diff |
-| Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` |
+| Bootstrap / release | `docs/bootstrap-design.md` | `tools/bootstrap.sh -j 16` (full); `--fast` = fixed point only, no self-test rebuild/suite |
 | In-language test suite | `docs/testing.md` | `build/stage2/mtc test test/mt -I .` |
 
 **Start by checking what your task can move, not by replaying the matrix.**  The
@@ -450,13 +450,26 @@ digest and only the self re-runs live — the repo-wide `lower` sweep drops from
 **Once per commit, on frozen sources**, run the tier-2 proofs: `tools/bootstrap.sh
 -j 16` (fixed point + compiler self-test — several changes that looked correct at
 the CLI level broke the compiler's own bootstrap) plus the sweep that covers the
-area.  `tools/gates.sh` picks the set for you:
+area.  `tools/bootstrap.sh -j 16 --fast` is the per-batch form: it implies
+`--keep-c` (skipping the two re-emit rebuilds the fixed-point check used to do),
+drops the `stage2-self` rebuild (the stage-3 build already *is* stage2 compiling
+itself) and the in-script suite — same `stage2.c == stage3.c` comparison, ~10 min
+less.  `tools/gates.sh` picks the set for you:
 
 ```sh
 tools/gates.sh                 # list the gates for the working-tree diff
 tools/gates.sh --areas linter  # or name the areas
 tools/gates.sh --run           # execute them (logs under tmp/gates/)
 ```
+
+**Batch the ceremony, not the care.**  The per-fix loop is tier 1 only: the dev
+build (~50 s), the focused sweep (the `lower` subset re-runs in seconds warm) and
+`tmp/mtc-dev test projects/mtc -I .` (now ~40 s — `gates_dev_tests` runs each of
+the 19 test files as its own process, since the self's `test` takes only a
+directory and does not parse `--jobs`).  Land 3–5 fixes per commit, then run the
+tier-2 set once on the frozen tree.  A batch of five fixes costs ~1 h end to end
+instead of five ~45-min cycles, and every fix is still verified against the host
+before the next one starts.
 
 **Never edit sources while a gate runs** — `bootstrap.sh` compiles the working
 tree, so a mid-run edit silently corrupts the result.  Check the exit status, not
@@ -1692,9 +1705,16 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
    `build --bogus` reports "accepts a single source path" instead of "unknown
    build option").  Exit: 61/61 on the current corpus.
 2. **Cheap flags/subcommands**: `test --jobs N` (the ported help advertises it;
-   nothing parses it today) and `--cc/--profile/--platform` for `test` (port
+   nothing parses it today — a stray `16` lands in the path slot and the run dies
+   "not a directory: 16") and `--cc/--profile/--platform` for `test` (port
    the host's fork-per-file, order-preserving parallel runner,
-   `cli/commands/test.rb:281-335`; `build` already honors `--cc`);
+   `cli/commands/test.rb:281-335`; `build` already honors `--cc`); the same
+   function also rejects **file** arguments the host accepts (`mtc test
+   path/file.mt` → "not a directory: …"; the host runs that file).  All three
+   survived the CLI sweep — `cli_parity.rb` does not exercise `test`'s argument
+   forms, so a green `cli` column does not cover this command.  Session 44
+   worked around the directory-only limit for the gate (one-process-per-file via
+   temp one-file dirs, `gates_dev_tests`);
    `build --kind static|shared` (`tooling/build.rb` kind handling);
    `toolchain bootstrap`/`toolchain tools` (`toolchain_cli.rb:68-205`; only
    `doctor` is dispatched today); `bindgen
@@ -2117,6 +2137,20 @@ examples 15/15, sdl3 34/34, a raylib sample; new tests in
   `docs/dap-design.md` as their areas change.
 - Declare done only when the Ledger shows every counter at its target.
 
+### Track 9 — compiler throughput (not parity; it prices every gate)
+
+The self compiles the compiler's own sources in **157 s** (`emit-c` of
+`projects/mtc/src/mtc/main.mt`) where the host takes **40 s** — a 3.9× gap, and
+every `bootstrap.sh` pays it twice (the stage2 and stage3 builds).  After the
+session-44 tooling pass it is the single biggest line item in the gate loop: a
+full bootstrap is ~26 min, `--fast` ~12 min, and ~10 of those minutes are the two
+self-builds (~5 min each at load).  One session profiling the self's
+front-end/lowering/C-emit on its own sources (candidates: repeated
+analysis/type resolution per module, the string-heavy rendering paths, the C
+emitter's text building) buys every future gate back several minutes; nothing
+else does.  **Not a parity item** — behavior must not change, only wall time.
+Verify with `emit-c` timing plus the fixed point.
+
 ### Risks and notes
 
 - **`lower` tail**: every fix moves files' first differences deeper and can
@@ -2144,7 +2178,7 @@ definition of done above.
 
 | Gate | Live | Target | Command |
 | --- | --- | --- | --- |
-| bootstrap fixed point | holds (2026-10-05 session 38 part 2 — `stage2.c == stage3.c`); self-test suite 19 files / 0 failed (session 34's `debug_map_test.mt` and session 38's `heap_region_test.mt` included) | stay green | `tools/bootstrap.sh -j 16` |
+| bootstrap fixed point | holds (2026-10-05 session 38 part 2 — `stage2.c == stage3.c`); self-test suite 19 files / 0 failed (session 44 re-measured green across all ten items; `--fast` re-verified `stage2.c == stage3.c` at 11.7 min) | stay green | `tools/bootstrap.sh -j 16 --fast` (per batch; the full form also runs the suite) |
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
@@ -2462,6 +2496,40 @@ differ / 51 host-rejected / 0 self-rejected of 717** (session 43's close).
   unsigned-boundary literal (~16), the `mt_str_buffer_*` decls (~15) and a
   statement's line/path shape (~13).  Carried into Track 3's ranked items
   3af/3ae/3ac.
+
+### Session 44, tools pass (2026-10-07) — the gate loop's cost, halved
+
+Goal: make the per-fix loop cheap enough that `lower` items land in batches
+(user ask: the diffs were resolving at ~1 item/45 min).  Measured on the 16-core
+box at session-44 load:
+
+| step | before | after |
+| --- | --- | --- |
+| self suite (19 files, 669 tests) | 243 s — `tmp/mtc-dev test projects/mtc`, strictly sequential | **37.6 s** — `gates_dev_tests`: one process per test file under `xargs -P16` |
+| bootstrap | ~26 min (five compiler builds: stage1, stage2, stage3, two `--keep-c` re-emits, a `stage2-self` rebuild) + the in-script suite | **11.7 min** — `--fast`: `--keep-c` from the start, no re-emit rebuilds, no `stage2-self` (the stage-3 build already *is* stage2 compiling itself), no in-script suite; `stage2.c == stage3.c` still verified by diff |
+
+Root causes found: (1) the self's `test` accepts only a **directory** and parses
+no `--jobs` (both advertised in the ported help; the host's fork-per-file runner
+is `cli/commands/test.rb:208, 281-335`) — a bare file argument dies "not a
+directory", and a stray `--jobs 16` lands in the path slot the same way, so the
+suite was 19 sequential builds; (2) `bootstrap.sh` rebuilt the fixed-point C
+files it had just emitted (because `--keep-c` was not passed on the real builds)
+and rebuilt `stage2-self` that stage 3 had just produced.  The gate fan-out works
+around the directory-only limit with one-file temp dirs (`gates_dev_tests`; the
+test path does not touch the build cache, so the workers are independent — the
+first run verified 19/0 rc=0 in 37.6 s).
+
+**Logged as work** (Track 4 item 2): `test`'s missing file arguments, `--jobs`
+and `--cc/--profile/--platform` — note `cli_parity.rb` does not exercise `test`'s
+argument forms, so a green CLI column did not cover this command.  **Track 9**
+(new): the self emits its own sources in 157 s against the host's 40 s (3.9×);
+that gap is the remaining ~10 min of every bootstrap, so a profiling pass is the
+one change that makes all future gates cheaper.
+
+**Process change carried with it**: the per-fix loop is tier 1 only (dev build
+~50 s + the focused sweep seconds warm + the 40 s suite); the tier-2 set
+(`bootstrap --fast`, `test_mt`, the area sweep, `examples`) runs once per batch
+of 3–5 fixes, on the frozen tree, with one plan record — not once per item.
 
 ### Session 43 (2026-10-07) — `lower` Track 3 item 3k: the refinement record's post-statement positions
 

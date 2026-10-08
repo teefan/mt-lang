@@ -8,6 +8,10 @@
 #   --bootstrap PATH     Path to stage0 mtc binary (default: auto-detect)
 #   --stage {1,2,3}      Build target stage (default: 3)
 #   --no-verify          Skip stage3 fixed-point check
+#   --fast               Fixed point only: implies --keep-c, skips the redundant
+#                        self-test rebuild and the test suite (run gates_dev_tests
+#                        / test_mt separately).  ~12 min instead of ~26; the
+#                        remaining cost is the two self-builds (~5 min each).
 #   --profile PROFILE    Build profile: debug or release (default: debug)
 #   --keep-c             Save generated C files alongside binaries
 #   -j N                 Parallel jobs for C compilation (default: nproc)
@@ -37,6 +41,7 @@ cd "$PROJECT_ROOT"
 BOOTSTRAP_PATH=""
 TARGET_STAGE=3
 SKIP_VERIFY=0
+FAST=0
 PROFILE="debug"
 KEEP_C=0
 JOBS="$(nproc 2>/dev/null || echo 1)"
@@ -56,6 +61,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-verify)
             SKIP_VERIFY=1
+            shift
+            ;;
+        --fast)
+            FAST=1
+            KEEP_C=1
             shift
             ;;
         --profile)
@@ -264,27 +274,35 @@ fi
 
 # ── self-test ────────────────────────────────────────────────────────────────
 
-echo "" >&2
-echo "═══ self-test: stage2 compiles itself ═══" >&2
+# The stage-3 build above already *is* stage2 compiling itself; this rebuild is
+# only kept for the full (non-fast) run, where its binary is the one the suite
+# exercises.  Fast mode relies on gates_dev_tests / test_mt for the suite.
 
-mkdir -p "$BUILD_DIR/stage2-self"
-$BUILD_DIR/stage2/mtc build projects/mtc \
-    "${FLAGS[@]}" \
-    -o "$BUILD_DIR/stage2-self/mtc"
+if [[ "$FAST" -eq 0 ]]; then
+    echo "" >&2
+    echo "═══ self-test: stage2 compiles itself ═══" >&2
 
-if [[ ! -x "$BUILD_DIR/stage2-self/mtc" ]]; then
-    echo "error: self-test failed — stage2 cannot build itself" >&2
-    exit 1
+    mkdir -p "$BUILD_DIR/stage2-self"
+    $BUILD_DIR/stage2/mtc build projects/mtc \
+        "${FLAGS[@]}" \
+        -o "$BUILD_DIR/stage2-self/mtc"
+
+    if [[ ! -x "$BUILD_DIR/stage2-self/mtc" ]]; then
+        echo "error: self-test failed — stage2 cannot build itself" >&2
+        exit 1
+    fi
+
+    echo "self-test: stage2 built itself successfully" >&2
 fi
-
-echo "self-test: stage2 built itself successfully" >&2
 
 # ── run tests ────────────────────────────────────────────────────────────────
 
-echo "" >&2
-echo "═══ running self-host test suite ═══" >&2
+if [[ "$FAST" -eq 0 ]]; then
+    echo "" >&2
+    echo "═══ running self-host test suite ═══" >&2
 
-$BUILD_DIR/stage2/mtc test projects/mtc -I . --timeout 60
+    $BUILD_DIR/stage2/mtc test projects/mtc -I . --timeout 60
+fi
 
 echo "" >&2
 echo "═══ done ═══" >&2
