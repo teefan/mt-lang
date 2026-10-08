@@ -3360,7 +3360,14 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         line = 0, source_path = "",
                     ))
                 if d.body != null:
-                    lower_stmt(ctx, ref_of(cleanup), ptr[ast.Stmt]<-d.body)
+                    # The host's `lower_defer_cleanup_body` is `lower_block` — a
+                    # *flat* statement list — so a braced body splices its
+                    # statements into the cleanup span instead of wrapping them
+                    # in an `IR::BlockStmt` (`examples/box3d/common.mt`'s `run`
+                    # replays `UnloadModel`, `b3DestroyWorld`, `CloseWindow` as
+                    # siblings).
+                    let defer_body = lower_block(ctx, ptr[ast.Stmt]<-d.body)
+                    append_span_stmts(ref_of(cleanup), defer_body)
                 record_defer(ctx, cleanup.as_span())
             ast.Stmt.stmt_emit:
                 # `emit` declarations are spliced into the module's top-level
@@ -7547,6 +7554,19 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     Option.some as cf_val:
                         return cf_val.value
                     Option.none:
+                        pass
+                # A module-level variable of plain *function* type
+                # (`var f: fn() -> void = noop_scene_draw`) is called through its
+                # value: the host's callee is an `IR::Name` carrying the function
+                # type, not a bare C name (`examples/box3d/*`'s `s_scene_draw()`).
+                # `module_var_type` only answers for module-level variables, so a
+                # function declaration still takes the direct-call path below.
+                match module_var_type(ctx, id.name):
+                    types.Type.ty_function as fn_var_ty:
+                        let c_name = naming.qualified_c_name(ctx.module_name, id.name)
+                        let callee_expr = alloc_expr(ir.Expr.expr_name(name = c_name, ty = module_var_type(ctx, id.name), pointer = false))
+                        return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, unsafe: fn_var_ty.return_type, empty_fn_sig())
+                    _:
                         pass
                 var ret_ty = function_return_type(ctx, id.name)
                 var ret_type_ptr = types.alloc_type(ret_ty)
@@ -14044,7 +14064,10 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             let ctx_ty = opaqueify_type(ctx, deep_alias_target(ctx, qualify_type(ctx, resolve_type_ref(ctx, ptr_of(ctx_pt)))))
             ctx.module_name = saved_module
             ctx.analysis = saved_analysis
-            return null_literal_to_context_type(arg, ctx_ty, lowered)
+            # Every bare literal takes the parameter's declared type — the
+            # host's `lower_contextual_expression` (int/float/string/null all
+            # retype, not just `null`).
+            return literal_value_to_context_type(arg, ctx_ty, lowered)
 
 
 function boundary_is_cstr(boundary: ast.TypeRef) -> bool:

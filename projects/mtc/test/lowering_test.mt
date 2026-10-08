@@ -2633,3 +2633,108 @@ function test_format_counter_is_env_scoped() -> void:
     expect(text.contains_substring("__fmt_buf_4_cap"))
     expect(text.contains_substring("__fmt_index_cap"))
     expect(not text.contains_substring("__fmt_index_2"))
+
+
+@[test]
+function test_function_typed_module_var_call_uses_a_callee_name() -> void:
+    ## A module-level variable of function type is called through its value:
+    ## the host's callee is an `IR::Name` carrying the function type, not a
+    ## bare C name (`var s_scene_draw: fn() -> void` in `examples/box3d/common.mt`);
+    ## the self emitted a direct call by name (session 44, item 3fa).
+    var source = <<-SRC
+        function noop() -> void:
+            pass
+
+        var handler: fn() -> void = noop
+
+        function main() -> int:
+            handler()
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("IR::Call :callee (IR::Name :name \""))
+    expect(text.contains_substring(":type (Types::Function :name \"\" :params () :return_type (Types::Primitive :name \"void\")"))
+
+
+@[test]
+function test_defer_body_splices_its_statements_flat() -> void:
+    ## A `defer` body lowers through the host's `lower_defer_cleanup_body`
+    ## (= `lower_block`), a *flat* statement list: a braced body's statements
+    ## replay as siblings, not as an `IR::BlockStmt`
+    ## (`examples/box3d/common.mt`'s `run`; session 44, item 3fb).
+    var source = <<-SRC
+        function main() -> int:
+            var total = 0
+            defer:
+                total += 1
+                total += 2
+            total += 3
+            return total
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(not text.contains_substring("IR::BlockStmt"))
+    expect(text.contains_substring(":value (IR::IntegerLiteral :value 1 :type (Types::Primitive :name \"int\"))"))
+    expect(text.contains_substring(":value (IR::IntegerLiteral :value 2 :type (Types::Primitive :name \"int\"))"))
+
+
+@[test]
+function test_foreign_integer_argument_takes_the_parameter_type() -> void:
+    ## Every bare literal in a foreign argument takes the parameter's declared
+    ## type (the host's `lower_contextual_expression`), not just `null`:
+    ## `set_count(0)` on a `uint` parameter carries a `uint` literal
+    ## (session 44, item 3fc).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_fint_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function SetCount(n: uint) -> int
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function set_count(n: uint) -> int = c.SetCount
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function use() -> int:
+            return wrap.set_count(0)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"uint\"))"))
+    expect(not text.contains_substring("(IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\"))"))
