@@ -333,6 +333,11 @@ struct LowerCtx:
     # at every function body.
     fmt_dest_name: str
     fmt_counter: map_mod.Map[str, ptr_uint]
+    # Whether the *current env* holds the counter map.  The host creates it
+    # lazily (`env[:fmt_counter] ||= {}`) on a `duplicate_env`'d child, so a
+    # child's count is invisible to the parent and to sibling blocks — only a
+    # block that already inherits a visible counter continues the numbering.
+    fmt_counter_visible: bool
     # Locals whose `str`/`cstr` value is backed by a C-string buffer that
     # outlives the enclosing statement — the host's `cstr_backed` bindings: a
     # string-literal initializer, a `cstr`-typed local, another cstr-backed
@@ -877,6 +882,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
     ctx.function_returns.clear()
     var saved_type_subst = ctx.type_substitution
@@ -1013,6 +1019,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         temp_counter = 0,
         fmt_dest_name = "",
         fmt_counter = map_mod.Map[str, ptr_uint].create(),
+        fmt_counter_visible = false,
         cstr_backed_names = map_mod.Map[str, bool].create(),
         foreign_map = map_mod.Map[str, ForeignInfo].create(),
         extern_map = map_mod.Map[str, str].create(),
@@ -2153,6 +2160,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
     let sig = lookup_fn_sig(ctx, m.name)
 
@@ -2311,6 +2319,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
     let sig = lookup_fn_sig(ctx, name)
 
@@ -2642,6 +2651,19 @@ function lower_block(ctx: ref[LowerCtx], body_ptr: ptr[ast.Stmt]?) -> span[ir.St
     # name is restored on exit so sibling blocks are unaffected.
     let fmt_dest_saved = ctx.fmt_dest_name
     defer: ctx.fmt_dest_name = fmt_dest_saved
+    # The dynamic format-string counter is created lazily *at the first use in
+    # an env* and shared with descendants by reference (the host's
+    # `env[:fmt_counter] ||= {}` on a duplicated env): an env whose parent
+    # holds no counter starts with none, so sibling blocks each restart at 1
+    # (`convex_hull.mt`'s two branches both emit `__fmt_index_cap`), while a
+    # child of an env that already counted continues the numbering.
+    let fmt_visible_saved = ctx.fmt_counter_visible
+    if not fmt_visible_saved:
+        ctx.fmt_counter.clear()
+    defer:
+        if not fmt_visible_saved:
+            ctx.fmt_counter.clear()
+            ctx.fmt_counter_visible = false
     let bp = body_ptr else:
         pop_defer_scope(ctx)
         return stmts.as_span()
@@ -6647,6 +6669,7 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
 
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
@@ -6777,6 +6800,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
 
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
@@ -11307,6 +11331,7 @@ function ensure_monomorphized_method(ctx: ref[LowerCtx], method_c: str, info: Ge
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
     ctx.function_returns = map_mod.Map[str, types.Type].create()
     ctx.type_substitution = sub
@@ -11391,6 +11416,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     ctx.temp_counter = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
+    ctx.fmt_counter_visible = false
     ctx.cstr_backed_names.clear()
 
     # Build the receiver struct type using only the struct-level type args
@@ -13133,7 +13159,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             var param: ast.ForeignParam
             unsafe:
                 param = read(info.params.data + i)
-            lowered = materialize_foreign_address_arg(ctx, lower_foreign_arg(ctx, param, arg.arg_value), ref_of(setup))
+            lowered = materialize_foreign_address_arg(ctx, lower_foreign_arg(ctx, info, param, arg.arg_value), ref_of(setup))
         else:
             lowered = lower_expr(ctx, arg.arg_value)
         if is_foreign_cstr_temp_call(lowered):
@@ -13431,7 +13457,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
                         projected = alloc_expr(ir.Expr.expr_address_of(expression = operand, ty = ptr_ty))
                 temp_ty = ptr_ty
             else:
-                projected = lower_foreign_arg(ctx, param, arg.arg_value)
+                projected = lower_foreign_arg(ctx, info, param, arg.arg_value)
                 # An `array[T, N]` argument for a `span[T]` parameter (e.g.
                 # `render_lines(renderer, line_points)`) coerces to the span
                 # aggregate `{ data = &arr[0], len = N }` so the mapping's
@@ -13883,7 +13909,7 @@ function is_plain_foreign_call_value(ep: ptr[ir.Expr]) -> bool:
 
 
 
-function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
+function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
     match param.boundary_type:
         Option.some as boundary:
             if boundary_is_cstr(boundary.value):
@@ -13994,16 +14020,31 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                     let arg_ty = ir_expr_type(lowered)
                     if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
                         return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
-            # A bare `null` argument should take the parameter's declared type
-            # (the host lowers every foreign argument with
-            # `expected_type: parameter.type`).  *Not applied yet*: the alias
-            # resolution gap below must land first — `std.stdio`'s `File` (an
-            # alias of the raw module's `opaque FILE`) resolves here to a
-            # `Struct File`, so a null typed `Nullable(File)` makes the C
-            # backend reference an undeclared `mt_opt_std_c_stdio_File` where
-            # the host emits `NULL` (the stage-2 gcc error, session 44 item 3ae
-            # revert — see the plan's ranked item on imported opaque aliases).
-            return lowered
+            # A bare `null` argument takes the parameter's declared type: the
+            # host lowers *every* foreign argument with
+            # `lower_contextual_expression(argument.value, expected_type:
+            # parameter.type)` (`calls.rb:727-731`) and
+            # `infer_null_literal_type` returns it.  The param TypeRef belongs
+            # to the *declaring* module, so it resolves there (a cross-module
+            # call lowers with ctx switched to the raw target, where `File` —
+            # `std.stdio`'s alias of the raw `opaque FILE` — would resolve as a
+            # bare name, lose the opaque and make the backend reference an
+            # undeclared `mt_opt_std_c_stdio_File` where the host emits
+            # `fflush(NULL)`; session 44, item 3ag).
+            var ctx_pt = param.param_type
+            var saved_module = ctx.module_name
+            var saved_analysis = ctx.analysis
+            if info.owner_module.len > 0 and not info.owner_module.equal(ctx.module_name):
+                match find_imported_analysis(ctx, info.owner_module):
+                    Option.some as owner_a:
+                        ctx.module_name = info.owner_module
+                        ctx.analysis = owner_a.value
+                    Option.none:
+                        pass
+            let ctx_ty = opaqueify_type(ctx, deep_alias_target(ctx, qualify_type(ctx, resolve_type_ref(ctx, ptr_of(ctx_pt)))))
+            ctx.module_name = saved_module
+            ctx.analysis = saved_analysis
+            return null_literal_to_context_type(arg, ctx_ty, lowered)
 
 
 function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
@@ -18456,6 +18497,11 @@ function fmt_plan(ctx: ref[LowerCtx], val_ty: types.Type, spec_ptr: ptr[ast.Form
 ## `fresh_c_temp_name(ctx, "fmt_str")` (`__mt_fmt_str_N`).
 function format_string_result_base(ctx: ref[LowerCtx]) -> str:
     if ctx.fmt_dest_name.len > 0:
+        # The env creates its counter slot at the first use (the host's
+        # `env[:fmt_counter] ||= {}`).
+        if not ctx.fmt_counter_visible:
+            ctx.fmt_counter.clear()
+            ctx.fmt_counter_visible = true
         var n: ptr_uint = 1
         let n_ptr = ctx.fmt_counter.get(ctx.fmt_dest_name)
         if n_ptr != null:

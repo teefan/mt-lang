@@ -2466,3 +2466,170 @@ function test_bare_integer_literal_picks_the_narrowest_fitting_type() -> void:
     expect(text.contains_substring("(IR::IntegerLiteral :value 4294967295 :type (Types::Primitive :name \"long\"))"))
     expect(text.contains_substring("(IR::IntegerLiteral :value 6364136223846793005 :type (Types::Primitive :name \"ulong\"))"))
     expect(not text.contains_substring("(IR::IntegerLiteral :value 4294967295 :type (Types::Primitive :name \"int\"))"))
+
+
+@[test]
+function test_foreign_null_argument_takes_the_parameter_type() -> void:
+    ## A bare `null` foreign-call argument takes the parameter's declared type:
+    ## the host lowers every argument with `expected_type: parameter.type`
+    ## (`calls.rb:727-731`) and `infer_null_literal_type` returns it, so
+    ## `load_thing(null)` on a `cstr?` parameter carries `Nullable(cstr)`
+    ## where the bare literal is `void` (session 44, item 3ae).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_fnull_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function LoadThing(fileName: cstr?) -> int
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function load_thing(file_name: cstr?) -> int = c.LoadThing
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function use() -> int:
+            return wrap.load_thing(null)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::NullLiteral :type (Types::Nullable :base (Types::Primitive :name \"cstr\")))"))
+    expect(not text.contains_substring("(IR::NullLiteral :type (Types::Primitive :name \"void\"))"))
+
+
+@[test]
+function test_foreign_null_argument_resolves_the_alias_in_its_declaring_module() -> void:
+    ## The parameter's TypeRef resolves in the module that *declares* the
+    ## foreign function: `wrap`'s `type Timer = c.CTimer` (the raw module's
+    ## `opaque`) reaches `(Types::Opaque :name "CTimer" ...)` even though the
+    ## call lowers with the context switched to the raw target.  Resolved from
+    ## the caller's context it kept the alias name, and a null typed
+    ## `Nullable(Timer)` made the backend reference an undeclared `mt_opt_*`
+    ## where the host emits `NULL` (session 44, item 3ag — the stage-2 gcc
+    ## failure behind the 3ae revert).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_fopq_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        opaque CTimer = c"CTimer"
+
+        external function stop(timer: CTimer?) -> int
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public type Timer = c.CTimer
+
+        public foreign function stop_it(timer: Timer?) -> int = c.stop
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function use() -> int:
+            return wrap.stop_it(null)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::NullLiteral :type (Types::Nullable :base (Types::Opaque :name \"CTimer\" :module_name \"std.c.raw.lib\")))"))
+    expect(not text.contains_substring("(IR::NullLiteral :type (Types::Nullable :base (Types::Struct"))
+
+
+@[test]
+function test_format_counter_is_env_scoped() -> void:
+    ## The dynamic format-string counter is created lazily at the first use in
+    ## an env and shared with that env's descendants; a sibling block whose
+    ## parent holds no counter restarts at 1 (the host's
+    ## `env[:fmt_counter] ||= {}` on a `duplicate_env`'d child).  `counted`
+    ## therefore numbers `__fmt_buf` … `__fmt_buf_4` across its blocks, while
+    ## `solo`'s two branches both emit `__fmt_index` with no repeat suffix
+    ## (session 44, item 3wf; `examples/box2d/convex_hull.mt`).
+    var source = <<-SRC
+        function counted() -> int:
+            var index = 0
+            var buf = ""
+            buf = f"same #{index}"
+            buf = f"same again #{index}"
+            if index == 0:
+                buf = f"sibling one #{index}"
+            else:
+                buf = f"sibling two #{index}"
+            return int<-buf.len + index
+
+        function solo(flag: bool) -> int:
+            var index = 0
+            if flag:
+                index += int<-f"one #{index}".len
+            else:
+                index += int<-f"two #{index}".len
+            return index
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("__fmt_buf_cap"))
+    expect(text.contains_substring("__fmt_buf_2_cap"))
+    expect(text.contains_substring("__fmt_buf_3_cap"))
+    expect(text.contains_substring("__fmt_buf_4_cap"))
+    expect(text.contains_substring("__fmt_index_cap"))
+    expect(not text.contains_substring("__fmt_index_2"))
