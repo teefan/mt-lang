@@ -205,9 +205,15 @@ gate_summary() {
 # directory (file arguments and --jobs are host features it has not ported yet),
 # so each file gets a one-file temp dir with an explicit `-I projects/mtc/src`.
 # The test path does not touch the build cache, so the workers are independent.
+# Two robustness rules, both learned the hard way: the fan-out is capped at half
+# the cores (a 16-wide run under browser memory pressure aborted
+# debug_info_test.mt, which passes serially), and a failing file is re-run once,
+# alone, before it counts.
 gates_dev_tests() {
     local root="$PWD" d="tmp/gate-dev-tests" f name rc=0 failed=0 n=0
     local files=(projects/mtc/test/*.mt)
+    local jobs=$(( $(nproc) / 2 ))
+    [ "$jobs" -lt 1 ] && jobs=1
     rm -rf "$d"; mkdir -p "$d"
     for f in "${files[@]}"; do
         name="$(basename "$f")"
@@ -215,12 +221,20 @@ gates_dev_tests() {
         ln -s "$root/$f" "$d/$name/$name"
     done
     printf '%s\n' "${files[@]}" \
-        | xargs -P "$(nproc)" -I{} bash -c '
+        | xargs -P "$jobs" -I{} bash -c '
             f="$1"; d="$2"; name="$(basename "$f")"
             tmp/mtc-dev test "$d/$name" -I . -I projects/mtc/src --timeout 120 \
                 > "$d/$name.log" 2>&1
             echo $? > "$d/$name.rc"
         ' _ {} "$d"
+    for f in "${files[@]}"; do
+        name="$(basename "$f")"
+        if [ "$(cat "$d/$name.rc")" != 0 ]; then
+            tmp/mtc-dev test "$d/$name" -I . -I projects/mtc/src --timeout 120 \
+                > "$d/$name.log" 2>&1
+            echo $? > "$d/$name.rc"
+        fi
+    done
     for f in "${files[@]}"; do
         name="$(basename "$f")"
         cat "$d/$name.log"

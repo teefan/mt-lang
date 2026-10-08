@@ -2415,3 +2415,54 @@ function test_method_specializations_group_under_the_declaring_module() -> void:
     expect(clear_pos.is_some())
     expect(make_pos.unwrap() < clear_pos.unwrap())
 
+
+
+@[test]
+function test_unannotated_local_infers_the_guards_visible_type() -> void:
+    ## The unannotated local's declared type comes from *inference* of the
+    ## initializer (the host's `block.rb:718-729`), not from the lowered value:
+    ## a guard-bound read lowers to the storage `Nullable(...)` under the
+    ## pointer-like rule while inferring the binding's visible success type —
+    ## `let data_ptr = data` in `String.push_byte` declares `ptr[ubyte]`
+    ## (session 44, item 3af).
+    var source = <<-SRC
+        struct Holder:
+            data: ptr[ubyte]?
+            len: ptr_uint
+
+        function push(h: Holder, value: ubyte) -> int:
+            let data = h.data else:
+                return 1
+            let data_ptr = data
+            unsafe:
+                read(data_ptr + 0) = value
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::LocalDecl :name \"data_ptr\" :linkage_name \"data_ptr\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"ubyte\"))) :value (IR::Name :name \"data\" :type (Types::Nullable"))
+    expect(not text.contains_substring("(IR::LocalDecl :name \"data_ptr\" :linkage_name \"data_ptr\" :type (Types::Nullable"))
+
+
+@[test]
+function test_bare_integer_literal_picks_the_narrowest_fitting_type() -> void:
+    ## A bare integer literal (no suffix, no contextual expected type) picks
+    ## the narrowest of int -> long -> ulong that holds its value (the host's
+    ## `infer_integer_literal`), and the binary-op harmonization re-types it
+    ## from its *peer* — `state * 6364136223846793005` on a `ulong` state
+    ## carries a `ulong` constant (session 44, item 3ac; `std/noise.mt`).
+    var source = <<-SRC
+        function main() -> int:
+            let a = 0xFFFFFFFF
+            let b = 7
+            var state: ulong = 1
+            state = state * 6364136223846793005
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::IntegerLiteral :value 4294967295 :type (Types::Primitive :name \"long\"))"))
+    expect(text.contains_substring("(IR::IntegerLiteral :value 6364136223846793005 :type (Types::Primitive :name \"ulong\"))"))
+    expect(not text.contains_substring("(IR::IntegerLiteral :value 4294967295 :type (Types::Primitive :name \"int\"))"))

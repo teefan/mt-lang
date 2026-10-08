@@ -4323,7 +4323,7 @@ const int_suffix_ul: str = "ul"
 const int_suffix_iz: str = "iz"
 
 
-function integer_suffix_type_name(lexeme: str) -> Option[str]:
+public function integer_suffix_type_name(lexeme: str) -> Option[str]:
     if lexeme.ends_with(int_suffix_ub):
         return Option[str].some(value = "ubyte")
     if lexeme.ends_with(int_suffix_us):
@@ -4953,7 +4953,18 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                     Option.some as st:
                         return types.primitive(st.value)
                     Option.none:
-                        return types.primitive("int")
+                        pass
+                # A bare literal picks the narrowest fixed-width type that
+                # holds its value: int -> long -> ulong (the host's
+                # `infer_integer_literal`; an overflowing `int` emitted
+                # overflowing C, e.g. `int32_t x = 2147483648;`).  A value
+                # that does not fit a signed `long` — stored negative by the
+                # parser, e.g. 0xFFFFFFFFFFFFFFFF — only fits `ulong`.
+                if lit.value < 0:
+                    return types.primitive("ulong")
+                if lit.value <= 2147483647:
+                    return types.primitive("int")
+                return types.primitive("long")
             ast.Expr.expr_float_literal as flit:
                 if float_literal_is_double(flit.lexeme):
                     return types.primitive("double")

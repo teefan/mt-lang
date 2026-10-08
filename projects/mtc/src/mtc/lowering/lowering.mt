@@ -2942,7 +2942,24 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         if types.is_error(ty):
                             ty = ir_expr_type(value_expr)
                     else:
-                        ty = qualify_type(ctx, ir_expr_type(value_expr))
+                        # The unannotated decl's type comes from *inference* of
+                        # the initializer (`block.rb:718-729`: `type =
+                        # storage_type = infer_expression_type(value)`), not
+                        # from the lowered value: a guard-bound read lowers to
+                        # the storage `Nullable(...)` under the host's
+                        # pointer-like rule while inferring the visible success
+                        # type (`let data_ptr = data` in `String.push_byte`).
+                        # Inference mirrors `infer_expression_type` exactly: an
+                        # identifier takes its binding's *visible* type (the
+                        # host's cache shortcut skips identifiers — refinement
+                        # and unwrapping live in `lookup_value`), every other
+                        # expression takes the analyzer's recorded type.
+                        unsafe:
+                            match read(ptr[ast.Expr]<-init):
+                                ast.Expr.expr_identifier:
+                                    ty = qualify_type(ctx, fallback_type(ctx, ptr[ast.Expr]<-init))
+                                _:
+                                    ty = qualify_type(ctx, ir_expr_type(value_expr))
                 # A float, integer, bare string or `null` literal in a declared
                 # `float`/`double`, integer (`ptr_uint`, `ubyte`, …), `cstr` or
                 # nullable position takes that type (the host's contextual
@@ -6180,13 +6197,17 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 # Re-type an integer literal against the other operand's integer
                 # type (e.g. `b == 0` where `b: ubyte`, `p + 1` where `p: ptr_uint`),
                 # mirroring the host's `harmonize_binary_integer_literal_types`.
+                # The literal is recognized *syntactically* — not by its inferred
+                # type — because the inference itself follows the peer
+                # (`std/noise.mt`'s `state * 6364136223846793005` types the
+                # constant `ulong`, and a value > 2^31 is `long` on its own).
                 let harm_lt = ir_expr_type(left)
                 let harm_rt = ir_expr_type(right)
-                if types.is_integer_type(harm_rt) and types.type_to_string(harm_lt) == "int":
+                if types.is_integer_type(harm_rt):
                     let hl = int_literal_to_context_type(bin.left, harm_rt, left)
                     if hl != left:
                         left = hl
-                if types.is_integer_type(harm_lt) and types.type_to_string(harm_rt) == "int":
+                if types.is_integer_type(harm_lt):
                     let hr = int_literal_to_context_type(bin.right, harm_lt, right)
                     if hr != right:
                         right = hr
@@ -12842,6 +12863,14 @@ function int_literal_to_context_type(arg_ast: ptr[ast.Expr], context_ty: types.T
                 literal_lexeme = lit.lexeme
             _:
                 return value
+    # An explicit suffix wins over the context — the host's
+    # `infer_integer_literal` checks it first, so `1u` stays `uint` even
+    # against a `ulong` expected type.
+    match analyzer.integer_suffix_type_name(literal_lexeme):
+        Option.some:
+            return value
+        Option.none:
+            pass
     if not int_value_fits_type(literal_value, context_ty):
         return value
     return alloc_expr(integer_literal_expr(literal_lexeme, literal_value, context_ty))
@@ -13965,6 +13994,15 @@ function lower_foreign_arg(ctx: ref[LowerCtx], param: ast.ForeignParam, arg: ptr
                     let arg_ty = ir_expr_type(lowered)
                     if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
                         return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
+            # A bare `null` argument should take the parameter's declared type
+            # (the host lowers every foreign argument with
+            # `expected_type: parameter.type`).  *Not applied yet*: the alias
+            # resolution gap below must land first — `std.stdio`'s `File` (an
+            # alias of the raw module's `opaque FILE`) resolves here to a
+            # `Struct File`, so a null typed `Nullable(File)` makes the C
+            # backend reference an undeclared `mt_opt_std_c_stdio_File` where
+            # the host emits `NULL` (the stage-2 gcc error, session 44 item 3ae
+            # revert — see the plan's ranked item on imported opaque aliases).
             return lowered
 
 
