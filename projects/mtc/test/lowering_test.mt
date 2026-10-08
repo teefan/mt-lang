@@ -1984,3 +1984,62 @@ function test_array_length_folds_through_an_imported_const() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::LocalDecl :name \"direct\" :linkage_name \"direct\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 8)))"))
     expect(text.contains_substring("(IR::LocalDecl :name \"hopped\" :linkage_name \"hopped\" :type (Types::Generic :name \"array\" :arguments ((Types::Primitive :name \"int\") (Types::LiteralTypeArg :value 9)))"))
+
+
+@[test]
+function test_dyn_vtable_member_takes_the_interface_method_type() -> void:
+    ## `s.area()` on a `dyn[Shape]` types the vtable member with the interface
+    ## method's `Types::Function` (`data: ptr[void]` + the method's params) even
+    ## when the generated `mt_vtable_Shape` struct does not exist yet in this
+    ## module's lowering — the dispatch lives in the module that declares the
+    ## interface, the `adapt` site in another (session 44, item 3t).  The whole
+    ## fixture's dump is byte-identical to the host's.
+    var root = fs.create_temporary_directory_in_system_temp("mtc_dynvt_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var iface_source = <<-SRC
+        public interface Shape:
+            function area() -> float
+            function scaled(factor: float) -> float
+
+        public function measure(s: dyn[Shape]) -> float:
+            return s.area() + s.scaled(2.0)
+    SRC
+    if not write_source_file(root.as_str(), "iface.mt", iface_source):
+        return
+
+    var source = <<-SRC
+        import iface
+
+        struct Square implements iface.Shape:
+            side: float
+
+        extending Square:
+            function area() -> float:
+                return this.side * this.side
+
+            function scaled(factor: float) -> float:
+                return this.side * factor
+
+        function main() -> int:
+            var square = Square(side = 2.0)
+            let shape = adapt[iface.Shape](ref_of(square))
+            return int<-iface.measure(shape)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":member \"area\" :type (Types::Function :name \"\" :params ((Types::Parameter :name \"data\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :mutable false :passing_mode :plain :boundary_type nil)) :return_type (Types::Primitive :name \"float\")"))
+    expect(text.contains_substring(":member \"scaled\" :type (Types::Function :name \"\" :params ((Types::Parameter :name \"data\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\"))) :mutable false :passing_mode :plain :boundary_type nil) (Types::Parameter :name \"factor\" :type (Types::Primitive :name \"float\")"))
+    expect(not text.contains_substring(":member \"area\" :type (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"void\")))"))

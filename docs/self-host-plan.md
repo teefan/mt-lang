@@ -131,7 +131,7 @@ constants, refined nullable operand types, event-field modelling, function-type
 names and the proc representation (§0j).  The sdl3 family's *builds* are fixed
 (2026-09-27) — the dump-level differences above remain.
 
-Last updated: session 44 (2026-10-07) — **`lower` Track 3 items 3r and 3s**
+Last updated: session 44 (2026-10-07) — **`lower` Track 3 items 3r, 3s and 3t**
 (the struct equality desugaring; the box2d family's first difference).  The
 lowering keeps the host's `IR::Binary` on struct values and registers the
 external (raw-module ABI) struct's field layout in the new
@@ -144,9 +144,16 @@ expression evaluated in the module that declares it, the lowering's
 `try_const_eval_int` gaining the member arm) — `array[b2.Vec2,
 b2.B2_MAX_POLYGON_VERTICES]` renders `:value 8` on the host and `:value 0`
 before — **the same 30 files' first difference deeper again, 0
-flips/shallower/newly differing/lost**; the full corpus reads 131/535/51/0
-unchanged throughout.  The newly exposed leader is **3t** (the dyn vtable
-slot's function type).
+flips/shallower/newly differing/lost**.  **3t** typed the dyn vtable member from
+the interface declaration when the generated `mt_vtable_<Iface>` struct is not
+in this module's lowering (`dyn_vtable_method_fn_type`'s interface-driven
+fallback, the host's `dyn_vtable_struct_type`) — **the full corpus goes 131 →
+132 match / 535 → 534 differ** (`projects/stress/src/engine/interfaces.mt`
+flips), the same 30 files deeper again (+1,925), 0 shallower/newly
+differing/lost; it also fixes a *runtime* divergence (the pre-3t self binary
+aborted `array index out of bounds` where the host and the post-3t self run).
+The newly exposed leader is **3u** (the mapping argument's address-of keeps the
+wrapper alias where the host deepens it to the raw struct).
 Session 43 had landed **`lower` Track 3 items 3k, 3j, 3l, 3m, 3o, 3i-b, 3g and
 3q**.
 3k, the refinement record's post-statement positions: a guard inside a compound
@@ -653,9 +660,10 @@ Records: §0k sessions 19–23; session 28.
 Work in the ranked order below; after **each** item re-run
 `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache`
 and re-rank — session 42's host cache makes the repeat measurement cheap.  Current set:
-**131 match / 535 differ / 51 host-rejected / 0 self-rejected of 717 files**
-(session 44 re-read — unchanged by 3r, which moves 30 files' first differences
-deeper; the count drifts with the tree's own sources and the tmp
+**132 match / 534 differ / 51 host-rejected / 0 self-rejected of 717 files**
+(session 44 re-read after 3t — 3r and 3s each move 30 files' first differences
+deeper, 3t flips `projects/stress/src/engine/interfaces.mt` and moves the same
+30 deeper; the count drifts with the tree's own sources and the tmp
 fixtures — quote the set).
 
 **First-difference census (session 43) — the track's re-ranking.**  Bucketing
@@ -675,15 +683,19 @@ taking the sweep **55/611 → 83/583**; 3o, 3i-b, 3g and 3q continued
 measured as a subset comparison with the identical corpus, 0 shallower, 0 newly
 differing, 0 lost).  Session 44 landed **3r** (30 files' first difference deeper
 by +21,667 to +21,677, 0 flips, 0 shallower/newly differing/lost on the same
-subset), and **3s** in the same session (the array-length literal: the lowering
+subset), **3s** in the same session (the array-length literal: the lowering
 folds a module-qualified constant through the alias's module, the const's value
 expression evaluated where it is declared) — **the same 30 files deeper again**,
-0 flips/shallower/newly differing/lost — exposing **3t**, now the leaders' first
-row.  The current leaders:
+0 flips/shallower/newly differing/lost — and **3t** (the dyn vtable member typed
+from the interface declaration when the generated struct is not in this
+module's lowering): **the full corpus 131 → 132 match / 535 → 534 differ**
+(`projects/stress/src/engine/interfaces.mt` flips), 30 files deeper again, 0
+shallower/newly differing/lost — exposing **3u**, now the leaders' first row.
+The current leaders:
 
 | Files | First difference | Where |
 | --- | --- | --- |
-| 30 | **3t, the dyn vtable slot's function type**: `sample.vtable.on_step(…)` types the member `(Types::Function :name "" :params ((data: ptr[void])) …)` on the host and `ptr[void]` on the self (byte 620,472 of `body_move.mt` after 3s) | `examples/box2d/**` |
+| 30 | **3u, the mapping argument's address-of alias**: `b2World_Draw(world, debug_draw)`'s address-of is typed `ptr[b2DebugDraw]` on the host and `ptr[DebugDraw]` on the self (the wrapper alias not deepened at the inline-mapping argument site; byte 622,397 of `body_move.mt` after 3t) | `examples/box2d/**` |
 | ~57 | an array/const literal element shape (host `IR::IntegerLiteral` where the self emits `IR::Name`; `projects/mtc/src/mtc/build.mt`'s first difference) | `projects/mtc/src/**` |
 | ~21 | a struct field's member order (`IR::Field :name "key"` vs `:name "current"`; `projects/mtc/src/mtc/bindgen.mt`) | `projects/mtc/src/**` |
 | ~9 | **the format-string hoist** (the sdl3 family's shape: host-hoisted `__mt_fmt_part_N` locals vs the self's `StmtExpr`) | `examples/sdl3/**` |
@@ -709,8 +721,10 @@ host's `IR::Binary` on struct values and the C backend synthesizes the
 `mt_struct_eq_<T>` helper from the layout the lowering registers in
 `Program.external_structs` (the IR carries no helper function, as on the host) —
 30 files deeper, 0 flips; **3s** followed in the same session (the array-length
-fold — 30 deeper again).  The next ranked item is **3t** (the dyn vtable slot's
-function type; the box2d family), then the tail: the
+fold — 30 deeper again) and **3t** (the dyn vtable member typed from the
+interface declaration — the corpus's 131 → 132 flip, 30 deeper again).  The next
+ranked item is **3u** (the mapping argument's address-of alias — the box2d
+family), then the tail: the
 array/const literal shape (57), the field-order shape (~21), the format-string
 hoist (9), 3n (the async frame name), 3p (the unnamed variant-arm
 construction's missing sema check — a pre-existing abort), the branch-position
@@ -1113,12 +1127,38 @@ file by file.
     accepts `points.len` on a fixed array where the host reports `cannot access
     member len of array[…]`.
 3t. **The dyn vtable slot's function type** (newly exposed by 3s; the 30 box2d
-    files — `common.mt`'s `sample.vtable.on_step(…)`): the host types the
-    vtable member `(Types::Function :name "" :params ((data: ptr[void]) …)
-    :return_type …)`, the self `(Types::Generic :name "ptr" :arguments
-    ((Types::Primitive :name "void")))` — a placeholder where the interface
-    method's function type belongs.  Repro: `examples/box2d/body_move.mt` at
-    byte 620,472 after 3s.
+    files — `common.mt`'s `sample.vtable.on_step(…)`) — **DONE (session 44,
+    2026-10-07)**.  The host types the vtable member
+    `(Types::Function :name "" :params ((data: ptr[void]) …) :return_type …)`,
+    the self `(Types::Generic :name "ptr" :arguments ((Types::Primitive :name
+    "void")))`: `dyn_vtable_method_fn_type` looked the slot's function type up
+    in the generated `mt_vtable_<Iface>` struct, which lives in the ctx of the
+    module whose `adapt` site created it — the dispatch site is in the module
+    that *declares* the interface, so the lookup missed and the `ptr[void]`
+    fallback was emitted (the host's `dyn_vtable_struct_type` always builds the
+    slot from the interface binding, never from the generated struct).  Landed:
+    the interface declaration is the fallback — `find_interface_analysis` →
+    `data: ptr[void]` + the method's `resolve_field_type_ref`'d parameters
+    (the same construction `ensure_dyn_vtable_struct` uses; the struct lookup
+    stays first for the substituted forms a generic instantiation produced).
+    Measured: the corpus's own flip — **`projects/stress/src/engine/interfaces.mt`
+    becomes byte-identical; the full corpus goes 131 → 132 match / 535 → 534
+    differ**, and the identical-corpus subset comparison reads 122/399/47/0 on
+    both binaries with the same 30 files deeper (+1,925 each), 0 shallower, 0
+    newly differing, 0 lost.  The fixture (an interface + dispatch in one
+    module, the `adapt` site in another) is byte-identical to the host
+    end-to-end.  **Runtime**: the pre-3t self binary aborted
+    `array index out of bounds` (rc 134) running `examples/box2d/body_move.mt`;
+    the post-3t build runs like the host (render loop, rc 124 under the 10 s
+    sandbox) — the type fed the C backend's indirect call.  Locked by
+    `test_dyn_vtable_member_takes_the_interface_method_type`.
+3u. **The mapping argument's address-of alias** (newly exposed by 3t; the 30
+    box2d files — `b2World_Draw(world, debug_draw)`): the address-of is typed
+    `ptr[b2DebugDraw]` on the host and `ptr[DebugDraw]` on the self — the
+    wrapper alias (`std/box2d.mt`'s `DebugDraw = c.b2DebugDraw`) is not deepened
+    through the alias chain at this inline-mapping argument site, where 3q's fix
+    deepened the plain `in` parameter's boundary type.  Repro:
+    `examples/box2d/body_move.mt` at byte 622,397 after 3t.
 3i-b. **The `break` half of the loop-flow model** — **DONE (session 43,
     2026-10-07)** (newly exposed by 3o; the box2d/raylib/sdl3 families' first
     difference, `std/str.mt`'s nested `while`).  The host emits a native
@@ -1816,7 +1856,7 @@ definition of done above.
 | `test/mt` | 60 files / 0 failed (re-run 2026-10-05 session 35) | stay green | `build/stage2/mtc test test/mt -I .` |
 | examples / sdl3 / raylib | 15/15, 34/34, 217/219 (emit-c sweep re-measured 2026-10-05 session 35: 49/49 same, 0 differ) | stay green | per-family sweeps |
 | `sexpr lex` / `parse` | 712/712; 708 comparable / 0 differ (session 33; the session-35 scoreboard re-read `parse` 712 match / 0 differ of 716 files — counts drift with the tree's own sources) | stay 0-diff | `ruby tools/sexpr_parity.rb lex\|parse -q --host-cache tmp/sexpr-host-cache` |
-| `sexpr lower` | 131 match / 535 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 44 — **3r's struct equality desugaring**: the identical-corpus `std examples test` subset comparison read **122/399/47/0 on both the pre-fix (`tmp/mtc-head`) and post-fix (`tmp/mtc-dev`) binaries** with **30 files' first difference deeper by +21,667 to +21,677** (the box2d family), 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus set is unchanged.  **3s's array-length fold** (same session): the same subset protocol read **122/399/47/0 on both binaries** with **the same 30 files' first difference deeper again (+19,298 to +19,308)**, 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus stays 131/535/51/0.  Session 43 — **3k's refinement-record positions**, **3j's simple-path call type**, **3l's `read(x) =` target literal**, **3m's call-argument/variant-field literals + the bare-float-literal operand retyping**, **3o's prelude generic variant arm field type**, **3i-b's native `break`**, **3g's raw-module/flags type classification** and **3q's foreign address-of boundary type**: `std examples test` subset comparisons with the identical corpus read 48/473/47/0 on the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries — 3k moves **209 files' first difference deeper (+30,767 each)**, 3j **100 files deeper**, 3l **183 files deeper with 26 flips** (the heap-importing `std/**` family), 3m **82 files deeper with 2 flips**, 3o **80 files deeper**, 3i-b **74 files deeper with 6 flips** (`std/str.mt` byte-identical), 3g **83 files deeper with 35 flips** (the raylib core family) and 3q **55 files deeper with 5 flips** (the raylib shapes family), 0 shallower, 0 newly differing, 0 lost throughout; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
+| `sexpr lower` | 132 match / 534 differ / 51 host-rejected / 0 self-rejected of 717 files (re-measured 2026-10-07 session 44 — **3r's struct equality desugaring**: the identical-corpus `std examples test` subset comparison read **122/399/47/0 on both the pre-fix (`tmp/mtc-head`) and post-fix (`tmp/mtc-dev`) binaries** with **30 files' first difference deeper by +21,667 to +21,677** (the box2d family), 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus set is unchanged.  **3s's array-length fold** (same session): the same subset protocol read **122/399/47/0 on both binaries** with **the same 30 files' first difference deeper again (+19,298 to +19,308)**, 0 flips, 0 shallower, 0 newly differing, 0 lost; the full corpus stays 131/535/51/0.  **3t's dyn vtable member type** (same session): **the full corpus 131 → 132 match / 535 → 534 differ** (`projects/stress/src/engine/interfaces.mt` flips), the same 30 files deeper (+1,925 each), 0 shallower/newly differing/lost — and the slot type was a real miscompile (the pre-fix binary aborted rc 134 running `body_move.mt`, the host runs the render loop).  Session 43 — **3k's refinement-record positions**, **3j's simple-path call type**, **3l's `read(x) =` target literal**, **3m's call-argument/variant-field literals + the bare-float-literal operand retyping**, **3o's prelude generic variant arm field type**, **3i-b's native `break`**, **3g's raw-module/flags type classification** and **3q's foreign address-of boundary type**: `std examples test` subset comparisons with the identical corpus read 48/473/47/0 on the pre-fix (`build/stage2/mtc`) and post-fix (`tmp/mtc-dev`) binaries — 3k moves **209 files' first difference deeper (+30,767 each)**, 3j **100 files deeper**, 3l **183 files deeper with 26 flips** (the heap-importing `std/**` family), 3m **82 files deeper with 2 flips**, 3o **80 files deeper**, 3i-b **74 files deeper with 6 flips** (`std/str.mt` byte-identical), 3g **83 files deeper with 35 flips** (the raylib core family) and 3q **55 files deeper with 5 flips** (the raylib shapes family), 0 shallower, 0 newly differing, 0 lost throughout; session 41: **the statement-position hoisting channel** — a statement-lowered foreign call's setup now hoists into the statement stream with the host's `hm_return`/`hm_value`/`hm_discard` shapes and the host's `foreign_arg`/`foreign_result` temp names, instead of an `IR::StmtExpr` — plus **item 3d, the pointer-like foreign argument** (an already-pointer `this`/`*p` argument is cast to the boundary pointer type, not addressed again; the discard statement's nil line/path rule corrected), **item 3e, the mapping-argument temp rule** (a referenced mapping parameter is temp-bound only where the host binds one and the other values are substituted into the mapping via `mapping_replacements`), **item 3f, the mapping call's return type** (an embedded external call takes the raw declaration's return type, resolved in the mapping's owner module), **item 3c, the guard-bound nullable pointer arithmetic** (the lowering's pointer-arithmetic result keeps the analyzer's refined pointer instead of the storage `Nullable`) and **item 3h, the assignment literal's contextual type** (`i = 1` / `i += 1` on a `ptr_uint` target emit `ptr_uint` literals) and **item 3i's continue half** (a `continue` in a plain `while` lowers to `IR::ContinueStmt`): set unchanged throughout (3c: 255 files +1287; 3h: 255 files +18; 3i: 255 files +222) and **3f flips 11 files to byte-identical — `std/raylib.mt`, `std/raygui.mt` and 9 raylib examples** — taking the sweep **44 → 55 match / 622 → 611 differ**, with **242 files' first difference deeper (max +314,637), 0 shallower, 0 newly differing, 0 lost**; the remaining leaders are 3i (the `continue` lowering, ~255), 3j (the simple-path call's raw type, ~100), the array/const literal shape (57), 3g (the flags/enum member type, 24) and the format-string hoist (9).  Session 40: items 2, 2b, 2c, 2d, 2e(a), 2e(b), 3b, 4 and 6 — global-from-imported-const folding, named function-reference types, tuple value structs, the synthetic-struct ordering, the anonymous-tuple default field names, the tuple constant's `ArrayLiteral` shape, the `reinterpret` lowering, the event fields and the include order — leave the differing set unchanged, with **23 + 29 + 6 + 42 files' first difference deeper** plus **3b's 169 files (+1527 each)**, **item 6's 91 files (+8456 … +136,782)** and `examples/event_stress_test.mt` **+737**, 0 shallower/newly differing, and **item 2e(a) flips `std/color.mt` to byte-identical (43 → 44 match / 623 → 622 differ)**; 2e(b) is corpus-neutral (fixtures byte-identical); item 3 verified closed.  Session 39: item 1 flipped `std/glfw.mt`, `std/gl.mt`, `std/box3d.mt`, `std/sdl3.mt`, 39 → 43; item 1b moved 296 files deeper) | 0 differ | `ruby tools/sexpr_parity.rb lower -q -j 16 --host-cache tmp/sexpr-host-cache` |
 | `cli:parity` | 24 match / 37 differ / 0 pending (61 cases; re-measured 2026-10-05 session 35 — unchanged; the `lint-timings` case can never be byte-equal, see session 31's record) | all match | `rake "cli:parity"` |
 | LSP harness | 30/30 capability keys; **4 documented entries** of **70 requests + 27 probes** (re-measured 2026-10-05 session 38: a fresh host+self pair reads the documented 4; the gate's pairing once read 5 because the *host* nondeterministically adds a phantom `renamed.mt` hit to `c5/references-no-declaration` after `willRenameFiles` — host-vs-host records agree, and the self matches the host's stable answer.  `milkTea/debugInfo` is **byte-equal** after the session-35 Facts/Bindings port; the 4 are the host parser recovery, the host's malformed-frame hang, the host's facts lag and the host's directory-form `typeDefinition` path) | 0 unintended | `tools/lsp_parity.rb record/compare --stress` |
 | LSP project audit | **canonical (warm) set: 6 differ** (re-read 2026-10-07 session 43: 6 → 6, the same keys, after 3k's record-position change — a greatest-position scan had briefly surfaced the refined-parameter hover `docs/memory_stress_test.mt@39:24`; the final order-based lookup mirrors the host and closes it.  2026-10-05 sessions 36–37, `--cap 200`: the 4 documented completion/highlight rows + the `type quat` hover + the 2 builtin-hover warm artifacts; the four references warm-coverage rows closed — 10 → 6, closed 4, added 0; session 37 re-confirmed 6 → 6, added 0).  Non-canonical runs read 4–5 with ±drift (session 37's gate read **4**, session 36's **4**, session 35's **5**, session 38's gate **4**); two canonical runs return identical sets | 0 unintended | `tools/lsp_project_audit.rb --workspace ~/Projects/MilkTea/SimpleGame [--canonical]` |
@@ -1920,11 +1960,33 @@ differ / 51 host-rejected / 0 self-rejected of 717** (session 43's close).
   imported const (its fold uses the current module's tables and
   `ModuleBinding` carries no import aliases); invisible on the dump and in the
   corpus — see Track 3's 3s entry.
-- Newly exposed, ranked: **3t** (the 30 box2d files — the dyn vtable slot's
-  function type: `sample.vtable.on_step` typed `Types::Function` on the host,
-  `ptr[void]` on the self, `body_move.mt` byte 620,472 after 3s), plus the
-  analyzer's acceptance of `points.len` on a fixed array where the host reports
-  `cannot access member len of array[…]` — noted, not changed.
+- **Item 3t (landed in the same session) — the dyn vtable slot's function
+  type.**  `sample.vtable.on_step(…)` typed the member `ptr[void]` (the
+  fallback) where the host carries the interface method's `Types::Function`
+  (`body_move.mt` byte 620,472 after 3s).  Root cause:
+  `dyn_vtable_method_fn_type` looked the slot type up in the *generated*
+  `mt_vtable_<Iface>` struct — which is created in the ctx of the module whose
+  `adapt` site lowers, while the dispatch site is the module that *declares*
+  the interface (in the corpus: `common.mt` declares `Sample` and its `run`
+  dispatch; the examples adapt) — so the lookup missed.  The host's
+  `dyn_vtable_struct_type` never consults the generated struct: it builds the
+  slot from the interface binding.  Landed: the interface declaration is the
+  fallback (`find_interface_analysis` → `data: ptr[void]` + the method's
+  `resolve_field_type_ref`'d parameters; the struct lookup stays first so a
+  generic instantiation's substituted forms still win).  Measured (same subset
+  protocol, the 3s `build/stage2/mtc` vs `tmp/mtc-dev`): 122/399/47/0 on both,
+  the same 30 files deeper (+1,925 each), 0 shallower/newly differing/lost;
+  **the full corpus goes 131 → 132 match / 535 → 534 differ** —
+  `projects/stress/src/engine/interfaces.mt` flips.  The fixture (interface +
+  dispatch in one module, the `adapt` site in another) is byte-identical to the
+  host end-to-end.  **The type was a real miscompile**: the pre-3t self binary
+  aborted `array index out of bounds` (rc 134) running `body_move.mt` where the
+  host (and the post-3t self) run the render loop (rc 124 under the 10 s
+  sandbox) — the slot's function type feeds the C backend's indirect call.
+  Locked by `test_dyn_vtable_member_takes_the_interface_method_type`.
+- Newly exposed, ranked: **3u** (the 30 box2d files — the mapping argument's
+  address-of keeps the wrapper alias `ptr[DebugDraw]` where the host deepens it
+  to `ptr[b2DebugDraw]`, `body_move.mt` byte 622,397 after 3t).
 
 ### Session 43 (2026-10-07) — `lower` Track 3 item 3k: the refinement record's post-statement positions
 

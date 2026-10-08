@@ -9897,10 +9897,13 @@ function dyn_vtable_iface_name(t: types.Type) -> str:
             return "unknown"
 
 
-## The `Types::Function` type of an interface method's vtable slot, looked up in
-## the generated `mt_vtable_<Iface>` struct declaration.  The method-call site
-## types the function pointer member with it (matching the host); falls back to
-## `ptr[void]` when the vtable has not been generated yet.
+## The `Types::Function` type of an interface method's vtable slot.  The
+## generated `mt_vtable_<Iface>` struct is consulted first (it carries the
+## *substituted* forms an `adapt` instantiation produced), but a call site can
+## be lowered before — or in a different module than — the site that creates
+## that struct, so the interface declaration itself is the fallback, exactly
+## what the host's `dyn_vtable_struct_type` always builds the slot from
+## (`data: ptr[void]` followed by the method's own parameters).
 function dyn_vtable_method_fn_type(ctx: ref[LowerCtx], iface_name: str, method_name: str) -> types.Type:
     let vtable_type_c_name = j3("mt_vtable_", iface_name, "")
     var iter = ctx.pending_dyn_vtable_structs.iter()
@@ -9915,6 +9918,32 @@ function dyn_vtable_method_fn_type(ctx: ref[LowerCtx], iface_name: str, method_n
                 if f.name == method_name:
                     return f.ty
                 fi += 1
+    match find_interface_analysis(ctx, iface_name):
+        Option.some as ia:
+            var mi: ptr_uint = 0
+            while mi < ia.value.methods.len:
+                var m: ast.InterfaceMethod
+                unsafe:
+                    m = read(ia.value.methods.data + mi)
+                if m.name == method_name:
+                    var void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
+                    var fn_params = vec.Vec[types.Type].create()
+                    var fn_param_names = vec.Vec[str].create()
+                    fn_params.push(void_ptr)
+                    fn_param_names.push("data")
+                    var pi: ptr_uint = 0
+                    while pi < m.method_params.len:
+                        var p: ast.Param
+                        unsafe:
+                            p = read(m.method_params.data + pi)
+                        fn_params.push(resolve_field_type_ref(ctx, p.param_type))
+                        fn_param_names.push(p.name)
+                        pi += 1
+                    var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
+                    return types.Type.ty_function(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_param_names.as_span())
+                mi += 1
+        Option.none:
+            pass
     return types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
 
 
