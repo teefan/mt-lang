@@ -1421,12 +1421,12 @@ function lower_module(analysis: analyzer.Analysis, program_returns: ref[map_mod.
                 # are not generic in the monomorphization sense and should
                 # be emitted directly.
                 if not has_non_lifetime_type_params(s.type_params):
-                    match lower_struct_decl(ref_of(ctx), s.name, s.packed, s.alignment):
+                    match lower_struct_decl(ref_of(ctx), s.name, s.packed, s.alignment, Option[str].none, s.name):
                         Option.some as sd:
                             structs.push(sd.value)
                         Option.none:
                             pass
-                    lower_nested_struct_decls(ref_of(ctx), s.nested_types, s.name, ref_of(structs))
+                    lower_nested_struct_decls(ref_of(ctx), s.nested_types, s.name, s.name, ref_of(structs))
             ast.Decl.decl_union as u:
                 unions.push(lower_union_decl(ref_of(ctx), u.name, u.union_fields))
             ast.Decl.decl_variant as vr:
@@ -15325,10 +15325,18 @@ function opaqueify_type(ctx: ref[LowerCtx], ty: types.Type) -> types.Type:
             return ty
 
 
-function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignment: int) -> Option[ir.StructDecl]:
-    let fields_ptr = ctx.analysis.structs.get(name) else:
+function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignment: int, qualified: Option[str], linkage_base: str) -> Option[ir.StructDecl]:
+    var fields_ptr: ptr[span[analyzer.FieldEntry]]? = null
+    match qualified:
+        Option.some as qn:
+            fields_ptr = ctx.analysis.structs.get(qn.value)
+        Option.none:
+            pass
+    if fields_ptr == null:
+        fields_ptr = ctx.analysis.structs.get(name)
+    let resolved_fields = fields_ptr else:
         return Option[ir.StructDecl].none
-    let entries = unsafe: read(fields_ptr)
+    let entries = unsafe: read(resolved_fields)
     var ir_fields = vec.Vec[ir.Field].create()
     var i: ptr_uint = 0
     while i < entries.len:
@@ -15368,15 +15376,14 @@ function lower_struct_decl(ctx: ref[LowerCtx], name: str, packed: bool, alignmen
         i += 1
     return Option[ir.StructDecl].some(value = ir.StructDecl(
         name = name,
-        linkage_name = naming.qualified_c_name(ctx.module_name, name),
+        linkage_name = naming.qualified_c_name(ctx.module_name, linkage_base),
         fields = ir_fields.as_span(),
         packed = packed,
         alignment = alignment,
         source_module = Option[str].some(value = ctx.module_name),
     ))
 
-
-function lower_nested_struct_decls(ctx: ref[LowerCtx], nested: span[ast.Decl], parent_name: str, structs: ref[vec.Vec[ir.StructDecl]]) -> void:
+function lower_nested_struct_decls(ctx: ref[LowerCtx], nested: span[ast.Decl], parent_name: str, parent_linkage: str, structs: ref[vec.Vec[ir.StructDecl]]) -> void:
     var i: ptr_uint = 0
     while i < nested.len:
         var d: ast.Decl
@@ -15385,12 +15392,18 @@ function lower_nested_struct_decls(ctx: ref[LowerCtx], nested: span[ast.Decl], p
         match d:
             ast.Decl.decl_struct as s:
                 if s.type_params.len == 0:
-                    match lower_struct_decl(ctx, s.name, s.packed, s.alignment):
+                    # A nested struct's C name carries its parents
+                    # (`<mod>_Rectangle_Edge`) while the IR `:name` stays plain —
+                    # the host's `resolve_nested_struct_fields` qualified name,
+                    # flattened for C.
+                    let qname = j3(parent_name, ".", s.name)
+                    let qlink = j3(parent_linkage, "_", s.name)
+                    match lower_struct_decl(ctx, s.name, s.packed, s.alignment, Option[str].some(value = qname), qlink):
                         Option.some as sd:
                             structs.push(sd.value)
                         Option.none:
                             pass
-                    lower_nested_struct_decls(ctx, s.nested_types, s.name, structs)
+                    lower_nested_struct_decls(ctx, s.nested_types, qname, qlink, structs)
             _:
                 pass
         i += 1

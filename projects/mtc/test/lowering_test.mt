@@ -3060,3 +3060,35 @@ function test_const_enum_table_folds_members_to_values() -> void:
     expect(text.contains_substring(":elements ((IR::IntegerLiteral :value 0 :type (Types::Enum :name \"Kind\""))
     expect(text.contains_substring("(IR::IntegerLiteral :value 1 :type (Types::Enum :name \"Kind\""))
     expect(not text.contains_substring(":elements ((IR::Name"))
+
+
+@[test]
+function test_nested_struct_linkage_carries_its_parent() -> void:
+    ## A nested struct's C name carries its parents
+    ## (`<mod>_Rectangle_Edge`) while the IR `:name` stays plain — the host's
+    ## `resolve_nested_struct_fields` qualified name, flattened for C
+    ## (session 44, item 10a; `examples/nested_struct_stress_test.mt`,
+    ## `examples/event_stress_test.mt`).
+    var source = <<-SRC
+        struct Rectangle:
+            x: float
+            y: float
+
+            struct Edge:
+                start: float
+                end: float
+
+            top_edge: Edge
+            width: float
+
+        function demo() -> float:
+            var r: Rectangle
+            r.top_edge.start = 1.0
+            return r.top_edge.start
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("IR::StructDecl :name \"Edge\" :linkage_name \""))
+    expect(text.contains_substring("_Rectangle_Edge\""))
+    expect(not text.contains_substring(":name \"Edge\" :linkage_name \"main_Edge\""))
