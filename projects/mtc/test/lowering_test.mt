@@ -2919,3 +2919,79 @@ function test_extern_call_literal_takes_the_parameter_type() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"ptr_int\")))))"))
     expect(not text.contains_substring("(IR::NullLiteral :type (Types::Primitive :name \"void\"))"))
+
+
+@[test]
+function test_match_member_scrutinee_switches_directly() -> void:
+    ## An enum scrutinee reached by a member access (`match h.kind`) switches on
+    ## the expression itself — the host hoists a `match_value` temp only for a
+    ## *variant* whose arms bind payloads (`expressions.rb:1148-1154`);
+    ## the self materialized `__mt_match_scrut_N` for any non-name scrutinee
+    ## (session 44, items 6c/6d).
+    var source = <<-SRC
+        enum Kind:
+            A
+            B
+
+        struct Holder:
+            kind: Kind
+
+        function pick(h: Holder) -> int:
+            var r = 0
+            match h.kind:
+                Kind.A: r = 1
+                Kind.B: r = 2
+            return r
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("IR::SwitchStmt :expression (IR::Member :receiver (IR::Name :name \"h\""))
+    expect(not text.contains_substring("__mt_match_scrut"))
+
+
+@[test]
+function test_return_match_carries_the_statement_path() -> void:
+    ## The `return match …` hoist's synthetic return keeps the statement's line
+    ## and path (the host builds it from the statement; the self passed an empty
+    ## path — session 44, item 6d).
+    var source = <<-SRC
+        enum Kind:
+            A
+            B
+
+        function pick(k: Kind) -> int:
+            return match k:
+                Kind.A: 1
+                Kind.B: 2
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("__mt_match_expr_1"))
+    expect(text.contains_substring(":line 6 :path \"/"))
+
+
+@[test]
+function test_async_frame_names_use_a_double_underscore() -> void:
+    ## The async frame and resume names derive from the constructor's linkage
+    ## with the host's *double* underscore (`<…>__frame`, `<…>__resume`;
+    ## `functions.rb:199-200`) — the self used a single one (session 44,
+    ## item 6b; the `examples/async_*` family).
+    var source = <<-SRC
+        async function tick() -> void:
+            return
+
+        async function work(n: int) -> int:
+            await tick()
+            return n + 1
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("__frame"))
+    expect(text.contains_substring("__resume"))
+    expect(not text.contains_substring("_impl_frame"))

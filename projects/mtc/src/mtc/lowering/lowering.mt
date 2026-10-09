@@ -2778,7 +2778,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         lower_match_expr_to_ref(ctx, output, me.scrutinee, me.arms, result_ref)
                         flush_all_defers(ctx, output)
                         let ret_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
-                        output.push(ir.Stmt.stmt_return(value = ret_ref, line = r.line, source_path = ""))
+                        output.push(ir.Stmt.stmt_return(value = ret_ref, line = r.line, source_path = ctx.analysis.source_path))
                         return
                     ast.Expr.expr_call as outer_call:
                         # Chain call: `return f(a)(b)` where `f(a)` returns a
@@ -7104,7 +7104,12 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
             elem_ty = qualify_type(ctx, generic_first_arg(recv_ty))
         if types.is_error(elem_ty):
             elem_ty = qualify_type(ctx, generic_first_arg(receiver_type))
-    # element types produce malformed C syntax (checked-index array-of-arrays).
+    # A checked-index helper for an *array* element (e.g.
+    # `array[array[float, 2], 6]`) needs the host's nested declarator
+    # (`static inline float (*name(float (*array)[2], …))[2]`) and a decayed
+    # call — the backend emits neither yet, so an array-of-arrays element keeps
+    # the plain index (the host's `IR::CheckedIndex` here is a known gap;
+    # session 44, item 6a deferred to a backend pass).
     if is_array_type(receiver_type):
         let elem_t = generic_first_arg(receiver_type)
         if is_array_type(elem_t):
@@ -16524,9 +16529,32 @@ function lower_match_expr_to_ref(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt
     if not types.is_error(lowered_sty) and not types.type_to_string(lowered_sty) == "void":
         scrutinee_ty = lowered_sty
     if not ir_expr_is_name(scrutinee_expr):
-        let temp = fresh_c_temp_name(ctx, "match_scrut")
-        output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrutinee_ty, value = scrutinee_expr, line = 0, source_path = ""))
-        scrutinee_expr = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrutinee_ty, pointer = false))
+        # The host hoists the scrutinee into a `match_value` temp only for a
+        # *variant* whose arms bind payloads and whose expression is not
+        # duplicable — every arm's body reads the scrutinee again; an enum
+        # scrutinee (a member access like `this.shape.kind`) switches on the
+        # expression itself (`expressions.rb:1148-1154`).
+        var binds_payload = false
+        var arm_i: ptr_uint = 0
+        while arm_i < arms.len:
+            var arm_chk: ast.MatchExprArm
+            unsafe:
+                arm_chk = read(arms.data + arm_i)
+            if arm_chk.binding_name.is_some() and arm_chk.wildcard_line == 0:
+                binds_payload = true
+            arm_i += 1
+        let scrut_name = named_type_name(scrutinee_ty)
+        var is_variant = false
+        match scrut_name:
+            Option.some as sn:
+                if ctx.variants.contains(sn.value):
+                    is_variant = true
+            Option.none:
+                pass
+        if binds_payload and is_variant and not duplicable_foreign_value(scrutinee_expr):
+            let temp = fresh_c_temp_name(ctx, "match_value")
+            output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrutinee_ty, value = scrutinee_expr, line = 0, source_path = ""))
+            scrutinee_expr = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrutinee_ty, pointer = false))
 
     let type_name = named_type_name(scrutinee_ty)
     if is_str_scrutinee(scrutinee_ty):
@@ -16872,10 +16900,22 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
 
     var scrut_base = lower_expr(ctx, scrutinee)
     if not ir_expr_is_name(scrut_base):
-        let temp = fresh_c_temp_name(ctx, "match_scrutinee")
-        let scrut_ty = ir_expr_type(scrut_base)
-        output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrut_ty, value = scrut_base, line = 0, source_path = ""))
-        scrut_base = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = false))
+        # The host's hoist rule (`block.rb:847-853`): a `match_value` temp only
+        # when some arm binds a payload and the expression is not duplicable.
+        var binds_payload = false
+        var arm_i: ptr_uint = 0
+        while arm_i < arms.len:
+            var arm_chk: ast.MatchArm
+            unsafe:
+                arm_chk = read(arms.data + arm_i)
+            if arm_chk.binding_name.is_some() and not (arm_chk.pattern == null):
+                binds_payload = true
+            arm_i += 1
+        if binds_payload and not duplicable_foreign_value(scrut_base):
+            let temp = fresh_c_temp_name(ctx, "match_value")
+            let scrut_ty = ir_expr_type(scrut_base)
+            output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrut_ty, value = scrut_base, line = 0, source_path = ""))
+            scrut_base = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = false))
 
     let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
     var cases = vec.Vec[ir.SwitchCase].create()
@@ -22700,9 +22740,11 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     let void_t = ctx.void_ty
     let is_void_ret = is_void_type_lowered(res_ty)
     # `link_base` is the constructor's C linkage (e.g. `<mod>_main`, or a method's
-    # `<mod>_Type_method`); the frame/resume names derive from it.
-    let frame_c = j2(link_base, "_frame")
-    let resume_c = j2(link_base, "_resume")
+    # `<mod>_Type_method`); the frame/resume names derive from it with the
+    # host's double underscore (`#{constructor_linkage_name}__frame`,
+    # `...__resume`; `functions.rb:199-200`).
+    let frame_c = j2(link_base, "__frame")
+    let resume_c = j2(link_base, "__resume")
     let task_ty = make_task_type(res_ty)
     let has_await = async_mod.body_has_await(body)
     let ptr_ty = ptr_uint_type()
