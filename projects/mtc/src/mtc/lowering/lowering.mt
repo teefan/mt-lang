@@ -19254,6 +19254,44 @@ function enum_member_value_in_module(ctx: ref[LowerCtx], module_name: str, type_
     return enum_member_value_in_file(ctx, a.source_file, type_name, member_name)
 
 
+## The value of an enum/flags member *expression* (`Kind.A`, or an imported
+## `Keyb.KEY_ESCAPE`): the member's own type names the declaring module, with the
+## name-based lookup as a fallback.
+function enum_member_value_of_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> Option[long]:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_member_access as ma:
+                let operand_ty = expr_type(ctx, ep)
+                var enum_name = ""
+                var enum_module = ""
+                match operand_ty:
+                    types.Type.ty_imported as im:
+                        enum_name = im.name
+                        enum_module = if im.module_name.len > 0: im.module_name else: ctx.module_name
+                    types.Type.ty_named as nm:
+                        enum_name = nm.name
+                        enum_module = if nm.module_name.len > 0: nm.module_name else: ctx.module_name
+                    _:
+                        pass
+                if enum_name.len > 0:
+                    var found = Option[long].none
+                    if enum_module.equal(ctx.module_name):
+                        found = enum_member_value_in_file(ctx, ctx.analysis.source_file, enum_name, ma.member_name)
+                    else:
+                        found = enum_member_value_in_module(ctx, enum_module, enum_name, ma.member_name)
+                    match found:
+                        Option.some as mv:
+                            return Option[long].some(value = mv.value)
+                        Option.none:
+                            pass
+                let by_name = try_lookup_enum_value(ctx, ma.receiver, ma.member_name)
+                if by_name >= 0:
+                    return Option[long].some(value = by_name)
+                return Option[long].none
+            _:
+                return Option[long].none
+
+
 function enum_member_value_in_file(ctx: ref[LowerCtx], file: ast.SourceFile, type_name: str, member_name: str) -> Option[long]:
     var di: ptr_uint = 0
     while di < file.declarations.len:
@@ -19735,39 +19773,11 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
                     Option.some:
                         pass
                     Option.none:
-                        unsafe:
-                            match read(pc.expression):
-                                ast.Expr.expr_member_access as ma:
-                                    # The operand's own type names the enum
-                                    # (`Keyb.KEY_ESCAPE` is `KeyboardKey`), so
-                                    # look the member up in its declaring module.
-                                    var found_value = Option[long].none
-                                    let operand_ty = expr_type(ctx, pc.expression)
-                                    var enum_name = ""
-                                    var enum_module = ""
-                                    match operand_ty:
-                                        types.Type.ty_imported as im:
-                                            enum_name = im.name
-                                            enum_module = if im.module_name.len > 0: im.module_name else: ctx.module_name
-                                        types.Type.ty_named as nm:
-                                            enum_name = nm.name
-                                            enum_module = if nm.module_name.len > 0: nm.module_name else: ctx.module_name
-                                        _:
-                                            pass
-                                    if enum_name.len > 0:
-                                        if enum_module.equal(ctx.module_name):
-                                            found_value = enum_member_value_in_file(ctx, ctx.analysis.source_file, enum_name, ma.member_name)
-                                        else:
-                                            found_value = enum_member_value_in_module(ctx, enum_module, enum_name, ma.member_name)
-                                    match found_value:
-                                        Option.some as mv:
-                                            operand_ir = Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = mv.value, ty = types.primitive("int"))))
-                                        Option.none:
-                                            let by_name = try_lookup_enum_value(ctx, ma.receiver, ma.member_name)
-                                            if by_name >= 0:
-                                                operand_ir = Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = by_name, ty = types.primitive("int"))))
-                                _:
-                                    pass
+                        match enum_member_value_of_expr(ctx, pc.expression):
+                            Option.some as mv:
+                                operand_ir = Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = mv.value, ty = types.primitive("int"))))
+                            Option.none:
+                                pass
                 match operand_ir:
                     Option.some as ov:
                         let target = resolve_type_ref(ctx, pc.target_type)
@@ -20761,14 +20771,26 @@ function try_const_array_literal_ir(ctx: ref[LowerCtx], type_args: span[ast.Type
     var elements = vec.Vec[ir.Expr].create()
     var i: ptr_uint = 0
     while i < args.len:
-        match try_const_value_ir(ctx, unsafe: read(args.data + i).arg_value, env):
-            Option.some as ev:
-                # Elements take the element type contextually too: a folded
-                # `array[ubyte, 4](0, 0, 0, 0)` keeps ubyte elements.
-                let retyped = const_value_to_field_type(ev.value, element_ty)
-                elements.push(unsafe: read(retyped))
+        # An *enum member* element of an mt-declared enum folds to its value
+        # typed as the enum: `const KINDS: array[TokenKind, 19] =
+        # array[…]((TokenKind.dot_dot, …))` carries
+        # `(IR::IntegerLiteral :value 33 :type (Types::Enum TokenKind))`.  A
+        # *runtime* array literal keeps its member names, and a *raw* module's
+        # enum keeps them too (the host cannot know the C values; session 44,
+        # item 9a).
+        let arg_ast = unsafe: read(args.data + i).arg_value
+        match enum_member_value_of_expr(ctx, arg_ast):
+            Option.some as mv:
+                elements.push(unsafe: read(alloc_expr(ir.Expr.expr_integer_literal(value = mv.value, ty = element_ty))))
             Option.none:
-                return Option[ptr[ir.Expr]].none
+                match try_const_value_ir(ctx, arg_ast, env):
+                    Option.some as ev:
+                        # Elements take the element type contextually too: a folded
+                        # `array[ubyte, 4](0, 0, 0, 0)` keeps ubyte elements.
+                        let retyped = const_value_to_field_type(ev.value, element_ty)
+                        elements.push(unsafe: read(retyped))
+                    Option.none:
+                        return Option[ptr[ir.Expr]].none
         i += 1
     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span())))
 

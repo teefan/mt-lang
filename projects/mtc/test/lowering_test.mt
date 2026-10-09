@@ -3035,3 +3035,28 @@ function test_str_buffer_struct_is_not_in_the_dump() -> void:
     let text = dump.as_str()
     expect(not text.contains_substring("IR::StructDecl :name \"mt_str_buffer_"))
     expect(text.contains_substring("(Types::Generic :name \"str_buffer\" :arguments ((Types::LiteralTypeArg :value 256))"))
+
+
+@[test]
+function test_const_enum_table_folds_members_to_values() -> void:
+    ## A *const* array initializer's enum members fold to their values typed as
+    ## the enum (`const KINDS: array[Kind, 2] = array[Kind, 2](Kind.A, Kind.B)`
+    ## yields `(IR::IntegerLiteral :value 0 :type (Types::Enum Kind))`), while a
+    ## *runtime* array literal keeps the member names (the compiler's own
+    ## `mtc.lexer.token_kinds` tables; session 44, item 9a).
+    var source = <<-SRC
+        enum Kind:
+            A
+            B
+
+        const KINDS: array[Kind, 2] = array[Kind, 2](Kind.A, Kind.B)
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":elements ((IR::IntegerLiteral :value 0 :type (Types::Enum :name \"Kind\""))
+    expect(text.contains_substring("(IR::IntegerLiteral :value 1 :type (Types::Enum :name \"Kind\""))
+    expect(not text.contains_substring(":elements ((IR::Name"))
