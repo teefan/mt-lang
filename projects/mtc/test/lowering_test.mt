@@ -2738,3 +2738,111 @@ function test_foreign_integer_argument_takes_the_parameter_type() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"uint\"))"))
     expect(not text.contains_substring("(IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\"))"))
+
+
+@[test]
+function test_array_element_constant_folds_to_its_aggregate() -> void:
+    ## A compile-time constant element inlines to its value: the host's array
+    ## elements fold, so `array[Color, 2](c.RED, c.GREEN)` carries the
+    ## constants' aggregates, not their C names (`raylib/*`'s colour tables;
+    ## session 44, item 4a).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_afold_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var c_source = <<-SRC
+        public struct Color:
+            r: ubyte
+            g: ubyte
+
+        public const RED: Color = Color(r = 230ub, g = 41ub)
+        public const GREEN: Color = Color(r = 0ub, g = 228ub)
+    SRC
+    if not write_source_file(root.as_str(), "c.mt", c_source):
+        return
+
+    var source = <<-SRC
+        import c
+
+        function main() -> int:
+            let colors = array[c.Color, 2](c.RED, c.GREEN)
+            return int<-colors[0].r
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":elements ((IR::AggregateLiteral :type (Types::Struct :name \"Color\""))
+    expect(text.contains_substring(":name \"r\" :value (IR::IntegerLiteral :value 230"))
+    expect(not text.contains_substring(":elements ((IR::Name"))
+
+
+@[test]
+function test_cstr_backed_if_passes_its_data_pointer() -> void:
+    ## A *syntactically* cstr-backed expression — an `if` of string literals,
+    ## whether bound to a local or passed directly — passes its `data` pointer
+    ## at a `str as cstr` boundary instead of the runtime temp copy (the host's
+    ## `cstr_backed_expression?`; session 44, items 4b/4c).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_cif_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function DrawLabel(text: cstr) -> int
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var wrap_source = <<-SRC
+        import std.c.raw.lib as c
+
+        public foreign function draw_label(text: str as cstr) -> int = c.DrawLabel
+    SRC
+    if not write_source_file(root.as_str(), "wrap.mt", wrap_source):
+        return
+
+    var source = <<-SRC
+        import wrap
+
+        function draw(flag: bool) -> int:
+            let t = if flag: "yes" else: "no"
+            let a = wrap.draw_label(t)
+            let b = wrap.draw_label(if flag: "up" else: "down")
+            return a + b
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("IR::Cast :target_type (Types::Primitive :name \"cstr\") :expression (IR::Member"))
+    expect(not text.contains_substring("mt_foreign_str_to_cstr_temp"))

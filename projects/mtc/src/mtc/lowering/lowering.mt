@@ -8125,6 +8125,7 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                     array_args.push(resolve_array_length_type(ctx, read(type_args.data + 1).value))
                     let array_ty = types.Type.ty_generic(name = "array", args = array_args.as_span())
                     var elements = vec.Vec[ir.Expr].create()
+                    var elem_fold_env = map_mod.Map[str, ptr[ir.Expr]].create()
                     var ai: ptr_uint = 0
                     while ai < call_args.len:
                         let arg = read(call_args.data + ai)
@@ -8135,6 +8136,22 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         element_value = int_literal_to_context_type(arg.arg_value, element_ty, element_value)
                         element_value = float_literal_to_context_type(arg.arg_value, element_ty, element_value)
                         element_value = null_literal_to_context_type(arg.arg_value, element_ty, element_value)
+                        # A *compile-time constant* element inlines to its value:
+                        # `array[rl.Color, 2](rl.RED, rl.GREEN)` carries the
+                        # constants' aggregates, not their C names (the host's
+                        # array elements fold; `raylib/*`).  A plain variable
+                        # reference stays a name — `try_const_value_ir` answers
+                        # none for it.
+                        unsafe:
+                            match read(element_value):
+                                ir.Expr.expr_name:
+                                    match try_const_value_ir(ctx, arg.arg_value, ref_of(elem_fold_env)):
+                                        Option.some as folded:
+                                            element_value = folded.value
+                                        Option.none:
+                                            pass
+                                _:
+                                    pass
                         elements.push(read(element_value))
                         ai += 1
                     return alloc_expr(ir.Expr.expr_array_literal(ty = array_ty, elements = elements.as_span()))
@@ -13954,11 +13971,13 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
                             if arg_is_cstr:
                                 return lowered_str
                             # A cstr-backed `str` (a string-literal or cstr-backed
-                            # local, or a dynamic format string's temp) owns a
-                            # buffer that outlives the call, so its `data`
-                            # pointer passes directly — the host's
-                            # `cstr_backed_expression?` branch.
-                            if is_cstr_backed_lowered(ctx, lowered_str):
+                            # local, a dynamic format string's temp, or any
+                            # *syntactically* cstr-backed expression — an
+                            # `if`/`unsafe` of them, the host's
+                            # `cstr_backed_expression?`) owns a buffer that
+                            # outlives the call, so its `data` pointer passes
+                            # directly.
+                            if is_cstr_backed_lowered(ctx, lowered_str) or ast_expr_cstr_backed(ctx, arg):
                                 let data_member = alloc_expr(ir.Expr.expr_member(receiver = lowered_str, member = "data", ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("char")))))
                                 return alloc_expr(ir.Expr.expr_cast(target_type = types.primitive("cstr"), expression = data_member, ty = types.primitive("cstr")))
                             return alloc_expr(ir.Expr.expr_call(
@@ -18633,15 +18652,39 @@ function cstr_backed_binding(ctx: ref[LowerCtx], ty: types.Type, init: ptr[ast.E
                 return true
             let ip = init else:
                 return false
-            unsafe:
-                match read(ip):
-                    ast.Expr.expr_string_literal:
-                        return true
-                    _:
-                        return false
+            return ast_expr_cstr_backed(ctx, ip)
         _:
             return false
     return false
+
+
+## The host's `cstr_backed_expression?`: a *syntactic* predicate — a string
+## literal, a `cstr`-typed or cstr-backed local's read, or an `if`/`unsafe`
+## whose parts are all cstr-backed (`let t = if flag: "a" else: "b"` is
+## cstr-backed, so `draw_text(t, …)` passes `t.data` directly).
+function ast_expr_cstr_backed(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ast.Expr.expr_string_literal:
+                return true
+            ast.Expr.expr_identifier as id:
+                match lookup_local(ctx, id.name):
+                    Option.some as lb:
+                        match lb.value.ty:
+                            types.Type.ty_primitive as p:
+                                if p.name == "cstr":
+                                    return true
+                            _:
+                                pass
+                        return ctx.cstr_backed_names.contains(lb.value.c_name)
+                    Option.none:
+                        return false
+            ast.Expr.expr_if as iff:
+                return ast_expr_cstr_backed(ctx, iff.then_expr) and ast_expr_cstr_backed(ctx, iff.else_expr)
+            ast.Expr.expr_unsafe as u:
+                return ast_expr_cstr_backed(ctx, u.expression)
+            _:
+                return false
 
 
 ## True when a lowered value is a cstr-backed local's read (or a format-string
