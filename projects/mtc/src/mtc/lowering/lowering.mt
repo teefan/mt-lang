@@ -8136,21 +8136,30 @@ function lower_specialization_call(ctx: ref[LowerCtx], spec_callee: ptr[ast.Expr
                         element_value = int_literal_to_context_type(arg.arg_value, element_ty, element_value)
                         element_value = float_literal_to_context_type(arg.arg_value, element_ty, element_value)
                         element_value = null_literal_to_context_type(arg.arg_value, element_ty, element_value)
-                        # A *compile-time constant* element inlines to its value:
-                        # `array[rl.Color, 2](rl.RED, rl.GREEN)` carries the
-                        # constants' aggregates, not their C names (the host's
-                        # array elements fold; `raylib/*`).  A plain variable
-                        # reference stays a name — `try_const_value_ir` answers
-                        # none for it.
+                        # The host folds a *scalar-shaped* compile-time constant
+                        # element (`int<-Kind.A` → 0, `-1` → -1, `1 + 2` → 3,
+                        # an imported constant → its aggregate); an aggregate
+                        # element (a struct literal and its fields) is lowered
+                        # normally, and a bare literal keeps the contextual
+                        # retyping above (`array[ubyte, 4](0, …)`).
+                        var element_foldable = false
                         unsafe:
                             match read(element_value):
                                 ir.Expr.expr_name:
-                                    match try_const_value_ir(ctx, arg.arg_value, ref_of(elem_fold_env)):
-                                        Option.some as folded:
-                                            element_value = folded.value
-                                        Option.none:
-                                            pass
+                                    element_foldable = true
+                                ir.Expr.expr_cast:
+                                    element_foldable = true
+                                ir.Expr.expr_unary:
+                                    element_foldable = true
+                                ir.Expr.expr_binary:
+                                    element_foldable = true
                                 _:
+                                    pass
+                        if element_foldable:
+                            match try_const_value_ir(ctx, arg.arg_value, ref_of(elem_fold_env)):
+                                Option.some as folded:
+                                    element_value = folded.value
+                                Option.none:
                                     pass
                         elements.push(read(element_value))
                         ai += 1
@@ -13946,6 +13955,27 @@ function is_plain_foreign_call_value(ep: ptr[ir.Expr]) -> bool:
 
 
 
+## The parameter's declared type, resolved in its *declaring* module and
+## deepened/opaqueified: the context type the host's
+## `lower_contextual_expression` gives every foreign argument (session 44,
+## items 3ag/5b).
+function foreign_param_context_type(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam) -> types.Type:
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    if info.owner_module.len > 0 and not info.owner_module.equal(ctx.module_name):
+        match find_imported_analysis(ctx, info.owner_module):
+            Option.some as owner_a:
+                ctx.module_name = info.owner_module
+                ctx.analysis = owner_a.value
+            Option.none:
+                pass
+    var ctx_pt = param.param_type
+    let ctx_ty = opaqueify_type(ctx, deep_alias_target(ctx, qualify_type(ctx, resolve_type_ref(ctx, ptr_of(ctx_pt)))))
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    return ctx_ty
+
+
 function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.ForeignParam, arg: ptr[ast.Expr]) -> ptr[ir.Expr]:
     match param.boundary_type:
         Option.some as boundary:
@@ -13991,7 +14021,7 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             if param.param_mode == ast.ForeignParamMode.fmode_in:
                 let lowered_val = lower_expr(ctx, arg)
                 if is_null_ir_expr(lowered_val):
-                    return lowered_val
+                    return null_literal_to_context_type(arg, foreign_param_context_type(ctx, info, param), lowered_val)
                 let arg_ty = ir_expr_type(lowered_val)
                 if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty) and not types.is_ref_type(arg_ty):
                     return alloc_expr(ir.Expr.expr_address_of(expression = lowered_val, ty = types.primitive("ptr[void]")))
@@ -14044,7 +14074,10 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             # `const_pointer_to(parameter.type)`.)
             if param.param_mode == ast.ForeignParamMode.fmode_in:
                 if is_null_ir_expr(lowered):
-                    return lowered
+                    # The host types the null with the parameter's declared
+                    # type (`c.time(null)` carries `Nullable(ptr[ptr_int])`,
+                    # not `void`).
+                    return null_literal_to_context_type(arg, foreign_param_context_type(ctx, info, param), lowered)
                 let in_arg_ty = ir_expr_type(lowered)
                 if types.is_raw_pointer(in_arg_ty) or types.is_ref_type(in_arg_ty) or types.is_own_type(in_arg_ty):
                     return lowered
@@ -14059,34 +14092,11 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
                     let arg_ty = ir_expr_type(lowered)
                     if not types.is_raw_pointer(arg_ty) and not types.is_own_type(arg_ty):
                         return alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = types.primitive("ptr[void]")))
-            # A bare `null` argument takes the parameter's declared type: the
-            # host lowers *every* foreign argument with
-            # `lower_contextual_expression(argument.value, expected_type:
-            # parameter.type)` (`calls.rb:727-731`) and
-            # `infer_null_literal_type` returns it.  The param TypeRef belongs
-            # to the *declaring* module, so it resolves there (a cross-module
-            # call lowers with ctx switched to the raw target, where `File` —
-            # `std.stdio`'s alias of the raw `opaque FILE` — would resolve as a
-            # bare name, lose the opaque and make the backend reference an
-            # undeclared `mt_opt_std_c_stdio_File` where the host emits
-            # `fflush(NULL)`; session 44, item 3ag).
-            var ctx_pt = param.param_type
-            var saved_module = ctx.module_name
-            var saved_analysis = ctx.analysis
-            if info.owner_module.len > 0 and not info.owner_module.equal(ctx.module_name):
-                match find_imported_analysis(ctx, info.owner_module):
-                    Option.some as owner_a:
-                        ctx.module_name = info.owner_module
-                        ctx.analysis = owner_a.value
-                    Option.none:
-                        pass
-            let ctx_ty = opaqueify_type(ctx, deep_alias_target(ctx, qualify_type(ctx, resolve_type_ref(ctx, ptr_of(ctx_pt)))))
-            ctx.module_name = saved_module
-            ctx.analysis = saved_analysis
             # Every bare literal takes the parameter's declared type — the
             # host's `lower_contextual_expression` (int/float/string/null all
-            # retype, not just `null`).
-            return literal_value_to_context_type(arg, ctx_ty, lowered)
+            # retype, not just `null`), resolved in the param's declaring
+            # module (session 44, items 3ag/3ae/3fc).
+            return literal_value_to_context_type(arg, foreign_param_context_type(ctx, info, param), lowered)
 
 
 function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
@@ -14368,6 +14378,10 @@ function lower_extern_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[ast
             var param: ast.ForeignParam
             unsafe:
                 param = read(info.params.data + i)
+            # Every bare literal takes the parameter's declared type — the raw
+            # external call path shares the foreign rule (`c.time(null)` carries
+            # `Nullable(ptr[time_t])`; session 44, item 5b).
+            lowered = literal_value_to_context_type(arg.arg_value, foreign_param_context_type(ctx, info, param), lowered)
             if param.param_mode == ast.ForeignParamMode.fmode_out or param.param_mode == ast.ForeignParamMode.fmode_inout:
                 let arg_ty = ir_expr_type(lowered)
                 lowered = alloc_expr(ir.Expr.expr_address_of(
@@ -19173,6 +19187,14 @@ function comptime_enum_member_value(ctx: ref[LowerCtx], type_name: str, member_n
     return 0
 
 
+## The value of `type_name.member_name` in the module that declares the enum —
+## the host's constant evaluation of an enum member (`int<-Kind.A` → 0).
+function enum_member_value_in_module(ctx: ref[LowerCtx], module_name: str, type_name: str, member_name: str) -> Option[long]:
+    let a = find_imported_analysis(ctx, module_name) else:
+        return Option[long].none
+    return enum_member_value_in_file(ctx, a.source_file, type_name, member_name)
+
+
 function enum_member_value_in_file(ctx: ref[LowerCtx], file: ast.SourceFile, type_name: str, member_name: str) -> Option[long]:
     var di: ptr_uint = 0
     while di < file.declarations.len:
@@ -19645,7 +19667,49 @@ function try_const_value_ir(ctx: ref[LowerCtx], ep: ptr[ast.Expr], env: ref[map_
                         pass
                 return Option[ptr[ir.Expr]].none
             ast.Expr.expr_prefix_cast as pc:
-                match try_const_value_ir(ctx, pc.expression, env):
+                # An enum member is a compile-time integer, so its cast folds:
+                # `int<-Kind.A` → 0 (`raylib/*`'s key tables are arrays of such
+                # casts).  A bare enum member *reference* keeps its name — only
+                # the cast fold consults the member's value.
+                var operand_ir = try_const_value_ir(ctx, pc.expression, env)
+                match operand_ir:
+                    Option.some:
+                        pass
+                    Option.none:
+                        unsafe:
+                            match read(pc.expression):
+                                ast.Expr.expr_member_access as ma:
+                                    # The operand's own type names the enum
+                                    # (`Keyb.KEY_ESCAPE` is `KeyboardKey`), so
+                                    # look the member up in its declaring module.
+                                    var found_value = Option[long].none
+                                    let operand_ty = expr_type(ctx, pc.expression)
+                                    var enum_name = ""
+                                    var enum_module = ""
+                                    match operand_ty:
+                                        types.Type.ty_imported as im:
+                                            enum_name = im.name
+                                            enum_module = if im.module_name.len > 0: im.module_name else: ctx.module_name
+                                        types.Type.ty_named as nm:
+                                            enum_name = nm.name
+                                            enum_module = if nm.module_name.len > 0: nm.module_name else: ctx.module_name
+                                        _:
+                                            pass
+                                    if enum_name.len > 0:
+                                        if enum_module.equal(ctx.module_name):
+                                            found_value = enum_member_value_in_file(ctx, ctx.analysis.source_file, enum_name, ma.member_name)
+                                        else:
+                                            found_value = enum_member_value_in_module(ctx, enum_module, enum_name, ma.member_name)
+                                    match found_value:
+                                        Option.some as mv:
+                                            operand_ir = Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = mv.value, ty = types.primitive("int"))))
+                                        Option.none:
+                                            let by_name = try_lookup_enum_value(ctx, ma.receiver, ma.member_name)
+                                            if by_name >= 0:
+                                                operand_ir = Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_integer_literal(value = by_name, ty = types.primitive("int"))))
+                                _:
+                                    pass
+                match operand_ir:
                     Option.some as ov:
                         let target = resolve_type_ref(ctx, pc.target_type)
                         var target_name = ""

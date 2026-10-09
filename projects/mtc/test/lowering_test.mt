@@ -2846,3 +2846,76 @@ function test_cstr_backed_if_passes_its_data_pointer() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("IR::Cast :target_type (Types::Primitive :name \"cstr\") :expression (IR::Member"))
     expect(not text.contains_substring("mt_foreign_str_to_cstr_temp"))
+
+
+@[test]
+function test_array_element_scalar_constant_folds() -> void:
+    ## The host folds a *scalar-shaped* compile-time constant element — an
+    ## enum member's cast, a negation, an arithmetic fold — while a bare
+    ## literal keeps the contextual retyping and an aggregate element (a
+    ## struct literal) keeps its fields (session 44, item 5a).
+    var source = <<-SRC
+        enum Kind:
+            A
+            B
+
+        function main() -> int:
+            let a = array[int, 3](int<-Kind.A, -1, 1 + 2)
+            return a[0]
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring(":elements ((IR::IntegerLiteral :value 0 :type (Types::Primitive :name \"int\")) (IR::IntegerLiteral :value -1 :type (Types::Primitive :name \"int\")) (IR::IntegerLiteral :value 3 :type (Types::Primitive :name \"int\"))"))
+    expect(not text.contains_substring("IR::Cast :target_type (Types::Primitive :name \"int\") :expression (IR::Name"))
+
+
+@[test]
+function test_extern_call_literal_takes_the_parameter_type() -> void:
+    ## The raw external call path shares the foreign literal rule: a bare
+    ## `null` argument carries the parameter's declared type
+    ## (`c.Take(null)` on a `ptr[ptr_int]?` parameter is
+    ## `Nullable(ptr[ptr_int])`, not `void`; session 44, item 5b).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_ecall_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var raw_dir = path_ops.join(root.as_str(), "std/c/raw")
+    defer: raw_dir.release()
+    match fs.create_directories(raw_dir.as_str()):
+        Result.failure as f:
+            var e = f.error
+            e.release()
+            return
+        Result.success:
+            pass
+
+    var raw_source = <<-SRC
+        external
+
+        external function Take(timer: ptr[ptr_int]?) -> ptr_int
+    SRC
+    if not write_source_file(root.as_str(), "std/c/raw/lib.mt", raw_source):
+        return
+
+    var source = <<-SRC
+        import std.c.raw.lib as c
+
+        function now() -> ptr_int:
+            return c.Take(null)
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::NullLiteral :type (Types::Nullable :base (Types::Generic :name \"ptr\" :arguments ((Types::Primitive :name \"ptr_int\")))))"))
+    expect(not text.contains_substring("(IR::NullLiteral :type (Types::Primitive :name \"void\"))"))
