@@ -114,7 +114,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     # Concrete generic struct instances are carried outside the IR's `:structs`
     # section (host parity).  Merge them into the declaration list the backend
     # sorts and emits, so their fields participate in every scan below.
-    if program.monomorphized_structs.len > 0:
+    if program.monomorphized_structs.len > 0 or program.str_buffer_structs.len > 0:
         var merged = vec.Vec[ir.StructDecl].create()
         var mi: ptr_uint = 0
         while mi < program.structs.len:
@@ -123,6 +123,10 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
         mi = 0
         while mi < program.monomorphized_structs.len:
             merged.push(unsafe: read(program.monomorphized_structs.data + mi))
+            mi += 1
+        mi = 0
+        while mi < program.str_buffer_structs.len:
+            merged.push(unsafe: read(program.str_buffer_structs.data + mi))
             mi += 1
         program = ir.Program(
             module_name = program.module_name,
@@ -141,6 +145,7 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
             monomorphized_structs = program.monomorphized_structs,
             monomorphized_variants = program.monomorphized_variants,
             external_structs = program.external_structs,
+            str_buffer_structs = program.str_buffer_structs,
         )
     var e = Emitter(
         buffer = string.String.create(),

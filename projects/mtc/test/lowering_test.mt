@@ -3016,3 +3016,22 @@ function test_array_of_arrays_element_uses_a_checked_index() -> void:
     let text = dump.as_str()
     expect(text.contains_substring("(IR::CheckedIndex :receiver (IR::Name :name \"grid\""))
     expect(not text.contains_substring("(IR::Index :receiver (IR::Name :name \"grid\""))
+
+
+@[test]
+function test_str_buffer_struct_is_not_in_the_dump() -> void:
+    ## The synthetic `str_buffer[N]` structs ride `Program.str_buffer_structs`
+    ## (backend-only, like `external_structs`) — the host collects them from the
+    ## type universe, so the dump has no `IR::StructDecl mt_str_buffer_*`
+    ## (session 44, item 8b; `examples/raylib/core/clipboard_text.mt`).
+    var source = <<-SRC
+        function main() -> int:
+            var buffer: str_buffer[256] = zero[str_buffer[256]]
+            let text = buffer.as_str()
+            return int<-text.len
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(not text.contains_substring("IR::StructDecl :name \"mt_str_buffer_"))
+    expect(text.contains_substring("(Types::Generic :name \"str_buffer\" :arguments ((Types::LiteralTypeArg :value 256))"))

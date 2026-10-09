@@ -638,8 +638,24 @@ public function lower(program: loader.Program) -> ir.Program:
         i += 1
 
     # Synthetic value structs registered while lowering (the host's
-    # `synthetic_structs` synthetics) follow the module declarations.
-    dedup_append_structs(ref_of(structs), pending_synthetic_structs.as_span(), ref_of(seen_structs))
+    # `synthetic_structs` synthetics) follow the module declarations.  The
+    # `str_buffer[N]` structs are the exception: the host synthesizes them in
+    # the *C backend* from the type universe, so they ride
+    # `Program.str_buffer_structs` and the dumper never sees them (session 44,
+    # item 8b).
+    var plain_synthetic = vec.Vec[ir.StructDecl].create()
+    var str_buffer_synthetic = vec.Vec[ir.StructDecl].create()
+    let all_synthetic = pending_synthetic_structs.as_span()
+    var syn_i: ptr_uint = 0
+    while syn_i < all_synthetic.len:
+        unsafe:
+            let sd = read(all_synthetic.data + syn_i)
+            if sd.linkage_name.starts_with("mt_str_buffer_"):
+                str_buffer_synthetic.push(sd)
+            else:
+                plain_synthetic.push(sd)
+        syn_i += 1
+    dedup_append_structs(ref_of(structs), plain_synthetic.as_span(), ref_of(seen_structs))
 
     # Place each module's functions in the host's order (`lower_functions`):
     # declaration order, with a generic function's or method's instances grouped
@@ -748,6 +764,7 @@ public function lower(program: loader.Program) -> ir.Program:
         monomorphized_structs = monomorphized_structs.as_span(),
         monomorphized_variants = monomorphized_variants.as_span(),
         external_structs = external_structs.as_span(),
+        str_buffer_structs = str_buffer_synthetic.as_span(),
     )
 
 
@@ -14097,6 +14114,12 @@ function lower_foreign_arg(ctx: ref[LowerCtx], info: ForeignInfo, param: ast.For
             # host's `lower_contextual_expression` (int/float/string/null all
             # retype, not just `null`), resolved in the param's declaring
             # module (session 44, items 3ag/3ae/3fc).
+            # A boundary *cast* for a pointer-type mismatch is the host's, but
+            # only in some shapes — a blanket cast regressed 114 files
+            # (`const_ptr_of(buffer[0])` as `const_ptr[void]` wants it; a
+            # `ptr[ubyte]` argument at a `ptr[void]` boundary does not, and
+            # already has its own cast).  Item 8a is left open with that
+            # evidence.
             return literal_value_to_context_type(arg, foreign_param_context_type(ctx, info, param), lowered)
 
 

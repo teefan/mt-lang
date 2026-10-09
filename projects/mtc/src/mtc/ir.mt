@@ -231,6 +231,10 @@ public struct Program:
     # C backend's `mt_struct_eq_*` helper synthesis.  Not a declaration
     # section: the dumper ignores it and no C declaration is emitted for it.
     external_structs: span[ExternalStructLayout]
+    ## The synthetic `str_buffer[N]` structs the lowering registers: the host
+    ## collects them from the type universe and the C backend emits them, so
+    ## they ride here rather than in `:structs`.  The dumper ignores the field.
+    str_buffer_structs: span[StructDecl]
 
 
 ## One external struct's field layout, keyed by `naming.type_c_key` so the C
@@ -263,6 +267,7 @@ public function empty_program(module_name: str, source_path: str) -> Program:
         monomorphized_structs = span[StructDecl](),
         monomorphized_variants = span[VariantDecl](),
         external_structs = span[ExternalStructLayout](),
+        str_buffer_structs = span[StructDecl](),
     )
 
 

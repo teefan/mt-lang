@@ -543,3 +543,21 @@ function test_external_struct_equality_helper_is_synthesized() -> void:
     expect_contains(text, "if (left.generation != right.generation) return false;")
     expect_contains(text, "!mt_struct_eq_Part(a, b)")
 
+
+
+@[test]
+function test_emits_the_str_buffer_struct_from_the_backend() -> void:
+    ## The backend emits the `mt_str_buffer_<N>` typedef and struct definition
+    ## from `Program.str_buffer_structs` (the merging pass), even though the IR's
+    ## `:structs` section has none (session 44, item 8b).
+    var source = <<-SRC
+        function main() -> int:
+            var buffer: str_buffer[256] = zero[str_buffer[256]]
+            let text = buffer.as_str()
+            return int<-text.len
+    SRC
+    var c = compile_to_c(source)
+    defer: c.release()
+    let text = c.as_str()
+    expect(text.contains_substring("typedef struct mt_str_buffer_256 mt_str_buffer_256;"))
+    expect(text.contains_substring("struct mt_str_buffer_256 {"))
