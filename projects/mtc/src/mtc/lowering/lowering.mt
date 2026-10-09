@@ -7104,16 +7104,12 @@ function lower_index_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], index: 
             elem_ty = qualify_type(ctx, generic_first_arg(recv_ty))
         if types.is_error(elem_ty):
             elem_ty = qualify_type(ctx, generic_first_arg(receiver_type))
-    # A checked-index helper for an *array* element (e.g.
-    # `array[array[float, 2], 6]`) needs the host's nested declarator
-    # (`static inline float (*name(float (*array)[2], …))[2]`) and a decayed
-    # call — the backend emits neither yet, so an array-of-arrays element keeps
-    # the plain index (the host's `IR::CheckedIndex` here is a known gap;
-    # session 44, item 6a deferred to a backend pass).
+    # An array receiver always takes the bounds-checked index, including an
+    # array-of-arrays element (`POINTS_OF_INEST[0]` over
+    # `array[array[float, 2], 6]`): the host emits
+    # `mt_checked_index_array_array_float_2_6(POINTS_OF_INEST, 0)` and
+    # dereferences it (session 44, item 6a).
     if is_array_type(receiver_type):
-        let elem_t = generic_first_arg(receiver_type)
-        if is_array_type(elem_t):
-            return alloc_expr(ir.Expr.expr_index(receiver = recv, index = index_expr, ty = elem_ty))
         return alloc_expr(ir.Expr.expr_checked_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))
     if is_span_type(receiver_type):
         return alloc_expr(ir.Expr.expr_checked_span_index(receiver = recv, index = index_expr, receiver_type = receiver_type, ty = elem_ty))

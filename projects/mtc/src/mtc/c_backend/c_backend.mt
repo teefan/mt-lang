@@ -4335,7 +4335,7 @@ function render_expression(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
                 cast_buf.append(emit_cast_operand(e, cast.expression))
                 return cast_buf.as_str()
             ir.Expr.expr_checked_index as ci:
-                return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", render_address_of_operand(e, ci.receiver), j3(", ", render_expression(e, ci.index), "))"))
+                return j5("(*", checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), j3(", ", render_expression(e, ci.index), "))"))
             ir.Expr.expr_checked_span_index as cs:
                 return j5("(*", checked_span_index_helper_name(cs.receiver_type), "(", render_expression(e, cs.receiver), j3(", ", render_expression(e, cs.index), "))"))
             ir.Expr.expr_index as ix:
@@ -4422,7 +4422,7 @@ function render_address_of(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_checked_index as ci:
-                return j4(checked_array_index_helper_name(ci.receiver_type), "(", render_address_of_operand(e, ci.receiver), j3(", ", render_expression(e, ci.index), ")"))
+                return j4(checked_array_index_helper_name(ci.receiver_type), "(", wrap_member_receiver(e, ci.receiver), j3(", ", render_expression(e, ci.index), ")"))
             _:
                 return render_address_of_operand(e, ep)
 
@@ -4577,10 +4577,31 @@ function checked_from_expr(ep: ptr[ir.Expr], seen: ref[map_mod.Map[str, bool]], 
 
 function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -> void:
     let elem_type = array_element_type(receiver_type)
-    # When the element is itself an array (e.g. array[array[float,512],N]),
-    # the C function signature would be malformed.  Skip the helper — the
-    # outer array indexing doesn't need a bounds-check wrapper.
+    # When the element is itself an array (e.g. array[array[float, 2], 6]) the
+    # parameter and the return type are *pointers to the element* (the host's
+    # nested declarator) and the call passes the receiver decayed:
+    #   static inline float (*name(float (*array)[2], uintptr_t index))[2]
+    #     { … return &array[index]; }
     if is_array_type(elem_type):
+        let inner_c = c_type(array_element_type(elem_type))
+        let m = long_to_str(array_length(elem_type))
+        let name_arr = checked_array_index_helper_name(receiver_type)
+        var asig = string.String.create()
+        asig.append("static inline ")
+        asig.append(inner_c)
+        asig.append(" (*")
+        asig.append(name_arr)
+        asig.append("(")
+        asig.append(inner_c)
+        asig.append(" (*array)[")
+        asig.append(m)
+        asig.append("], uintptr_t index))[")
+        asig.append(m)
+        asig.append("] {")
+        emit_line(e, asig.as_str())
+        emit_line(e, j4("  if (index >= ", long_to_str(array_length(receiver_type)), ") mt_fatal(\"array index out of bounds\");", ""))
+        emit_line(e, "  return &array[index];")
+        emit_line(e, "}")
         return
     let elem_c = c_type(elem_type)
     let n = long_to_str(array_length(receiver_type))
@@ -4596,11 +4617,10 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
             sig.append(" (**")
             sig.append(name)
             sig.append("(")
-            var array_decl = string.String.create()
-            array_decl.append("(*array)[")
-            array_decl.append(n)
-            array_decl.append("]")
-            sig.append(c_fn_ptr_declarator(elem_type, array_decl.as_str()))
+            # The parameter is a pointer to the element (a function pointer):
+            # `RET (**array)(params)` — every call passes the receiver decayed
+            # (session 44, item 6a).
+            sig.append(c_fn_ptr_declarator(elem_type, "*array"))
             sig.append(", uintptr_t index))(")
             var fpi: ptr_uint = 0
             while fpi < fnt.params.len:
@@ -4622,12 +4642,10 @@ function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.Type) -
             sig.append(name)
             sig.append("(")
             sig.append(elem_c)
-            sig.append(" (*array)[")
-            sig.append(n)
-            sig.append("], uintptr_t index) {")
+            sig.append(" *array, uintptr_t index) {")
     emit_line(e, sig.as_str())
     emit_line(e, j4("  if (index >= ", n, ") mt_fatal(\"array index out of bounds\");", ""))
-    emit_line(e, "  return &(*array)[index];")
+    emit_line(e, "  return &array[index];")
     emit_line(e, "}")
 
 

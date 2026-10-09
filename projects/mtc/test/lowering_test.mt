@@ -2995,3 +2995,24 @@ function test_async_frame_names_use_a_double_underscore() -> void:
     expect(text.contains_substring("__frame"))
     expect(text.contains_substring("__resume"))
     expect(not text.contains_substring("_impl_frame"))
+
+
+@[test]
+function test_array_of_arrays_element_uses_a_checked_index() -> void:
+    ## An array-of-arrays element takes the bounds-checked index, like any
+    ## array receiver: the host emits
+    ## `mt_checked_index_array_array_int_2_3(grid, i)` and dereferences it
+    ## (session 44, item 6a; the backend emits the matching nested declarator
+    ## and passes the receiver decayed).
+    var source = <<-SRC
+        function main() -> int:
+            var grid: array[array[int, 2], 3] = zero[array[array[int, 2], 3]]
+            var i = 1
+            grid[i][0] = 5
+            return grid[i][0]
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::CheckedIndex :receiver (IR::Name :name \"grid\""))
+    expect(not text.contains_substring("(IR::Index :receiver (IR::Name :name \"grid\""))
