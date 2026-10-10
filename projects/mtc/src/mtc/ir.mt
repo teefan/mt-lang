@@ -65,7 +65,7 @@ public struct SwitchCase:
 # =============================================================================
 
 public variant Expr:
-    expr_name(name: str, ty: types.Type, pointer: bool)
+    expr_name(name: str, ty: types.Type, pointer: Option[bool])
     expr_member(receiver: ptr[Expr], member: str, ty: types.Type)
     expr_index(receiver: ptr[Expr], index: ptr[Expr], ty: types.Type)
     expr_checked_index(receiver: ptr[Expr], index: ptr[Expr], receiver_type: types.Type, ty: types.Type)

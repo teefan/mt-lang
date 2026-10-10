@@ -698,7 +698,7 @@ function ir_expr_value(ctx: ref[SexprCtx], ep: ptr[ir.Expr]) -> SexprValue:
                 var f = vec.Vec[SexprField].create()
                 f.push(field_str("name", x.name))
                 f.push(field_value("type", types_value(ctx, x.ty)))
-                f.push(field_bool("pointer", x.pointer))
+                f.push(field_optional_bool("pointer", x.pointer))
                 return node("IR::Name", f.as_span())
             ir.Expr.expr_member as x:
                 var f = vec.Vec[SexprField].create()

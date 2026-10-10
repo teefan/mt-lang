@@ -62,7 +62,10 @@ struct LocalBinding:
     name: str
     c_name: str
     ty: types.Type
-    pointer: bool
+    # The host's optional `pointer` on the read it produces: `none` for an async
+    # parameter binding (`__mt_frame->param_<name>`), whose `Name` the host
+    # leaves unset (frame_builder.rb's `async_resume_env_for`).
+    pointer: Option[bool]
     projection: BindingProjection
 
 
@@ -935,7 +938,7 @@ function lower_specialized_function(ctx: ref[LowerCtx], name: str, spec_key: str
         let p_ptr = false
         let p_link = array_param_input_name(p_ty, p_c, ref_of(param_setup))
         ir_params.push(ir.Param(name = p.name, linkage_name = p_link, ty = p_ty, pointer = Option[bool].some(value = p_ptr)))
-        ctx.locals.push(LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = p_ptr))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = p_c, ty = p_ty, pointer = Option[bool].some(value = p_ptr)))
         pi += 1
     var ret_ty = ctx.void_ty
     if return_type != null:
@@ -2200,7 +2203,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
         # host's `pointer_lowered_sync_method_receiver?`.
         let recv_is_ptr = receiver_by_pointer(ctx, receiver_ty, m.method_kind, m.is_async)
         ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = receiver_ty, pointer = Option[bool].some(value = recv_is_ptr)))
-        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = receiver_ty, pointer = recv_is_ptr))
+        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = receiver_ty, pointer = Option[bool].some(value = recv_is_ptr)))
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
         var p: ast.Param
@@ -2213,7 +2216,7 @@ function lower_method(ctx: ref[LowerCtx], c_name: str, receiver_ty: types.Type, 
         let is_ptr = false
         let link_name = array_param_input_name(param_ty, c_pname, ref_of(param_setup))
         ir_params.push(ir.Param(name = p.name, linkage_name = link_name, ty = param_ty, pointer = Option[bool].some(value = is_ptr)))
-        ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = param_ty, pointer = is_ptr))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = param_ty, pointer = Option[bool].some(value = is_ptr)))
         pi += 1
 
     let ret_ty = resolve_return_type(ctx, sig, m.return_type)
@@ -2301,7 +2304,7 @@ function array_param_input_name(param_ty: types.Type, c_name: str, setup: ref[ve
     if not is_array_type(param_ty):
         return c_name
     let input_name = j2(c_name, "_input")
-    let input_ref = alloc_expr(ir.Expr.expr_name(name = input_name, ty = param_ty, pointer = false))
+    let input_ref = alloc_expr(ir.Expr.expr_name(name = input_name, ty = param_ty, pointer = Option[bool].some(value = false)))
     setup.push(ir.Stmt.stmt_local(name = c_name, linkage_name = c_name, ty = param_ty, value = input_ref, line = 0, source_path = ""))
     return input_name
 
@@ -2362,7 +2365,7 @@ function lower_function(ctx: ref[LowerCtx], name: str, params: span[ast.Param], 
         let f_ptr = false
         let link_name = array_param_input_name(param_ty, c_name, ref_of(param_setup))
         ir_params.push(ir.Param(name = p.name, linkage_name = link_name, ty = param_ty, pointer = Option[bool].some(value = f_ptr)))
-        ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = f_ptr))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = c_name, ty = param_ty, pointer = Option[bool].some(value = f_ptr)))
         pi += 1
 
     var ret_ty = resolve_return_type(ctx, sig, return_type)
@@ -2418,12 +2421,12 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
 
         var body = vec.Vec[ir.Stmt].create()
         # mt_str* __mt_args_items = NULL;
-        let items_null = alloc_expr(ir.Expr.expr_name(name = "NULL", ty = items_ty, pointer = true))
+        let items_null = alloc_expr(ir.Expr.expr_name(name = "NULL", ty = items_ty, pointer = Option[bool].some(value = true)))
         body.push(ir.Stmt.stmt_local(name = "__mt_args_items", linkage_name = "__mt_args_items", ty = items_ty, value = items_null, line = 0, source_path = ""))
-        let items_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args_items", ty = items_ty, pointer = false))
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args_items", ty = items_ty, pointer = Option[bool].some(value = false)))
         # mt_span_str __mt_args = mt_entry_argv_to_span_str(argc, argv, &__mt_args_items);
-        let argc_expr = alloc_expr(ir.Expr.expr_name(name = "argc", ty = int_ty, pointer = false))
-        let argv_expr = alloc_expr(ir.Expr.expr_name(name = "argv", ty = char_ptr_ptr, pointer = false))
+        let argc_expr = alloc_expr(ir.Expr.expr_name(name = "argc", ty = int_ty, pointer = Option[bool].some(value = false)))
+        let argv_expr = alloc_expr(ir.Expr.expr_name(name = "argv", ty = char_ptr_ptr, pointer = Option[bool].some(value = false)))
         let items_addr = alloc_expr(ir.Expr.expr_address_of(expression = items_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(items_ty))))
         var bridge_args = vec.Vec[ir.Expr].create()
         unsafe:
@@ -2432,7 +2435,7 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
             bridge_args.push(read(items_addr))
         let bridge_call = alloc_expr(ir.Expr.expr_call(callee = "mt_entry_argv_to_span_str", arguments = bridge_args.as_span(), ty = span_str_ty))
         body.push(ir.Stmt.stmt_local(name = "__mt_args", linkage_name = "__mt_args", ty = span_str_ty, value = bridge_call, line = 0, source_path = ""))
-        let args_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args", ty = span_str_ty, pointer = false))
+        let args_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_args", ty = span_str_ty, pointer = Option[bool].some(value = false)))
 
         var call_args = vec.Vec[ir.Expr].create()
         unsafe:
@@ -2448,7 +2451,7 @@ function build_root_main_entrypoint(ctx: ref[LowerCtx], name: str, params: span[
         else:
             body.push(ir.Stmt.stmt_local(name = "__mt_exit", linkage_name = "__mt_exit", ty = int_ty, value = call, line = 0, source_path = ""))
             append_free_argv_items(ref_of(body), items_ref)
-            let exit_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_exit", ty = int_ty, pointer = false))
+            let exit_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_exit", ty = int_ty, pointer = Option[bool].some(value = false)))
             body.push(ir.Stmt.stmt_return(value = exit_ref, line = 0, source_path = ""))
 
         var entry_params = vec.Vec[ir.Param].create()
@@ -2745,7 +2748,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         let result_target_name = if ctx.async_result_c_name.len > 0: ctx.async_result_c_name else: "__mt_result"
                         # `return await X`: suspend, then store the awaited result.
                         if ctx.async_cps_active and expr_is_direct_await(rv):
-                            let ret_target = alloc_expr(ir.Expr.expr_name(name = result_target_name, ty = ctx.current_fn_return_type, pointer = false))
+                            let ret_target = alloc_expr(ir.Expr.expr_name(name = result_target_name, ty = ctx.current_fn_return_type, pointer = Option[bool].some(value = false)))
                             lower_async_await_into(ctx, output, direct_await_inner(rv), Option[ptr[ir.Expr]].some(value = ret_target))
                         else:
                             # Hoist any embedded awaits in the return value first.
@@ -2754,7 +2757,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                 rvh = async_hoist_awaits(ctx, output, rv)
                             let lowered = lower_expr(ctx, rvh)
                             output.push(ir.Stmt.stmt_assignment(
-                                target = alloc_expr(ir.Expr.expr_name(name = result_target_name, ty = ctx.current_fn_return_type, pointer = false)),
+                                target = alloc_expr(ir.Expr.expr_name(name = result_target_name, ty = ctx.current_fn_return_type, pointer = Option[bool].some(value = false))),
                                 operator = "=",
                                 value = lowered,
                             ))
@@ -2801,10 +2804,10 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                         let tc = utils.c_local_name(temp)
                         let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = ret_ty))
                         output.push(ir.Stmt.stmt_local(name = temp, linkage_name = tc, ty = ret_ty, value = zero_init, line = 0, source_path = ""))
-                        let result_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
+                        let result_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = Option[bool].some(value = false)))
                         lower_match_expr_to_ref(ctx, output, me.scrutinee, me.arms, result_ref)
                         flush_all_defers(ctx, output)
-                        let ret_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = false))
+                        let ret_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = ret_ty, pointer = Option[bool].some(value = false)))
                         output.push(ir.Stmt.stmt_return(value = ret_ref, line = r.line, source_path = ctx.analysis.source_path))
                         return
                     ast.Expr.expr_call as outer_call:
@@ -2819,7 +2822,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                     let chain_tmp = fresh_c_temp_name(ctx, "chain")
                                     let ct = utils.c_local_name(chain_tmp)
                                     output.push(ir.Stmt.stmt_local(name = chain_tmp, linkage_name = ct, ty = inner_ty, value = inner_result, line = 0, source_path = ""))
-                                    let lb = LocalBinding(name = chain_tmp, c_name = ct, ty = inner_ty, pointer = false)
+                                    let lb = LocalBinding(name = chain_tmp, c_name = ct, ty = inner_ty, pointer = Option[bool].some(value = false))
                                     let proc_ret = lower_proc_call(ctx, lb, outer_call.args, value)
                                     flush_all_defers(ctx, output)
                                     output.push(ir.Stmt.stmt_return(value = proc_ret, line = r.line, source_path = ""))
@@ -2849,7 +2852,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     let rc = utils.c_local_name(rtemp)
                     output.push(ir.Stmt.stmt_local(name = rtemp, linkage_name = rc, ty = ret_ty, value = wrapped, line = 0, source_path = ""))
                     flush_all_defers(ctx, output)
-                    let rref = alloc_expr(ir.Expr.expr_name(name = rc, ty = ret_ty, pointer = false))
+                    let rref = alloc_expr(ir.Expr.expr_name(name = rc, ty = ret_ty, pointer = Option[bool].some(value = false)))
                     output.push(ir.Stmt.stmt_return(value = rref, line = r.line, source_path = ctx.analysis.source_path))
                     return
                 flush_all_defers(ctx, output)
@@ -2933,7 +2936,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                                             let bc = utils.c_local_name(loc.name)
                                             let val_ir = lower_expr(ctx, cast_expr)
                                             output.push(ir.Stmt.stmt_local(name = loc.name, linkage_name = bc, ty = ir_expr_type(val_ir), value = val_ir, line = 0, source_path = ""))
-                                            ctx.locals.push(LocalBinding(name = loc.name, c_name = bc, ty = ir_expr_type(val_ir), pointer = false))
+                                            ctx.locals.push(LocalBinding(name = loc.name, c_name = bc, ty = ir_expr_type(val_ir), pointer = Option[bool].some(value = false)))
                                             return
                                     _:
                                         pass
@@ -3052,7 +3055,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                     append_hoist_cleanups(output, drop_format_release_cleanups(hoist_collected))
                 else:
                     append_hoist_cleanups(output, hoist_collected)
-                ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = false))
+                ctx.locals.push(LocalBinding(name = loc.name, c_name = c_name, ty = ty, pointer = Option[bool].some(value = false)))
                 if cstr_backed_binding(ctx, ty, init, value_expr):
                     ctx.cstr_backed_names.set(c_name, true)
             ast.Stmt.stmt_assignment as asg:
@@ -3435,7 +3438,7 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
     # stable; `_` and discarded bindings get a fresh temp.
     let storage_c = if name == "_": fresh_c_temp_name(ctx, "let_else_discard") else: utils.c_local_name(name)
     output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = line, source_path = ctx.analysis.source_path))
-    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
 
     let kind = guard_storage_kind(ctx, storage_ty)
 
@@ -3461,10 +3464,10 @@ function lower_guard_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], na
         let gfield = j2("local_", name)
         let gcname = j2("__mt_frame->", gfield)
         async_register_local_field(ctx, name, gfield, gcname, success_ty)
-        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = gcname, ty = success_ty, pointer = false)), operator = "=", value = success_val))
+        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = gcname, ty = success_ty, pointer = Option[bool].some(value = false))), operator = "=", value = success_val))
         return
     # No second local: reads project the success value out of the storage local.
-    ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = false, projection = guard_binding_projection(kind, storage_ty)))
+    ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = Option[bool].some(value = false), projection = guard_binding_projection(kind, storage_ty)))
 
 
 ## The projection a guard storage kind implies for its binding.
@@ -3494,7 +3497,7 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
     let storage_c = fresh_c_temp_name(ctx, "propagate")
     output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
-    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
 
     let kind = guard_storage_kind(ctx, storage_ty)
     if kind != "option" and kind != "result" and kind != "nullable":
@@ -3585,7 +3588,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
     # Hidden storage local holding the full Option/Result value.
     let storage_c = fresh_c_temp_name(ctx, "propagate")
     output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
-    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
 
     let kind = guard_storage_kind(ctx, storage_ty)
     # Pre-register arm payload fields for Option/Result so that
@@ -3694,7 +3697,7 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
         # than emitting a value-returning `return`.
         if not ctx.async_result_is_void:
             fail_body.push(ir.Stmt.stmt_assignment(
-                target = alloc_expr(ir.Expr.expr_name(name = ctx.async_result_c_name, ty = ctx.async_result_ty, pointer = false)),
+                target = alloc_expr(ir.Expr.expr_name(name = ctx.async_result_c_name, ty = ctx.async_result_ty, pointer = Option[bool].some(value = false))),
                 operator = "=",
                 value = fail_value,
             ))
@@ -3716,10 +3719,10 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
         let afield = j2("local_", name)
         let acname = j2("__mt_frame->", afield)
         async_register_local_field(ctx, name, afield, acname, success_ty)
-        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = afield, ty = success_ty)), operator = "=", value = success_val))
+        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = afield, ty = success_ty)), operator = "=", value = success_val))
         return
     # No second local: reads project the success value out of the propagation temp.
-    ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = false, projection = guard_binding_projection(kind, storage_ty)))
+    ctx.locals.push(LocalBinding(name = name, c_name = storage_c, ty = success_ty, pointer = Option[bool].some(value = false), projection = guard_binding_projection(kind, storage_ty)))
 
 
 ## Lower `target = expr?` (assignment form of `?` propagation).  Mirrors
@@ -3738,7 +3741,7 @@ function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
     let storage_c = fresh_c_temp_name(ctx, "propagate")
     output.push(ir.Stmt.stmt_local(name = storage_c, linkage_name = storage_c, ty = storage_ty, value = value_ir, line = 0, source_path = ""))
-    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
 
     let kind = guard_storage_kind(ctx, storage_ty)
     if kind == "option" or kind == "result":
@@ -3803,7 +3806,7 @@ function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
     if ctx.async_cps_active:
         if not ctx.async_result_is_void:
             fail_body.push(ir.Stmt.stmt_assignment(
-                target = alloc_expr(ir.Expr.expr_name(name = ctx.async_result_c_name, ty = ctx.async_result_ty, pointer = false)),
+                target = alloc_expr(ir.Expr.expr_name(name = ctx.async_result_c_name, ty = ctx.async_result_ty, pointer = Option[bool].some(value = false))),
                 operator = "=",
                 value = fail_value,
             ))
@@ -3906,7 +3909,7 @@ function guard_failure_condition(ctx: ref[LowerCtx], kind: str, storage_ty: type
     let absent_arm = if kind == "result": "failure" else: "none"
     let int_ty = types.primitive("int")
     let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = storage_ref, member = "kind", ty = int_ty))
-    let absent_const = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, absent_arm), ty = int_ty, pointer = false))
+    let absent_const = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, absent_arm), ty = int_ty, pointer = Option[bool].some(value = false)))
     return alloc_expr(ir.Expr.expr_binary(operator = "==", left = kind_expr, right = absent_const, ty = bool_ty))
 
 
@@ -4001,9 +4004,9 @@ function guard_failure_projection(ctx: ref[LowerCtx], storage_ty: types.Type, st
 ## resolves the name to the storage's failure projection (the host registers the
 ## same projection on the else env; no local is emitted).
 function register_result_failure_binding(ctx: ref[LowerCtx], storage_c: str, storage_ty: types.Type, error_name: str) -> void:
-    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = false))
+    let storage_ref = alloc_expr(ir.Expr.expr_name(name = storage_c, ty = storage_ty, pointer = Option[bool].some(value = false)))
     let (_, error_ty) = guard_failure_projection(ctx, storage_ty, storage_ref)
-    ctx.locals.push(LocalBinding(name = error_name, c_name = storage_c, ty = error_ty, pointer = false, projection = BindingProjection.result_failure_error(storage_ty = storage_ty)))
+    ctx.locals.push(LocalBinding(name = error_name, c_name = storage_c, ty = error_ty, pointer = Option[bool].some(value = false), projection = BindingProjection.result_failure_error(storage_ty = storage_ty)))
 
 
 ## Read a bound name.  A guard/propagation binding is projected out of its
@@ -4074,11 +4077,11 @@ function lower_destructure(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bi
                                 pass
                     _:
                         pass
-        let receiver = alloc_expr(ir.Expr.expr_name(name = temp, ty = val_ty, pointer = false))
+        let receiver = alloc_expr(ir.Expr.expr_name(name = temp, ty = val_ty, pointer = Option[bool].some(value = false)))
         let member = alloc_expr(ir.Expr.expr_member(receiver = receiver, member = member_name, ty = member_ty))
         let binding_c = utils.c_local_name(binding)
         output.push(ir.Stmt.stmt_local(name = binding, linkage_name = binding_c, ty = member_ty, value = member, line = 0, source_path = ""))
-        ctx.locals.push(LocalBinding(name = binding, c_name = binding_c, ty = member_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = binding, c_name = binding_c, ty = member_ty, pointer = Option[bool].some(value = false)))
         i += 1
 
 
@@ -5167,7 +5170,7 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
             stop_linkage = j2("__mt_frame->", stp_field)
             async_register_local_field(ctx, stop_c, stp_field, stop_linkage, loop_type)
     else:
-        ctx.locals.push(LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = false))
+        ctx.locals.push(LocalBinding(name = index_name, c_name = index_c, ty = loop_type, pointer = Option[bool].some(value = false)))
 
     let body_span = lower_block(ctx, body_ptr)
     var body = vec.Vec[ir.Stmt].create()
@@ -5175,7 +5178,7 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     if contains_label_target(body.as_span(), cl):
         body.push(ir.Stmt.stmt_label(name = cl))
 
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = false))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
     var init: ptr[ir.Stmt]
     if ctx.async_cps_active:
         init = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "=", value = lower_expr(ctx, start)))
@@ -5188,9 +5191,9 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
             line = 0,
             source_path = "",
         ))
-    let stop_value = if inline_stop: lower_expr(ctx, stop) else: alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = false))
+    let stop_value = if inline_stop: lower_expr(ctx, stop) else: alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
     let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = stop_value, ty = ctx.bool_ty))
-    let post_target = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = false))
+    let post_target = alloc_expr(ir.Expr.expr_name(name = index_linkage, ty = loop_type, pointer = Option[bool].some(value = false)))
     let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = loop_type))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = one))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = body.as_span())
@@ -5198,7 +5201,7 @@ function lower_for_range(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
     var block_stmts = vec.Vec[ir.Stmt].create()
     if not inline_stop:
         if ctx.async_cps_active:
-            block_stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = false)), operator = "=", value = lower_expr(ctx, stop)))
+            block_stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = stop_linkage, ty = loop_type, pointer = Option[bool].some(value = false))), operator = "=", value = lower_expr(ctx, stop)))
         else:
             block_stmts.push(ir.Stmt.stmt_local(
                 name = stop_c,
@@ -5266,17 +5269,17 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         items_linkage = j2("__mt_frame->", items_field)
         async_register_local_field(ctx, items_c, items_field, items_linkage, iterable_type)
 
-    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = element_type, pointer = false))
+    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = element_type, pointer = Option[bool].some(value = false)))
     let body_span = lower_block(ctx, body_ptr)
 
     # item value: array -> items[index]; span -> items.data[index]
     var item_value: ptr[ir.Expr]
-    let index_ref_item = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false))
+    let index_ref_item = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     if is_arr:
-        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = false))
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false)))
         item_value = alloc_expr(ir.Expr.expr_index(receiver = items_ref, index = index_ref_item, ty = element_type))
     else:
-        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = false))
+        let items_ref = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false)))
         var ptr_args = vec.Vec[types.Type].create()
         ptr_args.push(element_type)
         let data_ty = types.Type.ty_generic(name = "ptr", args = ptr_args.as_span())
@@ -5288,7 +5291,7 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     if is_arr:
         stop_value = alloc_expr(ir.Expr.expr_integer_literal(value = array_length_of(iterable_type), ty = ptr_uint_ty))
     else:
-        let items_ref_stop = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = false))
+        let items_ref_stop = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false)))
         stop_value = alloc_expr(ir.Expr.expr_member(receiver = items_ref_stop, member = "len", ty = ptr_uint_ty))
 
     var loop_body = vec.Vec[ir.Stmt].create()
@@ -5296,7 +5299,7 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
         let elt_field = j2("local_for_elt_", binding_name)
         let elt_cname = j2("__mt_frame->", elt_field)
         async_register_local_field(ctx, binding_name, elt_field, elt_cname, element_type)
-        loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = elt_cname, ty = element_type, pointer = false)), operator = "=", value = item_value))
+        loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = elt_cname, ty = element_type, pointer = Option[bool].some(value = false))), operator = "=", value = item_value))
     else:
         loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = element_type, value = item_value, line = 0, source_path = ""))
     var bi: ptr_uint = 0
@@ -5309,18 +5312,18 @@ function lower_collection_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
 
     var init: ptr[ir.Stmt]
     if ctx.async_cps_active:
-        init = alloc_stmt(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))))
+        init = alloc_stmt(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty))))
     else:
         init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let index_ref_cond = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false))
+    let index_ref_cond = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref_cond, right = stop_value, ty = ctx.bool_ty))
-    let post_target = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = false))
+    let post_target = alloc_expr(ir.Expr.expr_name(name = idx_linkage, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
 
     var block_stmts = vec.Vec[ir.Stmt].create()
     if ctx.async_cps_active:
-        block_stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = false)), operator = "=", value = lower_expr(ctx, iterable)))
+        block_stmts.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = items_linkage, ty = iterable_type, pointer = Option[bool].some(value = false))), operator = "=", value = lower_expr(ctx, iterable)))
     else:
         block_stmts.push(ir.Stmt.stmt_local(name = items_c, linkage_name = items_c, ty = iterable_type, value = lower_expr(ctx, iterable), line = 0, source_path = ""))
     block_stmts.push(for_stmt)
@@ -5349,7 +5352,7 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
         return
 
     let it_c = fresh_c_temp_name(ctx, "for_iterator")
-    ctx.locals.push(LocalBinding(name = it_c, c_name = it_c, ty = iter_ty, pointer = false))
+    ctx.locals.push(LocalBinding(name = it_c, c_name = it_c, ty = iter_ty, pointer = Option[bool].some(value = false)))
 
     let it_id = alloc_ast_expr(ast.Expr.expr_identifier(name = it_c, line = 0, column = 0))
     let next_callee = alloc_ast_expr(ast.Expr.expr_member_access(receiver = it_id, member_name = "next", line = 0, column = 0))
@@ -5378,7 +5381,7 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
     let binding_c = utils.c_local_name(binding_name)
     let binding_ty = if nullable_item: types.unwrap_nullable(next_ty) else: cur_ty
-    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = binding_ty, pointer = false))
+    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = binding_ty, pointer = Option[bool].some(value = false)))
     let body_span = lower_block(ctx, body_ptr)
 
     var break_body = vec.Vec[ir.Stmt].create()
@@ -5386,14 +5389,14 @@ function lower_custom_iter_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
 
     var loop_body = vec.Vec[ir.Stmt].create()
     if nullable_item:
-        let item_ref = alloc_expr(ir.Expr.expr_name(name = binding_c, ty = next_ty, pointer = false))
+        let item_ref = alloc_expr(ir.Expr.expr_name(name = binding_c, ty = next_ty, pointer = Option[bool].some(value = false)))
         loop_body.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = next_ty, value = next_call, line = 0, source_path = ""))
         let null_lit = alloc_expr(ir.Expr.expr_null_literal(ty = next_ty))
         let is_null = alloc_expr(ir.Expr.expr_binary(operator = "==", left = item_ref, right = null_lit, ty = ctx.bool_ty))
         loop_body.push(ir.Stmt.stmt_if(condition = is_null, then_body = break_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     else:
         let ready_c = fresh_c_temp_name(ctx, "for_ready")
-        let ready_ref = alloc_expr(ir.Expr.expr_name(name = ready_c, ty = ctx.bool_ty, pointer = false))
+        let ready_ref = alloc_expr(ir.Expr.expr_name(name = ready_c, ty = ctx.bool_ty, pointer = Option[bool].some(value = false)))
         loop_body.push(ir.Stmt.stmt_local(name = ready_c, linkage_name = ready_c, ty = ctx.bool_ty, value = next_call, line = 0, source_path = ""))
         let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = ready_ref, ty = ctx.bool_ty))
         loop_body.push(ir.Stmt.stmt_if(condition = not_ready, then_body = break_body.as_span(), else_body = Option[span[ir.Stmt]].none))
@@ -5481,14 +5484,14 @@ function lower_simd_with_call(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], simd_
     let temp = fresh_c_temp_name(ctx, "simd_with")
     var setup = vec.Vec[ir.Stmt].create()
     setup.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = simd_ty, value = src, line = 0, source_path = ""))
-    let temp_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = simd_ty, pointer = false))
+    let temp_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = simd_ty, pointer = Option[bool].some(value = false)))
     let simd_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(simd_ty))
     let addr = alloc_expr(ir.Expr.expr_address_of(expression = temp_ref, ty = simd_ptr_ty))
     let elem_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(elem_ty))
     let cast = alloc_expr(ir.Expr.expr_cast(target_type = elem_ptr_ty, expression = addr, ty = elem_ptr_ty))
     let lane_ref = alloc_expr(ir.Expr.expr_index(receiver = cast, index = index_ir, ty = elem_ty))
     setup.push(ir.Stmt.stmt_assignment(target = lane_ref, operator = "=", value = value_ir))
-    let result = alloc_expr(ir.Expr.expr_name(name = temp, ty = simd_ty, pointer = false))
+    let result = alloc_expr(ir.Expr.expr_name(name = temp, ty = simd_ty, pointer = Option[bool].some(value = false)))
     return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = result, ty = simd_ty))
 
 
@@ -5741,9 +5744,9 @@ function parallel_for_worker_fn(ctx: ref[LowerCtx], body_ir: span[ir.Stmt]) -> i
     let name = j2("mt_pfor_work_", uid)
     # Wrap body in a for-loop: for (let i = mt_pfor_start; i < mt_pfor_end; i += 1) { body }
     let index_c = "i"
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = long_ty, pointer = false))
-    let start_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_start", ty = long_ty, pointer = false))
-    let end_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_end", ty = long_ty, pointer = false))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = long_ty, pointer = Option[bool].some(value = false)))
+    let start_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_start", ty = long_ty, pointer = Option[bool].some(value = false)))
+    let end_ref = alloc_expr(ir.Expr.expr_name(name = "mt_pfor_end", ty = long_ty, pointer = Option[bool].some(value = false)))
     let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = end_ref, ty = ctx.bool_ty))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = long_ty))))
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = long_ty, value = start_ref, line = 0, source_path = ""))
@@ -5838,9 +5841,9 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
         # Prepend capture-unpacking preamble.
         var pf_pre = vec.Vec[ir.Stmt].create()
         let pf_cap_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = pfor_cap_name)))
-        let pf_data_local = ir.Stmt.stmt_local(name = "__cap", linkage_name = "__cap", ty = pf_cap_ptr, value = alloc_expr(ir.Expr.expr_cast(target_type = pf_cap_ptr, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr_ty(), pointer = false)), ty = pf_cap_ptr)), line = 0, source_path = "")
+        let pf_data_local = ir.Stmt.stmt_local(name = "__cap", linkage_name = "__cap", ty = pf_cap_ptr, value = alloc_expr(ir.Expr.expr_cast(target_type = pf_cap_ptr, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr_ty(), pointer = Option[bool].some(value = false))), ty = pf_cap_ptr)), line = 0, source_path = "")
         pf_pre.push(pf_data_local)
-        let pf_cap_ref = alloc_expr(ir.Expr.expr_name(name = "__cap", ty = pf_cap_ptr, pointer = false))
+        let pf_cap_ref = alloc_expr(ir.Expr.expr_name(name = "__cap", ty = pf_cap_ptr, pointer = Option[bool].some(value = false)))
         var pf_iter2 = pfor_captures.entries()
         while pf_iter2.next():
             let pe2 = pf_iter2.current()
@@ -5869,12 +5872,12 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
     let count_expr = alloc_expr(ir.Expr.expr_binary(operator = "-", left = end_expr, right = start_expr, ty = long_ty))
     var call_args = vec.Vec[ir.Expr].create()
     unsafe:
-        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
+        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = Option[bool].some(value = false)))))
     if pfor_has_captures:
         let pf_cap_ty = types.Type.ty_named(module_name = "", name = pfor_cap_name)
         let pf_cap_var = j2("__pf_cap_", pfor_uid)
         var pf_setup = vec.Vec[ir.Stmt].create()
-        let pf_cap_ref = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = false))
+        let pf_cap_ref = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = Option[bool].some(value = false)))
         pf_setup.push(ir.Stmt.stmt_local(name = pf_cap_var, linkage_name = pf_cap_var, ty = pf_cap_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = pf_cap_ty)), line = 0, source_path = ""))
         var pf_iter3 = pfor_captures.entries()
         while pf_iter3.next():
@@ -5883,7 +5886,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
                 fatal(c"lower_parallel_for: missing capture")
             let lb_val = unsafe: read(lb_ptr)
             let key = unsafe: read(pe3.key)
-            let outer_ref = alloc_expr(ir.Expr.expr_name(name = key, ty = lb_val.ty, pointer = false))
+            let outer_ref = alloc_expr(ir.Expr.expr_name(name = key, ty = lb_val.ty, pointer = Option[bool].some(value = false)))
             let field_ref = alloc_expr(ir.Expr.expr_member(receiver = pf_cap_ref, member = key, ty = lb_val.ty))
             if is_array_type(lb_val.ty):
                 let field_addr = alloc_expr(ir.Expr.expr_address_of(expression = field_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
@@ -5902,7 +5905,7 @@ function lower_parallel_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], b
             let psp = pf_setup_iter.next() else:
                 break
             output.push(unsafe: read(psp))
-        let pf_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = false)), ty = void_ptr_ty()))
+        let pf_data_ref = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = pf_cap_var, ty = pf_cap_ty, pointer = Option[bool].some(value = false))), ty = void_ptr_ty()))
         unsafe:
             call_args.push(read(pf_data_ref))
     else:
@@ -5974,9 +5977,9 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                 break
             var pre_body = vec.Vec[ir.Stmt].create()
             let cap_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = cap_struct_name)))
-            let data_local = ir.Stmt.stmt_local(name = "__cap", linkage_name = "__cap", ty = cap_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = cap_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr_ty(), pointer = false)), ty = cap_ptr_ty)), line = 0, source_path = "")
+            let data_local = ir.Stmt.stmt_local(name = "__cap", linkage_name = "__cap", ty = cap_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = cap_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr_ty(), pointer = Option[bool].some(value = false))), ty = cap_ptr_ty)), line = 0, source_path = "")
             pre_body.push(data_local)
-            let cap_ref = alloc_expr(ir.Expr.expr_name(name = "__cap", ty = cap_ptr_ty, pointer = false))
+            let cap_ref = alloc_expr(ir.Expr.expr_name(name = "__cap", ty = cap_ptr_ty, pointer = Option[bool].some(value = false)))
             var cap_iter2 = all_captures.entries()
             while cap_iter2.next():
                 let entry2 = cap_iter2.current()
@@ -6018,7 +6021,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
             let cap_ty = types.Type.ty_named(module_name = "", name = cap_struct_name)
             let cap_var = j3("__cap_", cap_uid, j2("_", pw1_str(i)))
             var cap_setup = vec.Vec[ir.Stmt].create()
-            let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = false))
+            let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = Option[bool].some(value = false)))
             cap_setup.push(ir.Stmt.stmt_local(name = cap_var, linkage_name = cap_var, ty = cap_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = cap_ty)), line = 0, source_path = ""))
             var cap_iter3 = all_captures.entries()
             while cap_iter3.next():
@@ -6027,7 +6030,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                     fatal(c"lower_parallel_block: missing capture")
                 let lb_val = unsafe: read(lb2_ptr)
                 let key = unsafe: read(entry3.key)
-                let outer_ref = alloc_expr(ir.Expr.expr_name(name = key, ty = lb_val.ty, pointer = false))
+                let outer_ref = alloc_expr(ir.Expr.expr_name(name = key, ty = lb_val.ty, pointer = Option[bool].some(value = false)))
                 let field_ref = alloc_expr(ir.Expr.expr_member(receiver = cap_ref, member = key, ty = lb_val.ty))
                 if is_array_type(lb_val.ty):
                     let field_addr = alloc_expr(ir.Expr.expr_address_of(expression = field_ref, ty = types.Type.ty_generic(name = "ptr", args = sp_type(lb_val.ty))))
@@ -6046,11 +6049,11 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
                 let csp = cs_iter.next() else:
                     break
                 output.push(unsafe: read(csp))
-            item_data = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = false)), ty = void_ptr_ty))
+            item_data = alloc_expr(ir.Expr.expr_address_of(expression = alloc_expr(ir.Expr.expr_name(name = cap_var, ty = cap_ty, pointer = Option[bool].some(value = false))), ty = void_ptr_ty))
         else:
             item_data = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))
         var item_fields = vec.Vec[ir.AggregateField].create()
-        item_fields.push(ir.AggregateField(name = "work", value = alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
+        item_fields.push(ir.AggregateField(name = "work", value = alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = Option[bool].some(value = false)))))
         item_fields.push(ir.AggregateField(name = "data", value = item_data))
         let item_agg = alloc_expr(ir.Expr.expr_aggregate_literal(ty = spawn_item_ty, fields = item_fields.as_span()))
         unsafe:
@@ -6063,7 +6066,7 @@ function lower_parallel_block(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]],
     output.push(ir.Stmt.stmt_local(name = tasks_var, linkage_name = tasks_var, ty = spawn_arr_ty, value = tasks_arr, line = 0, source_path = ""))
     var sa_args = vec.Vec[ir.Expr].create()
     unsafe:
-        sa_args.push(read(alloc_expr(ir.Expr.expr_name(name = tasks_var, ty = spawn_arr_ty, pointer = false))))
+        sa_args.push(read(alloc_expr(ir.Expr.expr_name(name = tasks_var, ty = spawn_arr_ty, pointer = Option[bool].some(value = false)))))
         sa_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-item_count, ty = types.primitive("int")))))
     output.push(ir.Stmt.stmt_expression(
         expression = alloc_expr(ir.Expr.expr_call(callee = "mt_spawn_all", arguments = sa_args.as_span(), ty = void_ty)),
@@ -6113,7 +6116,7 @@ function lower_detach_expr(ctx: ref[LowerCtx], expression: ptr[ast.Expr], ep: pt
     ctx.pending_synthetic_functions.push(worker)
     var da = vec.Vec[ir.Expr].create()
     unsafe:
-        da.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = false))))
+        da.push(read(alloc_expr(ir.Expr.expr_name(name = worker.linkage_name, ty = void_ty, pointer = Option[bool].some(value = false)))))
         da.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty()))))
     resume_stmt_setup(ctx, hoist_saved)
     return alloc_expr(ir.Expr.expr_call(callee = "mt_detach_run", arguments = da.as_span(), ty = void_ptr_ty()))
@@ -6179,17 +6182,17 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                         return lower_fn_to_proc(ctx, fn_c_name, fn_ty)
                                 _:
                                     pass
-                            return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = false))
+                            return alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = fn_ty, pointer = Option[bool].some(value = false)))
                         if ctx.analysis.events.contains(id.name):
                             # The event's global is emitted under its
                             # module-qualified linkage name.
-                            return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = expr_type(ctx, ep), pointer = false))
+                            return alloc_expr(ir.Expr.expr_name(name = naming.qualified_c_name(ctx.module_name, id.name), ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
                         match lookup_qualified_constant(ctx, id.name):
                             Option.some as qc:
-                                return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = expr_type(ctx, ep), pointer = false))
+                                return alloc_expr(ir.Expr.expr_name(name = qc.value, ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
                             Option.none:
                                 pass
-                        return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = false))
+                        return alloc_expr(ir.Expr.expr_name(name = id.name, ty = expr_type(ctx, ep), pointer = Option[bool].some(value = false)))
             ast.Expr.expr_binary_op as bin:
                 var left = lower_expr(ctx, bin.left)
                 var right: ptr[ir.Expr]
@@ -6417,14 +6420,14 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                                                     is_proc = false,
                                                     param_names = pnames.as_span(),
                                                 )
-                                            return alloc_expr(ir.Expr.expr_name(name = vspec_key, ty = fn_ty, pointer = false))
+                                            return alloc_expr(ir.Expr.expr_name(name = vspec_key, ty = fn_ty, pointer = Option[bool].some(value = false)))
                                     _:
                                         pass
                             Option.none:
                                 pass
                     _:
                         pass
-                return alloc_expr(ir.Expr.expr_name(name = "spec", ty = types.Type.ty_error, pointer = false))
+                return alloc_expr(ir.Expr.expr_name(name = "spec", ty = types.Type.ty_error, pointer = Option[bool].some(value = false)))
             ast.Expr.expr_match as me:
                 return lower_expression_match(ctx, me.scrutinee, me.arms, ep)
             ast.Expr.expr_range as rng:
@@ -6580,9 +6583,9 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
         # Build proc struct literal with env pointer.
         var fields = vec.Vec[ir.AggregateField].create()
         fields.push(ir.AggregateField(name = "env", value = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr, expression = setup_call, ty = void_ptr))))
-        fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(proc_ty), pointer = false))))
-        fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
-        fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
+        fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(proc_ty), pointer = Option[bool].some(value = false)))))
+        fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
+        fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
         resume_stmt_setup(ctx, hoist_saved)
         return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
 
@@ -6594,9 +6597,9 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
     let null_env = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))
     var fields = vec.Vec[ir.AggregateField].create()
     fields.push(ir.AggregateField(name = "env", value = null_env))
-    fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(proc_ty), pointer = false))))
-    fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
-    fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
+    fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(proc_ty), pointer = Option[bool].some(value = false)))))
+    fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
+    fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
 
     resume_stmt_setup(ctx, hoist_saved)
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
@@ -6907,7 +6910,7 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
     body.push(ir.Stmt.stmt_local(name = "env", linkage_name = "env", ty = env_ptr_ty, value = cast_env, line = 0, source_path = ""))
 
     # env->__mt_ref_count = 1
-    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = false))
+    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = Option[bool].some(value = false)))
     let ref_field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = "__mt_ref_count", ty = uint_ty))
     let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
     body.push(ir.Stmt.stmt_assignment(target = ref_field, operator = "=", value = one))
@@ -6919,7 +6922,7 @@ function build_env_setup_fn(ctx: ref[LowerCtx], c_name: str, env_type_name: str,
         let field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
         let pname_ptr = param_names.get(ci2) else:
             break
-        let cap_val = alloc_expr(ir.Expr.expr_name(name = unsafe: read(pname_ptr), ty = cap.ty, pointer = false))
+        let cap_val = alloc_expr(ir.Expr.expr_name(name = unsafe: read(pname_ptr), ty = cap.ty, pointer = Option[bool].some(value = false)))
         if is_array_type(cap.ty):
             let addr_of_field = alloc_expr(ir.Expr.expr_address_of(expression = field, ty = types.Type.ty_generic(name = "ptr", args = sp_type(cap.ty))))
             # An array argument already decays to a pointer in C; taking its
@@ -6981,12 +6984,12 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
         let p_ty = resolve_field_type_ref(ctx, p.param_type)
         let pc = utils.c_local_name(p.name)
         params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = Option[bool].some(value = false)))
-        ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = Option[bool].some(value = false)))
         pi += 1
 
     # Build body: first cast env to typed pointer, then unpack captures.
     var body_stmts = vec.Vec[ir.Stmt].create()
-    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
     let cast_env = alloc_expr(ir.Expr.expr_cast(target_type = env_ptr_ty, expression = env_expr, ty = env_ptr_ty))
     let env_local_name = fresh_c_temp_name(ctx, "env")
     body_stmts.push(ir.Stmt.stmt_local(name = env_local_name, linkage_name = env_local_name, ty = env_ptr_ty, value = cast_env, line = 0, source_path = ""))
@@ -6995,11 +6998,11 @@ function build_capturing_invoke(ctx: ref[LowerCtx], method_params: span[ast.Para
     var ci: ptr_uint = 0
     while ci < captures.len:
         let cap = unsafe: read(captures.data + ci)
-        let env_ref = alloc_expr(ir.Expr.expr_name(name = env_local_name, ty = env_ptr_ty, pointer = false))
+        let env_ref = alloc_expr(ir.Expr.expr_name(name = env_local_name, ty = env_ptr_ty, pointer = Option[bool].some(value = false)))
         let member = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
         let bc = utils.c_local_name(cap.name)
         body_stmts.push(ir.Stmt.stmt_local(name = cap.name, linkage_name = bc, ty = cap.ty, value = member, line = 0, source_path = ""))
-        ctx.locals.push(LocalBinding(name = cap.name, c_name = bc, ty = cap.ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = cap.name, c_name = bc, ty = cap.ty, pointer = Option[bool].some(value = false)))
         ci += 1
 
     # Append the original body.
@@ -7037,17 +7040,17 @@ function build_capturing_release(c_name: str, env_type_name: str, captures: span
     params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
     var body = vec.Vec[ir.Stmt].create()
 
-    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
     let cast_env = alloc_expr(ir.Expr.expr_cast(target_type = env_ptr_ty, expression = env_expr, ty = env_ptr_ty))
     body.push(ir.Stmt.stmt_local(name = "env", linkage_name = "env", ty = env_ptr_ty, value = cast_env, line = 0, source_path = ""))
-    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = false))
+    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = Option[bool].some(value = false)))
     let ref_field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = "__mt_ref_count", ty = uint_ty))
     let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
     body.push(ir.Stmt.stmt_assignment(target = ref_field, operator = "-=", value = one))
     let zero = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = uint_ty))
     let cond = alloc_expr(ir.Expr.expr_binary(operator = "==", left = ref_field, right = zero, ty = types.primitive("bool")))
     var then_body = vec.Vec[ir.Stmt].create()
-    let free_call = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = pack_single(alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = false))), ty = types.primitive("void")))
+    let free_call = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = pack_single(alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))), ty = types.primitive("void")))
     then_body.push(ir.Stmt.stmt_expression(expression = free_call, line = 0, source_path = ""))
     body.push(ir.Stmt.stmt_if(condition = cond, then_body = then_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
@@ -7062,10 +7065,10 @@ function build_capturing_retain(c_name: str, env_type_name: str) -> ir.Function:
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "__mt_proc_env", linkage_name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
     var body = vec.Vec[ir.Stmt].create()
-    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = false))
+    let env_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_proc_env", ty = void_ptr, pointer = Option[bool].some(value = false)))
     let cast_env = alloc_expr(ir.Expr.expr_cast(target_type = env_ptr_ty, expression = env_expr, ty = env_ptr_ty))
     body.push(ir.Stmt.stmt_local(name = "env", linkage_name = "env", ty = env_ptr_ty, value = cast_env, line = 0, source_path = ""))
-    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = false))
+    let env_ref = alloc_expr(ir.Expr.expr_name(name = "env", ty = env_ptr_ty, pointer = Option[bool].some(value = false)))
     let ref_field = alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = "__mt_ref_count", ty = uint_ty))
     let one = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = uint_ty))
     body.push(ir.Stmt.stmt_assignment(target = ref_field, operator = "+=", value = one))
@@ -7110,7 +7113,7 @@ function build_proc_invoke_fn(ctx: ref[LowerCtx], method_params: span[ast.Param]
         let p_ty = resolve_field_type_ref(ctx, p.param_type)
         let pc = utils.c_local_name(p.name)
         params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = Option[bool].some(value = false)))
-        ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = false))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = Option[bool].some(value = false)))
         pi += 1
 
     let body_stmts = lower_function_body(ctx, body)
@@ -7676,7 +7679,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         # Mirrors Ruby's ref_of/ptr_of/const_ptr_of handling.
                         match read(inner):
                             ir.Expr.expr_name as nm:
-                                if nm.pointer or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
+                                if nm.pointer.unwrap_or(false) or types.is_ref_type(nm.ty) or types.is_own_type(nm.ty):
                                     # The operand is already a pointer *value* whose
                                     # MT type is a reference (`ref[T]`), or the
                                     # binding itself is pointer-lowered, so the
@@ -7700,7 +7703,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                         if id.name == "const_ptr_of":
                                             kind = "const_ptr"
                                         direct_ty = types.Type.ty_generic(name = kind, args = sp_type(elem))
-                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = direct_ty, pointer = true))
+                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = direct_ty, pointer = Option[bool].some(value = true)))
                                 # ref[T] is already a pointer in C, so ptr_of/const_ptr_of
                                 # on a ref variable returns the variable directly as a raw
                                 # pointer to the referent; ref_of returns it as-is.
@@ -7714,7 +7717,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                                         adjusted_ty = types.Type.ty_generic(name = "const_ptr", args = elem_sp)
                                     if id.name == "ref_of":
                                         pass
-                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = adjusted_ty, pointer = true))
+                                    return alloc_expr(ir.Expr.expr_name(name = nm.name, ty = adjusted_ty, pointer = Option[bool].some(value = true)))
                             ir.Expr.expr_unary as un:
                                 if un.operator == "*":
                                     return un.operand
@@ -7824,7 +7827,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                     callee_ty = module_var_type(ctx, id.name)
                 if is_proc_type(callee_ty):
                     let c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                    let lb = LocalBinding(name = id.name, c_name = c_name, ty = callee_ty, pointer = false)
+                    let lb = LocalBinding(name = id.name, c_name = c_name, ty = callee_ty, pointer = Option[bool].some(value = false))
                     return lower_proc_call(ctx, lb, args, call_ep)
                 # Compile-time builtins: evaluate to constant literals rather than
                 # emitting runtime function calls.  has_attribute returns a bool;
@@ -7853,7 +7856,7 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                 match module_var_type(ctx, id.name):
                     types.Type.ty_function as fn_var_ty:
                         let c_name = naming.qualified_c_name(ctx.module_name, id.name)
-                        let callee_expr = alloc_expr(ir.Expr.expr_name(name = c_name, ty = module_var_type(ctx, id.name), pointer = false))
+                        let callee_expr = alloc_expr(ir.Expr.expr_name(name = c_name, ty = module_var_type(ctx, id.name), pointer = Option[bool].some(value = false)))
                         return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, unsafe: fn_var_ty.return_type, empty_fn_sig())
                     _:
                         pass
@@ -8964,7 +8967,7 @@ function ir_expr_is_pointer(e: ptr[ir.Expr]) -> bool:
     unsafe:
         match read(e):
             ir.Expr.expr_name as n:
-                return n.pointer
+                return n.pointer.unwrap_or(false)
             _:
                 return false
 
@@ -9920,7 +9923,7 @@ function lower_adapt_call(ctx: ref[LowerCtx], iface_type_ref: ptr[ast.TypeRef], 
                     ir.AggregateField(name = "vtable", value = alloc_expr(ir.Expr.expr_cast(
                         target_type = void_ptr,
                         expression = alloc_expr(ir.Expr.expr_address_of(
-                            expression = alloc_expr(ir.Expr.expr_name(name = vtable_name, ty = vtable_ty, pointer = false)),
+                            expression = alloc_expr(ir.Expr.expr_name(name = vtable_name, ty = vtable_ty, pointer = Option[bool].some(value = false))),
                             ty = vtable_ptr_ty,
                         )),
                         ty = void_ptr,
@@ -10197,17 +10200,17 @@ function gen_dyn_vtable_wrappers(ctx: ref[LowerCtx], concrete_name: str, concret
                     let inner_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(c_ty))
                     if pointer_recv:
                         unsafe:
-                            call_args.push(read(alloc_expr(ir.Expr.expr_cast(target_type = inner_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr, pointer = false)), ty = inner_ptr_ty))))
+                            call_args.push(read(alloc_expr(ir.Expr.expr_cast(target_type = inner_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr, pointer = Option[bool].some(value = false))), ty = inner_ptr_ty))))
                     else:
                         unsafe:
-                            call_args.push(read(alloc_expr(ir.Expr.expr_unary(operator = "*", operand = alloc_expr(ir.Expr.expr_cast(target_type = inner_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr, pointer = false)), ty = inner_ptr_ty)), ty = c_ty))))
+                            call_args.push(read(alloc_expr(ir.Expr.expr_unary(operator = "*", operand = alloc_expr(ir.Expr.expr_cast(target_type = inner_ptr_ty, expression = alloc_expr(ir.Expr.expr_name(name = "data", ty = void_ptr, pointer = Option[bool].some(value = false))), ty = inner_ptr_ty)), ty = c_ty))))
                 pi = 0
                 while pi < m.method_params.len:
                     var p: ast.Param
                     unsafe:
                         p = read(m.method_params.data + pi)
                     unsafe:
-                        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = utils.c_local_name(p.name), ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params), pointer = false))))
+                        call_args.push(read(alloc_expr(ir.Expr.expr_name(name = utils.c_local_name(p.name), ty = substitute_interface_type_params(resolve_field_type_ref(ctx, p.param_type), type_args, type_params), pointer = Option[bool].some(value = false)))))
                     pi += 1
                 let call_ret_ty = if types.is_void(ret_ty): ctx.void_ty else: ret_ty
                 body_stmts.push(ir.Stmt.stmt_return(
@@ -10293,7 +10296,7 @@ function gen_dyn_vtable_constant(ctx: ref[LowerCtx], iface_name: str, vtable_typ
         var ret = if m.return_type != null: resolve_field_type_ref(ctx, unsafe: read(ptr[ast.TypeRef]<-m.return_type)) else: ctx.void_ty
         ret = substitute_interface_type_params(ret, type_args, type_params)
         let fn_ty = types.Type.ty_function(name = "", params = fn_params.as_span(), return_type = types.alloc_type(ret), variadic = false, is_proc = false, param_names = fn_names.as_span())
-        fields.push(ir.AggregateField(name = m.name, value = alloc_expr(ir.Expr.expr_name(name = wrapper_c_name, ty = fn_ty, pointer = false))))
+        fields.push(ir.AggregateField(name = m.name, value = alloc_expr(ir.Expr.expr_name(name = wrapper_c_name, ty = fn_ty, pointer = Option[bool].some(value = false)))))
         mi += 1
     ctx.pending_dyn_constants.push(ir.Constant(
         name = vtable_c_name,
@@ -10947,7 +10950,7 @@ function build_receiver_arg(ctx: ref[LowerCtx], recv: ptr[ir.Expr], method_kind:
     unsafe:
         match read(recv):
             ir.Expr.expr_name as n:
-                recv_is_ptr_expr = n.pointer
+                recv_is_ptr_expr = n.pointer.unwrap_or(false)
             ir.Expr.expr_unary as u:
                 if u.operator == "*":
                     recv_deref = Option[ptr[ir.Expr]].some(value = u.operand)
@@ -11781,7 +11784,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
     if m.method_kind != ast.MethodKind.mk_static:
         let recv_is_ptr = receiver_by_pointer(ctx, recv_struct_ty, m.method_kind, m.is_async)
         ir_params.push(ir.Param(name = "this", linkage_name = utils.c_local_name("this"), ty = recv_struct_ty, pointer = Option[bool].some(value = recv_is_ptr)))
-        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = recv_struct_ty, pointer = recv_is_ptr))
+        ctx.locals.push(LocalBinding(name = "this", c_name = utils.c_local_name("this"), ty = recv_struct_ty, pointer = Option[bool].some(value = recv_is_ptr)))
 
     var pi: ptr_uint = 0
     while pi < m.method_params.len:
@@ -11792,7 +11795,7 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
         let c_pname = utils.c_local_name(p.name)
         let is_ptr = false
         ir_params.push(ir.Param(name = p.name, linkage_name = c_pname, ty = p_ty, pointer = Option[bool].some(value = is_ptr)))
-        ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = p_ty, pointer = is_ptr))
+        ctx.locals.push(LocalBinding(name = p.name, c_name = c_pname, ty = p_ty, pointer = Option[bool].some(value = is_ptr)))
         pi += 1
 
     var ret_ty = ctx.void_ty
@@ -11862,7 +11865,7 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
                     p_ty = read(fnt.params.data + pi)
                 let pname = jstr_i("arg_", pi)
                 inv_params.push(ir.Param(name = pname, linkage_name = pname, ty = p_ty, pointer = Option[bool].some(value = false)))
-                let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = p_ty, pointer = false))
+                let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = p_ty, pointer = Option[bool].some(value = false)))
                 unsafe:
                     call_args.push(read(arg_expr))
                 pi += 1
@@ -11889,9 +11892,9 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
             let lifecycle_ty = proc_lifecycle_fn_type()
             var fields = vec.Vec[ir.AggregateField].create()
             fields.push(ir.AggregateField(name = "env", value = alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))))
-            fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(fn_ty), pointer = false))))
-            fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = false))))
-            fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = false))))
+            fields.push(ir.AggregateField(name = "invoke", value = alloc_expr(ir.Expr.expr_name(name = invoke_str, ty = proc_invoke_field_type(fn_ty), pointer = Option[bool].some(value = false)))))
+            fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
+            fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
             return alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_ty, fields = fields.as_span()))
         _:
             fatal(c"lowering: fn_to_proc requires function type")
@@ -12284,13 +12287,13 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
     let callee = if once: info.subscribe_once_c_name else: info.subscribe_c_name
     var body = vec.Vec[ir.Stmt].create()
     let index_name = "i"
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = false))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
     let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = cap_lit, ty = bool_ty))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_name, linkage_name = index_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
     var loop_body = vec.Vec[ir.Stmt].create()
-    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
     let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
@@ -12300,11 +12303,11 @@ function build_event_subscribe_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo
     loop_body.push(if_active)
     let gen_ref = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
     loop_body.push(ir.Stmt.stmt_local(name = "__mt_gen", linkage_name = "__mt_gen", ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = gen_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty)), ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let gen_snap = alloc_expr(ir.Expr.expr_name(name = "__mt_gen", ty = ptr_uint_ty, pointer = false))
+    let gen_snap = alloc_expr(ir.Expr.expr_name(name = "__mt_gen", ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = gen_ref, operator = "=", value = gen_snap))
-    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = false))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     # Return Result.success(value = {slot, generation}).
@@ -12361,13 +12364,13 @@ function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRu
         callee = info.subscribe_stateful_c_name
     var body = vec.Vec[ir.Stmt].create()
     let index_name = "i"
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = false))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
     let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = cap_lit, ty = bool_ty))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_name, linkage_name = index_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
     var loop_body = vec.Vec[ir.Stmt].create()
-    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
     let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
@@ -12377,12 +12380,12 @@ function build_event_subscribe_stateful_fn(ctx: ref[LowerCtx], info: ref[EventRu
     loop_body.push(if_active)
     let gen_ref = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
     loop_body.push(ir.Stmt.stmt_local(name = "__mt_gen", linkage_name = "__mt_gen", ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = gen_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty)), ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let gen_snap = alloc_expr(ir.Expr.expr_name(name = "__mt_gen", ty = ptr_uint_ty, pointer = false))
+    let gen_snap = alloc_expr(ir.Expr.expr_name(name = "__mt_gen", ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = once, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = gen_ref, operator = "=", value = gen_snap))
-    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = false))))
-    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "state", ty = void_ptr_ty, pointer = false))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "listener", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "listener", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "state", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "state", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "wait_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     # Return Result.success(value = {slot, generation}).
     var sub_literal = alloc_expr(ir.Expr.expr_aggregate_literal(ty = sub_plain_ty, fields = sp_fields2(
@@ -12424,13 +12427,13 @@ function build_event_unsubscribe_fn(info: ref[EventRuntimeInfo], slot_cn: str, e
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
     let sub_ty = types.Type.ty_named(module_name = "", name = "mt_subscription")
     var body = vec.Vec[ir.Stmt].create()
-    let sub_ref = alloc_expr(ir.Expr.expr_name(name = "subscription", ty = sub_ty, pointer = false))
+    let sub_ref = alloc_expr(ir.Expr.expr_name(name = "subscription", ty = sub_ty, pointer = Option[bool].some(value = false)))
     let sub_slot = alloc_expr(ir.Expr.expr_member(receiver = sub_ref, member = "slot", ty = ptr_uint_ty))
     let sub_gen = alloc_expr(ir.Expr.expr_member(receiver = sub_ref, member = "generation", ty = ptr_uint_ty))
     let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
     let out_of_range = alloc_expr(ir.Expr.expr_binary(operator = ">=", left = sub_slot, right = cap_lit, ty = bool_ty))
     body.push(ir.Stmt.stmt_if(condition = out_of_range, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty)), line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
-    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
     let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = sub_slot, ty = slot_ty))
@@ -12457,13 +12460,13 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
     var body = vec.Vec[ir.Stmt].create()
     let index_name = "i"
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = false))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
     let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = cap_lit, ty = bool_ty))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_name, linkage_name = index_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
     var loop_body = vec.Vec[ir.Stmt].create()
-    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
     let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
@@ -12476,10 +12479,10 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     var wait_body = vec.Vec[ir.Stmt].create()
     let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.wait_frame_c_name)))
     wait_body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = slot_wait_frame, ty = wf_ptr_ty)), line = 0, source_path = ""))
-    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
+    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = Option[bool].some(value = true)))
     var result_val: ptr[ir.Expr]
     if info.has_payload:
-        let payload_ref = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = false))
+        let payload_ref = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = Option[bool].some(value = false)))
         var result_fields = vec.Vec[ir.AggregateField].create()
         result_fields.push(ir.AggregateField(name = "value", value = payload_ref))
         result_val = alloc_expr(ir.Expr.expr_variant_literal(ty = info.wait_result_ty, arm_name = "success", fields = result_fields.as_span()))
@@ -12512,7 +12515,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     unsafe:
         stateful_call_args.push(read(slot_state))
     if info.has_payload:
-        let payload_ref2 = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = false))
+        let payload_ref2 = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = Option[bool].some(value = false)))
         unsafe:
             stateful_call_args.push(read(payload_ref2))
     var stateful_fn_params = vec.Vec[types.Type].create()
@@ -12531,7 +12534,7 @@ function build_event_emit_fn(info: ref[EventRuntimeInfo], slot_cn: str, event_cn
     var call_body = vec.Vec[ir.Stmt].create()
     var call_args = vec.Vec[ir.Expr].create()
     if info.has_payload:
-        let payload_ref = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = false))
+        let payload_ref = alloc_expr(ir.Expr.expr_name(name = "payload", ty = info.payload_type, pointer = Option[bool].some(value = false)))
         unsafe:
             call_args.push(read(payload_ref))
     var listener_fn_params = vec.Vec[types.Type].create()
@@ -12569,11 +12572,11 @@ function build_event_wait_ready_fn(info: ref[EventRuntimeInfo], slot_cn: str, ev
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.wait_frame_c_name)))
     var body = vec.Vec[ir.Stmt].create()
-    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = false))
+    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let null_check = alloc_expr(ir.Expr.expr_binary(operator = "==", left = raw_expr, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
     body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty)), line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
-    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
+    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = Option[bool].some(value = true)))
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "ready", ty = bool_ty)), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -12588,24 +12591,24 @@ function build_event_wait_set_waiter_fn(info: ref[EventRuntimeInfo], slot_cn: st
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.wait_frame_c_name)))
     var body = vec.Vec[ir.Stmt].create()
-    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = false))
+    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let null_check = alloc_expr(ir.Expr.expr_binary(operator = "==", left = raw_expr, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
     var null_then = vec.Vec[ir.Stmt].create()
     let wake_fn_ty = types.Type.ty_function(name = "", params = single_ty_span(void_ptr_ty), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("frame"))
     let wake_fn_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(wake_fn_ty))
-    let waiter_arg = alloc_expr(ir.Expr.expr_name(name = "waiter", ty = void_ptr_ty, pointer = false))
+    let waiter_arg = alloc_expr(ir.Expr.expr_name(name = "waiter", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let cast_waiter = alloc_expr(ir.Expr.expr_cast(target_type = wake_fn_ptr_ty, expression = waiter_arg, ty = wake_fn_ptr_ty))
-    null_then.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_waiter, arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = false))), ty = void_ty)), line = 0, source_path = ""))
+    null_then.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_waiter, arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))), ty = void_ty)), line = 0, source_path = ""))
     null_then.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     body.push(ir.Stmt.stmt_if(condition = null_check, then_body = null_then.as_span(), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
-    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
+    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = Option[bool].some(value = true)))
     let ready_expr = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "ready", ty = bool_ty))
     var ready_then = vec.Vec[ir.Stmt].create()
-    ready_then.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_waiter, arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = false))), ty = void_ty)), line = 0, source_path = ""))
+    ready_then.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = cast_waiter, arguments = single_expr_span(alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))), ty = void_ty)), line = 0, source_path = ""))
     ready_then.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     body.push(ir.Stmt.stmt_if(condition = ready_expr, then_body = ready_then.as_span(), else_body = Option[span[ir.Stmt]].none))
-    body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "waiter_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = false))))
+    body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "waiter_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
     body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "waiter", ty = void_ptr_ty)), operator = "=", value = waiter_arg))
     body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
@@ -12624,7 +12627,7 @@ function build_event_wait_release_fn(info: ref[EventRuntimeInfo], slot_cn: str, 
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.wait_frame_c_name)))
     var body = vec.Vec[ir.Stmt].create()
-    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = false))
+    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let null_check = alloc_expr(ir.Expr.expr_binary(operator = "==", left = raw_expr, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
     body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = null, line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
@@ -12642,14 +12645,14 @@ function build_event_wait_take_result_fn(info: ref[EventRuntimeInfo], slot_cn: s
     let void_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(void_ty))
     let wf_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = info.wait_frame_c_name)))
     var body = vec.Vec[ir.Stmt].create()
-    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = false))
+    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
     let null_check = alloc_expr(ir.Expr.expr_binary(operator = "==", left = raw_expr, right = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty)), ty = bool_ty))
     var fail_fields = vec.Vec[ir.AggregateField].create()
     let event_error_ty = types.Type.ty_named(module_name = "", name = "EventError")
     fail_fields.push(ir.AggregateField(name = "error", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = event_error_ty))))
     body.push(ir.Stmt.stmt_if(condition = null_check, then_body = span_from_one(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_variant_literal(ty = info.wait_result_ty, arm_name = "failure", fields = fail_fields.as_span())), line = 0, source_path = "")), else_body = Option[span[ir.Stmt]].none))
     body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = raw_expr, ty = wf_ptr_ty)), line = 0, source_path = ""))
-    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
+    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = Option[bool].some(value = true)))
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "result", ty = info.wait_result_ty)), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "frame", linkage_name = "frame", ty = void_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -12669,13 +12672,13 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     let event_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(types.Type.ty_named(module_name = "", name = event_cn)))
     var body = vec.Vec[ir.Stmt].create()
     let index_name = "i"
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = false))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     let cap_lit = alloc_expr(ir.Expr.expr_integer_literal(value = long<-(info.capacity), ty = ptr_uint_ty))
     let cond = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = cap_lit, ty = bool_ty))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = index_ref, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_name, linkage_name = index_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
     var loop_body = vec.Vec[ir.Stmt].create()
-    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = false))
+    let event_ref = alloc_expr(ir.Expr.expr_name(name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
     let slot_arr_ty = types.Type.ty_generic(name = "array", args = sp_type2(slot_ty, types.literal_int(long<-(info.capacity))))
     let slots_ref = alloc_expr(ir.Expr.expr_member(receiver = event_ref, member = "slots", ty = slot_arr_ty))
     let slot_ref = alloc_expr(ir.Expr.expr_index(receiver = slots_ref, index = index_ref, ty = slot_ty))
@@ -12683,7 +12686,7 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     loop_body.push(ir.Stmt.stmt_if(condition = slot_active, then_body = span_from_one(ir.Stmt.stmt_continue), else_body = Option[span[ir.Stmt]].none))
     let gen_ref = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "generation", ty = ptr_uint_ty))
     loop_body.push(ir.Stmt.stmt_local(name = "__mt_gen", linkage_name = "__mt_gen", ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = gen_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty)), ty = ptr_uint_ty)), line = 0, source_path = ""))
-    let gen_snap = alloc_expr(ir.Expr.expr_name(name = "__mt_gen", ty = ptr_uint_ty, pointer = false))
+    let gen_snap = alloc_expr(ir.Expr.expr_name(name = "__mt_gen", ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "active", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = slot_ref, member = "once", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = gen_ref, operator = "=", value = gen_snap))
@@ -12691,7 +12694,7 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     let wf_size_expr = alloc_expr(ir.Expr.expr_sizeof(target_type = types.Type.ty_named(module_name = "", name = info.wait_frame_c_name), ty = ptr_uint_ty))
     let alloc_call = alloc_expr(ir.Expr.expr_call(callee = "mt_async_alloc", arguments = single_expr_span(wf_size_expr), ty = void_ptr_ty))
     loop_body.push(ir.Stmt.stmt_local(name = "__mt_wf", linkage_name = "__mt_wf", ty = wf_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = wf_ptr_ty, expression = alloc_call, ty = wf_ptr_ty)), line = 0, source_path = ""))
-    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = true))
+    let wf_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_wf", ty = wf_ptr_ty, pointer = Option[bool].some(value = true)))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = false, ty = bool_ty))))
     loop_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = wf_ref, member = "waiter_frame", ty = void_ptr_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
     let event_cast = alloc_expr(ir.Expr.expr_cast(target_type = void_ptr_ty, expression = event_ref, ty = void_ptr_ty))
@@ -12709,22 +12712,22 @@ function build_event_wait_fn(ctx: ref[LowerCtx], info: ref[EventRuntimeInfo], sl
     let task_ty = make_task_type(info.wait_result_ty)
     var tf = vec.Vec[ir.AggregateField].create()
     tf.push(ir.AggregateField(name = "frame",       value = wf_void))
-    tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = info.wait_ready_c_name, ty = void_ptr_ty, pointer = false))))
-    tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = info.wait_set_waiter_c_name, ty = void_ptr_ty, pointer = false))))
-    tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = info.wait_release_c_name, ty = void_ptr_ty, pointer = false))))
-    tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = info.wait_take_result_c_name, ty = void_ptr_ty, pointer = false))))
-    tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = info.wait_release_c_name, ty = void_ptr_ty, pointer = false))))
+    tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = info.wait_ready_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = info.wait_set_waiter_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = info.wait_release_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = info.wait_take_result_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = info.wait_release_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
     loop_body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = tf.as_span())), line = 0, source_path = ""))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = cond, post = post, body = loop_body.as_span())
     body.push(for_stmt)
     # All slots were active — return a failing task
     var fail_tf = vec.Vec[ir.AggregateField].create()
     fail_tf.push(ir.AggregateField(name = "frame",       value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = void_ptr_ty))))
-    fail_tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = info.wait_ready_c_name, ty = void_ptr_ty, pointer = false))))
-    fail_tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = info.wait_set_waiter_c_name, ty = void_ptr_ty, pointer = false))))
-    fail_tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = info.wait_release_c_name, ty = void_ptr_ty, pointer = false))))
-    fail_tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = info.wait_take_result_c_name, ty = void_ptr_ty, pointer = false))))
-    fail_tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = info.wait_release_c_name, ty = void_ptr_ty, pointer = false))))
+    fail_tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = info.wait_ready_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    fail_tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = info.wait_set_waiter_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    fail_tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = info.wait_release_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    fail_tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = info.wait_take_result_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
+    fail_tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = info.wait_release_c_name, ty = void_ptr_ty, pointer = Option[bool].some(value = false)))))
     body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = fail_tf.as_span())), line = 0, source_path = ""))
     var params = vec.Vec[ir.Param].create()
     params.push(ir.Param(name = "event", linkage_name = "event", ty = event_ptr_ty, pointer = Option[bool].some(value = false)))
@@ -12801,7 +12804,7 @@ function lower_listener_arg(ctx: ref[LowerCtx], arg: ptr[ast.Expr]) -> ptr[ir.Ex
                     let void_fn_ty = types.Type.ty_function(name = "", params = span[types.Type](), return_type = types.alloc_type(void_ty), variadic = false, is_proc = false, param_names = span[str]())
                     return alloc_expr(ir.Expr.expr_cast(
                         target_type = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)),
-                        expression = alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = void_fn_ty, pointer = false)),
+                        expression = alloc_expr(ir.Expr.expr_name(name = fn_c_name, ty = void_fn_ty, pointer = Option[bool].some(value = false))),
                         ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty)),
                     ))
             _:
@@ -12912,7 +12915,7 @@ function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], ar
             let scrut_expr = lower_expr(ctx, scrutinee)
             let int_ty = types.primitive("int")
             let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_expr, member = "kind", ty = int_ty))
-            let kind_const = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, arm_name.value), ty = int_ty, pointer = false))
+            let kind_const = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, arm_name.value), ty = int_ty, pointer = Option[bool].some(value = false)))
             return alloc_expr(ir.Expr.expr_binary(operator = "==", left = kind_expr, right = kind_const, ty = ctx.bool_ty))
         Option.none:
             pass
@@ -12920,7 +12923,7 @@ function lower_expression_match(ctx: ref[LowerCtx], scrutinee: ptr[ast.Expr], ar
     # supported inline (needs statement hoisting); `return match` is handled at
     # the statement boundary in `lower_stmt`.  Fall back to a placeholder.
     let result_ty = expr_type(ctx, ep)
-    return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = result_ty, pointer = false))
+    return alloc_expr(ir.Expr.expr_name(name = "match_expr", ty = result_ty, pointer = Option[bool].some(value = false)))
 
 
 ## Detect the `is`-operator desugaring shape: exactly two arms, where the first
@@ -13501,7 +13504,7 @@ function lower_foreign_call(ctx: ref[LowerCtx], info: ForeignInfo, args: span[as
             let tc = fresh_c_temp_name(ctx, "foreign_arg")
             setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = cstr_ty, value = lowered, line = 0, source_path = ""))
             cstr_temps.push(tc)
-            lowered = alloc_expr(ir.Expr.expr_name(name = tc, ty = cstr_ty, pointer = false))
+            lowered = alloc_expr(ir.Expr.expr_name(name = tc, ty = cstr_ty, pointer = Option[bool].some(value = false)))
         unsafe:
             ir_args.push(read(lowered))
         i += 1
@@ -13588,7 +13591,7 @@ function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]
             while hi < cstr_temps.len():
                 ctx.hoist_stmts.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hi)))
                 hi += 1
-            return alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = false))
+            return alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = Option[bool].some(value = false)))
         var hj: ptr_uint = 0
         while hj < cstr_temps.len():
             ctx.hoist_cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hj)))
@@ -13615,14 +13618,14 @@ function wrap_foreign_cstr_frees(ctx: ref[LowerCtx], setup: ref[vec.Vec[ir.Stmt]
     while fj < cstr_temps.len():
         setup.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, fj)))
         fj += 1
-    let ret_result = alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = false))
+    let ret_result = alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = Option[bool].some(value = false)))
     return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = ret_result, ty = ret_ty))
 
 
 ## `mt_free_foreign_cstr_temp(<name>)` as an IR call expression (void).
 function free_cstr_temp_call(name: str) -> ptr[ir.Expr]:
     let cstr_ty = types.primitive("cstr")
-    let name_ref = alloc_expr(ir.Expr.expr_name(name = name, ty = cstr_ty, pointer = false))
+    let name_ref = alloc_expr(ir.Expr.expr_name(name = name, ty = cstr_ty, pointer = Option[bool].some(value = false)))
     var free_args = vec.Vec[ir.Expr].create()
     unsafe:
         free_args.push(read(name_ref))
@@ -13649,7 +13652,7 @@ function materialize_foreign_address_arg(ctx: ref[LowerCtx], lowered: ptr[ir.Exp
                 let op_ty = ir_expr_type(addr.expression)
                 let tc = fresh_c_temp_name(ctx, "foreign_in")
                 setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = op_ty, value = addr.expression, line = 0, source_path = ""))
-                let name_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = op_ty, pointer = false))
+                let name_ref = alloc_expr(ir.Expr.expr_name(name = tc, ty = op_ty, pointer = Option[bool].some(value = false)))
                 return alloc_expr(ir.Expr.expr_address_of(expression = name_ref, ty = addr.ty))
             _:
                 return lowered
@@ -13747,12 +13750,12 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
             let n_val = str_buffer_capacity_of(sb_ty)
             let pub_tc = fresh_c_temp_name(ctx, "foreign_arg_public")
             setup.push(ir.Stmt.stmt_local(name = pub_tc, linkage_name = pub_tc, ty = sb_ty, value = pub_ir, line = 0, source_path = ""))
-            ctx.locals.push(LocalBinding(name = j2(param.name, "_public"), c_name = pub_tc, ty = sb_ty, pointer = false))
+            ctx.locals.push(LocalBinding(name = j2(param.name, "_public"), c_name = pub_tc, ty = sb_ty, pointer = Option[bool].some(value = false)))
 
             let char_ty = types.primitive("char")
             let char_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(char_ty))
             let bool_ptr_ty = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.bool_ty))
-            let pub_ref = alloc_expr(ir.Expr.expr_name(name = pub_tc, ty = sb_ty, pointer = false))
+            let pub_ref = alloc_expr(ir.Expr.expr_name(name = pub_tc, ty = sb_ty, pointer = Option[bool].some(value = false)))
             let data_member = alloc_expr(ir.Expr.expr_member(receiver = pub_ref, member = "data", ty = types.Type.ty_generic(name = "array", args = sp_type2(char_ty, types.literal_int(n_val + 1)))))
             let data0 = alloc_expr(ir.Expr.expr_index(receiver = data_member, index = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("ptr_uint"))), ty = char_ty))
             let data_ptr = alloc_expr(ir.Expr.expr_address_of(expression = data0, ty = char_ptr_ty))
@@ -13766,7 +13769,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
             let pw_call = alloc_expr(ir.Expr.expr_call(callee = "mt_str_buffer_prepare_write", arguments = pw_args.as_span(), ty = char_ptr_ty))
             let proj_tc = fresh_c_temp_name(ctx, "foreign_arg")
             setup.push(ir.Stmt.stmt_local(name = proj_tc, linkage_name = proj_tc, ty = char_ptr_ty, value = pw_call, line = 0, source_path = ""))
-            ctx.locals.push(LocalBinding(name = param.name, c_name = proj_tc, ty = char_ptr_ty, pointer = false))
+            ctx.locals.push(LocalBinding(name = param.name, c_name = proj_tc, ty = char_ptr_ty, pointer = Option[bool].some(value = false)))
             i += 1
             continue
 
@@ -13819,7 +13822,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
                 let uty = ir_expr_type(public_ir)
                 let tcp = fresh_c_temp_name(ctx, "foreign_arg_public")
                 setup.push(ir.Stmt.stmt_local(name = tcp, linkage_name = tcp, ty = uty, value = public_ir, line = 0, source_path = ""))
-                ctx.locals.push(LocalBinding(name = pub_name, c_name = tcp, ty = uty, pointer = false))
+                ctx.locals.push(LocalBinding(name = pub_name, c_name = tcp, ty = uty, pointer = Option[bool].some(value = false)))
 
         i += 1
 
@@ -13863,7 +13866,7 @@ function lower_inline_foreign_mapping(ctx: ref[LowerCtx], info: ForeignInfo, arg
         if needs_temp:
             let tc = fresh_c_temp_name(ctx, "foreign_arg")
             setup.push(ir.Stmt.stmt_local(name = tc, linkage_name = tc, ty = b.ty, value = b.value, line = 0, source_path = ""))
-            ctx.locals.push(LocalBinding(name = b.name, c_name = tc, ty = b.ty, pointer = false))
+            ctx.locals.push(LocalBinding(name = b.name, c_name = tc, ty = b.ty, pointer = Option[bool].some(value = false)))
             if b.is_cstr:
                 cstr_temps.push(tc)
         else:
@@ -14486,7 +14489,7 @@ function addr_operand_expression(ep: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
-                if n.pointer:
+                if n.pointer.unwrap_or(false):
                     return Option[ptr[ir.Expr]].some(value = ep)
                 return Option[ptr[ir.Expr]].none
             ir.Expr.expr_unary as u:
@@ -15161,7 +15164,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                     return alloc_expr(ir.Expr.expr_name(
                         name = "EventError_full",
                         ty = expr_type(ctx, ep),
-                        pointer = false,
+                        pointer = Option[bool].some(value = false),
                     ))
                 if ctx.analysis.static_member_types.contains(id.name):
                     var member_ty = expr_type(ctx, ep)
@@ -15175,7 +15178,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                     return alloc_expr(ir.Expr.expr_name(
                         name = naming.qualified_member_c_name(ctx.module_name, id.name, member),
                         ty = member_ty,
-                        pointer = false,
+                        pointer = Option[bool].some(value = false),
                     ))
                 # Resolve `import_alias.member` through the imported module.
                 let mod_ptr = ctx.analysis.imports.get(id.name)
@@ -15198,14 +15201,14 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                 return alloc_expr(ir.Expr.expr_name(
                                     name = c_name,
                                     ty = member_ty,
-                                    pointer = false,
+                                    pointer = Option[bool].some(value = false),
                                 ))
                             if imported.value.value_types.contains(member):
                                 let c_name = imported_member_c_name(ctx, imported.value, target_module, member)
                                 return alloc_expr(ir.Expr.expr_name(
                                     name = c_name,
                                     ty = expr_type(ctx, ep),
-                                    pointer = false,
+                                    pointer = Option[bool].some(value = false),
                                 ))
                         Option.none:
                             pass
@@ -15285,7 +15288,7 @@ function lower_member_access(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], member
                                                 return alloc_expr(ir.Expr.expr_name(
                                                     name = member_c_name,
                                                     ty = expr_type(ctx, ep),
-                                                    pointer = false,
+                                                    pointer = Option[bool].some(value = false),
                                                 ))
                                 Option.none:
                                     pass
@@ -16555,7 +16558,7 @@ function lower_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], scrutine
             let value = alloc_expr(ir.Expr.expr_name(
                 name = enum_member_reference_c_name(ctx, enum_module, enum_name, member),
                 ty = scrutinee_ty,
-                pointer = false,
+                pointer = Option[bool].some(value = false),
             ))
             cases.push(ir.SwitchCase(is_default = false, value = value, body = body))
         i += 1
@@ -16731,7 +16734,7 @@ function lower_string_match(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], s
             fatal(c"lowering: string match value")
         let body_ptr = lit_bodies.get(idx) else:
             fatal(c"lowering: string match body")
-        let name_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = str_ty, pointer = false))
+        let name_ref = alloc_expr(ir.Expr.expr_name(name = temp, ty = str_ty, pointer = Option[bool].some(value = false)))
         let condition = alloc_expr(ir.Expr.expr_binary(
             operator = "==",
             left = name_ref,
@@ -16812,10 +16815,10 @@ function lower_match_expression_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir
     let zero_init = alloc_expr(ir.Expr.expr_zero_init(ty = ty))
     output.push(ir.Stmt.stmt_local(name = name, linkage_name = c_name, ty = ty, value = zero_init, line = 0, source_path = ""))
 
-    let result_ref = alloc_expr(ir.Expr.expr_name(name = c_name, ty = ty, pointer = false))
+    let result_ref = alloc_expr(ir.Expr.expr_name(name = c_name, ty = ty, pointer = Option[bool].some(value = false)))
     lower_match_expr_to_ref(ctx, output, scrutinee, arms, result_ref)
 
-    ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = ty, pointer = false))
+    ctx.locals.push(LocalBinding(name = name, c_name = c_name, ty = ty, pointer = Option[bool].some(value = false)))
 
 
 ## Lower a match expression so each arm assigns its value to `result_ref`, using
@@ -16856,7 +16859,7 @@ function lower_match_expr_to_ref(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt
         if binds_payload and is_variant and not duplicable_foreign_value(scrutinee_expr):
             let temp = fresh_c_temp_name(ctx, "match_value")
             output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrutinee_ty, value = scrutinee_expr, line = 0, source_path = ""))
-            scrutinee_expr = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrutinee_ty, pointer = false))
+            scrutinee_expr = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrutinee_ty, pointer = Option[bool].some(value = false)))
 
     let type_name = named_type_name(scrutinee_ty)
     if is_str_scrutinee(scrutinee_ty):
@@ -17080,7 +17083,7 @@ function lower_enum_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]]
                     let value = alloc_expr(ir.Expr.expr_name(
                         name = enum_member_reference_c_name(ctx, enum_module, tn.value, member),
                         ty = ir_expr_type(scrutinee_expr),
-                        pointer = false,
+                        pointer = Option[bool].some(value = false),
                     ))
                     cases.push(ir.SwitchCase(is_default = false, value = value, body = body.as_span()))
                 Option.none:
@@ -17122,7 +17125,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                     # 1166-1173) always declares the binding as a C local — its
                     # async path has no frame spill here.
                     body.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
-                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
+                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = Option[bool].some(value = false)))
                 Option.none:
                     pass
         let lowered_val = lower_expr(ctx, arm.value)
@@ -17136,7 +17139,7 @@ function lower_variant_match_expr(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             let kind_const = alloc_expr(ir.Expr.expr_name(
                 name = variant_kind_const_name(outer_c, arm_name),
                 ty = int_ty,
-                pointer = false,
+                pointer = Option[bool].some(value = false),
             ))
             cases.push(ir.SwitchCase(is_default = false, value = kind_const, body = body.as_span()))
         i += 1
@@ -17211,7 +17214,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             let temp = fresh_c_temp_name(ctx, "match_value")
             let scrut_ty = ir_expr_type(scrut_base)
             output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrut_ty, value = scrut_base, line = 0, source_path = ""))
-            scrut_base = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = false))
+            scrut_base = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = Option[bool].some(value = false)))
 
     let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
     var cases = vec.Vec[ir.SwitchCase].create()
@@ -17252,7 +17255,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                             reg_field = unsafe: read(ptr[str]<-fname_ptr)
                             reg_field_ty = binding_ty
                     stmts.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = binding_ty, value = arm_data, line = 0, source_path = ""))
-                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = false))
+                    ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = binding_ty, pointer = Option[bool].some(value = false)))
                 Option.none:
                     pass
             let body = lower_switch_arm_body(ctx, arm.body)
@@ -17266,7 +17269,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             let kind_const = alloc_expr(ir.Expr.expr_name(
                 name = variant_kind_const_name(outer_c, arm_name),
                 ty = int_ty,
-                pointer = false,
+                pointer = Option[bool].some(value = false),
             ))
             cases.push(ir.SwitchCase(is_default = false, value = kind_const, body = stmts.as_span()))
         i += 1
@@ -17291,7 +17294,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
         let temp = fresh_c_temp_name(ctx, "match_value")
         let scrut_ty = ir_expr_type(scrut_base)
         output.push(ir.Stmt.stmt_local(name = temp, linkage_name = temp, ty = scrut_ty, value = scrut_base, line = 0, source_path = ""))
-        scrut_base = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = false))
+        scrut_base = alloc_expr(ir.Expr.expr_name(name = temp, ty = scrut_ty, pointer = Option[bool].some(value = false)))
 
     ctx.match_label_counter += 1
     let m = ctx.match_label_counter
@@ -17320,7 +17323,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
             let goto_label = if arm_index < arms.len - 1: match_arm_label(m, arm_index + 1) else: next_label
 
             let kind_expr = alloc_expr(ir.Expr.expr_member(receiver = scrut_base, member = "kind", ty = int_ty))
-            let tag_value = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, arm_name), ty = int_ty, pointer = false))
+            let tag_value = alloc_expr(ir.Expr.expr_name(name = variant_kind_const_name(outer_c, arm_name), ty = int_ty, pointer = Option[bool].some(value = false)))
             let tag_check = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = kind_expr, right = tag_value, ty = bool_ty))
             var then_body = vec.Vec[ir.Stmt].create()
             then_body.push(ir.Stmt.stmt_goto(label = goto_label))
@@ -17344,15 +17347,15 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                             let mfield = j2("local_", payload_c)
                             let mcname = j2("__mt_frame->", mfield)
                             async_register_local_field(ctx, payload_c, mfield, mcname, payload_ty)
-                            blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = payload_ty, pointer = false)), operator = "=", value = arm_data))
+                            blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = mcname, ty = payload_ty, pointer = Option[bool].some(value = false))), operator = "=", value = arm_data))
                         else:
                             blk.push(ir.Stmt.stmt_local(name = payload_c, linkage_name = payload_c, ty = payload_ty, value = arm_data, line = 0, source_path = ""))
-                            ctx.locals.push(LocalBinding(name = payload_c, c_name = payload_c, ty = payload_ty, pointer = false))
+                            ctx.locals.push(LocalBinding(name = payload_c, c_name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
                         lower_variant_field_bindings(ctx, ref_of(blk), pattern, ai.value, payload_c, payload_ty, goto_label)
                         match arm.binding_name:
                             Option.some as bn:
                                 let bc = utils.c_local_name(bn.value)
-                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
+                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
                                 if ctx.inside_async:
                                     # The host's lowering-pass counter advance for
                                     # the `as` binding (the payload temp above has
@@ -17363,7 +17366,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                                     if gname_ptr != null:
                                         reg_field = unsafe: read(ptr[str]<-gname_ptr)
                                 blk.push(ir.Stmt.stmt_local(name = bn.value, linkage_name = bc, ty = payload_ty, value = payload_ref, line = 0, source_path = ""))
-                                ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = false))
+                                ctx.locals.push(LocalBinding(name = bn.value, c_name = bc, ty = payload_ty, pointer = Option[bool].some(value = false)))
                             Option.none:
                                 pass
                 Option.none:
@@ -17397,7 +17400,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                             # Equality pattern: `field = expr` —
                             # skip arm if payload.field != expr.
                             let field_ty = variant_arm_field_type(arm_info, eq_name.value)
-                            let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
+                            let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
                             let left = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = eq_name.value, ty = field_ty))
                             let right = lower_expr(ctx, arg.arg_value)
                             let cond = alloc_expr(ir.Expr.expr_binary(operator = "!=", left = left, right = right, ty = bool_ty))
@@ -17411,7 +17414,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                             if not id.name == "_":
                                 let field_ty = variant_arm_field_type(arm_info, id.name)
                                 let bc = utils.c_local_name(id.name)
-                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
+                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
                                 var field_expr = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = id.name, ty = field_ty))
                                 # Auto-dereference recursive variant fields.
                                 match payload_ty:
@@ -17427,10 +17430,10 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                     let vfield = j4("local_", payload_c, "_", id.name)
                                     let vcname = j2("__mt_frame->", vfield)
                                     async_register_local_field(ctx, id.name, vfield, vcname, field_ty)
-                                    blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = vcname, ty = field_ty, pointer = false)), operator = "=", value = field_expr))
+                                    blk.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = vcname, ty = field_ty, pointer = Option[bool].some(value = false))), operator = "=", value = field_expr))
                                 else:
                                     blk.push(ir.Stmt.stmt_local(name = id.name, linkage_name = bc, ty = field_ty, value = field_expr, line = 0, source_path = ""))
-                                    ctx.locals.push(LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = false))
+                                    ctx.locals.push(LocalBinding(name = id.name, c_name = bc, ty = field_ty, pointer = Option[bool].some(value = false)))
                         ast.Expr.expr_binary_op as b:
                             # Guard pattern: `field comparison_op expr` —
                             # skip arm if guard condition is false.
@@ -17445,7 +17448,7 @@ function lower_variant_field_bindings(ctx: ref[LowerCtx], blk: ref[vec.Vec[ir.St
                                         pass
                             if left_name != "":
                                 let field_ty = variant_arm_field_type(arm_info, left_name)
-                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = false))
+                                let payload_ref = alloc_expr(ir.Expr.expr_name(name = payload_c, ty = payload_ty, pointer = Option[bool].some(value = false)))
                                 let left_expr = alloc_expr(ir.Expr.expr_member(receiver = payload_ref, member = left_name, ty = field_ty))
                                 let right_expr = lower_expr(ctx, b.right)
                                 let cond = alloc_expr(ir.Expr.expr_binary(operator = b.operator, left = left_expr, right = right_expr, ty = bool_ty))
@@ -19123,11 +19126,11 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
         var temp_ty: types.Type = unsafe: read(plan).arg_ty
         if unsafe: read(plan).len_kind == 1:
             temp_ty = str_ty
-        let temp_ref = alloc_expr(ir.Expr.expr_name(name = unsafe: read(temp_c), ty = temp_ty, pointer = false))
+        let temp_ref = alloc_expr(ir.Expr.expr_name(name = unsafe: read(temp_c), ty = temp_ty, pointer = Option[bool].some(value = false)))
         let len_expr = fmt_len_expr(unsafe: read(plan), temp_ref, ptr_uint_ty)
-        let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = false))
+        let cap_ref = alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
         output.push(ir.Stmt.stmt_assignment(
-            target = alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = false)),
+            target = alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))),
             operator = "=",
             value = alloc_expr(ir.Expr.expr_binary(operator = "+", left = cap_ref, right = len_expr, ty = ptr_uint_ty)),
         ))
@@ -19136,7 +19139,7 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
     # Allocate the result buffer and reset the write offset.
     var make_args = vec.Vec[ir.Expr].create()
     unsafe:
-        make_args.push(read(alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = false))))
+        make_args.push(read(alloc_expr(ir.Expr.expr_name(name = cap_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
     output.push(ir.Stmt.stmt_local(name = result_c, linkage_name = result_c, ty = str_ty, value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_str_make", arguments = make_args.as_span(), ty = str_ty)), line = 0, source_path = ""))
     output.push(ir.Stmt.stmt_local(name = off_name, linkage_name = off_name, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
 
@@ -19148,10 +19151,10 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
             ast.FormatStringPart.fmt_text as t:
                 var append_args = vec.Vec[ir.Expr].create()
                 unsafe:
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false))))
+                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))))
+                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
                     append_args.push(read(alloc_expr(ir.Expr.expr_string_literal(value = t.value, ty = str_ty, cstring = false))))
-                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = append_args.as_span(), ty = ptr_uint_ty))))
+                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = append_args.as_span(), ty = ptr_uint_ty))))
             ast.FormatStringPart.fmt_expr:
                 let temp_ptr = temps.get(expr_index) else:
                     fatal(c"format string: missing interpolation temp")
@@ -19169,7 +19172,7 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                     # then append its contents into the result buffer.
                     let string_ty = types.Type.ty_imported(module_name = "std.string", name = "String", args = span[types.Type]())
                     let hs_c = fresh_c_temp_name(ctx, "fmt_hook_str")
-                    let hs_ref = alloc_expr(ir.Expr.expr_name(name = hs_c, ty = string_ty, pointer = false))
+                    let hs_ref = alloc_expr(ir.Expr.expr_name(name = hs_c, ty = string_ty, pointer = Option[bool].some(value = false)))
                     let ref_string_ty = types.Type.ty_generic(name = "ref", args = sp_type(string_ty))
                     let hs_addr = alloc_expr(ir.Expr.expr_address_of(expression = hs_ref, ty = ref_string_ty))
                     match resolve_method_info(ctx, string_ty, "create"):
@@ -19180,7 +19183,7 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                             pass
                     var hook_args = vec.Vec[ir.Expr].create()
                     unsafe:
-                        hook_args.push(read(alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = false))))
+                        hook_args.push(read(alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = Option[bool].some(value = false)))))
                         hook_args.push(read(hs_addr))
                     output.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = plan.append_helper, arguments = hook_args.as_span(), ty = ctx.void_ty)), line = 0, source_path = ""))
                     var str_args = vec.Vec[ir.Expr].create()
@@ -19190,13 +19193,13 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                             unsafe:
                                 as_args.push(read(hs_ref))
                             unsafe:
-                                str_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
-                                str_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false))))
+                                str_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))))
+                                str_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
                                 str_args.push(read(alloc_expr(ir.Expr.expr_call(callee = smi.value.c_name, arguments = as_args.as_span(), ty = str_ty))))
                         Option.none:
                             pass
                     if str_args.len == 3:
-                        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = str_args.as_span(), ty = ptr_uint_ty))))
+                        output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = "mt_format_append_str", arguments = str_args.as_span(), ty = ptr_uint_ty))))
                     match resolve_method_info(ctx, string_ty, "release"):
                         Option.some as rmi:
                             var rel_args = vec.Vec[ir.Expr].create()
@@ -19209,15 +19212,15 @@ function build_format_string_dynamic(ctx: ref[LowerCtx], parts: span[ast.FormatS
                     continue
                 var append_args = vec.Vec[ir.Expr].create()
                 unsafe:
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false))))
-                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = false))))
+                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))))
+                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))))
+                    append_args.push(read(alloc_expr(ir.Expr.expr_name(name = temp_c, ty = temp_ty, pointer = Option[bool].some(value = false)))))
                     if plan.len_kind == 2:
                         append_args.push(read(alloc_expr(ir.Expr.expr_integer_literal(value = long<-(plan.precision), ty = types.primitive("int")))))
-                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = false)), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = plan.append_helper, arguments = append_args.as_span(), ty = ptr_uint_ty))))
+                output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = off_name, ty = ptr_uint_ty, pointer = Option[bool].some(value = false))), operator = "=", value = alloc_expr(ir.Expr.expr_call(callee = plan.append_helper, arguments = append_args.as_span(), ty = ptr_uint_ty))))
         pi += 1
 
-    return alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = false))
+    return alloc_expr(ir.Expr.expr_name(name = result_c, ty = str_ty, pointer = Option[bool].some(value = false)))
 
 
 ## The length expression for one interpolation temp, per its plan's `len_kind`.
@@ -19734,7 +19737,7 @@ function lower_inline_for_iteration(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
             var iter_stmts = vec.Vec[ir.Stmt].create()
             let binding_c = utils.c_local_name(binding_name)
             iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = types.primitive("int"), value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = types.primitive("int"))), line = 0, source_path = ""))
-            ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = types.primitive("int"), pointer = false))
+            ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = types.primitive("int"), pointer = Option[bool].some(value = false)))
             ctx.inline_for_element = Option[ComptimeElement].some(value = elem)
             lower_block_stmts(ctx, ref_of(iter_stmts), body_ptr)
             ctx.inline_for_element = Option[ComptimeElement].none
@@ -19748,7 +19751,7 @@ function lower_inline_for_field_iter(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.
     var iter_stmts = vec.Vec[ir.Stmt].create()
     let binding_c = utils.c_local_name(binding_name)
     iter_stmts.push(ir.Stmt.stmt_local(name = binding_name, linkage_name = binding_c, ty = field_ty, value = alloc_expr(ir.Expr.expr_zero_init(ty = field_ty)), line = 0, source_path = ""))
-    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = field_ty, pointer = false))
+    ctx.locals.push(LocalBinding(name = binding_name, c_name = binding_c, ty = field_ty, pointer = Option[bool].some(value = false)))
     lower_inline_for_field_body(ctx, ref_of(iter_stmts), body_ptr, field_ty)
     ctx.locals.pop()
     ctx.inline_for_element = Option[ComptimeElement].none
@@ -19928,7 +19931,7 @@ function inline_for_member_subst(ctx: ref[LowerCtx], receiver: ptr[ast.Expr], me
                         match read(receiver):
                             ast.Expr.expr_identifier as id:
                                 if member == "type":
-                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(name = "sizeof_hint", ty = f.field_type, pointer = false)))
+                                    return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_name(name = "sizeof_hint", ty = f.field_type, pointer = Option[bool].some(value = false))))
                                 if member == "name":
                                     return Option[ptr[ir.Expr]].some(value = alloc_expr(ir.Expr.expr_string_literal(value = f.name, ty = types.Type.ty_str, cstring = false)))
                             _:
@@ -22975,11 +22978,11 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
         let binding_c = utils.c_local_name(bname)
         let elem_ptr = elem_types.get(bi) else:
             fatal(c"lower_multi_for: missing elem type")
-        ctx.locals.push(LocalBinding(name = bname, c_name = binding_c, ty = unsafe: read(elem_ptr), pointer = false))
+        ctx.locals.push(LocalBinding(name = bname, c_name = binding_c, ty = unsafe: read(elem_ptr), pointer = Option[bool].some(value = false)))
         bi += 1
     let body = lower_block(ctx, body_ptr)
     var loop_body = vec.Vec[ir.Stmt].create()
-    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
+    let index_ref = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     bi = 0
     while bi < len:
         var bname: str
@@ -23011,7 +23014,7 @@ function lower_multi_for(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], bind
         si += 1
     let init = alloc_stmt(ir.Stmt.stmt_local(name = index_c, linkage_name = index_c, ty = ptr_uint_ty, value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = ptr_uint_ty)), line = 0, source_path = ""))
     let condition = alloc_expr(ir.Expr.expr_binary(operator = "<", left = index_ref, right = alloc_expr(ir.Expr.expr_integer_literal(value = 3, ty = ptr_uint_ty)), ty = ctx.bool_ty))
-    let post_target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = false))
+    let post_target = alloc_expr(ir.Expr.expr_name(name = index_c, ty = ptr_uint_ty, pointer = Option[bool].some(value = false)))
     let post = alloc_stmt(ir.Stmt.stmt_assignment(target = post_target, operator = "+=", value = alloc_expr(ir.Expr.expr_integer_literal(value = 1, ty = ptr_uint_ty))))
     let for_stmt = ir.Stmt.stmt_for(init = init, condition = condition, post = post, body = loop_body.as_span())
     output.push(for_stmt)
@@ -23131,6 +23134,19 @@ function arm_has_payload(info: VariantInfo, arm_name: str) -> bool:
             return false
 
 
+## The host's param `pointer` value (`analysis.rb:20`):
+## `receiver_type && receiver_editable && name == "this"` — nil for a plain
+## function's params, `true` for an editable receiver (`this`) and `false` for a
+## method's other params.  Used by the async ctor's params and its param-copy
+## value Names (`frame_builder.rb:291,296`).
+function async_param_pointer(receiver_ty_opt: Option[types.Type], pname: str) -> Option[bool]:
+    match receiver_ty_opt:
+        Option.some as rty:
+            return Option[bool].some(value = is_pointer_or_ref_type(rty.value) and pname == "this")
+        Option.none:
+            return Option[bool].none
+
+
 ## Lower an async function: generate frame struct, resume fn, constructor fn,
 ## and vtable helpers.  Push into the output structs/functions collections.
 ## Supports both no-await (single-state) and full CPS (state-machine) paths.
@@ -23177,7 +23193,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     var vparams = vec.Vec[ir.Param].create()
     vparams.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     let vparam_s = vparams.as_span()
-    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = false))
+    let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
 
     # Param frame-field info.  Fields are named `param_<name>` so they cannot
     # clash with control fields (`state`/`result`/…).  For an async method the
@@ -23205,7 +23221,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     var resume_body = vec.Vec[ir.Stmt].create()
     resume_body.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     # The pointer lives in the type, not the `Name` (the host's `frame_expr`).
-    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = false))
+    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = Option[bool].some(value = false)))
     # Register each param as a frame-field binding so references resolve to
     # `__mt_frame->param_<name>` (surviving suspend/resume); no C-local copy.
     var pib: ptr_uint = 0
@@ -23215,7 +23231,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         unsafe:
             pname = read(ptr[str]<-ctor_param_names.data + pib)
             pty = read(ptr[types.Type]<-ctor_param_tys.data + pib)
-        ctx.locals.push(LocalBinding(name = pname, c_name = j2("__mt_frame->param_", pname), ty = pty, pointer = is_pointer_or_ref_type(pty)))
+        ctx.locals.push(LocalBinding(name = pname, c_name = j2("__mt_frame->param_", pname), ty = pty, pointer = Option[bool].none))
         pib += 1
 
     if has_await:
@@ -23302,7 +23318,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             bi += 1
         resume_body.push(ir.Stmt.stmt_label(name = "__mt_async_return"))
         if not is_void_ret:
-            resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "__mt_result", ty = res_ty, pointer = false))))
+            resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_name(name = "__mt_result", ty = res_ty, pointer = Option[bool].some(value = false)))))
         resume_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), operator = "=", value = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))))
         async_waiter_wake(ctx, ref_of(resume_body), frame_exp, bool_ty, async_mod.ptr_void_type())
         resume_body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
@@ -23394,8 +23410,8 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     vsw.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     # If already ready, call the waiter immediately (synchronous completion).
     var sw_rdy = vec.Vec[ir.Stmt].create()
-    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_fn", ty = ctx.ptr_void_ty, pointer = false))
-    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = true))
+    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_fn", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
+    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = true)))
     sw_rdy.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = sw_waiter_fn, arguments = single_expr_span(sw_waiter_frame), ty = void_t)), line = 0, source_path = ""))
     sw_rdy.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     let sw_ready_cond = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty))
@@ -23435,7 +23451,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # The frame `Name` is not marked as a pointer — the pointer lives in the
     # type (the host's `frame_expr`, `frame_builder.rb:267`) — and the resume
     # call / aggregate carry its `ptr[void]` cast (`raw_frame_expr`).
-    let cframe = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = false))
+    let cframe = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = frame_ptr_ty, pointer = Option[bool].some(value = false)))
     let raw_cframe = alloc_expr(ir.Expr.expr_cast(target_type = ctx.ptr_void_ty, expression = cframe, ty = ctx.ptr_void_ty))
     # `ready`/`cancelled`/`state` start zeroed by `mt_async_alloc`'s calloc — the
     # host's ctor stores none of them.
@@ -23454,36 +23470,25 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
                 fatal(c"lowering: async ctor param types missing storage")
             pty = read(ptr[types.Type]<-rawt + pi3)
         let field_expr = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = j2("param_", pname), ty = pty))
-        let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = pty, pointer = false))
+        let arg_expr = alloc_expr(ir.Expr.expr_name(name = pname, ty = pty, pointer = async_param_pointer(receiver_ty_opt, pname)))
         ctor_body.push(ir.Stmt.stmt_assignment(target = field_expr, operator = "=", value = arg_expr))
         pi3 += 1
     ctor_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = resume_c, arguments = single_expr_span(raw_cframe), ty = void_t)), line = 0, source_path = ""))
     var tf = vec.Vec[ir.AggregateField].create()
-    if not is_void_ret:
-        tf.push(ir.AggregateField(name = "value", value = alloc_expr(ir.Expr.expr_member(receiver = cframe, member = "result", ty = res_ty))))
+    # The host's ctor aggregate carries no `value` field (`frame_builder.rb:
+    # 308-318`): the result reaches the task through `take_result` at await time.
     tf.push(ir.AggregateField(name = "frame",       value = raw_cframe))
-    tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ctx.ptr_void_ty, pointer = false))))
-    tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = ctx.ptr_void_ty, pointer = false))))
-    tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = release_lk, ty = ctx.ptr_void_ty, pointer = false))))
+    tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = release_lk, ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
     if not is_void_ret:
-        tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = ctx.ptr_void_ty, pointer = false))))
-    tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = cancel_lk, ty = ctx.ptr_void_ty, pointer = false))))
+        tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = cancel_lk, ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
     ctor_body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = tf.as_span())), line = 0, source_path = ""))
-    # Build constructor params from the original async function params.  The
-    # `pointer` flag mirrors the host's `field_info[:pointer]` (`analysis.rb:20`,
-    # `frame_builder.rb:291`): nil for a plain function's params, `true` for an
-    # editable receiver (`this`) and `false` for a method's other params —
-    # `receiver_type && receiver_editable && name == "this"`.  The types already
-    # render as C pointers for `ptr`/`ref`/`own`.
+    # Build constructor params from the original async function params, with the
+    # host's `pointer` value (`async_param_pointer`; the types already render as
+    # C pointers for `ptr`/`ref`/`own`).
     var ctor_params = vec.Vec[ir.Param].create()
-    var has_receiver = false
-    var recv_editable = false
-    match receiver_ty_opt:
-        Option.some as rty:
-            has_receiver = true
-            recv_editable = is_pointer_or_ref_type(rty.value)
-        Option.none:
-            pass
     var pi4: ptr_uint = 0
     while pi4 < ctor_param_names.len:
         var pname: str
@@ -23497,10 +23502,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
             if rawt == null:
                 fatal(c"lowering: async ctor params missing storage")
             pty = read(ptr[types.Type]<-rawt + pi4)
-        var pptr = Option[bool].none
-        if has_receiver:
-            pptr = Option[bool].some(value = recv_editable and pname == "this")
-        ctor_params.push(ir.Param(name = pname, linkage_name = pname, ty = pty, pointer = pptr))
+        ctor_params.push(ir.Param(name = pname, linkage_name = pname, ty = pty, pointer = async_param_pointer(receiver_ty_opt, pname)))
         pi4 += 1
     functions.push(ir.Function(name = name, linkage_name = link_base, params = ctor_params.as_span(), return_type = task_ty, body = ctor_body.as_span(), entry_point = false, method_receiver_param = false))
 
@@ -23534,7 +23536,7 @@ function direct_await_inner(ep: ptr[ast.Expr]) -> ptr[ast.Expr]:
 ## `__mt_frame->local_<name>` so all references and writes go through the frame.
 function async_register_local_field(ctx: ref[LowerCtx], loc_name: str, field_name: str, frame_cname: str, ty: types.Type) -> void:
     async_register_unused_field(ctx, field_name, ty)
-    ctx.locals.push(LocalBinding(name = loc_name, c_name = frame_cname, ty = ty, pointer = false))
+    ctx.locals.push(LocalBinding(name = loc_name, c_name = frame_cname, ty = ty, pointer = Option[bool].some(value = false)))
 
 
 ## Register a frame field the host's async analysis recorded but its lowering
@@ -23591,7 +23593,7 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 # The store target is the host's `IR::Member(frame, field)`
                 # (`async_frame_field_expression`), not the `__mt_frame->…` text
                 # Name (which stays for reads).
-                let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = result_ty))
+                let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = result_ty))
                 async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
                 return alloc_ast_expr(ast.Expr.expr_identifier(name = tmp, line = 0, column = 0))
             ast.Expr.expr_binary_op as b:
@@ -23636,13 +23638,13 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
             let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
             let result_ty = extract_task_element_type(ctx, task_ty)
             async_register_unused_field(ctx, field_name, result_ty)
-            let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = result_ty))
+            let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = result_ty))
             async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
         else:
             let value_ir = lower_expr(ctx, dv)
             let value_ty = ir_expr_type(value_ir)
             async_register_unused_field(ctx, field_name, value_ty)
-            output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = value_ty)), operator = "=", value = value_ir))
+            output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = value_ty)), operator = "=", value = value_ir))
         return
 
     let field_name = j2("local_", loc_name)
@@ -23661,7 +23663,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
         let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
         let result_ty = extract_task_element_type(ctx, task_ty)
         async_register_local_field(ctx, loc_name, field_name, frame_cname, result_ty)
-        let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = result_ty))
+        let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = result_ty))
         async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
         return
 
@@ -23701,7 +23703,7 @@ function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], lo
                     _:
                         val_ir = nullable_some_literal(ty, val_ir)
     async_register_local_field(ctx, loc_name, field_name, frame_cname, ty)
-    let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false)), member = field_name, ty = ty))
+    let target = alloc_expr(ir.Expr.expr_member(receiver = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false))), member = field_name, ty = ty))
     output.push(ir.Stmt.stmt_assignment(target = target, operator = "=", value = val_ir))
 
 
@@ -23751,7 +23753,7 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
         ctx.async_await_fields.push(ir.Field(name = await_field, ty = task_ty))
     let next_state = int<-idx + 1
 
-    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = false))
+    let frame_exp = alloc_expr(ir.Expr.expr_name(name = "__mt_frame", ty = ctx.async_frame_ptr_ty, pointer = Option[bool].some(value = false)))
     let await_ref = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = await_field, ty = task_ty))
 
     # frame->await_N = <task>
@@ -23766,8 +23768,8 @@ function async_emit_await(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], tas
     var sw_args = vec.Vec[ir.Expr].create()
     unsafe:
         sw_args.push(read(alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "frame", ty = ptr_void))))
-        sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ptr_void, pointer = false))))
-        sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = ctx.async_resume_c, ty = ptr_void, pointer = false))))
+        sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ptr_void, pointer = Option[bool].some(value = false)))))
+        sw_args.push(read(alloc_expr(ir.Expr.expr_name(name = ctx.async_resume_c, ty = ptr_void, pointer = Option[bool].some(value = false)))))
     let set_waiter_fn = alloc_expr(ir.Expr.expr_member(receiver = await_ref, member = "set_waiter", ty = ptr_void))
     suspend.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = set_waiter_fn, arguments = sw_args.as_span(), ty = void_ty)), line = 0, source_path = ""))
     suspend.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
@@ -23823,7 +23825,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
     var body = vec.Vec[ir.Stmt].create()
     let root_name = "__mt_async_main_root"
     body.push(ir.Stmt.stmt_local(name = root_name, linkage_name = root_name, ty = proc_named_ty, value = proc_expr, line = 0, source_path = ""))
-    let root_ref = alloc_expr(ir.Expr.expr_name(name = root_name, ty = proc_named_ty, pointer = false))
+    let root_ref = alloc_expr(ir.Expr.expr_name(name = root_name, ty = proc_named_ty, pointer = Option[bool].some(value = false)))
 
     let result_name = "__mt_result"
     if is_void_ret:
@@ -23848,7 +23850,7 @@ function build_async_main_entrypoint(ctx: ref[LowerCtx], name: str) -> Option[ir
     if is_void_ret:
         body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_integer_literal(value = 0, ty = int_ty)), line = 0, source_path = ""))
     else:
-        body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_name(name = result_name, ty = int_ty, pointer = false)), line = 0, source_path = ""))
+        body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_name(name = result_name, ty = int_ty, pointer = Option[bool].some(value = false))), line = 0, source_path = ""))
 
     return Option[ir.Function].some(value = ir.Function(
         name = name, linkage_name = "main", params = span[ir.Param](),
@@ -23924,7 +23926,7 @@ function async_waiter_wake(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], fr
     # Nulling first (and re-reading the field) would call a null pointer; nulling
     # prevents a double-wake if the waiter re-registers.
     wake_body.push(ir.Stmt.stmt_local(name = "__mt_waker", linkage_name = "__mt_waker", ty = waiter_fn_ty, value = waiter_field, line = 0, source_path = ""))
-    let waker_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_waker", ty = waiter_fn_ty, pointer = false))
+    let waker_ref = alloc_expr(ir.Expr.expr_name(name = "__mt_waker", ty = waiter_fn_ty, pointer = Option[bool].some(value = false)))
     wake_body.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = waiter_fn_ty)), operator = "=", value = null_void))
     wake_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = waker_ref, arguments = single_expr_span(waiter_frame_field), ty = ctx.void_ty)), line = 0, source_path = ""))
     output.push(ir.Stmt.stmt_if(condition = has_waiter, then_body = wake_body.as_span(), else_body = Option[span[ir.Stmt]].none))

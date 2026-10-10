@@ -3308,3 +3308,7 @@ function test_async_ctor_params_and_refcounted_allocator() -> void:
     ## No `ready`/`cancelled` zero-store remains in the ctor (this source has no
     ## other `false` literal — the allocator's calloc is the initializer).
     expect(not text.contains_substring("(IR::BooleanLiteral :value false"))
+    ## 10i(c): the resume body's param read and the ctor's param-copy value Name
+    ## carry the host's unset pointer (`ir.Expr` `Name.pointer` is `Option[bool]`).
+    expect(text.contains_substring("(IR::Name :name \"__mt_frame->param_x\" :type (Types::Primitive :name \"int\") :pointer nil)"))
+    expect(text.contains_substring("(IR::Name :name \"x\" :type (Types::Primitive :name \"int\") :pointer nil)"))

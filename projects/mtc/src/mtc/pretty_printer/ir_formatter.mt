@@ -696,7 +696,7 @@ function pointer_receiver(ep: ptr[ir.Expr]) -> bool:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as n:
-                if n.pointer:
+                if n.pointer.unwrap_or(false):
                     return true
                 return is_ptr_type(n.ty)
             _:
