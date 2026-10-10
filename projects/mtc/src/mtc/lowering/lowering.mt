@@ -23191,7 +23191,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # Common vtable param: void* __mt_frame_raw
     var waiter_fn_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
     var vparams = vec.Vec[ir.Param].create()
-    vparams.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
+    vparams.push(ir.Param(name = "frame", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     let vparam_s = vparams.as_span()
     let raw_expr = alloc_expr(ir.Expr.expr_name(name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
 
@@ -23325,7 +23325,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         ctx.async_resume_return_label = saved_label
         ctx.current_fn_return_type = saved_rt
         ctx.inside_async = saved_inside
-    functions.push(ir.Function(name = j2(name, "_resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, method_receiver_param = false))
+    functions.push(ir.Function(name = j2(name, "__resume"), linkage_name = resume_c, params = vparam_s, return_type = void_t, body = resume_body.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- frame struct (base + state + result + params + spilled locals + awaits) --
     var ff = vec.Vec[ir.Field].create()
@@ -23366,17 +23366,17 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
 
 
     # -- vtable linkage names --
-    let ready_lk  = j2(frame_c, "_ready")
-    let waiter_lk = j2(frame_c, "_set_waiter")
-    let release_lk = j2(frame_c, "_release")
-    let take_lk   = j2(frame_c, "_take_result")
-    let cancel_lk = j2(frame_c, "_cancel")
+    let ready_lk  = j2(link_base, "__ready")
+    let waiter_lk = j2(link_base, "__set_waiter")
+    let release_lk = j2(link_base, "__release")
+    let take_lk   = j2(link_base, "__take_result")
+    let cancel_lk = j2(link_base, "__cancel")
 
     # -- vtable: ready (fresh vec) --
     var vrdy = vec.Vec[ir.Stmt].create()
     vrdy.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     vrdy.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), line = 0, source_path = ""))
-    functions.push(ir.Function(name = j2(name, "_ready"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, method_receiver_param = false))
+    functions.push(ir.Function(name = j2(ready_lk, "_fn"), linkage_name = ready_lk, params = vparam_s, return_type = bool_ty, body = vrdy.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: release (fresh vec) --
     var vrel = vec.Vec[ir.Stmt].create()
@@ -23403,15 +23403,15 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         let not_ready = alloc_expr(ir.Expr.expr_unary(operator = "not", operand = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty)), ty = bool_ty))
         vrel.push(ir.Stmt.stmt_if(condition = not_ready, then_body = rel_if_body.as_span(), else_body = Option[span[ir.Stmt]].none))
     vrel.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = "mt_async_free", arguments = single_expr_span(raw_expr), ty = void_t)), line = 0, source_path = ""))
-    functions.push(ir.Function(name = j2(name, "_release"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
+    functions.push(ir.Function(name = j2(release_lk, "_fn"), linkage_name = release_lk, params = vparam_s, return_type = void_t, body = vrel.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: set_waiter (fresh vec) --
     var vsw = vec.Vec[ir.Stmt].create()
     vsw.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     # If already ready, call the waiter immediately (synchronous completion).
     var sw_rdy = vec.Vec[ir.Stmt].create()
-    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_fn", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
-    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = true)))
+    let sw_waiter_fn = alloc_expr(ir.Expr.expr_name(name = "waiter", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
+    let sw_waiter_frame = alloc_expr(ir.Expr.expr_name(name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = true)))
     sw_rdy.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call_indirect(callee = sw_waiter_fn, arguments = single_expr_span(sw_waiter_frame), ty = void_t)), line = 0, source_path = ""))
     sw_rdy.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     let sw_ready_cond = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "ready", ty = bool_ty))
@@ -23420,25 +23420,25 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     vsw.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "waiter", ty = ctx.ptr_void_ty)), operator = "=", value = sw_waiter_fn))
     vsw.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
     var sw_params = vec.Vec[ir.Param].create()
-    sw_params.push(ir.Param(name = "__mt_frame_raw", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
-    sw_params.push(ir.Param(name = "__mt_waiter_frame", linkage_name = "__mt_waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
+    sw_params.push(ir.Param(name = "frame", linkage_name = "__mt_frame_raw", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
+    sw_params.push(ir.Param(name = "waiter_frame", linkage_name = "waiter_frame", ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))
     var waiter_cb_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(ctx.void_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
-    sw_params.push(ir.Param(name = "__mt_waiter_fn", linkage_name = "__mt_waiter_fn", ty = waiter_cb_ty, pointer = Option[bool].some(value = false)))
-    functions.push(ir.Function(name = j2(name, "_set_waiter"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
+    sw_params.push(ir.Param(name = "waiter", linkage_name = "waiter", ty = waiter_cb_ty, pointer = Option[bool].some(value = false)))
+    functions.push(ir.Function(name = j2(waiter_lk, "_fn"), linkage_name = waiter_lk, params = sw_params.as_span(), return_type = void_t, body = vsw.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: take_result (fresh vec) --
     if not is_void_ret:
         var vtr = vec.Vec[ir.Stmt].create()
         vtr.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
         vtr.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "result", ty = res_ty)), line = 0, source_path = ""))
-        functions.push(ir.Function(name = j2(name, "_take_result"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, method_receiver_param = false))
+        functions.push(ir.Function(name = j2(take_lk, "_fn"), linkage_name = take_lk, params = vparam_s, return_type = res_ty, body = vtr.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- vtable: cancel (fresh vec) --
     var vcn = vec.Vec[ir.Stmt].create()
     vcn.push(ir.Stmt.stmt_local(name = "__mt_frame", linkage_name = "__mt_frame", ty = frame_ptr_ty, value = alloc_expr(ir.Expr.expr_cast(target_type = frame_ptr_ty, expression = raw_expr, ty = frame_ptr_ty)), line = 0, source_path = ""))
     vcn.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_member(receiver = frame_exp, member = "cancelled", ty = bool_ty)), operator = "=", value = bool_true))
     vcn.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
-    functions.push(ir.Function(name = j2(name, "_cancel"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, method_receiver_param = false))
+    functions.push(ir.Function(name = j2(cancel_lk, "_fn"), linkage_name = cancel_lk, params = vparam_s, return_type = void_t, body = vcn.as_span(), entry_point = false, method_receiver_param = false))
 
     # -- constructor function --
     let size_expr = alloc_expr(ir.Expr.expr_sizeof(target_type = frame_ty, ty = ptr_ty))
@@ -23474,16 +23474,33 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
         ctor_body.push(ir.Stmt.stmt_assignment(target = field_expr, operator = "=", value = arg_expr))
         pi3 += 1
     ctor_body.push(ir.Stmt.stmt_expression(expression = alloc_expr(ir.Expr.expr_call(callee = resume_c, arguments = single_expr_span(raw_cframe), ty = void_t)), line = 0, source_path = ""))
+    # The host's task-struct field types (`async_info[:task_type].field(...)`)
+    # for the aggregate entries below — the vtable signatures with their
+    # parameter names (`frame_builder.rb:313-317`).
+    let ready_field_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(bool_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    let release_field_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(void_t), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    let cancel_field_ty = release_field_ty
+    let take_field_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(res_ty), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    let wake_field_ty = types.Type.ty_function(name = "", params = single_ty_span(ctx.ptr_void_ty), return_type = types.alloc_type(void_t), variadic = false, is_proc = false, param_names = sp_str("frame"))
+    var sw_field_tys = vec.Vec[types.Type].create()
+    sw_field_tys.push(ctx.ptr_void_ty)
+    sw_field_tys.push(ctx.ptr_void_ty)
+    sw_field_tys.push(wake_field_ty)
+    var sw_field_names = vec.Vec[str].create()
+    sw_field_names.push("frame")
+    sw_field_names.push("waiter_frame")
+    sw_field_names.push("waiter")
+    let set_waiter_field_ty = types.Type.ty_function(name = "", params = sw_field_tys.as_span(), return_type = types.alloc_type(void_t), variadic = false, is_proc = false, param_names = sw_field_names.as_span())
     var tf = vec.Vec[ir.AggregateField].create()
     # The host's ctor aggregate carries no `value` field (`frame_builder.rb:
     # 308-318`): the result reaches the task through `take_result` at await time.
     tf.push(ir.AggregateField(name = "frame",       value = raw_cframe))
-    tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
-    tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
-    tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = release_lk, ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "ready",       value = alloc_expr(ir.Expr.expr_name(name = ready_lk,  ty = ready_field_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "set_waiter",  value = alloc_expr(ir.Expr.expr_name(name = waiter_lk, ty = set_waiter_field_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "release",     value = alloc_expr(ir.Expr.expr_name(name = release_lk, ty = release_field_ty, pointer = Option[bool].some(value = false)))))
     if not is_void_ret:
-        tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
-    tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = cancel_lk, ty = ctx.ptr_void_ty, pointer = Option[bool].some(value = false)))))
+        tf.push(ir.AggregateField(name = "take_result", value = alloc_expr(ir.Expr.expr_name(name = take_lk, ty = take_field_ty, pointer = Option[bool].some(value = false)))))
+    tf.push(ir.AggregateField(name = "cancel",      value = alloc_expr(ir.Expr.expr_name(name = cancel_lk, ty = cancel_field_ty, pointer = Option[bool].some(value = false)))))
     ctor_body.push(ir.Stmt.stmt_return(value = alloc_expr(ir.Expr.expr_aggregate_literal(ty = task_ty, fields = tf.as_span())), line = 0, source_path = ""))
     # Build constructor params from the original async function params, with the
     # host's `pointer` value (`async_param_pointer`; the types already render as
