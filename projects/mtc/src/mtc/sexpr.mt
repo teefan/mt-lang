@@ -362,6 +362,16 @@ function field_bool(name: str, value: bool) -> SexprField:
     return SexprField(name = name, value = SexprValue.sv_bool(value = value))
 
 
+## Optional bool: the host renders `nil` when the value was never set (an
+## `IR::Param` without an explicit `pointer:`).
+function field_optional_bool(name: str, value: Option[bool]) -> SexprField:
+    match value:
+        Option.some as b:
+            return field_bool(name, b.value)
+        Option.none:
+            return field_nil(name)
+
+
 function field_nil(name: str) -> SexprField:
     return SexprField(name = name, value = SexprValue.sv_nil)
 
@@ -376,6 +386,15 @@ function node(name: str, fields: span[SexprField]) -> SexprValue:
 
 function list_value(items: span[SexprValue]) -> SexprValue:
     return SexprValue.sv_list(items = items)
+
+
+## A module name: the host's types carry `nil` for a synthetic (module-less)
+## type (`<mod>__frame`, `mt_proc_*`, `mt_tuple_*`, …) where the self models the
+## absent module as an empty string.
+function field_module_name(name: str, value: str) -> SexprField:
+    if value.len == 0:
+        return field_nil(name)
+    return field_str(name, value)
 
 
 ## Optional string: host nil when absent.
@@ -510,7 +529,7 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
         types.Type.ty_named as n:
             var nf = vec.Vec[SexprField].create()
             nf.push(field_str("name", n.name))
-            nf.push(field_str("module_name", n.module_name))
+            nf.push(field_module_name("module_name", n.module_name))
             # A module-qualified named type classifies through the qualified
             # kind map like an imported one (`std.c.box2d.b2HexColor` is the raw
             # module's enum, and no IR declaration carries it).
@@ -522,7 +541,7 @@ function types_value(ctx: ref[SexprCtx], t: types.Type) -> SexprValue:
             # the `Types::Struct` branch (`:name`, `:module_name`).
             var apf = vec.Vec[SexprField].create()
             apf.push(field_str("name", ap.name))
-            apf.push(field_str("module_name", ap.module_name))
+            apf.push(field_module_name("module_name", ap.module_name))
             return node("Types::VariantArmPayload", apf.as_span())
         types.Type.ty_imported as im:
             var imf = vec.Vec[SexprField].create()
@@ -979,7 +998,7 @@ function ir_params_value(ctx: ref[SexprCtx], params: span[ir.Param]) -> SexprVal
         pf.push(field_str("name", p.name))
         pf.push(field_str("linkage_name", p.linkage_name))
         pf.push(field_value("type", types_value(ctx, p.ty)))
-        pf.push(field_bool("pointer", p.pointer))
+        pf.push(field_optional_bool("pointer", p.pointer))
         items_out.push(node("IR::Param", pf.as_span()))
         i += 1
     return list_value(items_out.as_span())

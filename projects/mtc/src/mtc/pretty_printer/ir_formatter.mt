@@ -471,7 +471,7 @@ function render_param_list(params: span[ir.Param]) -> str:
 
 function render_param(p: ir.Param) -> str:
     var ty = render_type(p.ty)
-    if p.pointer:
+    if p.pointer.unwrap_or(false):
         ty = j3("ptr[", ty, "]")
     return j3(binding_name(p.name, p.linkage_name), ": ", ty)
 

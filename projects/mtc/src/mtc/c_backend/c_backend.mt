@@ -330,6 +330,11 @@ public function generate_c(input_program: ir.Program, emit_line_directives: bool
     if uses_parallel_runtime(program):
         emit_parallel_helpers(ref_of(e))
 
+    # Emit the refcounted async frame allocator when any frame/env/wait-frame
+    # allocation goes through it.
+    if uses_async_memory_helpers(program):
+        emit_async_memory_helpers(ref_of(e))
+
     # Emit builtin helpers (order/equal/hash) when used.
     if uses_builtin_helpers(program):
         emit_builtin_helpers(ref_of(e))
@@ -3736,8 +3741,9 @@ function function_params(func: ir.Function) -> str:
             # A pointer-lowered parameter (e.g. an editable method receiver)
             # carries its base type with `pointer = true`; the `*` is added
             # here.  Mirrors Ruby's
-            # `c_declaration(param.pointer ? pointer_to(param.type) : param.type, ...)`.
-            let pty = if p.pointer: types.Type.ty_generic(name = "ptr", args = sp_elem(p.ty)) else: p.ty
+            # `c_declaration(param.pointer ? pointer_to(param.type) : param.type, ...)`
+            # (a nil `pointer` — the async ctor params — is not a pointer).
+            let pty = if p.pointer.unwrap_or(false): types.Type.ty_generic(name = "ptr", args = sp_elem(p.ty)) else: p.ty
             parts.push(c_declaration(pty, p.linkage_name))
         i += 1
     if parts.len() == 0:
@@ -7837,8 +7843,55 @@ function expr_uses_offsetof(ep: ptr[ir.Expr]) -> bool:
 
 
 
-function emit_parallel_helpers(e: ref[Emitter]) -> void:
+## True when any function allocates or frees an async frame/env through the
+## host's refcounted allocator (`feature_detection.rb:161`).
+function uses_async_memory_helpers(program: ir.Program) -> bool:
+    var i: ptr_uint = 0
+    while i < program.functions.len:
+        unsafe:
+            let f = read(program.functions.data + i)
+            if body_calls(f.body, "mt_async_alloc") or body_calls(f.body, "mt_async_free"):
+                return true
+        i += 1
+    return false
 
+
+## The host's refcounted async frame allocator (`runtime_helpers.rb:224-255`):
+## a hidden header (magic + refcount) in front of every frame/env, so
+## `mt_async_free` only returns the block at refcount zero.
+function emit_async_memory_helpers(e: ref[Emitter]) -> void:
+    emit_line(e, "#define MT_ASYNC_HEADER_SIZE (sizeof(uint64_t) + sizeof(uintptr_t))")
+    emit_line(e, "#define MT_ASYNC_MAGIC UINT64_C(0x4D5441464D454D00)")
+    emit_line(e, "")
+    emit_line(e, "static void* mt_async_alloc(uintptr_t size) {")
+    emit_line(e, "  char* raw = (char*) calloc(1, (size_t)(MT_ASYNC_HEADER_SIZE + size));")
+    emit_line(e, "  if (raw == NULL) {")
+    emit_line(e, "    abort();")
+    emit_line(e, "  }")
+    emit_line(e, "  *(uint64_t*)raw = MT_ASYNC_MAGIC;")
+    emit_line(e, "  *(uintptr_t*)(raw + sizeof(uint64_t)) = 1;")
+    emit_line(e, "  return raw + MT_ASYNC_HEADER_SIZE;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_async_retain(void* frame) {")
+    emit_line(e, "  char* raw = (char*)frame - MT_ASYNC_HEADER_SIZE;")
+    emit_line(e, "  if (*(uint64_t*)raw != MT_ASYNC_MAGIC) return;")
+    emit_line(e, "  uintptr_t* ref = (uintptr_t*)(raw + sizeof(uint64_t));")
+    emit_line(e, "  (*ref)++;")
+    emit_line(e, "}")
+    emit_line(e, "")
+    emit_line(e, "static void mt_async_free(void* frame) {")
+    emit_line(e, "  char* raw = (char*)frame - MT_ASYNC_HEADER_SIZE;")
+    emit_line(e, "  if (*(uint64_t*)raw != MT_ASYNC_MAGIC) return;")
+    emit_line(e, "  uintptr_t* ref = (uintptr_t*)(raw + sizeof(uint64_t));")
+    emit_line(e, "  if (--(*ref) == 0) {")
+    emit_line(e, "    free(raw);")
+    emit_line(e, "  }")
+    emit_line(e, "}")
+    emit_line(e, "")
+
+
+function emit_parallel_helpers(e: ref[Emitter]) -> void:
     emit_line(e, "typedef struct {")
     emit_line(e, "  void (*work)(void* data, int64_t start, int64_t end);")
     emit_line(e, "  void* data;")

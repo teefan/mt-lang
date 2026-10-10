@@ -29,7 +29,10 @@ public struct Param:
     name: str
     linkage_name: str
     ty: types.Type
-    pointer: bool
+    # The host's `IR::Param#pointer`: `nil` when the constructor omitted it
+    # (a plain function's params — the async ctor params in particular),
+    # `some(true)` for a pointer-lowered parameter (an editable receiver).
+    pointer: Option[bool]
 
 
 public struct EnumMember:

@@ -3272,3 +3272,31 @@ function test_async_embedded_await_temps_and_discards() -> void:
     expect(text.contains_substring(":name \"__mt_frame->local_discard_6\""))
     expect(not text.contains_substring("local_await_tmp"))
     expect(not text.contains_substring("await_tmp_"))
+
+
+@[test]
+function test_async_ctor_params_and_refcounted_allocator() -> void:
+    ## The async constructor's params carry the host's unset `pointer`
+    ## (`:pointer nil` — `frame_builder.rb:291`'s `field_info[:pointer]`), the
+    ## frame's synthetic type renders `:module_name nil`, and the frame/env
+    ## allocation goes through the host's refcounted `mt_async_alloc`/
+    ## `mt_async_free` (session 44 batch 14; items 10d and 8C).
+    var source = <<-SRC
+        async function step(x: int) -> int:
+            return x
+
+        async function work(flag: bool) -> int:
+            let v = await step(1)
+            return v
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Param :name \"x\" :linkage_name \"x\" :type (Types::Primitive :name \"int\") :pointer nil)"))
+    expect(text.contains_substring("(Types::Struct :name \"main_step__frame\" :module_name nil)"))
+    expect(text.contains_substring(":callee \"mt_async_alloc\""))
+    expect(text.contains_substring(":callee \"mt_async_free\""))
+    expect(not text.contains_substring(":callee \"calloc\""))
