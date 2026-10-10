@@ -2094,7 +2094,11 @@ function c_type(t: types.Type) -> str:
                 if backing_ptr != null:
                     return j2(unsafe: read(backing_ptr), "*")
             return j2(type_key, "*")
-        types.Type.ty_function:
+        types.Type.ty_function as fnt:
+            # A proc value is the synthesized `mt_proc_<sig>` closure struct; a
+            # plain function type is a raw function pointer.
+            if fnt.is_proc:
+                return naming.proc_type_c_name(t)
             return c_fn_ptr_declarator(t, "")
         types.Type.ty_event as ev:
             return ev.linkage_name
@@ -3014,6 +3018,15 @@ function c_fn_ptr_declarator(t: types.Type, name: str) -> str:
                     buf.append(", ")
                 unsafe:
                     buf.append(c_type(read(fnt.params.data + i)))
+                # The host's `Types::Function#params` are named Parameters, so
+                # its declarators carry the names (`int32_t (*f)(int32_t x)`).
+                var pname = ""
+                if i < fnt.param_names.len:
+                    unsafe:
+                        pname = read(fnt.param_names.data + i)
+                if pname.len > 0:
+                    buf.append(" ")
+                    buf.append(pname)
                 i += 1
             if fnt.variadic:
                 if fnt.params.len > 0:
@@ -3041,18 +3054,24 @@ function c_declaration(t: types.Type, name: str) -> str:
             return c_declaration(elem_t, j4(inner_name, "[", long_to_str(array_length(t)), "]"))
         # Array of function pointers needs the array declarator inside the
         # parenthesized name: `void (*slots[16])(int32_t)`, not
-        # `void (*)(int32_t) slots[16]`.
+        # `void (*)(int32_t) slots[16]`.  A proc element is a plain struct value
+        # (`mt_proc_x items[2]`).
         match elem_t:
-            types.Type.ty_function:
+            types.Type.ty_function as ef:
+                if ef.is_proc:
+                    return j6(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
                 return c_fn_ptr_declarator(elem_t, j4(inner_name, "[", long_to_str(array_length(t)), "]"))
             _:
                 pass
         return j6(c_type(elem_t), " ", inner_name, "[", long_to_str(array_length(t)), "]")
     # Function-pointer types need declarator syntax: `ret_type (*name)(...)`.
+    # A proc type is the synthesized `mt_proc_<sig>` struct (a plain value).
     # Pointer/reference types: `T*` instead of `ptr_T`.
     # Generic variants: build `name_type0_type1_...` directly.
     match t:
-        types.Type.ty_function:
+        types.Type.ty_function as f:
+            if f.is_proc:
+                return j3(c_type(t), " ", name)
             return c_fn_ptr_declarator(t, name)
         types.Type.ty_nullable as nl:
             # A nullable function pointer (`fn(...)?`) lowers to a plain function
@@ -3465,6 +3484,11 @@ struct TypeNode:
 ## pointer-like fields (which need only a forward declaration).
 function by_value_dep_key(ty: types.Type) -> Option[str]:
     match ty:
+        types.Type.ty_function as fnt:
+            # A proc value embeds the synthesized closure struct by value.
+            if fnt.is_proc:
+                return Option[str].some(value = naming.proc_type_c_name(ty))
+            return Option[str].none
         types.Type.ty_named as n:
             if n.module_name.len > 0:
                 return Option[str].some(value = naming.qualified_c_name(n.module_name, n.name))

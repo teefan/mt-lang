@@ -35,6 +35,58 @@ public function sanitize_identifier(text: str) -> str:
     return result
 
 
+## The host's `sanitize_identifier` (`c_backend/type_system.rb:247-250`): every
+## non-alphanumeric byte to `_`, runs of `_` collapsed, leading/trailing `_`
+## stripped (`proc(int) -> int` -> `proc_int_int`).  Empty text becomes `value`.
+public function sanitize_c_identifier(text: str) -> str:
+    var buf = string.String.create()
+    var previous_underscore = false
+    var i: ptr_uint = 0
+    while i < text.len:
+        let b = text.byte_at(i)
+        if is_alnum_byte(b):
+            buf.push_byte(b)
+            previous_underscore = false
+        else:
+            if not previous_underscore:
+                buf.push_byte('_')
+            previous_underscore = true
+        i += 1
+    var result = buf.as_str()
+    while result.len > 0 and result.byte_at(0) == '_':
+        result = result.slice(1, result.len - 1)
+    while result.len > 0 and result.byte_at(result.len - 1) == '_':
+        result = result.slice(0, result.len - 1)
+    if result.len == 0:
+        return "value"
+    return result
+
+
+## The C struct name for a proc (closure) type — the host's `proc_type_name`
+## (`type_system.rb:213-215`): `mt_proc_` + the sanitized `proc(<params>) -> <ret>`
+## spelling (`Types::Proc#to_s`), so `proc(int) -> int` -> `mt_proc_proc_int_int`.
+## The elements render *module-qualified* (`ptr[std.toml.Entry]`, the host's
+## `to_s`), so same-named types from different modules get distinct C names.
+public function proc_type_c_name(t: types.Type) -> str:
+    var raw = string.String.create()
+    match t:
+        types.Type.ty_function as fnt:
+            raw.append("proc(")
+            var i: ptr_uint = 0
+            while i < fnt.params.len:
+                if i > 0:
+                    raw.append(", ")
+                unsafe:
+                    raw.append(type_to_s_qualified(read(fnt.params.data + i)))
+                i += 1
+            raw.append(") -> ")
+            unsafe:
+                raw.append(type_to_s_qualified(read(fnt.return_type)))
+        _:
+            raw.append(type_to_s_qualified(t))
+    return j2("mt_proc_", sanitize_c_identifier(raw.as_str()))
+
+
 ## The C identifier prefix for a module (`std.str` -> `std_str`).
 public function module_c_prefix(module_name: str) -> str:
     return sanitize_identifier(module_name)

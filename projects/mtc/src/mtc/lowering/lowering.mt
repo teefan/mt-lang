@@ -731,15 +731,16 @@ public function lower(program: loader.Program) -> ir.Program:
                         pass
                     Option.none:
                         continue
-            # Qualify proc type aliases to the shared proc struct name so
-            # that e.g. `type IntGenerator = proc() -> int` emits a typedef
-            # to `mt_proc_int` instead of a raw function pointer.
+            # Register the shared proc struct for a proc type alias so that
+            # e.g. `type IntGenerator = proc() -> int` emits a typedef to
+            # `mt_proc_proc_int` instead of a raw function pointer.  The alias's
+            # target stays the proc's own function type; the C name comes from
+            # the backend's type mapping.
             var qualified_tv = tv
             match tv:
                 types.Type.ty_function as fnt:
                     if fnt.is_proc:
-                        let proc_name = proc_type_name_from_signature(tv)
-                        qualified_tv = types.Type.ty_named(module_name = "", name = proc_name)
+                        let proc_name = naming.proc_type_c_name(tv)
                         # An alias that is only ever referenced as a typedef
                         # never reaches `resolve_type_ref`, so nothing else
                         # registers the shared proc value struct it points at.
@@ -4394,8 +4395,11 @@ function qualify_type(ctx: ref[LowerCtx], t: types.Type) -> types.Type:
             return types.Type.ty_nullable(base = types.alloc_type(qbase))
         types.Type.ty_function as fnt:
             if fnt.is_proc:
-                let proc_name = proc_type_name_from_signature(t)
-                return proc_ensure_struct_decl(ctx, proc_name, t)
+                # A proc value's IR type is the closure's own function type (the
+                # host's `Types::Proc`); the `mt_proc_*` C struct is synthesized
+                # from it by the backend.  Register the struct declaration and
+                # carry the type itself.
+                let _registered = proc_ensure_struct_decl(ctx, naming.proc_type_c_name(t), t)
             return t
         _:
             return t
@@ -4793,8 +4797,8 @@ function resolve_type_ref(ctx: ref[LowerCtx], tp: ptr[ast.TypeRef]) -> types.Typ
         if t.is_fn or t.is_proc:
             let fun = resolve_function_type_ref(ctx, tp)
             if t.is_proc:
-                let proc_name = proc_type_name_from_signature(fun)
-                return proc_ensure_struct_decl(ctx, proc_name, fun)
+                let _registered = proc_ensure_struct_decl(ctx, naming.proc_type_c_name(fun), fun)
+                return fun
             if t.nullable:
                 return types.Type.ty_nullable(base = types.alloc_type(fun))
             return fun
@@ -4906,7 +4910,7 @@ function proc_alias_struct_type(ctx: ref[LowerCtx], target: types.Type) -> types
     match target:
         types.Type.ty_function as fnt:
             if fnt.is_proc:
-                return proc_ensure_struct_decl(ctx, proc_type_name_from_signature(target), target)
+                return proc_ensure_struct_decl(ctx, naming.proc_type_c_name(target), target)
         _:
             pass
     return target
@@ -6506,11 +6510,11 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
     let captures = collect_proc_captures(ctx, method_params, body_ptr)
     let has_captures = captures.len > 0
 
-    # Proc struct type: { env, invoke, release, retain }.
-    # Use the shared proc struct name (mt_proc_<ret>) so that proc-typed
-    # fields, params, and expressions all unify to the same C struct type.
+    # Proc struct type: { env, invoke, release, retain }, named from the
+    # signature (`naming.proc_type_c_name`, the host's `proc_type_name`) so that
+    # proc-typed fields, params, and expressions all unify to one C struct.
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(ctx.void_ty))
-    let shared_name = proc_type_name_from_signature(proc_ty)
+    let shared_name = naming.proc_type_c_name(proc_ty)
     let struct_name = shared_name
     # Register the shared struct declaration (no-op if already emitted).
     let _proc_struct_ty = proc_ensure_struct_decl(ctx, struct_name, proc_ty)
@@ -6586,7 +6590,7 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
         fields.push(ir.AggregateField(name = "release", value = alloc_expr(ir.Expr.expr_name(name = release_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
         fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
         resume_stmt_setup(ctx, hoist_saved)
-        return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
+        return alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_ty, fields = fields.as_span()))
 
     # No-capture path.
     ctx.pending_synthetic_functions.push(build_proc_invoke_fn(ctx, method_params, ret_ty, body_ptr, invoke_str))
@@ -6601,7 +6605,7 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
     fields.push(ir.AggregateField(name = "retain", value = alloc_expr(ir.Expr.expr_name(name = retain_str, ty = lifecycle_ty, pointer = Option[bool].some(value = false)))))
 
     resume_stmt_setup(ctx, hoist_saved)
-    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = types.Type.ty_named(module_name = "", name = struct_name), fields = fields.as_span()))
+    return alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_ty, fields = fields.as_span()))
 
 
 ## Pack a single expression into a span.
@@ -7133,19 +7137,29 @@ function build_proc_noop_fn(c_name: str) -> ir.Function:
     return ir.Function(name = c_name, linkage_name = c_name, params = params.as_span(), return_type = types.primitive("void"), body = body.as_span(), entry_point = false, method_receiver_param = false)
 
 
-## The proc's invoke field type: `fn(env: ptr[void], params...) -> R`.
+## The proc struct's `invoke` field type — the host's
+## `proc_invoke_function_type` (`utils.rb:531-537`): a plain function type with
+## the leading `env: ptr[void]` parameter followed by the proc's own (named)
+## parameters.
 function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
     let void_ptr = types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void")))
     match proc_ty:
         types.Type.ty_function as fn_ty:
             var all_params = vec.Vec[types.Type].create()
+            var all_names = vec.Vec[str].create()
             all_params.push(void_ptr)
+            all_names.push("env")
             var i: ptr_uint = 0
             while i < fn_ty.params.len:
                 unsafe:
                     all_params.push(read(fn_ty.params.data + i))
+                var pname = ""
+                if i < fn_ty.param_names.len:
+                    unsafe:
+                        pname = read(fn_ty.param_names.data + i)
+                all_names.push(pname)
                 i += 1
-            return types.Type.ty_function(name = "", params = all_params.as_span(), return_type = fn_ty.return_type, variadic = false, is_proc = true, param_names = span[str]())
+            return types.Type.ty_function(name = "", params = all_params.as_span(), return_type = fn_ty.return_type, variadic = false, is_proc = false, param_names = all_names.as_span())
         _:
             return types.Type.ty_error
 
@@ -7154,7 +7168,7 @@ function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
 function proc_lifecycle_fn_type() -> types.Type:
     var params = vec.Vec[types.Type].create()
     params.push(types.Type.ty_generic(name = "ptr", args = sp_type(types.primitive("void"))))
-    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = span[str]())
+    return types.Type.ty_function(name = "", params = params.as_span(), return_type = types.alloc_type(types.primitive("void")), variadic = false, is_proc = false, param_names = sp_str("env"))
 ## fields `_0`, `_1`, ... and a `ty_tuple` type.  (Named tuples arrive later.)
 function lower_tuple_literal_with_names(ctx: ref[LowerCtx], elements: span[ast.Expr]) -> ptr[ir.Expr]:
     var fields = vec.Vec[ir.AggregateField].create()
@@ -7787,13 +7801,25 @@ function lower_call(ctx: ref[LowerCtx], callee: ptr[ast.Expr], args: span[ast.Ar
                         if is_proc_type(lb.value.ty):
                             return lower_proc_call(ctx, lb.value, args, call_ep)
                         if is_fn_type(lb.value.ty):
+                            # The host's callee is an `IR::Name` carrying the
+                            # function type (a call through the local's value,
+                            # not a bare C-name call); the call's type falls back
+                            # to the callee's own signature when the analyzer
+                            # recorded none (the `lower_proc_call` rule).
                             var ret_ty = expr_type(ctx, call_ep)
-                            var ret_type_ptr = types.alloc_type(ret_ty)
+                            match lb.value.ty:
+                                types.Type.ty_function as ft:
+                                    if is_void_type(ret_ty):
+                                        ret_ty = unsafe: read(ft.return_type)
+                                _:
+                                    pass
+                            let ret_type_ptr = types.alloc_type(ret_ty)
                             # A guard-projected binding is read as a member chain,
                             # so it cannot be spelled as a bare callee name.
                             match lb.value.projection:
                                 BindingProjection.plain:
-                                    return lower_plain_call_sig(ctx, lb.value.c_name, args, call_ep, ret_type_ptr, empty_fn_sig())
+                                    let callee_expr = alloc_expr(ir.Expr.expr_name(name = lb.value.c_name, ty = lb.value.ty, pointer = Option[bool].some(value = false)))
+                                    return lower_call_with_callee_expr(ctx, callee_expr, args, call_ep, ret_type_ptr, empty_fn_sig())
                                 _:
                                     return lower_call_with_callee_expr(ctx, lower_binding_read(ctx, lb.value), args, call_ep, ret_type_ptr, empty_fn_sig())
                     Option.none:
@@ -11598,7 +11624,10 @@ function coerce_monomorphized_arg_to_proc(ctx: ref[LowerCtx], cached: ptr[ir.Fun
                     match read(arg_ast):
                         ast.Expr.expr_identifier as fn_id:
                             if ctx.function_returns.contains(fn_id.name) or ctx.analysis.functions.contains(fn_id.name):
-                                return lower_fn_to_proc(ctx, nm.name, nm.ty)
+                                # The wrapper's value type is the *parameter's*
+                                # proc type (the bare name's own type is a plain
+                                # `fn`, whose C form is a function pointer).
+                                return lower_fn_to_proc(ctx, nm.name, param.ty)
                         _:
                             pass
             _:
@@ -11863,7 +11892,7 @@ function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type)
             ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
 
             # Ensure the proc struct type exists for this signature.
-            let proc_name = proc_type_name_from_signature(fn_ty)
+            let proc_name = naming.proc_type_c_name(fn_ty)
             let proc_ty = proc_ensure_struct_decl(ctx, proc_name, fn_ty)
 
             let lifecycle_ty = proc_lifecycle_fn_type()
@@ -14730,37 +14759,16 @@ function empty_fn_sig() -> Option[analyzer.FnSig]:
     return Option[analyzer.FnSig].none
 
 
-## Generate a shared proc struct type name for a given function type:
-## `mt_proc_R_P1_P2_...`.  Multiple proc expressions with the same signature
-## share this type, so proc-typed params, returns, and expressions unify.
-function proc_type_name_from_signature(proc_ty: types.Type) -> str:
-    var buf = string.String.create()
-    buf.append("mt_proc_")
-    match proc_ty:
-        types.Type.ty_function as fnt:
-            unsafe:
-                buf.append(naming.type_c_key(read(fnt.return_type)))
-            var i: ptr_uint = 0
-            while i < fnt.params.len:
-                buf.append("_")
-                unsafe:
-                    buf.append(naming.type_c_key(read(fnt.params.data + i)))
-                i += 1
-        _:
-            pass
-    return buf.as_str()
-
-
-## Ensure a proc struct declaration exists for the given signature and return a
-## `ty_named` pointing to it.  Multiple callers with the same signature share
-## the same struct type.
+## Ensure a proc struct declaration exists for the given signature.  Returns the
+## proc's own value type (its closure function type) — the struct is a backend
+## artifact (`Program.monomorphized_structs`), not the value's IR type.
 function proc_ensure_struct_decl(ctx: ref[LowerCtx], struct_name: str, proc_ty: types.Type) -> types.Type:
     # Skip when the proc type contains unresolved type variables (happens
     # inside generic function bodies where T is not yet substituted).
     if proc_type_has_type_var(proc_ty):
-        return types.Type.ty_named(module_name = "", name = struct_name)
+        return proc_ty
     ctx.pending_proc_structs.push(proc_struct_decl(struct_name, proc_ty))
-    return types.Type.ty_named(module_name = "", name = struct_name)
+    return proc_ty
 
 
 ## Build the concrete proc value struct declaration for a signature: the
@@ -14853,14 +14861,15 @@ function lower_proc_call(ctx: ref[LowerCtx], lb: LocalBinding, args: span[ast.Ar
         i += 1
 
     # Call through p.invoke (function pointer field).  The C backend renders
-    # this as p.invoke(arg0, arg1, ...), a direct call through the member.  The
-    # analyzer does not always record a type for a call through a proc VALUE
-    # (`let _s = scaler(10.0)` came out void), so fall back to the closure's own
-    # signature, which carries the real return type.
+    # this as p.invoke(arg0, arg1, ...), a direct call through the member, whose
+    # type is the invoke field's own signature (the host's `async_task_call`
+    # shape).  The analyzer does not always record a type for a call through a
+    # proc VALUE (`let _s = scaler(10.0)` came out void), so fall back to the
+    # closure's own signature, which carries the real return type.
     var call_ty = expr_type(ctx, call_ep)
     if is_void_type(call_ty):
         call_ty = proc_return_type(lb.ty)
-    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = call_ty))
+    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = proc_invoke_field_type(lb.ty)))
     return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
 
 
@@ -14883,11 +14892,13 @@ function lower_proc_field_call(ctx: ref[LowerCtx], field_expr: ptr[ir.Expr], arg
             invoke_args.push(read(lowered))
         i += 1
     # As in `lower_proc_call`: a call through a proc-typed field may not have a
-    # recorded type, so take the return type from the field's own signature.
+    # recorded type, so take the return type from the field's own signature, and
+    # type the `invoke` member with its field signature.
     var call_ty = expr_type(ctx, call_ep)
+    let field_proc_ty = ir_expr_type(field_expr)
     if is_void_type(call_ty):
-        call_ty = proc_return_type(ir_expr_type(field_expr))
-    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "invoke", ty = call_ty))
+        call_ty = proc_return_type(field_proc_ty)
+    let invoke_field = alloc_expr(ir.Expr.expr_member(receiver = field_expr, member = "invoke", ty = proc_invoke_field_type(field_proc_ty)))
     return alloc_expr(ir.Expr.expr_call_indirect(callee = invoke_field, arguments = invoke_args.as_span(), ty = call_ty))
 
 
@@ -16013,8 +16024,8 @@ function resolve_field_type_ref(ctx: ref[LowerCtx], tref: ast.TypeRef) -> types.
     if tref.is_fn or tref.is_proc:
         let fun = resolve_function_type_ref(ctx, ptr_of(local_tref))
         if tref.is_proc:
-            let proc_name = proc_type_name_from_signature(fun)
-            return proc_ensure_struct_decl(ctx, proc_name, fun)
+            let _registered = proc_ensure_struct_decl(ctx, naming.proc_type_c_name(fun), fun)
+            return fun
         if tref.nullable:
             return types.Type.ty_nullable(base = types.alloc_type(fun))
         return fun
