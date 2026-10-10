@@ -257,8 +257,6 @@ struct LowerCtx:
     # Always points to a valid map (empty during normal lowering, populated
     # during monomorphized function lowering).
     type_substitution: map_mod.Map[str, types.Type]
-    # Proc counter for synthetic invoke/release/retain function names.
-    proc_counter: ptr_uint
     # Pending synthetic functions (invoke/release/retain) emitted during
     # proc lowering, to be appended after the main module iteration.
     pending_synthetic_functions: vec.Vec[ir.Function]
@@ -372,12 +370,6 @@ struct LowerCtx:
     async_local_fields: vec.Vec[ir.Field]
     async_await_fields: vec.Vec[ir.Field]
     async_local_seen: map_mod.Map[str, bool]
-    # The host's `@async_binding_counter` (per compile, lowering.rb:129): a match
-    # arm with an `as` binding whose body awaits takes the next
-    # `local_match_binding_<N>` frame-field name, and the counter also advances
-    # per lowered payload-binding arm (the host's `async_match_binding_field_key`
-    # call sites — the analysis pass registers, the lowering pass looks up).
-    async_match_binding_counter: ptr_uint
     # Prepass-assigned field names for match arms whose body awaits, keyed by the
     # arm's address.  The lowering pass emits the field after the arm body (the
     # host's post-order analysis registration).
@@ -576,6 +568,9 @@ public function lower(program: loader.Program) -> ir.Program:
         return ir.empty_program("(anonymous)", "")
     var root = unsafe: read(root_ptr)
     let root_name = root.module_name
+    # Per-compile counters (the host resets these in `Lowering#initialize`).
+    async_binding_cnt = 0
+    proc_counter = 0
 
     # Shared cross-module function return types, keyed by C linkage name, so a
     # `mod.func(...)` call in one module can resolve the result type of a
@@ -1065,7 +1060,6 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         loaded_modules = lod_modules,
         spec_in_progress = map_mod.Map[str, bool].create(),
         type_substitution = map_mod.Map[str, types.Type].create(),
-        proc_counter = 0,
         pending_synthetic_functions = vec.Vec[ir.Function].create(),
         pending_external_structs = vec.Vec[ir.ExternalStructLayout].create(),
         external_struct_keys = map_mod.Map[str, bool].create(),
@@ -1103,7 +1097,6 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_local_fields = vec.Vec[ir.Field].create(),
         async_await_fields = vec.Vec[ir.Field].create(),
         async_local_seen = map_mod.Map[str, bool].create(),
-        async_match_binding_counter = 0,
         async_match_binding_names = map_mod.Map[ptr_uint, str].create(),
         async_complete_label = "",
         async_result_c_name = "",
@@ -6448,6 +6441,13 @@ function lower_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
                 fatal(c"lowering: unsupported expression")
 
 
+## Synthetic proc symbols: the host's `@synthetic_proc_counter`
+## (`fresh_proc_symbol`, utils.rb:555) is per *compile* and shared by proc
+## expressions (`block.rb:99`) and function-to-proc wrappers (`resolve.rb:62`),
+## whose symbols are `<module_prefix>__proc_<N>__invoke/release/retain`.
+var proc_counter: ptr_uint = 0
+
+
 ## Lower a proc expression `proc(x: int) -> int: x + 1` to a proc struct literal
 ## with invoke/release/retain function pointers and a capture env pointer.  No-
 ## capture procs use null env; capturing procs use a heap-allocated env struct
@@ -6468,16 +6468,17 @@ function lower_proc_expression_typed(ctx: ref[LowerCtx], method_params: span[ast
     # statement's hoisting while the synthetic invoke/release/retain functions
     # (and their bodies) are built.
     let hoist_saved = suspend_stmt_setup(ctx)
-    ctx.proc_counter += 1
-    let proc_id = ctx.proc_counter
+    proc_counter += 1
+    let proc_id = proc_counter
     var id_buf = string.String.create()
     id_buf.append(naming.module_c_prefix(ctx.module_name))
     id_buf.append("__proc_")
     fmt.append_ptr_uint(ref_of(id_buf), proc_id)
     let proc_prefix = id_buf.as_str()
 
-    # Collect all in-scope locals as captures (excluding "this" receiver).
-    let captures = collect_locals_for_capture(ctx, method_params)
+    # Captures are the body's referenced enclosing locals (the host's
+    # first-reference-order walk), not every visible local.
+    let captures = collect_proc_captures(ctx, method_params, body_ptr)
     let has_captures = captures.len > 0
 
     # Proc struct type: { env, invoke, release, retain }.
@@ -6586,35 +6587,269 @@ function pack_single(expr: ptr[ir.Expr]) -> span[ir.Expr]:
     return buf.as_span()
 
 
-## Collect all locals in the current scope that can be captured (excluding "this"
-## and function parameters declared in the proc).
-function collect_locals_for_capture(ctx: ref[LowerCtx], method_params: span[ast.Param]) -> span[ProcCapture]:
-    var result = vec.Vec[ProcCapture].create()
-    var param_names = map_mod.Map[str, bool].create()
+## Collect the proc body's free variables that resolve to enclosing locals — the
+## host's `proc_capture_entries` walk (`proc.rb:137-250`): first-reference order,
+## names bound inside the proc (its params, locals, `for` names, match bindings)
+## shadow and are not captured, a name with no enclosing local (a module
+## var/const/function) is not captured, and a nested proc's body is skipped
+## (`AST::ProcExpr`).
+function collect_proc_captures(ctx: ref[LowerCtx], method_params: span[ast.Param], body: ptr[ast.Stmt]?) -> span[ProcCapture]:
+    var captures = vec.Vec[ProcCapture].create()
+    var seen = map_mod.Map[str, bool].create()
+    var scopes = vec.Vec[map_mod.Map[str, bool]].create()
+    var param_scope = map_mod.Map[str, bool].create()
     var pi: ptr_uint = 0
     while pi < method_params.len:
         unsafe:
-            param_names.set(read(method_params.data + pi).name, true)
+            param_scope.set(read(method_params.data + pi).name, true)
         pi += 1
-    # Track already-collected names to avoid duplicates from stale match-
-    # arm bindings that persist in ctx.locals across scope boundaries.
-    var seen_names = map_mod.Map[str, bool].create()
-    var li: ptr_uint = 0
-    while li < ctx.locals.len():
-        let lb_ptr = ctx.locals.get(li) else:
-            break
+    scopes.push(param_scope)
+    proc_capture_visit_stmt(ctx, body, ref_of(scopes), ref_of(seen), ref_of(captures))
+    return captures.as_span()
+
+
+## True when `name` is bound in one of the proc's own scopes (innermost first).
+function proc_capture_name_bound(scopes: ref[vec.Vec[map_mod.Map[str, bool]]], name: str) -> bool:
+    var i = scopes.len()
+    while i > 0:
+        i -= 1
+        let sc = scopes.get(i) else:
+            continue
+        if unsafe: read(sc).contains(name):
+            return true
+    return false
+
+
+## Add `name` to the innermost proc scope (a no-op for the empty name of a
+## destructuring declaration).
+function proc_capture_scope_add(scopes: ref[vec.Vec[map_mod.Map[str, bool]]], name: str) -> void:
+    if name == "":
+        return
+    let sc = scopes.get(scopes.len() - 1) else:
+        return
+    unsafe: read(sc).set(name, true)
+
+
+## Visit a statement body in a fresh scope (the host's `local_scopes + [{}]` for
+## if/loop/unsafe/defer bodies and match arms).
+function proc_capture_visit_scope(ctx: ref[LowerCtx], body: ptr[ast.Stmt]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
+    if body == null:
+        return
+    scopes.push(map_mod.Map[str, bool].create())
+    proc_capture_visit_stmt(ctx, body, scopes, seen, captures)
+    let _dropped = scopes.pop()
+
+
+## Visit a statement list in place (same scope).
+function proc_capture_visit_stmts(ctx: ref[LowerCtx], stmts: span[ast.Stmt], scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
+    var i: ptr_uint = 0
+    while i < stmts.len:
         unsafe:
-            let lb = read(lb_ptr)
-            if lb.name == "this" or param_names.contains(lb.name):
-                li += 1
-                continue
-            if seen_names.contains(lb.c_name):
-                li += 1
-                continue
-            seen_names.set(lb.c_name, true)
-            result.push(ProcCapture(name = lb.name, c_name = lb.c_name, ty = lb.ty, read_expr = lower_binding_read(ctx, lb)))
-        li += 1
-    return result.as_span()
+            proc_capture_visit_stmt(ctx, stmts.data + i, scopes, seen, captures)
+        i += 1
+
+
+## Walk `ep` for free identifiers; the first reference to an enclosing local
+## records its capture with the enclosing binding's read expression (so a
+## frame-bound async local still resolves).
+function proc_capture_visit_expr(ctx: ref[LowerCtx], ep: ptr[ast.Expr]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
+    let xp = ep else:
+        return
+    unsafe:
+        match read(xp):
+            ast.Expr.expr_identifier as id:
+                if id.name == "this" or proc_capture_name_bound(scopes, id.name) or seen.contains(id.name):
+                    return
+                match find_local(ctx, id.name):
+                    Option.some as lb:
+                        seen.set(id.name, true)
+                        captures.push(ProcCapture(name = id.name, c_name = lb.value.c_name, ty = lb.value.ty, read_expr = lower_binding_read(ctx, lb.value)))
+                    Option.none:
+                        pass
+            ast.Expr.expr_member_access as ma:
+                proc_capture_visit_expr(ctx, ma.receiver, scopes, seen, captures)
+            ast.Expr.expr_call as c:
+                proc_capture_visit_expr(ctx, c.callee, scopes, seen, captures)
+                var i: ptr_uint = 0
+                while i < c.args.len:
+                    proc_capture_visit_expr(ctx, read(c.args.data + i).arg_value, scopes, seen, captures)
+                    i += 1
+            ast.Expr.expr_index_access as ix:
+                proc_capture_visit_expr(ctx, ix.receiver, scopes, seen, captures)
+                proc_capture_visit_expr(ctx, ix.index, scopes, seen, captures)
+            ast.Expr.expr_specialization as s:
+                proc_capture_visit_expr(ctx, s.callee, scopes, seen, captures)
+            ast.Expr.expr_binary_op as b:
+                proc_capture_visit_expr(ctx, b.left, scopes, seen, captures)
+                proc_capture_visit_expr(ctx, b.right, scopes, seen, captures)
+            ast.Expr.expr_unary_op as u:
+                proc_capture_visit_expr(ctx, u.operand, scopes, seen, captures)
+            ast.Expr.expr_if as c:
+                proc_capture_visit_expr(ctx, c.condition, scopes, seen, captures)
+                proc_capture_visit_expr(ctx, c.then_expr, scopes, seen, captures)
+                proc_capture_visit_expr(ctx, c.else_expr, scopes, seen, captures)
+            ast.Expr.expr_match as m:
+                proc_capture_visit_expr(ctx, m.scrutinee, scopes, seen, captures)
+                var ai: ptr_uint = 0
+                while ai < m.arms.len:
+                    let arm = read(m.arms.data + ai)
+                    proc_capture_visit_expr(ctx, arm.pattern, scopes, seen, captures)
+                    scopes.push(map_mod.Map[str, bool].create())
+                    match arm.binding_name:
+                        Option.some as bn:
+                            proc_capture_scope_add(scopes, bn.value)
+                        Option.none:
+                            pass
+                    proc_capture_visit_expr(ctx, arm.value, scopes, seen, captures)
+                    let _dropped = scopes.pop()
+                    ai += 1
+            ast.Expr.expr_format_string as f:
+                var pi: ptr_uint = 0
+                while pi < f.parts.len:
+                    match read(f.parts.data + pi):
+                        ast.FormatStringPart.fmt_expr as part:
+                            proc_capture_visit_expr(ctx, part.expression, scopes, seen, captures)
+                        ast.FormatStringPart.fmt_text:
+                            pass
+                    pi += 1
+            ast.Expr.expr_range as r:
+                proc_capture_visit_expr(ctx, r.start_expr, scopes, seen, captures)
+                proc_capture_visit_expr(ctx, r.end_expr, scopes, seen, captures)
+            ast.Expr.expr_prefix_cast as pc:
+                proc_capture_visit_expr(ctx, pc.expression, scopes, seen, captures)
+            ast.Expr.expr_unsafe as u:
+                proc_capture_visit_expr(ctx, u.expression, scopes, seen, captures)
+            ast.Expr.expr_await as aw:
+                proc_capture_visit_expr(ctx, aw.expression, scopes, seen, captures)
+            ast.Expr.expr_detach as d:
+                proc_capture_visit_expr(ctx, d.expression, scopes, seen, captures)
+            ast.Expr.expr_expression_list as el:
+                var ei: ptr_uint = 0
+                while ei < el.elements.len:
+                    proc_capture_visit_expr(ctx, el.elements.data + ei, scopes, seen, captures)
+                    ei += 1
+            ast.Expr.expr_named as n:
+                proc_capture_visit_expr(ctx, n.value, scopes, seen, captures)
+            _:
+                pass
+
+
+## The host's per-statement capture walk (`collect_proc_captures_from_statement`,
+## proc.rb:150-192): declarations bind after their initializer, branch/loop/arm
+## bodies get their own scope, and a nested `when` mirrors the if/match shape.
+function proc_capture_visit_stmt(ctx: ref[LowerCtx], sp: ptr[ast.Stmt]?, scopes: ref[vec.Vec[map_mod.Map[str, bool]]], seen: ref[map_mod.Map[str, bool]], captures: ref[vec.Vec[ProcCapture]]) -> void:
+    let xp = sp else:
+        return
+    unsafe:
+        match read(xp):
+            ast.Stmt.stmt_block as blk:
+                proc_capture_visit_stmts(ctx, blk.statements, scopes, seen, captures)
+            ast.Stmt.stmt_local as loc:
+                proc_capture_visit_expr(ctx, loc.value, scopes, seen, captures)
+                match loc.destructure_bindings:
+                    Option.some as names:
+                        var di: ptr_uint = 0
+                        while di < names.value.len:
+                            proc_capture_scope_add(scopes, read(names.value.data + di))
+                            di += 1
+                    Option.none:
+                        pass
+                proc_capture_scope_add(scopes, loc.name)
+            ast.Stmt.stmt_assignment as a:
+                proc_capture_visit_expr(ctx, a.target, scopes, seen, captures)
+                proc_capture_visit_expr(ctx, a.value, scopes, seen, captures)
+            ast.Stmt.stmt_if as iff:
+                var bi: ptr_uint = 0
+                while bi < iff.branches.len:
+                    let br = read(iff.branches.data + bi)
+                    proc_capture_visit_expr(ctx, br.condition, scopes, seen, captures)
+                    proc_capture_visit_scope(ctx, br.body, scopes, seen, captures)
+                    bi += 1
+                proc_capture_visit_scope(ctx, iff.else_body, scopes, seen, captures)
+            ast.Stmt.stmt_while as w:
+                proc_capture_visit_expr(ctx, w.condition, scopes, seen, captures)
+                proc_capture_visit_scope(ctx, w.body, scopes, seen, captures)
+            ast.Stmt.stmt_for as f:
+                var ii: ptr_uint = 0
+                while ii < f.iterables.len:
+                    proc_capture_visit_expr(ctx, f.iterables.data + ii, scopes, seen, captures)
+                    ii += 1
+                scopes.push(map_mod.Map[str, bool].create())
+                var bi: ptr_uint = 0
+                while bi < f.bindings.len:
+                    proc_capture_scope_add(scopes, read(f.bindings.data + bi).name)
+                    bi += 1
+                proc_capture_visit_stmt(ctx, f.body, scopes, seen, captures)
+                let _dropped = scopes.pop()
+            ast.Stmt.stmt_match as m:
+                proc_capture_visit_expr(ctx, m.scrutinee, scopes, seen, captures)
+                var ai: ptr_uint = 0
+                while ai < m.arms.len:
+                    let arm = read(m.arms.data + ai)
+                    proc_capture_visit_expr(ctx, arm.pattern, scopes, seen, captures)
+                    scopes.push(map_mod.Map[str, bool].create())
+                    match arm.binding_name:
+                        Option.some as bn:
+                            proc_capture_scope_add(scopes, bn.value)
+                        Option.none:
+                            pass
+                    proc_capture_visit_stmt(ctx, arm.body, scopes, seen, captures)
+                    let _dropped = scopes.pop()
+                    ai += 1
+            ast.Stmt.stmt_ret as r:
+                proc_capture_visit_expr(ctx, r.value, scopes, seen, captures)
+            ast.Stmt.stmt_expression as e:
+                proc_capture_visit_expr(ctx, e.expression, scopes, seen, captures)
+            ast.Stmt.stmt_defer as d:
+                scopes.push(map_mod.Map[str, bool].create())
+                proc_capture_visit_expr(ctx, d.expression, scopes, seen, captures)
+                proc_capture_visit_stmt(ctx, d.body, scopes, seen, captures)
+                let _dropped = scopes.pop()
+            ast.Stmt.stmt_unsafe as u:
+                proc_capture_visit_scope(ctx, u.body, scopes, seen, captures)
+            ast.Stmt.stmt_static_assert as sa:
+                proc_capture_visit_expr(ctx, sa.condition, scopes, seen, captures)
+                proc_capture_visit_expr(ctx, sa.message, scopes, seen, captures)
+            ast.Stmt.stmt_when as w:
+                proc_capture_visit_expr(ctx, w.discriminant, scopes, seen, captures)
+                var wi: ptr_uint = 0
+                while wi < w.branches.len:
+                    let br = read(w.branches.data + wi)
+                    proc_capture_visit_expr(ctx, br.pattern, scopes, seen, captures)
+                    scopes.push(map_mod.Map[str, bool].create())
+                    match br.binding_name:
+                        Option.some as bn:
+                            proc_capture_scope_add(scopes, bn.value)
+                        Option.none:
+                            pass
+                    proc_capture_visit_stmts(ctx, br.body, scopes, seen, captures)
+                    let _dropped = scopes.pop()
+                    wi += 1
+                proc_capture_visit_scope(ctx, w.else_body, scopes, seen, captures)
+            ast.Stmt.stmt_gather as g:
+                var gi: ptr_uint = 0
+                while gi < g.handles.len:
+                    proc_capture_visit_expr(ctx, g.handles.data + gi, scopes, seen, captures)
+                    gi += 1
+            ast.Stmt.stmt_parallel_block as pb:
+                var pbi: ptr_uint = 0
+                while pbi < pb.bodies.len:
+                    proc_capture_visit_scope(ctx, pb.bodies.data + pbi, scopes, seen, captures)
+                    pbi += 1
+            ast.Stmt.stmt_error_block as eb:
+                proc_capture_visit_stmt(ctx, eb.body, scopes, seen, captures)
+            ast.Stmt.stmt_emit:
+                pass
+            ast.Stmt.stmt_break:
+                pass
+            ast.Stmt.stmt_continue:
+                pass
+            ast.Stmt.stmt_pass:
+                pass
+            ast.Stmt.stmt_error:
+                pass
+            _:
+                pass
 
 
 ## Build a setup function that allocates + populates the capture-env struct.
@@ -11570,11 +11805,11 @@ function lower_specialized_method(ctx: ref[LowerCtx], method_c: str, info: Gener
 ## Wrap a function reference in a proc struct with a synthetic invoke function
 ## that calls the original function, plus no-op release/retain.
 function lower_fn_to_proc(ctx: ref[LowerCtx], fn_c_name: str, fn_ty: types.Type) -> ptr[ir.Expr]:
-    ctx.proc_counter += 1
+    proc_counter += 1
     var prefix = string.String.create()
     prefix.append(naming.module_c_prefix(ctx.module_name))
-    prefix.append("__fn_wrap_")
-    fmt.append_ptr_uint(ref_of(prefix), ctx.proc_counter)
+    prefix.append("__proc_")
+    fmt.append_ptr_uint(ref_of(prefix), proc_counter)
 
     var invoke_c = string.String.create()
     invoke_c.append(prefix.as_str())
@@ -16988,7 +17223,7 @@ function lower_variant_match_switch(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.S
                         # binding is a plain C local and the analysis-registered
                         # field stays unused.
                         if arm_has_payload(info, arm_name):
-                            ctx.async_match_binding_counter += 1
+                            async_binding_cnt += 1
                         let fname_ptr = ctx.async_match_binding_names.get(arm_key)
                         if fname_ptr != null:
                             reg_field = unsafe: read(ptr[str]<-fname_ptr)
@@ -17100,7 +17335,7 @@ function lower_variant_match_goto(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stm
                                     # the `as` binding (the payload temp above has
                                     # no host counterpart: the host's async match
                                     # path only handles member-pattern arms).
-                                    ctx.async_match_binding_counter += 1
+                                    async_binding_cnt += 1
                                     let gname_ptr = ctx.async_match_binding_names.get(arm_key)
                                     if gname_ptr != null:
                                         reg_field = unsafe: read(ptr[str]<-gname_ptr)
@@ -22795,6 +23030,14 @@ function has_non_lifetime_type_params(params: span[ast.TypeParam]) -> bool:
 #  Async CPS — Step 1: frame struct + synthetic functions (with await support)
 # =============================================================================
 
+## The host's `@async_binding_counter` (per *compile*, `lowering.rb:129`): a match
+## arm with an `as` binding whose body awaits takes the next
+## `local_match_binding_<N>` frame-field name, and the lowering advances the
+## counter per payload-binding arm (the two `async_match_binding_field_key` call
+## sites).  Program-scoped, not per LowerCtx: `lower_module` builds a fresh ctx
+## per module while the host's count continues across the whole closure.
+var async_binding_cnt: ptr_uint = 0
+
 ## The host's async analysis emulation for match bindings
 ## (`analyze_async_statements!`'s MatchStmt arm, analysis.rb:125-145): an arm
 ## with an `as` binding whose body awaits takes the next
@@ -22841,8 +23084,8 @@ function async_prepass_stmt_match_bindings(ctx: ref[LowerCtx], sp: ptr[ast.Stmt]
                     match arm.binding_name:
                         Option.some:
                             if async_mod.stmt_has_await(arm.body):
-                                ctx.async_match_binding_counter += 1
-                                ctx.async_match_binding_names.set(reinterpret[ptr_uint](arm_ptr), j2("local_match_binding_", pw1_str(ctx.async_match_binding_counter)))
+                                async_binding_cnt += 1
+                                ctx.async_match_binding_names.set(reinterpret[ptr_uint](arm_ptr), j2("local_match_binding_", pw1_str(async_binding_cnt)))
                         Option.none:
                             pass
                     ai += 1
@@ -22896,6 +23139,11 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     # (`analyze_async_function` → `lower_async_function_decl`); its match-binding
     # registrations are what name the frame's `local_match_binding_<N>` fields.
     async_prepass_match_bindings(ctx, body)
+    # The host appends the frame struct to `@artifacts.synthetic_structs` before
+    # the body's lowering (`functions.rb:210`), so a body-created struct (a proc
+    # env) follows it.  The frame's fields are only known after the body, so
+    # remember the insertion point and insert the frame there.
+    let frame_index = ctx.pending_synthetic_structs.len()
     let ptr_ty = ptr_uint_type()
     let frame_ty = types.Type.ty_named(module_name = "", name = frame_c)
     let frame_ptr_ty = types.Type.ty_generic(name = "ptr", args = single_ty_span(frame_ty))
@@ -23070,7 +23318,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
                 break
             ff.push(unsafe: read(afp))
             afi += 1
-    ctx.pending_synthetic_structs.push(ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
+    let _inserted = ctx.pending_synthetic_structs.insert(frame_index, ir.StructDecl(name = frame_c, linkage_name = frame_c, fields = ff.as_span(), packed = false, alignment = 0, source_module = Option[str].none))
 
     # Shared bool exprs for vtable/constructor
     let bool_true = alloc_expr(ir.Expr.expr_boolean_literal(value = true, ty = bool_ty))

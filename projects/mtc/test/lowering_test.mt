@@ -3149,3 +3149,92 @@ function test_async_match_bindings_use_local_match_binding_fields() -> void:
     expect(text.contains_substring("(IR::LocalDecl :name \"s\" :linkage_name \"s\""))
     expect(not text.contains_substring("local_success_q"))
     expect(not text.contains_substring("__mt_frame->local_success_"))
+
+
+@[test]
+function test_proc_captures_and_counters_are_program_scoped() -> void:
+    ## A proc captures only the enclosing locals its body *references* (the
+    ## host's `proc_capture_entries` walk, `proc.rb:137-250`) — not every visible
+    ## local — and both the synthetic proc symbols and the async match-binding
+    ## counter number per *compile* (the host's per-`Lowering` counters), not per
+    ## module (`lower_module` builds a fresh LowerCtx).  `beta`'s proc is symbol
+    ## 2 and its awaited arm takes `local_match_binding_4` (session 44 batch 12;
+    ## `std/json.mt`'s stray `current`, `std/net/clock.mt`'s 5/6).
+    var root = fs.create_temporary_directory_in_system_temp("mtc_progscope_") else:
+        return
+    defer: cleanup_dir(ref_of(root))
+
+    var alpha_source = <<-SRC
+        public function a_demo(x: int) -> int:
+            let unused_outer: int = 7
+            let f = proc(y: int) -> int: y + x
+            return 0
+
+        public async function a_step(x: int) -> Result[int, int]:
+            return Result[int, int].success(value = x)
+
+        public async function a_num(x: int) -> int:
+            return x
+
+        public async function a_work(x: int) -> Result[int, int]:
+            let r = await a_step(x)
+            match r:
+                Result.failure as p:
+                    return Result[int, int].failure(error = p.error)
+                Result.success as q:
+                    let v = await a_num(q.value)
+                    return Result[int, int].success(value = v)
+    SRC
+    if not write_source_file(root.as_str(), "alpha.mt", alpha_source):
+        return
+
+    var beta_source = <<-SRC
+        import alpha
+
+        public function b_demo(z: int) -> int:
+            let g = proc(w: int) -> int: w + z
+            return 0
+
+        public async function b_work(y: int) -> Result[int, int]:
+            let r2 = await alpha.a_step(y)
+            match r2:
+                Result.failure as pb:
+                    return Result[int, int].failure(error = pb.error)
+                Result.success as qb:
+                    let w = await alpha.a_num(qb.value)
+                    return Result[int, int].success(value = w)
+    SRC
+    if not write_source_file(root.as_str(), "beta.mt", beta_source):
+        return
+
+    var source = <<-SRC
+        import alpha
+        import beta
+
+        function main() -> int:
+            return 0
+    SRC
+    if not write_main_file(root.as_str(), source):
+        return
+
+    var main_path = path_ops.join(root.as_str(), "main.mt")
+    defer: main_path.release()
+    var roots = array[str, 1](root.as_str())
+    var program = loader.check_program(main_path.as_str(), roots.as_span(), resolver.Platform.linux)
+    defer: program.release()
+
+    let ir_program = lowering.lower(program)
+    var dump = sexpr.dump_ir(ir_program)
+    defer: dump.release()
+    let text = dump.as_str()
+    ## alpha's env carries only the referenced `x` (not `unused_outer`), and
+    ## beta's proc continues the program-wide symbol count.
+    expect(text.contains_substring("alpha__proc_1__env\" :linkage_name \"alpha__proc_1__env\" :fields ((IR::Field :name \"__mt_ref_count\" :type (Types::Primitive :name \"ptr_uint\")) (IR::Field :name \"x\" :type (Types::Primitive :name \"int\")))"))
+    expect(not text.contains_substring("(IR::Field :name \"unused_outer\""))
+    expect(text.contains_substring("beta__proc_2__env\""))
+    ## The async match-binding counter also continues across modules (1 in
+    ## alpha, 4 in beta after alpha's two lowering advances).
+    expect(text.contains_substring("local_match_binding_1"))
+    expect(text.contains_substring("local_match_binding_4"))
+    expect(not text.contains_substring("local_match_binding_2"))
+    expect(not text.contains_substring("local_match_binding_3"))
