@@ -367,6 +367,10 @@ struct LowerCtx:
     async_result_ty: types.Type
     async_result_is_void: bool
     async_await_counter: ptr_uint
+    # The host's per-function normalization temp counter
+    # (`fresh_async_temp_name`, normalization.rb:475): hoisted awaits become
+    # `__mt_async_tmp_<N>` local decls (field `local___mt_async_tmp_<N>`).
+    async_tmp_counter: ptr_uint
     async_local_fields: vec.Vec[ir.Field]
     async_await_fields: vec.Vec[ir.Field]
     async_local_seen: map_mod.Map[str, bool]
@@ -1094,6 +1098,7 @@ function new_lowering_context(analysis: analyzer.Analysis, prog_returns: ptr[map
         async_result_ty = types.primitive("void"),
         async_result_is_void = true,
         async_await_counter = 0,
+        async_tmp_counter = 0,
         async_local_fields = vec.Vec[ir.Field].create(),
         async_await_fields = vec.Vec[ir.Field].create(),
         async_local_seen = map_mod.Map[str, bool].create(),
@@ -2853,7 +2858,7 @@ function lower_stmt(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], sp: ptr[a
                 # Async CPS: spill every `let`/`var` to a frame field and, when the
                 # initializer is a direct `await`, split into suspend/resume.
                 if ctx.async_cps_active and loc.destructure_bindings.is_none() and loc.else_body == null:
-                    lower_async_local(ctx, output, loc.name, loc.value, loc.stmt_type)
+                    lower_async_local(ctx, output, loc.name, loc.value, loc.stmt_type, loc.line)
                     return
                 match loc.destructure_bindings:
                     Option.some as binds:
@@ -3478,7 +3483,13 @@ function guard_binding_projection(kind: str, storage_ty: types.Type) -> BindingP
 ## Like lower_propagate_let, but for `return expr?`: propagate the ? into
 ## an if/failure-return pattern, then return the unwrapped success value.
 function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], operand: ptr[ast.Expr], line: ptr_uint, source_path: str) -> void:
-    let value_ir = lower_expr(ctx, operand)
+    # The host's normalization hoists an embedded await out of a `?` operand
+    # into a `__mt_async_tmp_<N>` local before the propagation lowers it
+    # (`normalize_async_expression`'s AwaitExpr case).
+    var actual = operand
+    if ctx.async_cps_active and async_mod.expr_has_await(operand):
+        actual = async_hoist_awaits(ctx, output, operand)
+    let value_ir = lower_expr(ctx, actual)
     let storage_ty = ir_expr_type(value_ir)
 
     let storage_c = fresh_c_temp_name(ctx, "propagate")
@@ -3562,7 +3573,13 @@ function lower_propagate_return(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]
 
 
 function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], name: str, operand: ptr[ast.Expr]) -> void:
-    let value_ir = lower_expr(ctx, operand)
+    # The host's normalization hoists an embedded await out of a `?` operand
+    # into a `__mt_async_tmp_<N>` local before the propagation lowers it
+    # (`normalize_async_expression`'s AwaitExpr case).
+    var actual = operand
+    if ctx.async_cps_active and async_mod.expr_has_await(operand):
+        actual = async_hoist_awaits(ctx, output, operand)
+    let value_ir = lower_expr(ctx, actual)
     let storage_ty = ir_expr_type(value_ir)
 
     # Hidden storage local holding the full Option/Result value.
@@ -3710,7 +3727,13 @@ function lower_propagate_let(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], 
 ## lvalue target rather than introducing a `let` binding.  The failure branch is
 ## identical (return the wrapped failure, or complete the frame early in CPS).
 function lower_propagate_assign(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], target_ast: ptr[ast.Expr], operand: ptr[ast.Expr]) -> void:
-    let value_ir = lower_expr(ctx, operand)
+    # The host's normalization hoists an embedded await out of a `?` operand
+    # into a `__mt_async_tmp_<N>` local before the propagation lowers it
+    # (`normalize_async_expression`'s AwaitExpr case).
+    var actual = operand
+    if ctx.async_cps_active and async_mod.expr_has_await(operand):
+        actual = async_hoist_awaits(ctx, output, operand)
+    let value_ir = lower_expr(ctx, actual)
     let storage_ty = ir_expr_type(value_ir)
 
     let storage_c = fresh_c_temp_name(ctx, "propagate")
@@ -23118,6 +23141,7 @@ function lower_async_fn(ctx: ref[LowerCtx], name: str, link_base: str, receiver_
     ctx.async_result_c_name = ""
     ctx.async_complete_label = ""
     ctx.async_await_counter = 0
+    ctx.async_tmp_counter = 0
     ctx.async_local_fields = vec.Vec[ir.Field].create()
     ctx.async_await_fields = vec.Vec[ir.Field].create()
     ctx.async_local_seen = map_mod.Map[str, bool].create()
@@ -23549,7 +23573,8 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 let task_ir = lower_expr(ctx, inner)
                 let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
                 let result_ty = extract_task_element_type(ctx, task_ty)
-                let tmp = fresh_c_temp_name(ctx, "await_tmp")
+                ctx.async_tmp_counter += 1
+                let tmp = j2("__mt_async_tmp_", pw1_str(ctx.async_tmp_counter))
                 let field_name = j2("local_", tmp)
                 let frame_cname = j2("__mt_frame->", field_name)
                 async_register_local_field(ctx, tmp, field_name, frame_cname, result_ty)
@@ -23584,15 +23609,28 @@ function async_hoist_awaits(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], e
                 return ep
 
 
-function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], loc_name: str, loc_value: ptr[ast.Expr]?, loc_stmt_type: ptr[ast.TypeRef]?) -> void:
-    # `let _ = ...`: evaluate for side effects, no binding.
+function lower_async_local(ctx: ref[LowerCtx], output: ref[vec.Vec[ir.Stmt]], loc_name: str, loc_value: ptr[ast.Expr]?, loc_stmt_type: ptr[ast.TypeRef]?, line: ptr_uint) -> void:
+    # `let _ = ...`: the host's analysis registers `local_discard_<line>` for the
+    # discard and its lowering stores the (awaited) value there — a dead field,
+    # but part of the frame (`async_local_decl_field_name`,
+    # `lower_async_await_statement`).  No local binding is introduced.
     if loc_name == "_":
         let dv = loc_value else:
             return
+        let field_name = j2("local_discard_", pw1_str(line))
+        let frame_cname = j2("__mt_frame->", field_name)
         if expr_is_direct_await(dv):
-            lower_async_await_into(ctx, output, direct_await_inner(dv), Option[ptr[ir.Expr]].none)
+            let task_ir = lower_expr(ctx, direct_await_inner(dv))
+            let task_ty = normalize_awaited_task_type(ir_expr_type(task_ir))
+            let result_ty = extract_task_element_type(ctx, task_ty)
+            async_register_unused_field(ctx, field_name, result_ty)
+            let target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = result_ty, pointer = false))
+            async_emit_await(ctx, output, task_ir, task_ty, result_ty, Option[ptr[ir.Expr]].some(value = target))
         else:
-            output.push(ir.Stmt.stmt_expression(expression = lower_expr(ctx, dv), line = 0, source_path = ""))
+            let value_ir = lower_expr(ctx, dv)
+            let value_ty = ir_expr_type(value_ir)
+            async_register_unused_field(ctx, field_name, value_ty)
+            output.push(ir.Stmt.stmt_assignment(target = alloc_expr(ir.Expr.expr_name(name = frame_cname, ty = value_ty, pointer = false)), operator = "=", value = value_ir))
         return
 
     let field_name = j2("local_", loc_name)

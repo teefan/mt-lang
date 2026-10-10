@@ -3238,3 +3238,37 @@ function test_proc_captures_and_counters_are_program_scoped() -> void:
     expect(text.contains_substring("local_match_binding_4"))
     expect(not text.contains_substring("local_match_binding_2"))
     expect(not text.contains_substring("local_match_binding_3"))
+
+
+@[test]
+function test_async_embedded_await_temps_and_discards() -> void:
+    ## An embedded await hoists into the host's per-function
+    ## `__mt_async_tmp_<N>` local (field `local___mt_async_tmp_<N>`) — both from
+    ## a `?` operand (the normalization's AwaitExpr case; the propagation paths
+    ## hoist before lowering) and from a `let _ = await …`, which stores the
+    ## awaited value into the host's `local_discard_<line>` field (session 44
+    ## batch 13; `std/net/clock.mt`'s `measure_offset`/`respond_to_sync`).
+    var source = <<-SRC
+        async function step(x: int) -> Result[int, int]:
+            return Result[int, int].success(value = x)
+
+        async function work(flag: bool) -> Result[int, int]:
+            let ok = (await step(1))?
+            let _ = await step(2)
+            if flag:
+                return Result[int, int].success(value = ok)
+            return Result[int, int].failure(error = 0)
+
+        function main() -> int:
+            return 0
+    SRC
+    var dump = lower_dump_for_source(source)
+    defer: dump.release()
+    let text = dump.as_str()
+    expect(text.contains_substring("(IR::Field :name \"local___mt_async_tmp_1\" :type (Types::VariantInstance :name \"Result\" :module_name \"std.result\")) (IR::Field :name \"local_ok\" :type (Types::Primitive :name \"int\")) (IR::Field :name \"local_discard_6\" :type (Types::VariantInstance :name \"Result\" :module_name \"std.result\"))"))
+    ## The discard's awaited value is stored into the field (not silently
+    ## dropped) — the self's frame store carries the field path in a Name; the
+    ## host's `IR::Member` target shape is a separate item.
+    expect(text.contains_substring(":name \"__mt_frame->local_discard_6\""))
+    expect(not text.contains_substring("local_await_tmp"))
+    expect(not text.contains_substring("await_tmp_"))
